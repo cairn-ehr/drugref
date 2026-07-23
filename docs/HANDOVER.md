@@ -17,12 +17,16 @@ attach node-locally without ever contaminating interoperability).
 
 ## ⇒ NEXT
 
-**Slice 1 (the active-moiety identity spine) is ✅ COMPLETE** on branch `feat/slice-1-moiety-spine`
-(12 feature commits, **30 tests green** with the DB DSN set; final whole-branch review passed, verdict
-"merge with fixes" — all fixes applied, 0 Critical). **It is not yet merged / PR'd** — the immediate next
-step is to finish the branch (merge to `main` or open a PR) and then **file the deferred follow-ups as
-GitHub issues** (list below). After that, the next build slice is **Slice 2 — the class DAG + membership**
-(see [ROADMAP.md](ROADMAP.md)).
+**Slice 1 (the active-moiety identity spine) is ✅ COMPLETE and MERGED** — PR #1 merged to `main`
+(commit `14c40ec`; **35 tests green** with the DB DSN set; final whole-branch review passed, verdict
+"merge with fixes" — all fixes applied, 0 Critical). The deferred follow-ups are **filed as GitHub issues
+[#2](https://github.com/cairn-ehr/drugref/issues/2)–[#5](https://github.com/cairn-ehr/drugref/issues/5)**
+(plus batch-commit ingest, still unfiled — see below).
+
+The next build slice is **Slice 2 — the classification DAG + membership** (see [ROADMAP.md](ROADMAP.md)).
+**Gate before any ingest/bundling:** Slice 2's proposed seed sources (MED-RT, MeSH Pharmacological Actions)
+were *not* vetted in the sourcing eval — their licences must be **verified AGPL-compatible first** (rule 7);
+an incompatible licence is a blocker, not a cleanup-later item. ATC stays excluded (NC + no-derivatives).
 
 ## Current state (what slice 1 delivered)
 
