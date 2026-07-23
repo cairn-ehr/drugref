@@ -236,3 +236,7 @@ by the clinician who decides — so ingest optimises for **iteration speed**:
   set* (new drugs born harmonised); the crosswalk is a one-time bounded asset.
 - **(F) advisory tier ⇒ lax integrity?** → **No.** Tier is advisory (Python ingest), but substance-
   identity integrity is enforced **unbypassably in the DB** (append-only floor).
+- **(G) "unbypassable" floor overclaims** → the slice-1 DB floor enforces row-level UPDATE/DELETE
+  immutability only; TRUNCATE and the table-owning role remain bypasses, closed in a later
+  hardening slice via RLS + privilege separation (design §7's full floor). Accepted for slice 1
+  because the identity spine is rebuildable reference data, not the signed clinical wire core.

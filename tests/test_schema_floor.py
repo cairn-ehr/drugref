@@ -45,5 +45,20 @@ def test_claim_value_immutable_but_supersede_allowed(conn):
         conn.execute("UPDATE drugref.identity_claim SET value = 'XYZ' WHERE identity_claim_id = %s", (cid,))
     conn.rollback()
     run, cid = _seed_one(conn)
-    # ...but setting superseded_by is the permitted overlay path.
-    conn.execute("UPDATE drugref.identity_claim SET superseded_by = %s WHERE identity_claim_id = %s", (cid, cid))
+    # ...but the real overlay path is permitted: insert a SECOND claim (the
+    # correction) and point the FIRST claim's superseded_by at it. A claim
+    # superseding itself is not a valid overlay (see identity_claim_no_self_supersede)
+    # -- correction is always insert-new-then-point-old-at-new.
+    new_cid = conn.execute(
+        "INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
+        "VALUES ('00000000-0000-0000-0000-0000000000aa','UNII','ABC123-CORRECTED', %s) "
+        "RETURNING identity_claim_id", (run,)).fetchone()[0]
+    conn.execute("UPDATE drugref.identity_claim SET superseded_by = %s WHERE identity_claim_id = %s",
+                 (new_cid, cid))
+
+
+def test_claim_cannot_supersede_itself(conn):
+    run, cid = _seed_one(conn)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("UPDATE drugref.identity_claim SET superseded_by = %s WHERE identity_claim_id = %s",
+                     (cid, cid))

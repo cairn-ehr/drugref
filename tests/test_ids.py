@@ -20,3 +20,12 @@ def test_distinct_uniis_distinct_uuids():
 def test_namespace_is_stable_across_runs():
     # A frozen constant: if this value ever changes, every derived UUID changes.
     assert str(ids.MOIETY_NAMESPACE) == str(uuid.uuid5(uuid.uuid5(uuid.NAMESPACE_DNS, "drugref.org"), "moiety"))
+
+
+def test_namespace_matches_frozen_literal():
+    # Pin the ACTUAL value, not just formula-equals-formula: re-deriving MOIETY_NAMESPACE
+    # from the same uuid.uuid5(...) expression as ids.py (as the test above does) would
+    # stay green even if that formula drifted -- both sides drift together. A frozen
+    # literal is a real regression guard on the immortality invariant (every existing
+    # moiety_uuid is derived from this namespace and would silently change underneath us).
+    assert str(ids.MOIETY_NAMESPACE) == "d07651ee-311d-552b-a97b-591219eb3ad3"

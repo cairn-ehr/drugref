@@ -2,6 +2,13 @@
 -- drugref global tier, slice 1: the active-moiety identity spine.
 -- Three tables plus an append-only integrity floor enforced IN THE DATABASE, so a
 -- buggy ingest -- or a raw-SQL hand -- cannot silently rewrite substance identity.
+--
+-- Scope note (slice 1): the floor below enforces ROW-LEVEL UPDATE/DELETE immutability
+-- via triggers only. TRUNCATE and a table-owning role (ALTER TABLE ... DISABLE TRIGGER,
+-- or session_replication_role='replica') are OUT OF SCOPE for this slice and remain
+-- bypasses; they close in a later hardening slice via RLS + privilege separation (the
+-- full floor design §7 always envisioned). Accepted here because the identity spine is
+-- rebuildable reference data, not the signed clinical wire core.
 
 CREATE SCHEMA IF NOT EXISTS drugref;
 
@@ -34,7 +41,11 @@ CREATE TABLE IF NOT EXISTS drugref.identity_claim (
     value             text        NOT NULL,
     ingest_run        bigint      NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     asserted_at       timestamptz NOT NULL DEFAULT now(),
-    superseded_by     bigint      REFERENCES drugref.identity_claim(identity_claim_id)
+    superseded_by     bigint      REFERENCES drugref.identity_claim(identity_claim_id),
+    -- A claim can never supersede itself -- the overlay path always points to a
+    -- DIFFERENT (later) claim row, never back to its own id.
+    CONSTRAINT identity_claim_no_self_supersede
+        CHECK (superseded_by IS NULL OR superseded_by <> identity_claim_id)
 );
 
 -- Idempotent re-ingest: the same (moiety, scheme, value) is one logical claim.
