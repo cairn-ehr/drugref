@@ -1,7 +1,11 @@
 # tests/conftest.py
 """Shared DB fixtures. DB-gated tests are SKIPPED unless DRUGREF_TEST_DSN is set,
-so unit tests still run anywhere. Each DB test runs inside a transaction that is
-rolled back, so tests never see each other's writes."""
+so unit tests still run anywhere. The `conn` fixture rolls back after each test,
+which isolates tests whose code under test never commits. Isolation is
+rollback-based, not transaction-enforced: code under test that calls
+conn.commit() itself (e.g. an orchestrator that commits per run) escapes the
+rollback, so a test module exercising such code needs its own explicit
+cleanup (see tests/test_ingest_run.py's autouse truncate fixture)."""
 import os
 import pytest
 import psycopg

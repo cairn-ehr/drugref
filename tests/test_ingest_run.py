@@ -1,5 +1,6 @@
 # tests/test_ingest_run.py
 import pathlib
+import pytest
 from drugref.ingest import run
 from drugref import ids
 
@@ -7,6 +8,17 @@ FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 DATA = pathlib.Path("src/drugref/data")
 XW = DATA / "usan_inn_crosswalk.tsv"
 AL = DATA / "legacy_allowlist.tsv"
+
+
+@pytest.fixture(autouse=True)
+def _clean_ingest_tables(conn):
+    # ingest_unii() commits internally, so the conn fixture's rollback can't
+    # isolate these tests. Truncate the drugref tables before each test so the
+    # acceptance-matrix counts are order-independent.
+    conn.execute("TRUNCATE drugref.identity_claim, drugref.substance_moiety, "
+                 "drugref.ingest_run RESTART IDENTITY CASCADE")
+    conn.commit()
+    yield
 
 
 def _ingest(conn, release="2026-07"):

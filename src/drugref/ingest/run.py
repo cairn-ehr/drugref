@@ -37,10 +37,11 @@ def ingest_unii(conn: psycopg.Connection, *, unii_path, crosswalk_path,
             continue
         count += 1
         moiety_uuid = ids.mint_moiety_uuid(cand.unii)          # deterministic at seed
-        claims.upsert_moiety(conn, moiety_uuid, gate.inn_display_name(cand, crosswalk), run_id)
+        display_name = gate.inn_display_name(cand, crosswalk)
+        claims.upsert_moiety(conn, moiety_uuid, display_name, run_id)
         claims.add_claim(conn, moiety_uuid, "UNII", cand.unii, run_id)
         if cand.has_inn:
-            claims.add_claim(conn, moiety_uuid, "INN", gate.inn_display_name(cand, crosswalk), run_id)
+            claims.add_claim(conn, moiety_uuid, "INN", display_name, run_id)
         for scheme, value in cand.cross_refs.items():
             claims.add_claim(conn, moiety_uuid, scheme, value, run_id)
 
