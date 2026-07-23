@@ -5,6 +5,13 @@ term, the has-INN membership signal (presence of INN_ID -> the substance has a
 WHO INN, design §6.1), and the cheap cross-references (CAS/RxCUI/PubChem/
 InChIKey) that make drugref a public identifier cross-walk. The gate itself
 lives in gate.py; this module only reads the file.
+
+VERIFY-BEFORE-PRODUCTION (design §6.1): confirm the real UNII_Data_*.txt header
+names match {UNII, PT, RN, RXCUI, PUBCHEM, INN_ID, INCHIKEY} exactly, and that
+INN_ID is present and populated, before running against production data. If the
+real file differs, has_inn and the cross-refs silently degrade; a header rename
+is a one-line change to _CROSS_REF_COLUMNS / the INN_ID key, and an absent INN_ID
+column means the has-INN gate needs the WHO INN list as a fallback signal.
 """
 import csv
 import pathlib

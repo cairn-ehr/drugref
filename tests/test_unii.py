@@ -24,6 +24,8 @@ def test_cross_refs_captured_when_present():
     assert acet.cross_refs["RXNORM_IN"] == "161"
     assert acet.cross_refs["PUBCHEM_CID"] == "1983"
     assert acet.cross_refs["INCHIKEY"] == "RZVAJINKPMORJF-UHFFFAOYSA-N"
-    # Empty upstream cells are omitted, not stored as empty strings.
-    assert "CAS" not in by_name["MICROCRYSTALLINE CELLULOSE"].cross_refs or \
-        by_name["MICROCRYSTALLINE CELLULOSE"].cross_refs.get("RXNORM_IN") is None
+    # RN (CAS) is populated for this row -> present; RXCUI is empty -> omitted,
+    # not stored as an empty string.
+    cellulose = by_name["MICROCRYSTALLINE CELLULOSE"]
+    assert cellulose.cross_refs["CAS"] == "9004-34-6"      # populated -> present
+    assert "RXNORM_IN" not in cellulose.cross_refs          # empty RXCUI -> omitted
