@@ -7,7 +7,7 @@ CREATE SCHEMA IF NOT EXISTS drugref;
 
 -- Provenance: every registry/claim row traces to one ingest run, so any state is
 -- reproducible and attributable to a specific upstream release.
-CREATE TABLE drugref.ingest_run (
+CREATE TABLE IF NOT EXISTS drugref.ingest_run (
     ingest_run_id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     source           text        NOT NULL,   -- 'UNII' | 'CHEBI' | ...
     upstream_release text        NOT NULL,   -- the upstream file's release/version tag
@@ -18,7 +18,7 @@ CREATE TABLE drugref.ingest_run (
 
 -- The registry: one row per immortal active moiety. moiety_uuid is minted once
 -- (UUIDv5 at seed, see src/drugref/ids.py) and NEVER changes.
-CREATE TABLE drugref.substance_moiety (
+CREATE TABLE IF NOT EXISTS drugref.substance_moiety (
     moiety_uuid       uuid   PRIMARY KEY,
     display_name      text   NOT NULL,       -- INN-preferred label; a cache derived from claims
     first_seen_ingest bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id)
@@ -27,7 +27,7 @@ CREATE TABLE drugref.substance_moiety (
 -- External identifiers as append-only CLAIMS that attach to a moiety, never the key
 -- (principle 2). A correction OVERLAYS: insert the corrected claim, set superseded_by
 -- on the old one. Never UPDATE-in-place, never DELETE.
-CREATE TABLE drugref.identity_claim (
+CREATE TABLE IF NOT EXISTS drugref.identity_claim (
     identity_claim_id bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     moiety_uuid       uuid        NOT NULL REFERENCES drugref.substance_moiety(moiety_uuid),
     scheme            text        NOT NULL,  -- 'UNII'|'INN'|'RXNORM_IN'|'CHEBI'|'CAS'|'PUBCHEM_CID'|'INCHIKEY'
@@ -38,17 +38,17 @@ CREATE TABLE drugref.identity_claim (
 );
 
 -- Idempotent re-ingest: the same (moiety, scheme, value) is one logical claim.
-CREATE UNIQUE INDEX identity_claim_unique
+CREATE UNIQUE INDEX IF NOT EXISTS identity_claim_unique
     ON drugref.identity_claim (moiety_uuid, scheme, value);
 -- Reverse lookup (value -> moiety), the cross-walk query path.
-CREATE INDEX identity_claim_by_scheme_value
+CREATE INDEX IF NOT EXISTS identity_claim_by_scheme_value
     ON drugref.identity_claim (scheme, value);
 
 -- ---- The append-only floor ------------------------------------------------
 
 -- substance_moiety: forbid DELETE; forbid changing the immortal key. The
 -- display_name cache MAY be refreshed by a later ingest.
-CREATE FUNCTION drugref.forbid_moiety_rewrite() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION drugref.forbid_moiety_rewrite() RETURNS trigger AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'drugref.substance_moiety is append-only: DELETE forbidden';
@@ -60,13 +60,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER forbid_moiety_rewrite
+CREATE OR REPLACE TRIGGER forbid_moiety_rewrite
     BEFORE UPDATE OR DELETE ON drugref.substance_moiety
     FOR EACH ROW EXECUTE FUNCTION drugref.forbid_moiety_rewrite();
 
 -- identity_claim: forbid DELETE; the ONLY permitted mutation is setting superseded_by
 -- (the overlay/correction path). No other column may change.
-CREATE FUNCTION drugref.forbid_claim_rewrite() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION drugref.forbid_claim_rewrite() RETURNS trigger AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'drugref.identity_claim is append-only: DELETE forbidden';
@@ -82,6 +82,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER forbid_claim_rewrite
+CREATE OR REPLACE TRIGGER forbid_claim_rewrite
     BEFORE UPDATE OR DELETE ON drugref.identity_claim
     FOR EACH ROW EXECUTE FUNCTION drugref.forbid_claim_rewrite();
