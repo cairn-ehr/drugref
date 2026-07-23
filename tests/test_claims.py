@@ -31,6 +31,15 @@ def test_add_claim_is_idempotent(conn):
     assert n == 1
 
 
+def test_add_claim_reports_insert_vs_conflict(conn):
+    run = _new_run(conn)
+    claims.upsert_moiety(conn, M, "amlodipine", run)
+    # First assertion inserts a new row -> True; re-asserting the same claim is
+    # the ON CONFLICT no-op -> False. Callers rely on this to count new claims.
+    assert claims.add_claim(conn, M, "UNII", "1J444QC288", run) is True
+    assert claims.add_claim(conn, M, "UNII", "1J444QC288", run) is False
+
+
 def test_upsert_moiety_refreshes_display_name(conn):
     run = _new_run(conn)
     claims.upsert_moiety(conn, M, "acetaminophen", run)

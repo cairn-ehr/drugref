@@ -43,5 +43,10 @@ def is_moiety(cand: MoietyCandidate, allowlist: set[str]) -> bool:
 
 
 def inn_display_name(cand: MoietyCandidate, crosswalk: dict[str, str]) -> str:
-    """The INN-preferred display label: crosswalk override, else the folded PT."""
-    return crosswalk.get(_norm(cand.preferred_name), cand.preferred_name.strip().lower())
+    """The INN-preferred display label: crosswalk override, else the folded PT.
+
+    The fallback uses _norm() (same fold as the lookup key) so an upstream PT with
+    stray internal whitespace collapses to a clean single-spaced label rather than
+    passing through as-is.
+    """
+    return crosswalk.get(_norm(cand.preferred_name), _norm(cand.preferred_name))

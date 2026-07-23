@@ -32,3 +32,10 @@ def test_inn_display_name_uses_crosswalk_for_divergent_us_name():
 def test_inn_display_name_lowercases_harmonized_name():
     xw = gate.load_crosswalk(DATA / "usan_inn_crosswalk.tsv")
     assert gate.inn_display_name(_cand("AMLODIPINE", True), xw) == "amlodipine"
+
+
+def test_inn_display_name_collapses_internal_whitespace():
+    # A PT with stray internal whitespace must fold to a clean single-spaced
+    # label via _norm(), not pass through as-is.
+    xw = gate.load_crosswalk(DATA / "usan_inn_crosswalk.tsv")
+    assert gate.inn_display_name(_cand("MAGNESIUM   SULFATE", True), xw) == "magnesium sulfate"

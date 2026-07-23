@@ -14,8 +14,16 @@ _DB_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "db"
 
 
 def connect(dsn: str | None = None) -> psycopg.Connection:
-    """Open a connection. Falls back to the DRUGREF_DSN env var."""
-    dsn = dsn or os.environ["DRUGREF_DSN"]
+    """Open a connection. Falls back to the DRUGREF_DSN env var.
+
+    Raises a clear RuntimeError (not a bare KeyError) when neither a dsn argument
+    nor the DRUGREF_DSN environment variable is provided, so a misconfigured caller
+    gets an actionable message instead of an opaque traceback.
+    """
+    dsn = dsn or os.environ.get("DRUGREF_DSN")
+    if not dsn:
+        raise RuntimeError(
+            "no database DSN: pass dsn= or set the DRUGREF_DSN environment variable")
     return psycopg.connect(dsn)
 
 

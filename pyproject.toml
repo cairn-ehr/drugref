@@ -3,7 +3,9 @@ name = "drugref"
 version = "0.0.1"
 description = "drugref.org — an open drug-information service (global tier)"
 requires-python = ">=3.12"
-license = { text = "AGPL-3.0-or-later" }
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+readme = "README.md"
 dependencies = ["psycopg[binary]>=3.2"]
 
 [dependency-groups]

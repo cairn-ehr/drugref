@@ -78,22 +78,27 @@ junior-legible inline docs, files < 500 lines, no silent tech debt (fix or file 
 before commit, **AGPL-3.0 + AGPL-compatible sources only (check the licence before bundling)**, keep this file
 and ROADMAP current.
 
-## Open follow-ups (file these as GitHub issues before/at next session)
+## Open follow-ups
 
-- **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass via **RLS + privilege separation**
-  (the full floor the design §7 always envisioned; recorded as design §10 tension **G**). Add a
-  `BEFORE TRUNCATE` guard + rework the two commit-internally test modules' cleanup off `TRUNCATE`.
-- **ChEBI InChIKey lookup** (`ingest/chebi.py`) needs a `superseded_by IS NULL` / `ORDER BY` filter once the
-  overlay/correction path exists (pre-existing codebase-wide gap — nothing filters `superseded_by` yet).
-- **Batch-commit ingest** — `ingest/run.py` loads a whole file in one transaction (fine for fixtures; a real
-  UNII file is hundreds of thousands of rows). Batch commits per N rows for production.
-- **Verify-before-production** (from the spec §6/§6.1) — confirm the real UNII data-file header names (esp.
-  `INN_ID` presence/population) against a fresh download; confirm the ChEBI CC BY 4.0 deed + UNII/GSRS
-  distribution terms; expand the USAN↔INN crosswalk + legacy allow-list from seed subsets toward the full
-  closed sets.
-- **Cosmetic minors** — pyproject SPDX-string `license` form + `readme` field; `claims.py` module-docstring
-  wording ("never UPDATE the immortal columns") + `cur:` → `conn:` rename; `gate.inn_display_name` fallback
-  should use `_norm()` (collapse internal whitespace).
+Post-review (PR #1) findings that were larger than a cleanup are now filed as GitHub issues:
+
+- **Floor hardening** ([#2](https://github.com/cairn-ehr/drugref/issues/2)) — close the `TRUNCATE` +
+  table-owning-role bypass via **RLS + privilege separation** (design §7 / §10 tension **G**); includes
+  reworking the commit-internally test modules' cleanup off `TRUNCATE`.
+- **UNII-change immortality** ([#3](https://github.com/cairn-ehr/drugref/issues/3)) — `moiety_uuid` survives
+  every identifier's churn *except* a change to the UNII itself; structural re-key (by InChIKey) is deferred.
+- **One-way supersession** ([#4](https://github.com/cairn-ehr/drugref/issues/4)) — the floor lets
+  `superseded_by` be un-set / re-pointed; decide whether that's an invariant to enforce.
+- **INN sourced from UNII PT, not WHO INN** ([#5](https://github.com/cairn-ehr/drugref/issues/5)) — part of
+  the verify-before-production checklist (real UNII headers/`INN_ID`, ChEBI/UNII licence deeds, grow the
+  closed crosswalk + allow-list).
+- **Batch-commit ingest** (not yet filed) — `ingest/run.py` loads a whole file in one transaction (fine for
+  fixtures; a real UNII file is hundreds of thousands of rows). Batch commits per N rows for production.
+
+Fixed in the post-review pass (no longer open): ChEBI InChIKey lookup now filters `superseded_by IS NULL` and
+attaches to *all* matching moieties; `add_claim` reports insert-vs-conflict (no per-row probe); `db.connect`
+raises a clear error on missing DSN; `gate.inn_display_name` folds via `_norm()`; `claims.py` docstring +
+`conn` param naming; pyproject SPDX `license` string + `readme`/`license-files`.
 
 ## Repo facts
 

@@ -6,9 +6,16 @@ replay on an already-migrated database, mirroring Cairn's connect-and-load
 convention). These tests hold that claim to account: a second apply must not
 raise, and a fresh connection must be genuinely usable.
 """
-import os
 import pytest
 from drugref import db
+
+
+def test_connect_without_dsn_raises_clear_error(monkeypatch):
+    """No dsn arg and no DRUGREF_DSN env -> a clear RuntimeError, not a bare
+    KeyError. Runs anywhere (no database needed)."""
+    monkeypatch.delenv("DRUGREF_DSN", raising=False)
+    with pytest.raises(RuntimeError, match="DRUGREF_DSN"):
+        db.connect()
 
 
 def test_connect_returns_usable_connection(_dsn):

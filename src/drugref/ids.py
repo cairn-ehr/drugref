@@ -3,9 +3,15 @@
 drugref mints its OWN moiety UUID rather than keying on a name (principle 2:
 identity is a claim, never the name). The UUID is derived deterministically
 (UUIDv5) from the moiety's UNII, so two independent drugref instances ingesting
-the same UNII release derive the SAME UUID with zero coordination. It is minted
-at first sighting and then PINNED in the registry -- never re-derived, even if
-the upstream identifier later churns.
+the same UNII release derive the SAME UUID with zero coordination.
+
+Immortality scope: the UUID is a pure function of the UNII, re-derived on every
+ingest. It therefore survives churn in EVERY OTHER identifier (RxCUI, CAS, name,
+...), which attach as new claims and never re-key. The one thing it does NOT
+survive is a change to the UNII itself -- UNII is designed to be immortal, so
+this is acceptable for slice 1, but a real UNII correction would mint a new
+moiety and orphan the old one. Detecting that (structural re-key by InChIKey) is
+tracked as a follow-up, not solved here.
 """
 import uuid
 
@@ -19,8 +25,10 @@ MOIETY_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "moiety")
 def mint_moiety_uuid(unii: str) -> uuid.UUID:
     """Derive the immortal moiety UUID from an active moiety's UNII.
 
-    Deterministic: same UNII -> same UUID, always, everywhere. Callers use this
-    only at first sighting; thereafter the registry is authoritative.
+    Deterministic: same UNII -> same UUID, always, everywhere. Because it is a
+    pure function of the UNII, callers may re-derive it on every ingest and get
+    the registry's existing UUID back for free -- no lookup needed -- as long as
+    the UNII is unchanged (see the module docstring on the UNII-change caveat).
     """
     key = f"UNII:{unii.strip().upper()}"
     return uuid.uuid5(MOIETY_NAMESPACE, key)
