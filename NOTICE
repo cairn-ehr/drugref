@@ -1,0 +1,8 @@
+drugref.org — global tier. Copyright (C) 2026 the drugref/Cairn contributors.
+Licensed under AGPL-3.0-or-later.
+
+Seed data attributions:
+- UNII / Global Substance Registration System — U.S. FDA/NCATS (public domain).
+- ChEBI — EMBL-EBI, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+- International Nonproprietary Names (INN) — World Health Organization (public domain).
+- RxNorm — U.S. National Library of Medicine (public domain, prescribable subset).
