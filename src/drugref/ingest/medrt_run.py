@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
+from drugref import interactions
 from drugref.ingest import medrt
 
 SOURCE = "MED-RT"
@@ -38,14 +39,17 @@ class MedrtSummary:
 
     * classes_in_release -- classes this release asserts (upserted, new or not)
     * classes_added      -- of those, the ones drugref had never seen before
-    * parent_edges / memberships -- rows this run actually wrote
+    * parent_edges / memberships / contraindications -- rows this run actually wrote
+      (contraindications are the slice-5a CI_MoA/CI_PE drug-drug rules)
 
-    The remaining three are worklist numbers, not errors, reported rather than
-    silently swallowed -- the slice-1 gate's posture, that anything we decline to
-    carry is a work item and never an invisible drop:
+    The remaining worklist numbers are not errors, reported rather than silently
+    swallowed -- the slice-1 gate's posture, that anything we decline to carry is a
+    work item and never an invisible drop:
 
     * unmatched_rxcuis      -- MED-RT classified an ingredient we do not carry,
                                usually because the moiety gate excluded it
+    * unmatched_ci_rxcuis   -- the same, for a CI_MoA/CI_PE whose subject ingredient
+                               our registry does not carry
     * inactive_concepts     -- upstream no longer marks the concept active
     * unidentified_concepts -- the concept carries neither a NUI nor a code
     """
@@ -53,7 +57,9 @@ class MedrtSummary:
     classes_added: int
     parent_edges: int
     memberships: int
+    contraindications: int
     unmatched_rxcuis: int
+    unmatched_ci_rxcuis: int
     inactive_concepts: int
     unidentified_concepts: int
 
@@ -84,8 +90,10 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
         uuid_by_nui[concept.nui] = class_uuid
         classes_added += is_new
 
-    # 2. Drop the previous release's edges before writing this one's.
+    # 2. Drop the previous release's edges AND contraindications before writing this
+    #    run's -- both are rebuildable projections replaced wholesale per release.
     class_writer.clear_source_edges(conn, SOURCE)
+    interactions.clear_source_contraindications(conn, SOURCE)
 
     # 3. The DAG. The parser guaranteed both endpoints are classes we ingested.
     parent_edges = sum(
@@ -115,11 +123,31 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
                                            assertion.relationship, run_id):
                 memberships += 1
 
+    # 5. Contraindications (slice 5a). The subject is joined by RxCUI through the
+    #    same `moieties` index step 4 already built; the object is resolved through
+    #    the class UUIDs step 1 built (the parser guaranteed the object is an
+    #    ingested class, so uuid_by_nui always has it). A subject our registry does
+    #    not carry is counted by DISTINCT RxCUI, exactly as membership's are.
+    contraindications = 0
+    unmatched_ci: set[str] = set()
+    for ci in parsed.contraindications:
+        matches = moieties.get(ci.rxcui, ())
+        if not matches:
+            unmatched_ci.add(ci.rxcui)
+            continue
+        for moiety_uuid in matches:
+            if interactions.add_contraindication(conn, moiety_uuid,
+                                                 uuid_by_nui[ci.class_nui],
+                                                 ci.relationship, SOURCE, run_id):
+                contraindications += 1
+
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))
     conn.commit()
     return MedrtSummary(classes_in_release=len(uuid_by_nui), classes_added=classes_added,
                         parent_edges=parent_edges, memberships=memberships,
+                        contraindications=contraindications,
                         unmatched_rxcuis=len(unmatched),
+                        unmatched_ci_rxcuis=len(unmatched_ci),
                         inactive_concepts=parsed.inactive_concepts,
                         unidentified_concepts=parsed.unidentified_concepts)

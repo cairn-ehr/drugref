@@ -27,8 +27,8 @@ MAGNESIUM_SULFATE = "DE08037SAB"
 def _clean(conn):
     # Both orchestrators commit internally, so the conn fixture's rollback cannot
     # isolate these tests; truncate first so counts are order-independent.
-    conn.execute("TRUNCATE drugref.class_membership, drugref.class_parent, "
-                 "drugref.substance_class, drugref.identity_claim, "
+    conn.execute("TRUNCATE drugref.class_contraindication, drugref.class_membership, "
+                 "drugref.class_parent, drugref.substance_class, drugref.identity_claim, "
                  "drugref.substance_moiety, drugref.ingest_run RESTART IDENTITY CASCADE")
     conn.commit()
     yield
@@ -221,6 +221,75 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
     ).fetchone()[0]
     assert surviving == 3
     assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 50
+
+
+# ---- contraindications (slice 5a) ------------------------------------------
+
+
+def test_contraindications_are_written_from_the_real_fixture(seeded):
+    """The fixture carries amlodipine's real CI_PE edge (17767 -> N0000178477).
+    Ingest resolves the subject to its moiety and the object to its ingested PE
+    class, writing one drug-drug contraindication -- direction pinned on real data:
+    subject is the drug the statement is about, object is the co-administered
+    drug's class."""
+    summary = _ingest(seeded)
+    assert summary.contraindications == 1
+    assert summary.unmatched_ci_rxcuis == 0
+    row = seeded.execute(
+        "SELECT relationship, source FROM drugref.class_contraindication "
+        "WHERE subject_moiety_uuid = %s AND object_class_uuid = %s",
+        (ids.mint_moiety_uuid(AMLODIPINE), ids.mint_class_uuid("MED-RT", "N0000178477"))
+    ).fetchone()
+    assert row == ("CI_PE", "MED-RT")
+
+
+def test_a_contraindication_shares_its_runs_provenance(seeded):
+    """One MED-RT file, one ingest_run: the contraindication carries the same run id
+    as the classes and edges written beside it."""
+    _ingest(seeded)
+    run_id = seeded.execute(
+        "SELECT ingest_run_id FROM drugref.ingest_run WHERE source = 'MED-RT' "
+        "ORDER BY ingest_run_id DESC LIMIT 1").fetchone()[0]
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.class_contraindication WHERE ingest_run = %s",
+        (run_id,)).fetchone()[0] == 1
+
+
+def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edges(seeded):
+    """A rebuildable projection: a second release replaces the prior release's
+    contraindications, and clearing them leaves membership and the DAG untouched
+    (the clear is scoped to class_contraindication alone)."""
+    first = _ingest(seeded)
+    second = _ingest(seeded, release="2026.08.03")
+    assert first.contraindications == second.contraindications == 1
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 1
+    assert seeded.execute(
+        "SELECT (SELECT count(*) FROM drugref.class_membership), "
+        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (17, 39)
+
+
+def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted(seeded, tmp_path):
+    """The subject-side gate, mirroring membership's unmatched_rxcuis: a CI whose
+    ingredient our registry does not carry is a worklist number, never dropped in
+    silence."""
+    synthetic = tmp_path / "medrt_ci.xml"
+    synthetic.write_text(
+        '<?xml version="1.0" encoding="UTF-8" ?>\n<terminology>\n'
+        "\t<namespace><name>MED-RT</name><version>x</version></namespace>\n"
+        "\t<concept><namespace>MED-RT</namespace><name>A Mechanism [MoA]</name>"
+        "<code>N0000000401</code><status>A</status>"
+        "<property><namespace>MED-RT</namespace><name>CTY</name><value>MoA</value></property>"
+        "<property><namespace>MED-RT</namespace><name>NUI</name><value>N0000000401</value></property>"
+        "</concept>\n"
+        "\t<association><namespace>MED-RT</namespace><name>CI_MoA</name>"
+        "<from_namespace>RxNorm</from_namespace><from_name>x</from_name>"
+        "<from_code>9999999</from_code>"  # no such ingredient in the registry
+        "<to_namespace>MED-RT</to_namespace><to_name>y</to_name>"
+        "<to_code>N0000000401</to_code></association>\n</terminology>\n", encoding="utf-8")
+    summary = medrt_run.ingest_medrt(seeded, medrt_path=synthetic, upstream_release="2026.10.05")
+    assert summary.contraindications == 0
+    assert summary.unmatched_ci_rxcuis == 1
 
 
 def test_ingest_run_provenance_is_recorded(seeded):

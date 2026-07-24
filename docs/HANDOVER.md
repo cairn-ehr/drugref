@@ -29,7 +29,20 @@ set-valued keys) + `ingest/mesh_run.py` (orchestrator + the two-key bridge) + th
 `ClassConcept` moved into `classes.py` with a new `moieties_by_scheme` join primitive.
 [issue #11](https://github.com/cairn-ehr/drugref/issues/11) is answered — close it when this PR merges.
 
-**⇒ The next slice is Slice 3 (composition tree: salts/esters/hydrates).** Before that, one measured-but-
+**Slice 5a — MED-RT CI_MoA/CI_PE contraindications** ✅ done on this branch (drugref's first drug-drug
+interaction data). Design + plan:
+[slice-5a spec](superpowers/specs/2026-07-25-drugref-slice-5a-medrt-contraindication-design.md) /
+[plan](superpowers/plans/2026-07-25-slice-5a-medrt-contraindication.md). `db/004` adds the
+`class_contraindication` rebuildable projection + the `ddi_candidate_pair` read-time expansion view;
+`medrt.py` now emits `ContraindicationAssertion` for CI_MoA/CI_PE (both endpoints already ingested — **no
+new source/join/UUID**); `interactions.py` is the single writer; `medrt_run.py` gained step 5 +
+`contraindications`/`unmatched_ci_rxcuis` on `MedrtSummary`. **195 tests green.** Candidate tier only —
+MED-RT does not track label updates (spec §4.3), so nothing here auto-alerts. `NOTICE` unchanged. Split the
+ROADMAP Slice 5 into **5a** (this) / **5b** (MeSH-keyed CI_with/CI_ChemClass/may_treat/induces) / **5c**
+(the curated signed overlay).
+
+**⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications) or Slice 3 (composition tree: salts/esters/
+hydrates).** Before production, one measured-but-
 not-yet-verified-in-production concern carries over: the parser is validated against the committed fixtures
 (extracts of the real 2026 release); run it against the full `pa2026`/`supp2026`/`desc2026` and re-confirm
 the §5 aggregate numbers before production (real files are gitignored — see "How to run / test").

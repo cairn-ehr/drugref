@@ -99,6 +99,11 @@ def main(path: str) -> None:
             if (a["fns"] == "RxNorm" and a["fc"] in INGREDIENTS)
             or (a["tns"] == "RxNorm" and a["tc"] in INGREDIENTS)]
     # Trim the noisiest overlay relations: keep just a couple as proof they're dropped.
+    # CI_MoA / CI_PE are deliberately NOT trimmed -- they are slice-5a's drug-drug
+    # contraindications, extracted into class_contraindication, and the fixture must
+    # keep exercising them (amlodipine's real CI_PE -> N0000178477 is the edge the
+    # release provides for these ingredients). CI_with stays trimmed: it is MeSH-keyed
+    # (slice 5b) and its endpoint is redacted here anyway.
     trimmed, seen_overlay = [], {}
     for a in keep:
         if a["name"] in ("may_treat", "may_prevent", "CI_with", "Synonym Of"):

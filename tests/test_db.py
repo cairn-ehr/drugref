@@ -47,6 +47,10 @@ def test_apply_migrations_is_idempotent(conn):
         "ingest_run", "substance_moiety", "identity_claim",
         # slice 2a: the classification DAG
         "substance_class", "class_parent", "class_membership",
+        # slice 5a: the interaction projection, plus its read-time pair-expansion
+        # VIEW (information_schema.tables lists views too -- an exact inventory that
+        # catches any object created by accident, so the view is named explicitly).
+        "class_contraindication", "ddi_candidate_pair",
     }
 
 

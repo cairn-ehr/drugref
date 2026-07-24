@@ -249,3 +249,74 @@ def test_has_sc_into_mesh_is_dropped():
 def test_every_membership_points_at_an_ingested_class():
     nuis = {c.nui for c in parsed().classes}
     assert all(m.class_nui in nuis for m in parsed().memberships)
+
+
+# ---- contraindications (slice 5a) ------------------------------------------
+# CI_MoA / CI_PE are "contraindicated MoA / physiological-effect of a
+# CO-ADMINISTERED ingredient" -- drug-drug interaction rules. Subject is the drug
+# the statement is about (from_code, an RxCUI); object is the co-administered
+# drug's MED-RT class (to_code). Getting that direction backwards inverts the
+# clinical meaning, so it is pinned on controlled input here and on real data in
+# the fixture tests.
+
+
+def test_ci_moa_is_emitted_with_the_drug_as_subject_and_the_class_as_object(tmp_path):
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N0000000201", "Some Mechanism [MoA]", cty="MoA"),
+        _assoc("CI_MoA", "RxNorm", "12345", "MED-RT", "C-MOA"))
+    assert medrt.parse(path).contraindications == [
+        medrt.ContraindicationAssertion(rxcui="12345", class_nui="N0000000201",
+                                        relationship="CI_MoA")]
+
+
+def test_ci_pe_is_emitted_on_the_pe_axis(tmp_path):
+    path = _write(
+        tmp_path,
+        _concept("C-PE", "N0000000202", "Some Effect [PE]", cty="PE"),
+        _assoc("CI_PE", "RxNorm", "678", "MED-RT", "C-PE"))
+    assert medrt.parse(path).contraindications == [
+        medrt.ContraindicationAssertion(rxcui="678", class_nui="N0000000202",
+                                        relationship="CI_PE")]
+
+
+def test_a_contraindication_to_an_uningested_class_is_dropped(tmp_path):
+    """Endpoint scoping, exactly as for the DAG and membership: the object must be a
+    class we ingested, or the edge cannot be resolved to a class_uuid at all."""
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N0000000203", "Some Mechanism [MoA]", cty="MoA"),
+        # object code C-GONE names no ingested concept
+        _assoc("CI_MoA", "RxNorm", "999", "MED-RT", "C-GONE"))
+    assert medrt.parse(path).contraindications == []
+
+
+def test_contraindications_and_membership_do_not_leak_into_each_other(tmp_path):
+    """A CI_MoA is not membership; a has_MoA is not a contraindication; and the
+    MeSH-keyed CI_with (slice 5b) is neither, here."""
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N0000000204", "Some Mechanism [MoA]", cty="MoA"),
+        _assoc("CI_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
+        + _assoc("has_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
+        + _assoc("CI_with", "RxNorm", "1", "MeSH", "M0001111"))
+    result = medrt.parse(path)
+    assert [c.relationship for c in result.contraindications] == ["CI_MoA"]
+    assert [m.relationship for m in result.memberships] == ["has_MoA"]
+
+
+def test_the_real_fixture_contraindications_all_point_at_ingested_classes():
+    """Whatever CI_MoA/CI_PE the fixture carries, each resolves to a real class."""
+    nuis = {c.nui for c in parsed().classes}
+    assert all(c.class_nui in nuis for c in parsed().contraindications)
+
+
+def test_the_fixture_exercises_a_real_contraindication_edge():
+    """The generator keeps CI_MoA/CI_PE because it does not trim them; a regeneration
+    that started trimming them would silently empty slice-5a's axis and leave the
+    test above passing vacuously. Pin the real edge the release provides for our
+    ingredients: amlodipine's CI_PE (17767 -> N0000178477 [PE])."""
+    assert "<name>CI_PE</name>" in FIX.read_text(encoding="utf-8"), \
+        "fixture no longer exercises a contraindication edge"
+    assert medrt.ContraindicationAssertion("17767", "N0000178477", "CI_PE") \
+        in parsed().contraindications
