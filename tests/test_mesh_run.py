@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 from drugref import ids
-from drugref.ingest import mesh_run, medrt_run, run
+from drugref.ingest import mesh, mesh_run, medrt_run, run
 
 FIX = pathlib.Path(__file__).parent / "fixtures"
 PA = FIX / "mesh_pa_subset.xml"
@@ -158,6 +158,20 @@ def test_key_not_in_registry_is_counted(seeded):
     both carry a key that no gated-in moiety holds -> the second worklist number."""
     summary = _ingest(seeded)
     assert summary.members_key_not_in_registry == 2
+
+
+def test_every_member_is_accounted_for_no_silent_drop(seeded):
+    """Conservation: every DISTINCT member the parse yields ends up in exactly one
+    of the three buckets -- joined, no-key, or key-not-in-registry -- so no member
+    can silently vanish. The total is anchored independently on the parse (not the
+    summary), so if a future change stopped counting either worklist bucket the
+    derived `joined` would no longer equal the 2 members that actually join."""
+    summary = _ingest(seeded)
+    distinct_members = {m.record_ui for m in
+                        mesh.parse(pa_path=PA, desc_path=DESC, supp_path=SUPP).memberships}
+    assert len(distinct_members) == 5           # D000082, D001241, D008278, C000002, C007609
+    joined = len(distinct_members) - summary.members_no_key - summary.members_key_not_in_registry
+    assert joined == 2                          # paracetamol (UNII) + magnesium (CAS)
 
 
 def test_no_membership_points_outside_the_registry(seeded):

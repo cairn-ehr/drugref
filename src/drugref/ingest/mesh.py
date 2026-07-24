@@ -36,9 +36,14 @@ no UUID minting. The orchestrator (mesh_run.py) does the bridge join and all DB
 work. The parser STREAMS every file with iterparse + clear (supp2026.xml is
 ~750 MB uncompressed), so it scales to the full release by construction (spec §6).
 """
+import pathlib
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
+
+# A release file path -- accepted as str or Path throughout, mirroring medrt.parse.
+StrPath = str | pathlib.Path
 
 # Registry-number typing (spec §5.2). A UNII is 10 upper-alphanumerics; a CAS is
 # n-nn-n (1-7 digits, then 2, then 1 check digit). Anything else -- the placeholder
@@ -108,7 +113,7 @@ class ParsedMesh:
     memberships: list[PaMembership]
 
 
-def registry_keys(values) -> tuple[set[str], set[str]]:
+def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
     """Classify a bag of registry-number strings into (uniis, cas) sets.
 
     Pure and set-valued (spec §5.2). A RelatedRegistryNumber may be annotated
@@ -134,7 +139,7 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _iter_records(path, record_tag: str):
+def _iter_records(path: StrPath, record_tag: str):
     """Stream top-level `record_tag` elements, detaching each (and the growing
     root) after use so peak memory stays bounded on the ~750 MB supp file (§6/§F)."""
     context = ET.iterparse(str(path), events=("start", "end"))
@@ -160,7 +165,7 @@ def _findtext(record, tag: str) -> str:
     return ""
 
 
-def _parse_pa(pa_path) -> tuple[dict[str, str], dict[str, list[str]]]:
+def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]]]:
     """Read pa2026: the PA classes and their members.
 
     Returns (class_name_by_ui, member_uis_by_class):
@@ -185,7 +190,7 @@ def _parse_pa(pa_path) -> tuple[dict[str, str], dict[str, list[str]]]:
     return class_name, members
 
 
-def _parse_desc(desc_path, want_classes: set[str], want_members: set[str]):
+def _parse_desc(desc_path: StrPath, want_classes: set[str], want_members: set[str]):
     """Read desc2026 once, harvesting two disjoint things by DescriptorUI:
 
     * for a PA class     -- its tree numbers (and a fallback name);
@@ -207,7 +212,7 @@ def _parse_desc(desc_path, want_classes: set[str], want_members: set[str]):
     return trees, names, keys
 
 
-def _parse_supp(supp_path, want_members: set[str]) -> dict[str, MemberKeys]:
+def _parse_supp(supp_path: StrPath, want_members: set[str]) -> dict[str, MemberKeys]:
     """Read supp2026 once, harvesting each wanted SCR member's identity keys."""
     keys: dict[str, MemberKeys] = {}
     for rec in _iter_records(supp_path, "SupplementalRecord"):
@@ -225,9 +230,18 @@ def _build_dag(classes: list[PaClass]) -> list[PaParentEdge]:
     the trailing ".NNN" gives the immediate parent tree number. Emit a child->parent
     edge only when BOTH the child and its immediate tree-parent are ingested PA
     classes -- the same endpoint-scoping MED-RT uses to keep the DAG closed over the
-    ingested set. A parent tree number owned by no PA class drops the edge (the
-    child attaches at its nearest ingested ancestor, or is a root). A descriptor
-    bears several tree numbers, so a class genuinely has several parents (a DAG).
+    ingested set.
+
+    Only the IMMEDIATE tree-parent is considered, per tree number; this never walks
+    further up a single path. A tree number whose immediate parent is not a PA class
+    simply contributes no edge for THAT path -- it is not re-attached to a more
+    distant PA ancestor along the same path. A class still lands under its nearest
+    ingested PA ancestor whenever it *also* bears another tree number whose immediate
+    parent IS a PA class (a descriptor carries several, so this is the common case,
+    and it is why the axis is a genuine multi-parent DAG). A class none of whose
+    tree numbers has a PA-class immediate parent is a root of the ingested subset.
+    This is the approved design (spec §5.4): of the 1,042 tree numbers PA classes
+    bear, 794 have a PA-class immediate parent; the rest drop, by construction.
     """
     tree_to_class = {t: c.descriptor_ui for c in classes for t in c.tree_numbers}
     edges: set[PaParentEdge] = set()
@@ -241,7 +255,7 @@ def _build_dag(classes: list[PaClass]) -> list[PaParentEdge]:
     return sorted(edges, key=lambda e: (e.child_ui, e.parent_ui))
 
 
-def parse(*, pa_path, desc_path, supp_path) -> ParsedMesh:
+def parse(*, pa_path: StrPath, desc_path: StrPath, supp_path: StrPath) -> ParsedMesh:
     """Read one MeSH release (three files) into the PA records slice 2b ingests.
 
     The read order is deliberate: pa2026 first establishes WHICH descriptors are PA

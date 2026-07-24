@@ -23,7 +23,7 @@ attach node-locally without ever contaminating interoperability).
 **Slice 1** ✅ merged (PR #1). **Slice 2a** (MED-RT classification) ✅ merged (PR #9).
 **Slice 2a.1 — the source-neutral class registry** ✅ merged (PR #10).
 **Slice 2b — MeSH PA: the BUILD** ✅ done on this branch (parser + bridge + orchestrator + tests, TDD
-against spec §6–§8). **166 tests green.** The MeSH PA axis now ingests end-to-end: `ingest/mesh.py`
+against spec §6–§8). **167 tests green.** The MeSH PA axis now ingests end-to-end: `ingest/mesh.py`
 (pure streaming `iterparse` parser of pa/desc/supp → PA classes, tree-number DAG, memberships with
 set-valued keys) + `ingest/mesh_run.py` (orchestrator + the two-key bridge) + the source-neutral
 `ClassConcept` moved into `classes.py` with a new `moieties_by_scheme` join primitive.

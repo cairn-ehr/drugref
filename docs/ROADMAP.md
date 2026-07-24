@@ -69,7 +69,7 @@ keys. `ingest/mesh_run.py` — orchestrator + the **two-key membership bridge**:
 resolving a member's keys against slice-1 `identity_claim` rows (`scheme='UNII'`, else `'CAS'`) — **no new
 external source**. Unmatched members counted, split no-key vs key-not-in-registry (never dropped).
 `ClassConcept` moved to `classes.py` (source-neutral) + a generic `moieties_by_scheme` join primitive.
-166 tests. Detail: the slice-2b design spec.
+167 tests. Detail: the slice-2b design spec.
 
 The measurement that shaped it **refuted the doc-research**: MeSH **Descriptors DO carry UNIIs** in
 `RegistryNumber` (aspirin D001241 = UNII `R16CO5Y76E`, not "CAS only"), and a record may carry several, so
