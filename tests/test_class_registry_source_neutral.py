@@ -79,6 +79,24 @@ def test_canonical_source_folds_incidental_spellings():
     assert ids.canonical_source(" mesh ") == "MeSH"
 
 
+def test_an_unlisted_authority_still_folds_to_one_spelling():
+    """The invariant is 'stored source and UUID key derive from ONE fold', and it
+    has to hold for an authority that has not been added to _SOURCE_CANONICAL yet
+    -- because the db CHECK is widened in a migration and the Python table in a
+    separate edit, so there is always a window where a source is accepted by the
+    database but unlisted here.
+
+    The UUID key upper-cases; while the fallback preserved case, three spellings of
+    one new authority minted ONE class_uuid but stored THREE different `source`
+    strings, and upsert_class's ON CONFLICT never corrects the stored one -- so a
+    per-source rebuild would silently miss rows it owns.
+    """
+    folded = {ids.canonical_source(s) for s in ("RxClass", "RXCLASS", " rxclass ")}
+    assert folded == {"RXCLASS"}
+    # ...and that one spelling is the same string the class_uuid key is built from.
+    assert ids.mint_class_uuid("RxClass", "C1") == ids.mint_class_uuid("RXCLASS", "C1")
+
+
 # ---- schema: the registry accepts a second authority ------------------------
 
 

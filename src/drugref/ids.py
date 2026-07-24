@@ -70,11 +70,42 @@ def canonical_source(source: str) -> str:
     key uses, a case or whitespace slip in an XML feed -- folds to a single string
     here, so the value stored in substance_class.source and the value the
     class_uuid is minted from can never diverge. An unrecognised source is returned
-    stripped but otherwise untouched; the db/003 CHECK on substance_class.source is
-    what refuses one outright, so an unknown authority fails loudly at write time
-    rather than being silently stored under two spellings.
+    stripped and UPPER-CASED -- the same fold mint_class_uuid applies when building
+    the key -- so even an authority nobody has added to _SOURCE_CANONICAL yet can
+    only ever reach the table under one spelling.
+
+    That fallback matters more than it looks. A new authority is admitted by
+    widening a CHECK in a migration and adding an entry here in a separate edit, so
+    there is always a window where the database accepts a source this table does
+    not know. While the fallback preserved case, three spellings of one such source
+    minted a single class_uuid but were stored as three different strings -- and
+    upsert_class's ON CONFLICT does not rewrite the stored `source`, so whichever
+    arrived first stuck and a per-source rebuild silently missed rows it owned.
     """
-    return _SOURCE_CANONICAL.get(source.strip().upper(), source.strip())
+    stripped = source.strip()
+    return _SOURCE_CANONICAL.get(stripped.upper(), stripped.upper())
+
+
+# Identity schemes whose values are CODES with a defined case, versus schemes
+# whose values are human-readable labels. A code must be folded before storage --
+# the moiety UUID is minted from the upper-cased UNII, so storing the raw spelling
+# lets the identifier the UUID derives from sit in the table under a form no
+# exact-match lookup (moieties_by_scheme, chebi.py's InChIKey join) will find, and
+# two cases of one code insert two claims for one fact. A LABEL must not be folded:
+# 'INN' caches the display name, which is deliberately lower-case.
+_UPPERCASE_SCHEMES = frozenset({"UNII", "INCHIKEY", "CHEBI"})
+
+
+def canonical_claim_value(scheme: str, value: str) -> str:
+    """The one spelling an identity claim's value is stored under.
+
+    Pure and total: every scheme is stripped, and the code-valued ones are also
+    upper-cased. Applied once, in claims.add_claim, so no caller has to remember
+    which schemes are case-bearing -- the same reason canonical_source exists for
+    authority names.
+    """
+    cleaned = value.strip()
+    return cleaned.upper() if scheme in _UPPERCASE_SCHEMES else cleaned
 
 
 def mint_class_uuid(source: str, code: str) -> uuid.UUID:

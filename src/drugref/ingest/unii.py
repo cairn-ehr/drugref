@@ -36,9 +36,20 @@ class MoietyCandidate:
 
 
 def parse(path: str | pathlib.Path) -> Iterator[MoietyCandidate]:
-    """Yield one MoietyCandidate per row of the UNII data file."""
+    """Yield one MoietyCandidate per row of the UNII data file.
+
+    Rows with a blank UNII are still yielded: this module only READS the file,
+    and refusing them is an identity decision that belongs with the gate (see
+    gate.has_identity_key, applied by ingest/run.py so the refusal is counted).
+    """
     with open(path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
+        # QUOTE_NONE: the UNII file is tab-delimited text with no quoting
+        # convention, but csv's default QUOTE_MINIMAL treats a leading double
+        # quote as opening a quoted field and then swallows every following line
+        # until it finds a closing one. A single stray double-prime in a chemical
+        # name would therefore merge an unbounded run of substances into one
+        # mangled record, silently. Reading as pure delimited text removes that.
+        for row in csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE):
             # `csv.DictReader` yields None for any column missing from a short row,
             # so coerce with `or ""` before stripping (None.strip() would crash).
             cross_refs = {

@@ -26,7 +26,9 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path, upstream_release:
 
     added = 0
     with open(chebi_path, newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
+        # QUOTE_NONE: tab-delimited text with no quoting convention (see
+        # unii.parse for why csv's default would silently swallow rows).
+        for row in csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE):
             inchikey = row["INCHIKEY"].strip()
             chebi_id = row["CHEBI_ID"].strip()
             # Find every moiety carrying this InChIKey (structural identity join).

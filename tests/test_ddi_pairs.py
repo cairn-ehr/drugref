@@ -36,7 +36,7 @@ def _moiety(conn, run_id, name):
 
 def _partners(conn, subject):
     return [r[0] for r in conn.execute(
-        "SELECT moiety_b FROM drugref.ddi_candidate_pair WHERE moiety_a = %s",
+        "SELECT partner_moiety FROM drugref.ddi_candidate_pair WHERE subject_moiety = %s",
         (subject,)).fetchall()]
 
 
@@ -47,8 +47,8 @@ def test_ci_moa_expands_to_the_classs_has_moa_members(conn):
     interactions.add_contraindication(conn, subject, c, "CI_MoA", "MED-RT", run_id)
     classes.add_membership(conn, other, c, "has_MoA", run_id)
     assert conn.execute(
-        "SELECT moiety_a, moiety_b, relationship, via_class "
-        "FROM drugref.ddi_candidate_pair WHERE moiety_a = %s", (subject,)
+        "SELECT subject_moiety, partner_moiety, relationship, via_class "
+        "FROM drugref.ddi_candidate_pair WHERE subject_moiety = %s", (subject,)
     ).fetchall() == [(subject, other, "CI_MoA", c)]
 
 

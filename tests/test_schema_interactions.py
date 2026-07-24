@@ -61,10 +61,67 @@ def test_the_two_co_administered_predicates_are_accepted(conn, rel, cty):
 @pytest.mark.parametrize("rel", ["has_MoA", "may_treat", "CI_with", "CI_ChemClass", "nonsense"])
 def test_other_relationships_are_rejected(conn, rel):
     """Membership (has_*), indications (may_treat), and the MeSH-keyed CI predicates
-    (CI_with / CI_ChemClass -> slice 5b) are not this table's business."""
+    (CI_with / CI_ChemClass -> slice 5b) are not this table's business.
+
+    Enforced by the ci_axis foreign key: a predicate is admissible exactly when it
+    has been given a membership axis to expand over."""
     run_id = _run(conn)
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
         _ci(conn, run_id, _moiety(conn, run_id), _class(conn, run_id, "N0000000002"), rel)
+
+
+def test_admitting_a_predicate_requires_declaring_its_membership_axis(conn):
+    """The coupling that used to be a comment. db/004 mapped CI predicates to
+    membership axes in a CASE inside the view, while the CHECK that admitted them
+    lived on the table -- two lists kept in step by the word "COUPLED" in a comment.
+    Widening the CHECK without the CASE (exactly what slice 5b needs to do) inserted
+    rows that expanded to ZERO pairs, silently: an unmapped CASE arm yields NULL and
+    `m.relationship = NULL` joins nothing.
+
+    Now the axis table IS the vocabulary, so a predicate cannot be admitted without
+    saying what it expands over -- and once it is, the view picks it up for free.
+    """
+    run_id = _run(conn)
+    m, c = _moiety(conn, run_id), _class(conn, run_id, "N0000000021", "MoA")
+    # Registering the axis is the whole act of adding a predicate.
+    conn.execute("INSERT INTO drugref.ci_axis (relationship, membership_relationship) "
+                 "VALUES ('CI_ChemClass', 'has_MoA')")
+    _ci(conn, run_id, m, c, "CI_ChemClass")
+    from drugref import classes as class_writer
+    partner = _moiety(conn, run_id, "partnerium")
+    class_writer.add_membership(conn, partner, c, "has_MoA", run_id)
+    assert conn.execute(
+        "SELECT partner_moiety FROM drugref.ddi_candidate_pair "
+        "WHERE subject_moiety = %s AND relationship = 'CI_ChemClass'",
+        (m,)).fetchall() == [(partner,)]
+
+
+def test_two_sources_may_each_assert_the_same_contraindication(conn):
+    """`source` belongs in the key. Without it, a second authority confirming a
+    contraindication MED-RT already recorded was swallowed by ON CONFLICT DO
+    NOTHING -- and a routine MED-RT rebuild then deleted the shared row, taking the
+    other source's independent assertion with it.
+
+    MED-RT is still the only authority the production CHECK admits (slice 5c is
+    what adds one), so the second source is admitted only inside this test's
+    transaction, which the conn fixture rolls back. Widening the CHECK for real
+    without this PK would be the breaking change; that is the point of fixing it
+    while the table holds one source's data.
+    """
+    from drugref import interactions
+    conn.execute("ALTER TABLE drugref.class_contraindication "
+                 "DROP CONSTRAINT class_contraindication_source")
+    conn.execute("ALTER TABLE drugref.class_contraindication "
+                 "ADD CONSTRAINT class_contraindication_source "
+                 "CHECK (source IN ('MED-RT', 'MeSH'))")
+    medrt_run, mesh_run = _run(conn, "MED-RT"), _run(conn, "MeSH")
+    m, c = _moiety(conn, medrt_run), _class(conn, medrt_run, "N0000000022")
+    assert interactions.add_contraindication(conn, m, c, "CI_MoA", "MED-RT", medrt_run) is True
+    assert interactions.add_contraindication(conn, m, c, "CI_MoA", "MeSH", mesh_run) is True
+    interactions.clear_source_contraindications(conn, "MED-RT")
+    assert conn.execute(
+        "SELECT source FROM drugref.class_contraindication "
+        "WHERE subject_moiety_uuid = %s", (m,)).fetchall() == [("MeSH",)]
 
 
 def test_source_must_be_a_known_authority(conn):
@@ -105,11 +162,41 @@ def test_a_contraindication_is_not_duplicated(conn):
 
 
 def test_ddi_candidate_pair_view_exists_with_the_expected_shape(conn):
-    """The read-time expansion of class-level rules into concrete drug pairs."""
+    """The read-time expansion of class-level rules into concrete drug pairs.
+
+    The pair columns are named for their ROLES. `moiety_a`/`moiety_b` read as an
+    unordered pair, but this view is strictly directional -- moiety_a was the drug
+    the contraindication is ABOUT -- so a consumer querying one direction and
+    concluding "no interaction" was the likeliest way to misread it.
+    """
     cols = {r[0] for r in conn.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = 'drugref' AND table_name = 'ddi_candidate_pair'").fetchall()}
-    assert {"moiety_a", "moiety_b", "relationship", "via_class"} <= cols
+    assert {"subject_moiety", "partner_moiety", "relationship", "via_class"} <= cols
+    assert "moiety_a" not in cols
+
+
+def test_the_view_surfaces_which_release_the_advice_came_from(conn):
+    """Staleness has to be answerable from the read path. The design's own safety
+    argument is that MED-RT is a structural seed rather than a current evidence
+    feed, but the view exposed only the opaque `ingest_run` bigint -- so a consumer
+    could not tell how old the advice was without joining a table the view never
+    mentions."""
+    cols = {r[0] for r in conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'drugref' AND table_name = 'ddi_candidate_pair'").fetchall()}
+    assert {"upstream_release", "ingested_at"} <= cols
+
+
+def test_the_directional_contract_is_documented_in_the_catalog(conn):
+    """Every caveat this projection carries lived in `--` comments in the migration
+    file, which Postgres strips: `\\d+` showed a view named like an unordered pair
+    with empty descriptions. A consumer inspecting the database has to be able to
+    see the contract."""
+    comment = conn.execute(
+        "SELECT obj_description('drugref.ddi_candidate_pair'::regclass, 'pg_class')"
+    ).fetchone()[0]
+    assert comment and "directional" in comment.lower()
 
 
 def test_migrations_replay_is_idempotent(conn):

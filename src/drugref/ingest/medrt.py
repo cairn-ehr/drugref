@@ -142,6 +142,14 @@ class ParsedMedrt:
     contraindications: list[ContraindicationAssertion] = field(default_factory=list)
     inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
+    ambiguous_codes: int = 0          # one published code claimed by several concepts
+    # The DISTINCT names this parse saw and ignored, sorted. Not errors -- HC/EXT
+    # and may_treat/CI_with are deliberately out of scope -- but an upstream RENAME
+    # of something we DO ingest looks identical to an ignore, so the vocabulary we
+    # skipped is reported rather than assumed. A release-to-release diff of these
+    # two tuples is what makes such a change visible at all.
+    skipped_concept_types: tuple[str, ...] = ()
+    skipped_predicates: tuple[str, ...] = ()
 
 
 def _text(element, tag: str) -> str:
@@ -159,21 +167,25 @@ def _properties(concept) -> dict[str, str]:
     return {_text(p, "name"): _text(p, "value") for p in concept.findall("property")}
 
 
-def _parse_concepts(root) -> tuple[list[ClassConcept], int, int]:
+def _parse_concepts(root) -> tuple[list[ClassConcept], int, int, set[str]]:
     """Keep only active MED-RT-namespace concepts whose CTY is one we ingest.
 
-    Returns the classes plus the counts of concepts that had the right CTY but were
-    refused anyway (inactive, and unidentified) so the caller can report them.
+    Returns the classes, the counts of concepts that had the right CTY but were
+    refused anyway (inactive, and unidentified), and the DISTINCT concept types
+    that were skipped -- all so the caller can report them rather than let an
+    upstream vocabulary change pass unnoticed.
     """
     classes: list[ClassConcept] = []
     inactive = unidentified = 0
+    skipped_types: set[str] = set()
     for concept in root.findall("concept"):
         if _text(concept, "namespace") != MEDRT_NAMESPACE:
             continue                                 # not a MED-RT-owned concept
         props = _properties(concept)
         concept_type = props.get("CTY", "")
         if concept_type not in INGESTED_CONCEPT_TYPES:
-            continue                                 # HC bins, EXT, anything new upstream
+            skipped_types.add(concept_type)          # HC bins, EXT, anything new upstream
+            continue
         # Only a status upstream still asserts is active. An absent <status> is
         # treated as active: every concept in the current release carries one, so
         # a missing element means a shape change, not a retirement.
@@ -193,7 +205,29 @@ def _parse_concepts(root) -> tuple[list[ClassConcept], int, int]:
         classes.append(ClassConcept(nui=nui, code=code or nui,
                                     name=_text(concept, "name"),
                                     concept_type=concept_type))
-    return classes, inactive, unidentified
+    return classes, inactive, unidentified, skipped_types
+
+
+def _resolve_codes(classes: list[ClassConcept]) -> tuple[dict[str, str], int]:
+    """Build the published-code -> NUI map an association endpoint resolves through.
+
+    A code claimed by MORE THAN ONE concept is dropped from the map entirely and
+    counted, rather than resolved to whichever concept happened to come last in
+    document order. Last-write-wins here is not a near-miss: the two claimants may
+    sit on different axes, so an edge would be filed against a class that has
+    nothing to do with the assertion -- a has_MoA membership landing on a [PE]
+    class, with no error anywhere. Refusing the code loses those edges (counted),
+    which is recoverable; misfiling them is not.
+    """
+    nui_by_code: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for concept in classes:
+        if concept.code in nui_by_code and nui_by_code[concept.code] != concept.nui:
+            ambiguous.add(concept.code)
+        nui_by_code[concept.code] = concept.nui
+    for code in ambiguous:
+        del nui_by_code[code]
+    return nui_by_code, len(ambiguous)
 
 
 def parse(path: str | pathlib.Path) -> ParsedMedrt:
@@ -209,13 +243,17 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
     an explicit code -> NUI map costs nothing and removes that failure mode.
     """
     root = ElementTree.parse(path).getroot()
-    classes, inactive, unidentified = _parse_concepts(root)
-    nui_by_code = {c.code: c.nui for c in classes}
-    epc_codes = {c.code for c in classes if c.concept_type == EPC_CONCEPT_TYPE}
+    classes, inactive, unidentified, skipped_types = _parse_concepts(root)
+    nui_by_code, ambiguous = _resolve_codes(classes)
+    # Scoped to resolvable codes, so an ambiguous EPC code cannot reach the
+    # nui_by_code lookup below (which no longer holds it).
+    epc_codes = {c.code for c in classes
+                 if c.concept_type == EPC_CONCEPT_TYPE and c.code in nui_by_code}
 
     parents: list[ParentEdge] = []
     memberships: list[MembershipAssertion] = []
     contraindications: list[ContraindicationAssertion] = []
+    skipped_predicates: set[str] = set()
     for assoc in root.findall("association"):
         name = _text(assoc, "name")
         from_ns, from_code = _text(assoc, "from_namespace"), _text(assoc, "from_code")
@@ -255,9 +293,17 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
                     and to_code in nui_by_code):
                 contraindications.append(ContraindicationAssertion(
                     rxcui=from_code, class_nui=nui_by_code[to_code], relationship=name))
-        # Everything else (may_treat, CI_with, CI_ChemClass, has_SC, Synonym Of, ...)
-        # is either curated-overlay/indication data or MeSH-keyed CI content for a
-        # later slice, or points at a namespace we may not read -- ignored here.
+        else:
+            # Everything else (may_treat, CI_with, CI_ChemClass, has_SC, Synonym Of,
+            # ...) is either curated-overlay/indication data or MeSH-keyed CI content
+            # for a later slice, or points at a namespace we may not read. Recorded
+            # by NAME so that an upstream rename of a predicate we DO ingest -- which
+            # otherwise looks exactly like one of these deliberate skips -- shows up
+            # as a new entry rather than as edges quietly going missing.
+            skipped_predicates.add(name)
     return ParsedMedrt(classes=classes, parents=parents, memberships=memberships,
                        contraindications=contraindications,
-                       inactive_concepts=inactive, unidentified_concepts=unidentified)
+                       inactive_concepts=inactive, unidentified_concepts=unidentified,
+                       ambiguous_codes=ambiguous,
+                       skipped_concept_types=tuple(sorted(skipped_types)),
+                       skipped_predicates=tuple(sorted(skipped_predicates)))

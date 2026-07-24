@@ -66,9 +66,61 @@ def test_registers_every_ingested_class(seeded):
     # Nothing in the real release is retired or unidentified; if either ever fires
     # it is a shape change upstream, reported rather than silently absorbed.
     assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
+    # Codes are unique in the real release. If two concepts ever publish one
+    # code, edges through it are refused rather than misfiled -- reported here.
+    assert summary.ambiguous_codes == 0
     types = dict(seeded.execute(
         "SELECT concept_type, count(*) FROM drugref.substance_class GROUP BY 1").fetchall())
     assert types == {"MoA": 12, "PE": 18, "EPC": 3, "TC": 5, "PK": 6, "APC": 5}
+
+
+def test_a_failed_ingest_leaves_the_connection_usable(seeded, monkeypatch):
+    """An orchestrator owns the transaction it opens, so it must also clean it up.
+
+    Without this, a mid-run failure left the caller's connection in Postgres's
+    aborted-transaction state: every following statement fails with "current
+    transaction is aborted", including the unrelated ingest_run INSERT that a
+    subsequent ingest_mesh would start with. These three orchestrators are
+    deliberately mirror-shaped for exactly that kind of pipeline, so one feed's bad
+    row must not take the next feed down with it.
+    """
+    import psycopg
+    from drugref import classes as class_writer
+
+    def boom(conn, *args, **kwargs):
+        # A real database error, not a Python one: that is what puts the
+        # transaction into Postgres's aborted state, where every subsequent
+        # statement fails until someone rolls back.
+        conn.execute("SELECT no_such_function_exists()")
+
+    monkeypatch.setattr(class_writer, "add_membership", boom)
+    with pytest.raises(psycopg.Error):
+        _ingest(seeded)
+    # Without the orchestrator's rollback this raises InFailedSqlTransaction.
+    assert seeded.execute("SELECT 1").fetchone() == (1,)
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.class_membership").fetchone()[0] == 0
+
+
+def test_classes_added_never_exceeds_classes_in_release(seeded, tmp_path):
+    """`classes_added` summed a per-row flag over a list the parser never
+    deduplicates, while `classes_in_release` is a dict length. A concept repeated in
+    one release therefore counted as "new" twice and the summary reported more
+    classes added than the release contains -- which the docstring says cannot
+    happen, and which is exactly the number an operator checks a release against.
+    """
+    path = tmp_path / "dup_concept.xml"
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8" ?>\n<terminology>\n'
+        '<namespace><name>MED-RT</name><version>test</version></namespace>\n'
+        + 2 * ('<concept><namespace>MED-RT</namespace><name>Alpha [MoA]</name>'
+               '<code>N-DUP-1</code><status>A</status>'
+               '<property><name>CTY</name><value>MoA</value></property>'
+               '<property><name>NUI</name><value>N-DUP-1</value></property></concept>\n')
+        + '</terminology>\n', encoding="utf-8")
+    summary = medrt_run.ingest_medrt(seeded, medrt_path=path, upstream_release="dup")
+    assert summary.classes_in_release == 1
+    assert summary.classes_added == 1
 
 
 def test_hc_navigation_bins_never_become_classes(seeded):

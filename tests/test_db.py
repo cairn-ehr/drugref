@@ -43,6 +43,9 @@ def test_apply_migrations_is_idempotent(conn):
         ).fetchall()
     }
     assert tables == {
+        # the migration runner's own ledger (created by db.py, not by a db/*.sql
+        # file, because it decides whether those files run at all)
+        "schema_migration",
         # slice 1: the identity spine
         "ingest_run", "substance_moiety", "identity_claim",
         # slice 2a: the classification DAG
@@ -51,7 +54,47 @@ def test_apply_migrations_is_idempotent(conn):
         # VIEW (information_schema.tables lists views too -- an exact inventory that
         # catches any object created by accident, so the view is named explicitly).
         "class_contraindication", "ddi_candidate_pair",
+        # the contraindication predicate vocabulary: which CI predicates exist and
+        # which membership axis each expands over (db/006)
+        "ci_axis",
     }
+
+
+def test_every_migration_is_recorded_in_the_ledger(conn):
+    """Without a ledger, 'has this migration run?' has to be reverse-engineered from
+    the catalog by hand-written guards in each file -- which is why db/003 carries
+    three different DO-block idioms. The ledger answers it directly."""
+    recorded = {row[0] for row in conn.execute(
+        "SELECT filename FROM drugref.schema_migration").fetchall()}
+    on_disk = {p.name for p in db._DB_DIR.glob("*.sql")}
+    assert recorded == on_disk
+
+
+def test_editing_an_already_applied_migration_is_refused_loudly(conn):
+    """The failure this ledger exists to catch. db/003's own comment tells the next
+    author to extend its source CHECK in place, but its guard only asks 'does this
+    constraint exist', so an in-place edit silently never reaches a database that
+    already ran the file -- fresh and migrated databases then diverge with no error.
+    A checksum mismatch must stop the run instead.
+
+    apply_migrations commits, so this restores the ledger explicitly rather than
+    relying on the conn fixture's rollback.
+    """
+    target = "001_schema_drugref.sql"
+    original = conn.execute(
+        "SELECT checksum FROM drugref.schema_migration WHERE filename = %s",
+        (target,)).fetchone()[0]
+    conn.execute("UPDATE drugref.schema_migration SET checksum = 'tampered' "
+                 "WHERE filename = %s", (target,))
+    conn.commit()
+    try:
+        with pytest.raises(RuntimeError, match=target):
+            db.apply_migrations(conn)
+    finally:
+        conn.rollback()
+        conn.execute("UPDATE drugref.schema_migration SET checksum = %s "
+                     "WHERE filename = %s", (original, target))
+        conn.commit()
 
 
 def test_replaying_migrations_preserves_existing_classes(conn):

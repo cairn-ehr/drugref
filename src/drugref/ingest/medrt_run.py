@@ -14,6 +14,7 @@ Order matters here:
   3. then insert the new edges.
 """
 import hashlib
+import logging
 import pathlib
 import uuid
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from drugref import interactions
 from drugref.ingest import medrt
 
 SOURCE = "MED-RT"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,9 @@ class MedrtSummary:
                                our registry does not carry
     * inactive_concepts     -- upstream no longer marks the concept active
     * unidentified_concepts -- the concept carries neither a NUI nor a code
+    * ambiguous_codes       -- one published code claimed by several concepts, so
+                               every edge referencing it was refused rather than
+                               resolved to an arbitrary one of them
     """
     classes_in_release: int
     classes_added: int
@@ -62,6 +68,7 @@ class MedrtSummary:
     unmatched_ci_rxcuis: int
     inactive_concepts: int
     unidentified_concepts: int
+    ambiguous_codes: int
 
 
 def _checksum(path) -> str:
@@ -73,7 +80,30 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
     """Ingest one MED-RT release file.
 
     Idempotent: re-running rebuilds to the same state, with the same class UUIDs.
+
+    TRANSACTION OWNERSHIP: this function owns `conn`'s transaction for its whole
+    body and commits at the end. On any failure it rolls back before re-raising, so
+    the caller is handed back a usable connection rather than one stuck in
+    Postgres's aborted-transaction state -- which would otherwise make the NEXT
+    feed's first statement fail for reasons that have nothing to do with it.
+    Callers must therefore commit their own pending work before calling.
     """
+    log.info("MED-RT ingest starting (release=%s)", upstream_release)
+    try:
+        summary = _ingest_medrt(conn, medrt_path, upstream_release)
+    except Exception:
+        conn.rollback()
+        log.exception("MED-RT ingest failed (release=%s); transaction rolled back",
+                      upstream_release)
+        raise
+    log.info("MED-RT ingest finished (release=%s): %s", upstream_release, summary)
+    return summary
+
+
+def _ingest_medrt(conn: psycopg.Connection, medrt_path,
+                  upstream_release: str) -> MedrtSummary:
+    """The body of one MED-RT ingest. Separated so the public entry point above is
+    just the transaction/logging boundary and this stays readable top to bottom."""
     parsed = medrt.parse(medrt_path)
 
     run_id = conn.execute(
@@ -84,11 +114,18 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.
     uuid_by_nui: dict[str, uuid.UUID] = {}
-    classes_added = 0
+    # Counted by DISTINCT NUI, not by summing the per-row flag: parsed.classes is a
+    # list the parser does not deduplicate, and a concept repeated within one
+    # release reports is_new on every occurrence (first_seen_ingest is already this
+    # run's id by the second call). Summing gave classes_added > classes_in_release,
+    # which the summary's own contract says cannot happen.
+    new_nuis: set[str] = set()
     for concept in parsed.classes:
         class_uuid, is_new = class_writer.upsert_class(conn, concept, run_id, SOURCE)
         uuid_by_nui[concept.nui] = class_uuid
-        classes_added += is_new
+        if is_new:
+            new_nuis.add(concept.nui)
+    classes_added = len(new_nuis)
 
     # 2. Drop the previous release's edges AND contraindications before writing this
     #    run's -- both are rebuildable projections replaced wholesale per release.
@@ -150,4 +187,5 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
                         unmatched_rxcuis=len(unmatched),
                         unmatched_ci_rxcuis=len(unmatched_ci),
                         inactive_concepts=parsed.inactive_concepts,
-                        unidentified_concepts=parsed.unidentified_concepts)
+                        unidentified_concepts=parsed.unidentified_concepts,
+                        ambiguous_codes=parsed.ambiguous_codes)

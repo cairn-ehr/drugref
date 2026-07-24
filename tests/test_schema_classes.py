@@ -204,7 +204,7 @@ def test_moieties_by_rxcui_ignores_other_schemes(conn):
 def test_clear_source_edges_removes_only_that_sources_rows(conn):
     """Rebuild semantics: a new MED-RT release replaces MED-RT edges and leaves any
     other source's edges untouched."""
-    medrt_run, other_run = _run(conn, source="MED-RT"), _run(conn, source="SOMETHING-ELSE")
+    medrt_run, other_run = _run(conn, source="MED-RT"), _run(conn, source="MeSH")
     child = _class(conn, medrt_run, "N0000222222")
     parent = _class(conn, medrt_run, "N0000333333")
     classes.add_parent_edge(conn, child, parent, medrt_run)

@@ -8,6 +8,8 @@ rule against any caller, so this module is the convenient path, not the only gua
 import uuid
 import psycopg
 
+from drugref import ids
+
 
 def upsert_moiety(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
                   display_name: str, ingest_run_id: int) -> None:
@@ -31,10 +33,23 @@ def add_claim(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     Returns True if a new claim row was inserted, False if it already existed
     (the ON CONFLICT no-op path). Callers can use this to count genuinely-new
     claims without an extra existence query.
+
+    Idempotency is scoped to LIVE claims (`WHERE superseded_by IS NULL`, matching
+    db/005's partial unique index). That scoping is the point: a value that was
+    once superseded and is later re-asserted by upstream has to be able to land
+    as a live claim again. While the index covered superseded rows too, the
+    re-assertion silently hit the conflict and reported "already present", leaving
+    the identifier invisible to every join that filters on superseded_by.
+
+    The value is canonicalised here (ids.canonical_claim_value) rather than by each
+    caller, so a code-valued scheme is stored under exactly the spelling its lookups
+    -- and, for a UNII, the minted moiety_uuid -- are keyed on.
     """
+    value = ids.canonical_claim_value(scheme, value)
     cur = conn.execute(
         "INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
         "VALUES (%s, %s, %s, %s) "
-        "ON CONFLICT (moiety_uuid, scheme, value) DO NOTHING",
+        "ON CONFLICT (moiety_uuid, scheme, value) WHERE superseded_by IS NULL "
+        "DO NOTHING",
         (moiety_uuid, scheme, value, ingest_run_id))
     return cur.rowcount == 1
