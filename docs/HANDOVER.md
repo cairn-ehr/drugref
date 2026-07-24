@@ -1,8 +1,10 @@
 # HANDOVER — drugref
 
-> **Disposable working scaffolding, NOT a source of truth.** The canonical *what/why* for slice 1 is the
-> design spec [`docs/superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md`](superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md)
-> and its implementation plan alongside it. If this file disagrees with the spec, the spec wins.
+> **Disposable working scaffolding, NOT a source of truth.** The canonical *what/why* lives in the design
+> specs under [`docs/superpowers/specs/`](superpowers/specs/) — slice 1
+> ([moiety spine](superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md)) and slice 2a
+> ([MED-RT classification](superpowers/specs/2026-07-23-drugref-slice-2a-medrt-classification-design.md)).
+> If this file disagrees with a spec, the spec wins.
 > Regenerate this file at the end of every working session (nextsession rule 9).
 
 ## What drugref is
