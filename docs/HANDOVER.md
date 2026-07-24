@@ -51,6 +51,17 @@ seeded international-by-construction.
 Against the full 2026.07.06 release: **3,634 classes, 3,961 DAG edges (440 multi-parent), 27,540
 memberships over 6,012 ingredients**, parsed in ~4s.
 
+- **Class identity is immortal by determinism**: `class_uuid = UUIDv5(CLASS_NAMESPACE, "MEDRT:"+NUI)` for
+  MED-RT, `UUIDv5(CLASS_NAMESPACE, SOURCE+":"+code)` in general — its own per-level namespace. No pin
+  table needed — a rebuild re-derives the same UUIDs.
+- **Class edges are rebuildable projections**, deliberately **outside** slice 1's append-only floor: a new
+  release deletes this source's edges and re-inserts, so a parent removed upstream is removed here.
+- **Membership joins via the `RXNORM_IN` claims slice 1 already recorded** — no new bridge data. MED-RT
+  ingredient concepts are keyed on RxCUI. Unmatched RxCUIs are **counted, never silently dropped**.
+- **Licence scoping is structural**: only MED-RT concepts are *defined* in the release (SNOMED/MeSH appear
+  solely as edge endpoints), so requiring both endpoints of every edge to be an ingested class is what keeps
+  unlicensed content out — not good intentions.
+
 **Slice 2a.1 — the registry made source-neutral.** 2a named the class registry after its one authority
 (`medrt_nui`/`medrt_code`, a global UNIQUE, MED-RT-only axis CHECKs, a `"MEDRT:"` prefix hard-coded into
 minting), so no second authority could enter it. `db/003` renames those columns to `source_code` /
@@ -65,17 +76,6 @@ the CHECKs with `PA` / `has_PA`. `ids.mint_class_uuid(source, code)` replaces th
 - **db/003 is a separate migration, not an edit to 002**, because 002 uses `CREATE TABLE IF NOT EXISTS`:
   an edit there would never reach a database that already ran it. Every statement is guarded, and a test
   now replays the migrations over a live class row to prove the renames survive a second pass.
-
-- **Class identity is immortal by determinism**: `class_uuid = UUIDv5(CLASS_NAMESPACE, "MEDRT:"+NUI)` for
-  MED-RT, `UUIDv5(CLASS_NAMESPACE, SOURCE+":"+code)` in general — its own per-level namespace. No pin
-  table needed — a rebuild re-derives the same UUIDs.
-- **Class edges are rebuildable projections**, deliberately **outside** slice 1's append-only floor: a new
-  release deletes this source's edges and re-inserts, so a parent removed upstream is removed here.
-- **Membership joins via the `RXNORM_IN` claims slice 1 already recorded** — no new bridge data. MED-RT
-  ingredient concepts are keyed on RxCUI. Unmatched RxCUIs are **counted, never silently dropped**.
-- **Licence scoping is structural**: only MED-RT concepts are *defined* in the release (SNOMED/MeSH appear
-  solely as edge endpoints), so requiring both endpoints of every edge to be an ingested class is what keeps
-  unlicensed content out — not good intentions.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
