@@ -60,32 +60,26 @@ uniqueness moved from global to **per (source, source_code)**, and `PA`/`has_PA`
 pinned by frozen literals — the derivation is the join key of both edge tables, so a drift would orphan
 every edge on the next rebuild with no error anywhere. 116 tests.
 
-### Slice 2b — MeSH Pharmacological Actions (NEXT)
-The second classification axis, on the **same three tables**. The **source-neutral class registry it needs
-is now built** (`db/003`: `source` + `source_code`/`published_code`, per-source uniqueness, `PA`/`has_PA`
-axes) — an earlier note here that 2b needed "no schema change" was wrong, since the registry was
-MED-RT-shaped. What remains for 2b: the MeSH parser + the **membership bridge**.
+### Slice 2b — MeSH Pharmacological Actions (measured + designed; BUILD next)
+The second classification axis, on the **same three tables** (2a.1's `db/003` already added
+`PA`/`has_PA`/`MeSH`; **no schema change**). Measurement + design + fixture generator are **done**
+(issue #11); the [slice-2b spec](../superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md) is the
+authority. **What remains: the MeSH parser + orchestrator + tests**, TDD against the spec.
 
-**The bridge is the open question.** Unlike MED-RT, MeSH membership has no RxCUI to join through.
-Documentation research (not yet confirmed against the real release) says:
-- MeSH **SCRs** carry a **UNII** in the Registry Number field (NLM moved to UNIIs in 2013, ~8,000 records
-  initially; displaced CAS/EC numbers moved to Related Registry Number) — a *direct* join to drugref's
-  identity key, needing no new source.
-- MeSH **Descriptors** appear NOT to carry a UNII: aspirin (D001241) exposes only
-  `relatedRegistryNumber "50-78-2 (Aspirin)"` — i.e. **CAS**, which slice 1 also already records as a claim.
-
-So the likely bridge is **two-key (UNII for SCRs, CAS for Descriptors), both already held as slice-1
-claims**. This must be **measured against the real release before it is designed** — the public SPARQL
-endpoint returned self-contradictory counts (62,344 "topical descriptors", more than all of MeSH), and this
-project's rule since slice 2a is to verify upstream shape against the actual files, never the docs.
-Requires downloading `desc2026.xml` / `supp2026.xml` / `pa2026.xml` from
-[NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/). Tracked as
-**[#11](https://github.com/cairn-ehr/drugref/issues/11)**.
+**The bridge is settled** (was the open question). Measured against the real MeSH 2026 release — which
+**refuted the doc-research**: MeSH **Descriptors DO carry UNIIs** in `RegistryNumber` (aspirin D001241 =
+UNII `R16CO5Y76E`, not "CAS only"); both Descriptors and SCRs carry UNIIs, so the split is per-record
+key-typing, not per-record-type. The bridge is **two-key, UNII-primary → CAS-fallback**, resolving a
+member's `RegistryNumber` UNII (else CAS) against slice-1 `identity_claim` rows — **no new external
+source**. Measured shape: **568 PA classes** (all Descriptors, forming a **multi-parent DAG via tree-number
+nesting**), **10,505 member substances** (7,667 SCR + 2,838 Descriptor), **73% expose a UNII/CAS**, 27%
+neither (combinations / research compounds — counted, never dropped); moiety gate is the binding
+constraint, as for MED-RT.
 
 MeSH licence verified AGPL-compatible (NLM terms: attribution "Courtesy of the U.S. National Library of
-Medicine" + no-endorsement + version-currency; no NC, no ND, modification and redistribution permitted).
-MED-RT's own `has_SC` relationships (targeting MeSH structural classes) become ingestible once the bridge
-exists. **ATC stays excluded** (NC + no-derivatives).
+Medicine" + no-endorsement + version-currency; no NC, no ND) — now attributed in `NOTICE`. MED-RT's own
+`has_SC` relationships (targeting MeSH structural classes) become ingestible once the bridge exists.
+**ATC stays excluded** (NC + no-derivatives).
 
 ### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
 Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety

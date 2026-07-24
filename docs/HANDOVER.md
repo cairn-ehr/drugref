@@ -2,8 +2,9 @@
 
 > **Disposable working scaffolding, NOT a source of truth.** The canonical *what/why* lives in the design
 > specs under [`docs/superpowers/specs/`](superpowers/specs/) — slice 1
-> ([moiety spine](superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md)) and slice 2a
-> ([MED-RT classification](superpowers/specs/2026-07-23-drugref-slice-2a-medrt-classification-design.md)).
+> ([moiety spine](superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md)), slice 2a
+> ([MED-RT classification](superpowers/specs/2026-07-23-drugref-slice-2a-medrt-classification-design.md)) and
+> slice 2b ([MeSH PA](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)).
 > If this file disagrees with a spec, the spec wins.
 > Regenerate this file at the end of every working session (nextsession rule 9).
 
@@ -20,28 +21,34 @@ attach node-locally without ever contaminating interoperability).
 ## ⇒ NEXT
 
 **Slice 1** ✅ merged (PR #1). **Slice 2a** (MED-RT classification) ✅ merged (PR #9).
-**Slice 2a.1 — the source-neutral class registry** ✅ built on this branch: **116 tests green** with the
-DB DSN set.
+**Slice 2a.1 — the source-neutral class registry** ✅ merged (PR #10).
+**Slice 2b — MeSH PA: measurement + design + fixture generator** ✅ done on this branch: the real MeSH 2026
+release is measured, the [slice-2b design spec](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)
+is written against those measurements, and a committed re-runnable fixture generator + fixtures are in
+place. **120 tests green** (unchanged — the fixtures aren't referenced by a test yet; the slice-2b
+parser is next).
 
-The next build slice is **Slice 2b — MeSH Pharmacological Actions**. The schema work it needs is now
-done (2a.1); **what remains is the MeSH parser plus the membership bridge, and the bridge is an open
-question that must be settled against the real release first** — see [ROADMAP.md](ROADMAP.md) for the
-evidence gathered so far. In short:
+**What remains for slice 2b = the BUILD: the MeSH parser + membership bridge + orchestrator + tests**, TDD
+against the now-approved spec §6–§8. The bridge is **no longer an open question** — it is designed and
+verified end-to-end against the fixture (§5.3): **two-key, UNII-primary, CAS-fallback**, both keys already
+slice-1 `identity_claim` rows, **no new external source**. No schema change (2a.1 already added
+`PA`/`has_PA`/`MeSH`). Key measured facts that settled it (issue #11):
 
-- MeSH **SCRs** carry a **UNII** in the Registry Number field → a direct join to drugref's identity key.
-- MeSH **Descriptors** appear to carry only **CAS** (aspirin D001241 exposes `relatedRegistryNumber
-  "50-78-2 (Aspirin)"`, no UNII) → drugref records CAS as a slice-1 claim too.
-- So the bridge is probably **two-key (UNII + CAS), needing no new source** — but this is documentation
-  research, **not verified against the files**, and the public MeSH SPARQL endpoint gave contradictory
-  counts. **Measure `desc2026.xml` / `supp2026.xml` / `pa2026.xml` before designing** (rule established in
-  slice 2a: verify upstream shape against the real release, never the docs). Files:
-  <https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/>. Not yet downloaded.
+- **The doc-hypothesis was wrong.** MeSH **Descriptors DO carry UNIIs** in `RegistryNumber` — aspirin
+  D001241 carries UNII `R16CO5Y76E` (not "CAS only"). Both Descriptors and SCRs carry UNIIs; the real split
+  is per-record key-typing, not per-record-type.
+- **568 PA classes** (all Descriptors), forming a **multi-parent DAG via MeSH tree-number nesting** (build
+  `class_parent` like MED-RT). **10,505 distinct member substances** (7,667 SCR + 2,838 Descriptor);
+  **73% expose a UNII or CAS** (joinable), **27% expose neither** (drug combinations / novel research
+  compounds — counted, never dropped). The moiety gate is the binding constraint, same as MED-RT.
 
-The measurement task, with the full evidence and the counts to establish, is
-**[issue #11](https://github.com/cairn-ehr/drugref/issues/11)** — start slice 2b there.
+Full evidence: the spec §5, and the working measurement scripts + `FINDINGS.md` under the session
+scratchpad (not committed). [issue #11](https://github.com/cairn-ehr/drugref/issues/11) is answered by this
+work; close it when the build lands. **Real release files are gitignored** — see "How to run / test".
 
 **Open follow-ups are GitHub issues [#2](https://github.com/cairn-ehr/drugref/issues/2)–
-[#8](https://github.com/cairn-ehr/drugref/issues/8)**.
+[#8](https://github.com/cairn-ehr/drugref/issues/8)** (plus the slice-2b `RelatedRegistryNumber` precision
+pass, spec tension B — file when the build starts).
 
 ## Current state
 
@@ -85,6 +92,17 @@ the CHECKs with `PA` / `has_PA`. `ids.mint_class_uuid(source, code)` replaces th
   constraint steps skip the drop/add entirely once the widened shape is present, so a replay neither errors
   nor rescans — and tests replay the migrations both over an already-migrated row and over a populated
   pre-rename table (with an edge) to prove the renames survive.
+
+**Slice 2b — MeSH PA: measured + designed (parser not yet built).** The real MeSH 2026 release was
+measured (issue #11), the [design spec](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)
+written against it, and a committed fixture generator (`tests/fixtures/make_mesh_subset.py`) + three
+`mesh_*_subset.xml` fixtures + a `NOTICE` MeSH attribution landed. The membership **bridge** (MeSH PA has
+no RxCUI) is settled: **two-key, UNII-primary → CAS-fallback**, resolving a member's `RegistryNumber` UNII
+(else CAS) against slice-1 `identity_claim` rows — **no new external source**. PA classes form a
+**multi-parent DAG via tree-number nesting** (built like MED-RT, both-endpoints-ingested scoping). The
+build (parser + orchestrator + tests, TDD against the spec) is the next session's work; the fixture already
+covers every acceptance case (positive UNII join, positive CAS-fallback join, key-not-in-registry, no-key,
+multi-parent + root DAG).
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
@@ -159,6 +177,19 @@ DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv
   ```bash
   python tests/fixtures/make_medrt_subset.py <Core_MEDRT_*.xml> > tests/fixtures/medrt_subset.xml
   ```
+
+- **MeSH release for slice 2b** (also NOT committed). Fetch the **compressed** files from
+  [NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/) — `desc2026.gz` (16 MB),
+  `supp2026.gz` (45 MB), `pa2026.xml` (5 MB) — and `gunzip` the two `.gz` (they decompress to `desc2026` /
+  `supp2026`; rename to `.xml`) into `downloads/`. NLM throttles per connection hard; a segmented parallel
+  fetch (byte-range `curl`) beats it ~18×. Regenerate the committed fixtures with:
+
+  ```bash
+  python tests/fixtures/make_mesh_subset.py downloads tests/fixtures/
+  ```
+
+  The committed `tests/fixtures/mesh_{desc,supp,pa}_subset.xml` are small extracts of the real release
+  (all identity keys/tree numbers copied from the files, nothing invented; MeSH is attributed in `NOTICE`).
 
 ## Coding rules
 

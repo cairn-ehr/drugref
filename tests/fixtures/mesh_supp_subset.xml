@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_subset.py DOWNLOADS_DIR
+     All identity keys and tree numbers are copied from the release, never invented.
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
+<SupplementalRecordSet LanguageCode="eng">
+ <SupplementalRecord SCRClass="1">
+  <SupplementalRecordUI>C000002</SupplementalRecordUI>
+  <SupplementalRecordName>
+   <String>bevonium</String>
+  </SupplementalRecordName>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MC000002</ConceptUI>
+    <ConceptName>
+     <String>bevonium</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>34B0471E08</RegistryNumber>
+     <RegistryNumber>35517-05-6</RegistryNumber>
+     <RegistryNumber>UWC15E373Z</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>33371-53-8 (bevonium)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>35517-05-6</RelatedRegistryNumber>
+     <RelatedRegistryNumber>5205-82-3 (bevoinum methylsulfate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>UWC15E373Z</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </SupplementalRecord>
+ <SupplementalRecord SCRClass="1">
+  <SupplementalRecordUI>C007609</SupplementalRecordUI>
+  <SupplementalRecordName>
+   <String>aspirin, meprobamate drug combination</String>
+  </SupplementalRecordName>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MC007609</ConceptUI>
+    <ConceptName>
+     <String>aspirin, meprobamate drug combination</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </SupplementalRecord>
+</SupplementalRecordSet>

@@ -1,0 +1,181 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_subset.py DOWNLOADS_DIR
+     All identity keys and tree numbers are copied from the release, never invented.
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
+<PharmacologicalActionSet>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D000700</DescriptorUI>
+   <DescriptorName>
+    <String>Analgesics</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>D008278</RecordUI>
+    <RecordName>
+     <String>Magnesium Sulfate</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C000002</RecordUI>
+    <RecordName>
+     <String>bevonium</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C007609</RecordUI>
+    <RecordName>
+     <String>aspirin, meprobamate drug combination</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D000082</RecordUI>
+    <RecordName>
+     <String>Acetaminophen</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D001241</RecordUI>
+    <RecordName>
+     <String>Aspirin</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D000893</DescriptorUI>
+   <DescriptorName>
+    <String>Anti-Inflammatory Agents</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>C000002</RecordUI>
+    <RecordName>
+     <String>bevonium</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C007609</RecordUI>
+    <RecordName>
+     <String>aspirin, meprobamate drug combination</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D001241</RecordUI>
+    <RecordName>
+     <String>Aspirin</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D000894</DescriptorUI>
+   <DescriptorName>
+    <String>Anti-Inflammatory Agents, Non-Steroidal</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>C000002</RecordUI>
+    <RecordName>
+     <String>bevonium</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C007609</RecordUI>
+    <RecordName>
+     <String>aspirin, meprobamate drug combination</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D001241</RecordUI>
+    <RecordName>
+     <String>Aspirin</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D012102</DescriptorUI>
+   <DescriptorName>
+    <String>Reproductive Control Agents</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>D008278</RecordUI>
+    <RecordName>
+     <String>Magnesium Sulfate</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D018501</DescriptorUI>
+   <DescriptorName>
+    <String>Antirheumatic Agents</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>C000002</RecordUI>
+    <RecordName>
+     <String>bevonium</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C007609</RecordUI>
+    <RecordName>
+     <String>aspirin, meprobamate drug combination</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D001241</RecordUI>
+    <RecordName>
+     <String>Aspirin</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+ <PharmacologicalAction>
+  <DescriptorReferredTo>
+   <DescriptorUI>D018712</DescriptorUI>
+   <DescriptorName>
+    <String>Analgesics, Non-Narcotic</String>
+   </DescriptorName>
+  </DescriptorReferredTo>
+  <PharmacologicalActionSubstanceList>
+   <Substance>
+    <RecordUI>D000082</RecordUI>
+    <RecordName>
+     <String>Acetaminophen</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C000002</RecordUI>
+    <RecordName>
+     <String>bevonium</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>C007609</RecordUI>
+    <RecordName>
+     <String>aspirin, meprobamate drug combination</String>
+    </RecordName>
+   </Substance>
+   <Substance>
+    <RecordUI>D001241</RecordUI>
+    <RecordName>
+     <String>Aspirin</String>
+    </RecordName>
+   </Substance>
+  </PharmacologicalActionSubstanceList>
+ </PharmacologicalAction>
+</PharmacologicalActionSet>
