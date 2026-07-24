@@ -52,12 +52,39 @@ are **rebuildable projections**, deliberately outside slice 1's append-only floo
 2026.07.06 release: 3,634 classes, 3,961 DAG edges (440 multi-parent), 27,540 memberships over 6,012
 ingredients. 102 tests. Detail: the slice-2a design spec.
 
+### Slice 2a.1 — Source-neutral class registry ✅ DONE
+The enabling refactor for 2b, extracted because the 2a registry was built around a single authority.
+`db/003`: `medrt_nui`/`medrt_code` → `source_code`/`published_code`, a NOT NULL `source` column,
+uniqueness moved from global to **per (source, source_code)**, and `PA`/`has_PA` added to the axis CHECKs.
+`ids.mint_class_uuid(source, code)` replaces the NUI-only form. **MED-RT class UUIDs are unchanged**,
+pinned by frozen literals — the derivation is the join key of both edge tables, so a drift would orphan
+every edge on the next rebuild with no error anywhere. 116 tests.
+
 ### Slice 2b — MeSH Pharmacological Actions (NEXT)
-The second classification axis, on the **same three tables** (no schema change). Blocked on a
-**UNII→MeSH (or ChEBI→MeSH) bridge** drugref does not yet hold — unlike MED-RT, MeSH membership has no
-RxCUI to join through. MeSH licence already verified AGPL-compatible (NLM: attribution + no-endorsement +
-version-currency; no NC/ND). MED-RT's own `has_SC` relationships (3,632, targeting MeSH structural
-classes) become ingestible once the bridge exists. **ATC stays excluded** (NC + no-derivatives).
+The second classification axis, on the **same three tables**. The **source-neutral class registry it needs
+is now built** (`db/003`: `source` + `source_code`/`published_code`, per-source uniqueness, `PA`/`has_PA`
+axes) — an earlier note here that 2b needed "no schema change" was wrong, since the registry was
+MED-RT-shaped. What remains for 2b: the MeSH parser + the **membership bridge**.
+
+**The bridge is the open question.** Unlike MED-RT, MeSH membership has no RxCUI to join through.
+Documentation research (not yet confirmed against the real release) says:
+- MeSH **SCRs** carry a **UNII** in the Registry Number field (NLM moved to UNIIs in 2013, ~8,000 records
+  initially; displaced CAS/EC numbers moved to Related Registry Number) — a *direct* join to drugref's
+  identity key, needing no new source.
+- MeSH **Descriptors** appear NOT to carry a UNII: aspirin (D001241) exposes only
+  `relatedRegistryNumber "50-78-2 (Aspirin)"` — i.e. **CAS**, which slice 1 also already records as a claim.
+
+So the likely bridge is **two-key (UNII for SCRs, CAS for Descriptors), both already held as slice-1
+claims**. This must be **measured against the real release before it is designed** — the public SPARQL
+endpoint returned self-contradictory counts (62,344 "topical descriptors", more than all of MeSH), and this
+project's rule since slice 2a is to verify upstream shape against the actual files, never the docs.
+Requires downloading `desc2026.xml` / `supp2026.xml` / `pa2026.xml` from
+[NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/).
+
+MeSH licence verified AGPL-compatible (NLM terms: attribution "Courtesy of the U.S. National Library of
+Medicine" + no-endorsement + version-currency; no NC, no ND, modification and redistribution permitted).
+MED-RT's own `has_SC` relationships (targeting MeSH structural classes) become ingestible once the bridge
+exists. **ATC stays excluded** (NC + no-derivatives).
 
 ### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
 Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety

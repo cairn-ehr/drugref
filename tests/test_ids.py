@@ -36,16 +36,16 @@ def test_namespace_matches_frozen_literal():
 
 def test_mint_class_uuid_is_deterministic():
     """Same NUI -> same UUID, always, so two instances agree with no coordination."""
-    assert ids.mint_class_uuid("N0000175722") == ids.mint_class_uuid("N0000175722")
+    assert ids.mint_class_uuid("MED-RT", "N0000175722") == ids.mint_class_uuid("MED-RT", "N0000175722")
 
 
 def test_mint_class_uuid_is_case_and_space_insensitive_on_nui():
     """NUIs arrive from XML text nodes; incidental whitespace must not fork identity."""
-    assert ids.mint_class_uuid("  n0000175722  ") == ids.mint_class_uuid("N0000175722")
+    assert ids.mint_class_uuid("MED-RT", "  n0000175722  ") == ids.mint_class_uuid("MED-RT", "N0000175722")
 
 
 def test_distinct_nuis_distinct_uuids():
-    assert ids.mint_class_uuid("N0000175722") != ids.mint_class_uuid("N0000008836")
+    assert ids.mint_class_uuid("MED-RT", "N0000175722") != ids.mint_class_uuid("MED-RT", "N0000008836")
 
 
 def test_class_and_moiety_namespaces_cannot_collide():
@@ -53,7 +53,7 @@ def test_class_and_moiety_namespaces_cannot_collide():
     source string still land on different UUIDs (design principle: per-level
     namespace constants)."""
     assert ids.CLASS_NAMESPACE != ids.MOIETY_NAMESPACE
-    assert ids.mint_class_uuid("X") != ids.mint_moiety_uuid("X")
+    assert ids.mint_class_uuid("MED-RT", "X") != ids.mint_moiety_uuid("X")
 
 
 def test_class_namespace_matches_frozen_literal():

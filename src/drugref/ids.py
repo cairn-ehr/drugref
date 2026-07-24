@@ -35,20 +35,41 @@ def mint_moiety_uuid(unii: str) -> uuid.UUID:
     return uuid.uuid5(MOIETY_NAMESPACE, key)
 
 
-def mint_class_uuid(nui: str) -> uuid.UUID:
-    """Derive a classification class's immortal UUID from its MED-RT NUI.
+# The key prefix each classification authority contributes to a class UUID.
+#
+# Why an explicit table rather than just upper-casing the source name: MED-RT's
+# UUIDs were minted with the unhyphenated "MEDRT:" prefix, while the source is
+# spelled "MED-RT" everywhere else (ingest_run.source, clear_source_edges). Those
+# two spellings MUST resolve to the same key or a rebuild silently re-keys every
+# MED-RT class and orphans every edge pointing at the old UUIDs. Stripping
+# punctuation generically would do that too, but would also risk merging two
+# genuinely different future sources, so the aliasing is stated one entry at a
+# time. Anything absent is used as-is (upper-cased), which is what MeSH does.
+_SOURCE_KEY_PREFIX = {
+    "MED-RT": "MEDRT",   # frozen: the prefix slice 2a's class_uuids were minted with
+}
 
-    The NUI (an N-prefixed alphanumeric, e.g. "N0000175722") is MED-RT's own
-    stable concept identifier -- what MED-RT calls the "code in source" -- so it
-    is the natural key to derive from. Deterministic: same NUI -> same UUID,
-    everywhere, with zero coordination between drugref instances.
+
+def mint_class_uuid(source: str, code: str) -> uuid.UUID:
+    """Derive a classification class's immortal UUID from (authority, code).
+
+    The code is the authority's own stable concept identifier -- MED-RT's NUI (an
+    N-prefixed alphanumeric, e.g. "N0000175722"), or a MeSH descriptor UI (e.g.
+    "D000894") -- so it is the natural key to derive from. Deterministic: same
+    (source, code) -> same UUID, everywhere, with zero coordination between
+    drugref instances.
+
+    The SOURCE is part of the key, not decoration: the registry now holds classes
+    from more than one authority, and without it an accidental code collision
+    between two of them would silently merge two unrelated classes into one row.
 
     Unlike a moiety -- which is pinned on first sight because a UNII correction
-    would otherwise re-key it -- a class UUID is a pure function of the NUI and is
-    simply re-derived on every ingest. That is what lets the MED-RT projection be
-    dropped and rebuilt wholesale (see drugref/classes.py) while every class comes
-    back with exactly the UUID it had before. Immortality across a NUI *change* is
-    out of scope, the same caveat the moiety spine records for a UNII change.
+    would otherwise re-key it -- a class UUID is a pure function of its inputs and
+    is simply re-derived on every ingest. That is what lets a source's projection
+    be dropped and rebuilt wholesale (see drugref/classes.py) while every class
+    comes back with exactly the UUID it had before. Immortality across a *code*
+    change is out of scope, the same caveat the moiety spine records for a UNII.
     """
-    key = f"MEDRT:{nui.strip().upper()}"
+    src = source.strip().upper()
+    key = f"{_SOURCE_KEY_PREFIX.get(src, src)}:{code.strip().upper()}"
     return uuid.uuid5(CLASS_NAMESPACE, key)

@@ -86,7 +86,7 @@ def test_hc_navigation_bins_never_become_classes(seeded):
 def test_builds_the_dag_the_right_way_up(seeded):
     """The broad APC must come out ABOVE the specific EPC, not below it."""
     _ingest(seeded)
-    parent, child = ids.mint_class_uuid("N0000193892"), ids.mint_class_uuid("N0000175421")
+    parent, child = ids.mint_class_uuid("MED-RT", "N0000193892"), ids.mint_class_uuid("MED-RT", "N0000175421")
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_parent "
         "WHERE child_class_uuid = %s AND parent_class_uuid = %s", (child, parent)).fetchone()[0] == 1
@@ -97,11 +97,11 @@ def test_builds_the_dag_the_right_way_up(seeded):
 
 def test_a_class_keeps_both_of_its_parents(seeded):
     assert _ingest(seeded).parent_edges == 39
-    child = ids.mint_class_uuid("N0000193892")
+    child = ids.mint_class_uuid("MED-RT", "N0000193892")
     parents = {r[0] for r in seeded.execute(
         "SELECT parent_class_uuid FROM drugref.class_parent WHERE child_class_uuid = %s",
         (child,)).fetchall()}
-    assert parents == {ids.mint_class_uuid("N0000193904"), ids.mint_class_uuid("N0000193893")}
+    assert parents == {ids.mint_class_uuid("MED-RT", "N0000193904"), ids.mint_class_uuid("MED-RT", "N0000193893")}
 
 
 # ---- membership ------------------------------------------------------------
@@ -217,7 +217,7 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
     # class is simply added alongside. Classes accumulate; they are never deleted.
     surviving = seeded.execute(
         "SELECT count(*) FROM drugref.substance_class WHERE class_uuid = ANY(%s)",
-        ([ids.mint_class_uuid(n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
+        ([ids.mint_class_uuid("MED-RT", n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
     ).fetchone()[0]
     assert surviving == 3
     assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 50

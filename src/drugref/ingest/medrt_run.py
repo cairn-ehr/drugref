@@ -80,7 +80,7 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
     uuid_by_nui: dict[str, uuid.UUID] = {}
     classes_added = 0
     for concept in parsed.classes:
-        class_uuid, is_new = class_writer.upsert_class(conn, concept, run_id)
+        class_uuid, is_new = class_writer.upsert_class(conn, concept, run_id, SOURCE)
         uuid_by_nui[concept.nui] = class_uuid
         classes_added += is_new
 

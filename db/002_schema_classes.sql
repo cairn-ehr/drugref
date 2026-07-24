@@ -6,6 +6,13 @@
 -- many-to-many -- a link table, never a parent FK on the moiety -- because a moiety
 -- belongs to many classes on several axes at once (mechanism, effect, therapeutic).
 --
+-- SUPERSEDED IN PART by db/003_class_registry_source_neutral.sql: the columns
+-- created below as medrt_nui/medrt_code are renamed there to source_code and
+-- published_code, a NOT NULL `source` column is added, and the concept_type /
+-- relationship CHECKs are widened for MeSH. This file is left as-written because
+-- it uses CREATE TABLE IF NOT EXISTS -- editing it would never reach a database
+-- that has already run it. Read 003 for the shape the registry actually has.
+--
 -- IMPORTANT -- why there is no append-only trigger floor in this file:
 -- slice 1's floor (db/001) guards substance IDENTITY, which is immortal. The tables
 -- here are a REBUILDABLE PROJECTION of an upstream authority (MED-RT): ingesting a

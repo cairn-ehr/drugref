@@ -21,8 +21,13 @@ from drugref.ingest.medrt import ClassConcept
 
 
 def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
-                 ingest_run_id: int) -> tuple[uuid.UUID, bool]:
+                 ingest_run_id: int, source: str) -> tuple[uuid.UUID, bool]:
     """Register a class (or refresh its cached name).
+
+    `source` names the authority that defined the class ("MED-RT", "MeSH", ...).
+    It is part of the identity key, not a label: the registry holds classes from
+    several authorities, and without it two of them publishing the same code would
+    silently collapse into one row.
 
     Returns (class_uuid, is_new), where is_new is True only the first time drugref
     ever saw this class. The caller needs that distinction because classes
@@ -37,16 +42,16 @@ def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
     confirmed. That is also what makes it the newness test: the row is new to us
     exactly when the value that came back is this run's id.
     """
-    class_uuid = ids.mint_class_uuid(concept.nui)
+    class_uuid = ids.mint_class_uuid(source, concept.nui)
     first_seen = conn.execute(
         "INSERT INTO drugref.substance_class "
-        "(class_uuid, medrt_nui, medrt_code, class_name, concept_type, first_seen_ingest) "
-        "VALUES (%s, %s, %s, %s, %s, %s) "
+        "(class_uuid, source, source_code, published_code, class_name, concept_type, "
+        " first_seen_ingest) VALUES (%s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (class_uuid) DO UPDATE SET "
         "  class_name = EXCLUDED.class_name, concept_type = EXCLUDED.concept_type, "
-        "  medrt_code = EXCLUDED.medrt_code "
+        "  published_code = EXCLUDED.published_code "
         "RETURNING first_seen_ingest",
-        (class_uuid, concept.nui, concept.code, concept.name,
+        (class_uuid, source, concept.nui, concept.code, concept.name,
          concept.concept_type, ingest_run_id)).fetchone()[0]
     return class_uuid, first_seen == ingest_run_id
 
