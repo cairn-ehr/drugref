@@ -91,16 +91,27 @@ Three new tables in schema `drugref`:
 
 - **`substance_class`** — `class_uuid UUID PRIMARY KEY`, `medrt_nui TEXT NOT NULL UNIQUE` (natural key),
   `medrt_code TEXT`, `class_name TEXT NOT NULL`, `concept_type TEXT NOT NULL`
-  (`CHECK concept_type IN ('EPC','MoA','PE','PK')`), `first_seen_ingest` FK → `ingest_run`.
-  Thin, mirroring `substance_moiety`. **The four axes are exactly those with a verifiable MED-RT
-  drug→class assertion** (`has_EPC/has_MoA/has_PE/has_PK`), so `concept_type` and `class_membership.
-  relationship` stay symmetric; MED-RT's other concept families (TC therapeutic-category, APC, …) are
-  deferred to a later slice rather than ingested class-less.
+  (`CHECK concept_type IN ('MoA','PE','TC','PK')`), `first_seen_ingest` FK → `ingest_run`.
+  Thin, mirroring `substance_moiety`. **The four axes are exactly those with a documented MED-RT
+  ingredient→class association** (`has_MoA/has_PE/has_TC/has_PK`), so `concept_type` and
+  `class_membership.relationship` stay symmetric.
+
+  > **Verified against the official MED-RT documentation** (VA/VHA, June 2018 version), not assumed:
+  > the valid `CTY` values are `EPC | MoA | PE | TC | PK | EXT | HC`, and the documented
+  > ingredient-origin associations targeting a MED-RT concept type are exactly `has_MoA` (→MoA),
+  > `has_PE` (→PE), `has_TC` (→TC), `has_PK` (→PK). **There is no `has_EPC` association** — `EPC` is a
+  > concept type whose linkage to ingredients runs through FDA SPL / SNOMED CT / MeSH mappings, which
+  > the SNOMED-scoping rule (§1) forbids us to follow. `EPC`, `EXT` and `HC` are therefore **deferred**
+  > to a later slice rather than ingested with an invented membership path. `has_SC` targets MeSH and
+  > belongs to slice 2b.
 - **`class_parent`** — the DAG edge table: `child_class_uuid` FK, `parent_class_uuid` FK, `ingest_run` FK,
   `PRIMARY KEY (child_class_uuid, parent_class_uuid)`, `CHECK child <> parent`. A class may have **many
-  parents** (DAG). Sourced from MED-RT `isa` between class concepts.
+  parents** (DAG). Sourced from MED-RT `Parent Of` / `Child Of` hierarchical relationships, **followed only
+  when both endpoints are MED-RT-namespace concepts of an ingested `CTY`** — MED-RT's hierarchy also maps
+  out into SNOMED CT US Edition and MeSH, and refusing to traverse those endpoints is what enforces the
+  SNOMED-scoping rule (§1) structurally rather than by good intentions.
 - **`class_membership`** — `moiety_uuid` FK → `substance_moiety`, `class_uuid` FK → `substance_class`,
-  `relationship TEXT NOT NULL` (`CHECK relationship IN ('has_EPC','has_MoA','has_PE','has_PK')`),
+  `relationship TEXT NOT NULL` (`CHECK relationship IN ('has_MoA','has_PE','has_TC','has_PK')`),
   `ingest_run` FK, `PRIMARY KEY (moiety_uuid, class_uuid, relationship)`. The axis is recorded so a consumer
   can ask "all MoA classes of moiety X" (§2 inheritance needs the axis).
 
@@ -108,13 +119,15 @@ Rebuild scoping (§3) uses the `ingest_run` provenance column present on every e
 
 ## 6. Ingest (`src/drugref/ingest/medrt.py` — pure-function-first)
 
-- **Parser (pure, no DB).** MED-RT is distributed as XML: `<concept>` (code, name, status, a concept-type
-  property) and `<association>` (`isa`, `has_EPC`, `has_MoA`, `has_PE`, `has_PK`, and out-of-scope ones we
-  ignore). The parser yields typed records (`ClassConcept`, `IsaEdge`, `MembershipAssertion`) — TDD against
-  a small crafted XML fixture, exactly as slice-1 parses `unii_subset.tsv`. **Reads only the MED-RT
-  namespace**, satisfying the SNOMED-scoping caveat (§1).
-- **Membership join.** Each MED-RT `has_*` assertion links a *drug ingredient concept* (carrying an RxNorm
-  RxCUI) to a *class concept*. Resolve the ingredient's RxCUI against
+- **Parser (pure, no DB).** MED-RT is distributed as Apelon-DTS XML: `<concept>` (namespace, name,
+  code-in-source, plus `<property>` entries carrying `NUI` and `CTY`) and `<association>` (a `name`, plus
+  namespace/name/code triples for the `from` and `to` endpoints). The parser yields typed records
+  (`ClassConcept`, `ParentEdge`, `MembershipAssertion`) — TDD against a small crafted XML fixture, exactly
+  as slice-1 parses `unii_subset.tsv`. **Keeps only MED-RT-namespace class concepts and RxNorm-namespace
+  ingredient endpoints**, discarding SNOMED CT / MeSH endpoints, which satisfies the SNOMED-scoping
+  caveat (§1) by construction.
+- **Membership join.** Each MED-RT `has_*` assertion links a *drug ingredient concept* (an RxNorm-namespace
+  concept whose code-in-source **is the RxCUI**) to a MED-RT class concept. Resolve that RxCUI against
   `identity_claim(scheme='RXNORM_IN', value=rxcui, superseded_by IS NULL)` → `moiety_uuid`. **Unmatched**
   ingredients (moiety not in our registry, e.g. gated out by has-INN) are **skipped and counted** — the
   run summary reports the skip count as a worklist number, never a silent drop (mirrors the slice-1 gate's
@@ -130,15 +143,18 @@ imperative shell. Files kept < 500 lines (split parser vs. writer if needed).
 
 - **Unit (Python, no DB):** UUIDv5 class derivation is deterministic and stable for a fixed NUI;
   `class_namespace` is distinct from the moiety namespace (no cross-level collision); the XML parser yields
-  correct `ClassConcept` / `IsaEdge` / `MembershipAssertion` records from the fixture.
-- **Integration (DB-gated), against a small crafted MED-RT XML fixture** (a couple of ingredient concepts —
-  one whose RxCUI matches a fixture moiety's `RXNORM_IN` claim, one that does not — plus one EPC and one MoA
-  class, `isa` edges incl. a **multi-parent** class, and `has_EPC`/`has_MoA` assertions):
+  correct `ClassConcept` / `ParentEdge` / `MembershipAssertion` records from the fixture, and **discards
+  SNOMED-/MeSH-namespace endpoints**.
+- **Integration (DB-gated), against a small crafted MED-RT XML fixture** (two RxNorm ingredient concepts —
+  one whose RxCUI matches a fixture moiety's `RXNORM_IN` claim, one that does not — plus MoA and PE class
+  concepts, `Parent Of` edges including a **multi-parent** class, `has_MoA`/`has_PE` assertions, and one
+  SNOMED-namespace endpoint that must be ignored):
   - Classes minted with correct `concept_type`s; `class_uuid`s match the deterministic derivation.
-  - `isa` builds the DAG, including the multi-parent node (two `class_parent` rows).
+  - `Parent Of` builds the DAG, including the multi-parent node (two `class_parent` rows).
   - Membership links the matching ingredient to its moiety via the `RXNORM_IN` claim, with the correct
     `relationship` axis.
   - The RxCUI-unmatched ingredient produces **no** membership row and **increments the skip count**.
+  - The SNOMED-namespace endpoint yields **no** class row and **no** edge (scoping rule §1 enforced).
   - **Idempotent re-ingest:** re-run ⇒ identical `class_uuid`s, and `class_parent`/`class_membership`
     **rebuilt, not duplicated** (row counts stable; prior-run rows replaced).
 
@@ -151,6 +167,10 @@ imperative shell. Files kept < 500 lines (split parser vs. writer if needed).
 - **Indication/interaction relationships** — MED-RT `may_treat` / `may_prevent` / `CI_with` are **not**
   classification; they belong to the curated interaction/indication overlay (**Slice 5**, append-only +
   signed). Not ingested here.
+- **The `EPC`, `EXT` and `HC` concept types** — `EPC` (FDA Established Pharmacologic Class) is genuinely
+  valuable, but MED-RT exposes no ingredient→EPC association; its linkage runs through FDA SPL / SNOMED /
+  MeSH mappings we may not traverse (§1). Adding it needs its own sourcing decision, so it is deferred
+  rather than wired up on an invented path.
 - **Pass-through SNOMED content** — never (SNOMED is a build input to MED-RT but stays a node-local plug-in).
 - **ATC** — licence-blocked (§1).
 - **Class-level curation, edge inheritance, the HTTP API, salts/clinical drugs** — their own later slices.
@@ -164,8 +184,9 @@ imperative shell. Files kept < 500 lines (split parser vs. writer if needed).
 - **(B) MED-RT vs MeSH first?** → **MED-RT first.** It joins to moieties through the `RXNORM_IN` claims
   slice 1 already records; MeSH needs a bridge we lack. Ship one complete, low-risk axis (2a); add MeSH as
   2b on the same schema.
-- **(C) Which MED-RT relationships are "membership"?** → the pharmacologic-class assertions
-  `has_EPC/has_MoA/has_PE/has_PK` only. `may_treat`/`CI_with` are overlay data (Slice 5), excluded.
+- **(C) Which MED-RT relationships are "membership"?** → the four documented ingredient→class assertions
+  `has_MoA/has_PE/has_TC/has_PK` only. `may_treat`/`may_prevent`/`CI_*` are overlay data (Slice 5),
+  excluded; `has_SC` targets MeSH (2b). **There is no `has_EPC`** — see the §5 verification note.
 - **(D) Class UUID pinned-on-first-sight (like moiety) or pure-deterministic?** → **pure-deterministic** on
   the stable MED-RT NUI; no pin table. Immortality-across-NUI-change is out of scope (cf. slice-1
   follow-up [#3](https://github.com/cairn-ehr/drugref/issues/3)).
