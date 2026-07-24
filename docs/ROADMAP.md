@@ -79,7 +79,8 @@ claims**. This must be **measured against the real release before it is designed
 endpoint returned self-contradictory counts (62,344 "topical descriptors", more than all of MeSH), and this
 project's rule since slice 2a is to verify upstream shape against the actual files, never the docs.
 Requires downloading `desc2026.xml` / `supp2026.xml` / `pa2026.xml` from
-[NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/).
+[NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/). Tracked as
+**[#11](https://github.com/cairn-ehr/drugref/issues/11)**.
 
 MeSH licence verified AGPL-compatible (NLM terms: attribution "Courtesy of the U.S. National Library of
 Medicine" + no-endorsement + version-currency; no NC, no ND, modification and redistribution permitted).

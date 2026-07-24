@@ -37,6 +37,9 @@ evidence gathered so far. In short:
   slice 2a: verify upstream shape against the real release, never the docs). Files:
   <https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/>. Not yet downloaded.
 
+The measurement task, with the full evidence and the counts to establish, is
+**[issue #11](https://github.com/cairn-ehr/drugref/issues/11)** — start slice 2b there.
+
 **Open follow-ups are GitHub issues [#2](https://github.com/cairn-ehr/drugref/issues/2)–
 [#8](https://github.com/cairn-ehr/drugref/issues/8)**.
 
