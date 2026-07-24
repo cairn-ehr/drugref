@@ -19,15 +19,29 @@ attach node-locally without ever contaminating interoperability).
 
 ## ⇒ NEXT
 
-**Slice 1** (active-moiety identity spine) is ✅ merged (PR #1, `14c40ec`). **Slice 2a** (MED-RT
-classification DAG + membership) is ✅ built on this branch — **102 tests green** with the DB DSN set.
+**Slice 1** ✅ merged (PR #1). **Slice 2a** (MED-RT classification) ✅ merged (PR #9).
+**Slice 2a.1 — the source-neutral class registry** ✅ built on this branch: **116 tests green** with the
+DB DSN set.
 
-The next build slice is **Slice 2b — MeSH Pharmacological Actions** (see [ROADMAP.md](ROADMAP.md)). It needs
-no schema change; it is blocked on a **UNII→MeSH (or ChEBI→MeSH) bridge**, because MeSH membership has no
-RxCUI to join through the way MED-RT does. MeSH's licence is already verified AGPL-compatible.
+The next build slice is **Slice 2b — MeSH Pharmacological Actions**. The schema work it needs is now
+done (2a.1); **what remains is the MeSH parser plus the membership bridge, and the bridge is an open
+question that must be settled against the real release first** — see [ROADMAP.md](ROADMAP.md) for the
+evidence gathered so far. In short:
+
+- MeSH **SCRs** carry a **UNII** in the Registry Number field → a direct join to drugref's identity key.
+- MeSH **Descriptors** appear to carry only **CAS** (aspirin D001241 exposes `relatedRegistryNumber
+  "50-78-2 (Aspirin)"`, no UNII) → drugref records CAS as a slice-1 claim too.
+- So the bridge is probably **two-key (UNII + CAS), needing no new source** — but this is documentation
+  research, **not verified against the files**, and the public MeSH SPARQL endpoint gave contradictory
+  counts. **Measure `desc2026.xml` / `supp2026.xml` / `pa2026.xml` before designing** (rule established in
+  slice 2a: verify upstream shape against the real release, never the docs). Files:
+  <https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/>. Not yet downloaded.
+
+The measurement task, with the full evidence and the counts to establish, is
+**[issue #11](https://github.com/cairn-ehr/drugref/issues/11)** — start slice 2b there.
 
 **Open follow-ups are GitHub issues [#2](https://github.com/cairn-ehr/drugref/issues/2)–
-[#5](https://github.com/cairn-ehr/drugref/issues/5)** plus the slice-2a ones filed with this work.
+[#8](https://github.com/cairn-ehr/drugref/issues/8)**.
 
 ## Current state
 
@@ -40,8 +54,9 @@ seeded international-by-construction.
 Against the full 2026.07.06 release: **3,634 classes, 3,961 DAG edges (440 multi-parent), 27,540
 memberships over 6,012 ingredients**, parsed in ~4s.
 
-- **Class identity is immortal by determinism**: `class_uuid = UUIDv5(CLASS_NAMESPACE, "MEDRT:"+NUI)`, its
-  own per-level namespace. No pin table needed — a rebuild re-derives the same UUIDs.
+- **Class identity is immortal by determinism**: `class_uuid = UUIDv5(CLASS_NAMESPACE, "MEDRT:"+NUI)` for
+  MED-RT, `UUIDv5(CLASS_NAMESPACE, SOURCE+":"+code)` in general — its own per-level namespace. No pin
+  table needed — a rebuild re-derives the same UUIDs.
 - **Class edges are rebuildable projections**, deliberately **outside** slice 1's append-only floor: a new
   release deletes this source's edges and re-inserts, so a parent removed upstream is removed here.
 - **Membership joins via the `RXNORM_IN` claims slice 1 already recorded** — no new bridge data. MED-RT
@@ -49,6 +64,27 @@ memberships over 6,012 ingredients**, parsed in ~4s.
 - **Licence scoping is structural**: only MED-RT concepts are *defined* in the release (SNOMED/MeSH appear
   solely as edge endpoints), so requiring both endpoints of every edge to be an ingested class is what keeps
   unlicensed content out — not good intentions.
+
+**Slice 2a.1 — the registry made source-neutral.** 2a named the class registry after its one authority
+(`medrt_nui`/`medrt_code`, a global UNIQUE, MED-RT-only axis CHECKs, a `"MEDRT:"` prefix hard-coded into
+minting), so no second authority could enter it. `db/003` renames those columns to `source_code` /
+`published_code`, adds a NOT NULL `source`, moves uniqueness to **per (source, source_code)**, and widens
+the CHECKs with `PA` / `has_PA`. `ids.mint_class_uuid(source, code)` replaces the NUI-only form.
+
+- **Existing MED-RT class UUIDs are unchanged, and that is the invariant of the whole refactor.** Class
+  UUIDs are the join key of `class_parent` and `class_membership`, and the projection is dropped and
+  rebuilt on every ingest — so a drift in the derivation would silently re-key 3,634 classes and orphan
+  every edge, with no error anywhere. `ids._SOURCE_KEY_PREFIX` therefore maps `MED-RT → "MEDRT"` (the
+  prefix 2a minted with), and three **frozen UUID literals** captured before the refactor pin it.
+- **The stored `source` and the UUID key derive from one canonicalisation** (`ids.canonical_source`), so a
+  second spelling of one authority (`"MESH"` beside `"MeSH"`) can't share a `class_uuid` yet be stored as
+  two strings and split a per-source rebuild. A `db/003` CHECK on `substance_class.source` is the floor:
+  extend it **and** `ids._SOURCE_CANONICAL` together when a new authority lands.
+- **db/003 is a separate migration, not an edit to 002**, because 002 uses `CREATE TABLE IF NOT EXISTS`:
+  an edit there would never reach a database that already ran it. Every statement is guarded — the
+  constraint steps skip the drop/add entirely once the widened shape is present, so a replay neither errors
+  nor rescans — and tests replay the migrations both over an already-migrated row and over a populated
+  pre-rename table (with an edge) to prove the renames survive.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
@@ -109,8 +145,10 @@ uv run pytest                      # unit tests run anywhere; DB-gated tests SKI
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
-- Schema: `db/001_schema_drugref.sql` (identity spine) + `db/002_schema_classes.sql` (classification),
-  applied in filename order via `drugref.db.apply_migrations`, idempotent.
+- Schema: `db/001_schema_drugref.sql` (identity spine) + `db/002_schema_classes.sql` (classification) +
+  `db/003_class_registry_source_neutral.sql` (registry generalised for a second authority), applied in
+  filename order via `drugref.db.apply_migrations`, idempotent. **Read 003 for the class registry's actual
+  shape** — 002 still shows the superseded MED-RT-specific columns.
 - Code: `src/drugref/{ids,claims,classes,db}.py` + `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run}.py`;
   seed data under `src/drugref/data/`; fixtures under `tests/fixtures/`.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
@@ -168,8 +206,9 @@ Fixed in the slice-2a review pass (no longer open): the committed fixture no lon
 (or MeSH) terms and codes — `make_medrt_subset.py` redacts every endpoint outside MED-RT/RxNorm, and a test
 pins it; the RxCUI membership join returns **all** claimants rather than an arbitrary first (matching
 `chebi.py`, and removing a source of run-to-run non-determinism); the RxCUI index is read once per run
-instead of once per assertion; `medrt_code` now stores the published code and edge endpoints resolve
-code → NUI, so a future divergence cannot silently empty the DAG; the parser refuses (and counts) concepts
+instead of once per assertion; `medrt_code` (since 2a.1: `published_code`) stores the published code and
+edge endpoints resolve code → NUI, so a future divergence cannot silently empty the DAG; the parser
+refuses (and counts) concepts
 that are inactive or carry no identifier; `MedrtSummary` separates classes-in-release from classes-added.
 
 Fixed in the slice-1 post-review pass (no longer open): ChEBI InChIKey lookup now filters `superseded_by IS NULL` and

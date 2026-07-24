@@ -26,11 +26,12 @@ def _run(conn, source="MED-RT"):
 
 def _class(conn, run_id, nui, name="Test Class [MoA]", cty="MoA"):
     """Insert a class row, returning its deterministic uuid."""
-    cu = ids.mint_class_uuid(nui)
+    cu = ids.mint_class_uuid("MED-RT", nui)
     conn.execute(
         "INSERT INTO drugref.substance_class "
-        "(class_uuid, medrt_nui, medrt_code, class_name, concept_type, first_seen_ingest) "
-        "VALUES (%s, %s, %s, %s, %s, %s)", (cu, nui, nui, name, cty, run_id))
+        "(class_uuid, source, source_code, published_code, class_name, concept_type, "
+        " first_seen_ingest) VALUES (%s, 'MED-RT', %s, %s, %s, %s, %s)",
+        (cu, nui, nui, name, cty, run_id))
     return cu
 
 
@@ -120,10 +121,10 @@ def test_upsert_class_is_idempotent_and_refreshes_the_name(conn):
     first_seen_ingest records when we FIRST saw the class and must not move."""
     r1, r2 = _run(conn), _run(conn)
     cu, was_new = classes.upsert_class(
-        conn, ClassConcept("N0000123456", "N0000123456", "Old Name [MoA]", "MoA"), r1)
+        conn, ClassConcept("N0000123456", "N0000123456", "Old Name [MoA]", "MoA"), r1, "MED-RT")
     again, was_new_again = classes.upsert_class(
-        conn, ClassConcept("N0000123456", "N0000123456", "New Name [MoA]", "MoA"), r2)
-    assert cu == again == ids.mint_class_uuid("N0000123456")
+        conn, ClassConcept("N0000123456", "N0000123456", "New Name [MoA]", "MoA"), r2, "MED-RT")
+    assert cu == again == ids.mint_class_uuid("MED-RT", "N0000123456")
     # New only the first time: that is what lets a run report "classes added"
     # separately from "classes this release asserts".
     assert (was_new, was_new_again) == (True, False)
@@ -135,14 +136,15 @@ def test_upsert_class_is_idempotent_and_refreshes_the_name(conn):
 
 
 def test_upsert_class_stores_the_published_code_not_the_nui(conn):
-    """medrt_code is the code AS PUBLISHED. It equals the NUI throughout the
+    """published_code is the code AS PUBLISHED. It equals the NUI throughout the
     2026.07.06 release, so only a concept where they differ can show the column is
     genuinely carrying the code rather than a second copy of the identity key."""
     cu, _ = classes.upsert_class(
-        conn, ClassConcept("N0000654321", "SOME-CODE", "Odd One [MoA]", "MoA"), _run(conn))
+        conn, ClassConcept("N0000654321", "SOME-CODE", "Odd One [MoA]", "MoA"),
+        _run(conn), "MED-RT")
     assert conn.execute(
-        "SELECT medrt_nui, medrt_code FROM drugref.substance_class WHERE class_uuid = %s",
-        (cu,)).fetchone() == ("N0000654321", "SOME-CODE")
+        "SELECT source, source_code, published_code FROM drugref.substance_class "
+        "WHERE class_uuid = %s", (cu,)).fetchone() == ("MED-RT", "N0000654321", "SOME-CODE")
 
 
 def test_moieties_by_rxcui_indexes_the_rxnorm_in_claims(conn):
