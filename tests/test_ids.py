@@ -29,3 +29,34 @@ def test_namespace_matches_frozen_literal():
     # literal is a real regression guard on the immortality invariant (every existing
     # moiety_uuid is derived from this namespace and would silently change underneath us).
     assert str(ids.MOIETY_NAMESPACE) == "d07651ee-311d-552b-a97b-591219eb3ad3"
+
+
+# ---- slice 2a: classification class identity ------------------------------
+
+
+def test_mint_class_uuid_is_deterministic():
+    """Same NUI -> same UUID, always, so two instances agree with no coordination."""
+    assert ids.mint_class_uuid("N0000175722") == ids.mint_class_uuid("N0000175722")
+
+
+def test_mint_class_uuid_is_case_and_space_insensitive_on_nui():
+    """NUIs arrive from XML text nodes; incidental whitespace must not fork identity."""
+    assert ids.mint_class_uuid("  n0000175722  ") == ids.mint_class_uuid("N0000175722")
+
+
+def test_distinct_nuis_distinct_uuids():
+    assert ids.mint_class_uuid("N0000175722") != ids.mint_class_uuid("N0000008836")
+
+
+def test_class_and_moiety_namespaces_cannot_collide():
+    """Per-level namespaces guarantee a class and a moiety derived from the SAME
+    source string still land on different UUIDs (design principle: per-level
+    namespace constants)."""
+    assert ids.CLASS_NAMESPACE != ids.MOIETY_NAMESPACE
+    assert ids.mint_class_uuid("X") != ids.mint_moiety_uuid("X")
+
+
+def test_class_namespace_matches_frozen_literal():
+    # Same reasoning as the moiety namespace above: pin the real value, because
+    # every class_uuid in the database is derived from it.
+    assert str(ids.CLASS_NAMESPACE) == "98d5a3e5-fc3b-5e75-a670-4b7ecc28caef"

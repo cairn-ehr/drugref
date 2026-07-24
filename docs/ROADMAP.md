@@ -42,12 +42,22 @@ Python ingest; moiety registry with immortal `UUIDv5`-on-UNII (pinned) + append-
 ChEBI cross-refs / RxNorm demoted to a claim / closed USAN↔INN crosswalk); ChEBI enrichment by InChIKey.
 30 tests. Full detail: the slice-1 design spec + plan.
 
-### Slice 2 — Classification DAG + membership (NEXT)
-Class registry (own UUIDs) + a self-referential subclass DAG + a many-to-many `class_membership` link table.
-Seed from **MED-RT** (mechanism-of-action / physiologic-effect / chemical-structure / therapeutic axes) +
-**MeSH Pharmacological Actions** — both US-gov, *expected* public-domain but **licence-verify first** (they
-were not vetted in the sourcing eval). **ATC stays excluded** (NC + no-derivatives). Unblocks class×class
-interaction curation.
+### Slice 2a — MED-RT classification DAG + membership ✅ DONE
+Class registry (`substance_class`, own UUIDv5-on-NUI) + subclass DAG (`class_parent`) + many-to-many
+`class_membership`, seeded from **MED-RT** (licence-verified: VA federal work, public domain, UMLS
+restriction level 0). Six ingested axes — MoA / PE / TC / PK / **EPC** / APC; `HC` (alphabetical navigation
+bins) and `EXT` excluded. Membership joins to moieties via the `RXNORM_IN` claims slice 1 already records;
+EPC membership is hierarchical (`Parent Of` from EPC to ingredient), normalised to `has_EPC`. Class edges
+are **rebuildable projections**, deliberately outside slice 1's append-only floor. Against the full
+2026.07.06 release: 3,634 classes, 3,961 DAG edges (440 multi-parent), 27,540 memberships over 6,012
+ingredients. 102 tests. Detail: the slice-2a design spec.
+
+### Slice 2b — MeSH Pharmacological Actions (NEXT)
+The second classification axis, on the **same three tables** (no schema change). Blocked on a
+**UNII→MeSH (or ChEBI→MeSH) bridge** drugref does not yet hold — unlike MED-RT, MeSH membership has no
+RxCUI to join through. MeSH licence already verified AGPL-compatible (NLM: attribution + no-endorsement +
+version-currency; no NC/ND). MED-RT's own `has_SC` relationships (3,632, targeting MeSH structural
+classes) become ingestible once the bridge exists. **ATC stays excluded** (NC + no-derivatives).
 
 ### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
 Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety
@@ -80,6 +90,15 @@ jurisdictions (open regulatory registry bundled; national SNOMED extension licen
 
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
+  **Note the test-suite coupling**: `test_ingest_run.py` and `test_medrt_run.py` each `TRUNCATE` the drugref
+  tables in an autouse fixture, because both orchestrators commit internally and so escape the `conn`
+  fixture's rollback. Those fixtures depend on precisely the bypass this item closes, so hardening the floor
+  must land together with a replacement isolation strategy (e.g. a privileged test role, or per-test schemas)
+  or the suite stops being able to reset itself.
 - **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (real UNII
-  headers/`INN_ID`; ChEBI/UNII licence deeds; grow the closed crosswalk + allow-list toward completeness).
+  headers/`INN_ID`; ChEBI/UNII/MED-RT licence deeds; grow the closed crosswalk + allow-list toward
+  completeness). Note the moiety gate is the binding constraint on classification yield: MED-RT classifies
+  6,012 ingredients, so class coverage grows with the registry, not with more MED-RT parsing.
+- **`EPC`-adjacent MED-RT content not yet used** — `EXT` concepts, and the class→class `has_*` assertions
+  (an EPC declaring its own mechanism/effect) which would let class-level knowledge inherit along the DAG.
 - **Governance** — consider adding a CLAUDE.md (coding rules) and an ADR log as the design surface grows.
