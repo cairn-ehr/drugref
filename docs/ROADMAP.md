@@ -87,12 +87,38 @@ relationships**; salt↔base strength-equivalence data. Additive to the slice-1 
 ### Slice 4 — Clinical drugs (moiety/salt + strength + form)
 The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tree leaf before product/local.
 
-### Slice 5 — The curated interaction overlay (the moat)
-Append-only, **signed** DDI overlay (severity + mechanism + management), attaching at moiety **and** class
-level with edge inheritance. Layered by licence-safety: **ONC high-priority floor** (re-encoded from the
-papers) → **SPL/DailyMed-mined** layer (ONSIDES-style, MIT precedent) → DDInter *if its licence confirms* →
-drugref's own hand-curated overlay as the durable value-add. This is the append-only/signed half of the
-hybrid store; institutionally-owned, never a volunteer wiki. Plus core pharmacology prose.
+### Slice 5 — The interaction & contraindication layer
+Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b) seeded from public-domain
+regulatory-derived content, then the **append-only signed curated overlay** (5c). The projections give a
+defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable value-add
+built on top. Sequenced by licence-cleanliness, not by coverage.
+
+#### Slice 5a — MED-RT mechanism/effect contraindications ← next
+The smallest first cut: MED-RT **`CI_MoA`/`CI_PE`** ("contraindicated mechanism/physiological-effect of a
+**co-administered ingredient**") = ~739 **class-level drug–drug** rules, mined from the **MED-RT file slice
+2a already parses** — **no new source, no new join, no new UUID minting** (both endpoints — RxNorm subject,
+MoA/PE class object — are already ingested). New table `class_contraindication` (`db/004`), a rebuildable
+projection like `class_membership`; concrete drug pairs **expand at read time** over the existing class DAG
+(`ddi_candidate_pair` view). **Candidate tier only** — MED-RT does not track label updates, so rows carry
+provenance and feed review; nothing here auto-alerts. Design:
+[slice-5a spec](superpowers/specs/2026-07-25-drugref-slice-5a-medrt-contraindication-design.md) · plan:
+[slice-5a plan](superpowers/plans/2026-07-25-slice-5a-medrt-contraindication.md).
+
+#### Slice 5b — MeSH-keyed contraindications & indications
+The MeSH-endpoint MED-RT content, unlocked once **MeSH disease/chemical descriptors** are ingested (same NLM
+MeSH licence already cleared in slice 2b): **`CI_with`** (drug–disease contraindication, ~11.5k),
+**`CI_ChemClass`** (drug–drug by chemical class, ~1.9k), and **`may_treat`/`may_prevent`/`may_diagnose`/
+`induces`** (~18k drug–disease indications + drug-induced states) — a public-domain, drugref-owned drug–
+disease dataset (a MeDIC-alternative it holds outright). Still projection tier, still candidate-only.
+
+#### Slice 5c — The curated overlay (the moat)
+Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
+dimensions the projections lack — **referencing** the 5a/5b candidate rows. Layered by licence-safety:
+**ONC high-priority floor** (re-encoded from the papers; RAND/government-licensed) → **SPL/DailyMed-mined**
+(ONSIDES-*method*, MIT precedent) → DDInter *if its licence confirms* → drugref's own hand-curation as the
+durable value-add. The **"moat" is quality-control — who may assert — not access or leverage**: data ships
+paywall-free under copyleft (derivatives shared alike; code AGPL-3.0). Institutionally-owned, never a
+volunteer wiki. Plus core pharmacology prose.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is

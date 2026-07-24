@@ -44,7 +44,7 @@ This module is PURE: it reads a file and returns records. No database, no networ
 no UUID minting. The orchestrator (medrt_run.py) does all of that.
 """
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from xml.etree import ElementTree
 
 # ClassConcept is the source-neutral "class row to upsert" shape. It lives in
@@ -68,9 +68,19 @@ INGESTED_CONCEPT_TYPES = frozenset({"MoA", "PE", "TC", "PK", "EPC", "APC"})
 
 # Ingredient -> class assertions, all of which run RxNorm -> MED-RT. Kept in
 # lockstep with the CHECK constraint on drugref.class_membership.relationship.
-# Absent on purpose: may_treat / may_prevent / CI_* (curated-overlay data for a
-# later slice) and has_SC (targets MeSH; slice 2b).
+# Absent on purpose: may_treat / may_prevent (indications, still a later slice) and
+# has_SC (targets MeSH; slice 2b). CI_MoA / CI_PE are handled separately, below.
 MEMBERSHIP_RELATIONSHIPS = frozenset({"has_MoA", "has_PE", "has_TC", "has_PK"})
+
+# Drug -> class CONTRAINDICATIONS (slice 5a): "contraindicated MoA / physiological
+# effect of a CO-ADMINISTERED ingredient" -- drug-drug interaction rules, not
+# membership (the subject is not a member of the class; it is contraindicated with
+# drugs that are). Both run RxNorm -> MED-RT, so both endpoints are already-ingested
+# drugref content. Kept in lockstep with the CHECK on
+# drugref.class_contraindication.relationship. NOT here: CI_with / CI_ChemClass,
+# whose object is a MeSH descriptor (slice 5b), so admitting them would reach a
+# namespace this parse cannot resolve.
+CI_RELATIONSHIPS = frozenset({"CI_MoA", "CI_PE"})
 
 # The hierarchical relationship, which does double duty: MED-RT -> MED-RT builds
 # the subclass DAG, while EPC -> RxNorm expresses a drug's membership of an
@@ -107,6 +117,17 @@ class MembershipAssertion:
 
 
 @dataclass(frozen=True)
+class ContraindicationAssertion:
+    """MED-RT asserts that the ingredient with `rxcui` (the drug the statement is
+    ABOUT) is contraindicated with a co-administered drug of class `class_nui`, on
+    the axis named by `relationship` (CI_MoA or CI_PE). The clinical direction is
+    carried entirely by which side is which -- reversing it inverts the meaning."""
+    rxcui: str
+    class_nui: str
+    relationship: str
+
+
+@dataclass(frozen=True)
 class ParsedMedrt:
     """Everything one MED-RT file yields, already scoped to what we may ingest.
 
@@ -118,6 +139,7 @@ class ParsedMedrt:
     classes: list[ClassConcept]
     parents: list[ParentEdge]
     memberships: list[MembershipAssertion]
+    contraindications: list[ContraindicationAssertion] = field(default_factory=list)
     inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
 
@@ -193,6 +215,7 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
 
     parents: list[ParentEdge] = []
     memberships: list[MembershipAssertion] = []
+    contraindications: list[ContraindicationAssertion] = []
     for assoc in root.findall("association"):
         name = _text(assoc, "name")
         from_ns, from_code = _text(assoc, "from_namespace"), _text(assoc, "from_code")
@@ -223,8 +246,18 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
                     and to_code in nui_by_code):
                 memberships.append(MembershipAssertion(
                     rxcui=from_code, class_nui=nui_by_code[to_code], relationship=name))
-        # Everything else (may_treat, CI_with, has_SC, Synonym Of, ...) is either
-        # curated-overlay data for a later slice or points at a namespace we may
-        # not read, and is deliberately ignored.
+        elif name in CI_RELATIONSHIPS:
+            # A drug-drug contraindication by mechanism/effect (slice 5a). Runs
+            # ingredient (RxNorm) -> class (MED-RT), and endpoint-scoped to an
+            # ingested class exactly as membership is: an object not in nui_by_code
+            # is a CI_MoA/CI_PE whose class we did not ingest, so it is dropped.
+            if (from_ns == RXNORM_NAMESPACE and to_ns == MEDRT_NAMESPACE
+                    and to_code in nui_by_code):
+                contraindications.append(ContraindicationAssertion(
+                    rxcui=from_code, class_nui=nui_by_code[to_code], relationship=name))
+        # Everything else (may_treat, CI_with, CI_ChemClass, has_SC, Synonym Of, ...)
+        # is either curated-overlay/indication data or MeSH-keyed CI content for a
+        # later slice, or points at a namespace we may not read -- ignored here.
     return ParsedMedrt(classes=classes, parents=parents, memberships=memberships,
+                       contraindications=contraindications,
                        inactive_concepts=inactive, unidentified_concepts=unidentified)
