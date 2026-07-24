@@ -41,8 +41,56 @@ MED-RT does not track label updates (spec §4.3), so nothing here auto-alerts. `
 ROADMAP Slice 5 into **5a** (this) / **5b** (MeSH-keyed CI_with/CI_ChemClass/may_treat/induces) / **5c**
 (the curated signed overlay).
 
+**Foundation review hardening** ✅ done on this branch. A full review of the whole codebase (not a diff),
+with every finding reproduced against a live PG18 before fixing. **220 tests green.** Two new migrations and
+a migration runner with a ledger; the rest is parser/writer hardening. What changed, and why it mattered:
+
+- **`db/005`** — the correction overlay was a trapdoor in both directions. `identity_claim_unique` covered
+  superseded rows, so a value upstream *reverted* could never be re-asserted (the INSERT hit the index,
+  `add_claim` reported "already present", and the identifier stayed invisible to every
+  `superseded_by IS NULL` join). Uniqueness is now **partial** (live claims only). The floor also now
+  enforces that supersession is **one-way, same-moiety, and points at a later claim** — which makes a
+  cycle unrepresentable. Plus: `first_seen_ingest` immutable, a CHECK on `ingest_run.source` (the key every
+  per-source rebuild joins through, previously unconstrained), and indexes on that rebuild-delete path.
+  **This closes [#4](https://github.com/cairn-ehr/drugref/issues/4).**
+- **`db/006`** — the CHECK↔CASE coupling `db/004` held together with a comment is now structural: a
+  **`ci_axis` table** the `relationship` column is a **foreign key into**, and the view JOINs it instead of
+  a CASE. Widening the vocabulary without giving a predicate its membership axis now fails at write time
+  rather than expanding to zero pairs silently (the 5b landmine). `source` joins the **primary key** (a
+  second authority's identical assertion was swallowed by ON CONFLICT, then deleted by a MED-RT rebuild).
+  View columns renamed `moiety_a/b` → **`subject_moiety`/`partner_moiety`**, `upstream_release` +
+  `ingested_at` surfaced, and every clinical caveat moved into **`COMMENT ON`** — `--` comments are
+  stripped by Postgres, so none of it was visible to anyone inspecting the database.
+- **`db.apply_migrations` now keeps a ledger** (`drugref.schema_migration`, filename + checksum). Migrations
+  are applied once and are **immutable afterwards** — editing an applied file raises. Before this, each file
+  hand-wrote a guard inferring "has my change landed?" from the catalog, and `db/003`'s source-CHECK guard
+  tested only that the constraint *existed*: editing it in place (which its own comment instructs) silently
+  did nothing on an already-migrated database while a fresh one got the new constraint.
+- **`ingest/unii.py` was the least defended code in the repo, at the root of identity.** A row with a blank
+  UNII minted `UUIDv5(ns, "UNII:")` — one shared UUID that every such row collapsed onto, merging unrelated
+  drugs into a single moiety carrying all their INNs, CAS numbers and RxCUIs; irreversible, because
+  `moiety_uuid` is immortal and the floor forbids DELETE. Now refused via `gate.has_identity_key` and
+  counted. Separately, `csv`'s default quoting let one stray double-quote swallow an unbounded run of
+  following rows; all three TSV readers use `QUOTE_NONE`. `ingest_unii` returns a **`UniiSummary`**
+  (moieties / gated_out / rows_without_unii) instead of a bare int.
+- **`medrt.py`** — `nui_by_code` was last-write-wins, so two concepts publishing one `<code>` filed an edge
+  against whichever came last: a `has_MoA` membership landing on a `[PE]` class, silently. Ambiguous codes
+  are now refused and counted. Also reports `skipped_concept_types` / `skipped_predicates` by name, so an
+  upstream *rename* of something drugref ingests no longer looks identical to a deliberate skip.
+- **Claim values are canonicalised** (`ids.canonical_claim_value`): UNII/INCHIKEY/CHEBI are folded to upper
+  at storage, matching the fold the moiety UUID is minted with — two cases of one UNII were inserting two
+  claims and splitting the join index. `canonical_source`'s unknown-source fallback now upper-cases too.
+- **Orchestrators own their transaction**: rollback-then-re-raise on failure (a mid-run error previously
+  left the caller's connection aborted, so the *next* feed's first statement failed for unrelated reasons),
+  plus module loggers. `classes_added` is counted by distinct key so it can no longer exceed
+  `classes_in_release`.
+- **CI exists** (`.github/workflows/ci.yml`, PG18 service). 123 of 220 tests are DB-gated and used to skip
+  with exit 0 — `conftest` now **fails instead of skipping when `CI` is set**, and the workflow asserts the
+  run contains no skips.
+
 **⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications) or Slice 3 (composition tree: salts/esters/
-hydrates).**
+hydrates).** Note for 5b: adding a CI predicate is now one `ci_axis` INSERT plus the `source`/vocabulary
+CHECKs — the view needs no edit.
 
 ### Slice 5b — MeSH-keyed MED-RT contraindications & indications (the task)
 
@@ -222,14 +270,23 @@ an **immortal UUID** and **append-only external-identifier claims**, seeded inte
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# DB-gated tests need a PostgreSQL >= 18 database:
+# DB-gated tests need a PostgreSQL >= 18 database. 123 of 220 tests are DB-gated, so a
+# run without this DSN passes while exercising none of the schema, floor or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
-- Schema: `db/001_schema_drugref.sql` (identity spine) + `db/002_schema_classes.sql` (classification) +
-  `db/003_class_registry_source_neutral.sql` (registry generalised for a second authority), applied in
-  filename order via `drugref.db.apply_migrations`, idempotent. **Read 003 for the class registry's actual
-  shape** — 002 still shows the superseded MED-RT-specific columns.
+CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service container on every push and
+PR, and `conftest` **fails rather than skips** when `CI` is set — so the DB layer can never go green by
+being skipped.
+
+- Schema: `db/001` (identity spine) + `db/002` (classification) + `db/003` (registry generalised for a
+  second authority) + `db/004` (contraindication projection) + `db/005` (supersession/floor hardening) +
+  `db/006` (the `ci_axis` vocabulary, contraindication PK, view contract), applied in filename order via
+  `drugref.db.apply_migrations`. **Read the LATEST file that touches a table for its actual shape** — 002
+  still shows the superseded MED-RT-specific columns, and 004's relationship CHECK is replaced by 006's FK.
+- **Migrations are immutable once applied.** `apply_migrations` records each file's checksum in
+  `drugref.schema_migration` and raises if an applied file's content changed. To alter the schema, add a new
+  `db/NNN_*.sql` — editing an existing one is now an error rather than a silent no-op on migrated databases.
 - Code: `src/drugref/{ids,claims,classes,db}.py` +
   `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run,mesh,mesh_run}.py`;
   seed data under `src/drugref/data/`; fixtures under `tests/fixtures/`.
@@ -271,8 +328,8 @@ Post-review (PR #1) findings that were larger than a cleanup are now filed as Gi
   reworking the commit-internally test modules' cleanup off `TRUNCATE`.
 - **UNII-change immortality** ([#3](https://github.com/cairn-ehr/drugref/issues/3)) — `moiety_uuid` survives
   every identifier's churn *except* a change to the UNII itself; structural re-key (by InChIKey) is deferred.
-- **One-way supersession** ([#4](https://github.com/cairn-ehr/drugref/issues/4)) — the floor lets
-  `superseded_by` be un-set / re-pointed; decide whether that's an invariant to enforce.
+- ~~**One-way supersession** ([#4](https://github.com/cairn-ehr/drugref/issues/4))~~ — **done** in `db/005`:
+  supersession is set once, same-moiety, and must point at a later claim (so no cycles).
 - **INN sourced from UNII PT, not WHO INN** ([#5](https://github.com/cairn-ehr/drugref/issues/5)) — part of
   the verify-before-production checklist (real UNII headers/`INN_ID`, ChEBI/UNII licence deeds, grow the
   closed crosswalk + allow-list).
@@ -311,8 +368,21 @@ attaches to *all* matching moieties; `add_claim` reports insert-vs-conflict (no 
 raises a clear error on missing DSN; `gate.inn_display_name` folds via `_norm()`; `claims.py` docstring +
 `conn` param naming; pyproject SPDX `license` string + `readme`/`license-files`.
 
+Foundation-review follow-ups (filed, not fixed):
+
+- **DAG-descendant expansion** ([#15](https://github.com/cairn-ehr/drugref/issues/15)) — `ddi_candidate_pair`
+  matches direct membership only, so a CI naming a broad class misses drugs classified solely under a
+  descendant. **Measure the real blast radius first** (how many of the ~739 rules target a class with
+  children) before deciding whether to ship the recursive variant.
+- **Crashed-ingest visibility + CLI** ([#16](https://github.com/cairn-ehr/drugref/issues/16)) — the
+  `ingest_run` row is still written inside the run's own transaction, so a failure rolls it back and a
+  crashed run is indistinguishable from one that never started. Needs a connection-ownership decision.
+- **Remaining no-silent-drop gaps** ([#17](https://github.com/cairn-ehr/drugref/issues/17)) — MeSH PA
+  records with no `DescriptorUI`; the legacy allow-list still keyed on a display name rather than a UNII.
+
 ## Repo facts
 
 - GitHub: `cairn-ehr/drugref` · default branch `main` · licence **AGPL-3.0** · attribution in `NOTICE`.
+- CI: `.github/workflows/ci.yml` (PG18 service; DB-gated tests fail rather than skip under `CI`).
 - No CLAUDE.md yet (the coding rules live in the nextsession skill); no ADR log yet (slice 1's *why* is the
   design spec). Consider adding both as the project grows.

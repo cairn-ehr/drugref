@@ -16,6 +16,15 @@ from drugref import db
 def _dsn():
     dsn = os.environ.get("DRUGREF_TEST_DSN")
     if not dsn:
+        # Skipping locally is a convenience; skipping in CI is a trap. Over half
+        # the suite is DB-gated -- every schema, trigger, floor, writer and
+        # orchestrator test -- and pytest exits 0 on a run that skipped all of
+        # them, so an unset DSN would report green on a completely unexercised
+        # database layer. In CI that is a failure, not a skip.
+        if os.environ.get("CI"):
+            pytest.fail(
+                "DRUGREF_TEST_DSN is not set. Most of this suite is DB-gated, so a "
+                "CI run without a database would pass while testing none of it.")
         pytest.skip("DRUGREF_TEST_DSN not set — skipping DB-gated test")
     return dsn
 

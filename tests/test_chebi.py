@@ -35,7 +35,7 @@ def test_chebi_claim_attached_by_inchikey(conn):
 def _new_run(conn):
     return conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('TEST','r1','x') RETURNING ingest_run_id").fetchone()[0]
+        "VALUES ('UNII','r1','x') RETURNING ingest_run_id").fetchone()[0]
 
 
 def test_chebi_attaches_to_all_moieties_sharing_inchikey(conn, tmp_path):

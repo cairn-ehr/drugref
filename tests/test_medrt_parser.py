@@ -252,6 +252,75 @@ def test_every_membership_points_at_an_ingested_class():
 
 
 # ---- contraindications (slice 5a) ------------------------------------------
+# ---- upstream vocabulary drift ---------------------------------------------
+#
+# The parser silently ignores any concept type or association name it does not
+# recognise. That is correct behaviour (HC bins and may_treat are deliberately out
+# of scope) but it is also exactly how an upstream RENAME would look: a predicate
+# drugref does ingest, quietly matching nothing, forever. Reporting the distinct
+# names seen-and-skipped turns that into something a release-to-release diff shows.
+
+
+def test_skipped_concept_types_are_reported(tmp_path):
+    path = _write(
+        tmp_path,
+        _concept("C-HC", "N-HC-1", "A [Preparations]", cty="HC")
+        + _concept("C-EXT", "N-EXT-1", "Some Chemical", cty="EXT")
+        + _concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"))
+    assert medrt.parse(path).skipped_concept_types == ("EXT", "HC")
+
+
+def test_skipped_association_names_are_reported(tmp_path):
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"),
+        _assoc("may_treat", "RxNorm", "161", "MeSH", "M0001")
+        + _assoc("has_SC", "MED-RT", "C-MOA", "MeSH", "M0002")
+        + _assoc("has_MoA", "RxNorm", "161", "MED-RT", "C-MOA"))
+    result = medrt.parse(path)
+    assert result.skipped_predicates == ("has_SC", "may_treat")
+    assert len(result.memberships) == 1      # the recognised one still lands
+
+
+# ---- ambiguous published codes ---------------------------------------------
+#
+# Associations reference their endpoints by published <code>, while a class's
+# identity is its NUI, so the parser resolves code -> NUI through a lookup built
+# from the concepts. That lookup is only sound while codes are UNIQUE. Nothing
+# upstream guarantees it and no constraint enforces it, so a release in which two
+# concepts publish one code must not be resolved by "whichever came last".
+
+
+def test_an_edge_through_a_code_claimed_by_two_concepts_is_refused(tmp_path):
+    # Two DIFFERENT classes on DIFFERENT axes publishing one code. Resolving
+    # last-write-wins would attach this has_MoA membership to the PE class --
+    # a mechanism-of-action fact filed as a physiological effect, silently.
+    path = _write(
+        tmp_path,
+        _concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
+        + _concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE"),
+        _assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED"))
+    result = medrt.parse(path)
+    assert result.memberships == []
+    assert result.ambiguous_codes == 1
+
+
+def test_an_unambiguous_code_still_resolves_when_another_code_is_ambiguous(tmp_path):
+    # The refusal is scoped to the offending code, not the whole release.
+    path = _write(
+        tmp_path,
+        _concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
+        + _concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE")
+        + _concept("CLEAN", "N-MOA-2", "Clean Mechanism [MoA]", cty="MoA"),
+        _assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED")
+        + _assoc("has_MoA", "RxNorm", "161", "MED-RT", "CLEAN"))
+    result = medrt.parse(path)
+    assert result.memberships == [
+        medrt.MembershipAssertion(rxcui="161", class_nui="N-MOA-2",
+                                  relationship="has_MoA")]
+    assert result.ambiguous_codes == 1
+
+
 # CI_MoA / CI_PE are "contraindicated MoA / physiological-effect of a
 # CO-ADMINISTERED ingredient" -- drug-drug interaction rules. Subject is the drug
 # the statement is about (from_code, an RxCUI); object is the co-administered

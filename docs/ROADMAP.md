@@ -135,6 +135,17 @@ jurisdictions (open regulatory registry bundled; national SNOMED extension licen
 
 ## Cross-cutting hardening (not a single slice)
 
+- **Foundation review ✅ DONE** (post-slice-5a, whole-codebase). `db/005` made the correction overlay
+  one-way and re-assertable (partial unique index on LIVE claims; supersession set once, same-moiety,
+  strictly forward — closes #4) and constrained `ingest_run.source`; `db/006` replaced the
+  comment-enforced CHECK↔CASE coupling with a `ci_axis` table the vocabulary is an FK into, put `source`
+  in the contraindication PK, renamed the pair view's columns to their roles and moved the clinical
+  contract into `COMMENT ON`. `apply_migrations` gained a **checksum ledger** — migrations are immutable
+  once applied. Parser/identity fixes: UNII rows with no identity key are refused (they were merging
+  unrelated drugs onto one immortal UUID), TSV read with `QUOTE_NONE`, ambiguous MED-RT published codes
+  refused, claim values canonicalised, orchestrators roll back and log. **CI added** (PG18 service; the
+  DB-gated majority now fails rather than skips). 220 tests. Remaining: #15 (DAG-descendant expansion,
+  measure first), #16 (crashed-ingest visibility + CLI), #17 (last no-silent-drop gaps).
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling**: `test_ingest_run.py` and `test_medrt_run.py` each `TRUNCATE` the drugref

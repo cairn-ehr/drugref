@@ -1,0 +1,51 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    # The suite is majority DB-gated (schema, triggers, the append-only floor, both
+    # ingest orchestrators). Without a real database those tests SKIP and pytest
+    # still exits 0, so a green run would say nothing about the layer this project
+    # deliberately puts its integrity in. The service container is what makes the
+    # green meaningful; conftest fails rather than skips when CI is set, so a
+    # mis-wired DSN here cannot quietly go back to reporting success.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: drugref_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      DRUGREF_TEST_DSN: "host=localhost port=5432 dbname=drugref_test user=postgres password=postgres"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Run the full suite
+        run: uv run pytest -q
+
+      - name: Confirm nothing was skipped
+        # A belt-and-braces guard on the guard: if the DB-gated tests ever start
+        # skipping again (a renamed env var, a changed fixture), the suite would go
+        # back to passing vacuously. Fail loudly on any skip instead.
+        run: uv run pytest -q --strict-markers -p no:randomly -rs 2>&1 | tee out.txt && ! grep -q "skipped" out.txt

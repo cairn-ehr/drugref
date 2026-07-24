@@ -23,6 +23,7 @@ Both are counted by DISTINCT member, since a member's keys are the same under ev
 PA class it belongs to.
 """
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass
 
@@ -34,6 +35,8 @@ from drugref.ingest import mesh
 
 SOURCE = "MeSH"
 RELATIONSHIP = "has_PA"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -111,7 +114,26 @@ def ingest_mesh(conn: psycopg.Connection, *, pa_path, desc_path, supp_path,
     """Ingest one MeSH release (pa/desc/supp) into the PA classification axis.
 
     Idempotent: re-running rebuilds to the same state, with the same class UUIDs.
+
+    TRANSACTION OWNERSHIP: as for medrt_run.ingest_medrt -- this owns `conn`'s
+    transaction, commits on success, and rolls back before re-raising on failure so
+    the caller never receives a connection stuck in the aborted-transaction state.
     """
+    log.info("MeSH ingest starting (release=%s)", upstream_release)
+    try:
+        summary = _ingest_mesh(conn, pa_path, desc_path, supp_path, upstream_release)
+    except Exception:
+        conn.rollback()
+        log.exception("MeSH ingest failed (release=%s); transaction rolled back",
+                      upstream_release)
+        raise
+    log.info("MeSH ingest finished (release=%s): %s", upstream_release, summary)
+    return summary
+
+
+def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
+                 upstream_release: str) -> MeshSummary:
+    """The body of one MeSH ingest (see ingest_mesh for the transaction contract)."""
     parsed = mesh.parse(pa_path=pa_path, desc_path=desc_path, supp_path=supp_path)
 
     run_id = conn.execute(
@@ -123,13 +145,18 @@ def ingest_mesh(conn: psycopg.Connection, *, pa_path, desc_path, supp_path,
     #    MED-RT concept does; descriptor_ui is both its identity key and its
     #    published code (MeSH keys on the UI it publishes).
     uuid_by_ui: dict[str, uuid.UUID] = {}
-    classes_added = 0
+    # By DISTINCT descriptor UI, for the reason medrt_run gives: a descriptor
+    # repeated within one release would otherwise report is_new twice and make
+    # classes_added exceed classes_in_release.
+    new_uis: set[str] = set()
     for pa in parsed.classes:
         concept = ClassConcept(nui=pa.descriptor_ui, code=pa.descriptor_ui,
                                name=pa.name, concept_type=pa.concept_type)
         class_uuid, is_new = class_writer.upsert_class(conn, concept, run_id, SOURCE)
         uuid_by_ui[pa.descriptor_ui] = class_uuid
-        classes_added += is_new
+        if is_new:
+            new_uis.add(pa.descriptor_ui)
+    classes_added = len(new_uis)
 
     # 2. Drop this source's previous edges before writing this run's.
     class_writer.clear_source_edges(conn, SOURCE)

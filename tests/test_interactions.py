@@ -49,7 +49,7 @@ def test_clear_source_contraindications_removes_only_that_sources_rows(conn):
     """Rebuild semantics, mirroring classes.clear_source_edges: a new MED-RT release
     replaces MED-RT's contraindications and leaves an unrelated feed's untouched.
     Scoped by the run's source, so this run's own rows survive until it rewrites."""
-    medrt_run, other_run = _run(conn, "MED-RT"), _run(conn, "SOMETHING-ELSE")
+    medrt_run, other_run = _run(conn, "MED-RT"), _run(conn, "MeSH")
     m, c = _moiety(conn, medrt_run), _class(conn, medrt_run, "N0000000902")
     interactions.add_contraindication(conn, m, c, "CI_MoA", "MED-RT", medrt_run)
     interactions.add_contraindication(conn, m, c, "CI_PE", "MED-RT", other_run)

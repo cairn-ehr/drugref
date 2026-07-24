@@ -27,13 +27,48 @@ def _ingest(conn, release="2026-07"):
 
 
 def test_registers_only_gated_moieties(conn):
-    n = _ingest(conn)
+    n = _ingest(conn).moieties
     # acetaminophen + amlodipine (has-INN) + magnesium sulfate (allow-list) = 3;
     # microcrystalline cellulose excluded.
     assert n == 3
     names = {r[0] for r in conn.execute("SELECT display_name FROM drugref.substance_moiety").fetchall()}
     assert names == {"paracetamol", "amlodipine", "magnesium sulfate"}
     assert "microcrystalline cellulose" not in names
+
+
+def test_gate_rejections_are_counted_not_silently_dropped(conn):
+    # Every other ingest reports what it declined to carry as a worklist number
+    # (medrt_run's unmatched_rxcuis, mesh_run's members_no_key). The identity
+    # spine must do the same, or a legacy drug the allow-list narrowly misses
+    # disappears as invisibly as an excipient.
+    summary = _ingest(conn)
+    assert summary.gated_out == 1          # microcrystalline cellulose
+    assert summary.rows_without_unii == 0
+
+
+def test_rows_without_a_unii_are_refused_and_counted(conn, tmp_path):
+    # Two rows whose UNII cell is blank but which pass the has-INN gate. Before
+    # this guard both minted UUIDv5(namespace, "UNII:") and MERGED into one
+    # moiety carrying both drugs' INNs, CAS numbers and RxCUIs -- and because
+    # moiety_uuid is immortal and the floor forbids DELETE, that merge was
+    # unrecoverable. They must be refused and counted instead.
+    path = tmp_path / "blank_unii.tsv"
+    path.write_text(
+        "UNII\tPT\tRN\tRXCUI\tPUBCHEM\tINN_ID\tINCHIKEY\n"
+        "362O9ITL9D\tACETAMINOPHEN\t103-90-2\t161\t1983\t6689\tRZVAJINKPMORJF-UHFFFAOYSA-N\n"
+        "\tMETFORMIN\t657-24-9\t6809\t4091\t4779\tXZWYZXKJPYQGQO-UHFFFAOYSA-N\n"
+        "\tWARFARIN\t81-81-2\t11289\t54678486\t9312\tPJVWKTKQMONHTI-UHFFFAOYSA-N\n")
+    summary = run.ingest_unii(conn, unii_path=path, crosswalk_path=XW,
+                              allowlist_path=AL, upstream_release="2026-09")
+    assert summary.moieties == 1
+    assert summary.rows_without_unii == 2
+    names = {r[0] for r in conn.execute(
+        "SELECT display_name FROM drugref.substance_moiety").fetchall()}
+    assert names == {"paracetamol"}
+    # And nothing was minted from the empty key.
+    orphan = ids.mint_moiety_uuid("")
+    assert conn.execute("SELECT count(*) FROM drugref.substance_moiety "
+                        "WHERE moiety_uuid = %s", (orphan,)).fetchone()[0] == 0
 
 
 def test_cross_reference_claims_present(conn):

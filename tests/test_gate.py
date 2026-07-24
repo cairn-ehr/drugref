@@ -9,6 +9,21 @@ def _cand(name, has_inn):
     return unii.MoietyCandidate(unii="X", preferred_name=name, has_inn=has_inn)
 
 
+def test_row_carrying_a_unii_has_a_usable_identity():
+    assert gate.has_identity_key(_cand("ACETAMINOPHEN", True)) is True
+
+
+def test_row_without_a_unii_has_no_usable_identity():
+    # The moiety UUID is a pure function of the UNII, so a row with none would
+    # mint UUIDv5(namespace, "UNII:") -- one shared UUID that EVERY such row
+    # collapses onto, merging unrelated drugs into a single immortal registry
+    # entry. medrt.py already refuses concepts with no identifier for exactly
+    # this reason; the identity spine must refuse them too.
+    for blank in ("", "   ", "\t"):
+        cand = unii.MoietyCandidate(unii=blank, preferred_name="SOMETHING", has_inn=True)
+        assert gate.has_identity_key(cand) is False
+
+
 def test_has_inn_is_a_moiety():
     allow = gate.load_allowlist(DATA / "legacy_allowlist.tsv")
     assert gate.is_moiety(_cand("ACETAMINOPHEN", True), allow) is True
