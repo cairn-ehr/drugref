@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_subset.py. Do not hand-edit.
      Regenerate: python tests/fixtures/make_mesh_subset.py DOWNLOADS_DIR
-     All identity keys and tree numbers are copied from the release, never invented.
+     Identity keys, registry/tree numbers, names and record classes are copied from the
+     release, never invented; only the ConceptUI wrapper id is synthetic (M+UI, never read).
      MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
 <DescriptorRecordSet LanguageCode="eng">
  <DescriptorRecord DescriptorClass="1">
