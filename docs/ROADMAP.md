@@ -50,7 +50,7 @@ bins) and `EXT` excluded. Membership joins to moieties via the `RXNORM_IN` claim
 EPC membership is hierarchical (`Parent Of` from EPC to ingredient), normalised to `has_EPC`. Class edges
 are **rebuildable projections**, deliberately outside slice 1's append-only floor. Against the full
 2026.07.06 release: 3,634 classes, 3,961 DAG edges (440 multi-parent), 27,540 memberships over 6,012
-ingredients. 91 tests. Detail: the slice-2a design spec.
+ingredients. 102 tests. Detail: the slice-2a design spec.
 
 ### Slice 2b — MeSH Pharmacological Actions (NEXT)
 The second classification axis, on the **same three tables** (no schema change). Blocked on a
@@ -90,6 +90,11 @@ jurisdictions (open regulatory registry bundled; national SNOMED extension licen
 
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
+  **Note the test-suite coupling**: `test_ingest_run.py` and `test_medrt_run.py` each `TRUNCATE` the drugref
+  tables in an autouse fixture, because both orchestrators commit internally and so escape the `conn`
+  fixture's rollback. Those fixtures depend on precisely the bypass this item closes, so hardening the floor
+  must land together with a replacement isolation strategy (e.g. a privileged test role, or per-test schemas)
+  or the suite stops being able to reset itself.
 - **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (real UNII
   headers/`INN_ID`; ChEBI/UNII/MED-RT licence deeds; grow the closed crosswalk + allow-list toward
   completeness). Note the moiety gate is the binding constraint on classification yield: MED-RT classifies

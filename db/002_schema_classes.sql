@@ -18,8 +18,13 @@
 -- The class registry: one row per MED-RT pharmacologic class concept.
 CREATE TABLE IF NOT EXISTS drugref.substance_class (
     class_uuid        uuid   PRIMARY KEY,          -- UUIDv5(CLASS_NAMESPACE, 'MEDRT:'||nui)
-    medrt_nui         text   NOT NULL UNIQUE,      -- MED-RT's stable id, its "code in source"
-    medrt_code        text,                        -- code as published (equals the NUI in practice)
+    medrt_nui         text   NOT NULL UNIQUE,      -- MED-RT's stable id; class_uuid derives from it
+    -- The concept's code AS PUBLISHED -- which is what associations reference by
+    -- (from_code/to_code), whereas medrt_nui is the identity. The two hold the same
+    -- string throughout the 2026.07.06 release, so this looks redundant today; it
+    -- is stored separately because the parser resolves edge endpoints through it,
+    -- and a release that let them diverge would otherwise match no edge at all.
+    medrt_code        text,
     class_name        text   NOT NULL,             -- e.g. 'Calcium Channel Blocker [EPC]'
     concept_type      text   NOT NULL,             -- MED-RT CTY
     first_seen_ingest bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),

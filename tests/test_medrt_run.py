@@ -61,7 +61,11 @@ def _classes_of(conn, unii, relationship=None):
 
 
 def test_registers_every_ingested_class(seeded):
-    assert _ingest(seeded).classes == 49
+    summary = _ingest(seeded)
+    assert (summary.classes_in_release, summary.classes_added) == (49, 49)
+    # Nothing in the real release is retired or unidentified; if either ever fires
+    # it is a shape change upstream, reported rather than silently absorbed.
+    assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
     types = dict(seeded.execute(
         "SELECT concept_type, count(*) FROM drugref.substance_class GROUP BY 1").fetchall())
     assert types == {"MoA": 12, "PE": 18, "EPC": 3, "TC": 5, "PK": 6, "APC": 5}
@@ -135,6 +139,32 @@ def test_unmatched_ingredient_is_skipped_and_counted_not_silently_dropped(seeded
     assert summary.unmatched_rxcuis == 1      # ibuprofen (RxCUI 5640)
 
 
+def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
+    """Nothing stops two moieties from carrying the same RXNORM_IN claim, so the
+    membership join must classify BOTH. Picking one arbitrarily would silently
+    leave a real moiety unclassified -- and, being an unordered read, might leave a
+    different one unclassified on the next run."""
+    run_id = seeded.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('UNII', 'test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+    twin = ids.mint_moiety_uuid("TWIN-OF-PARACETAMOL")
+    seeded.execute("INSERT INTO drugref.substance_moiety "
+                   "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
+                   (twin, "paracetamol twin", run_id))
+    seeded.execute("INSERT INTO drugref.identity_claim "
+                   "(moiety_uuid, scheme, value, ingest_run) "
+                   "VALUES (%s, 'RXNORM_IN', '161', %s)", (twin, run_id))
+    seeded.commit()
+
+    summary = _ingest(seeded)
+    # Paracetamol's 8 memberships are now written for both claimants.
+    assert summary.memberships == 25          # 17 + a second set of paracetamol's 8
+    assert len(_classes_of(seeded, PARACETAMOL)) == 8
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
+        (twin,)).fetchone()[0] == 8
+
+
 def test_no_membership_points_outside_the_registry(seeded):
     _ingest(seeded)
     orphans = seeded.execute(
@@ -151,8 +181,11 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
     """A second release REPLACES the previous edges; class UUIDs are unchanged."""
     first = _ingest(seeded)
     second = _ingest(seeded, release="2026.08.03")
-    assert (second.classes, second.parent_edges, second.memberships) == \
-           (first.classes, first.parent_edges, first.memberships)
+    assert (second.classes_in_release, second.parent_edges, second.memberships) == \
+           (first.classes_in_release, first.parent_edges, first.memberships)
+    # ...but the second run ADDED nothing: classes accumulate, edges are rebuilt.
+    # Reporting one number for both would have hidden exactly this distinction.
+    assert (first.classes_added, second.classes_added) == (49, 0)
     counts = seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "

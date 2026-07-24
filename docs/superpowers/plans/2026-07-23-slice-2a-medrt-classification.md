@@ -9,7 +9,7 @@
 **Goal:** a classification layer over the active-moiety spine — class registry, subclass DAG, and
 many-to-many moiety↔class membership, seeded from MED-RT.
 
-**Outcome:** 91 tests green. Against the full `Core_MEDRT_2026.07.06_XML` release: **3,634 classes,
+**Outcome:** 102 tests green. Against the full `Core_MEDRT_2026.07.06_XML` release: **3,634 classes,
 3,961 DAG edges (440 multi-parent), 27,540 memberships across 6,012 ingredients**, parsed in ~4s.
 
 ## What shipped
@@ -23,7 +23,7 @@ many-to-many moiety↔class membership, seeded from MED-RT.
 | `src/drugref/ingest/medrt_run.py` | Orchestrator: classes → clear prior edges → rebuild DAG → join membership. |
 | `tests/fixtures/make_medrt_subset.py` | Re-runnable extractor that regenerates the fixture from a real release. |
 | `tests/fixtures/medrt_subset.xml` | The fixture, **extracted from real data** (49 classes, 39 DAG edges). |
-| `tests/test_{ids,schema_classes,medrt_parser,medrt_run}.py` | 56 new tests. |
+| `tests/test_{ids,schema_classes,medrt_parser,medrt_run}.py` | 67 new tests. |
 
 ## Design decisions worth re-reading before changing anything
 
@@ -36,8 +36,18 @@ many-to-many moiety↔class membership, seeded from MED-RT.
   records, because MED-RT's ingredient concepts are keyed on RxCUI.
 - **Licence scoping is structural.** Only MED-RT concepts are *defined* in the release; SNOMED and MeSH
   appear solely as association endpoints. Requiring both endpoints of every edge to be an ingested class is
-  therefore the mechanism that keeps unlicensed content out — not a review convention.
-- **Unmatched RxCUIs are counted, never dropped silently**, matching the slice-1 gate's posture.
+  therefore the mechanism that keeps unlicensed content out — not a review convention. **The repository is a
+  second distribution channel**: the fixture extractor redacts the term and code of every endpoint outside
+  MED-RT/RxNorm, because committing a SNOMED term redistributes it no matter what the parser does with it.
+- **Unmatched RxCUIs are counted, never dropped silently**, matching the slice-1 gate's posture — as are
+  concepts refused for being inactive or carrying no identifier at all.
+- **The RxCUI join takes every claimant, not the first.** `identity_claim` is unique on
+  `(moiety_uuid, scheme, value)`, so two moieties may claim one RxCUI; picking one would drop a real
+  membership and, being an unordered read, could pick differently next run. `chebi.py` reached the same
+  conclusion for InChIKey.
+- **`medrt_nui` and `medrt_code` are separate fields**, because identity is the NUI while associations
+  reference the code. Equal in this release; conflating them would silently rebuild an empty DAG the day
+  they diverge.
 
 ## What the real release corrected (and why the fixture is generated)
 

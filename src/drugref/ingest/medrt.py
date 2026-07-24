@@ -8,10 +8,11 @@ zip ships its own schema, MED-RT_Schema_v1.xsd.
 
 WHAT THIS MODULE READS, AND WHY ONLY THIS
 -----------------------------------------
-* Class concepts live in the "MED-RT" namespace, identified by their NUI (MED-RT's
-  "code in source"), each carrying a CTY (concept type) property. We ingest six
-  types -- see INGESTED_CONCEPT_TYPES for which, and why HC and EXT are not
-  among them.
+* Class concepts live in the "MED-RT" namespace, each carrying a CTY (concept
+  type) property. We ingest six types -- see INGESTED_CONCEPT_TYPES for which, and
+  why HC and EXT are not among them. A concept has both a NUI (its stable identity,
+  which class_uuid derives from) and a published <code> (what associations
+  reference it by); see parse() for why those are kept apart.
 * Ingredient concepts live in the "RxNorm" namespace, where the code in source IS
   the RxCUI. That is the join key back to our moiety registry, because slice 1
   already records an RXNORM_IN identity claim for every moiety.
@@ -23,6 +24,10 @@ only MED-RT-namespace concepts are *defined* in the file -- SNOMED and MeSH appe
 only as association endpoints -- so unlicensed content can enter through exactly
 one door: an edge. This parser closes that door by requiring both endpoints of any
 edge to be classes we ingested. Do not relax that check.
+
+The parser is not the only channel, though: a committed TEST FIXTURE naming an
+out-of-scope endpoint redistributes that term whatever this code does with it, so
+tests/fixtures/make_medrt_subset.py redacts those terms and codes on extraction.
 
 TWO FACTS ESTABLISHED FROM THE REAL RELEASE, NOT FROM THE DOCUMENTATION
 -----------------------------------------------------------------------
@@ -73,10 +78,24 @@ EPC_RELATIONSHIP = "has_EPC"
 EPC_CONCEPT_TYPE = "EPC"
 
 
+# A concept is only ingested while upstream still asserts it is active. MED-RT
+# ships every concept as status 'A' today, so this never fires against the current
+# release -- it exists so that a future release which starts publishing retired
+# concepts cannot quietly seed dead classes into a registry that never deletes.
+ACTIVE_STATUS = "A"
+
+
 @dataclass(frozen=True)
 class ClassConcept:
-    """One MED-RT pharmacologic class."""
+    """One MED-RT pharmacologic class.
+
+    `nui` is the identity key (class_uuid is derived from it); `code` is the
+    concept's code AS PUBLISHED, which is what association endpoints reference.
+    The two are equal throughout the 2026.07.06 release, but they are separate
+    fields on purpose -- see the code-vs-NUI note in parse().
+    """
     nui: str
+    code: str
     name: str
     concept_type: str
 
@@ -99,10 +118,18 @@ class MembershipAssertion:
 
 @dataclass(frozen=True)
 class ParsedMedrt:
-    """Everything one MED-RT file yields, already scoped to what we may ingest."""
+    """Everything one MED-RT file yields, already scoped to what we may ingest.
+
+    The two counts are not decoration: a concept this parser refuses is a concept
+    that will never be classified, so it is reported as a worklist number rather
+    than dropped invisibly -- the same posture the slice-1 gate takes, and the same
+    one MedrtSummary.unmatched_rxcuis takes for the membership join.
+    """
     classes: list[ClassConcept]
     parents: list[ParentEdge]
     memberships: list[MembershipAssertion]
+    inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
+    unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
 
 
 def _text(element, tag: str) -> str:
@@ -120,9 +147,14 @@ def _properties(concept) -> dict[str, str]:
     return {_text(p, "name"): _text(p, "value") for p in concept.findall("property")}
 
 
-def _parse_concepts(root) -> list[ClassConcept]:
-    """Keep only MED-RT-namespace concepts whose CTY is one we ingest."""
-    classes = []
+def _parse_concepts(root) -> tuple[list[ClassConcept], int, int]:
+    """Keep only active MED-RT-namespace concepts whose CTY is one we ingest.
+
+    Returns the classes plus the counts of concepts that had the right CTY but were
+    refused anyway (inactive, and unidentified) so the caller can report them.
+    """
+    classes: list[ClassConcept] = []
+    inactive = unidentified = 0
     for concept in root.findall("concept"):
         if _text(concept, "namespace") != MEDRT_NAMESPACE:
             continue                                 # not a MED-RT-owned concept
@@ -130,20 +162,44 @@ def _parse_concepts(root) -> list[ClassConcept]:
         concept_type = props.get("CTY", "")
         if concept_type not in INGESTED_CONCEPT_TYPES:
             continue                                 # HC bins, EXT, anything new upstream
-        # The NUI property is authoritative; <code> carries the same value in
-        # practice, so it is only a fallback.
-        nui = props.get("NUI") or _text(concept, "code")
-        classes.append(ClassConcept(nui=nui, name=_text(concept, "name"),
+        # Only a status upstream still asserts is active. An absent <status> is
+        # treated as active: every concept in the current release carries one, so
+        # a missing element means a shape change, not a retirement.
+        status = _text(concept, "status")
+        if status and status != ACTIVE_STATUS:
+            inactive += 1
+            continue
+        # NUI is the identity key, <code> is what associations reference. Either
+        # may stand in for the other, but a concept carrying NEITHER has no usable
+        # identity: minting from "" would collapse every such concept onto one
+        # class_uuid and let them silently overwrite each other's names.
+        code = _text(concept, "code")
+        nui = props.get("NUI", "").strip() or code
+        if not nui:
+            unidentified += 1
+            continue
+        classes.append(ClassConcept(nui=nui, code=code or nui,
+                                    name=_text(concept, "name"),
                                     concept_type=concept_type))
-    return classes
+    return classes, inactive, unidentified
 
 
 def parse(path: str | pathlib.Path) -> ParsedMedrt:
-    """Read one MED-RT XML release into the records slice 2a ingests."""
+    """Read one MED-RT XML release into the records slice 2a ingests.
+
+    CODE VS NUI -- why there are two lookups below and not one set. An association
+    references its endpoints by CODE (`from_code`/`to_code`), while a class's
+    identity -- and therefore its class_uuid -- is its NUI. Those two strings are
+    equal for every concept in the 2026.07.06 release, so matching endpoint codes
+    against a set of NUIs happens to work today. It would stop working silently the
+    moment upstream let them diverge: every edge would simply fail to match and the
+    DAG would come back empty, with no error and no count. Resolving codes through
+    an explicit code -> NUI map costs nothing and removes that failure mode.
+    """
     root = ElementTree.parse(path).getroot()
-    classes = _parse_concepts(root)
-    known = {c.nui for c in classes}
-    epc_nuis = {c.nui for c in classes if c.concept_type == EPC_CONCEPT_TYPE}
+    classes, inactive, unidentified = _parse_concepts(root)
+    nui_by_code = {c.code: c.nui for c in classes}
+    epc_codes = {c.code for c in classes if c.concept_type == EPC_CONCEPT_TYPE}
 
     parents: list[ParentEdge] = []
     memberships: list[MembershipAssertion] = []
@@ -157,24 +213,28 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
                 # Class hierarchy. Requiring BOTH endpoints to be ingested classes
                 # is what drops hierarchy mapped out into SNOMED/MeSH and edges
                 # hanging off HC navigation bins.
-                if from_code in known and to_code in known:
+                if from_code in nui_by_code and to_code in nui_by_code:
                     # 'Parent Of' is parent -> child, so `from` is the parent.
-                    parents.append(ParentEdge(child_nui=to_code, parent_nui=from_code))
+                    parents.append(ParentEdge(child_nui=nui_by_code[to_code],
+                                              parent_nui=nui_by_code[from_code]))
             elif (from_ns == MEDRT_NAMESPACE and to_ns == RXNORM_NAMESPACE
-                    and from_code in epc_nuis):
+                    and from_code in epc_codes):
                 # An EPC class sitting above a drug: this IS the drug's EPC
                 # membership. Only EPC parents count -- the same shape with an HC
                 # parent is just the alphabetical bin the drug is filed under.
                 memberships.append(MembershipAssertion(
-                    rxcui=to_code, class_nui=from_code, relationship=EPC_RELATIONSHIP))
+                    rxcui=to_code, class_nui=nui_by_code[from_code],
+                    relationship=EPC_RELATIONSHIP))
         elif name in MEMBERSHIP_RELATIONSHIPS:
             # Axis membership always runs ingredient (RxNorm) -> class (MED-RT).
             # The MED-RT -> MED-RT variant is a class describing itself, not
             # membership, so it is skipped by the namespace test.
-            if from_ns == RXNORM_NAMESPACE and to_ns == MEDRT_NAMESPACE and to_code in known:
+            if (from_ns == RXNORM_NAMESPACE and to_ns == MEDRT_NAMESPACE
+                    and to_code in nui_by_code):
                 memberships.append(MembershipAssertion(
-                    rxcui=from_code, class_nui=to_code, relationship=name))
+                    rxcui=from_code, class_nui=nui_by_code[to_code], relationship=name))
         # Everything else (may_treat, CI_with, has_SC, Synonym Of, ...) is either
         # curated-overlay data for a later slice or points at a namespace we may
         # not read, and is deliberately ignored.
-    return ParsedMedrt(classes=classes, parents=parents, memberships=memberships)
+    return ParsedMedrt(classes=classes, parents=parents, memberships=memberships,
+                       inactive_concepts=inactive, unidentified_concepts=unidentified)

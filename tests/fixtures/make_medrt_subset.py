@@ -21,6 +21,16 @@ case -- three that our tests/fixtures/unii_subset.tsv registry carries and one i
 deliberately does not -- plus every MED-RT class they reference, those classes'
 ancestors, and a deliberate sprinkling of out-of-scope material (an HC bin, a
 SNOMED endpoint, a MeSH has_SC, an overlay may_treat) that the parser must drop.
+
+WHAT IT REDACTS, AND WHY THAT IS A LICENCE RULE AND NOT TIDINESS: those
+out-of-scope edges name their far endpoint, and for the SNOMED one that endpoint
+is a SNOMED CT concept id and its fully specified name. The parser refuses such
+an edge, so nothing unlicensed reaches the database -- but a fixture is a file in
+an AGPL-licensed repository, so committing the term verbatim would redistribute
+it regardless of what the parser does, and would falsify the claim NOTICE makes.
+Every endpoint outside REDISTRIBUTABLE_NAMESPACES therefore has its term and code
+replaced before the fixture is written. The edges stay, and stay exactly as
+discriminating: the parser rejects them on their NAMESPACE, which is preserved.
 """
 import re
 import sys
@@ -38,10 +48,29 @@ INGREDIENTS = {
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
 INGESTED_CTY = {"MoA", "PE", "TC", "PK", "EPC", "APC"}
 
+# The only namespaces whose terms this repository may redistribute: MED-RT (VA,
+# public domain) and RxNorm (NLM, public domain), both attributed in NOTICE. An
+# endpoint in any other namespace -- SNOMED CT, which we are not licensed to
+# redistribute at all, and MeSH, which is not attributed until slice 2b -- is
+# emitted with its term and code redacted. See the module docstring.
+REDISTRIBUTABLE_NAMESPACES = {"MED-RT", "RxNorm"}
+REDACTED = "REDACTED"
+
 
 def field(block: str, tag: str) -> str:
     m = re.search(rf"<{tag}>(.*?)</{tag}>", block, re.S)
     return m.group(1).strip() if m else ""
+
+
+def endpoint(namespace: str, name: str, code: str) -> tuple[str, str]:
+    """Return the (name, code) to emit for one association endpoint.
+
+    Unchanged for namespaces we may redistribute; redacted for every other, so
+    the fixture carries the SHAPE of an out-of-scope edge without its content.
+    """
+    if namespace in REDISTRIBUTABLE_NAMESPACES:
+        return name, code
+    return REDACTED, REDACTED
 
 
 def main(path: str) -> None:
@@ -106,6 +135,10 @@ def main(path: str) -> None:
     out = ['<?xml version="1.0" encoding="UTF-8" ?>',
            "<!-- EXTRACTED FROM A REAL MED-RT RELEASE by make_medrt_subset.py. Do not hand-edit.",
            "     Regenerate with:  python tests/fixtures/make_medrt_subset.py <Core_MEDRT_*.xml>",
+           "     Association endpoints outside MED-RT/RxNorm carry REDACTED in place of their",
+           "     term and code: this repository may not redistribute SNOMED CT content, and",
+           "     MeSH is not attributed until slice 2b. The namespace is kept, which is what",
+           "     the parser rejects the edge on, so the fixture loses no discriminating power.",
            "     Ingredients covered:"]
     for rx, why in INGREDIENTS.items():
         out.append(f"       RxCUI {rx}: {why}")
@@ -125,14 +158,16 @@ def main(path: str) -> None:
                 "\t</concept>"]
 
     for a in keep:
+        from_name, from_code = endpoint(a["fns"], a["fnm"], a["fc"])
+        to_name, to_code = endpoint(a["tns"], a["tnm"], a["tc"])
         out += ["\t<association>", "\t\t<namespace>MED-RT</namespace>",
                 f"\t\t<name>{escape(a['name'])}</name>",
                 f"\t\t<from_namespace>{escape(a['fns'])}</from_namespace>",
-                f"\t\t<from_name>{escape(a['fnm'])}</from_name>",
-                f"\t\t<from_code>{escape(a['fc'])}</from_code>",
+                f"\t\t<from_name>{escape(from_name)}</from_name>",
+                f"\t\t<from_code>{escape(from_code)}</from_code>",
                 f"\t\t<to_namespace>{escape(a['tns'])}</to_namespace>",
-                f"\t\t<to_name>{escape(a['tnm'])}</to_name>",
-                f"\t\t<to_code>{escape(a['tc'])}</to_code>",
+                f"\t\t<to_name>{escape(to_name)}</to_name>",
+                f"\t\t<to_code>{escape(to_code)}</to_code>",
                 "\t</association>"]
 
     out.append("</terminology>")

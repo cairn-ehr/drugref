@@ -9,6 +9,7 @@ bins rather than classifications -- are invisible in a hand-written fixture,
 because a hand-written fixture just encodes whatever the author assumed.
 """
 import pathlib
+import re
 
 from drugref.ingest import medrt
 
@@ -17,6 +18,41 @@ FIX = pathlib.Path(__file__).parent / "fixtures" / "medrt_subset.xml"
 
 def parsed():
     return medrt.parse(FIX)
+
+
+def _write(tmp_path, concepts: str, associations: str = "") -> pathlib.Path:
+    """Write a minimal MED-RT file for the shape-variation tests below.
+
+    The acceptance tests all run against the real extracted fixture; this exists
+    only for shapes the current release does not contain (a retired concept, a
+    concept whose code differs from its NUI), which cannot be extracted from it.
+    """
+    path = tmp_path / "medrt.xml"
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8" ?>\n'
+        "<terminology>\n"
+        "\t<namespace><name>MED-RT</name><version>test</version></namespace>\n"
+        f"{concepts}{associations}"
+        "</terminology>\n", encoding="utf-8")
+    return path
+
+
+def _concept(code: str, nui: str, name: str, cty: str = "MoA", status: str = "A") -> str:
+    return (f"\t<concept><namespace>MED-RT</namespace><name>{name}</name>"
+            f"<code>{code}</code><status>{status}</status>"
+            f"<property><namespace>MED-RT</namespace><name>CTY</name>"
+            f"<value>{cty}</value></property>"
+            + (f"<property><namespace>MED-RT</namespace><name>NUI</name>"
+               f"<value>{nui}</value></property>" if nui else "")
+            + "</concept>\n")
+
+
+def _assoc(name: str, fns: str, fc: str, tns: str, tc: str) -> str:
+    return (f"\t<association><namespace>MED-RT</namespace><name>{name}</name>"
+            f"<from_namespace>{fns}</from_namespace><from_name>x</from_name>"
+            f"<from_code>{fc}</from_code>"
+            f"<to_namespace>{tns}</to_namespace><to_name>y</to_name>"
+            f"<to_code>{tc}</to_code></association>\n")
 
 
 # ---- concepts --------------------------------------------------------------
@@ -44,6 +80,70 @@ def test_class_records_carry_nui_and_name():
     amlodipine_epc = by_nui["N0000175421"]
     assert amlodipine_epc.name == "Dihydropyridine Calcium Channel Blocker [EPC]"
     assert amlodipine_epc.concept_type == "EPC"
+    # Code as published, kept separately from the identity key -- equal here, but
+    # see test_edges_resolve_when_code_and_nui_differ for why they are two fields.
+    assert amlodipine_epc.code == "N0000175421"
+
+
+def test_the_real_release_holds_no_inactive_or_unidentified_concepts():
+    """The counters exist for a release shape we have not seen yet; against the
+    real one they must read zero, or something has changed upstream."""
+    result = parsed()
+    assert (result.inactive_concepts, result.unidentified_concepts) == (0, 0)
+
+
+def test_a_retired_concept_is_refused_and_counted(tmp_path):
+    """substance_class never deletes, so a concept upstream has stopped asserting
+    must not get in -- and must be reported, not dropped in silence."""
+    path = _write(tmp_path, _concept("N0000000001", "N0000000001", "Live [MoA]")
+                  + _concept("N0000000002", "N0000000002", "Dead [MoA]", status="R"))
+    result = medrt.parse(path)
+    assert [c.nui for c in result.classes] == ["N0000000001"]
+    assert result.inactive_concepts == 1
+
+
+def test_a_concept_with_no_identifier_at_all_is_refused_and_counted(tmp_path):
+    """Minting from an empty key would collapse every such concept onto ONE
+    class_uuid, so they would silently overwrite each other's names."""
+    path = _write(tmp_path, _concept("", "", "Anonymous [MoA]")
+                  + _concept("", "", "Also Anonymous [MoA]"))
+    result = medrt.parse(path)
+    assert result.classes == []
+    assert result.unidentified_concepts == 2
+
+
+def test_either_identifier_alone_is_enough(tmp_path):
+    """A concept with only a code is still identifiable; the code stands in as the
+    NUI (and vice versa). Only carrying neither is fatal."""
+    path = _write(tmp_path, _concept("N0000000003", "", "Code Only [MoA]"))
+    only = medrt.parse(path).classes
+    assert [(c.nui, c.code) for c in only] == [("N0000000003", "N0000000003")]
+
+
+def test_edges_resolve_when_code_and_nui_differ(tmp_path):
+    """Associations reference endpoints by CODE while identity is the NUI. They
+    are equal in the 2026.07.06 release, so matching endpoint codes against NUIs
+    works by luck today; were upstream to let them diverge, every edge would fail
+    to match and the DAG would come back EMPTY with no error and no count."""
+    path = _write(
+        tmp_path,
+        _concept("C-PARENT", "N0000000004", "Parent [MoA]")
+        + _concept("C-CHILD", "N0000000005", "Child [MoA]"),
+        _assoc("Parent Of", "MED-RT", "C-PARENT", "MED-RT", "C-CHILD"))
+    # Edges are emitted in terms of NUIs, because that is what class_uuid derives
+    # from -- but they are FOUND by code.
+    assert medrt.parse(path).parents == [
+        medrt.ParentEdge(child_nui="N0000000005", parent_nui="N0000000004")]
+
+
+def test_epc_membership_also_resolves_by_code(tmp_path):
+    """The same code-vs-NUI rule on the hierarchical EPC membership path."""
+    path = _write(
+        tmp_path,
+        _concept("C-EPC", "N0000000006", "Some Class [EPC]", cty="EPC"),
+        _assoc("Parent Of", "MED-RT", "C-EPC", "RxNorm", "161"))
+    assert medrt.parse(path).memberships == [
+        medrt.MembershipAssertion("161", "N0000000006", "has_EPC")]
 
 
 # ---- the subclass DAG ------------------------------------------------------
@@ -77,6 +177,28 @@ def test_drops_hierarchy_into_unlicensed_or_uningested_endpoints():
     nuis = {c.nui for c in parsed().classes}
     for edge in parsed().parents:
         assert edge.child_nui in nuis and edge.parent_nui in nuis
+    # The check above is only meaningful while the fixture actually CONTAINS an
+    # edge reaching in from an unlicensed namespace. Pin that it still does.
+    assert "<from_namespace>SNOMED CT</from_namespace>" in FIX.read_text(encoding="utf-8")
+
+
+def test_the_fixture_redistributes_no_out_of_scope_terms_or_codes():
+    """A licence rule about the REPOSITORY, not the database.
+
+    The parser refusing a SNOMED edge keeps unlicensed content out of the DB, but
+    the fixture is a committed file in an AGPL-licensed repo: a SNOMED term sitting
+    in it is redistributed no matter what the parser does, and would contradict
+    NOTICE. make_medrt_subset.py therefore redacts the term and code of every
+    endpoint outside MED-RT/RxNorm; this fails if a regeneration ever drops that.
+    """
+    text = FIX.read_text(encoding="utf-8")
+    out_of_scope = re.findall(
+        r"<(from|to)_namespace>(?!MED-RT<|RxNorm<)([^<]+)</\1_namespace>\s*"
+        r"<\1_name>([^<]*)</\1_name>\s*<\1_code>([^<]*)</\1_code>", text)
+    assert out_of_scope, "fixture no longer exercises an out-of-scope endpoint"
+    for _side, namespace, name, code in out_of_scope:
+        assert (name, code) == ("REDACTED", "REDACTED"), \
+            f"unredacted {namespace} content in the committed fixture: {name!r} / {code!r}"
 
 
 # ---- membership ------------------------------------------------------------
@@ -113,9 +235,15 @@ def test_indication_and_contraindication_are_not_membership():
 
 
 def test_has_sc_into_mesh_is_dropped():
-    """has_SC targets MeSH, which belongs to slice 2b and is not ours to bundle here."""
+    """has_SC targets MeSH, which belongs to slice 2b and is not ours to bundle here.
+
+    Asserted against the fixture's own has_SC count rather than against the shape of
+    a MeSH code: those codes are redacted in the fixture, so a code-shape assertion
+    would pass whether or not the parser did anything.
+    """
+    text = FIX.read_text(encoding="utf-8")
+    assert text.count("<name>has_SC</name>") == 2, "fixture no longer exercises has_SC"
     assert all(m.relationship != "has_SC" for m in parsed().memberships)
-    assert all(not m.class_nui.startswith("M") for m in parsed().memberships)
 
 
 def test_every_membership_points_at_an_ingested_class():

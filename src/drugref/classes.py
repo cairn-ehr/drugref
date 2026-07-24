@@ -21,24 +21,34 @@ from drugref.ingest.medrt import ClassConcept
 
 
 def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
-                 ingest_run_id: int) -> uuid.UUID:
-    """Register a class (or refresh its cached name) and return its UUID.
+                 ingest_run_id: int) -> tuple[uuid.UUID, bool]:
+    """Register a class (or refresh its cached name).
+
+    Returns (class_uuid, is_new), where is_new is True only the first time drugref
+    ever saw this class. The caller needs that distinction because classes
+    ACCUMULATE while edges are rebuilt, so "classes in this release" and "classes
+    added by this run" are genuinely different numbers and a summary that reported
+    only one of them would be ambiguous.
 
     The UUID is derived, never looked up, so this is safe to call on every ingest.
-    ON CONFLICT refreshes the name and type caches -- upstream does rename classes
-    -- while first_seen_ingest is deliberately left out of the SET list, because it
-    records when drugref FIRST saw the class, not when it was last confirmed.
+    ON CONFLICT refreshes the name, type and code caches -- upstream does rename
+    classes -- while first_seen_ingest is deliberately left out of the SET list,
+    because it records when drugref FIRST saw the class, not when it was last
+    confirmed. That is also what makes it the newness test: the row is new to us
+    exactly when the value that came back is this run's id.
     """
     class_uuid = ids.mint_class_uuid(concept.nui)
-    conn.execute(
+    first_seen = conn.execute(
         "INSERT INTO drugref.substance_class "
         "(class_uuid, medrt_nui, medrt_code, class_name, concept_type, first_seen_ingest) "
         "VALUES (%s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (class_uuid) DO UPDATE SET "
-        "  class_name = EXCLUDED.class_name, concept_type = EXCLUDED.concept_type",
-        (class_uuid, concept.nui, concept.nui, concept.name,
-         concept.concept_type, ingest_run_id))
-    return class_uuid
+        "  class_name = EXCLUDED.class_name, concept_type = EXCLUDED.concept_type, "
+        "  medrt_code = EXCLUDED.medrt_code "
+        "RETURNING first_seen_ingest",
+        (class_uuid, concept.nui, concept.code, concept.name,
+         concept.concept_type, ingest_run_id)).fetchone()[0]
+    return class_uuid, first_seen == ingest_run_id
 
 
 def clear_source_edges(conn: psycopg.Connection, source: str) -> None:
@@ -84,20 +94,37 @@ def add_membership(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     return cur.rowcount == 1
 
 
-def resolve_moiety_by_rxcui(conn: psycopg.Connection, rxcui: str) -> uuid.UUID | None:
-    """Find the moiety carrying this RxCUI, or None if we do not have it.
+def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
+    """Build the RxCUI -> moieties index the membership join runs on.
 
-    This is the membership join key, and it needs no new bridge data: MED-RT states
-    class membership against RxNorm ingredient concepts whose code IS the RxCUI,
-    and slice 1 already attached an RXNORM_IN claim to every moiety.
+    This is the join key, and it needs no new bridge data: MED-RT states class
+    membership against RxNorm ingredient concepts whose code IS the RxCUI, and
+    slice 1 already attached an RXNORM_IN claim to every moiety.
 
     Superseded claims are excluded so a corrected-away RxCUI cannot resurrect a
-    stale membership (the same rule chebi.py applies to InChIKey lookups). Returns
-    the first match: an RxCUI identifies a single ingredient upstream, so a second
-    hit would be an upstream data error rather than a case worth modelling.
+    stale membership (the same rule chebi.py applies to InChIKey lookups).
+
+    EVERY claimant is kept, not the first. identity_claim is unique on
+    (moiety_uuid, scheme, value), so nothing stops two moieties from claiming one
+    RxCUI, and slice 1 takes the value straight from the UNII feed's RXCUI column
+    without checking it is unique across moieties. Picking one arbitrarily would
+    both drop a real membership and make the ingest non-reproducible, since an
+    unordered single-row read may answer differently run to run. chebi.py resolved
+    the identical question the identical way for InChIKey; the two lookups deserve
+    the same rule. The ordering makes the retained order deterministic too.
+
+    Read WHOLE rather than queried per assertion: MED-RT asserts ~27,500
+    memberships over ~6,000 distinct ingredients, so a per-assertion lookup re-asks
+    an already-answered question four times in five. The index is bounded by the
+    moiety registry -- one entry per moiety carrying an RxCUI -- so it grows with
+    the registry, not with MED-RT; if that ever outgrows memory it is the same
+    conversation as the whole-file parse, tracked in the production-ingest
+    follow-up rather than solved differently here.
     """
-    row = conn.execute(
-        "SELECT moiety_uuid FROM drugref.identity_claim "
-        "WHERE scheme = 'RXNORM_IN' AND value = %s AND superseded_by IS NULL "
-        "LIMIT 1", (rxcui,)).fetchone()
-    return row[0] if row else None
+    index: dict[str, list[uuid.UUID]] = {}
+    for value, moiety_uuid in conn.execute(
+            "SELECT value, moiety_uuid FROM drugref.identity_claim "
+            "WHERE scheme = 'RXNORM_IN' AND superseded_by IS NULL "
+            "ORDER BY value, moiety_uuid").fetchall():
+        index.setdefault(value, []).append(moiety_uuid)
+    return index

@@ -119,9 +119,14 @@ def test_upsert_class_is_idempotent_and_refreshes_the_name(conn):
     """Re-ingest must not duplicate, and an upstream rename should land -- but
     first_seen_ingest records when we FIRST saw the class and must not move."""
     r1, r2 = _run(conn), _run(conn)
-    cu = classes.upsert_class(conn, ClassConcept("N0000123456", "Old Name [MoA]", "MoA"), r1)
-    again = classes.upsert_class(conn, ClassConcept("N0000123456", "New Name [MoA]", "MoA"), r2)
+    cu, was_new = classes.upsert_class(
+        conn, ClassConcept("N0000123456", "N0000123456", "Old Name [MoA]", "MoA"), r1)
+    again, was_new_again = classes.upsert_class(
+        conn, ClassConcept("N0000123456", "N0000123456", "New Name [MoA]", "MoA"), r2)
     assert cu == again == ids.mint_class_uuid("N0000123456")
+    # New only the first time: that is what lets a run report "classes added"
+    # separately from "classes this release asserts".
+    assert (was_new, was_new_again) == (True, False)
     name, first = conn.execute(
         "SELECT class_name, first_seen_ingest FROM drugref.substance_class WHERE class_uuid = %s",
         (cu,)).fetchone()
@@ -129,18 +134,45 @@ def test_upsert_class_is_idempotent_and_refreshes_the_name(conn):
     assert first == r1
 
 
-def test_resolve_moiety_by_rxcui_uses_the_rxnorm_in_claim(conn):
+def test_upsert_class_stores_the_published_code_not_the_nui(conn):
+    """medrt_code is the code AS PUBLISHED. It equals the NUI throughout the
+    2026.07.06 release, so only a concept where they differ can show the column is
+    genuinely carrying the code rather than a second copy of the identity key."""
+    cu, _ = classes.upsert_class(
+        conn, ClassConcept("N0000654321", "SOME-CODE", "Odd One [MoA]", "MoA"), _run(conn))
+    assert conn.execute(
+        "SELECT medrt_nui, medrt_code FROM drugref.substance_class WHERE class_uuid = %s",
+        (cu,)).fetchone() == ("N0000654321", "SOME-CODE")
+
+
+def test_moieties_by_rxcui_indexes_the_rxnorm_in_claims(conn):
     """The membership join key: MED-RT ingredients carry an RxCUI, and slice 1
     already stores one as an RXNORM_IN claim per moiety."""
     run_id = _run(conn, source="UNII")
     m = _moiety(conn, run_id)
     conn.execute("INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
                  "VALUES (%s, 'RXNORM_IN', '4242', %s)", (m, run_id))
-    assert classes.resolve_moiety_by_rxcui(conn, "4242") == m
-    assert classes.resolve_moiety_by_rxcui(conn, "no-such-rxcui") is None
+    index = classes.moieties_by_rxcui(conn)
+    assert index["4242"] == [m]
+    assert "no-such-rxcui" not in index
 
 
-def test_resolve_moiety_ignores_superseded_claims(conn):
+def test_moieties_by_rxcui_keeps_every_claimant_not_just_one(conn):
+    """identity_claim is unique on (moiety, scheme, value), so two moieties CAN
+    claim one RxCUI -- slice 1 copies the value straight out of the UNII feed
+    without checking. Keeping one of them would drop a real membership and make the
+    ingest non-reproducible, since an unordered single-row read may pick
+    differently run to run. chebi.py made the same call for InChIKey."""
+    run_id = _run(conn, source="UNII")
+    a, b = _moiety(conn, run_id, "alphium"), _moiety(conn, run_id, "betium")
+    for m in (a, b):
+        conn.execute("INSERT INTO drugref.identity_claim "
+                     "(moiety_uuid, scheme, value, ingest_run) "
+                     "VALUES (%s, 'RXNORM_IN', '7777', %s)", (m, run_id))
+    assert classes.moieties_by_rxcui(conn)["7777"] == sorted([a, b])
+
+
+def test_moieties_by_rxcui_ignores_superseded_claims(conn):
     """A corrected-away RxCUI must not keep dragging in stale memberships."""
     run_id = _run(conn, source="UNII")
     m = _moiety(conn, run_id)
@@ -152,8 +184,19 @@ def test_resolve_moiety_ignores_superseded_claims(conn):
         "VALUES (%s, 'RXNORM_IN', '6666', %s) RETURNING identity_claim_id", (m, run_id)).fetchone()[0]
     conn.execute("UPDATE drugref.identity_claim SET superseded_by = %s WHERE identity_claim_id = %s",
                  (new, old))
-    assert classes.resolve_moiety_by_rxcui(conn, "5555") is None
-    assert classes.resolve_moiety_by_rxcui(conn, "6666") == m
+    index = classes.moieties_by_rxcui(conn)
+    assert "5555" not in index
+    assert index["6666"] == [m]
+
+
+def test_moieties_by_rxcui_ignores_other_schemes(conn):
+    """Only RXNORM_IN is a membership join key. A UNII or CAS value that happens to
+    read like an RxCUI must not classify anything."""
+    run_id = _run(conn, source="UNII")
+    m = _moiety(conn, run_id)
+    conn.execute("INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
+                 "VALUES (%s, 'CAS', '9999', %s)", (m, run_id))
+    assert "9999" not in classes.moieties_by_rxcui(conn)
 
 
 def test_clear_source_edges_removes_only_that_sources_rows(conn):
@@ -167,7 +210,13 @@ def test_clear_source_edges_removes_only_that_sources_rows(conn):
                  "(child_class_uuid, parent_class_uuid, ingest_run) VALUES (%s, %s, %s)",
                  (parent, child, other_run))
     classes.clear_source_edges(conn, "MED-RT")
-    assert conn.execute("SELECT ingest_run FROM drugref.class_parent").fetchall() == [(other_run,)]
+    # Scoped to this test's own two classes, for the reason the deletability test
+    # above gives: other modules' orchestrators commit their own edges, so a global
+    # query would be asserting about their rows rather than about clear_source_edges.
+    assert conn.execute(
+        "SELECT ingest_run FROM drugref.class_parent "
+        "WHERE child_class_uuid = ANY(%s) AND parent_class_uuid = ANY(%s)",
+        ([child, parent], [child, parent])).fetchall() == [(other_run,)]
 
 
 def test_repeated_edges_and_memberships_do_not_duplicate(conn):

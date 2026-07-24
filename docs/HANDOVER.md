@@ -20,7 +20,7 @@ attach node-locally without ever contaminating interoperability).
 ## ⇒ NEXT
 
 **Slice 1** (active-moiety identity spine) is ✅ merged (PR #1, `14c40ec`). **Slice 2a** (MED-RT
-classification DAG + membership) is ✅ built on this branch — **91 tests green** with the DB DSN set.
+classification DAG + membership) is ✅ built on this branch — **102 tests green** with the DB DSN set.
 
 The next build slice is **Slice 2b — MeSH Pharmacological Actions** (see [ROADMAP.md](ROADMAP.md)). It needs
 no schema change; it is blocked on a **UNII→MeSH (or ChEBI→MeSH) bridge**, because MeSH membership has no
@@ -158,8 +158,21 @@ Slice-2a follow-ups:
   the natural substrate for letting curated knowledge inherit along the DAG (the Slice 5 economy lever).
 - **Verify against the next MED-RT release** — the parser's namespace/CTY/relationship handling was
   validated against `2026.07.06`. Re-run `make_medrt_subset.py` and the suite when the release rolls.
+  Regeneration must keep the endpoint redaction (a test enforces it) — see below.
+- **Production ingest still writes row-at-a-time** ([#7](https://github.com/cairn-ehr/drugref/issues/7)) —
+  the RxCUI index is now read once per run rather than per assertion, but classes, DAG edges and memberships
+  are still individual `INSERT`s (~31k round trips on the full release). `executemany`/`COPY` belongs with
+  the `iterparse` + batch-commit work.
 
-Fixed in the post-review pass (no longer open): ChEBI InChIKey lookup now filters `superseded_by IS NULL` and
+Fixed in the slice-2a review pass (no longer open): the committed fixture no longer redistributes SNOMED CT
+(or MeSH) terms and codes — `make_medrt_subset.py` redacts every endpoint outside MED-RT/RxNorm, and a test
+pins it; the RxCUI membership join returns **all** claimants rather than an arbitrary first (matching
+`chebi.py`, and removing a source of run-to-run non-determinism); the RxCUI index is read once per run
+instead of once per assertion; `medrt_code` now stores the published code and edge endpoints resolve
+code → NUI, so a future divergence cannot silently empty the DAG; the parser refuses (and counts) concepts
+that are inactive or carry no identifier; `MedrtSummary` separates classes-in-release from classes-added.
+
+Fixed in the slice-1 post-review pass (no longer open): ChEBI InChIKey lookup now filters `superseded_by IS NULL` and
 attaches to *all* matching moieties; `add_claim` reports insert-vs-conflict (no per-row probe); `db.connect`
 raises a clear error on missing DSN; `gate.inn_display_name` folds via `_norm()`; `claims.py` docstring +
 `conn` param naming; pyproject SPDX `license` string + `readme`/`license-files`.
