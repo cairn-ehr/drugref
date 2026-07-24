@@ -21,7 +21,7 @@ def _class(conn, run_id, code, cty="MoA"):
     conn.execute(
         "INSERT INTO drugref.substance_class "
         "(class_uuid, source, source_code, published_code, class_name, concept_type, "
-        " first_seen_ingest) VALUES (%s, 'MED-RT', %s, %s, 'C', %s, %s)",
+        " first_seen_ingest) VALUES (%s, 'MED-RT', %s, %s, 'Test Class', %s, %s)",
         (cu, code, code, cty, run_id))
     return cu
 

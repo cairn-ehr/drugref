@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS drugref.class_contraindication (
     -- may_treat/may_prevent/induces (indications), and CI_with / CI_ChemClass --
     -- the last two are drug-disease / drug-drug too but MeSH-keyed, so they need
     -- MeSH descriptor ingest first and belong to slice 5b.
+    -- COUPLED to ddi_candidate_pair's CASE (below): every relationship admitted
+    -- here MUST also be mapped to its has_* membership axis there, or the view
+    -- expands it to zero pairs SILENTLY (an unmapped CASE arm yields NULL, and
+    -- `m.relationship = NULL` joins nothing). When slice 5b widens this CHECK, widen
+    -- the CASE in lockstep.
     CONSTRAINT class_contraindication_relationship
         CHECK (relationship IN ('CI_MoA', 'CI_PE')),
     -- Symmetric with substance_class.source; widened per source as authorities land.
@@ -56,8 +61,18 @@ CREATE INDEX IF NOT EXISTS class_contraindication_by_object
 -- inheritance is intentionally NOT applied here: this direct-membership view is the
 -- conservative default, and its blast radius is small enough to reason about; the
 -- reviewed overlay (a later slice), not this projection, decides what alerts.
+--
+-- DIRECTIONAL, not symmetric: moiety_a is the drug the CI is ABOUT (the subject),
+-- moiety_b the co-administered partner. A consumer wanting "either direction" of a
+-- pair must not assume one row implies its mirror -- (b, a) appears only if b
+-- independently carries its own CI against a's class, which is a distinct assertion.
+--
+-- The membership join is deliberately NOT filtered by source: it expands over every
+-- authority's membership of the object class. Harmless while MED-RT is the only
+-- membership source (db/002/003); when a second source lands, revisit whether a
+-- MED-RT CI rule should fan out over another authority's members.
 CREATE OR REPLACE VIEW drugref.ddi_candidate_pair AS
-SELECT ci.subject_moiety_uuid AS moiety_a,
+SELECT ci.subject_moiety_uuid AS moiety_a,        -- the drug the CI is ABOUT (subject)
        m.moiety_uuid          AS moiety_b,        -- the co-administered drug
        ci.relationship,
        ci.object_class_uuid   AS via_class,
@@ -66,6 +81,8 @@ SELECT ci.subject_moiety_uuid AS moiety_a,
 FROM   drugref.class_contraindication ci
 JOIN   drugref.class_membership m
        ON m.class_uuid = ci.object_class_uuid
+      -- CASE arms COUPLED to the relationship CHECK above: an unmapped predicate
+      -- yields NULL here and joins nothing. Keep the two in lockstep (see CHECK).
       AND m.relationship = CASE ci.relationship
                               WHEN 'CI_MoA' THEN 'has_MoA'
                               WHEN 'CI_PE'  THEN 'has_PE'
