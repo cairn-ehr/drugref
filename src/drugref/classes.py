@@ -9,7 +9,7 @@ difference is the point:
 * This module manages a REBUILDABLE PROJECTION. MED-RT is an upstream authority we
   re-ingest wholesale, and its edges are meant to be dropped and rebuilt -- so
   clear_source_edges() deliberately DELETEs. What survives a rebuild unchanged is
-  class IDENTITY: class_uuid is a pure function of the MED-RT NUI, so every class
+  class IDENTITY: class_uuid is a pure function of (source, code), so every class
   comes back with exactly the UUID it had before.
 """
 import uuid
@@ -43,6 +43,11 @@ def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
     exactly when the value that came back is this run's id.
     """
     class_uuid = ids.mint_class_uuid(source, concept.nui)
+    # Store the SAME canonicalisation the UUID was minted from, so the stored
+    # source and the identity key can never drift apart -- two spellings of one
+    # authority would otherwise share a class_uuid yet be stored as two strings,
+    # and a per-source rebuild query would then miss half its own rows.
+    stored_source = ids.canonical_source(source)
     first_seen = conn.execute(
         "INSERT INTO drugref.substance_class "
         "(class_uuid, source, source_code, published_code, class_name, concept_type, "
@@ -51,7 +56,7 @@ def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
         "  class_name = EXCLUDED.class_name, concept_type = EXCLUDED.concept_type, "
         "  published_code = EXCLUDED.published_code "
         "RETURNING first_seen_ingest",
-        (class_uuid, source, concept.nui, concept.code, concept.name,
+        (class_uuid, stored_source, concept.nui, concept.code, concept.name,
          concept.concept_type, ingest_run_id)).fetchone()[0]
     return class_uuid, first_seen == ingest_run_id
 

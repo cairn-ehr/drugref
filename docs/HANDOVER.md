@@ -76,9 +76,15 @@ the CHECKs with `PA` / `has_PA`. `ids.mint_class_uuid(source, code)` replaces th
   rebuilt on every ingest — so a drift in the derivation would silently re-key 3,634 classes and orphan
   every edge, with no error anywhere. `ids._SOURCE_KEY_PREFIX` therefore maps `MED-RT → "MEDRT"` (the
   prefix 2a minted with), and three **frozen UUID literals** captured before the refactor pin it.
+- **The stored `source` and the UUID key derive from one canonicalisation** (`ids.canonical_source`), so a
+  second spelling of one authority (`"MESH"` beside `"MeSH"`) can't share a `class_uuid` yet be stored as
+  two strings and split a per-source rebuild. A `db/003` CHECK on `substance_class.source` is the floor:
+  extend it **and** `ids._SOURCE_CANONICAL` together when a new authority lands.
 - **db/003 is a separate migration, not an edit to 002**, because 002 uses `CREATE TABLE IF NOT EXISTS`:
-  an edit there would never reach a database that already ran it. Every statement is guarded, and a test
-  now replays the migrations over a live class row to prove the renames survive a second pass.
+  an edit there would never reach a database that already ran it. Every statement is guarded — the
+  constraint steps skip the drop/add entirely once the widened shape is present, so a replay neither errors
+  nor rescans — and tests replay the migrations both over an already-migrated row and over a populated
+  pre-rename table (with an edge) to prove the renames survive.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
@@ -200,8 +206,9 @@ Fixed in the slice-2a review pass (no longer open): the committed fixture no lon
 (or MeSH) terms and codes — `make_medrt_subset.py` redacts every endpoint outside MED-RT/RxNorm, and a test
 pins it; the RxCUI membership join returns **all** claimants rather than an arbitrary first (matching
 `chebi.py`, and removing a source of run-to-run non-determinism); the RxCUI index is read once per run
-instead of once per assertion; `medrt_code` (since 2a.1: `published_code`) stores the published code and edge endpoints resolve
-code → NUI, so a future divergence cannot silently empty the DAG; the parser refuses (and counts) concepts
+instead of once per assertion; `medrt_code` (since 2a.1: `published_code`) stores the published code and
+edge endpoints resolve code → NUI, so a future divergence cannot silently empty the DAG; the parser
+refuses (and counts) concepts
 that are inactive or carry no identifier; `MedrtSummary` separates classes-in-release from classes-added.
 
 Fixed in the slice-1 post-review pass (no longer open): ChEBI InChIKey lookup now filters `superseded_by IS NULL` and

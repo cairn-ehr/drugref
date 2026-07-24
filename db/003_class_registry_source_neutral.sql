@@ -47,38 +47,83 @@ BEGIN
     END IF;
 END $$;
 
+-- The steps below add or widen constraints. Each is wrapped so that a REPLAY --
+-- which runs the whole db/ directory again over a database already in the target
+-- shape -- neither errors nor silently rebuilds an index / rescans the table to
+-- re-validate an identical CHECK. The guard is "is the finished shape already
+-- present?", so the one pass that actually upgrades (old 002-shape constraint in
+-- place) does the drop-and-add, and every pass after it is a cheap catalog read.
+
 -- 3. Uniqueness becomes per-authority. The old global UNIQUE on medrt_nui would
 --    reject a MeSH code that happened to equal a MED-RT one -- and, worse, would
 --    have made the two look like the same class.
 ALTER TABLE drugref.substance_class
     DROP CONSTRAINT IF EXISTS substance_class_medrt_nui_key;
-ALTER TABLE drugref.substance_class
-    DROP CONSTRAINT IF EXISTS substance_class_source_code_unique;
-ALTER TABLE drugref.substance_class
-    ADD CONSTRAINT substance_class_source_code_unique UNIQUE (source, source_code);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'substance_class_source_code_unique'
+                     AND conrelid = 'drugref.substance_class'::regclass) THEN
+        ALTER TABLE drugref.substance_class
+            ADD CONSTRAINT substance_class_source_code_unique UNIQUE (source, source_code);
+    END IF;
+END $$;
 
--- 4. Widen the axis vocabularies for MeSH.
+-- 4. Constrain the authority spelling itself. src/drugref/ids.canonical_source()
+--    folds every incidental spelling ("MESH", " mesh ", the hyphen-less "MEDRT"
+--    the UUID key uses) to one of these before classes.upsert_class writes a row,
+--    so the stored source and the class_uuid minted from it stay in lockstep. This
+--    CHECK is the database's own refusal of any third spelling reaching the table
+--    by another path. Extend it and _SOURCE_CANONICAL together when a source lands.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'substance_class_source'
+                     AND conrelid = 'drugref.substance_class'::regclass) THEN
+        ALTER TABLE drugref.substance_class
+            ADD CONSTRAINT substance_class_source
+            CHECK (source IN ('MED-RT', 'MeSH'));
+    END IF;
+END $$;
+
+-- 5. Widen the axis vocabularies for MeSH.
 --    'PA' is MeSH's Pharmacological Action -- a classification axis in exactly the
 --    sense the MED-RT six are, so it joins them rather than getting its own table.
 --    Still deliberately EXCLUDED: MED-RT's HC (the 26 alphabetical navigation
 --    bins) and EXT. See db/002 for why.
-ALTER TABLE drugref.substance_class
-    DROP CONSTRAINT IF EXISTS substance_class_concept_type;
-ALTER TABLE drugref.substance_class
-    ADD CONSTRAINT substance_class_concept_type
-    CHECK (concept_type IN ('MoA', 'PE', 'TC', 'PK', 'EPC', 'APC', 'PA'));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'substance_class_concept_type'
+                     AND conrelid = 'drugref.substance_class'::regclass
+                     AND pg_get_constraintdef(oid) LIKE '%''PA''%') THEN
+        ALTER TABLE drugref.substance_class
+            DROP CONSTRAINT IF EXISTS substance_class_concept_type;
+        ALTER TABLE drugref.substance_class
+            ADD CONSTRAINT substance_class_concept_type
+            CHECK (concept_type IN ('MoA', 'PE', 'TC', 'PK', 'EPC', 'APC', 'PA'));
+    END IF;
+END $$;
 
 -- 'has_PA' is drugref's label for MeSH pharmacological-action membership, kept
 -- symmetric with the has_* labels the MED-RT axes use. Indication /
 -- contraindication relations (may_treat, CI_with, ...) remain NOT membership --
 -- they are curated-overlay data for a later slice.
-ALTER TABLE drugref.class_membership
-    DROP CONSTRAINT IF EXISTS class_membership_relationship;
-ALTER TABLE drugref.class_membership
-    ADD CONSTRAINT class_membership_relationship
-    CHECK (relationship IN ('has_MoA', 'has_PE', 'has_TC', 'has_PK', 'has_EPC', 'has_PA'));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'class_membership_relationship'
+                     AND conrelid = 'drugref.class_membership'::regclass
+                     AND pg_get_constraintdef(oid) LIKE '%''has_PA''%') THEN
+        ALTER TABLE drugref.class_membership
+            DROP CONSTRAINT IF EXISTS class_membership_relationship;
+        ALTER TABLE drugref.class_membership
+            ADD CONSTRAINT class_membership_relationship
+            CHECK (relationship IN ('has_MoA', 'has_PE', 'has_TC', 'has_PK', 'has_EPC', 'has_PA'));
+    END IF;
+END $$;
 
--- 5. "Which classes does this authority define?" is now a real question, asked on
+-- 6. "Which classes does this authority define?" is now a real question, asked on
 --    every per-source rebuild.
 CREATE INDEX IF NOT EXISTS substance_class_by_source
     ON drugref.substance_class (source);

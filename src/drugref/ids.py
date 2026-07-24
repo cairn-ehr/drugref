@@ -35,10 +35,23 @@ def mint_moiety_uuid(unii: str) -> uuid.UUID:
     return uuid.uuid5(MOIETY_NAMESPACE, key)
 
 
-# The key prefix each classification authority contributes to a class UUID.
+# The ONE canonical spelling of each authority's name, keyed by its normalised
+# (stripped, upper-cased) form. This is the single source of truth for "how is
+# this authority spelled", and both things that must agree derive from it: the
+# class_uuid key (below) and the string stored in substance_class.source (via
+# classes.upsert_class). Keeping them on the same canonicalisation is what stops
+# "MeSH" and "MESH" minting one UUID while being stored as two different strings
+# -- a silent split that would make a per-source rebuild query miss half its rows.
+_SOURCE_CANONICAL = {
+    "MED-RT": "MED-RT",
+    "MEDRT":  "MED-RT",   # the UUID-key spelling; must fold into the display one
+    "MESH":   "MeSH",
+}
+
+# The key prefix each canonical authority contributes to a class UUID.
 #
-# Why an explicit table rather than just upper-casing the source name: MED-RT's
-# UUIDs were minted with the unhyphenated "MEDRT:" prefix, while the source is
+# Why an explicit table rather than just upper-casing the name: MED-RT's UUIDs
+# were minted with the unhyphenated "MEDRT:" prefix, while the authority is
 # spelled "MED-RT" everywhere else (ingest_run.source, clear_source_edges). Those
 # two spellings MUST resolve to the same key or a rebuild silently re-keys every
 # MED-RT class and orphans every edge pointing at the old UUIDs. Stripping
@@ -48,6 +61,20 @@ def mint_moiety_uuid(unii: str) -> uuid.UUID:
 _SOURCE_KEY_PREFIX = {
     "MED-RT": "MEDRT",   # frozen: the prefix slice 2a's class_uuids were minted with
 }
+
+
+def canonical_source(source: str) -> str:
+    """The one canonical spelling of an authority's name ("MED-RT", "MeSH", ...).
+
+    Every incidental spelling of an authority -- the hyphen-less "MEDRT" the UUID
+    key uses, a case or whitespace slip in an XML feed -- folds to a single string
+    here, so the value stored in substance_class.source and the value the
+    class_uuid is minted from can never diverge. An unrecognised source is returned
+    stripped but otherwise untouched; the db/003 CHECK on substance_class.source is
+    what refuses one outright, so an unknown authority fails loudly at write time
+    rather than being silently stored under two spellings.
+    """
+    return _SOURCE_CANONICAL.get(source.strip().upper(), source.strip())
 
 
 def mint_class_uuid(source: str, code: str) -> uuid.UUID:
@@ -70,6 +97,7 @@ def mint_class_uuid(source: str, code: str) -> uuid.UUID:
     comes back with exactly the UUID it had before. Immortality across a *code*
     change is out of scope, the same caveat the moiety spine records for a UNII.
     """
-    src = source.strip().upper()
-    key = f"{_SOURCE_KEY_PREFIX.get(src, src)}:{code.strip().upper()}"
+    canon = canonical_source(source)
+    prefix = _SOURCE_KEY_PREFIX.get(canon, canon.upper())
+    key = f"{prefix}:{code.strip().upper()}"
     return uuid.uuid5(CLASS_NAMESPACE, key)
