@@ -6,3 +6,8 @@ Seed data attributions:
 - ChEBI — EMBL-EBI, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 - International Nonproprietary Names (INN) — World Health Organization (public domain).
 - RxNorm — U.S. National Library of Medicine (public domain, prescribable subset).
+- MED-RT (Medication Reference Terminology) — U.S. Department of Veterans Affairs /
+  Veterans Health Administration, distributed via NCI Enterprise Vocabulary Services
+  (a work of the U.S. federal government; public domain in the US, UMLS restriction
+  level 0). drugref ingests only MED-RT-namespace class concepts and RxNorm-namespace
+  ingredient references; no SNOMED CT content is ingested or redistributed.
