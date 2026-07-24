@@ -144,14 +144,14 @@ Post-review (PR #1) findings that were larger than a cleanup are now filed as Gi
 - **Batch-commit ingest** — `ingest/run.py` loads a whole file in one transaction (fine for fixtures; a real
   UNII file is hundreds of thousands of rows). `ingest/medrt_run.py` has the same shape, and its parser
   additionally holds the entire 45 MB XML in memory via `ElementTree.parse`. Batch commits and, for MED-RT,
-  `iterparse` before production.
+  `iterparse` before production ([#7](https://github.com/cairn-ehr/drugref/issues/7)).
 
-Slice-2a follow-ups (filed with this work):
+Slice-2a follow-ups:
 
-- **MED-RT licence deed** — the public-domain determination rests on federal authorship + UMLS restriction
+- **MED-RT licence deed** ([#6](https://github.com/cairn-ehr/drugref/issues/6)) — the public-domain determination rests on federal authorship + UMLS restriction
   level 0 + open EVS distribution. NLM's formal source-release doc was HTTP 502 at design time, and the
   distribution ships **no** licence/terms file. Re-confirm against the live NLM deed before production.
-- **Class-level `has_*` assertions unused** — MED-RT also asserts `MED-RT → MED-RT` `has_MoA`/`has_PE`/
+- **Class-level `has_*` assertions unused** ([#8](https://github.com/cairn-ehr/drugref/issues/8)) — MED-RT also asserts `MED-RT → MED-RT` `has_MoA`/`has_PE`/
   `has_TC` (an EPC declaring its own mechanism/effect, ~756 edges). These describe *classes*, so they are
   the natural substrate for letting curated knowledge inherit along the DAG (the Slice 5 economy lever).
 - **Verify against the next MED-RT release** — the parser's namespace/CTY/relationship handling was
