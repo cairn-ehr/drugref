@@ -42,7 +42,41 @@ ROADMAP Slice 5 into **5a** (this) / **5b** (MeSH-keyed CI_with/CI_ChemClass/may
 (the curated signed overlay).
 
 **⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications) or Slice 3 (composition tree: salts/esters/
-hydrates).** Before production, one measured-but-
+hydrates).**
+
+### Slice 5b — MeSH-keyed MED-RT contraindications & indications (the task)
+
+The rest of MED-RT's interaction/indication content, all of it `RxNorm → MeSH` and therefore **blocked
+today only because drugref has not ingested MeSH disease/chemical descriptors** (slice 2b ingested the MeSH
+**PA** subset only). Measured in the 2026.07.06 release (same file slice 2a/5a parse):
+
+- **`CI_with`** — drug–**disease** contraindication ("therapeutic or co-morbid contraindication"): **11,524
+  assertions / 3,720 subjects**.
+- **`CI_ChemClass`** — drug–drug by **chemical structural class** of a co-administered ingredient: **1,939 /
+  565**.
+- **`may_treat` / `may_prevent` / `may_diagnose`** — indications: **~18,144** (a public-domain, drugref-owned
+  **MeDIC-alternative** for the drug–disease axis).
+- **`induces`** — drug-induced state / adverse effect: **170**.
+
+**What it needs, in order:**
+1. **Ingest MeSH disease + chemical descriptors** as drugref's condition/chem vocabulary. **Licence already
+   cleared** (NLM MeSH terms, same as slice 2b; attributed in `NOTICE`). The MED-RT endpoints are MeSH
+   **`M`-codes** (concept UIs, e.g. `M0006033`), so this needs an **M-code → MeSH descriptor** resolution
+   (slice 2b keyed on descriptor UI `D…`/tree numbers, not M-codes — the one genuinely new bit).
+2. **Extend the parser** (`medrt.py`) to emit these predicates once their MeSH object resolves — the loop
+   already sees and drops them (`medrt.py` trailing comment). Keep the both-endpoints-ingested scoping.
+3. **Storage:** extend `class_contraindication`'s CHECK to admit `CI_with`/`CI_ChemClass` **only after**
+   deciding object typing — `CI_with`'s object is a disease, not a `substance_class`, so it likely wants its
+   own `drug_disease_*` table(s) rather than overloading `object_class_uuid`. Indications (`may_treat` etc.)
+   are a **separate relation** again. **Design this in a 5b spec first** (mirror the 5a spec); do not
+   overload 5a's table blindly.
+4. **Same posture as 5a:** rebuildable projection, candidate tier only (MED-RT currency caveat, spec §4.3),
+   subject join via `moieties_by_rxcui`, unmatched counted never dropped.
+
+Reuse from 5a: the `interactions.py` writer pattern, the `unmatched_ci_rxcuis` counting, and the
+per-source-clear rebuild discipline. The subject side is identical; **only the MeSH object side is new.**
+
+Before production, one measured-but-
 not-yet-verified-in-production concern carries over: the parser is validated against the committed fixtures
 (extracts of the real 2026 release); run it against the full `pa2026`/`supp2026`/`desc2026` and re-confirm
 the §5 aggregate numbers before production (real files are gitignored — see "How to run / test").
