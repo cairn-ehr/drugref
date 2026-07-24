@@ -1,0 +1,1689 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- EXTRACTED FROM A REAL MED-RT RELEASE by make_medrt_subset.py. Do not hand-edit.
+     Regenerate with:  python tests/fixtures/make_medrt_subset.py <Core_MEDRT_*.xml>
+     Ingredients covered:
+       RxCUI 161: paracetamol / has_MoA, has_PE, has_PK, has_TC; no EPC; sits under an HC bin
+       RxCUI 17767: amlodipine / carries TWO EPC parents plus a MeSH has_SC
+       RxCUI 6853: magnesium sulfate / HC bin only, must end up unclassified
+       RxCUI 5640: ibuprofen / NOT in our registry, so membership must be skipped and counted
+-->
+<terminology>
+	<namespace>
+		<name>MED-RT</name>
+		<version>2026.07.06</version>
+	</namespace>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Pharmaceutical and Biological Preparations</name>
+		<code>N0000000001</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000001</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Elimination [PK]</name>
+		<code>N0000000022</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000022</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Metabolism [PK]</name>
+		<code>N0000000023</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000023</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Site of Metabolism [PK]</name>
+		<code>N0000000024</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000024</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Hepatic Metabolism [PK]</name>
+		<code>N0000000026</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000026</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Route of Excretion [PK]</name>
+		<code>N0000000041</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000041</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Renal Excretion [PK]</name>
+		<code>N0000000042</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PK</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000042</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Calcium Channel Antagonists [MoA]</name>
+		<code>N0000000069</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000069</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Prostaglandin Receptor Antagonists [MoA]</name>
+		<code>N0000000108</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000108</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Prostaglandin Receptor Interactions [MoA]</name>
+		<code>N0000000131</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000131</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Enzyme Inhibitors [MoA]</name>
+		<code>N0000000133</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000133</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Calcium Channel Interactions [MoA]</name>
+		<code>N0000000140</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000140</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>G-Protein-linked Receptor Interactions [MoA]</name>
+		<code>N0000000152</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000152</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cyclooxygenase Inhibitors [MoA]</name>
+		<code>N0000000160</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000160</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Enzyme Interactions [MoA]</name>
+		<code>N0000000163</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000163</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Ion Channel Interactions [MoA]</name>
+		<code>N0000000193</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000193</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Arterial Vasodilation [PE]</name>
+		<code>N0000008299</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008299</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cardiovascular Activity Alteration [PE]</name>
+		<code>N0000008331</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008331</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Coronary Arterial Vasodilation [PE]</name>
+		<code>N0000008375</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008375</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Eicosanoid Production [PE]</name>
+		<code>N0000008592</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008592</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Immunologically Active Molecule Production [PE]</name>
+		<code>N0000008665</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008665</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Lipid Derived Immunologically Active Molecule Production [PE]</name>
+		<code>N0000008686</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008686</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Platelet Activating Factor Production [PE]</name>
+		<code>N0000008831</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008831</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Prostaglandin Production [PE]</name>
+		<code>N0000008836</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008836</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Thromboxane Production [PE]</name>
+		<code>N0000009006</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009006</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Endocrine Activity Alteration [PE]</name>
+		<code>N0000009036</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009036</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Hypothalamic Endocrine Activity Alteration [PE]</name>
+		<code>N0000009072</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009072</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Nervous System Activity Alteration [PE]</name>
+		<code>N0000009759</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009759</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Organ System Specific Effects [PE]</name>
+		<code>N0000009770</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009770</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Vasodilation [PE]</name>
+		<code>N0000009909</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009909</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Preparations by Generic Ingredient</name>
+		<code>N0000010582</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010582</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>A [Preparations]</name>
+		<code>N0000010583</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010583</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>I [Preparations]</name>
+		<code>N0000010591</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010591</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>M [Preparations]</name>
+		<code>N0000010595</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010595</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>L-Calcium Channel Receptor Antagonists [MoA]</name>
+		<code>N0000020065</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000020065</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Dihydropyridine Calcium Channel Blocker [EPC]</name>
+		<code>N0000175421</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>EPC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175421</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Calcium Channel Blocker [EPC]</name>
+		<code>N0000175566</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>EPC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175566</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Nonsteroidal Anti-inflammatory Drug [EPC]</name>
+		<code>N0000175722</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>EPC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175722</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Central Nervous System Activity Alteration [PE]</name>
+		<code>N0000175724</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175724</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Peripheral Nervous System Activity Alteration [PE]</name>
+		<code>N0000175725</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175725</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Therapeutic Categories [TC]</name>
+		<code>N0000178293</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178293</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Anti-inflammatory Agent [TC]</name>
+		<code>N0000178306</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178306</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cardiovascular Agent [TC]</name>
+		<code>N0000178309</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178309</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Anti-anginal Agent [TC]</name>
+		<code>N0000178310</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178310</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Blood Pressure Alteration [PE]</name>
+		<code>N0000178476</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178476</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Blood Pressure [PE]</name>
+		<code>N0000178477</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178477</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cytochrome P450 Inhibitors [MoA]</name>
+		<code>N0000182136</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000182136</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cytochrome P450 3A Inhibitors [MoA]</name>
+		<code>N0000190114</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000190114</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Analgesics [TC]</name>
+		<code>N0000193809</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193809</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Calcium Channel Agent [APC]</name>
+		<code>N0000193892</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193892</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Cardiovascular Agent [APC]</name>
+		<code>N0000193893</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193893</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Enzyme Inhibitor [APC]</name>
+		<code>N0000193897</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193897</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Enzyme Interaction [APC]</name>
+		<code>N0000193898</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193898</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Ion Channel or Pump Agent [APC]</name>
+		<code>N0000193904</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193904</value>
+		</property>
+	</concept>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Prostaglandin Receptor Antagonists [MoA]</to_name>
+		<to_code>N0000000108</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Antagonists [MoA]</to_name>
+		<to_code>N0000000069</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>L-Calcium Channel Receptor Antagonists [MoA]</to_name>
+		<to_code>N0000020065</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cyclooxygenase Inhibitors [MoA]</to_name>
+		<to_code>N0000000160</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cytochrome P450 3A Inhibitors [MoA]</to_name>
+		<to_code>N0000190114</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PK</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal Excretion [PK]</to_name>
+		<to_code>N0000000042</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PK</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal Excretion [PK]</to_name>
+		<to_code>N0000000042</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PK</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Hepatic Metabolism [PK]</to_name>
+		<to_code>N0000000026</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PK</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Hepatic Metabolism [PK]</to_name>
+		<to_code>N0000000026</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Dihydropyridine Calcium Channel Blocker [EPC]</from_name>
+		<from_code>N0000175421</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>amlodipine</to_name>
+		<to_code>17767</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_SC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Dihydropyridines</to_name>
+		<to_code>M0006414</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Calcium Channel Blocker [EPC]</from_name>
+		<from_code>N0000175566</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>amlodipine</to_name>
+		<to_code>17767</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Platelet Activating Factor Production [PE]</to_name>
+		<to_code>N0000008831</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Prostaglandin Production [PE]</to_name>
+		<to_code>N0000008836</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Prostaglandin Production [PE]</to_name>
+		<to_code>N0000008836</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Thromboxane Production [PE]</to_name>
+		<to_code>N0000009006</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Nonsteroidal Anti-inflammatory Drug [EPC]</from_name>
+		<from_code>N0000175722</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>ibuprofen</to_name>
+		<to_code>5640</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_SC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Anti-Inflammatory Agents, Non-Steroidal</to_name>
+		<to_code>M0001335</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Coronary Arterial Vasodilation [PE]</to_name>
+		<to_code>N0000008375</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anti-anginal Agent [TC]</to_name>
+		<to_code>N0000178310</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>may_treat</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Arthritis, Rheumatoid</to_name>
+		<to_code>M0001750</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>A [Preparations]</from_name>
+		<from_code>N0000010583</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>acetaminophen</to_name>
+		<to_code>161</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>A [Preparations]</from_name>
+		<from_code>N0000010583</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>amlodipine</to_name>
+		<to_code>17767</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>may_prevent</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Pain</to_name>
+		<to_code>M0015742</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>I [Preparations]</from_name>
+		<from_code>N0000010591</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>ibuprofen</to_name>
+		<to_code>5640</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>M [Preparations]</from_name>
+		<from_code>N0000010595</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>methoxamine</to_name>
+		<to_code>6853</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Synonym Of</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>methoxamine</from_name>
+		<from_code>6853</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Methoxamine</to_name>
+		<to_code>M0013598</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Hypothalamic Endocrine Activity Alteration [PE]</to_name>
+		<to_code>N0000009072</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Blood Pressure [PE]</to_name>
+		<to_code>N0000178477</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Blood Pressure [PE]</to_name>
+		<to_code>N0000178477</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Central Nervous System Activity Alteration [PE]</to_name>
+		<to_code>N0000175724</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Peripheral Nervous System Activity Alteration [PE]</to_name>
+		<to_code>N0000175725</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Analgesics [TC]</to_name>
+		<to_code>N0000193809</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cardiovascular Agent [TC]</to_name>
+		<to_code>N0000178309</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anti-inflammatory Agent [TC]</to_name>
+		<to_code>N0000178306</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anti-inflammatory Agent [TC]</to_name>
+		<to_code>N0000178306</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>G-Protein-linked Receptor Interactions [MoA]</from_name>
+		<from_code>N0000000152</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Prostaglandin Receptor Interactions [MoA]</to_name>
+		<to_code>N0000000131</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Prostaglandin Receptor Interactions [MoA]</from_name>
+		<from_code>N0000000131</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Prostaglandin Receptor Antagonists [MoA]</to_name>
+		<to_code>N0000000108</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Ion Channel Interactions [MoA]</from_name>
+		<from_code>N0000000193</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Interactions [MoA]</to_name>
+		<to_code>N0000000140</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Calcium Channel Interactions [MoA]</from_name>
+		<from_code>N0000000140</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Antagonists [MoA]</to_name>
+		<to_code>N0000000069</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Calcium Channel Antagonists [MoA]</from_name>
+		<from_code>N0000000069</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>L-Calcium Channel Receptor Antagonists [MoA]</to_name>
+		<to_code>N0000020065</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Interactions [MoA]</from_name>
+		<from_code>N0000000163</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Enzyme Inhibitors [MoA]</to_name>
+		<to_code>N0000000133</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Inhibitors [MoA]</from_name>
+		<from_code>N0000000133</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cyclooxygenase Inhibitors [MoA]</to_name>
+		<to_code>N0000000160</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Inhibitors [MoA]</from_name>
+		<from_code>N0000000133</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cytochrome P450 Inhibitors [MoA]</to_name>
+		<to_code>N0000182136</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cytochrome P450 Inhibitors [MoA]</from_name>
+		<from_code>N0000182136</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cytochrome P450 3A Inhibitors [MoA]</to_name>
+		<to_code>N0000190114</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Elimination [PK]</from_name>
+		<from_code>N0000000022</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Route of Excretion [PK]</to_name>
+		<to_code>N0000000041</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Elimination [PK]</from_name>
+		<from_code>N0000000022</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Metabolism [PK]</to_name>
+		<to_code>N0000000023</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Route of Excretion [PK]</from_name>
+		<from_code>N0000000041</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal Excretion [PK]</to_name>
+		<to_code>N0000000042</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Metabolism [PK]</from_name>
+		<from_code>N0000000023</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Site of Metabolism [PK]</to_name>
+		<to_code>N0000000024</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Site of Metabolism [PK]</from_name>
+		<from_code>N0000000024</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Hepatic Metabolism [PK]</to_name>
+		<to_code>N0000000026</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Pharmaceutical and Biological Preparations</from_name>
+		<from_code>N0000000001</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Preparations by Generic Ingredient</to_name>
+		<to_code>N0000010582</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Ion Channel or Pump Agent [APC]</from_name>
+		<from_code>N0000193904</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Agent [APC]</to_name>
+		<to_code>N0000193892</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Calcium Channel Agent [APC]</from_name>
+		<from_code>N0000193892</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Dihydropyridine Calcium Channel Blocker [EPC]</to_name>
+		<to_code>N0000175421</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Calcium Channel Agent [APC]</from_name>
+		<from_code>N0000193892</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Blocker [EPC]</to_name>
+		<to_code>N0000175566</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cardiovascular Agent [APC]</from_name>
+		<from_code>N0000193893</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Calcium Channel Agent [APC]</to_name>
+		<to_code>N0000193892</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Immunologically Active Molecule Production [PE]</from_name>
+		<from_code>N0000008665</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Lipid Derived Immunologically Active Molecule Production [PE]</to_name>
+		<to_code>N0000008686</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Lipid Derived Immunologically Active Molecule Production [PE]</from_name>
+		<from_code>N0000008686</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Platelet Activating Factor Production [PE]</to_name>
+		<to_code>N0000008831</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Lipid Derived Immunologically Active Molecule Production [PE]</from_name>
+		<from_code>N0000008686</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Eicosanoid Production [PE]</to_name>
+		<to_code>N0000008592</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Eicosanoid Production [PE]</from_name>
+		<from_code>N0000008592</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Prostaglandin Production [PE]</to_name>
+		<to_code>N0000008836</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Eicosanoid Production [PE]</from_name>
+		<from_code>N0000008592</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Thromboxane Production [PE]</to_name>
+		<to_code>N0000009006</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Interaction [APC]</from_name>
+		<from_code>N0000193898</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Enzyme Inhibitor [APC]</to_name>
+		<to_code>N0000193897</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Inhibitor [APC]</from_name>
+		<from_code>N0000193897</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Nonsteroidal Anti-inflammatory Drug [EPC]</to_name>
+		<to_code>N0000175722</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Vasodilation [PE]</from_name>
+		<from_code>N0000009909</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Arterial Vasodilation [PE]</to_name>
+		<to_code>N0000008299</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Arterial Vasodilation [PE]</from_name>
+		<from_code>N0000008299</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Coronary Arterial Vasodilation [PE]</to_name>
+		<to_code>N0000008375</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cardiovascular Agent [TC]</from_name>
+		<from_code>N0000178309</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anti-anginal Agent [TC]</to_name>
+		<to_code>N0000178310</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by Generic Ingredient</from_name>
+		<from_code>N0000010582</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>A [Preparations]</to_name>
+		<to_code>N0000010583</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by Generic Ingredient</from_name>
+		<from_code>N0000010582</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>I [Preparations]</to_name>
+		<to_code>N0000010591</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by Generic Ingredient</from_name>
+		<from_code>N0000010582</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>M [Preparations]</to_name>
+		<to_code>N0000010595</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Organ System Specific Effects [PE]</from_name>
+		<from_code>N0000009770</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Endocrine Activity Alteration [PE]</to_name>
+		<to_code>N0000009036</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Organ System Specific Effects [PE]</from_name>
+		<from_code>N0000009770</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cardiovascular Activity Alteration [PE]</to_name>
+		<to_code>N0000008331</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Organ System Specific Effects [PE]</from_name>
+		<from_code>N0000009770</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Nervous System Activity Alteration [PE]</to_name>
+		<to_code>N0000009759</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Endocrine Activity Alteration [PE]</from_name>
+		<from_code>N0000009036</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Hypothalamic Endocrine Activity Alteration [PE]</to_name>
+		<to_code>N0000009072</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cardiovascular Activity Alteration [PE]</from_name>
+		<from_code>N0000008331</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Blood Pressure Alteration [PE]</to_name>
+		<to_code>N0000178476</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Blood Pressure Alteration [PE]</from_name>
+		<from_code>N0000178476</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Blood Pressure [PE]</to_name>
+		<to_code>N0000178477</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Nervous System Activity Alteration [PE]</from_name>
+		<from_code>N0000009759</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Central Nervous System Activity Alteration [PE]</to_name>
+		<to_code>N0000175724</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Nervous System Activity Alteration [PE]</from_name>
+		<from_code>N0000009759</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Peripheral Nervous System Activity Alteration [PE]</to_name>
+		<to_code>N0000175725</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Analgesics [TC]</to_name>
+		<to_code>N0000193809</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cardiovascular Agent [TC]</to_name>
+		<to_code>N0000178309</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anti-inflammatory Agent [TC]</to_name>
+		<to_code>N0000178306</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>SNOMED CT</from_namespace>
+		<from_name>Product containing calcium channel blocker (product)</from_name>
+		<from_code>48698004</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Dihydropyridine Calcium Channel Blocker [EPC]</to_name>
+		<to_code>N0000175421</to_code>
+	</association>
+</terminology>
