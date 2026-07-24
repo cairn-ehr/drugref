@@ -22,33 +22,39 @@ attach node-locally without ever contaminating interoperability).
 
 **Slice 1** ✅ merged (PR #1). **Slice 2a** (MED-RT classification) ✅ merged (PR #9).
 **Slice 2a.1 — the source-neutral class registry** ✅ merged (PR #10).
-**Slice 2b — MeSH PA: measurement + design + fixture generator** ✅ done on this branch: the real MeSH 2026
-release is measured, the [slice-2b design spec](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)
-is written against those measurements, and a committed re-runnable fixture generator + fixtures are in
-place. **134 tests green** — a stdlib shape-pin test (`tests/test_mesh_fixture_shape.py`, no parser/DB)
-now locks the committed fixtures against drift; the slice-2b parser itself is still next.
+**Slice 2b — MeSH PA: the BUILD** ✅ done on this branch (parser + bridge + orchestrator + tests, TDD
+against spec §6–§8). **166 tests green.** The MeSH PA axis now ingests end-to-end: `ingest/mesh.py`
+(pure streaming `iterparse` parser of pa/desc/supp → PA classes, tree-number DAG, memberships with
+set-valued keys) + `ingest/mesh_run.py` (orchestrator + the two-key bridge) + the source-neutral
+`ClassConcept` moved into `classes.py` with a new `moieties_by_scheme` join primitive.
+[issue #11](https://github.com/cairn-ehr/drugref/issues/11) is answered — close it when this PR merges.
 
-**What remains for slice 2b = the BUILD: the MeSH parser + membership bridge + orchestrator + tests**, TDD
-against the now-approved spec §6–§8. The bridge is **no longer an open question** — it is designed and
-verified end-to-end against the fixture (§5.3): **two-key, UNII-primary, CAS-fallback**, both keys already
-slice-1 `identity_claim` rows, **no new external source**. No schema change (2a.1 already added
-`PA`/`has_PA`/`MeSH`). Key measured facts that settled it (issue #11):
+**⇒ The next slice is Slice 3 (composition tree: salts/esters/hydrates).** Before that, one measured-but-
+not-yet-verified-in-production concern carries over: the parser is validated against the committed fixtures
+(extracts of the real 2026 release); run it against the full `pa2026`/`supp2026`/`desc2026` and re-confirm
+the §5 aggregate numbers before production (real files are gitignored — see "How to run / test").
 
+What the build delivered, and the facts that shaped it (all measured against the real release, issue #11):
+
+- **The bridge is two-key, UNII-primary → CAS-fallback**, resolving a member's `RegistryNumber` keys
+  against slice-1 `identity_claim` rows (`scheme='UNII'`, else `scheme='CAS'`). **No new external source.**
+  `RelatedRegistryNumber` CAS is deliberately **not** a bridge key (spec tension B) — left to a later
+  precision pass. Unmatched members are counted, split **no-key vs key-not-in-registry**, never dropped.
 - **The doc-hypothesis was wrong.** MeSH **Descriptors DO carry UNIIs** in `RegistryNumber` — aspirin
-  D001241 carries UNII `R16CO5Y76E` (not "CAS only"). Both Descriptors and SCRs carry UNIIs; the real split
-  is per-record key-typing, not per-record-type.
-- **568 PA classes** (all Descriptors), forming a **multi-parent DAG via MeSH tree-number nesting** (build
-  `class_parent` like MED-RT). **10,505 distinct member substances** (7,667 SCR + 2,838 Descriptor);
-  **73% expose a UNII or CAS** (joinable), **27% expose neither** (drug combinations / novel research
-  compounds — counted, never dropped). The moiety gate is the binding constraint, same as MED-RT.
+  D001241 carries UNII `R16CO5Y76E` (not "CAS only"); a record may carry **several** UNIIs, so key
+  extraction is set-valued. **568 PA classes** (all Descriptors), a **multi-parent DAG via tree-number
+  nesting**. **10,505 member substances**; **73% joinable**, 27% neither (combinations / research
+  compounds). The moiety gate is the binding constraint, same as MED-RT.
 
-Full evidence: the spec §5, and the working measurement scripts + `FINDINGS.md` under the session
-scratchpad (not committed). [issue #11](https://github.com/cairn-ehr/drugref/issues/11) is answered by this
-work; close it when the build lands. **Real release files are gitignored** — see "How to run / test".
+No schema change was needed (2a.1's `db/003` already admitted `PA`/`has_PA`/`MeSH`). **Real release files
+are gitignored** — see "How to run / test".
 
 **Open follow-ups are GitHub issues [#2](https://github.com/cairn-ehr/drugref/issues/2)–
-[#8](https://github.com/cairn-ehr/drugref/issues/8)** (plus the slice-2b `RelatedRegistryNumber` precision
-pass, spec tension B — file when the build starts).
+[#8](https://github.com/cairn-ehr/drugref/issues/8)**, plus two slice-2b carry-overs to file: the
+**`RelatedRegistryNumber` precision pass** (tension B — use a related CAS only when its parenthetical name
+matches the record's own name; would lift bridge yield past the 73% RegistryNumber ceiling), and
+**MED-RT `has_SC` → MeSH structural classes**, now ingestible since the MeSH bridge exists (a MED-RT-side
+relation, spec §10).
 
 ## Current state
 
@@ -93,16 +99,26 @@ the CHECKs with `PA` / `has_PA`. `ids.mint_class_uuid(source, code)` replaces th
   nor rescans — and tests replay the migrations both over an already-migrated row and over a populated
   pre-rename table (with an edge) to prove the renames survive.
 
-**Slice 2b — MeSH PA: measured + designed (parser not yet built).** The real MeSH 2026 release was
-measured (issue #11), the [design spec](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)
-written against it, and a committed fixture generator (`tests/fixtures/make_mesh_subset.py`) + three
-`mesh_*_subset.xml` fixtures + a `NOTICE` MeSH attribution landed. The membership **bridge** (MeSH PA has
-no RxCUI) is settled: **two-key, UNII-primary → CAS-fallback**, resolving a member's `RegistryNumber` UNII
-(else CAS) against slice-1 `identity_claim` rows — **no new external source**. PA classes form a
-**multi-parent DAG via tree-number nesting** (built like MED-RT, both-endpoints-ingested scoping). The
-build (parser + orchestrator + tests, TDD against the spec) is the next session's work; the fixture already
-covers every acceptance case (positive UNII join, positive CAS-fallback join, key-not-in-registry, no-key,
-multi-parent + root DAG).
+**Slice 2b — MeSH PA: the classification layer's second axis.** The 568 MeSH Pharmacological-Action class
+descriptors, their tree-number DAG, and moiety↔class memberships, on the **same three tables** as MED-RT
+(no schema change). Built pure-function-first:
+
+- **`ingest/mesh.py`** — a pure, streaming (`iterparse` + `clear`) parser of the three MeSH files
+  (`pa`/`desc`/`supp`). Yields `PaClass` (name + tree numbers), `PaParentEdge` (child→parent, derived from
+  tree-number nesting with both-endpoints-PA scoping like MED-RT), and `PaMembership` carrying `MemberKeys`
+  (set-valued `unii`/`cas` from `RegistryNumber` only). `registry_keys()` is the reusable classifier
+  (UNII = 10 alnum; CAS = `n-nn-n`; strips a `" (name)"` annotation). Streams by construction, so the
+  batch/`iterparse` follow-up (#7) is satisfied here for MeSH.
+- **`ingest/mesh_run.py`** — the orchestrator + the **two-key bridge**: read the UNII and CAS claim indexes
+  once (`classes.moieties_by_scheme`), resolve each member **UNII-primary → CAS-fallback** ("else any CAS",
+  not "also"), take **every** claimant. Unmatched members counted by distinct member, split
+  **`members_no_key`** vs **`members_key_not_in_registry`**. `MeshSummary` mirrors `MedrtSummary`
+  (classes-in-release vs classes-added, edge/membership counts, the two worklist numbers).
+- **`classes.py`** — `ClassConcept` now lives here (source-neutral upsert shape, was in `medrt.py`);
+  `moieties_by_scheme(conn, scheme)` is the generic join primitive (`moieties_by_rxcui` delegates to it).
+- **Tests** — `test_mesh_parser.py` (parser, no DB) + `test_mesh_run.py` (DB-gated acceptance matrix: UNII
+  join, CAS-fallback join, no-key/key-not-in-registry counting, multi-parent DAG orientation, idempotent
+  re-ingest, per-source rebuild leaves MED-RT intact). A pinned `class_uuid` literal guards the derivation.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
@@ -167,7 +183,8 @@ DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv
   `db/003_class_registry_source_neutral.sql` (registry generalised for a second authority), applied in
   filename order via `drugref.db.apply_migrations`, idempotent. **Read 003 for the class registry's actual
   shape** — 002 still shows the superseded MED-RT-specific columns.
-- Code: `src/drugref/{ids,claims,classes,db}.py` + `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run}.py`;
+- Code: `src/drugref/{ids,claims,classes,db}.py` +
+  `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run,mesh,mesh_run}.py`;
   seed data under `src/drugref/data/`; fixtures under `tests/fixtures/`.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored — a MED-RT release is ~45 MB).

@@ -60,26 +60,25 @@ uniqueness moved from global to **per (source, source_code)**, and `PA`/`has_PA`
 pinned by frozen literals — the derivation is the join key of both edge tables, so a drift would orphan
 every edge on the next rebuild with no error anywhere. 116 tests.
 
-### Slice 2b — MeSH Pharmacological Actions (measured + designed; BUILD next)
-The second classification axis, on the **same three tables** (2a.1's `db/003` already added
-`PA`/`has_PA`/`MeSH`; **no schema change**). Measurement + design + fixture generator are **done**
-(issue #11); the [slice-2b spec](../superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md) is the
-authority. **What remains: the MeSH parser + orchestrator + tests**, TDD against the spec.
+### Slice 2b — MeSH Pharmacological Actions ✅ DONE
+The second classification axis, on the **same three tables** as MED-RT (2a.1's `db/003` already added
+`PA`/`has_PA`/`MeSH`; **no schema change**). `ingest/mesh.py` — a pure, streaming (`iterparse`) parser of
+the three MeSH files (pa/desc/supp) → 568 PA class descriptors, a **multi-parent DAG from tree-number
+nesting** (both-endpoints-PA scoping, like MED-RT), and memberships carrying set-valued `RegistryNumber`
+keys. `ingest/mesh_run.py` — orchestrator + the **two-key membership bridge**: UNII-primary → CAS-fallback,
+resolving a member's keys against slice-1 `identity_claim` rows (`scheme='UNII'`, else `'CAS'`) — **no new
+external source**. Unmatched members counted, split no-key vs key-not-in-registry (never dropped).
+`ClassConcept` moved to `classes.py` (source-neutral) + a generic `moieties_by_scheme` join primitive.
+166 tests. Detail: the slice-2b design spec.
 
-**The bridge is settled** (was the open question). Measured against the real MeSH 2026 release — which
-**refuted the doc-research**: MeSH **Descriptors DO carry UNIIs** in `RegistryNumber` (aspirin D001241 =
-UNII `R16CO5Y76E`, not "CAS only"); both Descriptors and SCRs carry UNIIs, so the split is per-record
-key-typing, not per-record-type. The bridge is **two-key, UNII-primary → CAS-fallback**, resolving a
-member's `RegistryNumber` UNII (else CAS) against slice-1 `identity_claim` rows — **no new external
-source**. Measured shape: **568 PA classes** (all Descriptors, forming a **multi-parent DAG via tree-number
-nesting**), **10,505 member substances** (7,667 SCR + 2,838 Descriptor), **73% expose a UNII/CAS**, 27%
-neither (combinations / research compounds — counted, never dropped); moiety gate is the binding
-constraint, as for MED-RT.
-
-MeSH licence verified AGPL-compatible (NLM terms: attribution "Courtesy of the U.S. National Library of
-Medicine" + no-endorsement + version-currency; no NC, no ND) — now attributed in `NOTICE`. MED-RT's own
-`has_SC` relationships (targeting MeSH structural classes) become ingestible once the bridge exists.
-**ATC stays excluded** (NC + no-derivatives).
+The measurement that shaped it **refuted the doc-research**: MeSH **Descriptors DO carry UNIIs** in
+`RegistryNumber` (aspirin D001241 = UNII `R16CO5Y76E`, not "CAS only"), and a record may carry several, so
+key extraction is set-valued. **10,505 member substances**, **73% joinable** (27% combinations / research
+compounds); moiety gate is the binding constraint, as for MED-RT. `RelatedRegistryNumber` CAS is **not** a
+bridge key in this slice (tension B — deferred precision pass). MeSH licence verified AGPL-compatible (NLM
+terms: attribution + no-endorsement + version-currency; no NC/ND), attributed in `NOTICE`. **ATC stays
+excluded** (NC + no-derivatives). Follow-ups: the RelatedRegistryNumber precision pass, and MED-RT's own
+`has_SC` (→ MeSH structural classes), now ingestible since the bridge exists.
 
 ### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
 Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety

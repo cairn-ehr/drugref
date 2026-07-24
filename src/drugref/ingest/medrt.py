@@ -47,6 +47,11 @@ import pathlib
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
+# ClassConcept is the source-neutral "class row to upsert" shape. It lives in
+# drugref.classes (beside the writer that consumes it) now that MeSH feeds it too;
+# re-imported here so medrt.ClassConcept and ParsedMedrt keep working unchanged.
+from drugref.classes import ClassConcept
+
 # The only two namespaces we are licensed to read (see the module docstring).
 MEDRT_NAMESPACE = "MED-RT"
 RXNORM_NAMESPACE = "RxNorm"
@@ -83,21 +88,6 @@ EPC_CONCEPT_TYPE = "EPC"
 # release -- it exists so that a future release which starts publishing retired
 # concepts cannot quietly seed dead classes into a registry that never deletes.
 ACTIVE_STATUS = "A"
-
-
-@dataclass(frozen=True)
-class ClassConcept:
-    """One MED-RT pharmacologic class.
-
-    `nui` is the identity key (class_uuid is derived from it); `code` is the
-    concept's code AS PUBLISHED, which is what association endpoints reference.
-    The two are equal throughout the 2026.07.06 release, but they are separate
-    fields on purpose -- see the code-vs-NUI note in parse().
-    """
-    nui: str
-    code: str
-    name: str
-    concept_type: str
 
 
 @dataclass(frozen=True)

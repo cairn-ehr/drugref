@@ -13,11 +13,36 @@ difference is the point:
   comes back with exactly the UUID it had before.
 """
 import uuid
+from dataclasses import dataclass
 
 import psycopg
 
 from drugref import ids
-from drugref.ingest.medrt import ClassConcept
+
+
+@dataclass(frozen=True)
+class ClassConcept:
+    """One classification class to upsert, in a SOURCE-NEUTRAL shape.
+
+    This is the record every ingest hands to upsert_class, whatever authority it
+    came from (MED-RT, MeSH, ...). It lives here, beside the writer that consumes
+    it, rather than inside any one source's parser, precisely because more than one
+    source now feeds it:
+
+    * `nui`  -- the authority's stable identity key (MED-RT's NUI, a MeSH descriptor
+               UI, ...). class_uuid is derived from it, so it must never change for
+               a given class.
+    * `code` -- the code AS PUBLISHED, which the source's own edges reference. Equal
+               to `nui` for authorities (like MeSH) that key on their published UI;
+               kept separate because MED-RT allows the two to differ (see the
+               code-vs-NUI note in medrt.parse()).
+    * `name` / `concept_type` -- the cached display name and the axis this class
+               sits on (a MED-RT CTY such as 'MoA', or MeSH's 'PA').
+    """
+    nui: str
+    code: str
+    name: str
+    concept_type: str
 
 
 def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
@@ -104,37 +129,45 @@ def add_membership(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     return cur.rowcount == 1
 
 
-def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
-    """Build the RxCUI -> moieties index the membership join runs on.
+def moieties_by_scheme(conn: psycopg.Connection, scheme: str) -> dict[str, list[uuid.UUID]]:
+    """Build a {claim value -> moieties} index for one identity-claim scheme.
 
-    This is the join key, and it needs no new bridge data: MED-RT states class
-    membership against RxNorm ingredient concepts whose code IS the RxCUI, and
-    slice 1 already attached an RXNORM_IN claim to every moiety.
+    This is the generic membership-join primitive. A classification feed keyed on
+    some external identifier (MED-RT on RxCUI, MeSH PA on UNII/CAS) resolves its
+    members to moieties by asking "which moiety carries this claim?", and slice 1
+    already recorded those claims -- so no feed needs new bridge data.
 
-    Superseded claims are excluded so a corrected-away RxCUI cannot resurrect a
-    stale membership (the same rule chebi.py applies to InChIKey lookups).
+    Two rules that every caller depends on, applied here once:
 
-    EVERY claimant is kept, not the first. identity_claim is unique on
-    (moiety_uuid, scheme, value), so nothing stops two moieties from claiming one
-    RxCUI, and slice 1 takes the value straight from the UNII feed's RXCUI column
-    without checking it is unique across moieties. Picking one arbitrarily would
-    both drop a real membership and make the ingest non-reproducible, since an
-    unordered single-row read may answer differently run to run. chebi.py resolved
-    the identical question the identical way for InChIKey; the two lookups deserve
-    the same rule. The ordering makes the retained order deterministic too.
+    * Superseded claims are excluded (superseded_by IS NULL), so a corrected-away
+      identifier cannot resurrect a stale membership (chebi.py's InChIKey rule).
+    * EVERY claimant is kept, not the first. identity_claim is unique on
+      (moiety_uuid, scheme, value) but NOT across moieties, so two moieties may
+      legitimately carry the same value; picking one arbitrarily would drop a real
+      membership and -- being an unordered single-row read -- could answer
+      differently run to run. The ORDER BY makes the retained order deterministic.
 
-    Read WHOLE rather than queried per assertion: MED-RT asserts ~27,500
-    memberships over ~6,000 distinct ingredients, so a per-assertion lookup re-asks
-    an already-answered question four times in five. The index is bounded by the
-    moiety registry -- one entry per moiety carrying an RxCUI -- so it grows with
-    the registry, not with MED-RT; if that ever outgrows memory it is the same
-    conversation as the whole-file parse, tracked in the production-ingest
-    follow-up rather than solved differently here.
+    Read WHOLE rather than queried per member: a feed states many memberships per
+    substance, so a per-member lookup re-asks an already-answered question. The
+    index is bounded by the moiety registry (one bucket per claim value it holds),
+    so it grows with the registry, not with the feed; if that ever outgrows memory
+    it is the same conversation as the whole-file parse (production-ingest
+    follow-up), not solved differently here.
     """
     index: dict[str, list[uuid.UUID]] = {}
     for value, moiety_uuid in conn.execute(
             "SELECT value, moiety_uuid FROM drugref.identity_claim "
-            "WHERE scheme = 'RXNORM_IN' AND superseded_by IS NULL "
-            "ORDER BY value, moiety_uuid").fetchall():
+            "WHERE scheme = %s AND superseded_by IS NULL "
+            "ORDER BY value, moiety_uuid", (scheme,)).fetchall():
         index.setdefault(value, []).append(moiety_uuid)
     return index
+
+
+def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
+    """The RxCUI -> moieties index MED-RT membership joins on.
+
+    A thin alias for moieties_by_scheme(conn, 'RXNORM_IN'): MED-RT states class
+    membership against RxNorm ingredient concepts whose code IS the RxCUI, and
+    slice 1 attached an RXNORM_IN claim to every moiety carrying one.
+    """
+    return moieties_by_scheme(conn, "RXNORM_IN")
