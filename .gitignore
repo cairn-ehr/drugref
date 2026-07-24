@@ -5,3 +5,16 @@ __pycache__/
 dist/
 *.egg-info/
 downloads/
+
+# Real MED-RT / MeSH release files: large, fetched per docs/HANDOVER.md, never
+# committed. downloads/ is their intended home; these guard against an accidental
+# drop in the repo root (supp2026 alone is 750 MB uncompressed). Fixtures live in
+# tests/fixtures/ under their own mesh_*_subset.xml / medrt_subset.xml names.
+desc2026
+supp2026
+desc2026.xml
+supp2026.xml
+pa2026.xml
+desc2026.gz
+supp2026.gz
+Core_MEDRT_*.xml

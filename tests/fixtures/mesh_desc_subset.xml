@@ -1,0 +1,207 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_subset.py DOWNLOADS_DIR
+     Identity keys, registry/tree numbers, names and record classes are copied from the
+     release, never invented; only the ConceptUI wrapper id is synthetic (M+UI, never read).
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
+<DescriptorRecordSet LanguageCode="eng">
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000082</DescriptorUI>
+  <DescriptorName>
+   <String>Acetaminophen</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.199.092.040</TreeNumber>
+   <TreeNumber>D02.092.146.113.092.040</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000082</ConceptUI>
+    <ConceptName>
+     <String>Acetaminophen</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>362O9ITL9D</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>103-90-2 (Acetaminophen)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000700</DescriptorUI>
+  <DescriptorName>
+   <String>Analgesics</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.696.663.850.014</TreeNumber>
+   <TreeNumber>D27.505.954.427.040</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000700</ConceptUI>
+    <ConceptName>
+     <String>Analgesics</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000893</DescriptorUI>
+  <DescriptorName>
+   <String>Anti-Inflammatory Agents</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.954.158</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000893</ConceptUI>
+    <ConceptName>
+     <String>Anti-Inflammatory Agents</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000894</DescriptorUI>
+  <DescriptorName>
+   <String>Anti-Inflammatory Agents, Non-Steroidal</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.696.663.850.014.040.500</TreeNumber>
+   <TreeNumber>D27.505.954.158.030</TreeNumber>
+   <TreeNumber>D27.505.954.329.030</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000894</ConceptUI>
+    <ConceptName>
+     <String>Anti-Inflammatory Agents, Non-Steroidal</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001241</DescriptorUI>
+  <DescriptorName>
+   <String>Aspirin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.455.426.559.389.657.410.595.176</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD001241</ConceptUI>
+    <ConceptName>
+     <String>Aspirin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>R16CO5Y76E</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>50-78-2 (Aspirin)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D008278</DescriptorUI>
+  <DescriptorName>
+   <String>Magnesium Sulfate</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D01.524.550</TreeNumber>
+   <TreeNumber>D01.875.800.800.850.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD008278</ConceptUI>
+    <ConceptName>
+     <String>Magnesium Sulfate</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>7487-88-9</RegistryNumber>
+     <RegistryNumber>10034-99-8</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>10034-99-8 (heptahydrate)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D012102</DescriptorUI>
+  <DescriptorName>
+   <String>Reproductive Control Agents</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.696.875</TreeNumber>
+   <TreeNumber>D27.505.954.705</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD012102</ConceptUI>
+    <ConceptName>
+     <String>Reproductive Control Agents</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D018501</DescriptorUI>
+  <DescriptorName>
+   <String>Antirheumatic Agents</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.954.329</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD018501</ConceptUI>
+    <ConceptName>
+     <String>Antirheumatic Agents</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D018712</DescriptorUI>
+  <DescriptorName>
+   <String>Analgesics, Non-Narcotic</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D27.505.696.663.850.014.040</TreeNumber>
+   <TreeNumber>D27.505.954.427.040.100</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD018712</ConceptUI>
+    <ConceptName>
+     <String>Analgesics, Non-Narcotic</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+</DescriptorRecordSet>
