@@ -30,7 +30,7 @@ def test_connect_returns_usable_connection(_dsn):
 
 def test_apply_migrations_is_idempotent(conn):
     """Re-running apply_migrations on an already-migrated database must not error,
-    and the three drugref tables must still be present afterwards."""
+    and every drugref table must still be present afterwards."""
     # `conn` (from conftest) is already migrated once via the session-scoped
     # `_migrated` fixture. Applying again must be a no-op, not a crash.
     db.apply_migrations(conn)
@@ -42,4 +42,9 @@ def test_apply_migrations_is_idempotent(conn):
             "WHERE table_schema = 'drugref'"
         ).fetchall()
     }
-    assert tables == {"ingest_run", "substance_moiety", "identity_claim"}
+    assert tables == {
+        # slice 1: the identity spine
+        "ingest_run", "substance_moiety", "identity_claim",
+        # slice 2a: the classification DAG
+        "substance_class", "class_parent", "class_membership",
+    }
