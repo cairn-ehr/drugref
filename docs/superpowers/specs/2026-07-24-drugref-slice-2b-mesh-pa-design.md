@@ -109,6 +109,11 @@ PA **class** descriptors themselves carry **no** registry number (they are abstr
 Registry-number classification used: **UNII** = 10 upper-alphanumerics; **CAS** = `n-nn-n`;
 **EC** = `EC …`; `0`/empty = none.
 
+A single record may expose **more than one UNII** in `RegistryNumber` (e.g. the fixture's SCR `C000002`
+*bevonium* carries both `34B0471E08` and `UWC15E373Z` across its concepts). Key extraction is therefore
+**set-valued per record**, and the bridge (§6) must try **every** extracted UNII against `identity_claim`,
+not "the" UNII — the same reason it reads the keys as `unii`/`cas` sets.
+
 ### 5.3 The bridge, and its yield ceiling (issue #11 items 3–4)
 
 - **Bridge ceiling (MeSH-side key availability): 7,669 / 10,505 members (73%)** expose a UNII or CAS;
@@ -152,9 +157,11 @@ its nearest ingested ancestor, or is a root). This keeps the DAG scoped to the 5
     `Substance` under every `PharmacologicalAction` in `pa2026`, its keys filled from `supp2026`
     (C-records) or `desc2026` (D-records).
 - **Membership bridge (the new join).** For each member, resolve `moiety_uuid` by, in order:
-  **(1) RegistryNumber UNII → `identity_claim(scheme='UNII', superseded_by IS NULL)`**;
-  **(2) else RegistryNumber CAS → `identity_claim(scheme='CAS', …)`**. Take **every** match (as MED-RT and
-  `chebi.py` do; `identity_claim` is unique on `(moiety_uuid, scheme, value)` but not across moieties).
+  **(1) any RegistryNumber UNII → `identity_claim(scheme='UNII', superseded_by IS NULL)`**;
+  **(2) else any RegistryNumber CAS → `identity_claim(scheme='CAS', …)`**. A member's keys are
+  **set-valued** (§5.2: a record may carry several UNIIs), so try every one. Take **every** match (as
+  MED-RT and `chebi.py` do; `identity_claim` is unique on `(moiety_uuid, scheme, value)` but not across
+  moieties).
   Read both indexes **once per run**, not per member. **Unmatched members** (no key, or key not on a gated
   moiety) are **skipped and counted** as a worklist number — never a silent drop. `RelatedRegistryNumber`
   CAS is **not** a primary key (design tension **(B)**): it is usually the record's own displaced CAS but

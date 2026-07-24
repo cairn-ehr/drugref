@@ -9,9 +9,13 @@ most importantly that a MeSH **Descriptor** carries its substance's **UNII** in 
 **hierarchy** is encoded in **tree-number nesting**, not an explicit parent link.
 A hand-written fixture can only encode whatever the author believed, so it would
 "pass" against those wrong assumptions. Extracting from the genuine release, with
-every VALUE (registry numbers, tree numbers, PA memberships) copied from the file,
-removes that whole class of error -- the record structure is minimised, but no
-identity key or relationship is invented.
+every VALUE (registry numbers, tree numbers, PA memberships, names, and the
+DescriptorClass/SCRClass of each record) copied from the file, removes that whole
+class of error -- no identity key, name, relationship, or record class is invented.
+The ONLY synthetic thing is the `<ConceptUI>` wrapper id (emitted as `M`+UI): the
+parser never reads it (it reaches the RegistryNumbers nested under a Concept), so
+its exact value is not a fact under test -- everything that IS under test is copied.
+The record structure is otherwise minimised to the elements the parser walks.
 
 USAGE:
     python tests/fixtures/make_mesh_subset.py <downloads_dir> [<out_dir>]
@@ -103,49 +107,66 @@ def _texts(record, tag: str) -> list[str]:
     return out
 
 
-def _member_uis(pa_block) -> list[str]:
-    return [e.text for e in pa_block.iter()
-            if _local(e.tag) == "RecordUI" and e.text]
+def _members(pa_block) -> list[tuple[str, str]]:
+    """Each Substance under a PA block as (record_ui, record_name), both copied
+    from the release -- the member name is taken from the file, never invented,
+    so the fixture cannot drift from the real RecordName on regeneration."""
+    out = []
+    for sub in pa_block.iter():
+        if _local(sub.tag) != "Substance":
+            continue
+        ui = next((e.text for e in sub.iter()
+                   if _local(e.tag) == "RecordUI" and e.text), None)
+        name = next((e.text for e in sub.iter()
+                     if _local(e.tag) == "String" and e.text), "")
+        if ui:
+            out.append((ui, name))
+    return out
 
 
 # ----- extraction --------------------------------------------------------
 def extract(dl: pathlib.Path):
     pa_path, supp_path, desc_path = dl / "pa2026.xml", dl / "supp2026.xml", dl / "desc2026.xml"
 
-    # 1. PA membership: keep each kept class' block, substances trimmed to kept members.
-    pa_blocks = []          # (descriptor_ui, name, [member_ui,...])
+    # 1. PA membership: keep each kept class' block, substances trimmed to kept
+    #    members. Member UI *and* name are copied from the file (never invented).
+    pa_blocks = []          # (descriptor_ui, name, [(member_ui, member_name),...])
     for pa in _iter(pa_path, "PharmacologicalAction"):
         dui = pa.findtext(".//DescriptorReferredTo/DescriptorUI")
         if dui not in KEEP_PA_CLASSES:
             continue
         name = pa.findtext(".//DescriptorReferredTo/DescriptorName/String") or ""
-        members = [m for m in _member_uis(pa) if m in KEEP_MEMBERS]
+        members = [(ui, nm) for ui, nm in _members(pa) if ui in KEEP_MEMBERS]
         pa_blocks.append((dui, name, members))
 
     # 2. Descriptor records (kept classes + descriptor-type members): copy the
-    #    REAL registry numbers and tree numbers -- the shape facts under test.
+    #    REAL registry numbers, tree numbers and DescriptorClass -- the shape
+    #    facts under test (DescriptorClass is a real filtering axis, not scaffolding).
     want_desc = set(KEEP_PA_CLASSES) | {m for m in KEEP_MEMBERS if m.startswith("D")}
-    descriptors = {}        # ui -> dict(name, reg, related, trees)
+    descriptors = {}        # ui -> dict(name, cls, reg, related, trees)
     for rec in _iter(desc_path, "DescriptorRecord"):
         ui = rec.findtext("DescriptorUI")
         if ui not in want_desc:
             continue
         descriptors[ui] = {
             "name": rec.findtext("DescriptorName/String") or "",
+            "cls": rec.get("DescriptorClass", "1"),
             "reg": _texts(rec, "RegistryNumber"),
             "related": _texts(rec, "RelatedRegistryNumber"),
             "trees": _texts(rec, "TreeNumber"),
         }
 
-    # 3. Supplemental records (SCR-type members): copy their real registry numbers.
+    # 3. Supplemental records (SCR-type members): copy their real registry numbers
+    #    and SCRClass (1=chemical / 2=protocol / 3=disease -- a real axis §5.1).
     want_supp = {m for m in KEEP_MEMBERS if m.startswith("C")}
-    scrs = {}               # ui -> dict(name, reg, related)
+    scrs = {}               # ui -> dict(name, cls, reg, related)
     for rec in _iter(supp_path, "SupplementalRecord"):
         ui = rec.findtext("SupplementalRecordUI")
         if ui not in want_supp:
             continue
         scrs[ui] = {
             "name": rec.findtext("SupplementalRecordName/String") or "",
+            "cls": rec.get("SCRClass", "1"),
             "reg": _texts(rec, "RegistryNumber"),
             "related": _texts(rec, "RelatedRegistryNumber"),
         }
@@ -173,7 +194,8 @@ def _reg_block(reg: list[str], related: list[str], indent: str) -> list[str]:
 # NB: an XML comment may not contain a double hyphen, so this text uses none.
 _HEADER = "<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_subset.py. Do not hand-edit.\n" \
           "     Regenerate: python tests/fixtures/make_mesh_subset.py DOWNLOADS_DIR\n" \
-          "     All identity keys and tree numbers are copied from the release, never invented.\n" \
+          "     Identity keys, registry/tree numbers, names and record classes are copied from the\n" \
+          "     release, never invented; only the ConceptUI wrapper id is synthetic (M+UI, never read).\n" \
           "     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->"
 
 
@@ -181,7 +203,7 @@ def write_desc(descriptors, out: pathlib.Path):
     lines = ['<?xml version="1.0"?>', _HEADER, '<DescriptorRecordSet LanguageCode="eng">']
     for ui in sorted(descriptors):
         d = descriptors[ui]
-        lines += [' <DescriptorRecord DescriptorClass="1">',
+        lines += [f' <DescriptorRecord DescriptorClass="{escape(d["cls"])}">',
                   f'  <DescriptorUI>{ui}</DescriptorUI>',
                   '  <DescriptorName>', f'   <String>{escape(d["name"])}</String>',
                   '  </DescriptorName>']
@@ -189,6 +211,8 @@ def write_desc(descriptors, out: pathlib.Path):
             lines.append('  <TreeNumberList>')
             lines += [f'   <TreeNumber>{escape(t)}</TreeNumber>' for t in d["trees"]]
             lines.append('  </TreeNumberList>')
+        # ConceptUI is synthetic (M+UI): the parser reaches the RegistryNumbers
+        # under a Concept, never the ConceptUI itself, so its value is not tested.
         lines += ['  <ConceptList>', '   <Concept PreferredConceptYN="Y">',
                   f'    <ConceptUI>M{ui}</ConceptUI>',
                   '    <ConceptName>', f'     <String>{escape(d["name"])}</String>',
@@ -203,7 +227,7 @@ def write_supp(scrs, out: pathlib.Path):
     lines = ['<?xml version="1.0"?>', _HEADER, '<SupplementalRecordSet LanguageCode="eng">']
     for ui in sorted(scrs):
         s = scrs[ui]
-        lines += [' <SupplementalRecord SCRClass="1">',
+        lines += [f' <SupplementalRecord SCRClass="{escape(s["cls"])}">',
                   f'  <SupplementalRecordUI>{ui}</SupplementalRecordUI>',
                   '  <SupplementalRecordName>', f'   <String>{escape(s["name"])}</String>',
                   '  </SupplementalRecordName>',
@@ -225,10 +249,9 @@ def write_pa(pa_blocks, out: pathlib.Path):
                   '   <DescriptorName>', f'    <String>{escape(name)}</String>',
                   '   </DescriptorName>', '  </DescriptorReferredTo>',
                   '  <PharmacologicalActionSubstanceList>']
-        for m in members:
+        for m, mname in members:
             lines += ['   <Substance>', f'    <RecordUI>{m}</RecordUI>',
-                      '    <RecordName>',
-                      f'     <String>{escape(KEEP_MEMBERS[m].split(" -- ")[0])}</String>',
+                      '    <RecordName>', f'     <String>{escape(mname)}</String>',
                       '    </RecordName>', '   </Substance>']
         lines += ['  </PharmacologicalActionSubstanceList>', ' </PharmacologicalAction>']
     lines.append('</PharmacologicalActionSet>')

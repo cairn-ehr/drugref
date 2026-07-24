@@ -25,8 +25,8 @@ attach node-locally without ever contaminating interoperability).
 **Slice 2b — MeSH PA: measurement + design + fixture generator** ✅ done on this branch: the real MeSH 2026
 release is measured, the [slice-2b design spec](superpowers/specs/2026-07-24-drugref-slice-2b-mesh-pa-design.md)
 is written against those measurements, and a committed re-runnable fixture generator + fixtures are in
-place. **120 tests green** (unchanged — the fixtures aren't referenced by a test yet; the slice-2b
-parser is next).
+place. **134 tests green** — a stdlib shape-pin test (`tests/test_mesh_fixture_shape.py`, no parser/DB)
+now locks the committed fixtures against drift; the slice-2b parser itself is still next.
 
 **What remains for slice 2b = the BUILD: the MeSH parser + membership bridge + orchestrator + tests**, TDD
 against the now-approved spec §6–§8. The bridge is **no longer an open question** — it is designed and
