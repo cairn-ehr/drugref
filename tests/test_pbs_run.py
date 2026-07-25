@@ -157,3 +157,80 @@ def test_re_ingest_is_idempotent(conn, seeded_registry):
     assert first.products_written == second.products_written
     total = conn.execute("SELECT count(*) FROM drugref.local_product").fetchone()[0]
     assert total == second.products_written
+
+
+# The canary values make_pbs_subset.py plants in the fixture's atc_code/amt_code
+# columns. They are NOT upstream -- the fixture adds them precisely so this test
+# proves drugref DISCARDS them, instead of passing merely because they were absent.
+ATC_CANARY = "ZZZ_ATC_CANARY"
+AMT_CANARY = "ZZZ_AMT_CANARY"
+
+
+def _all_text_columns(conn):
+    """Every text-ish column in the drugref schema, for an exhaustive sweep."""
+    return conn.execute(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = 'drugref' AND data_type IN ('text','character varying') "
+        "ORDER BY table_name, column_name").fetchall()
+
+
+def test_no_encumbered_value_reaches_any_drugref_table(conn, seeded_registry):
+    """THE LICENCE GUARANTEE, EXECUTABLE (spec section 6).
+
+    ATC codes are WHO-owned (NonCommercial + NoDerivatives) and AMT/SNOMED CT-AU
+    is NCTS-licensed; neither may ever enter drugref -- that is a licence
+    constraint, not a style preference, and a breach here is a legal problem for
+    every downstream user of the data, not a bug report.
+
+    The committed fixture (tests/fixtures/pbs_items_subset.csv) carries a planted
+    ATC_CANARY/AMT_CANARY value in every row's atc_code/amt_code column. Those
+    columns do not exist in the real upstream items.csv -- make_pbs_subset.py
+    adds them on purpose, precisely so this test cannot pass just because the
+    encumbered columns happened to be absent. It only passes if drugref actively
+    reads items.csv WITHOUT those columns and never carries their values into any
+    table, which is what the licence actually requires.
+
+    This test sweeps every text/varchar column in the whole drugref schema
+    (not just the PBS tables) after a full ingest, so a leak via an unexpected
+    path -- a future column, a copy-paste into the wrong table -- is caught too.
+    """
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
+    offenders = []
+    for table, column in _all_text_columns(conn):
+        hits = conn.execute(
+            f'SELECT count(*) FROM drugref."{table}" WHERE "{column}" IN (%s, %s)',
+            (ATC_CANARY, AMT_CANARY)).fetchone()[0]
+        if hits:
+            offenders.append(f"{table}.{column}")
+    assert offenders == [], f"encumbered value leaked into: {offenders}"
+
+
+def test_rebuild_is_scoped_to_pbs(conn, seeded_registry):
+    """A PBS re-ingest must not touch another source's projection. The registry
+    seeded by the UNII run above must survive untouched."""
+    before = conn.execute(
+        "SELECT count(*) FROM drugref.identity_claim WHERE scheme = 'INN'").fetchone()[0]
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-08-01", "testsum2")
+    after = conn.execute(
+        "SELECT count(*) FROM drugref.identity_claim WHERE scheme = 'INN'").fetchone()[0]
+    assert after == before
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.substance_moiety").fetchone()[0] == len(SEED_INNS)
+
+
+def test_rebuild_drops_a_delisted_item(conn, seeded_registry, tmp_path):
+    """The projection must SHRINK when upstream does -- the property that makes
+    delete-and-rebuild the right model and an append-only floor the wrong one."""
+    import csv as _csv
+    rows = list(_csv.DictReader(open(FIXTURE, newline="", encoding="utf-8-sig")))
+    smaller = tmp_path / "items.csv"
+    with open(smaller, "w", newline="", encoding="utf-8-sig") as fh:
+        writer = _csv.DictWriter(fh, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows[:2])
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "a")
+    full = conn.execute("SELECT count(*) FROM drugref.local_product").fetchone()[0]
+    pbs_run.ingest_pbs(conn, smaller, "2026-08-01", "b")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 2 < full
