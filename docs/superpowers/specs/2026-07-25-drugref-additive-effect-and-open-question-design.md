@@ -7,7 +7,8 @@ implementation plan. **Builds on:** the
 [slice-2a MED-RT design](2026-07-23-drugref-slice-2a-medrt-classification-design.md) (the `has_PE`
 membership this design's whole leverage rests on) and the
 [slice-1 moiety-spine design](2026-07-23-drugref-global-moiety-spine-design.md) (§5 own-immortal-UUID, and
-the `superseded_by` correction overlay reused in §7).
+the `superseded_by` correction overlay reused in §5 and §7 — see §5.0 for the row shape it requires, and
+§12-J for what went wrong when this document cited it without adopting it).
 **Depends on PR #18** (the foundation-review hardening: `db/005` supersession invariants, `db/006` `ci_axis`)
 and on **[#15](https://github.com/cairn-ehr/drugref/issues/15)** (DAG-descendant expansion — §11).
 
@@ -38,9 +39,27 @@ later); the HTTP API; any auto-firing prescriber alert; and drug–disease contr
 
 ## 1. Licence gate (rule 7 — cleared before any bundling)
 
-**No new external source is introduced.** The contributor data is MED-RT `has_PE`/`has_MoA` membership,
-licence-verified public-domain in the slice-2a gate. Everything added here is either derived from that or is
-**drugref's own curated content**, authored in-project and therefore AGPL-3.0 by construction.
+**§§4–8 introduce no new external source.** The contributor data is MED-RT `has_PE`/`has_MoA` membership,
+licence-verified public-domain in the slice-2a gate. Everything in the model and the registry is either
+derived from that or is **drugref's own curated content**, authored in-project and therefore AGPL-3.0 by
+construction. That is the gate this document clears, and it covers everything it specifies a schema for.
+
+**§11 steps 4 and 5 do introduce new sources, and this gate does not clear them.** openFDA SPL, MeDIC,
+Wikidata and FAERS appear in the sequencing (§11) and in the cost ladder (§7.2.1) as *candidates whose
+consultation order this design fixes* — not as sources it authorises ingesting. Rule 7 is a per-source gate
+run before bundling, and asserting "public domain, so it's clear" inline is exactly the shortcut §12-I
+records this design making twice already. Each of those sources needs its own gate, in the spec that
+actually ingests it:
+
+| source | claimed licence | what the gate must still establish |
+|---|---|---|
+| openFDA SPL | public domain (US federal) | redistribution terms of the *bulk* downloads, and whether openFDA's not-for-clinical-use disclaimer must ride along in `NOTICE` |
+| MeDIC | CC0 | version pinned, attribution form, and that the CC0 grant covers the whole distribution rather than the schema alone |
+| Wikidata | CC0 | per-statement provenance is CC0 but *referenced* content may not be — supplement only |
+| FAERS | public domain | prioritisation only; it must never reach the answer path (§12-I) |
+
+The `question_source_check.source` vocabulary (§7.2.1) naming a tier is a record of *what was consulted*,
+which is not itself a bundling act. Ingesting any of it is.
 
 One consequence worth stating up front: §6 makes drugref **mint its own class concepts**. That is not a
 licence question (we own what we author) but it is a *provenance* question, and §6 addresses it — a
@@ -105,6 +124,35 @@ differently, which is why §11 prescribes a **named deny-list of abstract roots*
 threshold — size captured the coagulation and CNS cases only by luck of topology, and encodes no clinical
 reasoning that would survive MED-RT reshaping its tree.
 
+**The inclusion criterion for that list is qualitative, not the size measurement that found it.** Size is
+how these 14 classes were *discovered*; freezing a size-derived enumeration would inherit the arbitrariness
+of the threshold and add staleness on top. What actually distinguishes them is legible in their names and
+their position: they are **abstract organ-system "Activity Alteration" buckets that assert no specific
+physiologic effect** — `Hematologic Activity Alteration`, `Cardiovascular Activity Alteration` and their
+siblings name a *system that is affected*, not an *effect that accumulates*. A contraindication against
+"anything that alters hematologic activity" is not a clinical statement a prescriber can act on; one
+against "anything that decreases coagulation activity" is. The test to apply to a candidate is therefore:
+
+> Would a contraindication naming this class alone tell a prescriber what to avoid? If it names only the
+> organ system, deny expansion. If it names the direction and the function, expand.
+
+`Decreased Coagulation Activity [PE]` (109 in subtree) passes and is expanded despite being large; the size
+of a subtree is evidence about fan-out, never about specificity.
+
+**The deny-list is a filter on the CI rule's object class, not a barrier during traversal.** A rule whose
+object class is on the list expands to its *direct members only*; a rule whose object class is anywhere
+else expands over the full descendant closure, and the deny-list does not truncate that walk. The
+distinction is load-bearing and the wrong reading is implementable: `Decreased Coagulation Activity` is a
+**descendant** of the denied `Hematologic Activity Alteration`, so a traversal barrier would leave the
+coagulation rules unexpanded — deleting the single most important case this design exists to fix.
+
+**The list needs a per-release review gate**, or it silently rots the first time MED-RT adds an abstract
+root. §7's own rule — a gap is a query, never a report — supplies the mechanism: a
+`gap_unreviewed_expansion_root` view listing CI object classes whose subtree exceeds the discovery
+threshold and which appear on neither the deny-list nor a reviewed-and-allowed list. A new abstract root in
+the next release then surfaces as an open question rather than as a silent fan-out. The threshold survives
+in that view as a *discovery heuristic for the worklist*, which is the only job it was ever fit for.
+
 ### 3.3 MED-RT does not assert the n-ary cases even pairwise
 
 `Cyclooxygenase Inhibitors [MoA]` (61 members) and `Angiotensin-converting Enzyme Inhibitors [MoA]` (37
@@ -120,7 +168,14 @@ against the complete concept inventory — the release defines exactly eight con
 
 ```
 1873 PE   811 EPC   781 MoA   66 TC   59 PK   44 APC   31 HC   30 EXT     (3,695 concepts)
+└──────────────── 3,634 ingested as classes ─────────────┘  └─ 61 not ─┘
 ```
+
+The two totals in this document are both correct and count different things: **3,695** is every concept the
+release defines, **3,634** (the figure in §3's header) is what drugref ingests as `substance_class` rows —
+the six types in `medrt.INGESTED_CONCEPT_TYPES`, which sum to exactly that. The 61-concept difference is
+`HC` + `EXT`, MED-RT's own housekeeping categories: no `has_*` association targets them, so they classify
+no drugs and can carry no membership.
 
 **But MED-RT is not silent on nephrotoxicity.** The `induces` predicate (170 assertions, `RxNorm → MeSH`)
 carries drug-induced adverse states, including four renal ones:
@@ -173,7 +228,7 @@ sections probed), which matches the "requires extraction and review" triage.
 
 **Caveat on strength of evidence:** this is a 3-drug and 4-drug probe, not a coverage measurement. It is
 enough to establish that openFDA *should be consulted before curating*, not enough to quantify yield. §11
-step 3a includes measuring it properly.
+step 4 includes measuring it properly.
 
 ## 4. The model — accumulation primary, groups for exceptions
 
@@ -189,22 +244,66 @@ projection. Neither duplicates ingested data.
 
 ## 5. Schema
 
+### 5.0 The shared overlay row shape — stated once, because getting it wrong is subtle
+
+Every table in this section is an **append-only curated assertion corrected by overlay**, so every one of
+them has the same skeleton. It is written out here rather than four times below, and it is **not** the
+obvious natural-key schema:
+
+| column | notes |
+|---|---|
+| `<table>_id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` — a **surrogate** key |
+| …the table's own columns… | |
+| `source`, `ingest_run`, `asserted_at` | write-once provenance |
+| `superseded_by` | `bigint REFERENCES <table>(<table>_id)`, one-way, NULL while live |
+
+plus, for each table's natural key *K*:
+
+```sql
+CREATE UNIQUE INDEX <table>_live_unique ON drugref.<table> (K) WHERE superseded_by IS NULL;
+```
+
+**Why the natural key cannot be the primary key.** Correction-by-overlay means *inserting the new row and
+then pointing the old one at it*. Both rows carry the same natural key, so a primary key on *K* rejects the
+correction outright and the table can only ever be mutated in place — which is precisely what the overlay
+exists to prevent. This is not hypothetical: `db/001` shipped `identity_claim` with a unique index covering
+superseded rows as well as live ones, and `db/005` had to fix it after a superseded `(moiety, scheme, value)`
+became permanently un-re-assertable. `identity_claim` is therefore keyed on a surrogate
+`identity_claim_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` with uniqueness enforced by a
+**partial** index over live rows only (`db/005` step 1). These tables copy that, exactly.
+
+**The surrogate is also what makes "strictly forward" representable.** `db/005`'s `forbid_claim_rewrite`
+enforces one-way supersession by requiring `superseded_by > identity_claim_id` — a monotonically increasing
+integer is what makes a cycle unrepresentable. With a natural-key PK there is no ordering column at all, so
+the forward-only invariant §5.4 inherits could not be checked even in principle. Each table below gets a
+rewrite trigger modelled on `forbid_claim_rewrite`: DELETE forbidden, only `superseded_by` mutable, set once,
+never unset, and always pointing at a later row **with the same natural key** (the analogue of db/005's
+same-moiety rule — a correction replaces a statement about *this* effect, not a different one).
+
 ### 5.1 `additive_effect` — which effects accumulate, and when it matters
 
 Expected cardinality: tens of rows, ever.
 
 | column | notes |
 |---|---|
-| `effect_class_uuid` | PK → `substance_class(class_uuid)` |
+| `additive_effect_id` | surrogate PK (§5.0) |
+| `effect_class_uuid` | → `substance_class(class_uuid)`; **natural key** — `UNIQUE (effect_class_uuid) WHERE superseded_by IS NULL` |
 | `threshold_major` `smallint` | minimum `major` contributors |
 | `threshold_total` `smallint` | minimum contributors of any grade |
 | `severity` `text` | `CHECK (severity IN ('contraindicated','major','moderate','minor'))` — deliberately the same four-level vocabulary a prescriber-facing consumer expects, and CHECK-constrained rather than free text so it cannot drift per curator |
 | `clinical_note` `text` | what a prescriber needs told |
-| `source`, `ingest_run`, `asserted_at`, `superseded_by` | overlay provenance (§5.4) |
+| `source`, `ingest_run`, `asserted_at`, `superseded_by` | overlay provenance (§5.0, §5.4) |
 
 Fires when `majors >= threshold_major AND contributors >= threshold_total`. Two smallints express the
 realistic rules: "any two contributors" = `(0,2)`; "a major plus anything else" = `(1,2)`; "a major alone is
 worth saying" = `(1,1)`. `CHECK (threshold_total >= threshold_major AND threshold_total >= 1)`.
+
+`threshold_major = 0` is **legal but load-bearing**, and tension A is what makes it dangerous: with every
+uncurated member defaulting to `minor`, an effect curated at `(0, 2)` fires on any two members of a
+109-member subtree, most of which no curator has looked at. The schema cannot forbid it — `(0, 2)` is the
+correct encoding for a genuinely curated effect where every member really does count — so it is surfaced
+instead of prohibited: `gap_uncurated_threshold` (§7.1) lists effects with `threshold_major = 0` and fewer
+graded contributors than `threshold_total`, i.e. the ones firing purely on defaults.
 
 ### 5.2 `effect_contribution` — grade, not enumeration
 
@@ -215,14 +314,44 @@ worth saying" = `(1,1)`. `CHECK (threshold_total >= threshold_major AND threshol
 
 | column | notes |
 |---|---|
+| `effect_contribution_id` | surrogate PK (§5.0) |
 | `effect_class_uuid` | → `substance_class` |
 | `contributor_class_uuid` | → `substance_class` — a **class**, never a moiety |
 | `magnitude` | `CHECK (magnitude IN ('major','minor'))` |
-| PK | `(effect_class_uuid, contributor_class_uuid)` |
+| `source`, `ingest_run`, `asserted_at`, `superseded_by` | overlay provenance (§5.0, §5.4) |
+| natural key | `UNIQUE (effect_class_uuid, contributor_class_uuid) WHERE superseded_by IS NULL` |
+
+**Promotion regrades; it never recruits.** A row here changes the grade of moieties that are *already*
+contributors — formally, the **intersection** of the contributor class's membership with the effect class's
+membership-plus-descendants. It cannot add a moiety to the contributor set. This is the direct consequence
+of the headline above ("this table does not list contributors"), and the alternative reading is the one an
+implementer will otherwise reach for, so it is stated as a rule:
+
+```
+grade(effect E, moiety m) = 'major'  if m ∈ members(E) ∧ ∃ live row (E, C, 'major') with m ∈ members(C)
+                          = 'minor'  if m ∈ members(E)
+                          = undefined otherwise — m is not a contributor, and no row here makes it one
+```
+
+**An explicit `magnitude = 'minor'` row is not redundant**, which is why the CHECK admits it: it records
+*"a curator looked at this class and it really is minor"*, and that is a different fact from *"nobody has
+looked"* even though both grade to `minor`. The distinction is what keeps the review queue finite —
+`gap_ungraded_contribution` (§7.1) lists members with **no `effect_contribution` row at all**, not members
+whose grade is `minor`. Reading it the other way would leave every reviewed-and-confirmed-minor member in
+the queue permanently, re-earning the same curator attention forever: the nagging failure mode §7.2.1
+diagnoses for questions, in the curation layer.
 
 Keyed on **class** so a grade inherits to every member — the ROADMAP's "curate once, apply widely" lever
-doing real work. Curating bleeding means marking the DOACs, VKAs and heparins major and leaving ~100 other
-members at the default. A handful of rows, not a hundred.
+doing real work. Curating bleeding means promoting the classes whose members are the serious bleeders
+(`Decreased Coagulation Factor Activity [PE]` and its 53 members; the direct-Xa and direct-thrombin EPC
+classes, which intersect the effect's membership through apixaban, rivaroxaban and dabigatran) and leaving
+~100 other members at the default. A handful of rows, not a hundred.
+
+**A row whose intersection is empty is a silent no-op** — a curator promotes a class that shares no member
+with the effect and nothing happens, with no error anywhere. That is a curation mistake the schema cannot
+catch (both UUIDs are valid `substance_class` references), so §7.1's `gap_ineffective_contribution` surfaces
+it: rows whose promoted class intersects the effect's contributor set in zero moieties. It is also the gap
+view most likely to fire immediately after a MED-RT reshuffle moves a class out from under an effect.
 
 *Why default-minor rather than default-excluded:* excluding uncurated members would discard the 27,540-row
 leverage that makes this design worth building. Defaulting them to `minor` keeps the coverage while
@@ -230,22 +359,54 @@ leverage that makes this design worth building. Defaulting them to `minor` keeps
 
 ### 5.3 `interaction_group` — the role-based exceptions
 
+Three tables, not two, and for the same reason the moiety spine has `substance_moiety` beside
+`identity_claim`: the group's **identity** must outlive any particular assertion about it, because
+`interaction_group_member` and any external citation point at it.
+
 ```
-interaction_group(group_uuid PK, name, severity, clinical_note, source, ingest_run,
-                  asserted_at, superseded_by)
-interaction_group_member(group_uuid, role text, class_uuid, PK (group_uuid, role, class_uuid))
+interaction_group(group_uuid PK, source_code, first_seen_ingest)
+    -- immortal identity only. group_uuid = ids.mint_group_uuid('DRUGREF', source_code),
+    -- deterministic exactly as class_uuid is (§6), so it is reproducible across instances.
+    -- Append-only, never superseded: there is nothing here to correct.
+
+interaction_group_assertion(interaction_group_assertion_id PK, group_uuid → interaction_group,
+                            name, severity, clinical_note,
+                            source, ingest_run, asserted_at, superseded_by)
+    -- what is CLAIMED about the group, and the part that gets corrected.
+    UNIQUE (group_uuid) WHERE superseded_by IS NULL
+
+interaction_group_member(interaction_group_member_id PK, group_uuid → interaction_group,
+                         role text, class_uuid → substance_class,
+                         source, ingest_run, asserted_at, superseded_by)
+    UNIQUE (group_uuid, role, class_uuid) WHERE superseded_by IS NULL
 ```
 
-A group fires when the regimen covers **every distinct `role`** in its member set. The triple whammy is one
-group with three roles (`NSAID`, `RAAS blocker`, `diuretic`), each role listing the classes that satisfy it.
-No separate roles table: required roles are `SELECT DISTINCT role`, so a role cannot exist without a member
-that satisfies it.
+**Membership is versioned too, which the first draft of this design got wrong.** It gave the group header
+`superseded_by` and left `interaction_group_member` a bare natural-key table — so the header was append-only
+while the part that actually determines whether the group *fires* was mutable in place. Correcting which
+classes satisfy the `diuretic` role would have silently rewritten history, and the record of what drugref
+believed when it fired an alert would have been destroyed by the correction. Members carry the full overlay
+skeleton (§5.0).
+
+A group fires when the regimen covers **every distinct `role`** among its **live** members. The triple
+whammy is one group with three roles (`NSAID`, `RAAS blocker`, `diuretic`), each role listing the classes
+that satisfy it. No separate roles table: required roles are `SELECT DISTINCT role WHERE superseded_by IS
+NULL`, so a role cannot exist without a live member that satisfies it — and superseding the last member of a
+role *removes the role* rather than leaving a group that can never fire.
 
 ### 5.4 Correction semantics
 
-All three tables are curated clinical assertions, so corrections **overlay** rather than mutate — the
-`superseded_by` mechanism `db/005` hardened for `identity_claim` (set once, same subject, strictly forward),
-reused unchanged. A superseded row is history, never deleted: what was believed, and when, stays answerable.
+All four tables carrying assertions — `additive_effect`, `effect_contribution`,
+`interaction_group_assertion`, `interaction_group_member` — are curated clinical statements, so corrections
+**overlay** rather than mutate. The mechanism is the one `db/005` hardened for `identity_claim` (set once,
+same subject, strictly forward), reused **with the surrogate-key row shape it actually requires** (§5.0),
+not bolted onto a natural-key table where it cannot work. A superseded row is history, never deleted: what
+was believed, and when, stays answerable.
+
+`interaction_group` itself is the exception and carries no `superseded_by`: it holds nothing but a
+deterministic UUID and its provenance, so there is nothing about it that can be wrong. Retiring a group is
+superseding its assertion, not deleting its identity — the same discipline that keeps `moiety_uuid`
+immortal while its claims come and go.
 
 ## 6. drugref as its own authority (`source = 'DRUGREF'`)
 
@@ -261,11 +422,34 @@ which §7's worklist is what tells you.
 
 Where minting *is* warranted, drugref becomes **one more authority in its own registry**:
 
-- extend the `db/003` `substance_class.source` CHECK with `'DRUGREF'`, and `ids._SOURCE_CANONICAL`
-  correspondingly (the pair the migration comment already says to extend together);
-- mint with the existing `ids.mint_class_uuid('DRUGREF', code)` — no new machinery;
+- extend **all three** places an authority's spelling is pinned — they are a trio, not a pair, and db/005's
+  own comment says so ("Extend this together with `ids._SOURCE_CANONICAL` and `substance_class`'s own
+  CHECK"):
+
+  | # | what | today | why it bites |
+  |---|---|---|---|
+  | 1 | `db/003` `substance_class.source` CHECK | `('MED-RT', 'MeSH')` | rejects the class row |
+  | 2 | `db/005` `ingest_run.source` CHECK | `('UNII', 'CHEBI', 'MED-RT', 'MeSH')` | **rejects the ingest run** — and every curated row in §5 carries `ingest_run`, so nothing can be written at all |
+  | 3 | `ids._SOURCE_CANONICAL` | `MED-RT`, `MEDRT`, `MESH` | keeps the stored spelling and the UUID key in lockstep |
+
+  Missing #2 is the one that actually stops the migration: a `'DRUGREF'` class row is useless if no
+  `ingest_run` may exist to attribute it to. The same applies to `'openFDA-SPL'` in §11 step 4.
+
+- **add an explicit `_SOURCE_CANONICAL` entry per source — do not rely on the fall-through.**
+  `canonical_source` returns `_SOURCE_CANONICAL.get(s.upper(), s.upper())`, so an authority not listed is
+  **upper-cased**. `'DRUGREF'` survives that by luck; the sources §11 introduces do not —
+  `'openFDA-SPL'` → `OPENFDA-SPL`, `'MeDIC'` → `MEDIC`, `'Wikidata'` → `WIKIDATA`. A CHECK written against
+  the mixed-case literal then never matches what is stored, and a per-source rebuild silently deletes
+  nothing. `MeSH` already needs its entry for exactly this reason; each new source needs one too, and the
+  same spelling must be used in `question_source_check.source` (§7.2.1) so the two vocabularies cannot
+  drift apart.
+- mint classes with the existing `ids.mint_class_uuid('DRUGREF', code)` — no new machinery for the part
+  this section is about;
 - `source_code` is a drugref-assigned stable code (e.g. `NEPHROTOX`), so the UUID is deterministic and
-  reproducible across instances exactly as MED-RT's are.
+  reproducible across instances exactly as MED-RT's are. `interaction_group` (§5.3) needs one genuinely new
+  function, `ids.mint_group_uuid`, because a group is not a `substance_class` and must not share its
+  namespace — it is `uuid5(GROUP_NAMESPACE, …)` beside the existing `MOIETY_`/`CLASS_`/`QUESTION_NAMESPACE`,
+  and it inherits their collision test (§10).
 
 Nephrotoxicity then becomes: mint `Nephrotoxicity [PE, DRUGREF]`, curate NSAIDs / aminoglycosides /
 calcineurin-inhibitors / contrast media as contributors, and let the triple whammy group reference it.
@@ -291,14 +475,28 @@ make "how much do we not know" a number that can be watched per release.
 |---|---|---|
 | `gap_unpopulated_contraindication` | a CI rule names effect *E*; **no drug is filed under *E*** (41 rules / 13 classes) | ingested only |
 | `gap_unclassified_moiety` | registry moieties with no `has_PE` membership — structurally unable to participate | ingested only |
-| `gap_unmatched_ingredient` | RxCUIs MED-RT classifies that no moiety carries (already counted as `unmatched_rxcuis`; made queryable) | ingested only |
+| `gap_unreviewed_expansion_root` | a CI object class whose subtree exceeds the discovery threshold and which is on neither the deny-list nor the reviewed-and-allowed list (§3.2) | ingested + the deny-list |
+| `gap_unmatched_ingredient` | RxCUIs MED-RT classifies that no moiety carries | ingested **+ a new persisted table** — see below |
 | `gap_uncurated_additive_effect` | a PE class that **carries ≥1 CI rule or has ≥10 members in its subtree**, and has no `additive_effect` row — a pending *decision* | §5.1 table (may be empty) |
-| `gap_ungraded_contribution` | members of a curated additive effect sitting at default `minor` — the promote-to-major review queue | §5.1 + §5.2 populated |
+| `gap_uncurated_threshold` | an `additive_effect` with `threshold_major = 0` and fewer graded contributors than `threshold_total` — fires on defaults alone (§5.1) | §5.1 + §5.2 populated |
+| `gap_ineffective_contribution` | an `effect_contribution` row whose promoted class intersects the effect's contributor set in **zero** moieties — a silent no-op (§5.2) | §5.1 + §5.2 populated |
+| `gap_ungraded_contribution` | members of a curated additive effect with **no `effect_contribution` row at all** — the review queue. Not "members at `minor`": an explicit `minor` row means *reviewed* and leaves the queue (§5.2) | §5.1 + §5.2 populated |
 
-The first three depend on nothing but ingested data, which is what lets §11 step 1 ship before any curation
-exists. `gap_uncurated_additive_effect` needs `additive_effect` to exist but not to be populated (it returns
-*everything* when the table is empty, which is the correct initial answer). `gap_ungraded_contribution` is
-only meaningful once curation has begun, so it lands with §11 step 4.
+Only the **first two** depend on nothing but ingested data. `gap_unreviewed_expansion_root` additionally
+needs the deny-list, so it lands with the expansion work (§11 step 2) that introduces it.
+
+**`gap_unmatched_ingredient` is not free, and the first draft of this design said it was.** The claim that
+it is "already counted as `unmatched_rxcuis`; made queryable" is true about the *count* and misleading about
+the *data*: `medrt_run` builds the unmatched set locally and reports `unmatched_rxcuis=len(unmatched)` — the
+integer survives, the RxCUIs are discarded when the function returns. There is nothing in the database to
+build a view over. Making it queryable therefore needs a small persisted table
+(`ingest_unmatched_ingredient(ingest_run, rxcui, name)`, rebuilt per run like any other projection) **and a
+change to the ingest path**, not a view definition. It is still cheap, but it is a code change with its own
+test, and §11 step 1's scope is corrected accordingly.
+
+`gap_uncurated_additive_effect` needs `additive_effect` to exist but not to be populated (it returns
+*everything* when the table is empty, which is the correct initial answer). The remaining three are only
+meaningful once curation has begun, so they land with §11 step 7, alongside the curated tables they read.
 
 The `≥1 CI rule or ≥10 subtree members` criterion is a deliberately crude first filter, chosen to make the
 initial worklist finite and reviewable rather than to be clinically precise; it is a view definition and
@@ -309,27 +507,37 @@ therefore cheap to retune once a curator has seen its output.
 Each gap row derives a question with **immortal deterministic identity**:
 
 ```
-QUESTION_NAMESPACE = uuid5(_DRUGREF_ROOT, "question")     # beside MOIETY_/CLASS_NAMESPACE
+QUESTION_NAMESPACE = uuid5(_DRUGREF_ROOT, "question")   # beside MOIETY_/CLASS_/GROUP_NAMESPACE
 question_uuid      = uuid5(QUESTION_NAMESPACE, f"{gap_kind}:{gap_key}")
 ```
 
-The same trick as `class_uuid`: re-derivation on every ingest yields the same UUID, so the *derived* half is
-a rebuildable projection while the *evidence* half is append-only. No new architecture — drugref's existing
-hybrid store applied to a third kind of thing.
+The same trick as `class_uuid`: re-derivation on every ingest yields the same UUID, so the *derived* half
+(`open_question` itself) is a rebuildable projection, while everything a curator or a notifier contributes —
+`question_state`, `question_source_check`, `question_evidence` — is append-only and keyed by that UUID. No
+new architecture; drugref's existing hybrid store applied to a third kind of thing, with the split drawn
+where §12-K says it belongs.
 
 **`gap_key` must be pinned per `gap_kind`, because the UUID derives from it** and an external notifier will
 hold references to it. It is the natural key of the thing the question is *about*, stringified — never a row
-id, never anything ordering-dependent:
+id, never anything ordering-dependent. **One format throughout:** `SCHEME:value`, with `/` joining the parts
+of a compound key.
+The scheme prefix is redundant for a UUID and mandatory for anything else, so requiring it everywhere costs
+one token per key and removes the question of which kinds have one. These strings are frozen forever by the
+UUID derivation, so the convention is settled here rather than after the first external citation:
 
 | `gap_kind` | `gap_key` |
 |---|---|
-| `unpopulated_contraindication` | the effect class's `class_uuid` |
-| `uncurated_additive_effect` | the effect class's `class_uuid` |
-| `ungraded_contribution` | `{effect_class_uuid}/{contributor_class_uuid}` |
-| `unclassified_moiety` | the `moiety_uuid` |
+| `unpopulated_contraindication` | `CLASS:{class_uuid}` |
+| `uncurated_additive_effect` | `CLASS:{class_uuid}` |
+| `unreviewed_expansion_root` | `CLASS:{class_uuid}` |
+| `ungraded_contribution` | `CLASS:{effect_class_uuid}/CLASS:{contributor_class_uuid}` |
+| `ineffective_contribution` | `CLASS:{effect_class_uuid}/CLASS:{contributor_class_uuid}` |
+| `uncurated_threshold` | `CLASS:{effect_class_uuid}` |
+| `unclassified_moiety` | `MOIETY:{moiety_uuid}` |
 | `unmatched_ingredient` | `RXNORM_IN:{rxcui}` |
 
-Class and moiety UUIDs are themselves immortal, so a question's identity is as stable as its subject. A
+Class and moiety UUIDs are themselves immortal — `substance_class` UUIDs are derived from `(source, code)`
+and `db/005` makes `moiety_uuid` immortal outright — so a question's identity is as stable as its subject. A
 pinned-literal test guards the derivation (§10).
 
 | column | notes |
@@ -338,7 +546,29 @@ pinned-literal test guards the derivation (§10).
 | `gap_kind`, `gap_key` | what derived it |
 | `question_text` | the literature-searchable statement |
 | `search_expression` | what was asked, so re-asking is reproducible |
-| `state` | `open` \| `evidence_under_review` \| `answered` \| `withdrawn` |
+| `first_derived_ingest`, `last_derived_ingest` | write-once / refreshed provenance: when this question first appeared, and whether the gap that derives it is still open |
+
+**`state` does not live here** — and the first draft of this design put it here, which would have broken
+tension F. The reasoning: §7.2 calls the derived half "a rebuildable projection", re-derived from the gap
+views on every ingest. A `withdrawn` flag on a rebuildable table is erased by the next rebuild and the
+suppressed question comes straight back; `answered` likewise. Curator intent is not derivable from the gap
+views, so it cannot live on the table those views rebuild.
+
+It moves to its own append-only table, keyed by the deterministic `question_uuid` — which is exactly what
+the immortal identity is *for*:
+
+```
+question_state(question_state_id PK, question_uuid → open_question,
+               state, rationale, source, ingest_run, asserted_at, superseded_by)
+  state : 'open' | 'evidence_under_review' | 'answered' | 'withdrawn'
+  UNIQUE (question_uuid) WHERE superseded_by IS NULL
+```
+
+Same overlay skeleton as §5.0, for the same reason: a question moving from `evidence_under_review` back to
+`open` is a correction with a history worth keeping. A question with no `question_state` row is `open` by
+default, so the derived half can register thousands of questions without writing a state row for any of
+them. The rebuild of `open_question` is then an upsert on `question_uuid` that refreshes `question_text`,
+`search_expression` and `last_derived_ingest` and touches nothing a curator owns.
 
 ### 7.2.1 `question_source_check` — the watermark is per SOURCE TIER, not just literature
 
@@ -348,15 +578,46 @@ an openFDA label the whole time. A question therefore needs to record **which ti
 what version, with what outcome**:
 
 ```
-question_source_check(question_uuid, source, checked_at, source_version, outcome, note)
-  source  : 'MED-RT' | 'openFDA-SPL' | 'MeDIC' | 'Wikidata' | 'FAERS' | 'literature'
-  outcome : 'covered' | 'not_covered' | 'partial' | 'error'
-  PK (question_uuid, source, source_version)
+question_source_check(question_source_check_id PK,          -- surrogate (§5.0)
+                      question_uuid → open_question,
+                      source, source_version, checked_at, outcome, note)
+  source  : CHECK IN ('MED-RT','openFDA-SPL','MeDIC','Wikidata','FAERS','literature')
+  outcome : CHECK IN ('covered','not_covered','partial','error')
+  source_version : text NOT NULL          -- see below
+  UNIQUE (question_uuid, source, source_version)
 ```
 
 `source_version` is the release/label version checked, so a re-check against a *newer* version is a new row
 rather than an overwrite — the same append-only discipline as the evidence table, and what makes "has this
 been looked at since the January labels?" answerable.
+
+**Two corrections to the first draft of this table.**
+
+*The key could not hold a literature row.* `PK (question_uuid, source, source_version)` makes
+`source_version` NOT NULL by definition, and literature has no release version — so the one tier the whole
+watermark idea started from was the one tier the key could not record. Rather than allow NULL (which would
+also silently permit unlimited duplicate checks, since NULLs do not conflict), `source_version` stays NOT
+NULL and **every tier defines what it means**:
+
+| source | `source_version` |
+|---|---|
+| `MED-RT` | the release string, e.g. `2026.07.06` |
+| `openFDA-SPL` | the openFDA export date the query ran against |
+| `MeDIC` | the distribution version |
+| `Wikidata` | the ISO date of the query |
+| `FAERS` | the quarterly extract, e.g. `2026Q2` |
+| `literature` | the ISO date the search ran (`2026-07-25`) — which is the right answer anyway: re-asking the literature is a *new search on a later corpus*, and the date is exactly what "has this been looked at recently?" means |
+
+The uniqueness constraint moves off the primary key for the reason §5.0 gives — this table records
+observations rather than assertions and is never superseded, but the surrogate key keeps it consistent with
+its neighbours and gives an `ORDER BY` that does not depend on `checked_at` ties.
+
+*`source` and `outcome` were left as free text* while §5.1 argued at length that `severity` must be
+CHECK-constrained "so it cannot drift per curator". The same reasoning applies with more force here, since
+the cheapest-unchecked-tier ordering is a **join against these literals**: a row written as `'openfda-spl'`
+does not merely look untidy, it makes the question appear never to have been checked and re-earns expensive
+literature effort forever. Both get CHECKs, and `source` uses the same spellings as `_SOURCE_CANONICAL`
+(§6) so the two vocabularies cannot diverge.
 
 **This is what makes the cost ladder enforceable rather than aspirational.** A question with no
 `openFDA-SPL` row has not earned literature-mining effort yet, and the worklist views should order by
@@ -365,7 +626,7 @@ cheapest-unchecked-tier so the free sources are always exhausted first.
 | tier | cost | licence | why this order |
 |---|---|---|---|
 | MED-RT (all files, all predicates) | free, on disk | public domain | §12-H — already paid for |
-| openFDA SPL | free, public API | public domain / CC0 | **the source MED-RT is derived from** (§3.5) |
+| openFDA SPL | free; **bulk download**, not the API, for anything corpus-wide | public domain, gate pending (§1) | **the source MED-RT is derived from** (§3.5) |
 | MeDIC | free bulk | CC0 | drug–disease indications/contraindications seed |
 | Wikidata | free | CC0 | supplement only — cross-identifiers, candidate leads |
 | FAERS | free | public domain | signal *prioritisation*, not decision support |
@@ -383,12 +644,26 @@ An `answered` question also stays in the registry and keeps accepting evidence.
 ### 7.3 `question_evidence` — append-only, supersedable
 
 ```
-question_evidence(question_uuid, reference, verdict, confidence,
-                  asserted_at, superseded_by, ingest_run)
+question_evidence(question_evidence_id PK,                  -- surrogate (§5.0)
+                  question_uuid → open_question,
+                  reference_scheme, reference_value, verdict, confidence,
+                  source, ingest_run, asserted_at, superseded_by)
+  reference_scheme : CHECK IN ('DOI','PMID','PMCID','NCT','SPL','URL')
+  UNIQUE (question_uuid, reference_scheme, reference_value) WHERE superseded_by IS NULL
 ```
 
 A later finding may supersede an earlier one; nothing is deleted. Medicine revises, and the schema must let
-it revise without destroying the record of what was believed before. Same mechanism as §5.4.
+it revise without destroying the record of what was believed before. Same mechanism and same row shape as
+§5.4 and §5.0.
+
+**`reference` is split into a scheme and a value rather than left free text**, which is what the first draft
+had. Three reasons, in increasing order of importance. It makes citations *dedupable* — the same paper
+arriving as a bare DOI, a DOI URL and a PubMed link is otherwise three rows saying one thing, and the
+`UNIQUE` above cannot help. It makes them *resolvable* without guessing. And it is the field most likely to
+be rendered by a downstream consumer, so `URL` being one scheme among several — rather than the implicit
+default — keeps unvalidated links a deliberate, visible choice rather than the path of least resistance for
+whatever pastes into it. `URL` stays in the vocabulary because some evidence genuinely has no better
+identifier; consumers rendering it should treat it as untrusted, and the `COMMENT ON` (§9) says so.
 
 **Why deterministic UUIDs matter beyond tidiness:** an external tool cannot notify drugref about "that
 renal vasoconstriction thing" — it needs a stable key. Building the identity now, before anything notifies
@@ -401,8 +676,26 @@ drugref publishes what it knows and the thresholds it judges significant; the **
 with a patient's regimen. Two views are the contract of record:
 
 - `additive_effect_contributor(effect_class_uuid, moiety_uuid, magnitude)` — the flattened fact table,
-  effect → members (with descendants) → grade.
-- `interaction_group_member_moiety(group_uuid, role, moiety_uuid)`.
+  effect → members (with descendants) → grade. **Unique on `(effect_class_uuid, moiety_uuid)`**; see the
+  conflict rule below.
+- `interaction_group_member_moiety(group_uuid, role, moiety_uuid)` — live members only.
+
+**The conflict rule is part of the contract, not an implementation detail.** One moiety can reach one effect
+through several promoted classes: aspirin is a member of `Decreased Platelet Aggregation`, and a curator may
+also have promoted an EPC class it belongs to. Without a stated rule the view emits that moiety twice, and
+since §8's whole evaluation is *count the contributors*, a duplicated row is the difference between firing
+and not firing at `threshold_total = 2` — one drug counted as two. So:
+
+> `magnitude = max(magnitude)` over all live promotions, with `major > minor`, grouped by
+> `(effect_class_uuid, moiety_uuid)`. The view is unique on that pair, and a consumer may rely on it.
+
+`major` winning is the safety-preserving direction, and it also matches what a curator means: promoting a
+class is an assertion that *these members matter more*, never a demotion of anything already promoted.
+
+This is the one place the "genuinely small" claim below needs qualifying: the intersection and count really
+are small, but only because the view guarantees one row per moiety. A consumer computing the count from a
+non-deduplicated join would get it wrong, which is why the guarantee is stated here rather than left to be
+inferred.
 
 Consumers read `additive_effect` for the thresholds and clinical notes, and apply them to the intersection.
 This keeps the global tier **stateless and free of patient data**, matches the existing read-time-expansion
@@ -426,6 +719,12 @@ Unchanged from 5a and restated because this design widens what drugref says:
   attributed as such (`source = 'DRUGREF'`) and be traceable to evidence via §7.3 wherever they rest on it.
 - **Curated ≠ verified.** A `major` grade with no `question_evidence` behind it is an opinion; the registry
   makes that visible rather than letting it pass as sourced.
+- **Extracted text is untrusted input.** §11 step 4 parses free-text label sections written by third
+  parties into a clinical database. Extraction lands as a candidate-tier projection reviewed through §7 and
+  is never promoted to fact by the extractor itself; `question_evidence.reference_scheme = 'URL'` and
+  `question_text` are likewise author-supplied strings that a consumer may render. The `COMMENT ON` for each
+  must say so, for the same reason `db/006` moved the directionality contract into the catalog: the
+  constraint that lives only in a design document is the one that gets lost.
 
 ## 10. Testing (TDD, failing-test-first)
 
@@ -434,54 +733,108 @@ Unchanged from 5a and restated because this design widens what drugref says:
 - **Accumulation acceptance matrix** (DB-gated): a curated effect with three members at mixed grades;
   assert firing at each `(threshold_major, threshold_total)`; assert default-minor for uncurated members;
   assert descendant contributors are included; assert a superseded `additive_effect` row stops firing.
+- **The overlay row shape (§5.0), on every one of the four assertion tables.** These get the same three
+  assertions each, and they are the tests that would have caught the natural-key-PK defect: a correction
+  **inserts** rather than failing on a uniqueness violation; the superseded row survives and stays readable;
+  the read views see only the live row. `additive_effect` alone is not enough coverage —
+  `effect_contribution`, `interaction_group_assertion` and `interaction_group_member` are the ones most
+  likely to be implemented with the natural key, because that is the shape they read as.
+- **Supersession is one-way**, per table: `superseded_by` cannot be unset, cannot be re-pointed, and cannot
+  reference an earlier row — mirroring `db/005`'s `forbid_claim_rewrite` tests.
+- **Contributor promotion regrades, never recruits** (§5.2): a moiety in the promoted class but *not* in the
+  effect's membership does not appear in `additive_effect_contributor` at all; and a promotion whose
+  intersection is empty shows up in `gap_ineffective_contribution`.
+- **Reviewed-minor leaves the queue** (§5.2): a member with an explicit `magnitude = 'minor'` row grades
+  identically to an uncurated one but is **absent** from `gap_ungraded_contribution`, while the uncurated
+  one remains. The two are indistinguishable by grade alone, so only this assertion pins the difference.
+- **The `additive_effect_contributor` conflict rule** (§8): a moiety reachable through two promoted classes
+  appears **once**, at `major`. Asserted directly, because a consumer's count depends on it.
 - **Group semantics**: fires only when all distinct roles are covered; two drugs satisfying the *same* role
-  do **not** fire it.
+  do **not** fire it; superseding the last live member of a role removes the role rather than leaving a
+  group that can never fire.
+- **Descendant expansion and the deny-list** (Plan B — currently untested by this list, and the whole
+  content of a shippable slice): a denied root expands to direct members only; an allowed class expands over
+  its full closure; `Decreased Coagulation Activity [PE]` reaches warfarin, apixaban and aspirin after
+  expansion and only dabigatran before it; and — the regression test the §3.2 control case exists to
+  provide — `Serotonin Uptake Inhibitors [MoA]` returns an identical pair set with expansion on and off.
 - **Question determinism**: a pinned `question_uuid` literal, guarding the derivation the way
-  `test_class_registry_source_neutral.py` pins class UUIDs — an external notifier depends on it.
-- **Watermark semantics**: a question with `state='open'` and a stale `evaluated_through` still appears in
-  the worklist; a `withdrawn` one does not.
+  `test_class_registry_source_neutral.py` pins class UUIDs — an external notifier depends on it. Pin one
+  literal per `gap_kind`, since the `gap_key` format (§7.2) is frozen per kind, not globally.
+- **Curator state survives rebuild** (§7.2): register a question, mark it `withdrawn`, re-run the derivation,
+  assert it is still `withdrawn` and still absent from the worklist. This is the test that distinguishes the
+  corrected design from the one that put `state` on the rebuildable table, where it would silently pass on a
+  fresh database and fail only on the second ingest.
+- **Watermark semantics**: a question with no `question_state` row is treated as `open`; an `open` question
+  whose newest `question_source_check` is old still appears in the worklist (absence of evidence is not
+  closure); a `withdrawn` one does not appear.
+- **Source-check append-only-ness**: re-checking the same source at a *newer* `source_version` inserts a
+  second row rather than overwriting; re-checking at the *same* version conflicts. A `literature` check
+  records the search date as its version and is admissible — the case the first draft's primary key could
+  not represent at all.
+- **Cheapest-unchecked-tier ordering**: a question with no `openFDA-SPL` check sorts ahead of one that has
+  been checked there, so the ladder that governs where effort goes is asserted rather than assumed.
 - **`DRUGREF`-minted classes** coexist with MED-RT and MeSH, and a per-source rebuild of either leaves
   drugref-authored classes untouched.
+- **The four namespaces do not collide**: a moiety, a class, a group and a question minted from the *same*
+  input string yield four different UUIDs — extending
+  `test_class_uuids_still_cannot_collide_with_moiety_uuids` to the two new namespaces rather than assuming
+  uuid5 makes it impossible.
+- **The source trio stays in lockstep** (§6): a source admitted to `substance_class.source` is admitted to
+  `ingest_run.source` and canonicalises to the same spelling through `ids.canonical_source` — the assertion
+  that fails loudly if a future source extends one CHECK and forgets the other two.
 
 ## 11. Sequencing and dependencies
 
-1. **The question registry and gap views** (§7). No curation required, ships immediately, converts the
-   foundation review's findings into standing infrastructure, and is the thing that produces value first.
-   Depends on nothing beyond current `main` + PR #18.
+1. **The question registry and gap views** (§7). No curation required, ships early, converts the foundation
+   review's findings into standing infrastructure, and is the thing that produces value first. Depends on
+   nothing beyond current `main` + PR #18 — with **one correction to the original claim**: of its gap views
+   only `gap_unpopulated_contraindication` and `gap_unclassified_moiety` are pure views over existing
+   tables. `gap_unmatched_ingredient` additionally needs the unmatched RxCUIs *persisted*, which
+   `medrt_run` does not do today (§7.1), so this step carries a small ingest-path change and its own test.
 2. **#15 descendant expansion, with a named deny-list** of the ~14 abstract PE organ-system roots (§3.2) —
-   *not* a subtree-size threshold. Contributor sets in §5.2 are wrong without this, and it changes what
-   several gap views return, so it precedes the curated tables.
+   *not* a subtree-size threshold, and applied as a filter on the CI rule's object class rather than as a
+   traversal barrier. Contributor sets in §5.2 are wrong without this, and it changes what several gap views
+   return, so it precedes the curated tables. Ships `gap_unreviewed_expansion_root` with it, so the list
+   cannot rot silently across releases.
 3. **Slice 5b (MeSH disease descriptors), where it overlaps a gap** — moved ahead of DRUGREF minting by the
    §3.4 audit. `induces` / `may_treat` / `CI_with` all resolve once MeSH diseases are ingested, and `induces`
    already covers part of the nephrotoxicity gap this design would otherwise hand-curate. Curating before 5b
    risks paying for what the release supplies. The accessory crosswalk resolves 50.8% of the M-codes, which
    shrinks 5b's unknown but does not remove it (no tree numbers, 49% unresolved).
-3a. **Extract from openFDA SPL, before any curation** (§3.5). MED-RT is derived from these labels, so a
+4. **Extract from openFDA SPL, before any curation** (§3.5). MED-RT is derived from these labels, so a
    MED-RT gap should be checked against the label first. Two things belong here: **measure** the yield
    properly (does openFDA resolve the 41 dead rules and the 13 empty classes? — §3.5 is a 3-drug probe, not
    a measurement), and if it does, ingest the extraction as a **projection** with `source = 'openFDA-SPL'`,
-   attributed in `NOTICE`. Public domain, so the licence gate is clear; extraction quality is the real risk
-   and is why this lands as a candidate-tier projection reviewed via §7, not as fact.
-3b. **MeDIC** — CC0 drug–disease indications/contraindications. Overlaps `may_treat`/`CI_with`, so import
-   after 5b to make the overlap measurable rather than duplicated.
-4. **`source = 'DRUGREF'` minting** (§6) — one migration, small, and scoped to what 5b, 3a and 3b did *not*
+   attributed in `NOTICE` and admitted to all three source lists (§6). Corpus-wide work uses the bulk
+   downloads, not the per-request API. **The rule-7 gate for openFDA runs in that spec, not this one**
+   (§1) — extraction quality is the real risk, and is why this lands as a candidate-tier projection reviewed
+   via §7 rather than as fact.
+5. **MeDIC** — CC0 drug–disease indications/contraindications, gate pending (§1). Overlaps
+   `may_treat`/`CI_with`, so import after 5b to make the overlap measurable rather than duplicated.
+6. **`source = 'DRUGREF'` minting** (§6) — one migration, small, and scoped to what steps 3–5 did *not*
    supply. **This is now expected to be a much smaller set than first designed.**
-5. **The curated tables** (§5) with an empty curation set, plus the read views (§8).
-6. **Literature-backed curation**, driven by the §7 worklist, landing as `question_evidence` plus curated
+7. **The curated tables** (§5) with an empty curation set, plus the read views (§8) and the four
+   curation-dependent gap views (§7.1).
+8. **Literature-backed curation**, driven by the §7 worklist, landing as `question_evidence` plus curated
    grades.
+
+*(Steps 4 and 5 were `3a`/`3b` in the first draft. `3a.` is not a Markdown ordered-list marker, so those two
+steps rendered as loose paragraphs and split the list in two — renumbered rather than re-broken.)*
 
 **Recommended decomposition — this spec is too large for one implementation plan.** Three plans:
 
-- **Plan A — the open-question registry** (step 1): the three ingested-only gap views, `open_question`,
-  `question_evidence`, deterministic UUID minting. Self-contained, ships value immediately, and needs none
-  of the model below. *Start here.*
-- **Plan B — descendant expansion** (step 2): closes #15 with the named deny-list. Independently useful —
-  it improves `ddi_candidate_pair` whether or not the accumulation model is ever built.
-- **Plan C — the accumulation model** (steps 4–5): `DRUGREF` minting, the three curated tables, the read
-  views, and the two remaining gap views. **Gated on slice 5b** (step 3) for any effect 5b might supply —
+- **Plan A — the open-question registry** (step 1): the two pure gap views, the persisted-unmatched change
+  behind the third, `open_question`, `question_state`, `question_source_check`, `question_evidence`, and
+  deterministic UUID minting. Self-contained, ships value early, and needs none of the model below.
+  *Start here.*
+- **Plan B — descendant expansion** (step 2): closes #15 with the named deny-list and its review gate.
+  Independently useful — it improves `ddi_candidate_pair` whether or not the accumulation model is ever
+  built.
+- **Plan C — the accumulation model** (steps 6–7): `DRUGREF` minting, the four assertion tables of §5, the
+  read views, and the remaining gap views. **Gated on slice 5b** (step 3) for any effect 5b might supply —
   see §12-H.
 
-Step 6 is continuous curation work, not a plan. Slice 5b keeps its own separate spec. Each of A/B/C gets its
+Step 8 is continuous curation work, not a plan. Slice 5b keeps its own separate spec. Each of A/B/C gets its
 own spec-to-plan cycle if it grows beyond what this document already settles.
 
 **A precondition on Plan C, learned the hard way (§12-H): before curating any gap, audit every file and
@@ -494,12 +847,21 @@ asked automatically rather than remembered.
 **A. Default-minor vs default-excluded contributors** (§5.2). Resolved to default-minor: excluding
 uncurated members throws away the ingested-membership leverage that motivates the whole design. Accepted
 cost: an uncurated effect with `threshold_major = 0` would fire on weak contributors, so `threshold_major
->= 1` is the recommended default when curating a new effect.
+>= 1` is the recommended default when curating a new effect. That recommendation is **advice the schema
+cannot enforce** — `(0, 2)` is legitimate for a fully curated effect — so §7.1's `gap_uncurated_threshold`
+makes the risky combination visible instead: `threshold_major = 0` with fewer graded contributors than
+`threshold_total` means the effect is firing on defaults nobody reviewed.
 
 **B. Subtree-size threshold vs named deny-list** for descendant expansion. Resolved to the deny-list. Size
 worked for coagulation (6 descendants) and CNS depression (4) by topological luck; it encodes no clinical
 distinction and would silently change meaning when MED-RT reshapes its hierarchy. A named list of abstract
 roots states what is actually meant and fails visibly.
+
+**Sharpened after review:** naming the list is not enough if the *membership criterion* is still size — a
+frozen size-derived enumeration inherits the arbitrariness and adds staleness. §3.2 now states a qualitative
+criterion (does the class name an effect a prescriber can act on, or only an organ system?), keeps size as a
+*discovery heuristic for the worklist* rather than a rule, and adds `gap_unreviewed_expansion_root` so a new
+abstract root in the next release surfaces as a question instead of silently fanning out.
 
 **C. Class-level vs moiety-level grading** (§5.2). Class-level, for curation economy. Accepted cost: a
 moiety that is an atypical member of its class cannot be graded individually. Revisit only if real cases
@@ -525,8 +887,12 @@ Mitigated by attribution (`source`) and by §7.3 evidence links.
 **H. Existing sources were assumed exhausted before they were.** This design initially justified curation
 and literature-mining for gaps without auditing everything already on disk. The audit found: `induces`
 covers nephrotoxicity as a drug→disease relation (§3.4); `has_SC` has **248 MED-RT-targeted assertions**
-(210 `RxNorm→MED-RT`, 38 `MED-RT→MED-RT`) ingestible today, contradicting the HANDOVER note that `has_SC`
-"points into MeSH"; and the accessory `NDFRT-NUI_MeSH-CUI` crosswalk resolves **5,030 of 9,908 (50.8%)** of
+(210 `RxNorm→MED-RT`, 38 `MED-RT→MED-RT`) ingestible today **without the MeSH bridge** — which the HANDOVER
+and ROADMAP note that `has_SC` "points into MeSH" does not account for. Stated precisely, since the first
+draft of this tension overstated it: `has_SC` is 3,632 assertions, and the MeSH characterisation is right
+for 3,384 of them (2,916 `RxNorm→MeSH`, 468 `MED-RT→MeSH`). It is *incomplete*, not wrong — but the 248 it
+omits need no bridge at all, so they were available the whole time the follow-up was filed as blocked on
+one; and the accessory `NDFRT-NUI_MeSH-CUI` crosswalk resolves **5,030 of 9,908 (50.8%)** of
 the MeSH M-codes the release references, reducing (though not removing — no tree numbers, 49% unresolved)
 slice 5b's stated unknown.
 
@@ -559,6 +925,45 @@ path entirely — it prioritises the worklist, it does not populate it.
 and audit every source in the tier list — especially the one your source is derived FROM — before mining or
 curating (this tension).** §7's worklist mechanises both: it carries the `skipped_predicates` inventory and
 the per-tier check rows, so "did we already have this?" is asked structurally rather than remembered.
+
+**J. The append-only mechanism was cited but not actually adopted.** §5 originally gave every curated table
+a *natural-key* primary key — `additive_effect(effect_class_uuid)`,
+`effect_contribution(effect_class_uuid, contributor_class_uuid)`,
+`interaction_group_member(group_uuid, role, class_uuid)` — while §5.4 claimed the `db/005` overlay
+mechanism was "reused unchanged". The two are incompatible: an overlay correction inserts a second row with
+the *same* natural key, which a primary key on that key rejects, leaving in-place mutation as the only
+possible implementation — the exact thing the overlay exists to prevent.
+
+The mechanism was cited by name without adopting its **shape**. `identity_claim` is keyed on a surrogate
+`bigint GENERATED ALWAYS AS IDENTITY`, with uniqueness enforced by a *partial* index over live rows only,
+precisely because `db/001` shipped a full-coverage unique index and `db/005` had to repair it after
+superseded values became permanently un-re-assertable. The surrogate is also what makes db/005's
+"strictly forward" rule (`superseded_by > identity_claim_id`) expressible at all; with a natural-key PK
+there is no ordering column, so the invariant §5.4 claimed to inherit could not have been checked.
+
+Resolved: §5.0 states the row shape once and every assertion table adopts it. Two consequences worth
+naming — `interaction_group` splits into an immortal identity table plus a supersedable assertion table
+(the `substance_moiety` / `identity_claim` split, for the same reason), and `interaction_group_member`
+gains the overlay columns it lacked entirely, having been the one table where mutation-in-place would have
+silently rewritten the part that decides whether a group fires.
+
+**The generalisable rule: citing a prior mechanism obliges adopting its constraints, not just its name.**
+The cheapest check is to open the migration and compare column lists — which is what §12-H and §12-I say
+about *data*, applied here to *schema*.
+
+**K. Curator intent was placed on a rebuildable projection.** §7.2 put `state` (including `withdrawn`) on
+`open_question`, the table it simultaneously described as re-derived from the gap views on every ingest. A
+`withdrawn` flag on a rebuilt table is erased by the next rebuild, so tension F's noise-suppression answer
+would have quietly stopped working — and, worse, would have *passed* every test written against a fresh
+database, failing only on the second ingest of a long-running instance.
+
+Resolved: `state` moves to an append-only `question_state` keyed by the deterministic `question_uuid`,
+with absence meaning `open`. The immortal identity §7.2 built for external notifiers turns out to be
+exactly what lets curator state live beside a rebuildable projection without being owned by it.
+
+**The generalisable rule: in a hybrid store, every column belongs to either the rebuildable half or the
+append-only half, and the test that distinguishes them is "would a rebuild destroy this?"** Asked of each
+column in §5 and §7, it is also what surfaced tension J.
 
 ## 13. Explicitly out of scope
 
