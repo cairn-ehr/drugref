@@ -10,6 +10,7 @@ dependencies = ["psycopg[binary]>=3.2"]
 
 [dependency-groups]
 dev = ["pytest>=8"]
+docs = ["mkdocs-material>=9.5,<10"]
 
 [build-system]
 requires = ["hatchling"]

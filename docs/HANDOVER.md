@@ -438,5 +438,9 @@ Foundation-review follow-ups (filed, not fixed):
 
 - GitHub: `cairn-ehr/drugref` · default branch `main` · licence **AGPL-3.0** · attribution in `NOTICE`.
 - CI: `.github/workflows/ci.yml` (PG18 service; DB-gated tests fail rather than skip under `CI`).
-- No CLAUDE.md yet (the coding rules live in the nextsession skill); no ADR log yet (slice 1's *why* is the
-  design spec). Consider adding both as the project grows.
+- Coding rules live in CLAUDE.md (and the nextsession skill); the published docs site's **Design decisions**
+  section (`docs-site/docs/decisions/`) is the ADR-like log — living records, not immutable ADRs.
+- Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by
+  `.github/workflows/docs.yml`. Living decision records live in
+  `docs-site/docs/decisions/`; keep them current (revise in place, remove reversed
+  decisions). The internal specs/HANDOVER/ROADMAP are **not** published.

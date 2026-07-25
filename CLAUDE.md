@@ -18,6 +18,11 @@ Read `docs/HANDOVER.md` first and follow it (the `nextsession` skill does this).
 verify HANDOVER.md and ROADMAP.md reflect the current state; update them if stale. When done, update
 both (concise, < 500 lines), then commit, push, and open a PR to `main` linking any relevant issue.
 
+Public documentation is published from `docs-site/` (MkDocs Material) to
+`docs.drugref.org`; its **Design decisions** section holds *living* records (only
+decisions that currently stand — revised in place, reversed ones removed), distinct from
+the immutable per-slice specs under `docs/superpowers/specs/`.
+
 ## Commands
 
 - Install/sync: `uv sync`

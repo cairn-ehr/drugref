@@ -1,0 +1,42 @@
+# Design decisions
+
+These records capture the design decisions that **currently stand** behind drugref —
+what was chosen, and why.
+
+They are shaped like ADRs (Architecture Decision Records) but are deliberately
+**living, not immutable**:
+
+- Each record describes a decision *as it stands today*.
+- When a decision changes, its record is **revised in place** — not appended to.
+- A decision that is **reversed is removed**, not kept as a tombstone.
+
+There is therefore no "superseded by" chain and no status graveyard here. The full
+history is never lost — it remains in the git log and in the dated design specs under
+`docs/superpowers/specs/`. This section always reflects *current* truth.
+
+## Record template
+
+```text
+# <Decision title>
+
+**Status:** Active            (or "Under review")
+**Last reviewed:** YYYY-MM-DD
+**Applies to:** <slice / subsystem>
+**Full derivation:** <link to the relevant design spec>
+
+## Context      — the forces / the problem this decision answers
+## Decision     — what stands today
+## Consequences — trade-offs, what it enables, what it costs
+## Related      — other decision records, principles, code
+```
+
+## Current decisions
+
+- [Immortal moiety identity](immortal-moiety-identity.md) — every moiety gets its own
+  UUID, never keyed on a name.
+- [Append-only claims](append-only-claims.md) — corrections supersede; history is never
+  overwritten.
+- [The hybrid store](hybrid-store.md) — rebuildable projections beside an append-only
+  signed overlay.
+- [Licensing is a blocker](licensing-is-a-blocker.md) — AGPL-compatible sources only,
+  checked before adding.

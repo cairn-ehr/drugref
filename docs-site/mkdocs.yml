@@ -1,0 +1,76 @@
+site_name: drugref.org documentation
+site_url: https://docs.drugref.org/
+site_description: >-
+  Design, architecture, and the standing decisions behind drugref.org — an open,
+  vendor-independent drug-information commons.
+repo_url: https://github.com/cairn-ehr/drugref
+repo_name: cairn-ehr/drugref
+edit_uri: edit/main/docs-site/docs/
+copyright: >-
+  Documentation © drugref.org contributors, licensed
+  <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a> ·
+  Code licensed <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a>
+
+# strict makes a broken internal link or a nav entry with no file FAIL the build,
+# so the docs cannot silently rot. This is the project's "test".
+strict: true
+
+theme:
+  name: material
+  logo: assets/drugref_logo.png
+  favicon: assets/drugref_logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - assets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture/index.md
+  - Design decisions:
+      - decisions/index.md
+      - Immortal moiety identity: decisions/immortal-moiety-identity.md
+      - Append-only claims: decisions/append-only-claims.md
+      - The hybrid store: decisions/hybrid-store.md
+      - Licensing is a blocker: decisions/licensing-is-a-blocker.md
+  - Principles: principles/index.md
+  - Data sources & licensing: sources/index.md
+  - Roadmap: roadmap/index.md
+  - Developer guide: developer/index.md
+  - User manual: user-manual/index.md
