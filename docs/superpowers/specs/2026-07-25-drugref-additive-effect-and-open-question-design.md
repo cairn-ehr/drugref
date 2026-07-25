@@ -150,6 +150,31 @@ under it. These rules can never produce a pair under any expansion policy.
 class, because no such class exists; and the 41 dead rules are not breakage but the highest-value curation
 worklist available — upstream authority already vouching that the answer matters.
 
+### 3.5 The "dead" rules are largely an indexing loss, not a knowledge gap — openFDA has the statements
+
+**MED-RT is derived from FDA structured product labels.** So a MED-RT gap is prima facie evidence of a
+derivation loss, and the label is the first place to look — not the literature. Probed against the openFDA
+label API (public domain, reachable, `drug_interactions` / `contraindications` /
+`warnings_and_cautions` / `use_in_specific_populations` all present as structured fields):
+
+`Renal Arterial Vasoconstriction [PE]` — 6 CI rules, **zero members in MED-RT** (§3.4). Its six subjects are
+all ARBs. Every label checked names the interacting class explicitly:
+
+| label | names NSAID / COX-2 class in `drug_interactions` | renal-harm wording |
+|---|---|---|
+| losartan | yes — NSAID, non-steroidal anti-inflammatory, COX-2, cyclo-oxygenase | acute renal failure, deterioration of renal function |
+| valsartan | yes | acute renal failure |
+| telmisartan | yes | acute renal failure, deterioration |
+
+**The knowledge is not missing. MED-RT simply failed to file NSAIDs under the effect class its own
+contraindication points at.** The same probe found nephrotoxicity stated in labels too — gentamicin in the
+boxed warning, tacrolimus in warnings — though unevenly (vancomycin and ibuprofen did not hit the two
+sections probed), which matches the "requires extraction and review" triage.
+
+**Caveat on strength of evidence:** this is a 3-drug and 4-drug probe, not a coverage measurement. It is
+enough to establish that openFDA *should be consulted before curating*, not enough to quantify yield. §11
+step 3a includes measuring it properly.
+
 ## 4. The model — accumulation primary, groups for exceptions
 
 **Accumulation** covers the additive cases and gets its leverage from data already present: `has_PE`
@@ -313,15 +338,45 @@ pinned-literal test guards the derivation (§10).
 | `gap_kind`, `gap_key` | what derived it |
 | `question_text` | the literature-searchable statement |
 | `search_expression` | what was asked, so re-asking is reproducible |
-| `last_evaluated_at` `timestamptz` | when we last looked |
-| `evaluated_through` `date` | literature published up to here |
 | `state` | `open` \| `evidence_under_review` \| `answered` \| `withdrawn` |
 
-**Watermark, not closure.** "No evidence found" is `open` with a recent `evaluated_through`, **not** a
+### 7.2.1 `question_source_check` — the watermark is per SOURCE TIER, not just literature
+
+A single `evaluated_through` date was the first design here, and it was wrong: it assumes literature is the
+only place an answer can come from. §3.5 disproves that — the answer to six of the dead rules was sitting in
+an openFDA label the whole time. A question therefore needs to record **which tier has been consulted, at
+what version, with what outcome**:
+
+```
+question_source_check(question_uuid, source, checked_at, source_version, outcome, note)
+  source  : 'MED-RT' | 'openFDA-SPL' | 'MeDIC' | 'Wikidata' | 'FAERS' | 'literature'
+  outcome : 'covered' | 'not_covered' | 'partial' | 'error'
+  PK (question_uuid, source, source_version)
+```
+
+`source_version` is the release/label version checked, so a re-check against a *newer* version is a new row
+rather than an overwrite — the same append-only discipline as the evidence table, and what makes "has this
+been looked at since the January labels?" answerable.
+
+**This is what makes the cost ladder enforceable rather than aspirational.** A question with no
+`openFDA-SPL` row has not earned literature-mining effort yet, and the worklist views should order by
+cheapest-unchecked-tier so the free sources are always exhausted first.
+
+| tier | cost | licence | why this order |
+|---|---|---|---|
+| MED-RT (all files, all predicates) | free, on disk | public domain | §12-H — already paid for |
+| openFDA SPL | free, public API | public domain / CC0 | **the source MED-RT is derived from** (§3.5) |
+| MeDIC | free bulk | CC0 | drug–disease indications/contraindications seed |
+| Wikidata | free | CC0 | supplement only — cross-identifiers, candidate leads |
+| FAERS | free | public domain | signal *prioritisation*, not decision support |
+| literature mining | costly, high value | varies | for what none of the above answers |
+| hand curation | most costly | drugref's own | last resort, and the durable value-add |
+
+**Watermark, not closure.** "No evidence found" is `open` with recent `question_source_check` rows, **not** a
 terminal state. Medicine is young and fast-moving; a question unanswerable this month may be answerable
-next, and re-evaluation is incremental — search only what published since the watermark. The *only* terminal
-state is `withdrawn` (malformed or duplicated question). This is the property that makes leaving thousands
-of questions open sustainable rather than nagging.
+next, and re-evaluation is incremental — re-check only sources whose version has moved since the last row.
+The *only* terminal state is `withdrawn` (malformed or duplicated question). This is the property that makes
+leaving thousands of questions open sustainable rather than nagging.
 
 An `answered` question also stays in the registry and keeps accepting evidence.
 
@@ -401,7 +456,16 @@ Unchanged from 5a and restated because this design widens what drugref says:
    already covers part of the nephrotoxicity gap this design would otherwise hand-curate. Curating before 5b
    risks paying for what the release supplies. The accessory crosswalk resolves 50.8% of the M-codes, which
    shrinks 5b's unknown but does not remove it (no tree numbers, 49% unresolved).
-4. **`source = 'DRUGREF'` minting** (§6) — one migration, small, and scoped to what 5b did *not* supply.
+3a. **Extract from openFDA SPL, before any curation** (§3.5). MED-RT is derived from these labels, so a
+   MED-RT gap should be checked against the label first. Two things belong here: **measure** the yield
+   properly (does openFDA resolve the 41 dead rules and the 13 empty classes? — §3.5 is a 3-drug probe, not
+   a measurement), and if it does, ingest the extraction as a **projection** with `source = 'openFDA-SPL'`,
+   attributed in `NOTICE`. Public domain, so the licence gate is clear; extraction quality is the real risk
+   and is why this lands as a candidate-tier projection reviewed via §7, not as fact.
+3b. **MeDIC** — CC0 drug–disease indications/contraindications. Overlaps `may_treat`/`CI_with`, so import
+   after 5b to make the overlap measurable rather than duplicated.
+4. **`source = 'DRUGREF'` minting** (§6) — one migration, small, and scoped to what 5b, 3a and 3b did *not*
+   supply. **This is now expected to be a much smaller set than first designed.**
 5. **The curated tables** (§5) with an empty curation set, plus the read views (§8).
 6. **Literature-backed curation**, driven by the §7 worklist, landing as `question_evidence` plus curated
    grades.
@@ -476,9 +540,25 @@ EPC NUIs), no membership; the `NDFRT-NUI_RxNorm-RxCUI` crosswalk is concept iden
 not membership; and `CI_with` is 11,524 `RxNorm→MeSH` against 2 `RxNorm→MED-RT`, so treating it as
 MeSH-keyed was correct.
 
-**The generalisable rule: audit every file and every predicate in a release before proposing to curate what
-it might already contain.** §7's worklist carries the `skipped_predicates` inventory for exactly this
-reason.
+**I. The cost ladder was inverted — twice.** §12-H caught it within one source; the same error held across
+sources. This design initially proposed literature mining and hand curation as the mechanism for filling
+gaps, without first consulting the CC0 sources already triaged as *core source* and *import now* in the
+project's own interaction-source strategy: **openFDA SPL, MeDIC, Wikidata, FAERS**.
+
+Probing openFDA settled it (§3.5): the ARB labels name the NSAID/COX-2 class explicitly, with acute-renal-
+failure wording — so `Renal Arterial Vasoconstriction [PE]`'s six "dead" rules are a MED-RT **indexing loss**,
+not missing knowledge. MED-RT is *derived* from these labels; a gap in the derivative is the wrong place to
+conclude the knowledge does not exist.
+
+Resolved: §7.2.1 replaces the single literature watermark with **per-source-tier check rows**, and the
+worklist orders by cheapest-unchecked-tier, so free structured sources are exhausted before expensive ones.
+A question with no `openFDA-SPL` check has not earned literature-mining effort. FAERS stays out of the answer
+path entirely — it prioritises the worklist, it does not populate it.
+
+**The generalisable rule, in two parts: audit every file and predicate of a source before curating (§12-H);
+and audit every source in the tier list — especially the one your source is derived FROM — before mining or
+curating (this tension).** §7's worklist mechanises both: it carries the `skipped_predicates` inventory and
+the per-tier check rows, so "did we already have this?" is asked structurally rather than remembered.
 
 ## 13. Explicitly out of scope
 
