@@ -13,6 +13,7 @@ difference is the point:
   comes back with exactly the UUID it had before.
 """
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import psycopg
@@ -171,3 +172,49 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
     slice 1 attached an RXNORM_IN claim to every moiety carrying one.
     """
     return moieties_by_scheme(conn, "RXNORM_IN")
+
+
+def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) -> None:
+    """Drop the previous release's unmatched-ingredient list for `source`.
+
+    Same rebuildable-projection discipline as clear_source_edges, and needed for the
+    same reason: an ingredient that starts matching (because the moiety gate widened,
+    or the registry grew) must LEAVE the list. Without this the worklist would grow
+    by its own length on every ingest and never shrink, which is precisely the
+    "generated document, stale on write" failure the gap views exist to avoid.
+    """
+    conn.execute(
+        "DELETE FROM drugref.ingest_unmatched_ingredient WHERE ingest_run IN "
+        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
+        (source,))
+
+
+def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
+                              ingest_run_id: int,
+                              names: Mapping[str, str] | None = None) -> int:
+    """Record that each RxCUI was classified upstream but is carried by no moiety.
+
+    Not an error, and not a silent drop: MED-RT classifies far more ingredients than
+    pass drugref's moiety gate, and each one is a drug the registry can say nothing
+    about. Persisting the identity (rather than only counting it, as the ingest did
+    before Plan A) is what lets gap_unmatched_ingredient be a query.
+
+    Batched rather than one call per RxCUI -- this is thousands of rows on a real
+    release, and its siblings (add_membership, add_parent_edge) are per-row only
+    because their callers need the insert-vs-conflict answer to count with. Nobody
+    needs it here: the summary's count comes from the deduped set the caller already
+    holds. Returns rows written, for a caller that wants to assert on it.
+
+    `names` is optional and MED-RT's membership assertions carry none, so the ingest
+    leaves them NULL today; it is here for whichever source does supply one, because
+    a worklist a human cannot read is a worklist nobody works.
+    """
+    names = names or {}
+    rows = [(ingest_run_id, rxcui, names.get(rxcui)) for rxcui in rxcuis]
+    if not rows:
+        return 0
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO drugref.ingest_unmatched_ingredient (ingest_run, rxcui, name) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", rows)
+    return len(rows)

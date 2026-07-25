@@ -57,6 +57,16 @@ def test_apply_migrations_is_idempotent(conn):
         # the contraindication predicate vocabulary: which CI predicates exist and
         # which membership axis each expands over (db/006)
         "ci_axis",
+        # Plan A, db/007: the open-question registry. One rebuildable projection
+        # (open_question) and three append-only curated tables keyed off its
+        # deterministic UUID -- the split that stops a rebuild erasing curator intent.
+        "open_question", "question_state", "question_source_check", "question_evidence",
+        # Plan A, db/008: the gap views, the one table a gap view needed (the
+        # unmatched RxCUI identities, which the ingest previously discarded), the
+        # cost-ladder vocabulary, and the worklist that orders by it.
+        "ingest_unmatched_ingredient", "source_tier",
+        "gap_unpopulated_contraindication", "gap_unclassified_moiety",
+        "gap_unmatched_ingredient", "question_worklist",
     }
 
 

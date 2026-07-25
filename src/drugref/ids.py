@@ -21,6 +21,7 @@ import uuid
 _DRUGREF_ROOT = uuid.uuid5(uuid.NAMESPACE_DNS, "drugref.org")
 MOIETY_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "moiety")
 CLASS_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "class")
+QUESTION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "question")
 
 
 def mint_moiety_uuid(unii: str) -> uuid.UUID:
@@ -132,3 +133,37 @@ def mint_class_uuid(source: str, code: str) -> uuid.UUID:
     prefix = _SOURCE_KEY_PREFIX.get(canon, canon.upper())
     key = f"{prefix}:{code.strip().upper()}"
     return uuid.uuid5(CLASS_NAMESPACE, key)
+
+
+# ---- open-question identity (Plan A) ---------------------------------------
+
+
+def mint_question_uuid(gap_kind: str, gap_key: str) -> uuid.UUID:
+    """Derive an open question's immortal UUID from the gap that produced it.
+
+    Deterministic, so re-deriving the whole registry on every ingest yields the
+    same UUIDs and the derived half stays a rebuildable projection while the
+    curated half (question_state, question_source_check, question_evidence) keys
+    off it and is append-only.
+
+    `gap_kind` is the kind of gap; `gap_key` is the natural key of the thing the
+    question is ABOUT, in the frozen `SCHEME:value` form (`CLASS:<uuid>`,
+    `MOIETY:<uuid>`, `RXNORM_IN:<rxcui>`), with '/' joining compound keys. BOTH
+    are inputs to the UUID and both are therefore frozen: changing either format
+    re-mints every question and breaks every reference an external tool holds.
+
+    The ':' joiner only separates the two fields if gap_kind cannot contain one:
+    kind 'a:b' with key 'c' and kind 'a' with key 'b:c' both build "a:b:c" and
+    would mint ONE question for two unrelated gaps. gap_key must keep its colons
+    (they are the CLASS:/MOIETY:/RXNORM_IN: scheme prefixes), so the constraint
+    goes on gap_kind -- drugref's own closed vocabulary, which has no use for one.
+    Rejected here rather than validated at the call site, because a silent merge
+    of two questions is invisible downstream and permanent once cited.
+    """
+    kind = gap_kind.strip()
+    if ":" in kind:
+        raise ValueError(
+            f"gap_kind may not contain ':' (got {gap_kind!r}): it is the joiner "
+            "separating gap_kind from gap_key, so a colon here would let two "
+            "distinct gaps mint the same question_uuid")
+    return uuid.uuid5(QUESTION_NAMESPACE, f"{kind}:{gap_key.strip()}")

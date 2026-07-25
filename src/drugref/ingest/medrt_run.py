@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
-from drugref import interactions
+from drugref import interactions, questions
 from drugref.ingest import medrt
 
 SOURCE = "MED-RT"
@@ -131,6 +131,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    run's -- both are rebuildable projections replaced wholesale per release.
     class_writer.clear_source_edges(conn, SOURCE)
     interactions.clear_source_contraindications(conn, SOURCE)
+    class_writer.clear_source_unmatched_ingredients(conn, SOURCE)
 
     # 3. The DAG. The parser guaranteed both endpoints are classes we ingested.
     parent_edges = sum(
@@ -160,6 +161,13 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
                                            assertion.relationship, run_id):
                 memberships += 1
 
+    # 4a. Persist WHICH ingredients went unmatched, not merely how many. The count
+    #     answers "how much of the release can we not speak about"; only the
+    #     identities answer "which drugs", and that is the question worth publishing
+    #     (gap_unmatched_ingredient). Written once from the deduped set, after the
+    #     loop, so a repeated assertion costs one row rather than many.
+    class_writer.add_unmatched_ingredients(conn, sorted(unmatched), run_id)
+
     # 5. Contraindications (slice 5a). The subject is joined by RxCUI through the
     #    same `moieties` index step 4 already built; the object is resolved through
     #    the class UUIDs step 1 built (the parser guaranteed the object is an
@@ -177,6 +185,15 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
                                                  uuid_by_nui[ci.class_nui],
                                                  ci.relationship, SOURCE, run_id):
                 contraindications += 1
+
+    # 6. Re-derive the open-question register (Plan A). LAST, and deliberately so:
+    #    every gap view reads a projection steps 2-5 spent this whole function
+    #    demolishing and rebuilding, so a rebuild anywhere earlier would see the
+    #    empty middle -- closing every question the DAG and the memberships feed,
+    #    then reopening it moments later. Being derived, it is a rebuild rather than
+    #    a write: this is what keeps the register current instead of a snapshot
+    #    somebody has to remember to refresh.
+    questions.register_from_gaps(conn, run_id)
 
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))

@@ -351,3 +351,79 @@ def test_ingest_run_provenance_is_recorded(seeded):
         "WHERE source = 'MED-RT' ORDER BY ingest_run_id DESC LIMIT 1").fetchone()
     assert (source, release) == ("MED-RT", "2026.07.06")
     assert finished is not None
+
+
+def test_unmatched_ingredient_identities_are_persisted_not_just_counted(seeded):
+    """The count says HOW MANY drugs drugref cannot speak about; only the identities
+    say WHICH, and the identities are what a worklist needs. They were built locally
+    and discarded on return until Plan A, so gap_unmatched_ingredient had nothing to
+    query."""
+    _ingest(seeded)
+    rows = seeded.execute(
+        "SELECT rxcui FROM drugref.ingest_unmatched_ingredient ORDER BY rxcui").fetchall()
+    assert rows == [("5640",)]                # ibuprofen, the one the gate excludes
+
+
+def test_unmatched_ingredients_are_replaced_on_re_ingest(seeded):
+    """A rebuildable projection: re-ingesting the same release must not accumulate a
+    second copy, or the worklist would grow by its own length every run."""
+    _ingest(seeded)
+    _ingest(seeded)
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.ingest_unmatched_ingredient").fetchone()[0] == 1
+
+
+def test_the_unmatched_ingredient_reaches_the_gap_view(seeded):
+    """End to end: ingest -> persisted row -> gap view, with no moiety carrying it."""
+    _ingest(seeded)
+    assert seeded.execute(
+        "SELECT rxcui FROM drugref.gap_unmatched_ingredient").fetchall() == [("5640",)]
+
+
+def test_the_ingest_registers_the_open_questions(seeded):
+    """THE test this slice was missing. Every gap view worked, every curator API
+    worked, and register_from_gaps was called by nothing but its own unit tests -- so
+    on a real database open_question and question_worklist were permanently EMPTY
+    while three documents and a table comment all said "re-derived every ingest".
+    A register nothing populates is not a register. Asserted against the real
+    orchestrator, because that is the only place the wiring exists to be checked.
+
+    Asserted on the kind only THIS run can derive, not on a bare non-empty count:
+    the seeded fixture's UNII ingest registers unclassified_moiety questions of its
+    own, so `count(*) > 0` passes with this orchestrator's rebuild deleted -- which
+    is exactly the bug, still green. Verified by removing the call and watching this
+    fail."""
+    before = seeded.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unmatched_ingredient'").fetchone()[0]
+    assert before == 0
+
+    _ingest(seeded)
+
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unmatched_ingredient'").fetchone()[0] == 1
+    # and it reaches the read path a consumer actually queries
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.question_worklist "
+        "WHERE gap_kind = 'unmatched_ingredient'").fetchone()[0] == 1
+
+
+def test_the_unmatched_ingredient_becomes_a_citable_question(seeded):
+    """The full chain the slice promises: ingest -> persisted identity -> gap view ->
+    a question under the deterministic UUID an external tool can hold."""
+    _ingest(seeded)
+    assert seeded.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind = 'unmatched_ingredient'").fetchall() == [
+            (ids.mint_question_uuid("unmatched_ingredient", "RXNORM_IN:5640"),)]
+
+
+def test_re_ingesting_does_not_duplicate_the_register(seeded):
+    """The register is a rebuildable projection driven by an idempotent ingest, so a
+    second run must leave it the same size -- not twice the size."""
+    _ingest(seeded)
+    first = seeded.execute("SELECT count(*) FROM drugref.open_question").fetchone()[0]
+    _ingest(seeded)
+    assert seeded.execute(
+        "SELECT count(*) FROM drugref.open_question").fetchone()[0] == first
