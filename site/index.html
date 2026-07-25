@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drugref.org — the open drug-information commons</title>
+<meta name="description" content="drugref.org is an open, vendor-independent drug-information service: a registry of active drug moieties with immortal identities, seeded reproducibly from public-domain and open sources. AGPL-3.0.">
+<link rel="icon" type="image/png" href="assets/drugref_logo.png">
+<style>
+  :root {
+    --ink: #1c2733;
+    --ink-soft: #46586b;
+    --accent: #0e7c66;
+    --accent-dark: #0a5c4c;
+    --paper: #fbfaf7;
+    --card: #ffffff;
+    --rule: #e3e0d8;
+    --code-bg: #eef2ef;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.65;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* Hero */
+  header {
+    background: linear-gradient(160deg, #10382f 0%, #0e5645 60%, #0e7c66 100%);
+    color: #f2f7f4;
+    padding: 4.5rem 0 4rem;
+  }
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+  }
+  .hero-text { flex: 1 1 30rem; }
+  .hero-logo { flex: 0 0 auto; }
+  .hero-logo img {
+    display: block;
+    width: 260px;
+    height: auto;
+    filter: drop-shadow(0 12px 24px rgba(0,0,0,0.35));
+  }
+  .hero-logo figcaption {
+    margin-top: 0.3rem;
+    text-align: center;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: #bcd6cb;
+  }
+  @media (max-width: 640px) {
+    .hero { flex-direction: column-reverse; align-items: flex-start; }
+    .hero-logo { align-self: center; }
+  }
+  header .brand {
+    font-size: 1.05rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 1.2rem;
+  }
+  header h1 {
+    font-size: clamp(1.9rem, 4.5vw, 2.9rem);
+    font-weight: 700;
+    line-height: 1.2;
+    max-width: 40ch;
+  }
+  header p.lede {
+    margin-top: 1.2rem;
+    font-size: 1.15rem;
+    max-width: 62ch;
+    color: #d8e8e0;
+  }
+  .cta-row { margin-top: 2rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    padding: 0.65rem 1.3rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .btn-solid { background: #f2f7f4; color: var(--accent-dark); }
+  .btn-solid:hover { background: #ffffff; text-decoration: none; }
+  .btn-ghost { border: 1px solid rgba(242,247,244,0.5); color: #f2f7f4; }
+  .btn-ghost:hover { border-color: #f2f7f4; text-decoration: none; }
+
+  /* Status banner */
+  .status {
+    background: #fdf6e3;
+    border-bottom: 1px solid #ead9a8;
+    color: #6b5518;
+    font-size: 0.92rem;
+    padding: 0.6rem 0;
+    text-align: center;
+  }
+
+  /* Sections */
+  section { padding: 3rem 0 0.5rem; }
+  section:last-of-type { padding-bottom: 3rem; }
+  h2 {
+    font-size: 1.45rem;
+    margin-bottom: 1rem;
+    color: var(--ink);
+  }
+  section p { max-width: 70ch; color: var(--ink-soft); margin-bottom: 1rem; }
+  section p strong { color: var(--ink); }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0 1rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 1.2rem 1.3rem;
+  }
+  .card h3 { font-size: 1.02rem; margin-bottom: 0.5rem; color: var(--accent-dark); }
+  .card p { font-size: 0.93rem; margin: 0; }
+
+  ul.sources {
+    list-style: none;
+    margin: 1rem 0 1.5rem;
+    max-width: 70ch;
+  }
+  ul.sources li {
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-soft);
+    font-size: 0.96rem;
+  }
+  ul.sources li:last-child { border-bottom: none; }
+  ul.sources b { color: var(--ink); }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 0.12em 0.4em;
+    border-radius: 4px;
+  }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: 2rem 0 2.5rem;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<div class="status">
+  drugref.org v2 is under active development — the global moiety spine, classification and first
+  interaction data are built; the public API is coming. Follow progress
+  <a href="https://github.com/cairn-ehr/drugref">on GitHub</a>.
+</div>
+
+<header>
+  <div class="wrap hero">
+    <div class="hero-text">
+      <div class="brand">drugref.org</div>
+      <h1>An open drug-information commons — owned by no vendor, usable by every system.</h1>
+      <p class="lede">
+        drugref.org is a public-good drug-information service: a registry of active drug moieties,
+        each with an immortal identity and transparent, append-only links to the world's open drug
+        vocabularies. Any EHR, pharmacy system, prescribing tool or research pipeline can consume it
+        on equal footing — free software, free data, reproducible from source.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-solid" href="https://github.com/cairn-ehr/drugref">Source code on GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/cairn-ehr/drugref/tree/main/docs">Design documents</a>
+      </div>
+    </div>
+    <figure class="hero-logo">
+      <img src="assets/drugref_logo.png" alt="drugref.org logo — a balanced cairn of stacked tablets, capsules and a stone" width="1536" height="1024">
+      <figcaption>a cairn of medicines</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>Why drugref exists</h2>
+    <p>
+      Reliable drug reference data — what a substance <em>is</em>, how it is classified, what it
+      interacts with — sits behind proprietary licences in most of the world. That locks safe
+      prescribing support to whoever can pay, and locks health-IT projects into vendors. drugref.org
+      takes the opposite stance: the <strong>identity and knowledge layer of medicines is a
+      commons</strong>, built entirely from public-domain and openly licensed sources, and published
+      under a licence that keeps it open for everyone, forever.
+    </p>
+    <p>
+      This is a resuscitation of the original drugref.org project, rebuilt from the ground up as
+      <strong>drugref v2</strong> with modern identifiers, reproducible ingestion, and a design
+      hardened for decades of use.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What it provides</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>Immortal substance identity</h3>
+        <p>Every active drug moiety gets a stable UUID that never changes and is never reused —
+           minted deterministically, so independent installations agree on identity without
+           coordination.</p>
+      </div>
+      <div class="card">
+        <h3>Cross-vocabulary claims</h3>
+        <p>Append-only, auditable links from each moiety to UNII, InChIKey, CAS, ChEBI, RxNorm and
+           more. Corrections supersede — they never silently overwrite history.</p>
+      </div>
+      <div class="card">
+        <h3>Classification</h3>
+        <p>Source-neutral drug class registry populated from MED-RT (mechanism of action,
+           physiologic effect) and MeSH pharmacologic actions.</p>
+      </div>
+      <div class="card">
+        <h3>Interaction groundwork</h3>
+        <p>Class-level contraindication data from MED-RT, expanded to candidate drug–drug pairs —
+           the advisory foundation for interaction checking, clearly tiered by evidence.</p>
+      </div>
+    </div>
+    <p>
+      Two tiers are planned: the <strong>global tier</strong> (jurisdiction-independent substance
+      identity, chemistry, classes, interactions — being built first, in this repository) and a
+      later <strong>local tier</strong> for country-specific packaging, product and subsidy data.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Built from open sources, reproducibly</h2>
+    <p>Every fact in drugref traces to a public-domain or openly licensed upstream release, and the
+       entire database can be rebuilt from those sources by anyone:</p>
+    <ul class="sources">
+      <li><b>FDA GSRS / UNII</b> — the global substance registration backbone (public domain)</li>
+      <li><b>ChEBI</b> — chemical entities of biological interest (CC-BY)</li>
+      <li><b>MED-RT</b> — mechanisms of action, physiologic effects, contraindications (public domain, US NLM)</li>
+      <li><b>MeSH</b> — pharmacologic actions and descriptors (public domain, US NLM)</li>
+      <li><b>RxNorm</b> — normalised drug names and codes (openly redistributable subset)</li>
+    </ul>
+    <p>
+      Licensing is a hard rule, not an afterthought: only AGPL-compatible sources are ever bundled.
+      Licence-encumbered national sources can attach to a local installation as separate plug-ins,
+      but never contaminate the commons.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Independent by design</h2>
+    <p>
+      drugref.org is stewarded alongside the <a href="https://cairn-ehr.org">Cairn EHR</a> project,
+      but it is not a Cairn component. Cairn consumes drugref through the same public API offered to
+      everyone — the steward has no privileged access. drugref data is <strong>advisory reference
+      information</strong>: it informs clinical software, but no system is ever required to route
+      its records through it.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Get involved</h2>
+    <p>
+      The project is developed in the open at
+      <a href="https://github.com/cairn-ehr/drugref">github.com/cairn-ehr/drugref</a> —
+      code, design specifications, roadmap and issues. Contributions are welcome: source-licence
+      review, ingestion of additional open vocabularies, API design, and national local-tier
+      pilots are all on the horizon.
+    </p>
+    <p>
+      All code is licensed <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a>;
+      bundled reference data retains its upstream open licences (see the
+      <a href="https://github.com/cairn-ehr/drugref/blob/main/NOTICE">NOTICE</a> file).
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© drugref.org contributors · AGPL-3.0</span>
+    <span>
+      <a href="https://github.com/cairn-ehr/drugref">GitHub</a> ·
+      <a href="https://github.com/cairn-ehr/drugref/issues">Issues</a> ·
+      <a href="https://cairn-ehr.org">Cairn EHR</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>
