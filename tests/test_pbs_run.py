@@ -33,8 +33,16 @@ def _clean(conn):
 
 # INN claims are stored lower-case; PBS publishes Title-case. The fold is what
 # makes these meet, so seeding them lower-case mirrors production exactly.
+#
+# "dimethyl" (bare, no "fumarate") is NOT a real INN -- it is planted here
+# adversarially, alongside the real "dimethyl fumarate", so the ordering
+# regression test below can actually distinguish the two lookup orders. Without
+# it, a stripped-first lookup of "dimethyl fumarate" -> "dimethyl" simply MISSES
+# (nothing was seeded under that bare key) and falls through to the exact match
+# anyway, landing on the identical result regardless of order -- which is
+# exactly the gap the fix-round review caught.
 SEED_INNS = ["rifaximin", "abacavir", "lamivudine", "abiraterone",
-             "methylprednisolone", "alfuzosin", "dimethyl fumarate",
+             "methylprednisolone", "alfuzosin", "dimethyl fumarate", "dimethyl",
              "alendronic acid", "folic acid", "paracetamol", "aspirin"]
 
 
@@ -86,15 +94,26 @@ def test_salt_stripped_match_is_labelled(conn, seeded_registry):
 
 
 def test_unstripped_name_wins_over_the_salt_fallback(conn, seeded_registry):
-    """THE REGRESSION. 'Dimethyl fumarate' is itself an INN. Trying the stripped
-    form first would match nothing (or worse, the wrong moiety) and would be
-    recorded as salt_stripped."""
+    """THE REGRESSION. 'Dimethyl fumarate' is itself an INN, and the registry ALSO
+    carries a bare 'dimethyl' moiety (a synthetic plant -- see SEED_INNS) so the
+    two lookup orders are forced to disagree instead of quietly agreeing:
+
+    * correct order (exact first)  -> the 'dimethyl fumarate' moiety, 'exact'
+    * wrong order (strip first)    -> the 'dimethyl' moiety, 'salt_stripped'
+
+    Without the bare 'dimethyl' plant, a stripped-first lookup of 'dimethyl
+    fumarate' would simply MISS (nothing seeded under that key) and fall through
+    to the exact match anyway -- so both orderings would land on the identical
+    row and this test would pass either way, pinning nothing."""
     pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
-    row = conn.execute(
-        "SELECT b.component_name, b.match_method FROM drugref.local_product_moiety b "
+    component_name, match_method, moiety_uuid = conn.execute(
+        "SELECT b.component_name, b.match_method, b.moiety_uuid "
+        "FROM drugref.local_product_moiety b "
         "JOIN drugref.local_product p USING (local_product_uuid) "
         "WHERE p.drug_name = 'Dimethyl fumarate'").fetchone()
-    assert row == ("dimethyl fumarate", "exact")
+    assert (component_name, match_method) == ("dimethyl fumarate", "exact")
+    assert moiety_uuid == seeded_registry["dimethyl fumarate"]
+    assert moiety_uuid != seeded_registry["dimethyl"]
 
 
 def test_acid_names_match_exactly(conn, seeded_registry):
