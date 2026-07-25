@@ -139,6 +139,24 @@ def mint_class_uuid(source: str, code: str) -> uuid.UUID:
 # ---- local-tier product identity (slice 8a) --------------------------------
 
 
+def normalise_name(name: str) -> str:
+    """The one fold applied to any human-readable substance name.
+
+    Strip, lower-case, collapse internal whitespace. It lives here beside
+    canonical_source and canonical_claim_value because it is the same KIND of
+    thing: the single spelling two independently-produced strings must agree on
+    before they can be compared.
+
+    Two consumers depend on that agreement. The INN identity claim is stored
+    lower-case (it is a display label, so _UPPERCASE_SCHEMES deliberately excludes
+    it), and PBS publishes Title-case drug names -- 1,085 of 1,086 distinct names
+    in the 2026-07 release. If either side folded differently, the local-tier
+    bridge would silently match nothing at all, which is the failure mode
+    canonical_source exists to prevent for authority names.
+    """
+    return " ".join(name.strip().lower().split())
+
+
 def mint_local_product_uuid(jurisdiction: str, source: str, code: str) -> uuid.UUID:
     """Derive a local-tier product's UUID from (jurisdiction, source, code).
 

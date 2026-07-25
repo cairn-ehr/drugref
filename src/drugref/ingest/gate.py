@@ -14,12 +14,18 @@ the display name from (UNII PT, overridden by the divergence crosswalk).
 import csv
 import pathlib
 
+from drugref import ids
 from drugref.ingest.unii import MoietyCandidate
 
 
 def _norm(name: str) -> str:
-    """Case/space-fold a name for lookup and comparison."""
-    return " ".join(name.strip().lower().split())
+    """Case/space-fold a name for lookup and comparison.
+
+    Delegates to ids.normalise_name, which slice 8a promoted to the shared module
+    when the local-tier bridge became a second consumer. Kept as a private alias
+    so this module's existing call sites read unchanged.
+    """
+    return ids.normalise_name(name)
 
 
 def load_crosswalk(path: str | pathlib.Path) -> dict[str, str]:
