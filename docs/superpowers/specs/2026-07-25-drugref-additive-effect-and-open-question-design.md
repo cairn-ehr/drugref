@@ -536,6 +536,13 @@ UUID derivation, so the convention is settled here rather than after the first e
 | `unclassified_moiety` | `MOIETY:{moiety_uuid}` |
 | `unmatched_ingredient` | `RXNORM_IN:{rxcui}` |
 
+**`gap_kind` may not contain `':'`, and this must be enforced at mint time.** Found while implementing Plan
+A, by the test written before the function: the joiner alone does *not* separate the two fields. Kind `a:b`
+with key `c` and kind `a` with key `b:c` both build `"a:b:c"` and mint **one question for two unrelated
+gaps** — a silent merge, invisible downstream and permanent once cited. `gap_key` must keep its colons (they
+are the scheme prefixes), so the constraint belongs on `gap_kind`, which is drugref's own closed vocabulary
+and has no use for one. With that, the first `':'` splits kind from key unambiguously.
+
 Class and moiety UUIDs are themselves immortal — `substance_class` UUIDs are derived from `(source, code)`
 and `db/005` makes `moiety_uuid` immortal outright — so a question's identity is as stable as its subject. A
 pinned-literal test guards the derivation (§10).
