@@ -72,3 +72,5 @@ nav:
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md
+  - Developer guide: developer/index.md
+  - User manual: user-manual/index.md
