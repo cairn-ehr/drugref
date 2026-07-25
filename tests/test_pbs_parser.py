@@ -4,6 +4,9 @@ Every expectation here is drawn from the real 2026-07 release (spec 5.3), not
 from the PBS data dictionary and not from intuition. Where a case looks odd, it
 is odd because the upstream data is.
 """
+import pathlib
+import textwrap
+
 from drugref.ingest import pbs
 
 
@@ -81,3 +84,70 @@ def test_dimethyl_fumarate_is_a_regression_case():
     dumb, so the ordering is the safeguard (spec 5.3)."""
     suffixes = pbs.load_salt_suffixes(pbs.SALT_SUFFIX_PATH)
     assert pbs.strip_salt("dimethyl fumarate", suffixes) == "dimethyl"
+
+
+def _write_csv(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
+    """Write a minimal items.csv. The BOM is deliberate: the real files have one."""
+    path = tmp_path / "items.csv"
+    path.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8-sig")
+    return path
+
+
+def test_parse_items_reads_the_allow_listed_columns(tmp_path):
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
+        10001J_14023,10001J,Xifaxan,Rifaximin,Rifaximin,Tablet 550 mg,GE,A
+        """)
+    items = list(pbs.parse_items(path))
+    assert len(items) == 1
+    assert items[0].source_code == "10001J_14023"
+    assert items[0].drug_name == "Rifaximin"
+    assert items[0].benefit_type_code == "A"
+
+
+def test_parse_items_falls_back_to_drug_name_when_li_drug_name_is_null(tmp_path):
+    """159 rows upstream carry li_drug_name='null' -- every one with a usable
+    drug_name. Without this fallback they would all be lost."""
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
+        X_1,X,null,null,Aspirin,null,GE,U
+        """)
+    items = list(pbs.parse_items(path))
+    assert items[0].drug_name == "Aspirin"
+
+
+def test_parse_items_maps_the_null_sentinel_to_none(tmp_path):
+    """The literal string 'null' must never reach the database as a value."""
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
+        X_1,X,null,Aspirin,Aspirin,null,GE,U
+        """)
+    items = list(pbs.parse_items(path))
+    assert items[0].brand_name is None
+    assert items[0].form_strength is None
+
+
+def test_parse_items_ignores_encumbered_columns(tmp_path):
+    """QUARANTINE (spec 6). ATC and AMT are absent from items.csv upstream; if a
+    future release adds them, the fixed allow-list must still refuse to read
+    them. PbsItem has nowhere to put such a value."""
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code,atc_code,amt_code
+        X_1,X,B,Aspirin,Aspirin,Tab,GE,U,N02BA01,12345678
+        """)
+    item = next(pbs.parse_items(path))
+    assert "N02BA01" not in str(item)
+    assert "12345678" not in str(item)
+
+
+def test_parse_items_skips_rows_with_no_identity(tmp_path):
+    """A row with no li_item_id cannot be keyed, so it is refused rather than
+    given a degenerate UUID -- the same discipline gate.has_identity_key applies
+    to the identity spine."""
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
+        ,X,B,Aspirin,Aspirin,Tab,GE,U
+        X_2,Y,B,Ibuprofen,Ibuprofen,Tab,GE,U
+        """)
+    items = list(pbs.parse_items(path))
+    assert [i.source_code for i in items] == ["X_2"]

@@ -91,3 +91,64 @@ def strip_salt(name: str, suffixes: frozenset[str]) -> str | None:
     if len(words) < 2 or words[-1].lower() not in suffixes:
         return None
     return " ".join(words[:-1])
+
+
+@dataclass(frozen=True)
+class PbsItem:
+    """One PBS item instance, reduced to the licence-clean fields drugref keeps.
+
+    This dataclass IS the quarantine boundary (spec section 6): it has no field
+    for an ATC code or an AMT/SNOMED concept id, so no amount of downstream
+    carelessness can put one in the database. items.csv carries neither today --
+    they live in separate files the ingest never opens -- and the fixed allow-list
+    in parse_items keeps that true if a future release changes its mind.
+    """
+    source_code: str              # li_item_id -- unique per row upstream
+    pbs_code: str | None          # the Item Code: an attribute, NOT the key
+    brand_name: str | None
+    drug_name: str | None         # li_drug_name, falling back to drug_name
+    form_strength: str | None
+    program_code: str | None
+    benefit_type_code: str | None  # U/R/S/A
+
+
+def _clean(row: dict[str, str], column: str) -> str | None:
+    """Read one column, mapping blank and the 'null' sentinel to None."""
+    value = row.get(column)
+    return None if is_missing(value) else value.strip()
+
+
+def parse_items(path: str | pathlib.Path):
+    """Stream tables_as_csv/items.csv, yielding one PbsItem per usable row.
+
+    A GENERATOR, so the 8.3 MB file never lands in memory at once -- the same
+    streaming discipline mesh.py applies, and the reason the production-ingest
+    follow-up (#7) does not apply to this feed.
+
+    Opened with utf-8-sig because the real files carry a BOM: read as plain utf-8,
+    the first column name arrives as '﻿li_item_id' and every lookup of it
+    silently misses, yielding rows that are entirely empty.
+
+    Rows with no li_item_id are SKIPPED, not defaulted: the product UUID derives
+    from that value, so an empty one would mint a single shared UUID that every
+    such row collapses onto (the failure gate.has_identity_key exists to prevent
+    on the identity spine).
+    """
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            source_code = _clean(row, "li_item_id")
+            if not source_code:
+                continue
+            # li_drug_name is the legally-determined name and the better key;
+            # drug_name is the Medicinal Product Pack name and covers the 159
+            # rows where the former is the 'null' sentinel.
+            drug_name = _clean(row, "li_drug_name") or _clean(row, "drug_name")
+            yield PbsItem(
+                source_code=source_code,
+                pbs_code=_clean(row, "pbs_code"),
+                brand_name=_clean(row, "brand_name"),
+                drug_name=drug_name,
+                form_strength=_clean(row, "li_form") or _clean(row, "schedule_form"),
+                program_code=_clean(row, "program_code"),
+                benefit_type_code=_clean(row, "benefit_type_code"),
+            )
