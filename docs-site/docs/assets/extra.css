@@ -1,0 +1,23 @@
+/* Brand palette lifted verbatim from site/index.html so the docs read as the
+   same project as the drugref.org landing page. Material picks up these CSS
+   variables because both palette entries in mkdocs.yml set `primary: custom`
+   and `accent: custom`. `:root > *` matches Material's documented custom-color
+   selector (higher specificity than plain `:root`). */
+:root > * {
+  --md-primary-fg-color: #0e7c66;
+  --md-primary-fg-color--light: #0e7c66;
+  --md-primary-fg-color--dark: #0a5c4c;
+  --md-accent-fg-color: #0a5c4c;
+}
+
+/* Light scheme: warm paper background matching the landing page. */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #fbfaf7;
+  --md-typeset-color: #1c2733;
+}
+
+/* Dark scheme: keep Material's slate defaults, only the green accent carries over. */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0e7c66;
+  --md-accent-fg-color: #12a184;
+}
