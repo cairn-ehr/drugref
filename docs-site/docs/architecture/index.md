@@ -12,12 +12,12 @@ drugref models medicines as two independent graphs that a moiety sits in at once
 
 ```mermaid
 graph TD
-  subgraph Composition tree — "is made of", downward
+  subgraph ct["Composition tree — is made of, downward"]
     M[Active moiety] --> S[Specific substance<br/>salt / ester / hydrate]
     S --> C[Clinical drug<br/>moiety + strength + form]
     C --> P[Product<br/>brand / pack — local tier]
   end
-  subgraph Classification DAG — "is a kind of"
+  subgraph cd["Classification DAG — is a kind of"]
     K1[Class] --> K2[Class]
     M -. member of many .-> K1
   end
