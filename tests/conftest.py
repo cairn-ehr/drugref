@@ -45,3 +45,23 @@ def conn(_migrated):
     with psycopg.connect(_migrated) as c:
         yield c
         c.rollback()
+
+
+@pytest.fixture
+def ingest_run_id(conn):
+    """A committed-in-transaction ingest_run row for provenance FKs."""
+    return conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('PBS', 'test', 'test') RETURNING ingest_run_id").fetchone()[0]
+
+
+@pytest.fixture
+def a_moiety(conn, ingest_run_id):
+    """One registered moiety, for tests that need a live FK target."""
+    from drugref import ids
+    moiety_uuid = ids.mint_moiety_uuid("TESTUNII01")
+    conn.execute(
+        "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, first_seen_ingest) "
+        "VALUES (%s, 'testdrug', %s) ON CONFLICT DO NOTHING",
+        (moiety_uuid, ingest_run_id))
+    return moiety_uuid
