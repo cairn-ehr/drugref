@@ -146,6 +146,16 @@ jurisdictions (open regulatory registry bundled; national SNOMED extension licen
   refused, claim values canonicalised, orchestrators roll back and log. **CI added** (PG18 service; the
   DB-gated majority now fails rather than skips). 220 tests. Remaining: #15 (DAG-descendant expansion,
   measure first), #16 (crashed-ingest visibility + CLI), #17 (last no-silent-drop gaps).
+- **Open-question registry ✅ DONE** (Plan A of the additive-effect design). `db/007` adds
+  `open_question` (a rebuildable projection keyed on a deterministic `question_uuid` external tooling can
+  cite) plus three append-only curated tables — `question_state`, `question_source_check`,
+  `question_evidence` — each with a surrogate PK and live-row-only uniqueness, per `db/005`. `db/008` adds
+  the three gap views, the `ingest_unmatched_ingredient` table that makes the third of them possible (the
+  ingest previously kept only the COUNT and discarded the RxCUIs), the `source_tier` cost ladder and the
+  `question_worklist` view that orders by cheapest-unchecked tier. Coverage gaps are now published rather
+  than hidden, and "how much do we not know" is a number watchable per release. **Watermark, not closure:**
+  no-evidence-found leaves a question open; only `withdrawn` is terminal. Plans B (DAG-descendant
+  expansion, #15) and C (the accumulation model) remain.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling**: `test_ingest_run.py` and `test_medrt_run.py` each `TRUNCATE` the drugref

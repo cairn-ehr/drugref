@@ -88,9 +88,13 @@ a migration runner with a ledger; the rest is parser/writer hardening. What chan
   with exit 0 — `conftest` now **fails instead of skipping when `CI` is set**, and the workflow asserts the
   run contains no skips.
 
-**⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications) or Slice 3 (composition tree: salts/esters/
-hydrates).** Note for 5b: adding a CI predicate is now one `ci_axis` INSERT plus the `source`/vocabulary
-CHECKs — the view needs no edit.
+**Plan A — the open-question registry** ✅ done on this branch (`db/007`, `db/008`; **276 tests green**).
+Detail under "Current state". First slice of the additive-effect design; Plans B (#15 descendant expansion)
+and C (the accumulation model) remain.
+
+**⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications), Plan B (#15 descendant expansion) or Slice 3
+(composition tree: salts/esters/hydrates).** Note for 5b: adding a CI predicate is now one `ci_axis` INSERT
+plus the `source`/vocabulary CHECKs — the view needs no edit.
 
 ### Slice 5b — MeSH-keyed MED-RT contraindications & indications (the task)
 
@@ -168,7 +172,8 @@ memberships over 6,012 ingredients**, parsed in ~4s.
 - **Class edges are rebuildable projections**, deliberately **outside** slice 1's append-only floor: a new
   release deletes this source's edges and re-inserts, so a parent removed upstream is removed here.
 - **Membership joins via the `RXNORM_IN` claims slice 1 already recorded** — no new bridge data. MED-RT
-  ingredient concepts are keyed on RxCUI. Unmatched RxCUIs are **counted, never silently dropped**.
+  ingredient concepts are keyed on RxCUI. Unmatched RxCUIs are **counted, never silently dropped** — and
+  since Plan A (below) their **identities are persisted too**, in `ingest_unmatched_ingredient`.
 - **Licence scoping is structural**: only MED-RT concepts are *defined* in the release (SNOMED/MeSH appear
   solely as edge endpoints), so requiring both endpoints of every edge to be an ingested class is what keeps
   unlicensed content out — not good intentions.
@@ -214,6 +219,33 @@ descriptors, their tree-number DAG, and moiety↔class memberships, on the **sam
 - **Tests** — `test_mesh_parser.py` (parser, no DB) + `test_mesh_run.py` (DB-gated acceptance matrix: UNII
   join, CAS-fallback join, no-key/key-not-in-registry counting, multi-parent DAG orientation, idempotent
   re-ingest, per-source rebuild leaves MED-RT intact). A pinned `class_uuid` literal guards the derivation.
+
+**Plan A — the open-question registry** (`db/007`, `db/008`). drugref's coverage gaps are published as a
+queryable register rather than hidden: contraindications naming a class no drug is filed under (41 rules
+across 13 classes in 2026.07.06), moieties with no `has_PE` membership, and ingredients no moiety carries.
+
+- **A gap is a query, never a report.** Three views (`gap_unpopulated_contraindication`,
+  `gap_unclassified_moiety`, `gap_unmatched_ingredient`) are always current and shrink visibly as coverage
+  improves. `gap_unpopulated_contraindication` descends the class DAG — "no drug filed under E" means
+  nowhere in E's subtree, not merely directly on E.
+- **Questions have immortal deterministic UUIDs**: `uuid5(QUESTION_NAMESPACE, gap_kind + ':' + gap_key)`,
+  with `gap_key` in the frozen `SCHEME:value` form. External tooling can cite one. `gap_kind` may not
+  contain `':'` — enforced in `ids.mint_question_uuid`, because it is the joiner and a colon there would let
+  two distinct gaps mint the same UUID.
+- **The hybrid split is the design.** `open_question` is a REBUILDABLE PROJECTION re-derived every ingest.
+  Curator intent (`question_state`), tier watermarks (`question_source_check`) and findings
+  (`question_evidence`) are APPEND-ONLY and keyed off that UUID. Putting `state` on `open_question` would
+  have let each rebuild erase every `withdrawn` — and would have passed on a fresh database while failing on
+  the second ingest of a long-lived one.
+- **Curated tables use SURROGATE primary keys** with uniqueness over live rows only, per `db/005`. A
+  natural-key PK rejects the correction insert outright and leaves in-place mutation as the only option.
+  `question_state`'s single-live rule is a DEFERRED constraint rather than an index, because `superseded_by`
+  must reference an existing row, so a correction is necessarily insert-then-point and both rows are live in
+  between.
+- **Watermark, not closure.** "No evidence found" is `open` with recent `question_source_check` rows; the
+  only terminal state is `withdrawn`. `question_worklist` orders by cheapest-unchecked tier
+  (`source_tier`), so free structured sources are exhausted before literature mining — a question with no
+  `openFDA-SPL` check has not yet earned it.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 

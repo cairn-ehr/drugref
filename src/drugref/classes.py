@@ -171,3 +171,37 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
     slice 1 attached an RXNORM_IN claim to every moiety carrying one.
     """
     return moieties_by_scheme(conn, "RXNORM_IN")
+
+
+def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) -> None:
+    """Drop the previous release's unmatched-ingredient list for `source`.
+
+    Same rebuildable-projection discipline as clear_source_edges, and needed for the
+    same reason: an ingredient that starts matching (because the moiety gate widened,
+    or the registry grew) must LEAVE the list. Without this the worklist would grow
+    by its own length on every ingest and never shrink, which is precisely the
+    "generated document, stale on write" failure the gap views exist to avoid.
+    """
+    conn.execute(
+        "DELETE FROM drugref.ingest_unmatched_ingredient WHERE ingest_run IN "
+        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
+        (source,))
+
+
+def add_unmatched_ingredient(conn: psycopg.Connection, rxcui: str,
+                             ingest_run_id: int, name: str | None = None) -> bool:
+    """Record that `rxcui` was classified upstream but is carried by no moiety.
+
+    Not an error, and not a silent drop: MED-RT classifies far more ingredients than
+    pass drugref's moiety gate, and each one is a drug the registry can say nothing
+    about. Persisting the identity (rather than only counting it, as the ingest did
+    before Plan A) is what lets gap_unmatched_ingredient be a query.
+
+    `name` is nullable and MED-RT's membership assertions do not carry one, so the
+    ingest leaves it NULL today; it is here for whichever source does supply one,
+    because a worklist a human cannot read is a worklist nobody works.
+    """
+    cur = conn.execute(
+        "INSERT INTO drugref.ingest_unmatched_ingredient (ingest_run, rxcui, name) "
+        "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", (ingest_run_id, rxcui, name))
+    return cur.rowcount == 1
