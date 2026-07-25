@@ -107,6 +107,19 @@ def test_a_rebuild_refreshes_the_last_seen_watermark(conn):
     assert (first, last) == (run_id, later)
 
 
+def _classify(conn, run_id, moiety, code="N0000000009"):
+    """Give `moiety` a has_PE membership, which closes its unclassified_moiety gap."""
+    cu = ids.mint_class_uuid("MED-RT", code)
+    conn.execute("INSERT INTO drugref.substance_class (class_uuid, source, source_code, "
+                 "published_code, class_name, concept_type, first_seen_ingest) "
+                 "VALUES (%s, 'MED-RT', %s, %s, 'C [PE]', 'PE', %s)",
+                 (cu, code, code, run_id))
+    conn.execute("INSERT INTO drugref.class_membership "
+                 "(moiety_uuid, class_uuid, relationship, ingest_run) "
+                 "VALUES (%s, %s, 'has_PE', %s)", (moiety, cu, run_id))
+    return cu
+
+
 def test_a_closed_gap_leaves_the_register(conn):
     """A gap that closes must be able to leave -- the projection tracks reality, and
     a register that only ever grows is the stale document these views replace."""
@@ -114,16 +127,66 @@ def test_a_closed_gap_leaves_the_register(conn):
     m = _moiety(conn, run_id)
     questions.register_from_gaps(conn, run_id)
 
-    cu = ids.mint_class_uuid("MED-RT", "N0000000009")
-    conn.execute("INSERT INTO drugref.substance_class (class_uuid, source, source_code, "
-                 "published_code, class_name, concept_type, first_seen_ingest) "
-                 "VALUES (%s, 'MED-RT', 'N9', 'N9', 'C [PE]', 'PE', %s)", (cu, run_id))
-    conn.execute("INSERT INTO drugref.class_membership "
-                 "(moiety_uuid, class_uuid, relationship, ingest_run) "
-                 "VALUES (%s, %s, 'has_PE', %s)", (m, cu, run_id))
+    _classify(conn, run_id, m)
     questions.register_from_gaps(conn, run_id)
 
     assert conn.execute("SELECT count(*) FROM drugref.open_question").fetchone()[0] == 0
+
+
+def test_a_closed_gap_carrying_evidence_is_RETAINED_not_deleted(conn):
+    """The cascade cuts both ways. Every curated table is ON DELETE CASCADE from
+    open_question, so deleting a closed question destroys append-only rows whose own
+    contract promises "the record of what was believed before must survive the
+    revision". A question anyone has contributed to is kept, marked not-current."""
+    run_id = _run(conn)
+    m = _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+    questions.add_evidence(conn, qu, "DOI", "10.1000/x", "supports", run_id)
+
+    _classify(conn, run_id, m)                       # the gap closes
+    questions.register_from_gaps(conn, run_id)
+
+    assert conn.execute(
+        "SELECT is_current FROM drugref.open_question "
+        "WHERE question_uuid = %s", (qu,)).fetchall() == [(False,)]
+    # the finding survived, which is the whole point
+    assert conn.execute("SELECT count(*) FROM drugref.question_evidence "
+                        "WHERE question_uuid = %s", (qu,)).fetchone()[0] == 1
+
+
+def test_a_retained_question_is_off_the_worklist(conn):
+    """Retention must cost no noise, or the fix above would trade a data-loss bug for
+    a worklist full of questions nobody can act on."""
+    run_id = _run(conn)
+    m = _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+    questions.record_source_check(conn, qu, "MED-RT", "2026.07.06", "not_covered")
+
+    _classify(conn, run_id, m)
+    questions.register_from_gaps(conn, run_id)
+
+    assert conn.execute("SELECT count(*) FROM drugref.question_worklist").fetchone()[0] == 0
+
+
+def test_a_reopened_gap_becomes_current_again_under_the_same_uuid(conn):
+    """Immortal identity is what makes retention safe: the external tool holding this
+    UUID sees the same question come back, not a new one."""
+    run_id = _run(conn)
+    m = _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+    questions.add_evidence(conn, qu, "DOI", "10.1000/x", "inconclusive", run_id)
+
+    cu = _classify(conn, run_id, m)
+    questions.register_from_gaps(conn, run_id)
+    conn.execute("DELETE FROM drugref.class_membership WHERE class_uuid = %s", (cu,))
+    questions.register_from_gaps(conn, run_id)       # the gap reopens
+
+    assert conn.execute(
+        "SELECT question_uuid, is_current FROM drugref.open_question").fetchall() \
+        == [(qu, True)]
 
 
 # ---- the curated half, and the property that motivated it --------------------
@@ -190,9 +253,40 @@ def test_an_unchecked_question_outranks_a_checked_one(conn):
         "WHERE gap_kind = 'unpopulated_contraindication'").fetchone()[0]
     questions.record_source_check(conn, checked, "openFDA-SPL", "2026-07-01", "not_covered")
 
+    # ORDER BY restated rather than leaning on the one inside the view: Postgres does
+    # not guarantee a view's ordering survives the query that wraps it, so a test
+    # that relies on it is asserting something the database has not promised.
     order = [r[0] for r in conn.execute(
-        "SELECT question_uuid FROM drugref.question_worklist")]
+        "SELECT question_uuid FROM drugref.question_worklist "
+        "ORDER BY cheapest_unchecked_rank NULLS LAST, gap_kind, question_uuid")]
     assert order.index(checked) == len(order) - 1
+
+
+def test_recording_the_same_check_twice_reports_the_no_op(conn):
+    """The bool is the whole insert-vs-conflict signal, so a caller sweeping a tier
+    can tell new work from a re-run. Untested, it could invert and nothing would
+    notice."""
+    run_id = _run(conn)
+    _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+
+    assert questions.record_source_check(conn, qu, "MED-RT", "2026.07.06", "not_covered")
+    assert not questions.record_source_check(conn, qu, "MED-RT", "2026.07.06", "not_covered")
+
+
+def test_add_evidence_returns_the_id_a_correction_needs(conn):
+    """Supersession is insert-then-point, so the caller cannot correct a finding it
+    cannot name."""
+    run_id = _run(conn)
+    _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+
+    eid = questions.add_evidence(conn, qu, "PMID", "12345678", "supports", run_id)
+    assert conn.execute(
+        "SELECT reference_value FROM drugref.question_evidence "
+        "WHERE question_evidence_id = %s", (eid,)).fetchone() == ("12345678",)
 
 
 def test_a_withdrawn_question_is_off_the_worklist_but_still_registered(conn):

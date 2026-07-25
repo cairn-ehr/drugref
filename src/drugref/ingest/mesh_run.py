@@ -30,6 +30,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
+from drugref import questions
 from drugref.classes import ClassConcept
 from drugref.ingest import mesh
 
@@ -195,6 +196,14 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
                                                uuid_by_ui[descriptor_ui],
                                                RELATIONSHIP, run_id):
                     memberships += 1
+
+    # Re-derive the open-question register (Plan A), last and for the same reason
+    # medrt_run does: this run rewrote class_parent and class_membership, both of
+    # which the gap views read. MeSH memberships are has_PA, so they never close a
+    # gap_unclassified_moiety row (that asks for has_PE) -- but they do populate
+    # classes, which is exactly what gap_unpopulated_contraindication tests against
+    # once slice 5b keys contraindications on MeSH.
+    questions.register_from_gaps(conn, run_id)
 
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))

@@ -13,6 +13,7 @@ difference is the point:
   comes back with exactly the UUID it had before.
 """
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import psycopg
@@ -188,20 +189,32 @@ def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) ->
         (source,))
 
 
-def add_unmatched_ingredient(conn: psycopg.Connection, rxcui: str,
-                             ingest_run_id: int, name: str | None = None) -> bool:
-    """Record that `rxcui` was classified upstream but is carried by no moiety.
+def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
+                              ingest_run_id: int,
+                              names: Mapping[str, str] | None = None) -> int:
+    """Record that each RxCUI was classified upstream but is carried by no moiety.
 
     Not an error, and not a silent drop: MED-RT classifies far more ingredients than
     pass drugref's moiety gate, and each one is a drug the registry can say nothing
     about. Persisting the identity (rather than only counting it, as the ingest did
     before Plan A) is what lets gap_unmatched_ingredient be a query.
 
-    `name` is nullable and MED-RT's membership assertions do not carry one, so the
-    ingest leaves it NULL today; it is here for whichever source does supply one,
-    because a worklist a human cannot read is a worklist nobody works.
+    Batched rather than one call per RxCUI -- this is thousands of rows on a real
+    release, and its siblings (add_membership, add_parent_edge) are per-row only
+    because their callers need the insert-vs-conflict answer to count with. Nobody
+    needs it here: the summary's count comes from the deduped set the caller already
+    holds. Returns rows written, for a caller that wants to assert on it.
+
+    `names` is optional and MED-RT's membership assertions carry none, so the ingest
+    leaves them NULL today; it is here for whichever source does supply one, because
+    a worklist a human cannot read is a worklist nobody works.
     """
-    cur = conn.execute(
-        "INSERT INTO drugref.ingest_unmatched_ingredient (ingest_run, rxcui, name) "
-        "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", (ingest_run_id, rxcui, name))
-    return cur.rowcount == 1
+    names = names or {}
+    rows = [(ingest_run_id, rxcui, names.get(rxcui)) for rxcui in rxcuis]
+    if not rows:
+        return 0
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO drugref.ingest_unmatched_ingredient (ingest_run, rxcui, name) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", rows)
+    return len(rows)

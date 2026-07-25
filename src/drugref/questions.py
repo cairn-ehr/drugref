@@ -4,11 +4,15 @@ It mirrors classes.py's and interactions.py's single-writer role, and enforces t
 split db/007 is built around:
 
   * `open_question` is DERIVED. register_from_gaps() re-derives it from the gap
-    views on every ingest, upserting on the deterministic question_uuid, and deletes
-    rows whose gap has closed. Nothing a curator owns lives on it.
+    views at the end of every ingest, upserting on the deterministic question_uuid,
+    and retires rows whose gap has closed. Nothing a curator owns lives on it.
   * `question_state` / `question_source_check` / `question_evidence` are CURATED.
     They are append-only, keyed off that same immortal UUID, and no rebuild touches
     them -- which is the whole reason state is not a column on open_question.
+
+"Retires" rather than "deletes" because the two halves meet at a cascade: a closed
+gap with no curator work is deleted, one that has any is kept with `is_current`
+false. See register_from_gaps.
 
 The registry is auto-registering by design (a known gap IS a question; requiring a
 promotion step means real gaps sit unregistered because nobody did the paperwork),
@@ -59,18 +63,34 @@ _GAP_SOURCES = {
 def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str, int]:
     """Re-derive `open_question` from the gap views. Returns rows live per gap_kind.
 
+    Call this at the END of an ingest, after every projection the gap views read has
+    been rebuilt and before the commit. Called earlier it reads a half-demolished
+    registry -- the orchestrators clear this source's edges, memberships and
+    contraindications before re-inserting them -- and would close, then reopen, every
+    question those tables feed.
+
     Idempotent by construction: question_uuid is a pure function of (gap_kind,
     gap_key), so re-running mints the same UUIDs and the upsert refreshes the text
     and `last_derived_ingest` rather than inserting duplicates. `first_derived_ingest`
     is never overwritten -- it is write-once provenance answering "when did drugref
     first notice this".
 
-    Questions whose gap has closed are DELETED. The register tracks reality; one
-    that only ever grows is the stale generated document these views exist to
-    replace. Deleting is safe precisely because nothing a curator owns lives here --
-    though a curator's `question_state` rows do cascade with it, which is correct:
-    state about a gap that no longer exists is not worth resurrecting, and if the
-    gap reopens the question is re-derived under the very same UUID.
+    A CLOSED GAP LEAVES, BUT NEVER TAKES CURATOR WORK WITH IT. The register tracks
+    reality, so a question whose gap has closed is deleted -- one that only ever
+    grows is the stale generated document these views exist to replace. But every
+    curated table cascades from open_question, and those tables are APPEND-ONLY with
+    a trigger that refuses DELETE. So an unconditional delete here does not quietly
+    lose a curator's work: the cascade hits forbid_question_state_rewrite (or the
+    evidence one), the trigger RAISES, and the whole ingest transaction aborts. The
+    first design shipped that, and it was unreachable only while no question had
+    ever been withdrawn or cited -- it would have failed on the first ingest after a
+    curator touched a gap that later closed.
+
+    So a question carrying any curated row is RETAINED with `is_current` false
+    instead: invisible on the worklist, still citable by the external tool that
+    already holds the UUID, and restored to current under that same UUID if the gap
+    reopens. Only untouched questions are deleted, and those have nothing to cascade
+    to.
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -85,21 +105,40 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
         ).fetchall()
 
         live_keys = [gap_key for gap_key, _ in gaps]
-        for gap_key, question_text in gaps:
-            conn.execute(
-                "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
-                "question_text, first_derived_ingest, last_derived_ingest) "
-                "VALUES (%s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (question_uuid) DO UPDATE "
-                "   SET question_text       = EXCLUDED.question_text, "
-                "       last_derived_ingest = EXCLUDED.last_derived_ingest",
-                (ids.mint_question_uuid(gap_kind, gap_key), gap_kind, gap_key,
-                 question_text, ingest_run_id, ingest_run_id))
+        if gaps:
+            # executemany, not a Python loop of execute(): gap_unclassified_moiety
+            # returns one row per moiety carrying no has_PE membership, which on a
+            # full registry is thousands. A per-row round trip there costs more than
+            # the rest of the ingest.
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+                    "question_text, first_derived_ingest, last_derived_ingest) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) "
+                    "ON CONFLICT (question_uuid) DO UPDATE "
+                    "   SET question_text       = EXCLUDED.question_text, "
+                    "       last_derived_ingest = EXCLUDED.last_derived_ingest, "
+                    # A reopened gap becomes current again under the same UUID.
+                    "       is_current          = true",
+                    [(ids.mint_question_uuid(gap_kind, gap_key), gap_kind, gap_key,
+                      question_text, ingest_run_id, ingest_run_id)
+                     for gap_key, question_text in gaps])
 
         # Whatever this kind derived last time and does not derive now has closed.
+        # Drop the ones nobody has touched; keep -- and mark stale -- the rest.
         conn.execute(
-            "DELETE FROM drugref.open_question "
-            "WHERE gap_kind = %s AND NOT (gap_key = ANY(%s))",
+            "DELETE FROM drugref.open_question q "
+            "WHERE q.gap_kind = %s AND NOT (q.gap_key = ANY(%s)) "
+            "AND NOT EXISTS (SELECT 1 FROM drugref.question_state x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            "AND NOT EXISTS (SELECT 1 FROM drugref.question_source_check x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            "AND NOT EXISTS (SELECT 1 FROM drugref.question_evidence x "
+            "                WHERE x.question_uuid = q.question_uuid)",
+            (gap_kind, live_keys))
+        conn.execute(
+            "UPDATE drugref.open_question SET is_current = false "
+            "WHERE gap_kind = %s AND NOT (gap_key = ANY(%s)) AND is_current",
             (gap_kind, live_keys))
         counts[gap_kind] = len(live_keys)
 

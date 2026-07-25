@@ -153,10 +153,17 @@ jurisdictions (open regulatory registry bundled; national SNOMED extension licen
   `question_evidence` — each with a surrogate PK and live-row-only uniqueness, per `db/005`. `db/008` adds
   the three gap views, the `ingest_unmatched_ingredient` table that makes the third of them possible (the
   ingest previously kept only the COUNT and discarded the RxCUIs), the `source_tier` cost ladder and the
-  `question_worklist` view that orders by cheapest-unchecked tier. Coverage gaps are now published rather
-  than hidden, and "how much do we not know" is a number watchable per release. **Watermark, not closure:**
-  no-evidence-found leaves a question open; only `withdrawn` is terminal. Plans B (DAG-descendant
-  expansion, #15) and C (the accumulation model) remain.
+  `question_worklist` view that orders by cheapest-unchecked tier. Every ingest orchestrator (UNII, MED-RT,
+  MeSH) rebuilds the register as its last step before commit, so it reflects the database after any ingest
+  rather than only the one that ran last. Coverage gaps are now published rather than hidden, and "how much
+  do we not know" is a number watchable per release. **Watermark, not closure:** no-evidence-found leaves a
+  question open; only `withdrawn` is terminal. **Populated is per axis:** the contraindication gap view
+  joins `db/006`'s `ci_axis`, because a class populated on an axis the rule does not expand over still
+  yields no pair — reading it relationship-blind hides real gaps, and slice 5b (MeSH `has_PA`) is where the
+  axes stop coinciding. **A closed gap carrying curator work is retired, not deleted**
+  (`open_question.is_current`): the curated tables cascade from `open_question` *and* refuse `DELETE`, so
+  deleting one aborts the ingest outright. Plans B (DAG-descendant expansion, #15) and C (the accumulation
+  model) remain.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling**: `test_ingest_run.py` and `test_medrt_run.py` each `TRUNCATE` the drugref

@@ -552,8 +552,22 @@ pinned-literal test guards the derivation (§10).
 | `question_uuid` | PK, deterministic (above) |
 | `gap_kind`, `gap_key` | what derived it |
 | `question_text` | the literature-searchable statement |
-| `search_expression` | what was asked, so re-asking is reproducible |
+| `search_expression` | what was asked, so re-asking is reproducible — **deferred, see below** |
 | `first_derived_ingest`, `last_derived_ingest` | write-once / refreshed provenance: when this question first appeared, and whether the gap that derives it is still open |
+| `is_current` | **added while implementing Plan A**: is the gap still derived? See below |
+
+**`search_expression` is NOT in `db/007`, deliberately.** Plan A derives questions; it does not run
+searches, so nothing populates this column and no plan has yet decided what a search expression looks like.
+Migrations are immutable once applied, so shipping the column would freeze a guess permanently. The plan
+that actually mines literature adds it, in its own migration, with the shape its searches need.
+
+**`is_current` was forced by the cascade, and it is not cosmetic.** §7.2 says a closed gap must be able to
+leave the projection, and every curated table is `ON DELETE CASCADE` from `open_question` — but those
+tables are also append-only, with a trigger that refuses `DELETE`. Those two facts do not merely trade off
+against each other: deleting a closed question that carries any curator row trips the trigger and **aborts
+the entire ingest transaction**. The registry therefore deletes only untouched questions and retains the
+rest with `is_current` false — excluded from `question_worklist`, still citable, and restored to current
+under the same UUID if the gap reopens.
 
 **`state` does not live here** — and the first draft of this design put it here, which would have broken
 tension F. The reasoning: §7.2 calls the derived half "a rebuildable projection", re-derived from the gap
@@ -575,7 +589,7 @@ Same overlay skeleton as §5.0, for the same reason: a question moving from `evi
 `open` is a correction with a history worth keeping. A question with no `question_state` row is `open` by
 default, so the derived half can register thousands of questions without writing a state row for any of
 them. The rebuild of `open_question` is then an upsert on `question_uuid` that refreshes `question_text`,
-`search_expression` and `last_derived_ingest` and touches nothing a curator owns.
+`last_derived_ingest` and `is_current`, and touches nothing a curator owns.
 
 ### 7.2.1 `question_source_check` — the watermark is per SOURCE TIER, not just literature
 

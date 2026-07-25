@@ -33,8 +33,8 @@ def _question(conn, run_id, gap_kind="unclassified_moiety", gap_key=None):
     qu = ids.mint_question_uuid(gap_kind, gap_key)
     conn.execute(
         "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
-        "question_text, search_expression, first_derived_ingest, last_derived_ingest) "
-        "VALUES (%s, %s, %s, 'why?', 'q', %s, %s)",
+        "question_text, first_derived_ingest, last_derived_ingest) "
+        "VALUES (%s, %s, %s, 'why?', %s, %s)",
         (qu, gap_kind, gap_key, run_id, run_id))
     return qu
 
@@ -241,6 +241,49 @@ def test_outcome_is_constrained(conn):
     qu = _question(conn, run_id)
     with pytest.raises(psycopg.errors.CheckViolation):
         _check(conn, qu, "MED-RT", "2026.07.06", "probably")
+
+
+def test_source_tier_spellings_are_admissible_checks(conn):
+    """The two source vocabularies must agree, and no foreign key can say so.
+    db/007's CHECK admits FAERS, which db/008's ladder deliberately omits, so the
+    relationship is "every tier is a valid check source" -- not equality. Left to a
+    comment, a tier spelled one way in the ladder and another in a check row makes
+    every question look never-checked at that tier and re-earns expensive literature
+    effort forever. Asserted here so adding a tier fails loudly until both lists
+    agree."""
+    run_id = _run(conn)
+    tiers = [r[0] for r in conn.execute(
+        "SELECT source FROM drugref.source_tier ORDER BY rank")]
+    assert tiers, "the cost ladder is empty -- db/008's seed INSERT did not run"
+
+    for tier in tiers:
+        qu = _question(conn, run_id)          # a fresh question per tier: the
+        _check(conn, qu, tier, "v1")          # unique key is (question, source, ver)
+
+
+def test_confidence_is_constrained(conn):
+    """Free text here would silently drop rows spelled 'High' or 'strong' from a
+    consumer filtering on high-confidence evidence."""
+    run_id = _run(conn)
+    qu = _question(conn, run_id)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.question_evidence (question_uuid, reference_scheme, "
+            "reference_value, verdict, confidence, source, ingest_run) "
+            "VALUES (%s, 'DOI', '10.1000/z', 'supports', 'pretty sure', 'DRUGREF', %s)",
+            (qu, run_id))
+
+
+def test_confidence_may_be_unstated(conn):
+    """NULL stays admissible: a finding nobody assessed the confidence of is honest,
+    a finding carrying an invented level is not."""
+    run_id = _run(conn)
+    qu = _question(conn, run_id)
+    conn.execute(
+        "INSERT INTO drugref.question_evidence (question_uuid, reference_scheme, "
+        "reference_value, verdict, confidence, source, ingest_run) "
+        "VALUES (%s, 'DOI', '10.1000/z', 'supports', NULL, 'DRUGREF', %s)",
+        (qu, run_id))
 
 
 # ---- question_evidence -------------------------------------------------------

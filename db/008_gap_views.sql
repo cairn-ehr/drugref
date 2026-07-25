@@ -65,6 +65,20 @@ COMMENT ON TABLE drugref.ingest_unmatched_ingredient IS
 -- The recursive descent is NOT the DAG-descendant expansion of #15 and needs none
 -- of its deny-list: this asks only "does ANY drug sit anywhere below", a yes/no
 -- that no fan-out concern applies to.
+--
+-- POPULATED IS PER AXIS, NOT PER CLASS, and the ci_axis join is what makes it so.
+-- class_membership admits six axes (has_MoA, has_PE, has_TC, has_PK, has_EPC and
+-- MeSH's has_PA); ddi_candidate_pair expands a rule along exactly ONE of them, the
+-- one db/006's ci_axis maps its predicate to. Asking merely "does this class have
+-- any member at all" therefore answers a different question than the read path
+-- does: a CI_PE rule on a class populated only by has_TC members yields no pair,
+-- yet a relationship-blind test calls the class populated and HIDES the gap. That
+-- is the two-lists-in-two-places failure db/006 exists to prevent, and reasoning
+-- about the axis here without consulting ci_axis would have re-created it in a
+-- third place. Nothing ties class_membership.relationship to
+-- substance_class.concept_type, so the axes coinciding in MED-RT's own data is a
+-- property of that release, not a guarantee -- and slice 5b (MeSH-keyed CI, over a
+-- vocabulary MeSH populates with has_PA) is where it stops holding.
 CREATE OR REPLACE VIEW drugref.gap_unpopulated_contraindication AS
 WITH RECURSIVE subtree(root_uuid, class_uuid) AS (
     SELECT DISTINCT ci.object_class_uuid, ci.object_class_uuid
@@ -74,8 +88,10 @@ WITH RECURSIVE subtree(root_uuid, class_uuid) AS (
     FROM   subtree s
     JOIN   drugref.class_parent cp ON cp.parent_class_uuid = s.class_uuid
 ),
+-- (root, axis) pairs: which membership axes actually have a drug somewhere below
+-- this contraindicated class. A rule is dead unless ITS OWN axis appears here.
 populated AS (
-    SELECT DISTINCT s.root_uuid
+    SELECT DISTINCT s.root_uuid, m.relationship AS membership_relationship
     FROM   subtree s
     JOIN   drugref.class_membership m ON m.class_uuid = s.class_uuid
 )
@@ -85,16 +101,27 @@ SELECT ci.object_class_uuid          AS class_uuid,
        count(*)                      AS ci_rule_count,
        max(r.upstream_release)       AS upstream_release
 FROM   drugref.class_contraindication ci
-JOIN   drugref.substance_class sc ON sc.class_uuid = ci.object_class_uuid
+       -- A predicate with no ci_axis row cannot be in the table at all (db/006's
+       -- foreign key), so this join drops nothing it should have kept.
+JOIN   drugref.ci_axis         a  ON a.relationship  = ci.relationship
+JOIN   drugref.substance_class sc ON sc.class_uuid   = ci.object_class_uuid
 JOIN   drugref.ingest_run      r  ON r.ingest_run_id = ci.ingest_run
-WHERE  ci.object_class_uuid NOT IN (SELECT root_uuid FROM populated)
+WHERE  NOT EXISTS (SELECT 1 FROM populated p
+                   WHERE p.root_uuid               = ci.object_class_uuid
+                   AND   p.membership_relationship = a.membership_relationship)
 GROUP  BY ci.object_class_uuid, sc.class_name, sc.concept_type;
 
 COMMENT ON VIEW drugref.gap_unpopulated_contraindication IS
-    'Contraindications naming a class no drug is filed under, ANYWHERE in its '
-    'subtree -- upstream asserts the concern and never populates it, so the rule can '
-    'never yield a pair. ci_rule_count is the priority signal. ABSENCE OF A ROW IS '
-    'NOT COVERAGE: a hazard MED-RT never modelled at all appears nowhere here.';
+    'Contraindications whose object class has no drug filed under it ON THE AXIS THE '
+    'RULE EXPANDS OVER (ci_axis), anywhere in the class subtree -- upstream asserts '
+    'the concern and never populates it. ci_rule_count counts only the DEAD rules on '
+    'that class and is the priority signal for this view; question_worklist does not '
+    'order by it. TWO CAVEATS. (1) Population is tested over the whole SUBTREE, while '
+    'ddi_candidate_pair expands over DIRECT membership only until descendant '
+    'expansion (#15) lands: a rule whose class is populated only via a descendant '
+    'yields no pair today yet is deliberately absent here, so this view UNDERSTATES '
+    'what currently returns nothing. (2) ABSENCE OF A ROW IS NOT COVERAGE: a hazard '
+    'MED-RT never modelled at all appears nowhere here.';
 
 -- ---- 3. moieties no effect class contains -----------------------------------
 --
@@ -121,8 +148,17 @@ COMMENT ON VIEW drugref.gap_unclassified_moiety IS
 --
 -- The join, not the stored row, is what makes this current: once a moiety claims
 -- the RxCUI the gap closes with nobody rewriting the ingest table.
+--
+-- ONE ROW PER RxCUI, from the most recent run that reported it. The stored table is
+-- keyed (ingest_run, rxcui) and clear_source_unmatched_ingredients only clears ONE
+-- source, so the moment a second source reports unmatched ingredients the same
+-- RxCUI is stored twice. Un-deduplicated that is two identical rows here -- and
+-- because gap_key is an input to question_uuid, both collapse onto ONE question,
+-- so register_from_gaps would silently over-report its own live count. DISTINCT ON
+-- makes the view's grain match the question's.
 CREATE OR REPLACE VIEW drugref.gap_unmatched_ingredient AS
-SELECT u.rxcui,
+SELECT DISTINCT ON (u.rxcui)
+       u.rxcui,
        u.name,
        r.upstream_release
 FROM   drugref.ingest_unmatched_ingredient u
@@ -130,7 +166,8 @@ JOIN   drugref.ingest_run r ON r.ingest_run_id = u.ingest_run
 WHERE  NOT EXISTS (SELECT 1 FROM drugref.identity_claim ic
                    WHERE  ic.scheme = 'RXNORM_IN'
                    AND    ic.value  = u.rxcui
-                   AND    ic.superseded_by IS NULL);
+                   AND    ic.superseded_by IS NULL)
+ORDER  BY u.rxcui, u.ingest_run DESC;
 
 COMMENT ON VIEW drugref.gap_unmatched_ingredient IS
     'Ingredients an upstream release classifies that no moiety in the registry '
@@ -174,6 +211,14 @@ COMMENT ON TABLE drugref.source_tier IS
 -- none -- which is what lets the register hold thousands of questions without a
 -- state row for any of them. Only `withdrawn` leaves the list; an `answered`
 -- question stays, because it keeps accepting evidence and medicine revises.
+--
+-- `is_current` is the other exclusion, and it is why a question carrying curator
+-- work can be RETAINED after its gap closes without haunting the worklist forever.
+--
+-- The ORDER BY is a convenience for a human reading the view directly. Postgres
+-- does not guarantee it survives an outer query that wraps this one, so a consumer
+-- that depends on the ordering must restate it -- which is exactly what the tests
+-- do rather than leaning on this clause.
 CREATE OR REPLACE VIEW drugref.question_worklist AS
 SELECT q.question_uuid,
        q.gap_kind,
@@ -190,10 +235,25 @@ FROM   drugref.open_question q
 LEFT   JOIN drugref.question_state s
        ON s.question_uuid = q.question_uuid AND s.superseded_by IS NULL
 WHERE  COALESCE(s.state, 'open') <> 'withdrawn'
+AND    q.is_current
 ORDER  BY cheapest_unchecked_rank NULLS LAST, q.gap_kind, q.question_uuid;
 
 COMMENT ON VIEW drugref.question_worklist IS
     'Open questions in the order effort should be spent: cheapest unchecked source '
     'tier first, so the free structured sources are exhausted before literature '
-    'mining or hand curation. Withdrawn questions are excluded; ANSWERED ones are '
-    'NOT, because they keep accepting evidence. A question with no state row is open.';
+    'mining or hand curation. Withdrawn questions are excluded, as are questions '
+    'whose gap has closed (is_current false); ANSWERED ones are NOT, because they '
+    'keep accepting evidence. A question with no state row is open. The ORDER BY is '
+    'a convenience and is not guaranteed through a wrapping query -- restate it.';
+
+-- The two source vocabularies must agree. question_source_check.source (db/007) is
+-- a CHECK, this table is the ladder, and the worklist JOINs them on the literal: a
+-- tier spelled one way here and another way there makes every question look
+-- never-checked at that tier and re-earns expensive effort forever. There is no
+-- parent table to hang a foreign key on -- FAERS is deliberately admissible as a
+-- CHECK value while being absent from the ladder -- so the agreement is asserted by
+-- test_source_tier_spellings_are_admissible_checks rather than left to a comment.
+COMMENT ON COLUMN drugref.source_tier.source IS
+    'Must be spelled exactly as question_source_check.source''s CHECK admits it; the '
+    'worklist joins the two on this literal. FAERS is intentionally absent: it is a '
+    'valid check source but never a rung on the ladder.';

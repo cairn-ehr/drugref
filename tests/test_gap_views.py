@@ -13,6 +13,7 @@ queryable needed a persisted table and a change to the ingest path -- not a view
 import uuid
 
 import pytest
+import psycopg
 
 from drugref import ids
 
@@ -127,6 +128,50 @@ def test_rules_naming_one_empty_class_are_counted_together(conn):
                         "drugref.gap_unpopulated_contraindication").fetchone()[0] == 3
 
 
+def test_a_member_on_the_WRONG_AXIS_does_not_close_the_gap(conn):
+    """POPULATED IS PER AXIS. ddi_candidate_pair expands a CI_PE rule over has_PE
+    members and nothing else (db/006's ci_axis), so a class whose only members sit on
+    has_MoA yields no pair -- and a relationship-blind "does this class have any
+    member at all" test would call it populated and HIDE the gap. That is the
+    two-lists-in-two-places failure db/006 exists to prevent, and this view must
+    consult ci_axis rather than re-deriving the mapping."""
+    run_id = _run(conn)
+    klass = _class(conn, run_id, "N0000000010")
+    _member(conn, run_id, _moiety(conn, run_id), klass, "has_MoA")
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), klass, "CI_PE")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchone()[0] == 1
+
+
+def test_the_matching_axis_is_what_closes_the_gap(conn):
+    """The other half of the pair above: same shape, correct axis, no gap. Asserted
+    so the fix cannot be "report everything" -- that would pass the test above while
+    burying the real gaps, which is the failure mode the subtree descent avoids."""
+    run_id = _run(conn)
+    klass = _class(conn, run_id, "N0000000011")
+    _member(conn, run_id, _moiety(conn, run_id), klass, "has_MoA")
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), klass, "CI_MoA")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchone()[0] == 0
+
+
+def test_only_the_dead_rules_on_a_partly_populated_class_are_counted(conn):
+    """A class can carry rules on BOTH axes. With has_PE members present and has_MoA
+    absent, the CI_PE rules can yield pairs and the CI_MoA one cannot -- so the count
+    is the dead rules only. Counting all of them would overstate the worklist; not
+    listing the class at all would lose a real gap."""
+    run_id = _run(conn)
+    klass = _class(conn, run_id, "N0000000012")
+    _member(conn, run_id, _moiety(conn, run_id), klass, "has_PE")
+    _ci(conn, run_id, _moiety(conn, run_id, "a"), klass, "CI_PE")
+    _ci(conn, run_id, _moiety(conn, run_id, "b"), klass, "CI_MoA")
+
+    assert conn.execute("SELECT ci_rule_count FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchall() == [(1,)]
+
+
 # ---- gap_unclassified_moiety ------------------------------------------------
 
 
@@ -187,14 +232,30 @@ def test_an_rxcui_the_registry_later_carries_is_no_longer_a_gap(conn):
                         "drugref.gap_unmatched_ingredient").fetchone()[0] == 0
 
 
-def test_unmatched_ingredients_are_replaced_per_run_not_accumulated(conn):
-    """A rebuildable projection like every other per-source table: a re-ingest must
-    replace the previous release's list, or an ingredient that started matching would
-    linger as a gap forever."""
+def test_one_run_cannot_store_an_rxcui_twice(conn):
+    """The (ingest_run, rxcui) primary key. Named for what it actually asserts:
+    replacement ACROSS runs is a different property and is tested against the real
+    ingest in test_medrt_run.py, which is the only place it can be exercised."""
     run_id = _run(conn)
     conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
                  "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (run_id,))
-    with pytest.raises(Exception):
+    with pytest.raises(psycopg.errors.UniqueViolation):
         conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
                      "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')",
                      (run_id,))
+
+
+def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
+    """clear_source_unmatched_ingredients clears ONE source, so the moment a second
+    source reports unmatched ingredients the same RxCUI is stored twice. The view has
+    to collapse them: gap_key is an input to question_uuid, so two rows here mint one
+    question and register_from_gaps would over-report its own live count. The row
+    kept is the most recent run's."""
+    older, newer = _run(conn), _run(conn, source="MeSH")
+    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
+                 "(ingest_run, rxcui, name) VALUES (%s, '5640', NULL)", (older,))
+    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
+                 "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (newer,))
+
+    assert conn.execute("SELECT rxcui, name FROM "
+                        "drugref.gap_unmatched_ingredient").fetchall() == [("5640", "ibuprofen")]

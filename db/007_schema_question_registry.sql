@@ -23,6 +23,20 @@
 --     each rebuild erase every `withdrawn`, and would have passed every test on a
 --     fresh database while failing on the second ingest of a long-lived one.
 --
+-- THE CASCADE IS THE SEAM BETWEEN THE TWO HALVES, and the two halves contradict
+-- each other across it unless the rebuild is careful. Every curated table below is
+-- ON DELETE CASCADE from open_question AND append-only with a trigger that refuses
+-- DELETE outright. Those are not merely in tension -- they are incompatible: a
+-- rebuild that deletes a closed question whose curator rows exist does not lose
+-- them quietly, it trips forbid_question_state_rewrite and ABORTS THE INGEST. The
+-- first design did exactly that, and stayed green only because no test closed a gap
+-- that anyone had curated.
+--
+-- The registry resolves it in the writer: register_from_gaps deletes only questions
+-- with no curated row at all, and RETAINS the rest with is_current false. The
+-- cascades stay as a backstop for the untouched-question case, never as the
+-- mechanism -- nothing should ever reach them with rows to remove.
+--
 -- WHY SURROGATE PRIMARY KEYS ON THE CURATED TABLES. Correction-by-overlay means
 -- inserting a new row and pointing the old one at it, so both rows carry the same
 -- natural key. A primary key on that natural key rejects the correction outright
@@ -48,11 +62,27 @@ CREATE TABLE IF NOT EXISTS drugref.open_question (
     -- to question_uuid, so its format is frozen too.
     gap_key              text   NOT NULL,
     question_text        text   NOT NULL,
-    search_expression    text,
+    -- NO search_expression COLUMN, deliberately. The design table listed one ("what
+    -- was asked, so re-asking is reproducible"), but Plan A asks nothing: it derives
+    -- questions, it does not run searches. Shipping a column no writer populates
+    -- freezes a guess about a format the plan that actually mines literature has not
+    -- made yet -- and migrations are immutable once applied, so the guess would be
+    -- permanent. The plan that runs searches adds it, with the shape its searches
+    -- need. question_text already carries the searchable statement.
     first_derived_ingest bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
-    -- Refreshed by every rebuild that still finds the gap. The pair answers "when
-    -- did this appear" and "is it still open" without a state row existing.
+    -- Refreshed by every rebuild that still finds the gap.
     last_derived_ingest  bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
+    -- Is the gap STILL derived? Derived data, so it belongs on the derived table.
+    --
+    -- The rebuild deletes questions whose gap has closed, and deleting is only safe
+    -- while the question carries no curator work -- every curated table cascades
+    -- from this one. A question that HAS accumulated a state, a source check or a
+    -- piece of evidence is retained instead and marked false here, because deleting
+    -- it would silently destroy append-only rows whose own contract promises "the
+    -- record of what was believed before must survive". Retained questions leave
+    -- question_worklist via this flag, so retention costs no noise; if the gap
+    -- reopens the rebuild sets it true again under the very same UUID.
+    is_current           boolean NOT NULL DEFAULT true,
     -- Plan A ships exactly three kinds. Widen deliberately, in a new migration, as
     -- the curated gap views land -- an unconstrained gap_kind would let a typo mint
     -- a whole parallel question namespace that nothing ever reconciles.
@@ -74,9 +104,21 @@ COMMENT ON COLUMN drugref.open_question.question_uuid IS
     'Immortal and deterministic (uuid5 over gap_kind:gap_key). External references '
     'depend on it: changing the derivation re-mints every question and silently '
     'breaks every citation.';
+COMMENT ON COLUMN drugref.open_question.question_text IS
+    'The literature-searchable statement, naming its subject rather than referring '
+    'to it by UUID so it is usable as a search expression on its own. BUILT BY '
+    'CONCATENATING UPSTREAM TEXT (class_name, display_name), so like '
+    'question_evidence.reference_value it is untrusted input a consumer must escape '
+    'when rendering -- drugref does not sanitise what a release calls a concept.';
 COMMENT ON COLUMN drugref.open_question.gap_key IS
     'SCHEME:value -- CLASS:<uuid>, MOIETY:<uuid>, RXNORM_IN:<rxcui>. An input to '
     'question_uuid, therefore frozen.';
+COMMENT ON COLUMN drugref.open_question.is_current IS
+    'Is the gap still derived by its view? False marks a CLOSED gap whose question '
+    'was retained rather than deleted because curator work (state, source check or '
+    'evidence) hangs off it and would have cascaded away. Retained questions are '
+    'excluded from question_worklist. Pair with last_derived_ingest for "when was '
+    'this last seen".';
 
 -- ---- 2. curator state -------------------------------------------------------
 
@@ -86,6 +128,9 @@ CREATE TABLE IF NOT EXISTS drugref.question_state (
                                   ON DELETE CASCADE,
     state             text        NOT NULL,
     rationale         text,
+    -- WHO asserted this, and deliberately unconstrained -- see the same column on
+    -- question_evidence. An open set (drugref, a named curator, an external
+    -- notifier), unlike question_source_check.source, which is a closed ladder.
     source            text        NOT NULL,
     ingest_run        bigint      NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     asserted_at       timestamptz NOT NULL DEFAULT now(),
@@ -206,8 +251,16 @@ CREATE TABLE IF NOT EXISTS drugref.question_source_check (
     -- CHECK-constrained for the same reason severity is: the cheapest-unchecked-tier
     -- ordering JOINs on these literals, so a row spelled 'openfda-spl' does not merely
     -- look untidy -- it makes the question appear never-checked and re-earns expensive
-    -- literature effort forever. Spellings match ids._SOURCE_CANONICAL so the two
-    -- vocabularies cannot drift apart.
+    -- literature effort forever.
+    --
+    -- This is drugref's SOURCE-TIER vocabulary and it is NOT ids._SOURCE_CANONICAL,
+    -- which answers a different question (which authority spelling a class UUID is
+    -- minted under, and holds only MED-RT and MeSH). Nothing reconciles the two and
+    -- nothing should. The list that must agree with this one is db/008's source_tier
+    -- ladder, and because FAERS belongs here while being deliberately absent there,
+    -- a foreign key cannot express the relationship -- so it is asserted in
+    -- test_source_tier_spellings_are_admissible_checks instead of trusted to a
+    -- comment. Adding a tier means editing both lists and that test will say so.
     CONSTRAINT question_source_check_source CHECK (source IN (
         'MED-RT', 'openFDA-SPL', 'MeDIC', 'Wikidata', 'FAERS', 'literature')),
     CONSTRAINT question_source_check_outcome CHECK (outcome IN (
@@ -241,7 +294,17 @@ CREATE TABLE IF NOT EXISTS drugref.question_evidence (
     reference_scheme     text        NOT NULL,
     reference_value      text        NOT NULL,
     verdict              text        NOT NULL,
+    -- Constrained like every other vocabulary here, and for the ordinary reason: a
+    -- consumer filtering "high-confidence evidence only" against free text silently
+    -- drops rows spelled 'High' or 'strong'. NULL stays admissible -- a finding whose
+    -- confidence nobody assessed is honest; a finding with an invented level is not.
     confidence           text,
+    -- `source` is deliberately UNCONSTRAINED, unlike source above in
+    -- question_source_check, and the asymmetry is not an oversight. That column names
+    -- one of a CLOSED ladder of source tiers the worklist joins on. This one names
+    -- WHO asserted the finding -- drugref itself, a named curator, an external
+    -- notifier that may not exist yet -- which is an open set by design. A CHECK here
+    -- would mean a new contributor cannot record evidence without a migration.
     source               text        NOT NULL,
     ingest_run           bigint      NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     asserted_at          timestamptz NOT NULL DEFAULT now(),
@@ -250,6 +313,8 @@ CREATE TABLE IF NOT EXISTS drugref.question_evidence (
         'DOI', 'PMID', 'PMCID', 'NCT', 'SPL', 'URL')),
     CONSTRAINT question_evidence_verdict CHECK (verdict IN (
         'supports', 'refutes', 'inconclusive')),
+    CONSTRAINT question_evidence_confidence CHECK (
+        confidence IS NULL OR confidence IN ('high', 'moderate', 'low')),
     CONSTRAINT question_evidence_not_self
         CHECK (superseded_by IS NULL OR superseded_by <> question_evidence_id)
 );

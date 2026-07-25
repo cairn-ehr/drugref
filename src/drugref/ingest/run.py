@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import claims, ids
+from drugref import claims, ids, questions
 from drugref.ingest import gate, unii
 
 log = logging.getLogger(__name__)
@@ -100,6 +100,14 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
             claims.add_claim(conn, moiety_uuid, "INN", display_name, run_id)
         for scheme, value in cand.cross_refs.items():
             claims.add_claim(conn, moiety_uuid, scheme, value, run_id)
+
+    # Re-derive the open-question register (Plan A). This run registers moieties, and
+    # a moiety with no has_PE membership IS a gap_unclassified_moiety -- so on a
+    # fresh database this is the ingest that first fills the register, and every
+    # moiety a later MED-RT run classifies leaves it again. Rebuilding here rather
+    # than only in medrt_run is what makes "the register reflects the database" true
+    # after ANY ingest, instead of only after the one that happens to run last.
+    questions.register_from_gaps(conn, run_id)
 
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s", (run_id,))
     conn.commit()

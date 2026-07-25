@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
-from drugref import interactions
+from drugref import interactions, questions
 from drugref.ingest import medrt
 
 SOURCE = "MED-RT"
@@ -166,8 +166,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #     identities answer "which drugs", and that is the question worth publishing
     #     (gap_unmatched_ingredient). Written once from the deduped set, after the
     #     loop, so a repeated assertion costs one row rather than many.
-    for rxcui in sorted(unmatched):
-        class_writer.add_unmatched_ingredient(conn, rxcui, run_id)
+    class_writer.add_unmatched_ingredients(conn, sorted(unmatched), run_id)
 
     # 5. Contraindications (slice 5a). The subject is joined by RxCUI through the
     #    same `moieties` index step 4 already built; the object is resolved through
@@ -186,6 +185,15 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
                                                  uuid_by_nui[ci.class_nui],
                                                  ci.relationship, SOURCE, run_id):
                 contraindications += 1
+
+    # 6. Re-derive the open-question register (Plan A). LAST, and deliberately so:
+    #    every gap view reads a projection steps 2-5 spent this whole function
+    #    demolishing and rebuilding, so a rebuild anywhere earlier would see the
+    #    empty middle -- closing every question the DAG and the memberships feed,
+    #    then reopening it moments later. Being derived, it is a rebuild rather than
+    #    a write: this is what keeps the register current instead of a snapshot
+    #    somebody has to remember to refresh.
+    questions.register_from_gaps(conn, run_id)
 
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))
