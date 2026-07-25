@@ -172,16 +172,19 @@ from the **existing** `classes.moieties_by_scheme(conn, 'INN')` — no new bridg
    canonicalisation helpers `canonical_source` / `canonical_claim_value`, which it is a sibling of), with
    `gate` delegating. Reaching into another module's private name would leave the two folds free to diverge
    silently — the precise failure `canonical_source` exists to prevent for authority names.
-2. **Split combinations** — on `" + "` and `" with "`. Each component resolves **independently** and gets
-   its **own bridge row**. A combination where one component matches and another does not is recorded
-   honestly: the matched components are bridged, the unmatched one is written to
-   `local_unmatched_ingredient`. Partial knowledge is represented as partial, never rounded up to a match or
-   down to a miss.
+2. **Split combinations** — on `" with "`, `" and "` and `", "`. **Measured against the July-2026 release
+   (§5.3), not assumed:** `" + "` appears in **zero** of the 1,086 distinct names, while `" with "` appears
+   in 208 and `" and "` in 88; multi-component names chain both plus commas ("Allantoin with sulfur, phenol,
+   coal tar solution and menthol"). Each component resolves **independently** and gets its **own bridge
+   row**. A combination where one component matches and another does not is recorded honestly: the matched
+   components are bridged, the unmatched one is written to `local_unmatched_ingredient`. Partial knowledge is
+   represented as partial, never rounded up to a match or down to a miss.
 3. **Salt/hydrate strip** — applied **only if** the unstripped name misses. A small **closed** list in
    `src/drugref/data/salt_suffixes.tsv` (the same closed-asset pattern as slice 1's USAN↔INN crosswalk):
-   common salt formers (hydrochloride, sodium, potassium, calcium, sulfate, tartrate, maleate, succinate,
-   mesilate, besilate, …) and hydration states (mono/di/trihydrate, anhydrous). Strips a **trailing** token
-   only.
+   salt formers (hydrochloride, sulfate, fumarate, decanoate, succinate, maleate, tartrate, mesilate,
+   besilate, sodium, …) and hydration states (mono/di/trihydrate, anhydrous). Strips a **trailing** token
+   only. **`acid` is never on the list** — "Alendronic acid", "Folic acid" and "Folinic acid" are INNs whose
+   own last word it is, and stripping it would destroy real matches (§5.3).
 4. **Ambiguity** — a name resolving to more than one moiety keeps **every** claimant, matching
    `moieties_by_scheme`'s existing all-claimants rule; picking one arbitrarily would drop a real link and
    answer differently run to run.
@@ -198,25 +201,66 @@ design refuses to let it hide:
 - The list is **closed and curated**, not generated: it does not grow silently, and adding to it is a
   reviewable diff.
 
+**5.1a Two upstream traps the parser must handle, both measured (§5.3).**
+
+- **The literal string `'null'` is PBS's empty-value sentinel**, used in 44 of `items.csv`'s 75 columns.
+  **159 rows carry `li_drug_name = 'null'`** — every one of which has a usable `drug_name`. So the
+  ingredient name is `li_drug_name`, **falling back to `drug_name`**, with `'null'` treated as absent
+  everywhere. Untreated, drugref would earnestly try to bridge a drug called "null".
+- **Parenthetical annotations** ("Acetone (use as additive only)", "Acetic Acid (33 per cent)") are stripped
+  before matching — the same `" (…)"` annotation strip `mesh.registry_keys()` already performs.
+
 **5.2 What is deliberately NOT done.** No fuzzy/edit-distance matching (unauditable, and a wrong drug match
 is a clinical hazard, not a metrics dip). No AU→INN legacy-name aliases (frusemide→furosemide,
 lignocaine→lidocaine) in this slice: they are plausible but unmeasured, and §7's output is exactly the
 evidence needed to decide whether they earn their place. Measure first, then curate.
+
+**5.3 The measurements these rules rest on** (July-2026 release, `2026-07-01-PBS-API-CSV-files.zip`,
+4.4 MB, 33 CSVs — taken before the plan was written, so no rule here is assumed):
+
+| Fact | Value |
+|---|---|
+| `items.csv` rows / distinct `pbs_code` / distinct `li_item_id` | 14,840 / 6,945 / **14,840** |
+| Distinct `li_drug_name` | 1,086 (1,085 Title-case → folding is load-bearing) |
+| `" + "` / `" with "` / `" and "` in distinct names | **0** / 208 / 88 |
+| Rows with `li_drug_name = 'null'` (all have a usable `drug_name`) | 159 |
+| Distinct names with a genuine trailing salt token | ~20 (hydrochloride 8, fumarate 3, decanoate 3, sulfate 3, …) |
+| `benefit_type_code` spread | S 4,577 · A 4,083 · R 3,797 · U 2,383 |
+
+Two consequences worth stating plainly. **`li_item_id` is unique per row (14,840 = 14,840)**, confirming
+§4.2's keying decision against the real file rather than the dictionary. And **the salt strip is worth far
+less than assumed** — only ~20 names carry a genuine trailing salt token, and two of them ("Dimethyl
+fumarate", "Diroximel fumarate") are INNs *in their own right*, so stripping would turn a correct match into
+a miss. That is precisely why the strip is **fallback-only** (try the unstripped name first), and
+`test_pbs_parser.py` pins "Dimethyl fumarate" as the regression case for it.
+
+Note also that many `items.csv` names are **not drugs at all** — enteral formulas ("Amino acid formula
+with…"), wound dressings ("Dressing-gauze-paraffin with…") and extemporaneous chemicals ("Acetone (use as
+additive only)"). These will legitimately never match a moiety, because slice 1's gate excludes foods and
+excipients by design. They belong in `local_unmatched_ingredient` as *correct* output, which is why §7
+reports the residual rather than treating it as failure.
 
 ## 6. Encumbrance quarantine — structural, not a promise
 
 §1.2/§1.3 forbid ATC and AMT/SNOMED values from entering drugref. A comment saying so is worth nothing, so
 the constraint is enforced in three places:
 
+0. **The encumbered content is in separate FILES, so it is quarantined by not being opened.** Measured on
+   the real release: `items.csv` (75 columns) contains **no ATC and no AMT column whatsoever** — they live
+   in `atc-codes.csv`, `item-atc-relationships.csv` and `amt-items.csv` (the largest file in the ZIP at
+   9.2 MB). The ingest reads **only `items.csv`**. This is a stronger boundary than the column-level one the
+   design assumed, and it is why the quarantine costs nothing.
 1. **The parser reads a fixed column allow-list.** `ingest/pbs.py` selects only the §4 fields into its
-   `PbsItem` dataclass. `atc_code`, `atc_description`, `amt_code`, `non_amt_code` and AMT `preferred_term`
-   are never read into any field.
+   `PbsItem` dataclass — belt-and-braces behind (0), so that a future release adding an ATC column to
+   `items.csv` still cannot leak it.
 2. **No table has anywhere to put them** — §4's schema has no ATC or AMT column, so even a buggy writer has
    no target.
 3. **A test proves it after a real ingest.** Following the precedent of the MED-RT fixture-redaction test,
-   an acceptance test ingests a fixture that *does* contain populated ATC and AMT columns and asserts that
-   **no such value appears anywhere in any drugref table**. The licence guarantee becomes executable, and it
-   fails loudly if a future column is added carelessly.
+   an acceptance test ingests a fixture whose rows have been given **deliberately planted ATC and AMT
+   columns** (`atc_code`, `amt_code` — absent upstream, added by the fixture *because* their absence is what
+   is being defended) and asserts that **no planted value appears anywhere in any drugref table**. The
+   licence guarantee becomes executable, and it fails loudly if a future release adds such a column and a
+   future parser reads it.
 
 ## 7. Measurement is the deliverable
 
@@ -253,11 +297,21 @@ fixture `tests/fixtures/pbs_items_subset.csv` is extracted from a **real** PBS A
 re-runnable `tests/fixtures/make_pbs_subset.py` — the same discipline as `make_medrt_subset.py`, so the
 fixture can never re-encode a wrong assumption about upstream shape.
 
-**Node operator workflow** (documented in HANDOVER, not automated here): download the monthly
-`YYYY-MM-01-PBS-API-CSV-files.zip` (~5 MB) from `pbs.gov.au/browse/publications` into the gitignored
-`downloads/`, then run the orchestrator. XML and text feeds were **discontinued from 1 May 2026**, so CSV
-(or the keyless public API, rate-limited to one request per twenty seconds) is the only path. Pin the data
-dictionary version — the schema moved v3.5.7 → v3.6.5 → v3.7.8 within about a year.
+**Node operator workflow** (documented in HANDOVER, not automated here): download the monthly ZIP into the
+gitignored `downloads/`, then run the orchestrator. The URL **requires a `?variant=3` query parameter** —
+without it the server returns 404 (verified):
+
+```bash
+curl -L -o downloads/pbs-2026-07.zip \
+  "https://www.pbs.gov.au/publication/schedule/2026/07/2026-07-01-PBS-API-CSV-files.zip?variant=3"
+```
+
+It unpacks to `tables_as_csv/` (33 files, 4.4 MB compressed / ~50 MB raw); the ingest reads **only**
+`tables_as_csv/items.csv` (8.3 MB), per §6. Files are UTF-8 **with a BOM**, so they are opened with
+`encoding='utf-8-sig'` — otherwise the first column name arrives with a `﻿` prefix and every lookup of
+it misses. XML and text feeds were **discontinued from 1 May 2026**, so CSV (or the keyless public API,
+rate-limited to one request per twenty seconds) is the only path. Pin the data dictionary version — the
+schema moved v3.5.7 → v3.6.5 → v3.7.8 within about a year.
 
 ## 9. Risks and open questions
 
@@ -265,6 +319,12 @@ dictionary version — the schema moved v3.5.7 → v3.6.5 → v3.7.8 within abou
   ingest; it blocks redistribution, permanently, until written confirmation arrives.
 - **Match rate is unknown until measured** — that is the point of the spike, but it means this slice cannot
   promise a usable Australian product layer, only an honest assessment of how far a name bridge gets.
-- **`li_item_id` and the exact column names are pinned during implementation** against a real CSV (§4.2).
+- **Measuring it requires a populated registry.** The dev database currently holds **0 moieties and 0 `INN`
+  claims**, so a UNII ingest must run before any match rate is meaningful; against an empty registry the
+  bridge correctly matches nothing. The measurement step therefore depends on the slice-1 ingest, not just
+  on this slice's code.
+- **Column names are now pinned against the real July-2026 release** (§5.3), so §4.2's open question is
+  closed. What remains is *release drift*: re-run the fixture extractor and re-confirm §5.3's numbers when
+  the monthly schedule rolls.
 - **Monthly churn and schema drift** (§8) mean a pinned dictionary version and a re-run of the fixture
   extractor when the release rolls — the same standing follow-up MED-RT and MeSH carry.
