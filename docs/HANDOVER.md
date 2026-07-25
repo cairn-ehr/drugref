@@ -152,8 +152,11 @@ are gitignored** — see "How to run / test".
 [#8](https://github.com/cairn-ehr/drugref/issues/8)**, plus two slice-2b carry-overs to file: the
 **`RelatedRegistryNumber` precision pass** (tension B — use a related CAS only when its parenthetical name
 matches the record's own name; would lift bridge yield past the 73% RegistryNumber ceiling), and
-**MED-RT `has_SC` → MeSH structural classes**, now ingestible since the MeSH bridge exists (a MED-RT-side
-relation, spec §10).
+**MED-RT `has_SC`**, now ingestible since the MeSH bridge exists (a MED-RT-side relation, spec §10).
+Measured against the 2026.07.06 release: 3,632 assertions, of which 3,384 target MeSH (2,916 `RxNorm→MeSH`,
+468 `MED-RT→MeSH`) and **248 target MED-RT itself** (210 `RxNorm→MED-RT`, 38 `MED-RT→MED-RT`). Those 248
+need no bridge and were ingestible before it existed — so "→ MeSH structural classes" describes most of
+`has_SC` but not all of it, and the MED-RT-targeted slice is not blocked on anything.
 
 ## Current state
 
