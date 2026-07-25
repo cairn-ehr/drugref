@@ -440,3 +440,7 @@ Foundation-review follow-ups (filed, not fixed):
 - CI: `.github/workflows/ci.yml` (PG18 service; DB-gated tests fail rather than skip under `CI`).
 - No CLAUDE.md yet (the coding rules live in the nextsession skill); no ADR log yet (slice 1's *why* is the
   design spec). Consider adding both as the project grows.
+- Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by
+  `.github/workflows/docs.yml`. Living decision records live in
+  `docs-site/docs/decisions/`; keep them current (revise in place, remove reversed
+  decisions). The internal specs/HANDOVER/ROADMAP are **not** published.
