@@ -111,11 +111,35 @@ reasoning that would survive MED-RT reshaping its tree.
 members) both exist and are well populated. **Zero** CI rules connect them. The triple whammy is absent
 from the source, not merely unreachable by the view.
 
-### 3.4 Some effects are absent from the terminology entirely
+### 3.4 Some effects are absent from the *class* vocabulary — but not always from the release
 
-**MED-RT contains no nephrotoxicity concept.** Zero classes match "nephrotox"; the only "toxic" hit in the
+**MED-RT defines no nephrotoxicity CLASS.** Zero classes match "nephrotox"; the only "toxic" hit in the
 whole terminology is a therapeutic category for antidotes. Its 70-class renal hierarchy is pure physiology
-(ion excretion, arterial vasoconstriction, filtration pressure) with no toxicity vocabulary.
+(ion excretion, arterial vasoconstriction, filtration pressure) with no toxicity vocabulary. Confirmed
+against the complete concept inventory — the release defines exactly eight concept types, all pharmacologic:
+
+```
+1873 PE   811 EPC   781 MoA   66 TC   59 PK   44 APC   31 HC   30 EXT     (3,695 concepts)
+```
+
+**But MED-RT is not silent on nephrotoxicity.** The `induces` predicate (170 assertions, `RxNorm → MeSH`)
+carries drug-induced adverse states, including four renal ones:
+
+```
+phenacetin            -> Kidney Failure, Acute        magnesium trisilicate -> Kidney Failure, Chronic
+sevoflurane           -> Kidney Failure, Acute        methoxyflurane        -> Nephrocalcinosis
+```
+
+So nephrotoxicity is expressed as a **drug→disease** relation, not as a physiologic-effect class. Coverage is
+thin (4 assertions) but non-zero, and it arrives **free with slice 5b's MeSH disease ingest** rather than
+needing curation. §6 and §11 are amended accordingly: 5b should precede DRUGREF-minted effect classes,
+because it may supply some of what would otherwise be hand-curated.
+
+This matters as a method point too. The `induces` predicate was visible in `medrt.py`'s
+`skipped_predicates` output the whole time; it was framed as "indication/adverse-effect content for slice
+5b" and never inspected for overlap with the gaps this design set out to fill. **Before curating a gap,
+check the predicates already on disk.** §7's worklist should therefore carry the release's own
+`skipped_predicates` inventory as a standing prompt, not just derived gaps.
 
 Relatedly, **41 of 739 CI rules (5.5%) name a class with no members anywhere in its subtree** — across 13
 distinct empty classes, of which `Genitourinary Arterial Vasoconstriction [PE]` (7 rules) and `Renal
@@ -200,8 +224,17 @@ reused unchanged. A superseded row is history, never deleted: what was believed,
 
 ## 6. drugref as its own authority (`source = 'DRUGREF'`)
 
-Nephrotoxicity (§3.4) has nothing in MED-RT for `additive_effect` to point at. Rather than special-case it,
-drugref becomes **one more authority in its own registry**:
+Nephrotoxicity (§3.4) has no *class* in MED-RT for `additive_effect` to point at — and MED-RT defines no
+disease concepts at all, so there is nothing else in the release to point at either (the accessory
+`NDFRT-NUI_MeSH-CUI` crosswalk carries 15,311 legacy NDF-RT disease NUIs, but **zero** of them are defined as
+concepts in the current release, so they cannot serve as a condition vocabulary).
+
+**Sequencing consequence:** do slice 5b *first* where the two overlap. `induces` already asserts four renal
+toxicities against MeSH disease descriptors (§3.4), so minting a `DRUGREF` nephrotoxicity class before 5b
+risks hand-curating what 5b supplies. Mint a `DRUGREF` class only where the release genuinely says nothing —
+which §7's worklist is what tells you.
+
+Where minting *is* warranted, drugref becomes **one more authority in its own registry**:
 
 - extend the `db/003` `substance_class.source` CHECK with `'DRUGREF'`, and `ids._SOURCE_CANONICAL`
   correspondingly (the pair the migration comment already says to extend together);
@@ -363,9 +396,14 @@ Unchanged from 5a and restated because this design widens what drugref says:
 2. **#15 descendant expansion, with a named deny-list** of the ~14 abstract PE organ-system roots (§3.2) —
    *not* a subtree-size threshold. Contributor sets in §5.2 are wrong without this, and it changes what
    several gap views return, so it precedes the curated tables.
-3. **`source = 'DRUGREF'` minting** (§6) — one migration, small.
-4. **The curated tables** (§5) with an empty curation set, plus the read views (§8).
-5. **Literature-backed curation**, driven by the §7 worklist, landing as `question_evidence` plus curated
+3. **Slice 5b (MeSH disease descriptors), where it overlaps a gap** — moved ahead of DRUGREF minting by the
+   §3.4 audit. `induces` / `may_treat` / `CI_with` all resolve once MeSH diseases are ingested, and `induces`
+   already covers part of the nephrotoxicity gap this design would otherwise hand-curate. Curating before 5b
+   risks paying for what the release supplies. The accessory crosswalk resolves 50.8% of the M-codes, which
+   shrinks 5b's unknown but does not remove it (no tree numbers, 49% unresolved).
+4. **`source = 'DRUGREF'` minting** (§6) — one migration, small, and scoped to what 5b did *not* supply.
+5. **The curated tables** (§5) with an empty curation set, plus the read views (§8).
+6. **Literature-backed curation**, driven by the §7 worklist, landing as `question_evidence` plus curated
    grades.
 
 **Recommended decomposition — this spec is too large for one implementation plan.** Three plans:
@@ -375,11 +413,17 @@ Unchanged from 5a and restated because this design widens what drugref says:
   of the model below. *Start here.*
 - **Plan B — descendant expansion** (step 2): closes #15 with the named deny-list. Independently useful —
   it improves `ddi_candidate_pair` whether or not the accumulation model is ever built.
-- **Plan C — the accumulation model** (steps 3–4): `DRUGREF` minting, the three curated tables, the read
-  views, and the two remaining gap views.
+- **Plan C — the accumulation model** (steps 4–5): `DRUGREF` minting, the three curated tables, the read
+  views, and the two remaining gap views. **Gated on slice 5b** (step 3) for any effect 5b might supply —
+  see §12-H.
 
-Step 5 is continuous curation work, not a plan. Each of A/B/C gets its own spec-to-plan cycle if it grows
-beyond what this document already settles.
+Step 6 is continuous curation work, not a plan. Slice 5b keeps its own separate spec. Each of A/B/C gets its
+own spec-to-plan cycle if it grows beyond what this document already settles.
+
+**A precondition on Plan C, learned the hard way (§12-H): before curating any gap, audit every file and
+every predicate in the relevant release for content that already covers it.** Plan A's worklist is the
+mechanism — it carries the `skipped_predicates` inventory so the question "did we already have this?" is
+asked automatically rather than remembered.
 
 ## 12. Design tensions recorded
 
@@ -409,10 +453,32 @@ slice 4. Widening the CHECK later is additive.
 `withdrawn` to suppress noise. Rationale: the default should be that a known gap *is* a question; requiring
 a manual promotion step means real gaps sit unregistered because nobody did the paperwork.
 
-**G. drugref minting its own classes** (§6). Accepted, because nephrotoxicity is otherwise unmodellable and
-the registry was made source-neutral precisely to admit new authorities. Tension: drugref-authored classes
-have no external validation. Mitigated by attribution (`source`) and by §7.3 evidence links — and honestly,
-this *is* the contribution the project exists to make.
+**G. drugref minting its own classes** (§6). Accepted, but **narrowed** after auditing the release: mint only
+where the release genuinely says nothing, and run slice 5b first where the two overlap (§3.4 — `induces`
+already covers four renal toxicities). Tension: drugref-authored classes have no external validation.
+Mitigated by attribution (`source`) and by §7.3 evidence links.
+
+**H. Existing sources were assumed exhausted before they were.** This design initially justified curation
+and literature-mining for gaps without auditing everything already on disk. The audit found: `induces`
+covers nephrotoxicity as a drug→disease relation (§3.4); `has_SC` has **248 MED-RT-targeted assertions**
+(210 `RxNorm→MED-RT`, 38 `MED-RT→MED-RT`) ingestible today, contradicting the HANDOVER note that `has_SC`
+"points into MeSH"; and the accessory `NDFRT-NUI_MeSH-CUI` crosswalk resolves **5,030 of 9,908 (50.8%)** of
+the MeSH M-codes the release references, reducing (though not removing — no tree numbers, 49% unresolved)
+slice 5b's stated unknown.
+
+Hypotheses checked and **closed negative**, recorded so they are not re-litigated: class-level
+`has_PE`/`has_MoA`/`has_TC` (756 edges, [#8](https://github.com/cairn-ehr/drugref/issues/8)) propagate only
+**299** extra contributions (+2.5%) across 13 effects and fill **zero** previously-empty effects; the 13
+empty classes of [#19](https://github.com/cairn-ehr/drugref/issues/19) have **zero** class-level
+contributors, so that finding stands; `Core_MEDRT_DTS.xml` is the same content as the core XML (96,516
+associations in both); the `Core_MEDRT_SPL` archive holds class *listings* only (1,873 PE / 781 MoA / 1,127
+EPC NUIs), no membership; the `NDFRT-NUI_RxNorm-RxCUI` crosswalk is concept identity (including dose forms),
+not membership; and `CI_with` is 11,524 `RxNorm→MeSH` against 2 `RxNorm→MED-RT`, so treating it as
+MeSH-keyed was correct.
+
+**The generalisable rule: audit every file and every predicate in a release before proposing to curate what
+it might already contain.** §7's worklist carries the `skipped_predicates` inventory for exactly this
+reason.
 
 ## 13. Explicitly out of scope
 
