@@ -62,3 +62,12 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
+  - Architecture: architecture/index.md
+  - Design decisions:
+      - decisions/index.md
+      - Immortal moiety identity: decisions/immortal-moiety-identity.md
+      - Append-only claims: decisions/append-only-claims.md
+      - The hybrid store: decisions/hybrid-store.md
+      - Licensing is a blocker: decisions/licensing-is-a-blocker.md
+  - Principles: principles/index.md
+  - Data sources & licensing: sources/index.md
