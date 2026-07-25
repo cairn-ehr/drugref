@@ -78,7 +78,8 @@ compounds); moiety gate is the binding constraint, as for MED-RT. `RelatedRegist
 bridge key in this slice (tension B — deferred precision pass). MeSH licence verified AGPL-compatible (NLM
 terms: attribution + no-endorsement + version-currency; no NC/ND), attributed in `NOTICE`. **ATC stays
 excluded** (NC + no-derivatives). Follow-ups: the RelatedRegistryNumber precision pass, and MED-RT's own
-`has_SC` (→ MeSH structural classes), now ingestible since the bridge exists.
+`has_SC` — 3,632 assertions, mostly (3,384) into MeSH structural classes and so unblocked by the bridge,
+but **248 of them target MED-RT itself** and never needed the bridge at all (see HANDOVER).
 
 ### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
 Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety
