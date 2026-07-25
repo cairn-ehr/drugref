@@ -42,14 +42,10 @@ and a later **local tier** for country-specific packaging, product, and subsidy 
 
 ## How to read these docs
 
-<!-- These five section names become links once their pages land (Tasks 2-6 of the
-     docs-site plan). A strict build fails on a relative link to a file that doesn't
-     exist yet, so until then these are plain text, not markdown links. -->
-
-- **Architecture** — how drugref is built.
-- **Design decisions** — why it is built that way (the decisions that currently
-  stand).
-- **Principles** — the invariants everything else follows from.
-- **Data sources & licensing** — where the data comes from and the licence rules
-  that govern it.
-- **Roadmap** — what is done and what is next.
+- [Architecture](architecture/index.md) — how drugref is built.
+- [Design decisions](decisions/index.md) — why it is built that way (the decisions that
+  currently stand).
+- [Principles](principles/index.md) — the invariants everything else follows from.
+- [Data sources & licensing](sources/index.md) — where the data comes from and the
+  licence rules that govern it.
+- [Roadmap](roadmap/index.md) — what is done and what is next.
