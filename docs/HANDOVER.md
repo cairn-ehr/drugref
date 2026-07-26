@@ -72,8 +72,9 @@ and C (the accumulation model) remain.
 jurisdiction-specific (local) tier: `db/009` (three rebuildable-projection tables — no append-only floor,
 because a de-listed PBS item must be able to disappear), a pure parser (`ingest/pbs.py`), the single writer
 (`local.py`) and orchestrator (`ingest/pbs_run.py`) bridging PBS products to the global moiety spine **by
-name alone** — the only licence-clean join, since PBS carries no UNII/CAS/InChIKey. **334 tests green.**
-Measured against the real July-2026 release: a **92.4% name-bridge ceiling**, but only **84.6%** against
+name alone** — the only licence-clean join, since PBS carries no UNII/CAS/InChIKey. **341 tests green**
+(334 at the initial build, +7 from the final whole-branch review round — see below). Measured against the
+real July-2026 release: a **92.4% name-bridge ceiling**, but only **84.6%** against
 today's INN-gated registry — the moiety gate, not the bridge, is the binding constraint
 ([#26](https://github.com/cairn-ehr/drugref/issues/26)). Full write-up below.
 
@@ -253,7 +254,29 @@ is tried first, so "Dimethyl fumarate", an INN in its own right, isn't broken by
 treats the literal string `'null'`, PBS's empty-value sentinel, as absent); `local.py` (the single writer);
 `ingest/pbs_run.py` (the orchestrator: clears this source's prior rows, reads the INN claim index once via
 `classes.moieties_by_scheme`, resolves and bridges or records each component, one transaction, rollback-
-then-re-raise on failure). **334 tests green.**
+then-re-raise on failure). **334 tests green** at the initial build.
+
+**Final whole-branch review round (APPROVE WITH MINOR FIXES) — all 12 findings addressed, 341 tests
+green.** Three non-minor findings: (1) `parse_items` now raises if the CSV is missing the `li_item_id`
+column outright (a renamed/dropped column previously made every row silently skip, yielding an empty,
+error-free re-ingest after `clear_source_products` had already run — the same drift class as `#27` below),
+and rows with a present-but-blank `li_item_id` are now counted on `PbsSummary.rows_without_identity`
+instead of vanishing uncounted; (2) an item with no usable drug name at all now records a
+`NO_DRUG_NAME_SENTINEL` unmatched row instead of disappearing from both the bridge and the residual;
+(3) `products_written` is now a measured count of distinct product UUIDs actually written, not
+`items_read` echoed back (a repeated `li_item_id` would otherwise have drifted the slice's headline
+match-rate denominator). Six minor fixes: a `local_product` row tagged to a non-PBS `ingest_run` is now
+seeded in the rebuild-scoping test (the only prior assertions were on tables `clear_source_products`
+can't reach); `unmatched_components` now counts distinct component names, matching its documented meaning;
+`LOCAL_PRODUCT_NAMESPACE` gained a frozen-literal test; `gate.inn_display_name` now folds a crosswalk hit
+through `_norm()` too, not just the fallback; `ingest_pbs`'s unreachable `jurisdiction=`/`source=`
+parameters were dropped (YAGNI — db/009's CHECKs admit only one value each); and the TRUNCATE-coupling
+note (here and in ROADMAP.md) was corrected from "third module" to the actual count of seven. Two
+deferred-minor fixes: `parse_items` gained its promised `-> Iterator[PbsItem]` annotation, and
+`make_pbs_subset.py` now self-reports found/missing WANTED names to stderr and exits non-zero if any is
+missing (mirroring `make_medrt_subset.py`/`make_mesh_subset.py`), and dropped its vestigial
+`extrasaction="ignore"`. No schema, licence, or measured-number change — the 92.4%/84.6% figures below
+are unaffected.
 
 **Measured against the real July-2026 PBS release** (14,840 items) **and the real Feb-2026 UNII release**
 (168,046 records), both gitignored:

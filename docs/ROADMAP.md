@@ -156,7 +156,8 @@ admitted slice-3 stand-in) contributes only 1.1% of bridge rows against the gate
 the ceiling** — reported as near-worthless rather than left to quietly imply otherwise (rule 5); slice 3's
 GSRS salt relationships are the real fix. The residual is otherwise explained by AU/INN-vs-USAN spelling
 divergence (paracetamol, cefalexin, ciclosporin, …) and non-drugs the moiety gate correctly excludes
-(vitamins, dressings). 334 tests. No `NOTICE` change — this slice redistributes nothing.
+(vitamins, dressings). 334 tests at the initial build; 341 after the final whole-branch review round (all
+12 findings fixed — see HANDOVER.md). No `NOTICE` change — this slice redistributes nothing.
 
 Remaining slice-8 scope (not built): pricing (AEMP/DPMQ/premiums/fees), restriction texts/criteria, TGA
 ARTG, the composition tree's salt/clinical-drug levels underneath the bridge, and the same shape applied to
@@ -194,11 +195,14 @@ other jurisdictions.
   model) remain.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
-  **Note the test-suite coupling**: `test_ingest_run.py`, `test_medrt_run.py` and now `test_pbs_run.py` each
-  `TRUNCATE` the drugref tables in an autouse fixture, because all three orchestrators commit internally and
-  so escape the `conn` fixture's rollback. Those fixtures depend on precisely the bypass this item closes, so
-  hardening the floor must land together with a replacement isolation strategy (e.g. a privileged test role,
-  or per-test schemas) or the suite stops being able to reset itself.
+  **Note the test-suite coupling** (corrected, slice-8a review round — the prior count of three was wrong
+  and went unverified before being repeated): `grep -l TRUNCATE tests/*.py` finds **seven** modules —
+  `test_chebi.py`, `test_gap_views.py`, `test_ingest_run.py`, `test_medrt_run.py`, `test_mesh_run.py`,
+  `test_pbs_run.py` and `test_questions.py` — each `TRUNCATE`-ing the drugref tables in an autouse fixture
+  because their orchestrators commit internally and so escape the `conn` fixture's rollback. Those fixtures
+  depend on precisely the bypass this item closes, so hardening the floor must land together with a
+  replacement isolation strategy (e.g. a privileged test role, or per-test schemas) or the suite stops being
+  able to reset itself.
 - **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (real UNII
   headers/`INN_ID`; ChEBI/UNII/MED-RT licence deeds; grow the closed crosswalk + allow-list toward
   completeness). Note the moiety gate is the binding constraint on classification yield: MED-RT classifies
