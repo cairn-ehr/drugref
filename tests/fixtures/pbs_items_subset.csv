@@ -1,0 +1,12 @@
+li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,schedule_form,program_code,benefit_type_code,atc_code,amt_code
+10001J_14023_31078_31081_31083,10001J,Xifaxan,Rifaximin,Rifaximin,Tablet 550 mg,"rifaximin 550 mg tablet, 56",GE,A,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+10357D_11634_1223_5493_57354,10357D,Abacavir/Lamivudine Viatris,Abacavir with lamivudine,Abacavir + lamivudine,Tablet containing abacavir 600 mg (as sulfate) with lamivudine 300 mg,"abacavir 600 mg + lamivudine 300 mg tablet, 30",CA,S,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+10573L_6996_328_2180_7955,10573L,Megafol 5,Folic acid,Folic acid,Tablet 5 mg,"folic acid 5 mg tablet, 100",R1,U,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+10582Y_7030_485_2862_46535,10582Y,PHARMACY CARE PARACETAMOL,Paracetamol,Paracetamol,Tablet 500 mg,"paracetamol 500 mg tablet, 100",R1,U,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+11933C_11531_153_1545_29005,11933C,APO-Amoxycillin and Clavulanic Acid,Amoxicillin with clavulanic acid,Amoxicillin + clavulanic acid,Tablet containing 875 mg amoxicillin (as trihydrate) with 125 mg clavulanic acid (as potassium clavulanate),"amoxicillin 875 mg + clavulanic acid 125 mg tablet, 10",GE,S,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+13263C_27245_54978_55107_55256,13263C,Yonsa Mpred,Abiraterone and methylprednisolone,abiraterone (&) methylprednisolone,Pack containing 120 tablets abiraterone acetate 125 mg and 60 tablets methylprednisolone 4 mg,"abiraterone acetate 125 mg tablet [120] (&) methylprednisolone 4 mg tablet [60], 1 pack",GE,A,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+13499L_12116_963_4555_13673,13499L,APO-Alendronate,Alendronic acid,Alendronate,Tablet 70 mg (as alendronate sodium),"alendronate 70 mg tablet, 4",GE,R,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+14183L_8254_1407_5962_7259,14183L,Xatral SR,Alfuzosin hydrochloride,Alfuzosin,Tablet 10 mg,"alfuzosin hydrochloride 10 mg modified release tablet, 30",R1,A,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+2896K_12929_29023_29026_29028,2896K,Tecfidera,Dimethyl fumarate,Dimethyl fumarate,Capsule (modified release) 120 mg,"dimethyl fumarate 120 mg enteric capsule, 14",GE,S,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+4505D_10989_15605_3324_10732,4505D,Egopsoryl-TA,"Allantoin with sulfur, phenol, coal tar solution and menthol",coal tar solution + phenol + precipitated sulfur,"Gel 25 mg-5 mg-5 mg-0.05 mL-7.5 mg per g (2.5%-0.5%-0.5%-5%-0.75%), 30 g","coal tar solution 5% + phenol 0.5% + precipitated sulfur 0.5% gel, 30 g",R1,U,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY
+NULLCASE_1,NULLC,null,null,Aspirin,null,null,GE,U,ZZZ_ATC_CANARY,ZZZ_AMT_CANARY

@@ -14,12 +14,18 @@ the display name from (UNII PT, overridden by the divergence crosswalk).
 import csv
 import pathlib
 
+from drugref import ids
 from drugref.ingest.unii import MoietyCandidate
 
 
 def _norm(name: str) -> str:
-    """Case/space-fold a name for lookup and comparison."""
-    return " ".join(name.strip().lower().split())
+    """Case/space-fold a name for lookup and comparison.
+
+    Delegates to ids.normalise_name, which slice 8a promoted to the shared module
+    when the local-tier bridge became a second consumer. Kept as a private alias
+    so this module's existing call sites read unchanged.
+    """
+    return ids.normalise_name(name)
 
 
 def load_crosswalk(path: str | pathlib.Path) -> dict[str, str]:
@@ -63,8 +69,16 @@ def is_moiety(cand: MoietyCandidate, allowlist: set[str]) -> bool:
 def inn_display_name(cand: MoietyCandidate, crosswalk: dict[str, str]) -> str:
     """The INN-preferred display label: crosswalk override, else the folded PT.
 
-    The fallback uses _norm() (same fold as the lookup key) so an upstream PT with
-    stray internal whitespace collapses to a clean single-spaced label rather than
-    passing through as-is.
+    Both branches are folded through _norm() (review round, finding 7): the
+    fallback needs it so an upstream PT with stray internal whitespace collapses
+    to a clean single-spaced label rather than passing through as-is, and the
+    crosswalk HIT needs it for the identical reason -- ids.normalise_name's own
+    docstring states that lower-casing is the fact the whole local-tier bridge
+    rests on (PBS names fold to meet the stored INN claim). Returning a crosswalk
+    value un-normalised made that only CONTINGENTLY true: every entry in the
+    shipped usan_inn_crosswalk.tsv happens to be lower-case today, but a future
+    Title-case entry would store an INN claim the bridge's fold-based lookup can
+    never match, silently killing that drug's bridge with no error anywhere.
     """
-    return crosswalk.get(_norm(cand.preferred_name), _norm(cand.preferred_name))
+    folded_pt = _norm(cand.preferred_name)
+    return _norm(crosswalk.get(folded_pt, folded_pt))

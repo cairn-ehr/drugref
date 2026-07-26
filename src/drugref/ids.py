@@ -22,6 +22,7 @@ _DRUGREF_ROOT = uuid.uuid5(uuid.NAMESPACE_DNS, "drugref.org")
 MOIETY_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "moiety")
 CLASS_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "class")
 QUESTION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "question")
+LOCAL_PRODUCT_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "local_product")
 
 
 def mint_moiety_uuid(unii: str) -> uuid.UUID:
@@ -133,6 +134,44 @@ def mint_class_uuid(source: str, code: str) -> uuid.UUID:
     prefix = _SOURCE_KEY_PREFIX.get(canon, canon.upper())
     key = f"{prefix}:{code.strip().upper()}"
     return uuid.uuid5(CLASS_NAMESPACE, key)
+
+
+# ---- local-tier product identity (slice 8a) --------------------------------
+
+
+def normalise_name(name: str) -> str:
+    """The one fold applied to any human-readable substance name.
+
+    Strip, lower-case, collapse internal whitespace. It lives here beside
+    canonical_source and canonical_claim_value because it is the same KIND of
+    thing: the single spelling two independently-produced strings must agree on
+    before they can be compared.
+
+    Two consumers depend on that agreement. The INN identity claim is stored
+    lower-case (it is a display label, so _UPPERCASE_SCHEMES deliberately excludes
+    it), and PBS publishes Title-case drug names -- 1,085 of 1,086 distinct names
+    in the 2026-07 release. If either side folded differently, the local-tier
+    bridge would silently match nothing at all, which is the failure mode
+    canonical_source exists to prevent for authority names.
+    """
+    return " ".join(name.strip().lower().split())
+
+
+def mint_local_product_uuid(jurisdiction: str, source: str, code: str) -> uuid.UUID:
+    """Derive a local-tier product's UUID from (jurisdiction, source, code).
+
+    Deterministic and RE-DERIVED on every ingest, never pinned -- the same
+    discipline as mint_class_uuid and deliberately unlike mint_moiety_uuid. That
+    is what lets the local tier be dropped and rebuilt monthly while every
+    surviving product comes back with exactly the UUID it had before.
+
+    Jurisdiction and source are part of the key, not decoration: a second
+    jurisdiction's identically-numbered item would otherwise collapse onto the
+    same row. `code` is the upstream item-instance id (PBS li_item_id), which is
+    unique per row upstream -- unlike the PBS Item Code, which covers many brands.
+    """
+    key = f"{jurisdiction.strip().upper()}:{source.strip().upper()}:{code.strip()}"
+    return uuid.uuid5(LOCAL_PRODUCT_NAMESPACE, key)
 
 
 # ---- open-question identity (Plan A) ---------------------------------------

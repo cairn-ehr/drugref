@@ -54,3 +54,15 @@ def test_inn_display_name_collapses_internal_whitespace():
     # label via _norm(), not pass through as-is.
     xw = gate.load_crosswalk(DATA / "usan_inn_crosswalk.tsv")
     assert gate.inn_display_name(_cand("MAGNESIUM   SULFATE", True), xw) == "magnesium sulfate"
+
+
+def test_inn_display_name_normalises_a_title_case_crosswalk_hit():
+    """A crosswalk HIT must fold too, not just the fallback (review round,
+    finding 7). Nothing stops a future crosswalk entry from being Title-case --
+    every shipped entry happens to be lower-case today, but that was only ever
+    contingent, not guaranteed. ids.normalise_name's docstring is explicit that
+    lower-casing is the fact the whole local-tier bridge rests on: an
+    un-normalised hit would store an INN claim the fold-based PBS bridge lookup
+    could never match, silently killing that drug's bridge with no error."""
+    xw = {"acetaminophen": "Paracetamol"}
+    assert gate.inn_display_name(_cand("ACETAMINOPHEN", True), xw) == "paracetamol"

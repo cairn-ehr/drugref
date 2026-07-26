@@ -67,6 +67,9 @@ def test_apply_migrations_is_idempotent(conn):
         "ingest_unmatched_ingredient", "source_tier",
         "gap_unpopulated_contraindication", "gap_unclassified_moiety",
         "gap_unmatched_ingredient", "question_worklist",
+        # slice 8a, db/009: the local (AU/PBS) tier -- a rebuildable projection
+        # bridged to the global moiety spine, plus its unmatched-ingredient ledger.
+        "local_product", "local_product_moiety", "local_unmatched_ingredient",
     }
 
 

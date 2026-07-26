@@ -1,0 +1,39 @@
+# Trailing salt-former and hydration tokens stripped ONLY as a fallback, when the
+# unstripped name matches no moiety. A stand-in for slice 3 (GSRS active-moiety ->
+# salt relationships), not a replacement for it.
+#
+# DELIBERATELY ABSENT: "acid". It is the last word of real INNs (alendronic acid,
+# folic acid, folinic acid), so stripping it would destroy correct matches.
+#
+# Measured on the 2026-07 release: only ~20 distinct names carry a genuine trailing
+# salt token, and two of them ("Dimethyl fumarate", "Diroximel fumarate") are INNs
+# in their own right -- which is why the CALLER must try the unstripped name first.
+hydrochloride
+hydrobromide
+sulfate
+sulphate
+fumarate
+maleate
+tartrate
+succinate
+mesilate
+mesylate
+besilate
+besylate
+citrate
+acetate
+decanoate
+propionate
+valerate
+phosphate
+nitrate
+gluconate
+lactate
+sodium
+potassium
+calcium
+magnesium
+monohydrate
+dihydrate
+trihydrate
+anhydrous
