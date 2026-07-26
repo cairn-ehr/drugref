@@ -11,6 +11,7 @@ gate that is still open.
 import hashlib
 import logging
 import pathlib
+import uuid
 from dataclasses import dataclass
 
 import psycopg
@@ -20,6 +21,17 @@ from drugref.ingest import pbs
 
 log = logging.getLogger(__name__)
 
+# The only values db/009's CHECK constraints admit today (review round, finding
+# 8): local_product.jurisdiction is CHECK (jurisdiction IN ('AU')) and .source is
+# CHECK (source IN ('PBS')). They used to be ingest_pbs parameters, but a second
+# jurisdiction or source could never actually be passed -- the database would
+# reject the row -- so the parameters were unreachable knobs, not real
+# configuration (YAGNI). Kept as module constants rather than deleted outright
+# because a second jurisdiction is a real, if not-yet-built, follow-up: see the
+# docstring note on local.clear_source_products below.
+JURISDICTION = "AU"
+SOURCE = "PBS"
+
 
 @dataclass(frozen=True)
 class PbsSummary:
@@ -28,6 +40,12 @@ class PbsSummary:
     products_bridged / products_written is the MATCH RATE, and the split between
     exact and salt-stripped rows says how much of it the slice-3 stand-in is
     carrying. unmatched_components is the residual worklist.
+
+    * rows_without_identity -- rows carrying no li_item_id at all. Refused
+      rather than written, because the product UUID derives from that value
+      and an empty one would mint a single shared UUID every such row
+      collapses onto (mirrors ingest/run.py's rows_without_unii -- a row
+      skipped for lack of an id must be counted, never silently dropped).
     """
     items_read: int
     products_written: int
@@ -36,6 +54,7 @@ class PbsSummary:
     bridge_rows_salt_stripped: int
     combination_products: int
     unmatched_components: int
+    rows_without_identity: int
 
 
 def resolve(component: str, inn_index: dict[str, list], salt_suffixes: frozenset[str]):
@@ -65,8 +84,7 @@ def resolve(component: str, inn_index: dict[str, list], salt_suffixes: frozenset
 
 
 def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
-               upstream_release: str, source_checksum: str | None = None,
-               jurisdiction: str = "AU", source: str = "PBS") -> PbsSummary:
+               upstream_release: str, source_checksum: str | None = None) -> PbsSummary:
     """Ingest one PBS release's items.csv. Owns the transaction end to end.
 
     Steps, in an order that matters: open the provenance row, CLEAR this source's
@@ -78,6 +96,16 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     left half-applied: a mid-run abort previously left the caller's connection in
     an aborted state, so the NEXT feed's first statement failed for reasons that
     had nothing to do with it.
+
+    ONLY AU/PBS today (review round, finding 8): `jurisdiction`/`source` used to be
+    parameters here, but db/009's CHECK constraints admit no other value, and
+    local.clear_source_products deletes by `source` alone -- so a second
+    jurisdiction sharing 'PBS' as its source would wipe the first jurisdiction's
+    rows on every re-ingest. Adding a second jurisdiction therefore requires TWO
+    changes together, not one: widening the CHECKs (a new migration) AND making
+    clear_source_products jurisdiction-aware (it is not, yet). Until both land,
+    the module constants above are the only correct values and are not exposed as
+    knobs a caller could get wrong.
     """
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
@@ -86,21 +114,48 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         run_id = conn.execute(
             "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
             "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-            (source, upstream_release, source_checksum)).fetchone()[0]
+            (SOURCE, upstream_release, source_checksum)).fetchone()[0]
 
-        local.clear_source_products(conn, source)
+        local.clear_source_products(conn, SOURCE)
         inn_index = classes.moieties_by_scheme(conn, "INN")
         salt_suffixes = pbs.load_salt_suffixes()
         log.info("PBS ingest %s: %d INN claims indexed", upstream_release, len(inn_index))
 
         items_read = products_bridged = exact_rows = salt_rows = combinations = 0
+        rows_without_identity = 0
         unmatched: list[tuple[str, str]] = []
+        # Distinct product UUIDs actually written (review round, finding 3): NOT
+        # the same number as items_read. A repeated li_item_id upstream (or a row
+        # refused for lacking one) would otherwise let items_read and a
+        # products_written that merely echoed it drift together while the real
+        # row count in local_product fell behind -- silently wrong on the slice's
+        # headline match-rate denominator. A set of the UUIDs local.upsert_product
+        # actually returned is the only way to measure this rather than assume it.
+        written_product_uuids: set[uuid.UUID] = set()
 
         for item in pbs.parse_items(path):
             items_read += 1
+            if item.source_code is None:
+                # No li_item_id: the product UUID derives from that value, so an
+                # empty one would mint one shared UUID every such row collapses
+                # onto (the same reason gate.has_identity_key refuses a blank
+                # UNII). Counted, never silently dropped -- mirrors
+                # ingest/run.py's rows_without_unii (review round, finding 1).
+                rows_without_identity += 1
+                continue
             product_uuid = local.upsert_product(
-                conn, item, run_id, jurisdiction=jurisdiction, source=source)
+                conn, item, run_id, jurisdiction=JURISDICTION, source=SOURCE)
+            written_product_uuids.add(product_uuid)
             components = pbs.split_components(item.drug_name or "")
+            if not components:
+                # Neither li_drug_name nor drug_name was usable (review round,
+                # finding 2). The product is still written above, but with no
+                # component name it would otherwise never reach a bridge row NOR
+                # local_unmatched_ingredient -- vanishing from both the numerator
+                # and the residual with no queryable trace, silently lowering the
+                # match rate. A sentinel component keeps the item visible in the
+                # unmatched worklist instead.
+                components = [pbs.NO_DRUG_NAME_SENTINEL]
             if len(components) > 1:
                 combinations += 1
             bridged_here = False
@@ -121,7 +176,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
                 products_bridged += 1
 
         local.add_unmatched_components(
-            conn, unmatched, run_id, jurisdiction=jurisdiction, source=source)
+            conn, unmatched, run_id, jurisdiction=JURISDICTION, source=SOURCE)
         conn.execute(
             "UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
             (run_id,))
@@ -132,9 +187,16 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         raise
 
     summary = PbsSummary(
-        items_read=items_read, products_written=items_read,
+        items_read=items_read, products_written=len(written_product_uuids),
         products_bridged=products_bridged, bridge_rows_exact=exact_rows,
         bridge_rows_salt_stripped=salt_rows, combination_products=combinations,
-        unmatched_components=len(unmatched))
+        # Distinct component NAMES, not rows (review round, finding 5): spec
+        # section 7 and HANDOVER both document this figure as "distinct unmatched
+        # component names", so the field must actually measure that rather than
+        # counting one row per (item, component) pair -- the same ingredient
+        # missing from a thousand products is one residual worklist entry, not a
+        # thousand.
+        unmatched_components=len({component for _, component in unmatched}),
+        rows_without_identity=rows_without_identity)
     log.info("PBS ingest %s complete: %s", upstream_release, summary)
     return summary

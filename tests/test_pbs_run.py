@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from drugref import claims, ids
-from drugref.ingest import pbs_run
+from drugref.ingest import pbs, pbs_run
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "pbs_items_subset.csv"
 
@@ -20,9 +20,14 @@ def _clean(conn):
     tests. Truncate first, exactly as test_medrt_run.py does, so counts are
     order-independent.
 
-    NOTE (ROADMAP floor-hardening): this fixture depends on the very TRUNCATE
-    bypass that item plans to close, so this module is now the THIRD one coupled
-    to it. Add it to that note.
+    NOTE (ROADMAP floor-hardening; corrected, review round finding 9): this
+    fixture depends on the very TRUNCATE bypass that item plans to close. This is
+    NOT the third module coupled to it -- `grep -l TRUNCATE tests/*.py` finds
+    SEVEN: test_chebi.py, test_gap_views.py, test_ingest_run.py,
+    test_medrt_run.py, test_mesh_run.py, test_pbs_run.py (this one) and
+    test_questions.py. The original "third" count was wrong even before this
+    module existed and this branch never re-checked it before repeating the claim
+    (see docs/ROADMAP.md, corrected alongside this).
     """
     conn.execute(
         "TRUNCATE drugref.local_product_moiety, drugref.local_unmatched_ingredient, "
@@ -144,11 +149,109 @@ def test_null_sentinel_row_uses_the_drug_name_fallback(conn, seeded_registry):
 
 
 def test_summary_counts_are_consistent(conn, seeded_registry):
+    """products_written must be a MEASUREMENT of what actually landed in
+    local_product, not an assertion echoing items_read (review round, finding
+    3) -- comparing a field to itself is a tautology that can never fail, even
+    if a repeated li_item_id upstream collapsed two rows onto one product."""
     summary = pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
-    assert summary.items_read == summary.products_written
+    total_products = conn.execute(
+        "SELECT count(*) FROM drugref.local_product").fetchone()[0]
+    assert summary.products_written == total_products
     assert summary.products_bridged <= summary.products_written
     assert summary.bridge_rows_salt_stripped >= 1
     assert summary.combination_products >= 2
+
+
+def test_products_written_counts_distinct_products_not_rows_read(conn, seeded_registry, tmp_path):
+    """THE REGRESSION (review round, finding 3). Two CSV rows sharing one
+    li_item_id must collapse onto ONE local_product row (product identity is
+    keyed on that value), so products_written -- the slice's headline
+    match-rate denominator -- must report 1, not 2. Before this fix,
+    products_written was simply set to items_read, so a duplicate upstream row
+    would have silently inflated it to match items_read while the real
+    database only ever gained one row: exactly the drift this test pins."""
+    path = tmp_path / "items.csv"
+    path.write_text(
+        "li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,"
+        "program_code,benefit_type_code\n"
+        "DUP_1,X,Brand A,Rifaximin,Rifaximin,Tab,GE,A\n"
+        "DUP_1,X,Brand B,Rifaximin,Rifaximin,Tab,GE,A\n",
+        encoding="utf-8-sig")
+    summary = pbs_run.ingest_pbs(conn, path, "2026-07-01", "testsum")
+    assert summary.items_read == 2
+    assert summary.products_written == 1
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 1
+
+
+def test_rows_without_identity_are_counted_not_silently_dropped(conn, seeded_registry, tmp_path):
+    """THE ROW-LEVEL COUNTER (review round, finding 1). A row with no li_item_id
+    cannot be keyed and must not be written -- but it must be COUNTED, not just
+    quietly absorbed into a lower items_read-vs-database-rows gap with no
+    number anyone could query (mirrors ingest/run.py's rows_without_unii)."""
+    path = tmp_path / "items.csv"
+    path.write_text(
+        "li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,"
+        "program_code,benefit_type_code\n"
+        ",X,B,Aspirin,Aspirin,Tab,GE,U\n"
+        "X_2,Y,B,Ibuprofen,Ibuprofen,Tab,GE,U\n",
+        encoding="utf-8-sig")
+    summary = pbs_run.ingest_pbs(conn, path, "2026-07-01", "testsum")
+    assert summary.items_read == 2
+    assert summary.rows_without_identity == 1
+    assert summary.products_written == 1
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 1
+
+
+def test_column_drift_raises_instead_of_silently_wiping_the_projection(conn, seeded_registry, tmp_path):
+    """THE COLUMN-DRIFT GUARD, end to end (review round, finding 1). If a future
+    release renames li_item_id, the OLD behaviour would let every row hit the
+    per-row skip, parse_items would yield nothing usable, and ingest_pbs would
+    commit an EMPTY local tier with no error -- after clear_source_products had
+    already deleted the previous release's rows. Seed one row via the real
+    fixture first, so there is something to lose, then re-ingest a CSV missing
+    the key column and confirm the whole ingest raises and the transaction rolls
+    back rather than silently emptying local_product."""
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
+    before = conn.execute("SELECT count(*) FROM drugref.local_product").fetchone()[0]
+    assert before > 0
+
+    broken = tmp_path / "items.csv"
+    broken.write_text(
+        "pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,"
+        "benefit_type_code\n"
+        "10001J,Xifaxan,Rifaximin,Rifaximin,Tablet 550 mg,GE,A\n",
+        encoding="utf-8-sig")
+    with pytest.raises(ValueError, match="li_item_id"):
+        pbs_run.ingest_pbs(conn, broken, "2026-08-01", "testsum2")
+
+    # The failed run must not have left the previous release's rows deleted:
+    # ingest_pbs rolls back on any exception, and clear_source_products ran
+    # inside that same transaction.
+    after = conn.execute("SELECT count(*) FROM drugref.local_product").fetchone()[0]
+    assert after == before
+
+
+def test_nameless_item_is_recorded_as_unmatched_not_dropped(conn, seeded_registry, tmp_path):
+    """THE NAMELESS-ITEM GUARD (review round, finding 2). A row where BOTH
+    li_drug_name and drug_name are absent/'null' has no component to bridge --
+    but the product must still surface in local_unmatched_ingredient under the
+    sentinel name, rather than silently vanishing from both the bridge and the
+    residual worklist with no queryable trace (spec section 7)."""
+    path = tmp_path / "items.csv"
+    path.write_text(
+        "li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,"
+        "program_code,benefit_type_code\n"
+        "NONAME_1,X,SomeBrand,null,null,Tab,GE,U\n",
+        encoding="utf-8-sig")
+    summary = pbs_run.ingest_pbs(conn, path, "2026-07-01", "testsum")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 1
+    unmatched = {row[0] for row in conn.execute(
+        "SELECT component_name FROM drugref.local_unmatched_ingredient").fetchall()}
+    assert unmatched == {pbs.NO_DRUG_NAME_SENTINEL}
+    assert summary.products_bridged == 0
 
 
 def test_re_ingest_is_idempotent(conn, seeded_registry):
@@ -206,17 +309,41 @@ def test_no_encumbered_value_reaches_any_drugref_table(conn, seeded_registry):
 
 
 def test_rebuild_is_scoped_to_pbs(conn, seeded_registry):
-    """A PBS re-ingest must not touch another source's projection. The registry
-    seeded by the UNII run above must survive untouched."""
+    """A PBS re-ingest must not touch another source's projection.
+
+    Two things must survive, and only one of them was actually at risk (review
+    round, finding 4). The registry seeded by the UNII run above (identity_claim,
+    substance_moiety) is unreachable by ANY bug in clear_source_products, because
+    that function only ever DELETEs the three local_* tables -- so asserting on
+    the registry alone could never fail no matter how badly the scoping broke.
+    The property genuinely at risk is a local_product row belonging to a
+    DIFFERENT source's ingest_run: clear_source_products scopes its DELETE via
+    `ingest_run IN (SELECT ingest_run_id FROM ingest_run WHERE source = %s)`, and
+    only a row seeded exactly that way can catch a regression in that scoping.
+    """
     before = conn.execute(
         "SELECT count(*) FROM drugref.identity_claim WHERE scheme = 'INN'").fetchone()[0]
+
+    other_run_id = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT', 'other', 'other') RETURNING ingest_run_id").fetchone()[0]
+    foreign_uuid = ids.mint_local_product_uuid("AU", "PBS", "NOT_A_PBS_INGEST_RUN")
+    conn.execute(
+        "INSERT INTO drugref.local_product (local_product_uuid, jurisdiction, "
+        "source, source_code, ingest_run) VALUES (%s, 'AU', 'PBS', "
+        "'NOT_A_PBS_INGEST_RUN', %s)", (foreign_uuid, other_run_id))
+
     pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
     pbs_run.ingest_pbs(conn, FIXTURE, "2026-08-01", "testsum2")
+
     after = conn.execute(
         "SELECT count(*) FROM drugref.identity_claim WHERE scheme = 'INN'").fetchone()[0]
     assert after == before
     assert conn.execute(
         "SELECT count(*) FROM drugref.substance_moiety").fetchone()[0] == len(SEED_INNS)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.local_product WHERE local_product_uuid = %s",
+        (foreign_uuid,)).fetchone()[0] == 1
 
 
 def test_rebuild_drops_a_delisted_item(conn, seeded_registry, tmp_path):

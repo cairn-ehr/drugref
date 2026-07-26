@@ -20,6 +20,7 @@ file that intuition gets wrong.
 import csv
 import pathlib
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from drugref import ids
@@ -30,6 +31,19 @@ SALT_SUFFIX_PATH = pathlib.Path(__file__).parent.parent / "data" / "salt_suffixe
 # of items.csv's 75 columns. Untreated, drugref would earnestly register a drug
 # named "null" -- 159 rows carry li_drug_name = 'null'.
 _NULL_SENTINEL = "null"
+
+# The name a product with NO usable drug name at all is recorded under (review
+# round, finding 2). Both li_drug_name and drug_name being absent/'null' is rare
+# (0 rows in the measured 2026-07 release) but not impossible, and split_components
+# correctly returns [] for it -- "no name" is a legitimate data condition, not a
+# bug in the split. The bug would be letting the CALLER'S component list end up
+# empty too: the product is still written, but with zero components it would
+# never appear in a bridge row NOR in local_unmatched_ingredient, vanishing from
+# both the numerator and the residual with no queryable trace (spec section 7
+# exists precisely to forbid that). pbs_run.py substitutes this sentinel whenever
+# split_components returns [], so the item stays visible in the unmatched worklist
+# instead of disappearing silently.
+NO_DRUG_NAME_SENTINEL = "<no drug name>"
 
 # Combination separators, in the forms actually present upstream. " + " is NOT
 # here: it appears in zero of the 1,086 distinct names, so treating it as a
@@ -103,7 +117,10 @@ class PbsItem:
     they live in separate files the ingest never opens -- and the fixed allow-list
     in parse_items keeps that true if a future release changes its mind.
     """
-    source_code: str              # li_item_id -- unique per row upstream
+    source_code: str | None       # li_item_id -- unique per row upstream, or None
+                                  # if the row carried no usable value (see
+                                  # parse_items: the identity gate that refuses
+                                  # such a row lives with the orchestrator, not here)
     pbs_code: str | None          # the Item Code: an attribute, NOT the key
     brand_name: str | None
     drug_name: str | None         # li_drug_name, falling back to drug_name
@@ -118,8 +135,8 @@ def _clean(row: dict[str, str], column: str) -> str | None:
     return None if is_missing(value) else value.strip()
 
 
-def parse_items(path: str | pathlib.Path):
-    """Stream tables_as_csv/items.csv, yielding one PbsItem per usable row.
+def parse_items(path: str | pathlib.Path) -> Iterator[PbsItem]:
+    """Stream tables_as_csv/items.csv, yielding one PbsItem per CSV row.
 
     A GENERATOR, so the 8.3 MB file never lands in memory at once -- the same
     streaming discipline mesh.py applies, and the reason the production-ingest
@@ -129,16 +146,39 @@ def parse_items(path: str | pathlib.Path):
     the first column name arrives as '﻿li_item_id' and every lookup of it
     silently misses, yielding rows that are entirely empty.
 
-    Rows with no li_item_id are SKIPPED, not defaulted: the product UUID derives
-    from that value, so an empty one would mint a single shared UUID that every
-    such row collapses onto (the failure gate.has_identity_key exists to prevent
-    on the identity spine).
+    THE COLUMN ITSELF IS CHECKED EAGERLY, before the per-row loop (review round,
+    finding 1). If a future release renames li_item_id, every row would otherwise
+    be missing the key, this generator would silently yield PbsItem after PbsItem
+    with source_code=None, and the caller (pbs_run.ingest_pbs) would count every
+    one of them as rows_without_identity and write NOTHING -- but only after
+    clear_source_products had already deleted the previous release's rows. That
+    reads as a successful, empty re-ingest with items_read == 0 and no error: the
+    same silent-drift failure mode issue #27 found in ingest/unii.py (a renamed
+    column there quietly disabled matching with no exception). A missing COLUMN
+    is a broken upstream contract, not a per-row data condition, so it raises
+    immediately instead of being discovered one skipped row at a time.
+
+    Rows with no li_item_id VALUE (the column exists, the row just has none) are
+    still YIELDED, with source_code=None, rather than skipped here: refusing such
+    a row is an identity-gate decision -- the product UUID derives from that
+    value, so an empty one would mint a single shared UUID every such row
+    collapses onto -- and that gate belongs with the orchestrator, exactly as
+    gate.has_identity_key belongs with ingest/run.py rather than ingest/unii.py.
+    Counting it there (PbsSummary.rows_without_identity) is what makes a skipped
+    row visible instead of silently dropped.
     """
     with open(path, newline="", encoding="utf-8-sig") as fh:
-        for row in csv.DictReader(fh):
+        reader = csv.DictReader(fh)
+        if not reader.fieldnames or "li_item_id" not in reader.fieldnames:
+            raise ValueError(
+                "PBS items.csv is missing the 'li_item_id' column "
+                f"(columns found: {reader.fieldnames!r}). Both the product "
+                "UUID and the identity gate key on this column; a rename or "
+                "drop upstream is a broken contract, not a row-level data "
+                "condition, so parsing refuses rather than silently yielding "
+                "zero usable rows.")
+        for row in reader:
             source_code = _clean(row, "li_item_id")
-            if not source_code:
-                continue
             # li_drug_name is the legally-determined name and the better key;
             # drug_name is the Medicinal Product Pack name and covers the 159
             # rows where the former is the 'null' sentinel.

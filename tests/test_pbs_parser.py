@@ -7,6 +7,8 @@ is odd because the upstream data is.
 import pathlib
 import textwrap
 
+import pytest
+
 from drugref.ingest import pbs
 
 
@@ -140,14 +142,39 @@ def test_parse_items_ignores_encumbered_columns(tmp_path):
     assert "12345678" not in str(item)
 
 
-def test_parse_items_skips_rows_with_no_identity(tmp_path):
-    """A row with no li_item_id cannot be keyed, so it is refused rather than
-    given a degenerate UUID -- the same discipline gate.has_identity_key applies
-    to the identity spine."""
+def test_parse_items_yields_rows_with_no_identity_as_none(tmp_path):
+    """A row with no li_item_id cannot be keyed, so admitting it into the
+    database would mint a degenerate UUID every such row collapses onto -- the
+    same discipline gate.has_identity_key applies to the identity spine. But
+    REFUSING it is an identity-gate decision, not a parsing one (review round,
+    finding 1): this pure parser yields the row anyway, with source_code=None,
+    and the orchestrator (pbs_run.ingest_pbs) is the one that skips it AND
+    counts it as rows_without_identity -- mirroring how ingest/unii.py yields a
+    blank-UNII row for ingest/run.py to refuse and count, rather than dropping
+    it silently inside the parser where nothing could ever see it happen."""
     path = _write_csv(tmp_path, """
         li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
         ,X,B,Aspirin,Aspirin,Tab,GE,U
         X_2,Y,B,Ibuprofen,Ibuprofen,Tab,GE,U
         """)
     items = list(pbs.parse_items(path))
-    assert [i.source_code for i in items] == ["X_2"]
+    assert [i.source_code for i in items] == [None, "X_2"]
+
+
+def test_parse_items_raises_if_the_li_item_id_column_is_entirely_missing(tmp_path):
+    """THE COLUMN-DRIFT GUARD (review round, finding 1). If a future release
+    renames li_item_id, every row would otherwise be missing the key, and
+    parse_items would silently yield a PbsItem with source_code=None for every
+    single row -- which pbs_run.ingest_pbs would then count entirely as
+    rows_without_identity and write NOTHING, but only after it had already
+    cleared the previous release's projection. That is a silent, empty,
+    "successful" re-ingest: the same failure mode filed as issue #27 against
+    ingest/unii.py (a renamed column there quietly disabled matching with no
+    exception). A missing COLUMN is a broken upstream contract, not a per-row
+    data condition, so parsing must refuse immediately instead."""
+    path = _write_csv(tmp_path, """
+        pbs_code,brand_name,li_drug_name,drug_name,li_form,program_code,benefit_type_code
+        10001J,Xifaxan,Rifaximin,Rifaximin,Tablet 550 mg,GE,A
+        """)
+    with pytest.raises(ValueError, match="li_item_id"):
+        list(pbs.parse_items(path))
