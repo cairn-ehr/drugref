@@ -96,3 +96,12 @@ def test_local_product_uuid_has_its_own_namespace():
     string from ever colliding (the rule ids.py already applies to classes)."""
     assert ids.LOCAL_PRODUCT_NAMESPACE not in (
         ids.MOIETY_NAMESPACE, ids.CLASS_NAMESPACE, ids.QUESTION_NAMESPACE)
+
+
+def test_local_product_namespace_matches_frozen_literal():
+    # Same reasoning as test_namespace_matches_frozen_literal and
+    # test_class_namespace_matches_frozen_literal (review round, finding 6):
+    # pin the ACTUAL value, not a re-derivation of ids.py's own formula, because
+    # every local_product_uuid in the database depends on this namespace and a
+    # rebuild would silently re-key every PBS product if it ever drifted.
+    assert str(ids.LOCAL_PRODUCT_NAMESPACE) == "2886bb06-5c2f-544a-bdeb-23bdc074b4bc"
