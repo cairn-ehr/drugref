@@ -45,13 +45,38 @@ _NULL_SENTINEL = "null"
 # instead of disappearing silently.
 NO_DRUG_NAME_SENTINEL = "<no drug name>"
 
-# Combination separators, in the forms actually present upstream. " + " is NOT
-# here: it appears in zero of the 1,086 distinct names, so treating it as a
-# separator could only ever shred a real name.
+# Combination separators as li_drug_name writes them: 208 distinct names use
+# " with ", 88 use " and ", the rest chain commas.
 _SEPARATORS = re.compile(r"\s+with\s+|\s+and\s+|,\s*", re.IGNORECASE)
 
+# Combination separators as DRUG_NAME writes them -- a second vocabulary, and the
+# reason this constant exists at all (fix round, finding 2).
+#
+# The original separator set was measured on li_drug_name and on nothing else.
+# But _clean's fallback pulls drug_name for the 159 rows whose li_drug_name is the
+# 'null' sentinel, and drug_name is the Medicinal Product Pack name, which spells
+# the same combinations differently: "Abacavir + lamivudine", "abiraterone (&)
+# methylprednisolone", "coal tar solution + phenol + precipitated sulfur" (all
+# three shapes appear in the committed fixture's own drug_name column). Untreated,
+# every combination among those rows became ONE pseudo-ingredient no INN can
+# match -- silently absent from the bridge and silently present in the residual
+# worklist as a name that is not a name.
+#
+# Folded to ", " BEFORE the annotation strip below, which matters for "(&)":
+# it is parenthesised, so stripping first would DELETE the separator and fuse the
+# two halves into "abiraterone methylprednisolone" -- a plausible-looking single
+# ingredient, which is worse than an obviously-broken one.
+#
+# The plus is matched only in its SPACED form. " + " occurs in zero of
+# li_drug_name's 1,086 distinct names, so admitting it costs that vocabulary
+# nothing, while an unspaced "+" stays part of the name it belongs to
+# ("Vitamin B+C complex").
+_FALLBACK_SEPARATORS = re.compile(r"\s+\+\s+|\s*\(&\)\s*")
+
 # A trailing " (...)" annotation: "Acetic Acid (33 per cent)", "Acetone (use as
-# additive only)". The same annotation strip mesh.registry_keys() performs.
+# additive only)". The same annotation strip mesh.registry_keys() performs. Only
+# the exact "(&)" marker above escapes it; anything else in parentheses -- even
+# something merely CONTAINING an ampersand -- is an annotation and is stripped.
 _PARENTHETICAL = re.compile(r"\s*\([^)]*\)")
 
 
@@ -77,10 +102,17 @@ def split_components(name: str) -> list[str]:
     one component is a known moiety and another is not can be recorded honestly:
     the known one bridges, the unknown one is counted. Rounding such a product up
     to "matched" or down to "unmatched" would both be lies.
+
+    Handles BOTH upstream combination vocabularies -- li_drug_name's " with "/
+    " and "/comma and drug_name's " + "/"(&)" -- because the caller cannot know
+    which column supplied the name (see _FALLBACK_SEPARATORS).
     """
     if is_missing(name):
         return []
-    cleaned = _PARENTHETICAL.sub("", name)
+    # Order is load-bearing: fold drug_name's forms to a comma FIRST, so the
+    # parenthesised "(&)" becomes a separator instead of being eaten as an
+    # annotation by the strip on the next line.
+    cleaned = _PARENTHETICAL.sub("", _FALLBACK_SEPARATORS.sub(", ", name))
     seen: list[str] = []
     for part in _SEPARATORS.split(cleaned):
         component = ids.normalise_name(part)
@@ -158,6 +190,14 @@ def parse_items(path: str | pathlib.Path) -> Iterator[PbsItem]:
     is a broken upstream contract, not a per-row data condition, so it raises
     immediately instead of being discovered one skipped row at a time.
 
+    THE NAME COLUMNS GET THE SAME GUARD (fix round, finding 4). Guarding only the
+    identity column left the other half of what this ingest depends on unguarded:
+    with li_drug_name AND drug_name both renamed, every row parses cleanly with
+    drug_name=None, every product is written, and every one lands in the residual
+    worklist under NO_DRUG_NAME_SENTINEL -- a 0% bridge that raises nothing and
+    reads as a successful run. EITHER column satisfies the guard, because falling
+    back from one to the other is a designed path (159 rows need it), not drift.
+
     Rows with no li_item_id VALUE (the column exists, the row just has none) are
     still YIELDED, with source_code=None, rather than skipped here: refusing such
     a row is an identity-gate decision -- the product UUID derives from that
@@ -177,6 +217,15 @@ def parse_items(path: str | pathlib.Path) -> Iterator[PbsItem]:
                 "drop upstream is a broken contract, not a row-level data "
                 "condition, so parsing refuses rather than silently yielding "
                 "zero usable rows.")
+        if not {"li_drug_name", "drug_name"} & set(reader.fieldnames):
+            raise ValueError(
+                "PBS items.csv has neither a 'li_drug_name' nor a 'drug_name' "
+                f"column (columns found: {reader.fieldnames!r}). The drug name is "
+                "the ONLY licence-clean join to the global moiety spine; without "
+                "one, every row would parse cleanly, be written, and land in "
+                "local_unmatched_ingredient under the no-name sentinel -- a 0% "
+                "bridge reported as a successful ingest. Refused at the header "
+                "for the same reason the missing li_item_id above is.")
         for row in reader:
             source_code = _clean(row, "li_item_id")
             # li_drug_name is the legally-determined name and the better key;

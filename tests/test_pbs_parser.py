@@ -23,11 +23,48 @@ def test_splits_on_and():
         "abiraterone", "methylprednisolone"]
 
 
-def test_does_not_split_on_plus():
-    """' + ' appears in ZERO of the 1,086 distinct names upstream. A plus sign is
-    therefore part of a name, never a separator, and splitting on it would shred
-    real names for no gain."""
+def test_does_not_split_on_an_unspaced_plus():
+    """An UNSPACED '+' is part of a name, never a separator: 'Vitamin B+C complex'
+    must survive whole. Only the SPACED ' + ' form separates (see below), which is
+    what lets both facts hold at once."""
     assert pbs.split_components("Vitamin B+C complex") == ["vitamin b+c complex"]
+
+
+def test_splits_on_the_spaced_plus_the_fallback_column_uses():
+    """THE FALLBACK-VOCABULARY GAP (fix round, finding 2).
+
+    The ' + ' measurement ("zero of the 1,086 distinct names") was taken on
+    li_drug_name. But parse_items falls back to drug_name for the 159 rows whose
+    li_drug_name is the 'null' sentinel, and drug_name is the Medicinal Product
+    Pack name -- a DIFFERENT vocabulary that writes combinations with ' + ', as
+    the committed fixture's own drug_name column shows ('Abacavir + lamivudine',
+    'coal tar solution + phenol + precipitated sulfur'). Untreated, every
+    combination among those rows collapsed into ONE pseudo-ingredient that no INN
+    can ever match: lost from the bridge AND polluting the residual worklist with
+    a name that is not a name."""
+    assert pbs.split_components("Abacavir + lamivudine") == ["abacavir", "lamivudine"]
+    assert pbs.split_components(
+        "coal tar solution + phenol + precipitated sulfur") == [
+        "coal tar solution", "phenol", "precipitated sulfur"]
+
+
+def test_splits_on_the_ampersand_form_the_fallback_column_uses():
+    """The other drug_name combination form: 'abiraterone (&) methylprednisolone'.
+
+    This one was WORSE than a missed split (fix round, finding 2). '(&)' is
+    parenthesised, so the annotation strip ate it and FUSED the two halves into
+    'abiraterone methylprednisolone' -- a plausible-looking single ingredient
+    rather than an obviously-broken one. It must separate, not be stripped."""
+    assert pbs.split_components("abiraterone (&) methylprednisolone") == [
+        "abiraterone", "methylprednisolone"]
+
+
+def test_a_genuine_parenthetical_is_still_stripped_not_split():
+    """The separator fix must not turn every '(...)' into a split. ONLY the exact
+    '(&)' marker separates; anything else in parentheses is still an annotation
+    and is still stripped -- including one that merely CONTAINS an ampersand."""
+    assert pbs.split_components("Acetic Acid (33 per cent)") == ["acetic acid"]
+    assert pbs.split_components("Sulfur (& related salts)") == ["sulfur"]
 
 
 def test_splits_multi_component_chains():
@@ -178,3 +215,40 @@ def test_parse_items_raises_if_the_li_item_id_column_is_entirely_missing(tmp_pat
         """)
     with pytest.raises(ValueError, match="li_item_id"):
         list(pbs.parse_items(path))
+
+
+def test_parse_items_raises_if_BOTH_name_columns_are_missing(tmp_path):
+    """THE SAME GUARD, EXTENDED TO THE NAME (fix round, finding 4). The identity
+    column was guarded; the name columns -- the OTHER thing the whole ingest
+    depends on -- were not. With both renamed, every row parses cleanly with
+    drug_name=None, every product is written, and every single one lands in the
+    residual worklist under the '<no drug name>' sentinel: a 0% bridge reported
+    as a successful run, discoverable only by someone reading the summary.
+
+    That is the same broken-upstream-contract class as the li_item_id rename and
+    issue #27's 'PT'-vs-'Display Name' drift, so it gets the same answer: refuse
+    at the header, not one silent row at a time. ONE of the two suffices -- the
+    fallback from li_drug_name to drug_name is a designed path, not drift."""
+    path = _write_csv(tmp_path, """
+        li_item_id,pbs_code,brand_name,li_form,program_code,benefit_type_code
+        10001J_14023,10001J,Xifaxan,Tablet 550 mg,GE,A
+        """)
+    with pytest.raises(ValueError, match="li_drug_name"):
+        list(pbs.parse_items(path))
+
+
+def test_parse_items_accepts_either_name_column_alone(tmp_path):
+    """The guard demands ONE of the two name columns, never both: a release that
+    dropped the redundant drug_name is degraded, not broken, and must still
+    ingest. Pinned so the guard cannot be tightened into a false alarm."""
+    only_li = _write_csv(tmp_path, """
+        li_item_id,pbs_code,li_drug_name,program_code,benefit_type_code
+        X_1,X,Rifaximin,GE,A
+        """)
+    assert next(pbs.parse_items(only_li)).drug_name == "Rifaximin"
+
+    only_fallback = _write_csv(tmp_path, """
+        li_item_id,pbs_code,drug_name,program_code,benefit_type_code
+        X_1,X,Rifaximin,GE,A
+        """)
+    assert next(pbs.parse_items(only_fallback)).drug_name == "Rifaximin"
