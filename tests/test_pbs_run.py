@@ -182,6 +182,33 @@ def test_products_written_counts_distinct_products_not_rows_read(conn, seeded_re
     assert summary.products_written == 1
     assert conn.execute(
         "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 1
+    # THE OTHER HALF OF THE SAME DEFECT (fix round, finding 1). Fixing only the
+    # denominator left the NUMERATOR counting per CSV row, so this duplicate
+    # scored products_bridged=2 against products_written=1 -- a 200% match rate,
+    # the slice's headline figure reading as nonsense. The invariant below is
+    # asserted HERE, on the only fixture that contains a duplicate: asserting it
+    # in test_summary_counts_are_consistent (which ingests the duplicate-free
+    # subset) is a check that cannot fail no matter how badly the counter drifts.
+    assert summary.products_bridged == 1
+    assert summary.products_bridged <= summary.products_written
+
+
+def test_combination_count_is_per_product_not_per_row(conn, seeded_registry, tmp_path):
+    """combination_products drifted exactly like products_bridged (fix round,
+    finding 1): counted per CSV row, so one duplicated combination item reported
+    two combinations while the database held one product. Every count in
+    PbsSummary that describes PRODUCTS must be keyed on the product UUID."""
+    path = tmp_path / "items.csv"
+    path.write_text(
+        "li_item_id,pbs_code,brand_name,li_drug_name,drug_name,li_form,"
+        "program_code,benefit_type_code\n"
+        "DUP_2,X,Brand A,Abacavir with lamivudine,Abacavir + lamivudine,Tab,CA,S\n"
+        "DUP_2,X,Brand B,Abacavir with lamivudine,Abacavir + lamivudine,Tab,CA,S\n",
+        encoding="utf-8-sig")
+    summary = pbs_run.ingest_pbs(conn, path, "2026-07-01", "testsum")
+    assert summary.items_read == 2
+    assert summary.products_written == 1
+    assert summary.combination_products == 1
 
 
 def test_rows_without_identity_are_counted_not_silently_dropped(conn, seeded_registry, tmp_path):
@@ -296,13 +323,21 @@ def test_no_encumbered_value_reaches_any_drugref_table(conn, seeded_registry):
     This test sweeps every text/varchar column in the whole drugref schema
     (not just the PBS tables) after a full ingest, so a leak via an unexpected
     path -- a future column, a copy-paste into the wrong table -- is caught too.
+
+    The match is a SUBSTRING one, not equality (fix round, finding 5). Equality
+    only catches a canary copied whole into its own column; it misses the leak
+    that is actually harder to spot by eye -- an encumbered value CONCATENATED
+    into a longer string, e.g. an ATC code appended to a display name or folded
+    into a provenance note. A licence breach is a legal problem for every
+    downstream user, so the guard should cost nothing to widen and does.
     """
     pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
     offenders = []
     for table, column in _all_text_columns(conn):
         hits = conn.execute(
-            f'SELECT count(*) FROM drugref."{table}" WHERE "{column}" IN (%s, %s)',
-            (ATC_CANARY, AMT_CANARY)).fetchone()[0]
+            f'SELECT count(*) FROM drugref."{table}" '
+            f'WHERE "{column}" LIKE %s OR "{column}" LIKE %s',
+            (f"%{ATC_CANARY}%", f"%{AMT_CANARY}%")).fetchone()[0]
         if hits:
             offenders.append(f"{table}.{column}")
     assert offenders == [], f"encumbered value leaked into: {offenders}"

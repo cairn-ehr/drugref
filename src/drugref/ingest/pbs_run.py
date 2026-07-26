@@ -4,9 +4,18 @@
 Owns the transaction, exactly like medrt_run.py and mesh_run.py: the parser is
 pure, local.py holds the SQL, and this module decides what happens and when.
 
-LICENCE (spec section 1): drugref ships this CODE. It never ships PBS DATA, and a
-node operator supplies their own release. See issue #25 for the redistribution
-gate that is still open.
+LICENCE (spec section 1): drugref ships this CODE, never a PBS RELEASE -- a node
+operator supplies their own. See issue #25 for the redistribution gate that is
+still open.
+
+Stated precisely, because the blanket version of this claim was not quite true
+(fix round, finding 3): the repository DOES commit one small piece of real PBS
+data, tests/fixtures/pbs_items_subset.csv -- 11 rows extracted by
+tests/fixtures/make_pbs_subset.py so the test suite runs against the real upstream
+shape rather than a hand-written guess at it. That is deliberate and argued as
+fair-dealing scale in that script's docstring, but it is not "no PBS data", and
+#25 covers it too. Nothing in the ingest PATH redistributes anything: the tables
+db/009 creates are populated only from a release the operator supplies.
 """
 import hashlib
 import logging
@@ -40,6 +49,11 @@ class PbsSummary:
     products_bridged / products_written is the MATCH RATE, and the split between
     exact and salt-stripped rows says how much of it the slice-3 stand-in is
     carrying. unmatched_components is the residual worklist.
+
+    THE INVARIANT: products_bridged <= products_written <= items_read. Every
+    per-product figure counts DISTINCT product UUIDs, so a li_item_id repeated
+    upstream cannot push the numerator past the denominator and report a match
+    rate above 100% (fix round, finding 1). Only items_read counts CSV rows.
 
     * rows_without_identity -- rows carrying no li_item_id at all. Refused
       rather than written, because the product UUID derives from that value
@@ -109,7 +123,11 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     """
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
-        source_checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        # Streamed, not read_bytes() (fix round, finding 5): the parser goes to
+        # some trouble to keep the 8.3 MB file out of memory, and slurping the
+        # whole thing here to hash it gave that back for nothing.
+        with open(path, "rb") as fh:
+            source_checksum = hashlib.file_digest(fh, "sha256").hexdigest()
     try:
         run_id = conn.execute(
             "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
@@ -121,17 +139,26 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         salt_suffixes = pbs.load_salt_suffixes()
         log.info("PBS ingest %s: %d INN claims indexed", upstream_release, len(inn_index))
 
-        items_read = products_bridged = exact_rows = salt_rows = combinations = 0
+        items_read = exact_rows = salt_rows = 0
         rows_without_identity = 0
         unmatched: list[tuple[str, str]] = []
-        # Distinct product UUIDs actually written (review round, finding 3): NOT
-        # the same number as items_read. A repeated li_item_id upstream (or a row
-        # refused for lacking one) would otherwise let items_read and a
-        # products_written that merely echoed it drift together while the real
-        # row count in local_product fell behind -- silently wrong on the slice's
-        # headline match-rate denominator. A set of the UUIDs local.upsert_product
-        # actually returned is the only way to measure this rather than assume it.
+        # EVERY per-PRODUCT figure is a set of product UUIDs, never a counter
+        # (review round finding 3, completed in the fix round as finding 1).
+        #
+        # These three are the numerator, the denominator and the combination
+        # count of the slice's headline match rate, and all three are populated
+        # once per CSV ROW while local_product is keyed per PRODUCT. A repeated
+        # li_item_id upstream therefore inflates any of them that merely counts,
+        # while the real row count in the database does not move. Fixing only the
+        # denominator was worse than fixing none: products_bridged/products_written
+        # then read 2/1 -- a 200% match rate -- on a single duplicated row.
+        #
+        # bridge_rows_exact / bridge_rows_salt_stripped stay plain counters on
+        # purpose: they count ROWS IN local_product_moiety, and add_product_moiety
+        # already reports insert-vs-conflict, so a duplicate contributes nothing.
         written_product_uuids: set[uuid.UUID] = set()
+        bridged_product_uuids: set[uuid.UUID] = set()
+        combination_product_uuids: set[uuid.UUID] = set()
 
         for item in pbs.parse_items(path):
             items_read += 1
@@ -157,7 +184,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
                 # unmatched worklist instead.
                 components = [pbs.NO_DRUG_NAME_SENTINEL]
             if len(components) > 1:
-                combinations += 1
+                combination_product_uuids.add(product_uuid)
             bridged_here = False
             for component in components:
                 moieties, method = resolve(component, inn_index, salt_suffixes)
@@ -173,7 +200,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
                         else:
                             salt_rows += 1
             if bridged_here:
-                products_bridged += 1
+                bridged_product_uuids.add(product_uuid)
 
         local.add_unmatched_components(
             conn, unmatched, run_id, jurisdiction=JURISDICTION, source=SOURCE)
@@ -188,8 +215,9 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
 
     summary = PbsSummary(
         items_read=items_read, products_written=len(written_product_uuids),
-        products_bridged=products_bridged, bridge_rows_exact=exact_rows,
-        bridge_rows_salt_stripped=salt_rows, combination_products=combinations,
+        products_bridged=len(bridged_product_uuids), bridge_rows_exact=exact_rows,
+        bridge_rows_salt_stripped=salt_rows,
+        combination_products=len(combination_product_uuids),
         # Distinct component NAMES, not rows (review round, finding 5): spec
         # section 7 and HANDOVER both document this figure as "distinct unmatched
         # component names", so the field must actually measure that rather than
