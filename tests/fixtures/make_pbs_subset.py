@@ -43,7 +43,7 @@ WANTED = [
 
 
 def main(source_path: str) -> None:
-    writer = csv.DictWriter(sys.stdout, fieldnames=COLUMNS, extrasaction="ignore")
+    writer = csv.DictWriter(sys.stdout, fieldnames=COLUMNS)
     writer.writeheader()
     wanted = {name.lower() for name in WANTED}
     seen: set[str] = set()
@@ -64,6 +64,21 @@ def main(source_path: str) -> None:
         "li_drug_name": "null", "drug_name": "Aspirin", "li_form": "null",
         "schedule_form": "null", "program_code": "GE", "benefit_type_code": "U",
         "atc_code": "ZZZ_ATC_CANARY", "amt_code": "ZZZ_AMT_CANARY"})
+
+    # Self-report to stderr (review round, finding 11): make_medrt_subset.py and
+    # make_mesh_subset.py both report what they found, and this script silently
+    # omitted it. Without this, a WANTED name that no longer appears upstream (a
+    # future release renaming or dropping a product) would silently shrink the
+    # fixture by one case and nobody regenerating it would notice -- the exact
+    # same silent-drop failure class as finding 1's column-drift guard, just at
+    # fixture-generation time instead of ingest time.
+    missing = sorted(wanted - seen)
+    print(f"make_pbs_subset: found {len(seen)}/{len(wanted)} WANTED names",
+          file=sys.stderr)
+    if missing:
+        print(f"make_pbs_subset: MISSING from {source_path}: {missing}",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
