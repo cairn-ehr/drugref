@@ -42,59 +42,45 @@ ROADMAP Slice 5 into **5a** (this) / **5b** (MeSH-keyed CI_with/CI_ChemClass/may
 (the curated signed overlay).
 
 **Foundation review hardening** ✅ done on this branch. A full review of the whole codebase (not a diff),
-with every finding reproduced against a live PG18 before fixing. **220 tests green.** Two new migrations and
-a migration runner with a ledger; the rest is parser/writer hardening. What changed, and why it mattered:
+every finding reproduced against a live PG18 before fixing. **220 tests green.** Highlights:
 
-- **`db/005`** — the correction overlay was a trapdoor in both directions. `identity_claim_unique` covered
-  superseded rows, so a value upstream *reverted* could never be re-asserted (the INSERT hit the index,
-  `add_claim` reported "already present", and the identifier stayed invisible to every
-  `superseded_by IS NULL` join). Uniqueness is now **partial** (live claims only). The floor also now
-  enforces that supersession is **one-way, same-moiety, and points at a later claim** — which makes a
-  cycle unrepresentable. Plus: `first_seen_ingest` immutable, a CHECK on `ingest_run.source` (the key every
-  per-source rebuild joins through, previously unconstrained), and indexes on that rebuild-delete path.
-  **This closes [#4](https://github.com/cairn-ehr/drugref/issues/4).**
+- **`db/005`** — supersession uniqueness moved from covering-all-rows to **partial** (live claims only), so
+  a value upstream reverted then reasserted is no longer permanently invisible; supersession is now one-way,
+  same-moiety, strictly forward (**closes [#4](https://github.com/cairn-ehr/drugref/issues/4)**); plus a
+  CHECK on `ingest_run.source` and immutable `first_seen_ingest`.
 - **`db/006`** — the CHECK↔CASE coupling `db/004` held together with a comment is now structural: a
-  **`ci_axis` table** the `relationship` column is a **foreign key into**, and the view JOINs it instead of
-  a CASE. Widening the vocabulary without giving a predicate its membership axis now fails at write time
-  rather than expanding to zero pairs silently (the 5b landmine). `source` joins the **primary key** (a
-  second authority's identical assertion was swallowed by ON CONFLICT, then deleted by a MED-RT rebuild).
-  View columns renamed `moiety_a/b` → **`subject_moiety`/`partner_moiety`**, `upstream_release` +
-  `ingested_at` surfaced, and every clinical caveat moved into **`COMMENT ON`** — `--` comments are
-  stripped by Postgres, so none of it was visible to anyone inspecting the database.
-- **`db.apply_migrations` now keeps a ledger** (`drugref.schema_migration`, filename + checksum). Migrations
-  are applied once and are **immutable afterwards** — editing an applied file raises. Before this, each file
-  hand-wrote a guard inferring "has my change landed?" from the catalog, and `db/003`'s source-CHECK guard
-  tested only that the constraint *existed*: editing it in place (which its own comment instructs) silently
-  did nothing on an already-migrated database while a fresh one got the new constraint.
-- **`ingest/unii.py` was the least defended code in the repo, at the root of identity.** A row with a blank
-  UNII minted `UUIDv5(ns, "UNII:")` — one shared UUID that every such row collapsed onto, merging unrelated
-  drugs into a single moiety carrying all their INNs, CAS numbers and RxCUIs; irreversible, because
-  `moiety_uuid` is immortal and the floor forbids DELETE. Now refused via `gate.has_identity_key` and
-  counted. Separately, `csv`'s default quoting let one stray double-quote swallow an unbounded run of
-  following rows; all three TSV readers use `QUOTE_NONE`. `ingest_unii` returns a **`UniiSummary`**
-  (moieties / gated_out / rows_without_unii) instead of a bare int.
-- **`medrt.py`** — `nui_by_code` was last-write-wins, so two concepts publishing one `<code>` filed an edge
-  against whichever came last: a `has_MoA` membership landing on a `[PE]` class, silently. Ambiguous codes
-  are now refused and counted. Also reports `skipped_concept_types` / `skipped_predicates` by name, so an
-  upstream *rename* of something drugref ingests no longer looks identical to a deliberate skip.
-- **Claim values are canonicalised** (`ids.canonical_claim_value`): UNII/INCHIKEY/CHEBI are folded to upper
-  at storage, matching the fold the moiety UUID is minted with — two cases of one UNII were inserting two
-  claims and splitting the join index. `canonical_source`'s unknown-source fallback now upper-cases too.
-- **Orchestrators own their transaction**: rollback-then-re-raise on failure (a mid-run error previously
-  left the caller's connection aborted, so the *next* feed's first statement failed for unrelated reasons),
-  plus module loggers. `classes_added` is counted by distinct key so it can no longer exceed
-  `classes_in_release`.
-- **CI exists** (`.github/workflows/ci.yml`, PG18 service). 123 of 220 tests are DB-gated and used to skip
-  with exit 0 — `conftest` now **fails instead of skipping when `CI` is set**, and the workflow asserts the
-  run contains no skips.
+  **`ci_axis`** table the `relationship` column is a foreign key into, `source` moved into the PK, and every
+  clinical caveat moved into `COMMENT ON` (`--` comments are stripped by Postgres and were invisible to
+  anyone inspecting the database).
+- **`db.apply_migrations` gained a checksum ledger** — migrations are immutable once applied, replacing ad
+  hoc guards that could silently no-op against an already-migrated database.
+- **`ingest/unii.py`** — a blank UNII used to mint one shared UUID every such row collapsed onto, merging
+  unrelated drugs irreversibly; now refused and counted. TSV readers use `QUOTE_NONE` (a stray quote
+  previously swallowed an unbounded run of following rows).
+- **`medrt.py`** — ambiguous published codes (two concepts, one code) are now refused rather than
+  last-write-wins silently misfiling an edge.
+- **Claim values are canonicalised** (`ids.canonical_claim_value`) so two cases of one UNII can no longer
+  split the join index; **orchestrators roll back and re-raise** rather than leaving the connection aborted
+  for the next feed.
+- **CI added** (PG18 service); DB-gated tests now **fail rather than skip** when `CI` is set.
 
 **Plan A — the open-question registry** ✅ done on this branch (`db/007`, `db/008`; **291 tests green**).
 Detail under "Current state". First slice of the additive-effect design; Plans B (#15 descendant expansion)
 and C (the accumulation model) remain.
 
-**⇒ Next candidates: Slice 5b (MeSH-keyed CI/indications), Plan B (#15 descendant expansion) or Slice 3
-(composition tree: salts/esters/hydrates).** Note for 5b: adding a CI predicate is now one `ci_axis` INSERT
-plus the `source`/vocabulary CHECKs — the view needs no edit.
+**Slice 8a — PBS localisation: the local tier's first attachment** ✅ done on this branch. drugref's first
+jurisdiction-specific (local) tier: `db/009` (three rebuildable-projection tables — no append-only floor,
+because a de-listed PBS item must be able to disappear), a pure parser (`ingest/pbs.py`), the single writer
+(`local.py`) and orchestrator (`ingest/pbs_run.py`) bridging PBS products to the global moiety spine **by
+name alone** — the only licence-clean join, since PBS carries no UNII/CAS/InChIKey. **334 tests green.**
+Measured against the real July-2026 release: a **92.4% name-bridge ceiling**, but only **84.6%** against
+today's INN-gated registry — the moiety gate, not the bridge, is the binding constraint
+([#26](https://github.com/cairn-ehr/drugref/issues/26)). Full write-up below.
+
+**⇒ Next candidates: Slice 3 (composition tree: salts/esters/hydrates — now doubly motivated, since slice
+8a's salt-strip heuristic carries almost nothing and GSRS salt relationships are the real fix), Slice 5b
+(MeSH-keyed CI/indications), or Plan B (#15 descendant expansion).** Note for 5b: adding a CI predicate is
+now one `ci_axis` INSERT plus the `source`/vocabulary CHECKs — the view needs no edit.
 
 ### Slice 5b — MeSH-keyed MED-RT contraindications & indications (the task)
 
@@ -160,9 +146,7 @@ need no bridge and were ingestible before it existed — so "→ MeSH structural
 
 ## Current state
 
-**Slice 1 — the identity spine.** A Postgres schema `drugref` + Python ingest standing up a registry of
-**active drug moieties**, each with an **immortal UUID** and **append-only external-identifier claims**,
-seeded international-by-construction.
+**Slice 1 — the identity spine.** See "What slice 1 delivered (detail)" below.
 
 **Slice 2a — the classification layer.** Three more tables (`substance_class`, `class_parent`,
 `class_membership`) seeded from **MED-RT**, giving every moiety its pharmacologic classes on six axes.
@@ -224,66 +208,117 @@ descriptors, their tree-number DAG, and moiety↔class memberships, on the **sam
   re-ingest, per-source rebuild leaves MED-RT intact). A pinned `class_uuid` literal guards the derivation.
 
 **Plan A — the open-question registry** (`db/007`, `db/008`). drugref's coverage gaps are published as a
-queryable register rather than hidden: contraindications naming a class no drug is filed under (41 rules
-across 13 classes in 2026.07.06), moieties with no `has_PE` membership, and ingredients no moiety carries.
-
-- **A gap is a query, never a report.** Three views (`gap_unpopulated_contraindication`,
-  `gap_unclassified_moiety`, `gap_unmatched_ingredient`) are always current and shrink visibly as coverage
-  improves. `gap_unpopulated_contraindication` descends the class DAG — "no drug filed under E" means
-  nowhere in E's subtree, not merely directly on E.
-- **Populated is per AXIS, via `ci_axis`.** `ddi_candidate_pair` expands a `CI_PE` rule over `has_PE`
-  members only, so a class populated solely on another of the six membership axes yields no pair — and a
-  relationship-blind "has any member?" test would call it populated and **hide a real gap**. That is the
-  two-lists-in-two-places failure `db/006` exists to prevent, so the view joins `ci_axis` rather than
-  re-deriving the mapping. Nothing ties `class_membership.relationship` to `substance_class.concept_type`;
-  the axes coinciding in MED-RT today is a property of that release, and **slice 5b is where it stops
-  holding** (MeSH populates with `has_PA`). `ci_rule_count` counts the dead rules on a class, so a class
-  half-populated across two axes reports only the rules that can never fire.
-- **The register is rebuilt by every ingest orchestrator** — `run.py` (UNII), `medrt_run.py` and
-  `mesh_run.py` each call `questions.register_from_gaps` as their **last step before commit**. Last, because
-  steps 2–5 demolish and rebuild the very projections the gap views read; a rebuild earlier sees the empty
-  middle and closes every question the DAG feeds. On a fresh database the UNII run is what first fills the
-  register, and MED-RT's classifications empty most of it again.
-- **Questions have immortal deterministic UUIDs**: `uuid5(QUESTION_NAMESPACE, gap_kind + ':' + gap_key)`,
-  with `gap_key` in the frozen `SCHEME:value` form. External tooling can cite one. `gap_kind` may not
-  contain `':'` — enforced in `ids.mint_question_uuid`, because it is the joiner and a colon there would let
-  two distinct gaps mint the same UUID.
-- **The hybrid split is the design.** `open_question` is a REBUILDABLE PROJECTION re-derived every ingest.
-  Curator intent (`question_state`), tier watermarks (`question_source_check`) and findings
-  (`question_evidence`) are APPEND-ONLY and keyed off that UUID. Putting `state` on `open_question` would
-  have let each rebuild erase every `withdrawn` — and would have passed on a fresh database while failing on
-  the second ingest of a long-lived one.
-- **Curated tables use SURROGATE primary keys** with uniqueness over live rows only, per `db/005`. A
-  natural-key PK rejects the correction insert outright and leaves in-place mutation as the only option.
-  `question_state`'s single-live rule is a DEFERRED constraint rather than an index, because `superseded_by`
-  must reference an existing row, so a correction is necessarily insert-then-point and both rows are live in
-  between.
-- **Watermark, not closure.** "No evidence found" is `open` with recent `question_source_check` rows; the
-  only terminal state is `withdrawn`. `question_worklist` orders by cheapest-unchecked tier
-  (`source_tier`), so free structured sources are exhausted before literature mining — a question with no
-  `openFDA-SPL` check has not yet earned it.
-- **A closed gap is retired, not always deleted** (`open_question.is_current`). The curated tables are
-  `ON DELETE CASCADE` from `open_question` *and* append-only with a trigger that refuses `DELETE` — which
-  is not a tension but an outright contradiction: deleting a closed question that carries curator rows
-  **raises and aborts the whole ingest**. So `register_from_gaps` deletes only questions nobody has touched
-  and retains the rest with `is_current` false — off the worklist, still citable, restored to current under
-  the same UUID if the gap reopens. The cascades remain as a backstop nothing should reach.
+**queryable register** rather than hidden: three views (`gap_unpopulated_contraindication` — descends the
+class DAG, so "no drug filed under E" means nowhere in E's subtree — `gap_unclassified_moiety`,
+`gap_unmatched_ingredient`) stay current and shrink visibly as coverage improves. **Populated is per axis**
+(joins `db/006`'s `ci_axis`): a class populated on a membership axis the rule doesn't expand over still
+yields no pair, and reading it axis-blind would hide a real gap — MED-RT's axes coinciding today is a
+property of that release, and **slice 5b is where it stops holding**. Questions carry an **immortal
+deterministic UUID** (`uuid5(QUESTION_NAMESPACE, gap_kind+':'+gap_key)`) external tooling can cite. **The
+hybrid split is the design:** `open_question` is a rebuildable projection re-derived every ingest; curator
+intent (`question_state`), tier watermarks (`question_source_check`) and findings (`question_evidence`) are
+**append-only**, keyed off that UUID — so a rebuild can never erase a `withdrawn` decision. Every
+orchestrator (UNII, MED-RT, MeSH) rebuilds the register as its last step before commit. **Watermark, not
+closure:** only `withdrawn` is terminal; `question_worklist` orders by cheapest-unchecked tier. **A closed
+gap carrying curator work is retired, not deleted** (`is_current`) — the curated tables cascade from
+`open_question` *and* refuse `DELETE`, so deleting a closed question with curator rows aborts the whole
+ingest outright. Plans B (#15 descendant expansion) and C (the accumulation model) remain.
 
 ### Three things the MED-RT documentation got wrong (verified against the real release)
 
-Recorded because they are invisible to a hand-written fixture and would each be a silent, plausible bug:
+Recorded because each would be a silent, plausible bug invisible to a hand-written fixture: **`Parent Of`
+runs parent → child**, not the reverse (the MoA root is `from_code` 9×, `to_code` never); **`[HC]` concepts
+are the 26 alphabetical navigation bins** (`"A [Preparations]"`), not classifications — 18,450 of 21,058
+class→ingredient edges; and **EPC membership is licence-clean and hierarchical** (`Parent Of` from the EPC
+to the ingredient), not routed through SNOMED/MeSH as first assumed. The fixture is therefore extracted
+from the real release by a committed, re-runnable extractor (`tests/fixtures/make_medrt_subset.py`), so it
+can never re-encode a wrong assumption about upstream shape.
 
-1. **`Parent Of` runs parent → child**, not child → parent. Verified two ways (the MoA root appears as
-   `from_code` 9× and as `to_code` never; `"A [Preparations]"` is the *from* of paracetamol). The reverse
-   reading inverts the whole DAG.
-2. **`[HC]` concepts are the 26 alphabetical navigation bins** (`"A [Preparations]"`), not classifications —
-   18,450 of 21,058 class→ingredient edges. Ingesting them files nearly every drug under a letter.
-3. **EPC membership is licence-clean** and hierarchical (`Parent Of` from the EPC to the ingredient),
-   *not* routed through SNOMED/MeSH mappings as first assumed. EPC is the most clinically recognisable axis,
-   so it is in scope, normalised to `has_EPC`.
+### Slice 8a — PBS localisation (detail)
 
-**The fixture is therefore extracted from the real release** by a committed, re-runnable extractor
-(`tests/fixtures/make_medrt_subset.py`), so it can never re-encode a wrong assumption about upstream shape.
+drugref's first **local (jurisdiction-specific) tier**: a minimal Australian PBS product layer bridged to
+the global moiety spine **by name** — the only licence-clean join available, because the PBS API's two
+*structured* ingredient keys (ATC, AMT/SNOMED CT-AU) are exactly the two encumbered ones. Design + plan:
+[slice-8a spec](superpowers/specs/2026-07-25-drugref-slice-8a-pbs-localisation-design.md) /
+[plan](superpowers/plans/2026-07-25-slice-8a-pbs-localisation.md).
+
+**What was built:** `db/009` (three tables — `local_product`, `local_product_moiety`,
+`local_unmatched_ingredient` — widening `ingest_run.source`'s CHECK to admit `'PBS'`); a **rebuildable
+projection**, deliberately outside slice 1's append-only floor, because PBS re-lists monthly and a
+de-listed item must be able to disappear. `local_product_uuid` is a pure function of `(jurisdiction,
+source, source_code)` — re-derived every ingest, never pinned — so a rebuild returns every surviving
+product with the UUID it had before. `ingest/pbs.py` (pure parser: splits combination names on
+`" with "`/`" and "`/`,`, strips a trailing salt/hydrate token **only as a fallback** — the unstripped name
+is tried first, so "Dimethyl fumarate", an INN in its own right, isn't broken by an eager strip — and
+treats the literal string `'null'`, PBS's empty-value sentinel, as absent); `local.py` (the single writer);
+`ingest/pbs_run.py` (the orchestrator: clears this source's prior rows, reads the INN claim index once via
+`classes.moieties_by_scheme`, resolves and bridges or records each component, one transaction, rollback-
+then-re-raise on failure). **334 tests green.**
+
+**Measured against the real July-2026 PBS release** (14,840 items) **and the real Feb-2026 UNII release**
+(168,046 records), both gitignored:
+
+| Measurement | Value |
+|---|---|
+| Name-bridge ceiling (vs **all** UNII substance names) | **92.4%** (13,710 / 14,840 items) |
+| Against today's **INN-gated** registry | **84.6%** (12,552 items) |
+| The gap — registry coverage, not name matching | **7.8 points** |
+| `salt_stripped` share of bridge rows | 1.1% (gated) / 0.0% (at ceiling) |
+| Combination products split | 1,647 |
+| Distinct unmatched component names | 462 |
+
+Top residual: paracetamol (105), vitamins (93), carbidopa (72), amino acid formula (66), cefalexin (60),
+mesalazine (48), ciclosporin (48), minerals (45), ethinylestradiol (37), valaciclovir (37).
+
+**Three conclusions, judged rather than merely reported:**
+
+1. **The name bridge works** — 92.4% from name matching alone, no fuzzy matching, the honest ceiling for the
+   only licence-clean join available.
+2. **The binding constraint is registry coverage, not the bridge** — the same "moiety gate is the binding
+   constraint" pattern already recorded for MED-RT and MeSH, now measured on a third, independent axis. The
+   7.8-point gap traces to `INN_ID` being **empty** for amoxicillin, morphine, codeine, doxycycline,
+   tacrolimus and dasatinib in the real UNII release. Filed as
+   [#26](https://github.com/cairn-ehr/drugref/issues/26).
+3. **The salt-strip heuristic is near-worthless, and is reported as such rather than left quietly implying
+   it earns its place (rule 5).** 1.1% of bridge rows against the gated vocabulary, **0.0% at the ceiling**
+   — spec §5.3 predicted ~20 affected names and that held. Cheap, labelled per row via `match_method`,
+   harmless — but slice 3 (GSRS salt relationships) is the real answer, not this stand-in.
+
+The residual is dominated by two explainable groups, **neither a bridge defect**: (a) **AU/INN vs US/USAN
+spelling divergence** — paracetamol (UNII says ACETAMINOPHEN), cefalexin, ciclosporin, mesalazine,
+valaciclovir, phenoxymethylpenicillin. Spec §5.2 deferred an AU→INN alias list pending measurement; **the
+measurement is in, and it has earned its place** — the closed USAN↔INN crosswalk drugref already ships is
+its natural home. (b) **Non-drugs correctly excluded by the moiety gate** — vitamins, amino acid formula,
+minerals, carbohydrate, dressing-foam: foods/dressings, correct output, not failure.
+
+**A second defect this measurement surfaced: [#27](https://github.com/cairn-ehr/drugref/issues/27).**
+`ingest/unii.py` reads a `PT` column; the real UNII release has **`Display Name`** instead. Every moiety
+gets an empty `display_name`, silently disabling both the legacy allow-list and the USAN↔INN crosswalk
+(both keyed on that name) — and it does not raise. This is why the end-to-end DB measurement could not be
+run directly and the pure-function measurement above was used instead; both #26 and #27 were invisible to
+the committed 284-byte `unii_subset.tsv` fixture.
+
+**Licence posture — read before extending this slice.** Node-local plug-in only: drugref ships AGPL-3.0
+ingest code and schema, **never PBS data**. The PBS Schedule/API data mart carries no CC BY statement and
+`pbs.gov.au` itself reads all-rights-reserved (only the *statistical* datasets on data.gov.au are CC BY).
+ATC (WHO, NC+ND) and AMT/SNOMED CT-AU (NCTS-licensed) are quarantined **structurally**: `items.csv` has no
+ATC/AMT column at all, the parser reads a fixed allow-list, no table has anywhere to put them, and a test
+proves it by ingesting a fixture with **planted** `atc_code`/`amt_code` columns and asserting neither value
+reaches any drugref table. Redistribution stays blocked pending written Dept-of-Health confirmation:
+[#25](https://github.com/cairn-ehr/drugref/issues/25). `NOTICE` is unchanged — this slice redistributes
+nothing.
+
+**Node operator workflow.** Download the monthly ZIP into gitignored `downloads/` — **the `?variant=3`
+query parameter is required, or the server 404s**:
+
+```bash
+curl -L -o downloads/pbs-2026-07.zip \
+  "https://www.pbs.gov.au/publication/schedule/2026/07/2026-07-01-PBS-API-CSV-files.zip?variant=3"
+```
+
+Unpacks to `tables_as_csv/` (33 files); the ingest reads **only** `items.csv`, per the licence quarantine
+above. Files are UTF-8 **with a BOM** — open with `encoding='utf-8-sig'`, or the first column name arrives
+with a `﻿` prefix and every lookup of it misses.
 
 ## What slice 1 delivered (detail)
 
@@ -335,15 +370,16 @@ being skipped.
 
 - Schema: `db/001` (identity spine) + `db/002` (classification) + `db/003` (registry generalised for a
   second authority) + `db/004` (contraindication projection) + `db/005` (supersession/floor hardening) +
-  `db/006` (the `ci_axis` vocabulary, contraindication PK, view contract), applied in filename order via
+  `db/006` (the `ci_axis` vocabulary, contraindication PK, view contract) + `db/007`/`008` (open-question
+  registry + gap views) + `db/009` (the local tier's three PBS tables), applied in filename order via
   `drugref.db.apply_migrations`. **Read the LATEST file that touches a table for its actual shape** — 002
   still shows the superseded MED-RT-specific columns, and 004's relationship CHECK is replaced by 006's FK.
 - **Migrations are immutable once applied.** `apply_migrations` records each file's checksum in
   `drugref.schema_migration` and raises if an applied file's content changed. To alter the schema, add a new
   `db/NNN_*.sql` — editing an existing one is now an error rather than a silent no-op on migrated databases.
-- Code: `src/drugref/{ids,claims,classes,db}.py` +
-  `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run,mesh,mesh_run}.py`;
-  seed data under `src/drugref/data/`; fixtures under `tests/fixtures/`.
+- Code: `src/drugref/{ids,claims,classes,db,local}.py` +
+  `src/drugref/ingest/{unii,gate,run,chebi,medrt,medrt_run,mesh,mesh_run,pbs,pbs_run}.py`;
+  seed data under `src/drugref/data/` (incl. `salt_suffixes.tsv`); fixtures under `tests/fixtures/`.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored — a MED-RT release is ~45 MB).
   Fetch MED-RT from [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`) and regenerate
@@ -365,6 +401,14 @@ being skipped.
 
   The committed `tests/fixtures/mesh_{desc,supp,pa}_subset.xml` are small extracts of the real release
   (all identity keys/tree numbers copied from the files, nothing invented; MeSH is attributed in `NOTICE`).
+- **PBS release for slice 8a** (also NOT committed — node-local only, see "Slice 8a" above for the licence
+  posture). Download command and the `?variant=3`/`utf-8-sig` gotchas are in that section. Regenerate the
+  fixture with:
+
+  ```bash
+  python tests/fixtures/make_pbs_subset.py downloads/tables_as_csv/items.csv \
+      > tests/fixtures/pbs_items_subset.csv
+  ```
 
 ## Coding rules
 
@@ -434,13 +478,22 @@ Foundation-review follow-ups (filed, not fixed):
 - **Remaining no-silent-drop gaps** ([#17](https://github.com/cairn-ehr/drugref/issues/17)) — MeSH PA
   records with no `DescriptorUI`; the legacy allow-list still keyed on a display name rather than a UNII.
 
+Slice 8a follow-ups (filed, not fixed — full context in the "Slice 8a" section above):
+
+- **PBS redistribution licence gate** ([#25](https://github.com/cairn-ehr/drugref/issues/25)) — blocks
+  bundling/redistributing PBS data, not node-local ingest; needs written Dept-of-Health confirmation.
+- **UNII gate excludes common drugs** ([#26](https://github.com/cairn-ehr/drugref/issues/26)) — `INN_ID` is
+  empty for amoxicillin, morphine, codeine, doxycycline, tacrolimus, dasatinib; the binding constraint
+  behind slice 8a's 7.8-point registry gap.
+- **`ingest/unii.py` reads a non-existent `PT` column** ([#27](https://github.com/cairn-ehr/drugref/issues/27))
+  — the real release uses `Display Name`; every moiety silently gets an empty `display_name` and it does not
+  raise.
+
 ## Repo facts
 
 - GitHub: `cairn-ehr/drugref` · default branch `main` · licence **AGPL-3.0** · attribution in `NOTICE`.
 - CI: `.github/workflows/ci.yml` (PG18 service; DB-gated tests fail rather than skip under `CI`).
 - Coding rules live in CLAUDE.md (and the nextsession skill); the published docs site's **Design decisions**
   section (`docs-site/docs/decisions/`) is the ADR-like log — living records, not immutable ADRs.
-- Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by
-  `.github/workflows/docs.yml`. Living decision records live in
-  `docs-site/docs/decisions/`; keep them current (revise in place, remove reversed
-  decisions). The internal specs/HANDOVER/ROADMAP are **not** published.
+- Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by `.github/workflows/docs.yml`.
+  Keep decision records current (revise in place, remove reversed decisions); specs/HANDOVER/ROADMAP are **not** published.

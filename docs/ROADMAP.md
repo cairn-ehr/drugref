@@ -130,9 +130,37 @@ Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: au
 previously-uncoded substance, DDI advisory — **overlay enrichment, never a wire change** on the Cairn side.
 
 ### Slice 8 — Local tier (Australia first)
-Country-specific packaging/pricing: **PBS + TGA ARTG** (both CC BY, redistributable) as the shippable layer;
-**AMT/SNOMED CT-AU** only as a node-local NCTS-licensed plug-in, never bundled. Same shape for other
-jurisdictions (open regulatory registry bundled; national SNOMED extension licensed per node).
+Country-specific packaging/pricing. **Corrected claim (was: "PBS + TGA ARTG, both CC BY, redistributable" —
+refuted by a live-source check, spec §1):** neither is confirmed open. The PBS Schedule/API data mart
+carries no CC BY statement and `pbs.gov.au`'s copyright page reads all-rights-reserved (CC BY is verified
+only for PBS's separate *statistical* datasets on data.gov.au); TGA ARTG's copyright page is explicitly
+non-commercial. ATC (WHO, NC+ND) and AMT/SNOMED CT-AU (NCTS-licensed) were never candidates for bundling.
+The posture for all of them is the one **CLAUDE.md rule 6 already states**: drugref ships **AGPL-3.0
+ingest code and schema only**, never the data; a node operator supplies their own release under whatever
+terms bind them. Redistribution of any of it is blocked pending written confirmation — tracked for PBS as
+[#25](https://github.com/cairn-ehr/drugref/issues/25).
+
+#### Slice 8a — PBS localisation: the local tier's first attachment ✅ DONE
+A spike proving the local-tier pattern — name-only bridge, jurisdiction scoping, structural encumbrance
+quarantine — before investing further. A minimal Australian PBS product layer (`local_product`,
+`local_product_moiety`, `local_unmatched_ingredient` — `db/009`, a **rebuildable projection**, deliberately
+outside slice 1's append-only floor since a de-listed PBS item must be able to disappear) bridged to the
+global moiety spine **by name alone**, the only licence-clean join: PBS carries no UNII, CAS or InChIKey.
+Design: [slice-8a spec](superpowers/specs/2026-07-25-drugref-slice-8a-pbs-localisation-design.md).
+
+Measured against the real July-2026 release (14,840 items): **92.4%** name-bridge ceiling against all UNII
+substance names, but only **84.6%** against today's INN-gated registry — the **moiety gate, not the
+bridge, is the binding constraint** ([#26](https://github.com/cairn-ehr/drugref/issues/26)), the same
+pattern already measured for MED-RT and MeSH, now on a third independent axis. The salt-strip heuristic (an
+admitted slice-3 stand-in) contributes only 1.1% of bridge rows against the gated vocabulary and **0.0% at
+the ceiling** — reported as near-worthless rather than left to quietly imply otherwise (rule 5); slice 3's
+GSRS salt relationships are the real fix. The residual is otherwise explained by AU/INN-vs-USAN spelling
+divergence (paracetamol, cefalexin, ciclosporin, …) and non-drugs the moiety gate correctly excludes
+(vitamins, dressings). 334 tests. No `NOTICE` change — this slice redistributes nothing.
+
+Remaining slice-8 scope (not built): pricing (AEMP/DPMQ/premiums/fees), restriction texts/criteria, TGA
+ARTG, the composition tree's salt/clinical-drug levels underneath the bridge, and the same shape applied to
+other jurisdictions.
 
 ## Cross-cutting hardening (not a single slice)
 
