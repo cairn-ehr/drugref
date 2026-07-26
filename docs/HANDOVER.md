@@ -72,8 +72,9 @@ and C (the accumulation model) remain.
 jurisdiction-specific (local) tier: `db/009` (three rebuildable-projection tables — no append-only floor,
 because a de-listed PBS item must be able to disappear), a pure parser (`ingest/pbs.py`), the single writer
 (`local.py`) and orchestrator (`ingest/pbs_run.py`) bridging PBS products to the global moiety spine **by
-name alone** — the only licence-clean join, since PBS carries no UNII/CAS/InChIKey. **341 tests green**
-(334 at the initial build, +7 from the final whole-branch review round — see below). Measured against the
+name alone** — the only licence-clean join, since PBS carries no UNII/CAS/InChIKey. **347 tests green**
+(334 at the initial build, +7 from the final whole-branch review round, +6 from the PR-review fix round on
+#28 — see below). Measured against the
 real July-2026 release: a **92.4% name-bridge ceiling**, but only **84.6%** against
 today's INN-gated registry — the moiety gate, not the bridge, is the binding constraint
 ([#26](https://github.com/cairn-ehr/drugref/issues/26)). Full write-up below.
@@ -257,26 +258,56 @@ treats the literal string `'null'`, PBS's empty-value sentinel, as absent); `loc
 then-re-raise on failure). **334 tests green** at the initial build.
 
 **Final whole-branch review round (APPROVE WITH MINOR FIXES) — all 12 findings addressed, 341 tests
-green.** Three non-minor findings: (1) `parse_items` now raises if the CSV is missing the `li_item_id`
-column outright (a renamed/dropped column previously made every row silently skip, yielding an empty,
-error-free re-ingest after `clear_source_products` had already run — the same drift class as `#27` below),
-and rows with a present-but-blank `li_item_id` are now counted on `PbsSummary.rows_without_identity`
-instead of vanishing uncounted; (2) an item with no usable drug name at all now records a
-`NO_DRUG_NAME_SENTINEL` unmatched row instead of disappearing from both the bridge and the residual;
-(3) `products_written` is now a measured count of distinct product UUIDs actually written, not
-`items_read` echoed back (a repeated `li_item_id` would otherwise have drifted the slice's headline
-match-rate denominator). Six minor fixes: a `local_product` row tagged to a non-PBS `ingest_run` is now
-seeded in the rebuild-scoping test (the only prior assertions were on tables `clear_source_products`
-can't reach); `unmatched_components` now counts distinct component names, matching its documented meaning;
-`LOCAL_PRODUCT_NAMESPACE` gained a frozen-literal test; `gate.inn_display_name` now folds a crosswalk hit
-through `_norm()` too, not just the fallback; `ingest_pbs`'s unreachable `jurisdiction=`/`source=`
-parameters were dropped (YAGNI — db/009's CHECKs admit only one value each); and the TRUNCATE-coupling
-note (here and in ROADMAP.md) was corrected from "third module" to the actual count of seven. Two
-deferred-minor fixes: `parse_items` gained its promised `-> Iterator[PbsItem]` annotation, and
-`make_pbs_subset.py` now self-reports found/missing WANTED names to stderr and exits non-zero if any is
-missing (mirroring `make_medrt_subset.py`/`make_mesh_subset.py`), and dropped its vestigial
-`extrasaction="ignore"`. No schema, licence, or measured-number change — the 92.4%/84.6% figures below
-are unaffected.
+green.** The three non-minor ones: (1) `parse_items` raises if `li_item_id` is missing as a *column* (a
+rename previously made every row silently skip — an empty, error-free re-ingest after
+`clear_source_products` had already run, the same drift class as `#27`), and present-but-blank values are
+counted on `PbsSummary.rows_without_identity`; (2) an item with no usable drug name records a
+`NO_DRUG_NAME_SENTINEL` unmatched row instead of vanishing from both bridge and residual; (3)
+`products_written` became a measured count of distinct product UUIDs, not `items_read` echoed back. The
+other nine (rebuild-scoping test seeded with a genuinely-at-risk row; `unmatched_components` counting
+distinct names; frozen-literal test for `LOCAL_PRODUCT_NAMESPACE`; `gate.inn_display_name` folding
+crosswalk hits too; unreachable `jurisdiction=`/`source=` params dropped; TRUNCATE-coupling count
+corrected to seven; `-> Iterator[PbsItem]`; `make_pbs_subset.py` self-reporting) are in PR #28's history.
+No schema, licence, or measured-number change.
+
+**PR-review fix round on #28 — 5 findings fixed, 2 lodged as issues, 347 tests green.** No schema change;
+`db/009` was deliberately **not** touched (it is in the migration ledger, which checksums the file body —
+editing even a comment would make `apply_migrations` refuse on every already-migrated database).
+
+1. **Per-product counts were still per-row.** The earlier round fixed `products_written` to distinct UUIDs
+   but left `products_bridged` and `combination_products` incrementing per CSV row, so a repeated
+   `li_item_id` reported **2 bridged against 1 written — a 200% match rate**. All three are now UUID sets;
+   `bridge_rows_*` stay counters deliberately (they count `local_product_moiety` rows, and `ON CONFLICT`
+   absorbs the duplicate). The `bridged <= written` assertion moved to the duplicate fixture — where
+   it previously sat, on the duplicate-free subset, it **could not fail**.
+2. **The `drug_name` fallback used an unhandled combination vocabulary.** The
+   `" + "`-is-never-a-separator measurement was taken on `li_drug_name` only, but the fallback pulls
+   `drug_name` (the Medicinal Product Pack name) for the 159 `'null'`-sentinel rows, and that column writes
+   `"Abacavir + lamivudine"`, `"abiraterone (&) methylprednisolone"`. Each collapsed to one
+   pseudo-ingredient; `(&)` was worse — the annotation strip **deleted the separator** and fused the halves
+   into a plausible-looking single name. Now folded to a comma *before* the parenthetical strip. Only the
+   **spaced** `" + "` separates, so `"Vitamin B+C complex"` survives, and all ten `li_drug_name` fixture
+   values split exactly as before (verified).
+3. **The no-redistribution claim was overstated** — `tests/fixtures/pbs_items_subset.csv` commits 11 real
+   PBS rows. Now scoped to the ingest *path* wherever editable (`pbs_run.py`, ROADMAP), with
+   `make_pbs_subset.py` stating plainly that the fixture is the one place real PBS data enters the repo and
+   is what goes if #25 lands negative. `db/009`'s header keeps its wording — immutable, and it describes
+   the shipped product.
+4. **The column-drift guard covered only `li_item_id`.** With both name columns renamed, every row parsed
+   cleanly into the residual under the no-name sentinel: a 0% bridge reported as success. Now refused at
+   the header; **either** name column satisfies it, since the fallback is a designed path.
+5. **Two smaller:** the encumbrance sweep matches by substring, not equality (equality misses a canary
+   *concatenated* into a longer value — mutation-proven); the checksum streams via `hashlib.file_digest`
+   rather than `read_bytes()`, which had quietly undone the parser's streaming.
+
+**Deferred, with issues:** [#29](https://github.com/cairn-ehr/drugref/issues/29) (~28k single-row round
+trips per release; batching needs another way to derive the exact/salt-stripped split) and
+[#30](https://github.com/cairn-ehr/drugref/issues/30) (`strip_salt` drops only one token, so
+`"X hydrochloride monohydrate"` never bridges — unmeasured, and the heuristic is 0.0% at the ceiling).
+
+⚠️ **The table below predates fix 2** and was measured with the old single-vocabulary split. Combination
+splits among the 159 fallback rows can only have been *undercounted*, so the true figures are equal or
+marginally better. Re-measure against a real release before quoting them anywhere load-bearing.
 
 **Measured against the real July-2026 PBS release** (14,840 items) **and the real Feb-2026 UNII release**
 (168,046 records), both gitignored:
@@ -322,14 +353,16 @@ run directly and the pure-function measurement above was used instead; both #26 
 the committed 284-byte `unii_subset.tsv` fixture.
 
 **Licence posture — read before extending this slice.** Node-local plug-in only: drugref ships AGPL-3.0
-ingest code and schema, **never PBS data**. The PBS Schedule/API data mart carries no CC BY statement and
+ingest code and schema, **never a PBS release** (with one stated exception: the 11-row test fixture — see
+the fix-round note above and `make_pbs_subset.py`). The PBS Schedule/API data mart carries no CC BY statement and
 `pbs.gov.au` itself reads all-rights-reserved (only the *statistical* datasets on data.gov.au are CC BY).
 ATC (WHO, NC+ND) and AMT/SNOMED CT-AU (NCTS-licensed) are quarantined **structurally**: `items.csv` has no
 ATC/AMT column at all, the parser reads a fixed allow-list, no table has anywhere to put them, and a test
 proves it by ingesting a fixture with **planted** `atc_code`/`amt_code` columns and asserting neither value
-reaches any drugref table. Redistribution stays blocked pending written Dept-of-Health confirmation:
-[#25](https://github.com/cairn-ehr/drugref/issues/25). `NOTICE` is unchanged — this slice redistributes
-nothing.
+reaches any drugref table. That sweep matches by **substring**, not equality, so a canary concatenated into
+a longer value is caught too. Redistribution stays blocked pending written Dept-of-Health confirmation:
+[#25](https://github.com/cairn-ehr/drugref/issues/25). `NOTICE` is unchanged — the ingest path
+redistributes nothing, and the test fixture is in scope for #25.
 
 **Node operator workflow.** Download the monthly ZIP into gitignored `downloads/` — **the `?variant=3`
 query parameter is required, or the server 404s**:
@@ -382,8 +415,9 @@ an **immortal UUID** and **append-only external-identifier claims**, seeded inte
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# DB-gated tests need a PostgreSQL >= 18 database. 123 of 220 tests are DB-gated, so a
-# run without this DSN passes while exercising none of the schema, floor or orchestrators:
+# DB-gated tests need a PostgreSQL >= 18 database. 210 of 347 tests are DB-gated (the count
+# was stale at "123 of 220"; recounted in the #28 fix round), so a run without this DSN
+# passes while exercising none of the schema, floor or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
@@ -511,6 +545,12 @@ Slice 8a follow-ups (filed, not fixed — full context in the "Slice 8a" section
 - **`ingest/unii.py` reads a non-existent `PT` column** ([#27](https://github.com/cairn-ehr/drugref/issues/27))
   — the real release uses `Display Name`; every moiety silently gets an empty `display_name` and it does not
   raise.
+- **PBS ingest writes row-at-a-time** ([#29](https://github.com/cairn-ehr/drugref/issues/29)) — ~28k single-row
+  round trips per release. Batching `add_product_moiety` first needs another way to derive the exact vs
+  salt-stripped split, which currently rides on its per-row insert-vs-conflict return. Same family as #7.
+- **`strip_salt` drops only one trailing token** ([#30](https://github.com/cairn-ehr/drugref/issues/30)) —
+  `"X hydrochloride monohydrate"` never bridges. Unmeasured, and the whole heuristic contributes 0.0% of
+  bridge rows at the ceiling; **measure before building**, and let slice 3 supersede it if the count is zero.
 
 ## Repo facts
 

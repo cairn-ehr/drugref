@@ -10,10 +10,17 @@ belief was wrong three times over (spec 5.3). Extracting from the real file mean
 the fixture can never re-encode an assumption -- the same discipline as
 make_medrt_subset.py and make_mesh_subset.py.
 
-LICENCE (spec section 1): PBS data is NOT redistributable by drugref, so this
-extract is deliberately TINY -- a few dozen rows chosen to exercise the parser,
-which is fair-dealing scale, not a dataset. Never commit the full file, and never
-add columns beyond the allow-list below.
+LICENCE (spec section 1): PBS data is NOT confirmed redistributable by drugref
+(issue #25), so this extract is deliberately TINY -- roughly a dozen rows chosen
+to exercise the parser, which is fair-dealing scale, not a dataset. Never commit
+the full file, and never add columns beyond the allow-list below.
+
+THE FIXTURE IS THE ONE PLACE REAL PBS DATA ENTERS THE REPOSITORY, and saying so
+plainly is the point (fix round, finding 3): elsewhere the project states it
+ships code and not data, and that is true of the ingest path but not of this
+file. If #25 comes back negative, THIS is what has to go -- so it is kept small,
+regenerable from the script below, and never treated as anything but a test
+input. Reviewers checking the licence posture should start here.
 
 The two planted columns (atc_code, amt_code) are NOT upstream. They are added
 here on purpose so the quarantine test has something to prove drugref discards:

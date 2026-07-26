@@ -136,9 +136,14 @@ carries no CC BY statement and `pbs.gov.au`'s copyright page reads all-rights-re
 only for PBS's separate *statistical* datasets on data.gov.au); TGA ARTG's copyright page is explicitly
 non-commercial. ATC (WHO, NC+ND) and AMT/SNOMED CT-AU (NCTS-licensed) were never candidates for bundling.
 The posture for all of them is the one **CLAUDE.md rule 6 already states**: drugref ships **AGPL-3.0
-ingest code and schema only**, never the data; a node operator supplies their own release under whatever
+ingest code and schema only**, never a release; a node operator supplies their own under whatever
 terms bind them. Redistribution of any of it is blocked pending written confirmation — tracked for PBS as
 [#25](https://github.com/cairn-ehr/drugref/issues/25).
+
+**One stated exception, so the claim above stays literally true:** `tests/fixtures/pbs_items_subset.csv`
+commits ~a dozen real PBS rows as a test input, extracted by `tests/fixtures/make_pbs_subset.py` so the
+suite runs against the real upstream shape instead of a guess at it. Argued as fair-dealing scale, not a
+dataset; it is in scope for #25 and is the thing that has to go if #25 comes back negative.
 
 #### Slice 8a — PBS localisation: the local tier's first attachment ✅ DONE
 A spike proving the local-tier pattern — name-only bridge, jurisdiction scoping, structural encumbrance
@@ -157,7 +162,10 @@ the ceiling** — reported as near-worthless rather than left to quietly imply o
 GSRS salt relationships are the real fix. The residual is otherwise explained by AU/INN-vs-USAN spelling
 divergence (paracetamol, cefalexin, ciclosporin, …) and non-drugs the moiety gate correctly excludes
 (vitamins, dressings). 334 tests at the initial build; 341 after the final whole-branch review round (all
-12 findings fixed — see HANDOVER.md). No `NOTICE` change — this slice redistributes nothing.
+12 findings fixed), **347** after the PR-review fix round (5 findings fixed, 2 deferred to
+[#29](https://github.com/cairn-ehr/drugref/issues/29)/[#30](https://github.com/cairn-ehr/drugref/issues/30)
+— see HANDOVER.md). No `NOTICE` change — the ingest path redistributes nothing; the test fixture noted
+above is the sole committed PBS data and is tracked under #25.
 
 Remaining slice-8 scope (not built): pricing (AEMP/DPMQ/premiums/fees), restriction texts/criteria, TGA
 ARTG, the composition tree's salt/clinical-drug levels underneath the bridge, and the same shape applied to
