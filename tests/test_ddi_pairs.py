@@ -331,3 +331,59 @@ def test_is_direct_reproduces_the_pre_expansion_row_set(conn):
     assert [r[0] for r in conn.execute(
         "SELECT partner_moiety FROM drugref.ddi_candidate_pair "
         "WHERE subject_moiety = %s AND is_direct", (subject,)).fetchall()] == [near]
+
+
+# ---- the walk itself, factored out (db/012) ----------------------------------
+
+
+def test_the_subtree_view_is_the_one_place_the_class_dag_is_walked(conn):
+    """db/012 hoists the recursive descent into `ci_class_subtree`. db/010 claimed
+    "one recursion pattern in the codebase, not two" while shipping the identical
+    WITH RECURSIVE block THREE times -- in ddi_candidate_pair, in
+    gap_unreviewed_expansion_root and (from db/008) in
+    gap_unpopulated_contraindication. Three copies of one frozen rule is the
+    two-lists-in-two-places footgun db/006 exists to remove, so the walk becomes one
+    named view the three select from.
+
+    Scoped to classes a CONTRAINDICATION NAMES, as all three callers were: the walk
+    answers "what does this rule reach", so a class no rule names is absent entirely
+    rather than present with only itself."""
+    run_id = _run(conn)
+    subject = _moiety(conn, run_id, "s")
+    root = _class(conn, run_id, "N0000000710", "PE")
+    child = _class(conn, run_id, "N0000000711", "PE")
+    grandchild = _class(conn, run_id, "N0000000712", "PE")
+    unnamed = _class(conn, run_id, "N0000000713", "PE")
+    _parent(conn, run_id, child, root)
+    _parent(conn, run_id, grandchild, child)
+    _parent(conn, run_id, unnamed, root)
+    interactions.add_contraindication(conn, subject, root, "CI_PE", "MED-RT", run_id)
+
+    # The root is in its own subtree -- every caller relies on it (is_direct, and
+    # gap_unreviewed_expansion_root's count(*) - 1).
+    assert sorted(r[0] for r in conn.execute(
+        "SELECT class_uuid FROM drugref.ci_class_subtree WHERE root_uuid = %s",
+        (root,)).fetchall()) == sorted([root, child, grandchild, unnamed])
+    # `unnamed` is walked THROUGH as a descendant but is not itself a root.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ci_class_subtree WHERE root_uuid = %s",
+        (unnamed,)).fetchone()[0] == 0
+
+
+def test_the_subtree_view_survives_a_cycle(conn):
+    """The property every caller inherits from it, so it is pinned on the view itself
+    and not only through ddi_candidate_pair: db/002 forbids self-parenting and nothing
+    else, so A-is-a-B-is-a-A is representable and one bad release could introduce it.
+    Deduping on (root, class) rather than on paths is what makes this terminate."""
+    run_id = _run(conn)
+    subject = _moiety(conn, run_id, "s")
+    a = _class(conn, run_id, "N0000000720", "PE")
+    b = _class(conn, run_id, "N0000000721", "PE")
+    _parent(conn, run_id, b, a)
+    _parent(conn, run_id, a, b)          # the cycle
+    interactions.add_contraindication(conn, subject, a, "CI_PE", "MED-RT", run_id)
+
+    conn.execute("SET LOCAL statement_timeout = '10s'")
+    assert sorted(r[0] for r in conn.execute(
+        "SELECT class_uuid FROM drugref.ci_class_subtree WHERE root_uuid = %s",
+        (a,)).fetchall()) == sorted([a, b])

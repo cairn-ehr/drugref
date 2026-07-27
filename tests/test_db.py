@@ -79,6 +79,9 @@ def test_apply_migrations_is_idempotent(conn):
         # db/011 (#26): why each moiety passed the membership gate. A rebuildable
         # projection -- the moiety is immortal, the evidence is per-release.
         "moiety_admission",
+        # db/012: the class-DAG descent, hoisted out of the three views that each
+        # carried a copy of it. One recursion in the codebase, not three.
+        "ci_class_subtree",
     }
 
 

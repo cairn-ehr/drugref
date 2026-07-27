@@ -18,12 +18,16 @@ inter-node wire core**.
 **Merged to `main`:** slice 1 (identity spine, PR #1) · slice 2a (MED-RT classification, #9) · slice 2a.1
 (source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
 foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
-(DAG-descendant expansion, #32).
+(DAG-descendant expansion, #32) · the identity-spine fix round (#34).
 
-**⇒ DONE ON THIS BRANCH (`fix/identity-spine-unii-columns`): the identity-spine fix round — #27, #17, #26.**
-**412 tests green** (384 → 412). This is the round that made every other slice's numbers real: the
-registry was silently unlabelled, the gate silently excluded amoxicillin and morphine, and the PBS bridge
-could not see either problem. Detail in the next section.
+**⇒ IN FLIGHT: `fix/plan-b-review-round` — the review round on Plan B (#32).**
+**419 tests green** (412 → 419), `ruff check` clean. `db/012` closes five gaps between what `db/010`'s
+comments legislate and what its DDL does — see "The Plan B review round" below. `ddi_candidate_pair`'s row
+set is unchanged; the one semantic fix narrows a worklist view. Follow-ups filed as #35, #36, #37.
+
+**Just merged: the identity-spine fix round — #27, #17, #26 (PR #34), 412 tests.** The round that made every
+other slice's numbers real: the registry was silently unlabelled, the gate silently excluded amoxicillin and
+morphine, and the PBS bridge could not see either problem. Detail two sections down.
 
 **⇒ Next candidates:**
 
@@ -39,7 +43,7 @@ could not see either problem. Detail in the next section.
 - **[#31](https://github.com/cairn-ehr/drugref/issues/31) (reopened).** It was swept closed by #32's merge
   although PR #32 records it as *filed, not fixed*; verified still unfixed on `main` at 6642ebc.
 
-## The identity-spine fix round (this branch) — #27, #17, #26
+## The identity-spine fix round (merged, #34) — #27, #17, #26
 
 Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md) (has the full
 measurement tables). Three defects, each invisible to the committed fixtures, each found by running against
@@ -200,6 +204,54 @@ regression** — those rules returned nothing before Plan B too; Plan B shrank t
 `db/010` narrows `gap_unpopulated_contraindication`'s `COMMENT ON` to say so rather than deleting the
 now-mostly-stale caveat.
 
+## The Plan B review round (`fix/plan-b-review-round`) — `db/012`
+
+The review of #32 found no defect in the expanded read path — the `DISTINCT ON` grain is deterministic (the
+`class_contraindication` primary key makes the collapsed provenance columns functionally dependent), the
+walk is genuinely cycle-safe, and the deny-list-is-not-a-traversal-barrier distinction is correct and well
+guarded. What it found was **five gaps between what `db/010`'s comments legislate and what its DDL does**.
+`db/012` closes them; migrations are immutable once applied, so each is a re-issue rather than an edit.
+
+1. **The walk is now one object.** `db/010` claimed "one recursion pattern in the codebase, not two" while
+   shipping the identical `WITH RECURSIVE` block **three times** (twice in `db/010`, once in `db/008`) —
+   the two-lists-in-two-places footgun `db/006` exists to remove. New view **`ci_class_subtree`**; all
+   three callers read it and none carries inline recursion (verified in the catalog).
+2. **The review gate is axis-aware** — the one semantic fix. `gap_unreviewed_expansion_root` asked "should
+   this class expand?" of classes whose predicates *cannot* expand, and `register_from_gaps` would mint
+   that moot question an immortal citable UUID no available decision could retire. It now joins `ci_axis`,
+   as `gap_unpopulated_contraindication` already did for the same reason, and `ci_rule_count` counts only
+   the expanding rules. **Latent in `db/010` (both MED-RT predicates expand), live at 5b** — proved by
+   running `db/010`'s definition against a switched-off predicate: 1 moot row vs 0.
+3. **`expansion_policy_unresolved` has a consumer.** `db/010` wrote it because "a deny that matches nothing
+   looks exactly like a deny that is working", then gave it no reader — no gap kind, no orchestrator, no
+   test. `medrt_run` now reports it: `interactions.unresolved_expansion_policy(conn, source)` (a read,
+   source-scoped), counted into `MedrtSummary` and **logged at WARNING naming the codes**, since the
+   operator's next move is to look at those exact rows. Not an error — a re-keyed class is upstream's
+   prerogative.
+4. **`class_expansion_policy.source` has a CHECK**, as every other `source` column does (`db/003`,
+   `db/004`). It is joined on `(source, source_code)`, so `'MEDRT'` inserted cleanly and then matched no
+   class ever again.
+5. **Two contracts stated honestly.** `ci_axis.expands_descendants`'s comment claimed `db/006`'s
+   force-a-declaration discipline while supplying a `DEFAULT` — the default is kept (expansion is the
+   recall-safe direction) but the comment now says it is a default, not a gate. And
+   `ddi_candidate_pair`'s `COMMENT ON` regains the **source-blindness** caveat `db/004` wrote in a `--`
+   comment and `db/006` dropped: `class_parent` and `class_membership` carry no `source` column, so the now
+   **transitive** walk crosses vocabularies wherever a cross-source parent edge exists. Latent (MeSH
+   populates `has_PA`, which neither MED-RT predicate maps to); slice 5b ends that.
+
+**Row set unchanged.** `ddi_candidate_pair` returns exactly what #32 measured — `db/012` changes only where
+its subtree comes from — so the 6,395/+46.6% figures above still stand. **419 tests green** (412 → 419),
+`ruff` clean.
+
+**Filed, not fixed:** [#35](https://github.com/cairn-ehr/drugref/issues/35) (the policy table has no
+history: a revised decision overwrites its own rationale, and unlike `question_state` it has no rewrite
+trigger — Plan C's append-only overlay is the design-consistent answer) ·
+[#36](https://github.com/cairn-ehr/drugref/issues/36) (the discovery heuristic counts descendant *classes*,
+not reachable *members* — `Increased Sympathetic Activity` spent a curator `allow` on a provable no-op;
+retuning it needs a curator and a re-measure, which `db/010` says explicitly) ·
+[#37](https://github.com/cairn-ehr/drugref/issues/37) (the DAG is expanded unprunably on every query and
+`WHERE is_direct` pays for expansion it discards — 25 ms today, and MeSH is a different size).
+
 ## Current state, by layer
 
 **Slice 1 — the identity spine.** Schema `drugref` (`ingest_run`, `substance_moiety`, `identity_claim`) +
@@ -326,7 +378,7 @@ a record may carry several — so key extraction is set-valued.
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 412 tests, of which ~240 are DB-gated -- a run without this DSN passes while
+# 419 tests, of which ~245 are DB-gated -- a run without this DSN passes while
 # exercising none of the schema, floor, views or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .
@@ -410,6 +462,18 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   the pairwise shape. MED-RT does not assert the triple-whammy even pairwise.
 - [#8](https://github.com/cairn-ehr/drugref/issues/8) **Class-level `has_*` assertions unused** (~756
   edges) — the other half of making the DAG carry knowledge, now that Plan B walks it.
+- [#35](https://github.com/cairn-ehr/drugref/issues/35) **`class_expansion_policy` has no history** — a
+  revised decision overwrites its own rationale, and unlike the `question_*` tables it has no rewrite
+  trigger, on a table that gates recall. Plan C's append-only overlay is the design-consistent fix.
+- [#36](https://github.com/cairn-ehr/drugref/issues/36) **The discovery heuristic counts descendant classes,
+  not reachable members** — `Increased Sympathetic Activity` spent a curator `allow` on a provable no-op
+  (all 21 children empty). Changing the metric moves which roots get asked about, so it needs a curator and
+  a re-measure, exactly as `db/010` says.
+- [#37](https://github.com/cairn-ehr/drugref/issues/37) **The class DAG is expanded unprunably on every
+  query** — denied roots are walked then discarded, and `WHERE is_direct` cannot push down, so the precision
+  opt-out funds the expansion it throws away. 25 ms today; slice 5b's vocabulary is a different size. The
+  issue records the trap: restricting the *root set* is safe, restricting the *walk* deletes the coagulation
+  case.
 
 **Licence deeds (blockers before production, per rule 6)**
 - [#6](https://github.com/cairn-ehr/drugref/issues/6) Re-confirm the MED-RT deed against the live NLM
