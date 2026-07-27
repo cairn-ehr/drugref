@@ -17,25 +17,116 @@ inter-node wire core**.
 
 **Merged to `main`:** slice 1 (identity spine, PR #1) · slice 2a (MED-RT classification, #9) · slice 2a.1
 (source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
-foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28).
+foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
+(DAG-descendant expansion, #32).
 
-**⇒ DONE ON THIS BRANCH (`feat/plan-b-descendant-expansion`): Plan B — DAG-descendant expansion.**
-**384 tests green** (347 → 384). Detail below. Note [#15](https://github.com/cairn-ehr/drugref/issues/15)
-was closed as COMPLETED when the *measurement* landed in the additive-effect spec; the code it asked for is
-what this branch built.
+**⇒ DONE ON THIS BRANCH (`fix/identity-spine-unii-columns`): the identity-spine fix round — #27, #17, #26.**
+**412 tests green** (384 → 412). This is the round that made every other slice's numbers real: the
+registry was silently unlabelled, the gate silently excluded amoxicillin and morphine, and the PBS bridge
+could not see either problem. Detail in the next section.
 
 **⇒ Next candidates:**
 
-- **Slice 3 — composition tree (salts/esters/hydrates via GSRS).** Doubly motivated: slice 8a's salt-strip
-  heuristic contributes 0.0% of bridge rows at the ceiling, and GSRS salt relationships are the real fix.
+- **Slice 3 — composition tree (salts/esters/hydrates via GSRS).** Now triply motivated: the salt-strip
+  heuristic is down to **0.03%** of bridge rows, [#33](https://github.com/cairn-ehr/drugref/issues/33)
+  needs form→moiety relationships to close the MeSH CAS gap, and #30 is waiting on the same thing.
 - **Slice 5b — MeSH-keyed CI/indications.** The largest single block of unlocked content (~31k assertions).
   Adding a CI predicate is now **one `ci_axis` INSERT** (`relationship`, `membership_relationship`,
   `expands_descendants`) plus the `source`/vocabulary CHECKs — neither read-path view needs an edit. See
   "Slice 5b" below for the measured inventory and the one genuinely new piece (M-code → descriptor).
 - **Plan C — the accumulation model.** Gated on 5b (§12-H): curating before 5b risks paying for what the
   release already supplies.
+- **[#31](https://github.com/cairn-ehr/drugref/issues/31) (reopened).** It was swept closed by #32's merge
+  although PR #32 records it as *filed, not fixed*; verified still unfixed on `main` at 6642ebc.
 
-## Plan B — DAG-descendant expansion (this branch)
+## The identity-spine fix round (this branch) — #27, #17, #26
+
+Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md) (has the full
+measurement tables). Three defects, each invisible to the committed fixtures, each found by running against
+the real releases.
+
+**1. `ingest/unii.py` read a `PT` column that does not exist ([#27](https://github.com/cairn-ehr/drugref/issues/27)).**
+The real header names it **`Display Name`**; `PT` is a *value* of the TYPE column in the separate
+`UNII_Names_*.txt`, never a header. `row.get("PT") or ""` turned that into an empty string for every row,
+so a production run would have completed "successfully" over a registry of correctly-identified, entirely
+**unlabelled** moieties — with a dead allow-list and a dead USAN↔INN crosswalk, since both are name-keyed.
+The fix reads `Display Name` and **declares the required columns**: a missing one now raises, naming the
+header found. *The bug was never the wrong column name — names drift — it was `or ""` absorbing a
+structural mismatch.* Verified on the real release: **168,046/168,046 rows named, 0 moieties with a blank
+label** (was 100%), 3 allow-list admissions (was 0), 5 crosswalk hits (was 0).
+
+**2. The legacy allow-list was keyed on a display name ([#17](https://github.com/cairn-ehr/drugref/issues/17)).**
+Its flagship entry matched nothing: magnesium sulfate is published as `MAGNESIUM SULFATE, UNSPECIFIED
+FORM`. Now keyed on **UNII**, which also *tightens* the gate (a substance sharing a listed name no longer
+inherits its admission). Keeps a `name` column so a pharmacist can diff it.
+
+**3. The gate admitted 7.5% of UNII and excluded amoxicillin and morphine ([#26](https://github.com/cairn-ehr/drugref/issues/26)).**
+`INN_ID` is a sparse cross-reference, not a has-INN flag. The rule is now
+
+> `INN_ID | USAN_ID | (RXCUI & drug-like SUBSTANCE_TYPE) | legacy allow-list`
+
+**The asymmetry is the design.** A strong signal (INN/USAN) is an act of naming by WHO or the USAN
+Council, so it admits **outright**, whatever the type. Applying the type filter uniformly was measured and
+rejected: 571 records carry an `INN_ID` with a non-drug-like type, including **heparin, enoxaparin,
+protamine sulfate, iron sucrose and 346 gene/cell therapies**. The type test qualifies only the *weak*
+signal, because RxNorm also assigns RxCUIs to excipients and homeopathic botanicals. **Strictly monotone**
+— nothing admitted before is excluded now — and pinned by a test, because `moiety_uuid` is immortal.
+
+**`db/011 moiety_admission`** records *why* each moiety is in the registry, set-valued, as a rebuildable
+projection (the moiety is immortal; the evidence is a per-release reading). `gate.admission_signals`
+answers "admitted?" and "on what evidence?" in one call, so the two cannot drift.
+
+**4. The gate fix changed NOTHING until the bridge was fixed too.** `run.py` writes an `INN` claim only
+`if cand.has_inn`, and the PBS bridge indexed those claims — so the newly-admitted moieties were in the
+registry and invisible to it. Both arms, with #27 already applied:
+
+| | INN-claim index | display-name index |
+|---|---:|---:|
+| old gate (`INN_ID` only) | 12,685 (85.5%) | 12,689 (85.5%) |
+| **new gate** | 12,685 (85.5%) | **13,719 (92.4%)** |
+
+Writing an INN claim for them would have been wrong — drugref must not assert a WHO INN it cannot source.
+Indexing `display_name` is lossless (all 12,588 INN claims equal their moiety's display_name, **zero
+mismatches**) and correct on the merits: the local tier is a *name* bridge. **#26's diagnosis holds — the
+gate was binding — but only both fixes together reveal it**, and the bridge lands on **exactly the 92.4%
+ceiling** slice 8a measured against all UNII names.
+
+**Measured against the real releases (UNII 26Feb2026, PBS 2026-07, MED-RT 2026.07.06):**
+
+| | before | after |
+|---|---:|---:|
+| moieties | 12,591 | **19,438** |
+| PBS products bridged | 12,685 (85.5%) | **13,719 (92.4%)** |
+| PBS unmatched components | 3,140 | **347** |
+| salt-strip bridge rows | 149 | **5** (0.03%) |
+| MED-RT classified moieties | 2,066 | **3,875** |
+| MED-RT membership rows | 10,562 | **18,639** |
+| populated CI rules | 331 | **635** |
+| `ddi_candidate_pair` rows | 6,402 | **21,664** |
+
+Admission evidence: `INN_ID` 12,588 · `RXCUI` 8,694 · `USAN_ID` 5,404 · `LEGACY_ALLOWLIST` 4.
+**5,227 moieties rest on `RXCUI` alone** — the weakest evidence, and the natural head of a #19 worklist.
+The old-gate arm reproduced Plan B's recorded 6,395 pairs (6,402 here, the difference being the two
+moieties the allow-list re-key added), which is the consistency check on the measurement itself.
+
+**Filed: [#33](https://github.com/cairn-ehr/drugref/issues/33).** MeSH keys D008278 by the **anhydrous and
+heptahydrate** CAS numbers while drugref's moiety is the *unspecified form* (which carries no CAS at all),
+so the two identify the same drug one level apart in the composition tree and no key matches. The old
+fixture concealed this by inventing a CAS. Pre-existing, counted not dropped
+(`members_key_not_in_registry` 2→3), closed by slice 3. Do **not** "fix" it by allow-listing the hydrate
+UNIIs — they are composition-tree children, not moieties.
+
+**Known residual, stated not hidden:** 4,453 records carry both `RXCUI` and `DAILYMED` yet are rejected —
+3,015 botanicals/allergens, 821 excipient polymers, 600 mixtures. Genuine misses in the tail
+(**pancrelipase**, **sodium polystyrene sulfonate**, **monobasic sodium phosphate**) are allow-list
+candidates and are **not a new loss**: today's gate excluded them too.
+
+**The fixture is now extracted from the real release** by `tests/fixtures/make_unii_subset.py`, copying the
+header verbatim and selecting rows **by UNII** (the name is what drifted). The old hand-written one also
+invented an `INN_ID` for acetaminophen (6689; really 626) and amlodipine, a CAS for magnesium sulfate, and
+a UNII of `QCM` for microcrystalline cellulose. **This was the last hand-written fixture in the repo.**
+
+## Plan B — DAG-descendant expansion (merged, #32)
 
 Design: §3.2 / §7.1 / §11 step 2 of the
 [additive-effect & open-question spec](superpowers/specs/2026-07-25-drugref-additive-effect-and-open-question-design.md).
@@ -115,9 +206,11 @@ now-mostly-stale caveat.
 an append-only row-level floor. Own immortal `moiety_uuid` (`UUIDv5` on UNII at first sighting, then
 **pinned forever**; namespace `d07651ee-311d-552b-a97b-591219eb3ad3`), never keyed on a name. External IDs
 are **append-only claims** (UNII, INN, RXNORM_IN, CAS, PUBCHEM_CID, INCHIKEY, CHEBI), so drugref doubles as
-a public cross-walk. Membership gate = **has-INN** (UNII `INN_ID`) **or** a small closed legacy allow-list.
-International-by-construction seeding: UNII (public domain) backbone, INN display anchor, ChEBI (CC BY 4.0)
-chemistry, **RxNorm demoted to a claim**, a closed hand-curated USAN↔INN crosswalk.
+a public cross-walk. Membership gate (since #26) = **`INN_ID | USAN_ID | (RXCUI & drug-like
+SUBSTANCE_TYPE)`** **or** the closed **UNII-keyed** legacy allow-list, with the admitting signal recorded
+in `moiety_admission` (`db/011`). International-by-construction seeding: UNII (public domain) backbone,
+INN display anchor, ChEBI (CC BY 4.0) chemistry, **RxNorm demoted to a claim** (an RxCUI read from the FDA
+file is a gate signal, not an RxNorm ingest), a closed hand-curated USAN↔INN crosswalk.
 **Floor scope:** row-level UPDATE/DELETE only — `TRUNCATE` and the table-owning role remain bypasses
 ([#2](https://github.com/cairn-ehr/drugref/issues/2)).
 
@@ -139,8 +232,11 @@ ingested class is what keeps unlicensed content out.
 **Slice 2b — MeSH PA.** 568 PA class descriptors, their tree-number DAG and memberships, on the **same
 three tables** (no schema change). `ingest/mesh.py` is a pure streaming (`iterparse`) parser;
 `ingest/mesh_run.py` holds the **two-key bridge** — UNII-primary → CAS-fallback against slice-1
-`identity_claim` rows, **no new external source**. 10,505 member substances, **73% joinable**; unmatched
-counted, split no-key vs key-not-in-registry.
+`identity_claim` rows, **no new external source**. 10,505 member substances, **73% joinable** *(measured
+pre-#26; the gate redesign raises it and it has not been re-run against the full MeSH release)*; unmatched
+counted, split no-key vs key-not-in-registry. Part of the residual is
+[#33](https://github.com/cairn-ehr/drugref/issues/33): MeSH keys chemical records by **form-specific CAS**,
+which cannot reach a moiety held as UNII's *unspecified form*.
 
 **Slice 5a — the first interaction data.** `db/004` `class_contraindication` (rebuildable projection) +
 read-time pair expansion. `db/006` replaced the comment-enforced CHECK↔CASE coupling with a **`ci_axis`
@@ -163,14 +259,14 @@ projection with **no** append-only floor, because a de-listed PBS item must be a
 products to the global spine **by name alone** — the only licence-clean join, since PBS carries no
 UNII/CAS/InChIKey. `local_product_uuid` is a pure function of `(jurisdiction, source, source_code)`.
 
-Measured against the real July-2026 release (14,840 items): **92.4%** name-bridge ceiling against all UNII
-substance names but only **84.6%** against today's INN-gated registry — **the moiety gate, not the bridge,
-is the binding constraint** ([#26](https://github.com/cairn-ehr/drugref/issues/26)), the same pattern
-already measured for MED-RT and MeSH, now on a third independent axis. The salt-strip heuristic contributes
-1.1% of bridge rows gated and **0.0% at the ceiling** — reported as near-worthless rather than left to
-imply otherwise; slice 3 is the real fix. The residual is otherwise AU/INN-vs-USAN spelling divergence
-(paracetamol, cefalexin, ciclosporin — the deferred alias list **has now earned its place**, and the closed
-USAN↔INN crosswalk is its home) and non-drugs the gate correctly excludes.
+Measured against the real July-2026 release (14,840 items): the bridge now reaches **13,719 = 92.4%**,
+**exactly the ceiling** originally measured against all UNII substance names. It sat at 85.5% until the
+#26 round, and slice 8a's call was right — **the moiety gate, not the bridge, was the binding constraint**
+— though it took *both* the gate fix and the display-name index to show it (see the fix-round section).
+Unmatched components 3,140 → 347. The salt-strip heuristic is down to **5 rows, 0.03%**, so the "near-
+worthless" verdict stands more strongly than when it was made; slice 3 is the real fix. The residual is
+AU/INN-vs-USAN spelling divergence (cefalexin, ciclosporin — the deferred alias list **has earned its
+place**, and the closed USAN↔INN crosswalk is its home) and non-drugs the gate correctly excludes.
 
 **Licence posture — read before extending slice 8a.** Node-local plug-in only: drugref ships AGPL-3.0
 ingest code and schema, **never a PBS release**, with one stated exception — `tests/fixtures/
@@ -230,7 +326,7 @@ a record may carry several — so key extraction is set-valued.
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 384 tests, of which ~230 are DB-gated -- a run without this DSN passes while
+# 412 tests, of which ~240 are DB-gated -- a run without this DSN passes while
 # exercising none of the schema, floor, views or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .
@@ -241,7 +337,8 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 
 - **Schema:** `db/001` identity spine · `002` classification · `003` registry generalised · `004`
   contraindication projection · `005` supersession/floor hardening · `006` `ci_axis` + view contract · `007`
-  question registry · `008` gap views · `009` local (PBS) tier · `010` descendant expansion.
+  question registry · `008` gap views · `009` local (PBS) tier · `010` descendant expansion · `011`
+  moiety admission evidence.
   **Read the LATEST file that touches an object for its actual shape** — 002 still shows superseded
   MED-RT-specific columns, 004's relationship CHECK is replaced by 006's FK, and 006's `ddi_candidate_pair`
   is replaced by 010's.
@@ -278,18 +375,19 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   this closes, so hardening must land with a replacement isolation strategy.
 - [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** — structural re-key by
   InChIKey, deferred.
-- [#17](https://github.com/cairn-ehr/drugref/issues/17) **Remaining no-silent-drop gaps** — MeSH PA records
-  with no `DescriptorUI`; the legacy allow-list still keyed on a display name rather than a UNII.
+- [#17](https://github.com/cairn-ehr/drugref/issues/17) **Remaining no-silent-drop gaps** — *half done*:
+  the allow-list is now UNII-keyed. Still open: MeSH PA records with no `DescriptorUI`.
 
 **Ingest correctness (all found by measuring the real releases)**
-- [#27](https://github.com/cairn-ehr/drugref/issues/27) **`ingest/unii.py` reads a non-existent `PT`
-  column** — the real release uses `Display Name`, so every moiety gets an empty `display_name` and it does
-  not raise. Visible in Plan B's own verification output. **Cheap and high value — good next task.**
-- [#26](https://github.com/cairn-ehr/drugref/issues/26) **UNII gate excludes common drugs** — `INN_ID` is
-  empty for amoxicillin, morphine, codeine, doxycycline, tacrolimus, dasatinib. The binding constraint
-  behind every coverage number in this file.
-- [#5](https://github.com/cairn-ehr/drugref/issues/5) INN sourced from UNII PT, not an authoritative WHO
-  list.
+- [#33](https://github.com/cairn-ehr/drugref/issues/33) **MeSH CAS keys name specific forms** — D008278 is
+  keyed to the anhydrous/heptahydrate UNIIs while drugref's moiety is the unspecified form, so no key
+  matches. Counted, not dropped. **Closed by slice 3.**
+- [#5](https://github.com/cairn-ehr/drugref/issues/5) INN sourced from UNII's `Display Name`, not an
+  authoritative WHO list. **Sharpened this round:** `UNII_Names_*.txt` carries `TYPE='of'` (official name)
+  rows for 24,127 UNIIs, and for acetaminophen it lists **both `ACETAMINOPHEN` and `PARACETAMOL`** — so an
+  authoritative INN source may be derivable from a file drugref already downloads, and the hand-curated
+  USAN↔INN crosswalk may be replaceable by data. Not attempted; recorded because the measurement was made.
+  Note `of` also covers excipients, so it is a *name* source, not a membership signal.
 - [#7](https://github.com/cairn-ehr/drugref/issues/7) / [#29](https://github.com/cairn-ehr/drugref/issues/29)
   **Row-at-a-time ingest** — MED-RT (~31k round trips, plus `ElementTree.parse` holding 45 MB) and PBS
   (~28k). `executemany`/`COPY` + batch commits + `iterparse`.
@@ -302,8 +400,10 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 **Interaction model**
 - [#31](https://github.com/cairn-ehr/drugref/issues/31) **Denied-root rules with no direct members yield no
   pair, unreported** — Plan B's residue, pre-existing rather than a regression (above).
-- [#19](https://github.com/cairn-ehr/drugref/issues/19) **41 of 739 CI rules are structurally dead** — the
-  object class has no member anywhere in its subtree. The highest-value curation worklist available:
+- [#19](https://github.com/cairn-ehr/drugref/issues/19) **CI rules whose object class is unpopulated** —
+  filed as 41 of 739; `gap_unpopulated_contraindication` now returns **12** against the real release
+  (13 before #26), Plan B's descendant expansion having absorbed most of the rest. Re-measure before
+  acting on the issue text. Still the highest-value curation worklist available:
   upstream vouching that the answer matters. Largely an **indexing loss, not a knowledge gap** — openFDA
   labels carry the statements (§3.5), which is why the cost ladder puts `openFDA-SPL` above `literature`.
 - [#20](https://github.com/cairn-ehr/drugref/issues/20) **n-ary interactions** — decide before 5c builds on

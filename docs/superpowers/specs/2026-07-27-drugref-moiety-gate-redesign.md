@@ -147,6 +147,46 @@ The registry grows 12,588 → 19,436 (+54%), so every published coverage figure 
 
 These numbers are part of the deliverable, not a follow-up.
 
+### 5.1 Measured outcome (added after implementation)
+
+**A second constraint was hiding behind the first.** The gate change alone moved *no* downstream
+number, because `run.py` writes an `INN` identity_claim only `if cand.has_inn` and the PBS bridge
+indexed those claims — so the newly-admitted moieties were in the registry but invisible to it.
+Both arms measured with the `Display Name` fix already in place:
+
+| | INN-claim index | display-name index |
+|---|---:|---:|
+| old gate (`INN_ID` only) | 12,685 (85.5%) | 12,689 (85.5%) |
+| **new gate** | 12,685 (85.5%) | **13,719 (92.4%)** |
+
+Indexing `substance_moiety.display_name` instead is lossless (all 12,588 INN claims equal their
+moiety's display_name; zero mismatches) and is right on the merits — the local tier performs a *name*
+bridge and `display_name` is drugref's name for a moiety. Writing an INN claim for the new moieties
+would have been the wrong fix: drugref must not assert a WHO INN it has no source for.
+
+**So #26's diagnosis holds** — the gate, not the bridge, was binding — but only both fixes together
+show it. The bridge reaches **exactly the 92.4% ceiling** slice 8a measured against all UNII
+substance names. Unmatched components fall 3,140 → 347 (−89%); the salt-strip heuristic falls from
+149 bridge rows to 5 (0.03%), reconfirming that slice 3 is its replacement rather than tuning.
+
+**MED-RT, no parser change** (it joins on `RXNORM_IN` claims, which every RxCUI-carrying moiety now
+records):
+
+| metric | old gate | new gate |
+|---|---:|---:|
+| classified moieties | 2,066 | 3,875 (+88%) |
+| membership rows | 10,562 | 18,639 (+76%) |
+| populated CI rules | 331 | 635 (+92%) |
+| unmatched RxCUIs | 3,946 | 2,137 (−46%) |
+| `ddi_candidate_pair` rows | 6,402 | 21,664 (+238%) |
+
+The old-gate arm's 6,402 pairs reproduces Plan B's recorded 6,395 to within the two moieties the
+allow-list re-key added, which is the consistency check on the measurement itself.
+
+Registry: **12,591 → 19,438** moieties, admitted by `INN_ID` 12,588 · `RXCUI` 8,694 · `USAN_ID`
+5,404 · `LEGACY_ALLOWLIST` 4; **5,227 rest on `RXCUI` alone**, the weakest evidence and the natural
+head of a curation worklist.
+
 ## 6. Known residual — stated, not hidden
 
 4,453 records carry **both** `RXCUI` and `DAILYMED` (i.e. are marketed in the US) yet are rejected,

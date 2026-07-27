@@ -35,12 +35,15 @@ up through a moiety's classes) — curate once, apply widely. This is the bigges
 
 ## Slices
 
-### Slice 1 — Active-moiety identity spine ✅ DONE
+### Slice 1 — Active-moiety identity spine ✅ DONE (gate corrected, see below)
 Schema `drugref` (3 tables: `ingest_run`, `substance_moiety`, `identity_claim`) + append-only row-level floor;
 Python ingest; moiety registry with immortal `UUIDv5`-on-UNII (pinned) + append-only cross-ref claims;
-`has-INN` (+ closed legacy allow-list) membership gate; international seeding (UNII backbone / INN display /
+membership gate + closed legacy allow-list; international seeding (UNII backbone / INN display /
 ChEBI cross-refs / RxNorm demoted to a claim / closed USAN↔INN crosswalk); ChEBI enrichment by InChIKey.
 30 tests. Full detail: the slice-1 design spec + plan.
+
+**Corrected by the identity-spine fix round** (below): the parser read a `PT` column the real release
+does not have, and the `has-INN` gate turned out to rest on a false premise about `INN_ID`.
 
 ### Slice 2a — MED-RT classification DAG + membership ✅ DONE
 Class registry (`substance_class`, own UUIDv5-on-NUI) + subclass DAG (`class_parent`) + many-to-many
@@ -154,16 +157,17 @@ outside slice 1's append-only floor since a de-listed PBS item must be able to d
 global moiety spine **by name alone**, the only licence-clean join: PBS carries no UNII, CAS or InChIKey.
 Design: [slice-8a spec](superpowers/specs/2026-07-25-drugref-slice-8a-pbs-localisation-design.md).
 
-Measured against the real July-2026 release (14,840 items): **92.4%** name-bridge ceiling against all UNII
-substance names, but only **84.6%** against today's INN-gated registry — the **moiety gate, not the
-bridge, is the binding constraint** ([#26](https://github.com/cairn-ehr/drugref/issues/26)), the same
-pattern already measured for MED-RT and MeSH, now on a third independent axis. The salt-strip heuristic (an
-admitted slice-3 stand-in) contributes only 1.1% of bridge rows against the gated vocabulary and **0.0% at
-the ceiling** — reported as near-worthless rather than left to quietly imply otherwise (rule 5); slice 3's
-GSRS salt relationships are the real fix. The residual is otherwise explained by AU/INN-vs-USAN spelling
-divergence (paracetamol, cefalexin, ciclosporin, …) and non-drugs the moiety gate correctly excludes
-(vitamins, dressings). 334 tests at the initial build; 341 after the final whole-branch review round (all
-12 findings fixed), **347** after the PR-review fix round (5 findings fixed, 2 deferred to
+Measured against the real July-2026 release (14,840 items): the bridge sat at **85.5%** against a **92.4%**
+ceiling (all UNII substance names), and slice 8a's reading — **the moiety gate, not the bridge, is the
+binding constraint** ([#26](https://github.com/cairn-ehr/drugref/issues/26)) — proved right: after the
+identity-spine fix round the bridge reaches **13,719 = 92.4%, exactly that ceiling**, with unmatched
+components down 3,140 → 347. It took *two* fixes to show it, since the gate change alone moved nothing
+until the bridge stopped indexing `INN` claims (see the fix round below). The salt-strip heuristic (an
+admitted slice-3 stand-in) is now **5 bridge rows, 0.03%** — reported as near-worthless rather than left to
+quietly imply otherwise (rule 5); slice 3's GSRS salt relationships are the real fix. The residual is
+otherwise AU/INN-vs-USAN spelling divergence (cefalexin, ciclosporin, …) and non-drugs the moiety gate
+correctly excludes (vitamins, dressings). 334 tests at the initial build; 341 after the final whole-branch
+review round (all 12 findings fixed), **347** after the PR-review fix round (5 findings fixed, 2 deferred to
 [#29](https://github.com/cairn-ehr/drugref/issues/29)/[#30](https://github.com/cairn-ehr/drugref/issues/30)
 — see HANDOVER.md). No `NOTICE` change — the ingest path redistributes nothing; the test fixture noted
 above is the sole committed PBS data and is tracked under #25.
@@ -173,6 +177,30 @@ ARTG, the composition tree's salt/clinical-drug levels underneath the bridge, an
 other jurisdictions.
 
 ## Cross-cutting hardening (not a single slice)
+
+- **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). The round that made every other
+  slice's coverage number real, and every defect in it was invisible to the committed fixtures.
+  `ingest/unii.py` read a **`PT` column the real UNII release does not have** (it is `Display Name`;
+  `PT` is a *value* of the TYPE column in the separate names file), so `row.get("PT") or ""` produced an
+  empty label for all 168,046 rows — a production run would have completed "successfully" over an
+  **entirely unlabelled registry** with a dead allow-list and a dead USAN↔INN crosswalk. Required columns
+  are now **declared and checked**; the lesson taken was not "that column was renamed" but "`or ""`
+  absorbed a structural mismatch". The legacy allow-list moved to **UNII keys** (#17) after its flagship
+  entry was measured to match nothing (`MAGNESIUM SULFATE, UNSPECIFIED FORM`). And the membership gate
+  (#26) became **`INN_ID | USAN_ID | (RXCUI & drug-like SUBSTANCE_TYPE)`** plus the allow-list: `INN_ID`
+  is a sparse cross-reference, not a has-INN flag, and was empty for amoxicillin, morphine, codeine,
+  doxycycline, tacrolimus and aspirin. **The asymmetry is the design** — a strong identifier admits
+  outright, because uniformly type-filtering would delete heparin, enoxaparin, protamine and 346 gene/cell
+  therapies from a drug-interaction service. **Strictly monotone**, pinned by a test. `db/011` records the
+  admitting signal as a rebuildable projection (the moiety is immortal; the evidence is per-release).
+  A fourth defect surfaced only on measurement: the gate change moved **no** downstream number until the
+  PBS bridge stopped indexing `INN` claims — the new moieties have none — and indexed `display_name`
+  instead, which is lossless and is what a *name* bridge should match. Measured against the real releases:
+  moieties **12,591 → 19,438**, PBS bridge **85.5% → 92.4%** (exactly the ceiling slice 8a identified),
+  unmatched PBS components **3,140 → 347**, MED-RT classified moieties **2,066 → 3,875**, and
+  `ddi_candidate_pair` **6,402 → 21,664**. 412 tests. Residue filed as
+  [#33](https://github.com/cairn-ehr/drugref/issues/33) (MeSH form-specific CAS keys, closed by slice 3).
+  Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md).
 
 - **Foundation review ✅ DONE** (post-slice-5a, whole-codebase). `db/005` made the correction overlay
   one-way and re-assertable (partial unique index on LIVE claims; supersession set once, same-moiety,
