@@ -314,3 +314,84 @@ def test_an_old_check_does_not_close_a_question(conn):
 
     assert questions.current_state(conn, qu) == "open"
     assert conn.execute("SELECT count(*) FROM drugref.question_worklist").fetchone()[0] == 1
+
+
+# ---- unreviewed_expansion_root (Plan B) --------------------------------------
+
+
+def _unreviewed_root(conn, run_id, code="N0000900000", descendants=25):
+    """A contraindicated class with enough descendants to clear the discovery
+    heuristic, and no expansion-policy decision recorded against it."""
+    root = ids.mint_class_uuid("MED-RT", code)
+    conn.execute("INSERT INTO drugref.substance_class (class_uuid, source, source_code, "
+                 "published_code, class_name, concept_type, first_seen_ingest) "
+                 "VALUES (%s, 'MED-RT', %s, %s, 'Sprawling Activity Alteration [PE]', "
+                 "'PE', %s)", (root, code, code, run_id))
+    base = int(code[1:])
+    for i in range(descendants):
+        child_code = f"N{base + i + 1:010d}"
+        child = ids.mint_class_uuid("MED-RT", child_code)
+        conn.execute("INSERT INTO drugref.substance_class (class_uuid, source, "
+                     "source_code, published_code, class_name, concept_type, "
+                     "first_seen_ingest) VALUES (%s, 'MED-RT', %s, %s, 'c', 'PE', %s)",
+                     (child, child_code, child_code, run_id))
+        conn.execute("INSERT INTO drugref.class_parent (child_class_uuid, "
+                     "parent_class_uuid, ingest_run) VALUES (%s, %s, %s)",
+                     (child, root, run_id))
+    conn.execute("INSERT INTO drugref.class_contraindication (subject_moiety_uuid, "
+                 "object_class_uuid, relationship, source, ingest_run) "
+                 "VALUES (%s, %s, 'CI_PE', 'MED-RT', %s)",
+                 (_moiety(conn, run_id, "subj"), root, run_id))
+    return root
+
+
+def test_an_unreviewed_expansion_root_becomes_a_question(conn):
+    """The review gate reaches the worklist. Left as a view alone it would be a report
+    nobody reads; as a question it carries a citable UUID, a state and a watermark."""
+    run_id = _run(conn)
+    root = _unreviewed_root(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+
+    gap_key, text = conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()
+    assert gap_key == f"CLASS:{root}"
+    # Named, not referenced by UUID: a reviewer has to judge it on sight, and the
+    # count is the whole reason it was asked about.
+    assert "Sprawling Activity Alteration [PE]" in text and "25" in text
+
+
+def test_recording_a_decision_closes_the_expansion_question(conn):
+    """The gap is answerable by drugref itself rather than by literature -- which is
+    what makes it a good end-to-end test of the register: the answer goes into a
+    table, the next rebuild sees the gap gone, and the question leaves."""
+    run_id = _run(conn)
+    _unreviewed_root(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    assert conn.execute("SELECT count(*) FROM drugref.open_question "
+                        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()[0] == 1
+
+    conn.execute(
+        "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+        "class_name, rationale, reviewed_by, reviewed_against) VALUES "
+        "('MED-RT', 'N0000900000', 'deny', 'Sprawling Activity Alteration [PE]', "
+        "'abstract organ-system bucket', 'test', '2026.07.06')")
+    questions.register_from_gaps(conn, run_id)
+
+    assert conn.execute("SELECT count(*) FROM drugref.open_question "
+                        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()[0] == 0
+
+
+def test_the_same_class_can_raise_two_different_questions(conn):
+    """gap_key is CLASS:{uuid} for both unpopulated_contraindication and
+    unreviewed_expansion_root, so only gap_kind separates them. A sprawling class
+    nothing is filed under is BOTH -- two questions, two UUIDs, answerable
+    independently."""
+    run_id = _run(conn)
+    root = _unreviewed_root(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+
+    assert sorted(k for (k,) in conn.execute(
+        "SELECT gap_kind FROM drugref.open_question WHERE gap_key = %s",
+        (f"CLASS:{root}",)).fetchall()) == ["unpopulated_contraindication",
+                                            "unreviewed_expansion_root"]

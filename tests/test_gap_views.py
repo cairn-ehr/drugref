@@ -259,3 +259,101 @@ def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
 
     assert conn.execute("SELECT rxcui, name FROM "
                         "drugref.gap_unmatched_ingredient").fetchall() == [("5640", "ibuprofen")]
+
+
+# ---- gap_unreviewed_expansion_root -------------------------------------------
+#
+# The review gate for Plan B's deny-list. A curated list of abstract roots rots the
+# first time upstream adds one, so §7's own rule supplies the mechanism: a gap is a
+# query, never a report. A new large CI object class surfaces here as an open
+# question instead of silently fanning out.
+#
+# The >20-descendant-CLASSES threshold is a DISCOVERY HEURISTIC for the worklist,
+# never the criterion for denying expansion -- that judgement is qualitative and
+# lives in class_expansion_policy. Size is only how the original fourteen were
+# found, and the boundary test below pins it so a retune is a deliberate act.
+
+DISCOVERY_THRESHOLD = 20
+
+
+def _wide_root(conn, run_id, code, descendants, with_ci=True):
+    """A class with `descendants` classes beneath it, optionally carrying a CI rule."""
+    root = _class(conn, run_id, code, name=f"Root {code} [PE]")
+    base = int(code[1:])
+    for i in range(descendants):
+        child = _class(conn, run_id, f"N{base + i + 1:010d}")
+        _parent(conn, run_id, child, root)
+    if with_ci:
+        _ci(conn, run_id, _moiety(conn, run_id, "subj"), root)
+    return root
+
+
+def _policy(conn, code, decision):
+    conn.execute(
+        "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+        "class_name, rationale, reviewed_by, reviewed_against) "
+        "VALUES ('MED-RT', %s, %s, 'X', 'because', 'test', '2026.07.06')",
+        (code, decision))
+
+
+def _unreviewed(conn):
+    return conn.execute(
+        "SELECT class_uuid, descendant_class_count, ci_rule_count "
+        "FROM drugref.gap_unreviewed_expansion_root").fetchall()
+
+
+def test_a_large_unreviewed_contraindicated_class_is_a_gap(conn):
+    """The rot this view exists to catch: the next MED-RT release adds an abstract
+    organ-system root, a rule names it, and nothing on the deny-list stops the
+    fan-out. It should arrive as a question for a pharmacist, not as 1,200 pairs."""
+    run_id = _run(conn)
+    root = _wide_root(conn, run_id, "N0000100000", 25)
+    assert _unreviewed(conn) == [(root, 25, 1)]
+
+
+def test_denying_a_root_takes_it_off_the_worklist(conn):
+    run_id = _run(conn)
+    _wide_root(conn, run_id, "N0000200000", 25)
+    _policy(conn, "N0000200000", "deny")
+    assert _unreviewed(conn) == []
+
+
+def test_allowing_a_root_takes_it_off_the_worklist_too(conn):
+    """`allow` and `deny` differ for the pair set and agree here: both mean REVIEWED,
+    and this view asks only whether a human has looked. Three of the fourteen seeded
+    roots are `allow` precisely so they stop being asked about."""
+    run_id = _run(conn)
+    _wide_root(conn, run_id, "N0000300000", 25)
+    _policy(conn, "N0000300000", "allow")
+    assert _unreviewed(conn) == []
+
+
+def test_a_class_at_the_threshold_is_not_yet_asked_about(conn):
+    """The boundary, pinned in both directions so retuning the heuristic is a
+    deliberate act rather than a drift. `Decreased Coagulation Activity` has 6
+    descendant classes and 109 drugs beneath it: it must expand silently, never
+    appear here."""
+    run_id = _run(conn)
+    _wide_root(conn, run_id, "N0000400000", DISCOVERY_THRESHOLD)
+    assert _unreviewed(conn) == []
+
+    over = _wide_root(conn, run_id, "N0000500000", DISCOVERY_THRESHOLD + 1)
+    assert _unreviewed(conn) == [(over, DISCOVERY_THRESHOLD + 1, 1)]
+
+
+def test_a_large_class_no_contraindication_names_is_not_a_gap(conn):
+    """The question is about expansion POLICY, and a class no rule names expands
+    nothing. Asking about every large class in a 3,634-class DAG would bury the
+    handful that matter."""
+    run_id = _run(conn)
+    _wide_root(conn, run_id, "N0000600000", 30, with_ci=False)
+    assert _unreviewed(conn) == []
+
+
+def test_the_rule_count_is_the_priority_signal(conn):
+    """How many contraindications ride on the decision is what tells a reviewer which
+    root to look at first -- Hematologic Activity Alteration carries 15."""
+    run_id = _run(conn)
+    root = _wide_root(conn, run_id, "N0000700000", 25)
+    _ci(conn, run_id, _moiety(conn, run_id, "second"), root)
+    assert _unreviewed(conn) == [(root, 25, 2)]

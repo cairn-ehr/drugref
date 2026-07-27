@@ -84,6 +84,24 @@ def test_gap_kind_is_constrained_to_the_shipped_vocabulary(conn):
             (uuid.uuid4(), run_id, run_id))
 
 
+@pytest.mark.parametrize("gap_kind", [
+    "unpopulated_contraindication", "unclassified_moiety", "unmatched_ingredient",
+    "unreviewed_expansion_root",
+])
+def test_every_kind_a_gap_view_derives_is_admissible(conn, gap_kind):
+    """The other half of the CHECK, and the half that actually breaks. db/007 shipped
+    three kinds; db/010 adds Plan B's fourth. A kind a view derives but the CHECK does
+    not admit fails at INSERT inside register_from_gaps -- i.e. it ABORTS THE INGEST,
+    at the very last step, after every projection has been rebuilt. Asserting only
+    the rejection would leave that failure to be discovered by an ingest."""
+    run_id = _run(conn)
+    conn.execute(
+        "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+        "question_text, first_derived_ingest, last_derived_ingest) "
+        "VALUES (%s, %s, 'CLASS:1', 'why?', %s, %s)",
+        (ids.mint_question_uuid(gap_kind, "CLASS:1"), gap_kind, run_id, run_id))
+
+
 # ---- question_state: the curated half, and the surrogate-key proof -----------
 
 
