@@ -135,9 +135,14 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
             (SOURCE, upstream_release, source_checksum)).fetchone()[0]
 
         local.clear_source_products(conn, SOURCE)
-        inn_index = classes.moieties_by_scheme(conn, "INN")
+        # Index drugref's LABEL, not its INN claims (#26). Since the gate
+        # redesign, ~6,850 moieties are admitted on a USAN or an RxCUI and carry
+        # no INN claim at all -- amoxicillin, morphine, codeine among them -- so
+        # an INN-keyed index cannot see them. Lossless: display_name equals the
+        # INN claim value for every INN holder (classes.moieties_by_display_name).
+        inn_index = classes.moieties_by_display_name(conn)
         salt_suffixes = pbs.load_salt_suffixes()
-        log.info("PBS ingest %s: %d INN claims indexed", upstream_release, len(inn_index))
+        log.info("PBS ingest %s: %d moiety names indexed", upstream_release, len(inn_index))
 
         items_read = exact_rows = salt_rows = 0
         rows_without_identity = 0

@@ -164,6 +164,41 @@ def moieties_by_scheme(conn: psycopg.Connection, scheme: str) -> dict[str, list[
     return index
 
 
+def moieties_by_display_name(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
+    """Build a {display_name -> moieties} index, for name-keyed bridges (#26).
+
+    The companion to moieties_by_scheme, for the case where the join key is
+    drugref's own LABEL rather than an external identifier. The local (PBS) tier
+    is the consumer: PBS carries no UNII, CAS or InChIKey, so a name match is the
+    only licence-clean join available to it (slice 8a spec §1).
+
+    WHY NOT JUST INDEX THE `INN` CLAIMS, which is what slice 8a originally did:
+    since the #26 gate redesign the registry admits ~6,850 moieties on a USAN or
+    an RxCUI rather than an INN -- amoxicillin, morphine, codeine, doxycycline,
+    tacrolimus. Those carry a display_name but NO `INN` claim, because drugref
+    will not assert an INN it has no source for. An INN-keyed index therefore
+    could not see the very moieties the gate redesign was written to admit, and
+    against the real July-2026 PBS release that cost 1,256 of 3,140 unmatched
+    components and 1,235 products.
+
+    The switch is LOSSLESS, not a trade: display_name and the INN claim value are
+    both gate.inn_display_name(cand, crosswalk) for an INN holder, and against
+    the real 26Feb2026 release all 12,588 INN claims equal their moiety's
+    display_name -- zero mismatches. So this index is a strict superset of the
+    one it replaces.
+
+    Every claimant is kept, for the same reason moieties_by_scheme keeps them:
+    display_name is not unique, and picking one arbitrarily would drop a real
+    bridge and could answer differently run to run. Order is deterministic.
+    """
+    index: dict[str, list[uuid.UUID]] = {}
+    for name, moiety_uuid in conn.execute(
+            "SELECT display_name, moiety_uuid FROM drugref.substance_moiety "
+            "ORDER BY display_name, moiety_uuid").fetchall():
+        index.setdefault(name, []).append(moiety_uuid)
+    return index
+
+
 def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
     """The RxCUI -> moieties index MED-RT membership joins on.
 
