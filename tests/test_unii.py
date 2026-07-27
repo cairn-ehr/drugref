@@ -6,10 +6,18 @@ from drugref.ingest import unii
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 
-# The real release header, used by the tests that build their own file. Kept as
-# one literal so a future column rename is a single edit here plus a fixture
-# regeneration -- never a quietly divergent second opinion about upstream shape.
-REAL_HEADER = ("UNII\tDisplay Name\tRN\tRXCUI\tPUBCHEM\tINN_ID\tINCHIKEY\n")
+# The real release columns drugref reads, used by the tests that build their own
+# file. Kept as one literal so a future column rename is a single edit here plus a
+# fixture regeneration -- never a quietly divergent second opinion about upstream
+# shape. Column ORDER is irrelevant (DictReader keys by name); presence is not.
+REAL_HEADER = ("UNII\tDisplay Name\tRN\tRXCUI\tPUBCHEM\tINN_ID\tUSAN_ID"
+               "\tINCHIKEY\tSUBSTANCE_TYPE\n")
+
+
+def _row(unii, name, *, rn="", rxcui="", pubchem="", inn="", usan="",
+         inchikey="", stype="chemical"):
+    """One tab-delimited line matching REAL_HEADER, so tests state only what matters."""
+    return "\t".join((unii, name, rn, rxcui, pubchem, inn, usan, inchikey, stype)) + "\n"
 
 
 def _by_name() -> dict[str, unii.MoietyCandidate]:
@@ -17,7 +25,7 @@ def _by_name() -> dict[str, unii.MoietyCandidate]:
 
 
 def test_parse_yields_all_rows():
-    assert len(list(unii.parse(FIX))) == 5
+    assert len(list(unii.parse(FIX))) == 11
 
 
 def test_preferred_name_comes_from_the_display_name_column():
@@ -66,16 +74,34 @@ def test_a_header_without_the_membership_signal_is_refused(tmp_path):
 def test_a_missing_cross_ref_column_is_tolerated(tmp_path):
     """Cross-refs are enrichment, not identity: absence degrades, it does not break.
 
-    The contrast with the two tests above is the whole point of the header
-    contract -- REQUIRED columns are the ones whose absence corrupts identity,
-    labelling or membership. A release that stopped shipping PUBCHEM should cost
-    drugref a cross-walk scheme, not an ingest.
+    The contrast with the tests above is the whole point of the header contract --
+    REQUIRED columns are the ones whose absence corrupts identity, labelling or
+    membership. A release that stopped shipping PUBCHEM should cost drugref a
+    cross-walk scheme, not an ingest.
     """
     path = tmp_path / "no_pubchem.tsv"
-    path.write_text("UNII\tDisplay Name\tINN_ID\n362O9ITL9D\tACETAMINOPHEN\t626\n")
+    path.write_text("UNII\tDisplay Name\tINN_ID\tUSAN_ID\tRXCUI\tSUBSTANCE_TYPE\n"
+                    "362O9ITL9D\tACETAMINOPHEN\t626\t\t\tchemical\n")
     cand = list(unii.parse(path))[0]
     assert cand.preferred_name == "ACETAMINOPHEN"
     assert cand.cross_refs == {}
+
+
+def test_a_header_without_a_gate_signal_column_is_refused(tmp_path):
+    """USAN_ID, RXCUI and SUBSTANCE_TYPE became gate-critical with #26.
+
+    RXCUI in particular used to be an OPTIONAL cross-ref, tolerated when absent.
+    Once the gate reads it, that tolerance would silently shrink the registry by
+    every substance admitted on the weak signal -- so it moves to the required
+    set. #27's lesson applied forward rather than relearned.
+    """
+    for missing in ("USAN_ID", "RXCUI", "SUBSTANCE_TYPE"):
+        cols = [c for c in ("UNII", "Display Name", "INN_ID", "USAN_ID", "RXCUI",
+                            "SUBSTANCE_TYPE") if c != missing]
+        path = tmp_path / f"no_{missing}.tsv"
+        path.write_text("\t".join(cols) + "\n" + "\t".join(["x"] * len(cols)) + "\n")
+        with pytest.raises(ValueError, match=missing):
+            list(unii.parse(path))
 
 
 def test_has_inn_flag_from_inn_id_column():
@@ -93,10 +119,13 @@ def test_a_stray_double_quote_does_not_swallow_following_rows(tmp_path):
     # a single mangled record. The parser must read TSV as pure delimited text.
     path = tmp_path / "quoted.tsv"
     path.write_text(
-        REAL_HEADER +
-        '1ABC000001\t"ALPHA FORM OF SOMETHING\t50-00-1\t1\t1\t1\tAAAAAAAAAAAAAA-A\n'
-        '2DEF000002\tPLAIN NAME\t60-00-2\t2\t2\t2\tBBBBBBBBBBBBBB-B\n'
-        '3GHI000003\tANOTHER NAME\t70-00-3\t3\t3\t3\tCCCCCCCCCCCCCC-C\n')
+        REAL_HEADER
+        + _row("1ABC000001", '"ALPHA FORM OF SOMETHING', rn="50-00-1", rxcui="1",
+               pubchem="1", inn="1", inchikey="AAAAAAAAAAAAAA-A")
+        + _row("2DEF000002", "PLAIN NAME", rn="60-00-2", rxcui="2", pubchem="2",
+               inn="2", inchikey="BBBBBBBBBBBBBB-B")
+        + _row("3GHI000003", "ANOTHER NAME", rn="70-00-3", rxcui="3", pubchem="3",
+               inn="3", inchikey="CCCCCCCCCCCCCC-C"))
     cands = list(unii.parse(path))
     assert [c.unii for c in cands] == ["1ABC000001", "2DEF000002", "3GHI000003"]
 

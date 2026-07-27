@@ -76,6 +76,9 @@ def test_apply_migrations_is_idempotent(conn):
         # release no longer defines.
         "class_expansion_policy", "gap_unreviewed_expansion_root",
         "expansion_policy_unresolved",
+        # db/011 (#26): why each moiety passed the membership gate. A rebuildable
+        # projection -- the moiety is immortal, the evidence is per-release.
+        "moiety_admission",
     }
 
 

@@ -28,19 +28,30 @@ def _ingest(conn, release="2026-07"):
 
 
 def test_registers_only_gated_moieties(conn):
+    """The whole gate, end to end: 8 of the fixture's 11 rows are moieties.
+
+    Admitted, one per branch of the #26 rule --
+      INN_ID:           paracetamol, amlodipine, heparin sodium
+      USAN_ID:          iron sucrose
+      RXCUI+drug-like:  amoxicillin, morphine
+      allow-list:       magnesium sulfate, activated charcoal
+    Rejected -- an excipient, another excipient, and a homeopathic botanical,
+    all three carrying an RXCUI and excluded purely by substance type.
+    """
     n = _ingest(conn).moieties
-    # acetaminophen + amlodipine (has-INN) + magnesium sulfate and activated
-    # charcoal (allow-list) = 4; microcrystalline cellulose excluded.
-    assert n == 4
+    assert n == 8
     names = {r[0] for r in conn.execute("SELECT display_name FROM drugref.substance_moiety").fetchall()}
     # Note "magnesium sulfate, unspecified form": that IS what the real UNII
     # release calls it, and the display name is a LABEL sourced from upstream,
     # not a key -- the allow-list matched it on UNII (#17). Before #27 this row
     # was excluded entirely, because the list was keyed on a name upstream does
     # not use.
-    assert names == {"paracetamol", "amlodipine",
+    assert names == {"paracetamol", "amlodipine", "heparin sodium", "iron sucrose",
+                     "amoxicillin", "morphine",
                      "magnesium sulfate, unspecified form", "activated charcoal"}
-    assert "microcrystalline cellulose" not in names
+    for excluded in ("microcrystalline cellulose", "polysorbate 80",
+                     "thuja occidentalis leaf"):
+        assert excluded not in names
 
 
 def test_gate_rejections_are_counted_not_silently_dropped(conn):
@@ -49,7 +60,8 @@ def test_gate_rejections_are_counted_not_silently_dropped(conn):
     # spine must do the same, or a legacy drug the allow-list narrowly misses
     # disappears as invisibly as an excipient.
     summary = _ingest(conn)
-    assert summary.gated_out == 1          # microcrystalline cellulose
+    # microcrystalline cellulose, polysorbate 80, thuja occidentalis leaf
+    assert summary.gated_out == 3
     assert summary.rows_without_unii == 0
 
 
@@ -95,13 +107,14 @@ def test_reingest_is_idempotent(conn):
     _ingest(conn)  # run again — same UUIDs, no duplicate claims
     n_moiety = conn.execute("SELECT count(*) FROM drugref.substance_moiety").fetchone()[0]
     n_claim = conn.execute("SELECT count(*) FROM drugref.identity_claim").fetchone()[0]
-    assert n_moiety == 4
+    assert n_moiety == 8
     # Counted from the REAL release rows the fixture extracts, so the arithmetic
-    # is upstream's, not ours: acetaminophen UNII+INN+CAS+RXNORM_IN+PUBCHEM_CID+
-    # INCHIKEY = 6; amlodipine likewise = 6; magnesium sulfate (no INN, and no RN/
-    # PUBCHEM/INCHIKEY upstream) UNII+RXNORM_IN = 2; activated charcoal (no INN,
-    # no PUBCHEM/INCHIKEY) UNII+CAS+RXNORM_IN = 3. Total = 17.
-    assert n_claim == 17
+    # is upstream's, not ours. Each moiety contributes UNII + (INN if has_inn) +
+    # one claim per populated cross-ref column:
+    #   paracetamol 6, amlodipine 6, morphine 5, amoxicillin 5,
+    #   heparin sodium 4, iron sucrose 4, activated charcoal 3,
+    #   magnesium sulfate 2  ->  35
+    assert n_claim == 35
 
 
 def test_immortality_uuid_survives_upstream_rxcui_remap(conn, tmp_path):

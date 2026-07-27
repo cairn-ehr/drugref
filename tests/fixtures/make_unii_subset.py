@@ -58,6 +58,24 @@ WANTED = {
     # verbatim -- the contrast case that keeps the magnesium-sulfate mismatch
     # from reading as "the allow-list never works".
     "2P3VWU3H10": "ACTIVATED CHARCOAL -- allow-list entry that matches by name",
+
+    # ---- the #26 gate redesign: one row per branch of the new rule ----------
+    # No INN_ID at all, admitted on RXCUI + a drug-like type. THE headline case:
+    # the old gate excluded the world's most-prescribed antibiotic and the
+    # reference opioid, and nothing said so.
+    "804826J2HU": "AMOXICILLIN -- RXCUI-only admission (no INN_ID upstream)",
+    "76I7G6D29C": "MORPHINE -- RXCUI-only admission (no INN_ID upstream)",
+    # INN_ID with a NON-drug-like type. Pins the asymmetry: a strong signal must
+    # admit outright, or the type filter deletes heparin from a drug-interaction
+    # service (and enoxaparin, protamine, and 346 gene/cell therapies with it).
+    "ZZ45AB24CA": "HEPARIN SODIUM -- INN + `polymer` type",
+    # USAN_ID only, also a `polymer`: the same asymmetry via the other strong
+    # signal, so neither branch can be dropped without a test failing.
+    "FZ7NYF5N8L": "IRON SUCROSE -- USAN + `polymer` type",
+    # RXCUI on a non-drug-like type -> rejected. The two classes of noise the
+    # type constraint exists to exclude: homeopathic botanicals and excipients.
+    "0T0DQN8786": "THUJA OCCIDENTALIS LEAF -- RXCUI + `structurallyDiverse`, rejected",
+    "6OZP39ZG8H": "POLYSORBATE 80 -- RXCUI + `polymer` excipient, rejected",
 }
 
 

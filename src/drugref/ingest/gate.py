@@ -97,15 +97,59 @@ def has_identity_key(cand: MoietyCandidate) -> bool:
     return bool(cand.unii.strip())
 
 
+#: UNII SUBSTANCE_TYPE values a *weak* signal may be trusted on. Not a definition
+#: of "drug" -- see is_moiety for why it qualifies only the weak signal.
+DRUG_LIKE_SUBSTANCE_TYPES = frozenset({"chemical", "protein", "nucleicAcid"})
+
+
+def admission_signals(cand: MoietyCandidate, allowlist: set[str]) -> list[str]:
+    """Every reason this candidate is admitted, or [] if it is not (#26).
+
+    Returned in strength order, strongest first, and named after the UNII column
+    the signal is read from so a stored row can be traced back to the release.
+    The gate is `bool()` of this list -- the two cannot disagree, which is what
+    makes drugref.moiety_admission an audit of the decision rather than a second,
+    parallel opinion about it.
+
+    * INN_ID / USAN_ID -- STRONG. An INN or a USAN is an act of naming by WHO or
+      the USAN Council: a positive assertion that the substance is a medicine.
+      A strong signal admits OUTRIGHT, whatever the substance type. That
+      asymmetry is the design: 571 records carry an INN_ID with a non-drug-like
+      type, and they include heparin, enoxaparin, protamine sulfate, iron sucrose
+      and 346 gene/cell therapies. Losing heparin from a drug-interaction service
+      would be far worse than admitting a botanical.
+    * RXCUI -- WEAK, and therefore type-constrained. RxNorm covers US-marketed
+      content broadly, including excipients (microcrystalline cellulose has an
+      RxCUI) and homeopathic botanicals. The type test rejects ~5k of those.
+    * LEGACY_ALLOWLIST -- the curated escape hatch, keyed on UNII. Still needed:
+      magnesium sulfate (`mixture`), activated charcoal (`polymer`) and
+      pancrelipase (`mixture`) are real drugs with neither an INN nor a USAN.
+
+    MONOTONICITY. Every substance the old INN_ID-only gate admitted is still
+    admitted, because has_inn alone suffices. moiety_uuid is immortal and
+    consumers cite it, so this gate may widen but must never silently narrow.
+    """
+    signals = []
+    if cand.has_inn:
+        signals.append("INN_ID")
+    if cand.has_usan:
+        signals.append("USAN_ID")
+    if cand.has_rxcui and cand.substance_type in DRUG_LIKE_SUBSTANCE_TYPES:
+        signals.append("RXCUI")
+    if cand.unii.strip() in allowlist:
+        signals.append("LEGACY_ALLOWLIST")
+    return signals
+
+
 def is_moiety(cand: MoietyCandidate, allowlist: set[str]) -> bool:
-    """True iff the candidate is an active drug moiety (design §6.1 gate).
+    """True iff the candidate is an active drug moiety (design §6.1, #26).
 
     `allowlist` is a set of UNIIs (load_allowlist), not of names -- see that
     function for why. Matching on the immortal key also TIGHTENS the gate: a
     different substance that merely happens to share a listed drug's name no
     longer inherits its admission.
     """
-    return cand.has_inn or cand.unii.strip() in allowlist
+    return bool(admission_signals(cand, allowlist))
 
 
 def inn_display_name(cand: MoietyCandidate, crosswalk: dict[str, str]) -> str:
