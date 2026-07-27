@@ -25,6 +25,38 @@ def upsert_moiety(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
         (moiety_uuid, display_name, ingest_run_id))
 
 
+def clear_admissions(conn: psycopg.Connection) -> None:
+    """Drop the whole admission projection, ready for a rebuild (db/011, #26).
+
+    Unqualified DELETE, deliberately: unlike class_membership or local_product
+    there is no per-source key to scope by, because there is only ever one source
+    of admission evidence -- the UNII gate. Scoping it by ingest_run would be
+    worse than useless: rows written by the PREVIOUS run are precisely the ones a
+    rebuild must retire, so a run-scoped delete would leave every stale signal in
+    place while looking careful.
+    """
+    conn.execute("DELETE FROM drugref.moiety_admission")
+
+
+def record_admission(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
+                     signals: list[str], ingest_run_id: int) -> None:
+    """Record WHY a moiety passed the membership gate (db/011, #26).
+
+    `signals` comes straight from gate.admission_signals, so the stored evidence
+    and the admission decision cannot disagree -- they are the same computation,
+    not two opinions about it.
+
+    ON CONFLICT DO NOTHING guards the case of two UNII rows minting the same
+    moiety_uuid within one run; across runs, clear_admissions has already emptied
+    the table, so this is not the rebuild mechanism.
+    """
+    for signal in signals:
+        conn.execute(
+            "INSERT INTO drugref.moiety_admission (moiety_uuid, signal, ingest_run) "
+            "VALUES (%s, %s, %s) ON CONFLICT (moiety_uuid, signal) DO NOTHING",
+            (moiety_uuid, signal, ingest_run_id))
+
+
 def add_claim(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
               scheme: str, value: str, ingest_run_id: int) -> bool:
     """Append an external-identifier claim. Idempotent: re-asserting the same

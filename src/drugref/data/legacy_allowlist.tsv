@@ -1,4 +1,5 @@
-magnesium sulfate
-sodium chloride
-activated charcoal
-sodium bicarbonate
+unii	name	why
+DE08037SAB	magnesium sulfate	Pre-INN legacy drug (eclampsia, torsades). Upstream Display Name is "MAGNESIUM SULFATE, UNSPECIFIED FORM" -- the mismatch that proved a name-keyed list silently drops entries (#17, #27). The six hydrate forms are composition-tree children, not separate moieties (slice 3).
+2P3VWU3H10	activated charcoal	Pre-INN legacy drug (poisoning/overdose). No INN_ID upstream.
+8MDF5V39QO	sodium bicarbonate	Pre-INN legacy drug (acidosis, TCA overdose). No INN_ID upstream.
+451W47IQ8X	sodium chloride	Pre-INN legacy drug (fluid/electrolyte replacement). Carries INN_ID 4155 in the 26Feb2026 release, so the has-INN gate admits it anyway -- kept deliberately, because that INN_ID is upstream's editorial choice and the admission should not silently depend on it.

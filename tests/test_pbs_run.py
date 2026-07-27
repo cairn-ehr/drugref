@@ -76,6 +76,43 @@ def _bridged_names(conn, drug_name):
         "WHERE p.drug_name = %s", (drug_name,)).fetchall()}
 
 
+def test_a_moiety_with_no_inn_claim_still_bridges(conn, seeded_registry):
+    """The bridge must index drugref's LABEL, not only its INN claims (#26).
+
+    Since #26 the registry admits ~6,850 moieties on a USAN or an RxCUI rather
+    than an INN -- amoxicillin, morphine, codeine, doxycycline among them. Those
+    moieties get a display_name but NO `INN` identity_claim, because drugref has
+    no grounds to assert an INN it cannot source. While the bridge indexed INN
+    claims alone they were invisible to it, and measured against the real July
+    2026 PBS release that cost 1,256 of 3,140 unmatched components (40%) and
+    1,235 products -- i.e. the entire downstream benefit of the gate redesign.
+
+    display_name is a strict superset of the INN claim values: verified against
+    the real release, all 12,588 INN claims equal their moiety's display_name
+    (both come from gate.inn_display_name), with zero mismatches. So indexing the
+    label loses nothing and gains every non-INN moiety.
+    """
+    run_id = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('UNII', 'seed2', 'seed2') RETURNING ingest_run_id").fetchone()[0]
+    # Exactly how run.py registers amoxicillin: a moiety and a display_name, but
+    # no INN claim, because UNII carries no INN_ID for it.
+    amox = ids.mint_moiety_uuid("804826J2HU")
+    conn.execute(
+        "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, "
+        "first_seen_ingest) VALUES (%s, 'amoxicillin', %s) ON CONFLICT DO NOTHING",
+        (amox, run_id))
+    assert conn.execute("SELECT count(*) FROM drugref.identity_claim "
+                        "WHERE moiety_uuid = %s AND scheme = 'INN'",
+                        (amox,)).fetchone()[0] == 0
+
+    pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
+    bridged = {row[0] for row in conn.execute(
+        "SELECT component_name FROM drugref.local_product_moiety "
+        "WHERE moiety_uuid = %s", (amox,)).fetchall()}
+    assert bridged == {"amoxicillin"}      # stored normalised, as every bridge row is
+
+
 def test_exact_match_bridges(conn, seeded_registry):
     pbs_run.ingest_pbs(conn, FIXTURE, "2026-07-01", "testsum")
     assert _bridged_names(conn, "Rifaximin") == {"rifaximin"}

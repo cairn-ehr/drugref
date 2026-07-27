@@ -24,7 +24,7 @@ XW = DATA / "usan_inn_crosswalk.tsv"
 AL = DATA / "legacy_allowlist.tsv"
 
 PARACETAMOL = "362O9ITL9D"          # seed: UNII join (MeSH D000082 carries this UNII)
-MAGNESIUM_SULFATE = "DE08037SAB"    # seed: CAS fallback (MeSH D008278 carries CAS only)
+MAGNESIUM_SULFATE = "DE08037SAB"    # seed: the form-level CAS mismatch (#33)
 
 # A pinned MeSH class_uuid literal: mint_class_uuid("MeSH", "D000894"). Pins the
 # derivation so a future ids.py refactor cannot silently re-key the PA axis (as
@@ -129,18 +129,39 @@ def test_positive_unii_join(seeded):
         "Analgesics": "has_PA", "Analgesics, Non-Narcotic": "has_PA"}
 
 
-def test_cas_fallback_join(seeded):
-    """Magnesium sulfate carries NO UNII in MeSH (D008278); it must still join, via
-    its CAS 7487-88-9 -> the case that makes the bridge two-key (spec §5.3/§6)."""
+def test_mesh_cas_keys_point_below_the_moiety_and_so_do_not_bridge(seeded):
+    """Magnesium sulfate does NOT bridge -- and that is the true behaviour (#33).
+
+    This test asserted the opposite until #27, on the strength of a hand-written
+    UNII fixture that gave DE08037SAB a CAS of 7487-88-9. The real 26Feb2026
+    release gives it NO CAS at all, and 7487-88-9 belongs to a different UNII:
+
+        MeSH D008278 RegistryNumbers  7487-88-9  -> ML30MJ2U7I  (ANHYDROUS)
+                                      10034-99-8 -> SK47B8698T  (HEPTAHYDRATE)
+        drugref's moiety             DE08037SAB  =  UNSPECIFIED FORM, no CAS
+
+    So MeSH keys the chemical record to SPECIFIC FORMS, while drugref's moiety is
+    the form-agnostic one (RxNorm agrees: RXCUI 6585 is the ingredient). The two
+    identify the same drug one level apart in the composition tree, which is why
+    no key matches. Slice 3 (salt/hydrate relationships from GSRS) is what will
+    let a form's CAS reach its parent moiety.
+
+    Nothing is dropped: the member lands in members_key_not_in_registry, the
+    worklist number that exists precisely so a gap like this is counted rather
+    than invisible.
+    """
     _ingest(seeded)
-    assert _classes_of(seeded, MAGNESIUM_SULFATE, "has_PA") == {
-        "Analgesics": "has_PA", "Reproductive Control Agents": "has_PA"}
+    assert _classes_of(seeded, MAGNESIUM_SULFATE, "has_PA") == {}
 
 
 def test_membership_count_and_relationship(seeded):
-    """4 rows: paracetamol (2 classes) + magnesium (2 classes); all has_PA."""
+    """2 rows: paracetamol's two PA classes. All has_PA.
+
+    Was 4 before #27 -- the other 2 were magnesium sulfate, joined via a CAS the
+    hand-written fixture invented. See the test above.
+    """
     summary = _ingest(seeded)
-    assert summary.memberships == 4
+    assert summary.memberships == 2
     rels = {r[0] for r in seeded.execute(
         "SELECT DISTINCT relationship FROM drugref.class_membership").fetchall()}
     assert rels == {"has_PA"}
@@ -154,10 +175,16 @@ def test_no_key_member_is_counted_never_dropped(seeded):
 
 
 def test_key_not_in_registry_is_counted(seeded):
-    """Aspirin (D001241, UNII not seeded) and bevonium (C000002, UNIIs not seeded)
-    both carry a key that no gated-in moiety holds -> the second worklist number."""
+    """Three members carry a key that no gated-in moiety holds -> the second
+    worklist number: aspirin (D001241, UNII not seeded), bevonium (C000002, UNIIs
+    not seeded), and -- since #27 -- magnesium sulfate (D008278, whose CAS keys
+    name the anhydrous and heptahydrate UNIIs, not the moiety; see #33).
+
+    That third one is the point of this counter: a real coverage gap becomes a
+    number on a worklist instead of a silence.
+    """
     summary = _ingest(seeded)
-    assert summary.members_key_not_in_registry == 2
+    assert summary.members_key_not_in_registry == 3
 
 
 def test_every_member_is_accounted_for_no_silent_drop(seeded):
@@ -165,13 +192,13 @@ def test_every_member_is_accounted_for_no_silent_drop(seeded):
     of the three buckets -- joined, no-key, or key-not-in-registry -- so no member
     can silently vanish. The total is anchored independently on the parse (not the
     summary), so if a future change stopped counting either worklist bucket the
-    derived `joined` would no longer equal the 2 members that actually join."""
+    derived `joined` would no longer equal the members that actually join."""
     summary = _ingest(seeded)
     distinct_members = {m.record_ui for m in
                         mesh.parse(pa_path=PA, desc_path=DESC, supp_path=SUPP).memberships}
     assert len(distinct_members) == 5           # D000082, D001241, D008278, C000002, C007609
     joined = len(distinct_members) - summary.members_no_key - summary.members_key_not_in_registry
-    assert joined == 2                          # paracetamol (UNII) + magnesium (CAS)
+    assert joined == 1                          # paracetamol (UNII); magnesium: see #33
 
 
 def test_no_membership_points_outside_the_registry(seeded):
@@ -200,7 +227,7 @@ def test_every_moiety_claiming_a_key_gets_classified(seeded):
     seeded.commit()
 
     summary = _ingest(seeded)
-    assert summary.memberships == 6          # 4 + a second copy of paracetamol's 2
+    assert summary.memberships == 4          # 2 + a second copy of paracetamol's 2
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
         (twin,)).fetchone()[0] == 2
@@ -220,7 +247,7 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "
         "       (SELECT count(*) FROM drugref.class_membership)").fetchone()
-    assert counts == (6, 4, 4)
+    assert counts == (6, 4, 2)
 
 
 def test_a_mesh_rebuild_leaves_medrt_edges_intact(seeded):

@@ -81,6 +81,11 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
         "VALUES ('UNII', %s, %s) RETURNING ingest_run_id",
         (upstream_release, _checksum(unii_path))).fetchone()[0]
 
+    # The admission projection is rebuilt, not appended to (db/011): clear it
+    # before the loop so a signal upstream has stopped asserting disappears with
+    # this release rather than lingering as evidence nothing supports.
+    claims.clear_admissions(conn)
+
     count = gated_out = rows_without_unii = 0
     for cand in unii.parse(unii_path):
         # Identity first: a row with no UNII has no derivable moiety_uuid, and
@@ -88,13 +93,17 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
         if not gate.has_identity_key(cand):
             rows_without_unii += 1
             continue
-        if not gate.is_moiety(cand, allowlist):
+        # One call answers both "is it admitted" and "on what evidence", so the
+        # stored reason can never drift from the decision (#26).
+        signals = gate.admission_signals(cand, allowlist)
+        if not signals:
             gated_out += 1
             continue
         count += 1
         moiety_uuid = ids.mint_moiety_uuid(cand.unii)          # deterministic at seed
         display_name = gate.inn_display_name(cand, crosswalk)
         claims.upsert_moiety(conn, moiety_uuid, display_name, run_id)
+        claims.record_admission(conn, moiety_uuid, signals, run_id)
         claims.add_claim(conn, moiety_uuid, "UNII", cand.unii, run_id)
         if cand.has_inn:
             claims.add_claim(conn, moiety_uuid, "INN", display_name, run_id)
