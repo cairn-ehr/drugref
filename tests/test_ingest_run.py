@@ -3,6 +3,7 @@ import pathlib
 import pytest
 from drugref.ingest import run
 from drugref import ids
+from tests.test_unii import REAL_HEADER      # one opinion about upstream shape
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 DATA = pathlib.Path("src/drugref/data")
@@ -28,11 +29,17 @@ def _ingest(conn, release="2026-07"):
 
 def test_registers_only_gated_moieties(conn):
     n = _ingest(conn).moieties
-    # acetaminophen + amlodipine (has-INN) + magnesium sulfate (allow-list) = 3;
-    # microcrystalline cellulose excluded.
-    assert n == 3
+    # acetaminophen + amlodipine (has-INN) + magnesium sulfate and activated
+    # charcoal (allow-list) = 4; microcrystalline cellulose excluded.
+    assert n == 4
     names = {r[0] for r in conn.execute("SELECT display_name FROM drugref.substance_moiety").fetchall()}
-    assert names == {"paracetamol", "amlodipine", "magnesium sulfate"}
+    # Note "magnesium sulfate, unspecified form": that IS what the real UNII
+    # release calls it, and the display name is a LABEL sourced from upstream,
+    # not a key -- the allow-list matched it on UNII (#17). Before #27 this row
+    # was excluded entirely, because the list was keyed on a name upstream does
+    # not use.
+    assert names == {"paracetamol", "amlodipine",
+                     "magnesium sulfate, unspecified form", "activated charcoal"}
     assert "microcrystalline cellulose" not in names
 
 
@@ -54,8 +61,8 @@ def test_rows_without_a_unii_are_refused_and_counted(conn, tmp_path):
     # unrecoverable. They must be refused and counted instead.
     path = tmp_path / "blank_unii.tsv"
     path.write_text(
-        "UNII\tPT\tRN\tRXCUI\tPUBCHEM\tINN_ID\tINCHIKEY\n"
-        "362O9ITL9D\tACETAMINOPHEN\t103-90-2\t161\t1983\t6689\tRZVAJINKPMORJF-UHFFFAOYSA-N\n"
+        REAL_HEADER +
+        "362O9ITL9D\tACETAMINOPHEN\t103-90-2\t161\t1983\t626\tRZVAJINKPMORJF-UHFFFAOYSA-N\n"
         "\tMETFORMIN\t657-24-9\t6809\t4091\t4779\tXZWYZXKJPYQGQO-UHFFFAOYSA-N\n"
         "\tWARFARIN\t81-81-2\t11289\t54678486\t9312\tPJVWKTKQMONHTI-UHFFFAOYSA-N\n")
     summary = run.ingest_unii(conn, unii_path=path, crosswalk_path=XW,
@@ -88,10 +95,13 @@ def test_reingest_is_idempotent(conn):
     _ingest(conn)  # run again — same UUIDs, no duplicate claims
     n_moiety = conn.execute("SELECT count(*) FROM drugref.substance_moiety").fetchone()[0]
     n_claim = conn.execute("SELECT count(*) FROM drugref.identity_claim").fetchone()[0]
-    assert n_moiety == 3
-    # acetaminophen: UNII+INN+CAS+RXNORM_IN+PUBCHEM_CID+INCHIKEY = 6; amlodipine = 6;
-    # magnesium sulfate (no INN): UNII+CAS+RXNORM_IN = 3. Total = 15.
-    assert n_claim == 15
+    assert n_moiety == 4
+    # Counted from the REAL release rows the fixture extracts, so the arithmetic
+    # is upstream's, not ours: acetaminophen UNII+INN+CAS+RXNORM_IN+PUBCHEM_CID+
+    # INCHIKEY = 6; amlodipine likewise = 6; magnesium sulfate (no INN, and no RN/
+    # PUBCHEM/INCHIKEY upstream) UNII+RXNORM_IN = 2; activated charcoal (no INN,
+    # no PUBCHEM/INCHIKEY) UNII+CAS+RXNORM_IN = 3. Total = 17.
+    assert n_claim == 17
 
 
 def test_immortality_uuid_survives_upstream_rxcui_remap(conn, tmp_path):
@@ -100,8 +110,8 @@ def test_immortality_uuid_survives_upstream_rxcui_remap(conn, tmp_path):
     # Simulate a new upstream release where acetaminophen's RxCUI changed.
     remapped = tmp_path / "unii_remap.tsv"
     remapped.write_text(
-        "UNII\tPT\tRN\tRXCUI\tPUBCHEM\tINN_ID\tINCHIKEY\n"
-        "362O9ITL9D\tACETAMINOPHEN\t103-90-2\t999999\t1983\t6689\tRZVAJINKPMORJF-UHFFFAOYSA-N\n")
+        REAL_HEADER +
+        "362O9ITL9D\tACETAMINOPHEN\t103-90-2\t999999\t1983\t626\tRZVAJINKPMORJF-UHFFFAOYSA-N\n")
     run.ingest_unii(conn, unii_path=remapped, crosswalk_path=XW, allowlist_path=AL,
                     upstream_release="2026-08")
     # Same UUID (unchanged); the new RxCUI is an ADDED claim, the old one retained.

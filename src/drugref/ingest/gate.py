@@ -2,14 +2,21 @@
 """The moiety-membership gate and INN display-name resolution (design §6.1).
 
 Gate: a substance is an active drug moiety iff it HAS a WHO INN (UNII's INN_ID
-signal) OR it is on the small, closed legacy allow-list of pre-INN drugs
+signal) OR its UNII is on the small, closed legacy allow-list of pre-INN drugs
 (magnesium sulfate, ...). Everything else (excipients, foods) is excluded.
 
 INN display name: for harmonized drugs the UNII preferred term IS the INN once
 case-folded; for the closed historical USAN<->INN divergences
 (acetaminophen -> paracetamol) the hand-curated crosswalk overrides. This is
 why slice 1 needs no WHO INN bulk-list: the gate signal comes from UNII, and
-the display name from (UNII PT, overridden by the divergence crosswalk).
+the display name from (UNII's Display Name, overridden by the crosswalk).
+
+NAMES ARE LABELS HERE, NOT KEYS -- with exactly one deliberate exception. The
+allow-list moved to UNII keys after #27 measured that its flagship entry matched
+nothing upstream. The USAN<->INN crosswalk stays name-keyed because it is a
+NAME-TO-NAME map: its whole subject matter is that two vocabularies spell the
+same drug differently, and all five shipped entries were verified to match a real
+Display Name exactly in the 26Feb2026 release.
 """
 import csv
 import pathlib
@@ -40,10 +47,39 @@ def load_crosswalk(path: str | pathlib.Path) -> dict[str, str]:
     return out
 
 
+def load_allowlist_entries(path: str | pathlib.Path) -> dict[str, str]:
+    """Load the closed legacy-drug allow-list as {UNII: human-readable name}.
+
+    KEYED ON UNII, NOT ON A NAME (issue #17, measured by #27). The list used to
+    hold normalised display names, and against the real 26Feb2026 release its
+    flagship entry matched nothing: magnesium sulfate is published as "MAGNESIUM
+    SULFATE, UNSPECIFIED FORM", so the pre-INN drug the list exists to admit was
+    silently excluded from the registry with no error anywhere. A display name is
+    upstream's editorial choice and may be restyled in any release; the UNII is
+    the immortal key drugref already mints moiety_uuid from. Keying on it is the
+    ROADMAP's "own immortal UUIDs, never key on a name" applied to curator data.
+
+    The `name` column is carried for HUMANS: a bare column of UNII codes is
+    undiffable, and a reviewer must be able to see whether a changed line added
+    magnesium sulfate or removed it. It is never a lookup key -- same posture as
+    Plan B's class_expansion_policy, which is curator policy held as data a
+    pharmacist can read.
+    """
+    out: dict[str, str] = {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        # QUOTE_NONE for the same reason as unii.parse: tab-delimited files with
+        # no quoting convention, where csv's default lets a stray double quote
+        # swallow the following lines.
+        for row in csv.DictReader(fh, delimiter="\t", quoting=csv.QUOTE_NONE):
+            code = (row.get("unii") or "").strip()
+            if code:                                  # skip blank/padding lines
+                out[code] = (row.get("name") or "").strip()
+    return out
+
+
 def load_allowlist(path: str | pathlib.Path) -> set[str]:
-    """Load the closed legacy-drug allow-list (normalized names)."""
-    with open(path, encoding="utf-8") as fh:
-        return {_norm(line) for line in fh if line.strip()}
+    """The allow-list as the bare set of admitted UNIIs, for is_moiety()."""
+    return set(load_allowlist_entries(path))
 
 
 def has_identity_key(cand: MoietyCandidate) -> bool:
@@ -62,8 +98,14 @@ def has_identity_key(cand: MoietyCandidate) -> bool:
 
 
 def is_moiety(cand: MoietyCandidate, allowlist: set[str]) -> bool:
-    """True iff the candidate is an active drug moiety (design §6.1 gate)."""
-    return cand.has_inn or _norm(cand.preferred_name) in allowlist
+    """True iff the candidate is an active drug moiety (design §6.1 gate).
+
+    `allowlist` is a set of UNIIs (load_allowlist), not of names -- see that
+    function for why. Matching on the immortal key also TIGHTENS the gate: a
+    different substance that merely happens to share a listed drug's name no
+    longer inherits its admission.
+    """
+    return cand.has_inn or cand.unii.strip() in allowlist
 
 
 def inn_display_name(cand: MoietyCandidate, crosswalk: dict[str, str]) -> str:
