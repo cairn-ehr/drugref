@@ -116,6 +116,15 @@ MeSH licence already cleared in slice 2b): **`CI_with`** (drug–disease contrai
 `induces`** (~18k drug–disease indications + drug-induced states) — a public-domain, drugref-owned drug–
 disease dataset (a MeDIC-alternative it holds outright). Still projection tier, still candidate-only.
 
+**Three things this slice must not forget** (each is a one-liner, and each is invisible until it bites):
+decide `ci_axis.expands_descendants` per new predicate rather than inheriting the `true` default (MeSH's
+tree is a different shape — the default is recall-safe, not correct); wire **`mesh_run`** to report
+`interactions.unresolved_expansion_policy('MeSH')` as `medrt_run` already does for MED-RT, the moment any
+MeSH-keyed row can exist in `class_expansion_policy`; and revisit the **source-blind walk** —
+`class_parent` and `class_membership` carry no `source` column, so a rule from one authority expands over
+every authority's edges and members (harmless only while the reachable axes belong to one source, which
+5b ends). All three are stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
+
 #### Slice 5c — The curated overlay (the moat)
 Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
 dimensions the projections lack — **referencing** the 5a/5b candidate rows. Layered by licence-safety:
@@ -241,7 +250,17 @@ other jurisdictions.
   denied root and must still expand, which is how a rule reaches warfarin, apixaban and aspirin. Plus
   `ci_axis.expands_descendants` per predicate (slice 5b's MeSH tree has a different shape) and
   `gap_unreviewed_expansion_root`, a fourth question kind, so the list cannot rot silently across releases.
-  384 tests. Residue filed as #31. **Plan C (the accumulation model) remains, gated on slice 5b.**
+  384 tests. Residue filed as #31.
+- **Plan B review round** (`db/012`, on `fix/plan-b-review-round`). The review of #32 found no defect in the
+  expanded read path, and **five gaps between what `db/010`'s comments legislate and its DDL does**: the
+  recursive walk becomes one view (**`ci_class_subtree`**) instead of three copies of itself;
+  `gap_unreviewed_expansion_root` joins `ci_axis`, so it stops asking whether a class should expand when its
+  predicates cannot (latent today, live at 5b); `expansion_policy_unresolved` gains a consumer in
+  `medrt_run`, having shipped as a detector nothing read; `class_expansion_policy.source` gains the CHECK
+  every other `source` column has; and two `COMMENT ON`s stop overclaiming — `expands_descendants` is a
+  recall-safe *default*, not a gate, and the walk is **source-blind** (`class_parent` carries no `source`, so
+  a transitive walk can cross vocabularies — 5b's problem). Row set unchanged. 419 tests. Follow-ups filed
+  as #35, #36, #37. **Plan C (the accumulation model) remains, gated on slice 5b.**
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling** (corrected, slice-8a review round — the prior count of three was wrong

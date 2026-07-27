@@ -357,3 +357,37 @@ def test_the_rule_count_is_the_priority_signal(conn):
     root = _wide_root(conn, run_id, "N0000700000", 25)
     _ci(conn, run_id, _moiety(conn, run_id, "second"), root)
     assert _unreviewed(conn) == [(root, 25, 2)]
+
+
+def test_a_root_only_non_expanding_predicates_name_is_not_asked_about(conn):
+    """db/012. The question this view asks is "SHOULD this expand?", so a class named
+    only by predicates that do not expand at all has nothing riding on the answer --
+    and a decision recorded against it could not change one row of
+    ddi_candidate_pair.
+
+    db/008's gap_unpopulated_contraindication joins ci_axis for precisely this reason
+    ("populated is per axis, not per class"); db/010 shipped this view axis-blind, so
+    once slice 5b lands a MeSH-keyed predicate with expands_descendants false, a moot
+    question would reach a pharmacist's worklist AND be minted an immortal
+    question_uuid that no available decision retires."""
+    run_id = _run(conn)
+    root = _wide_root(conn, run_id, "N0000800000", 25)
+    assert _unreviewed(conn) == [(root, 25, 1)]
+
+    conn.execute("UPDATE drugref.ci_axis SET expands_descendants = false "
+                 "WHERE relationship = 'CI_PE'")
+    assert _unreviewed(conn) == []
+
+
+def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
+    """The count is the priority signal, so it has to mean "rules whose reach the
+    decision changes". A class named by one expanding and one non-expanding predicate
+    stays on the worklist -- but weighted by the expanding rule alone."""
+    run_id = _run(conn)
+    root = _wide_root(conn, run_id, "N0000810000", 25)          # one CI_PE rule
+    _ci(conn, run_id, _moiety(conn, run_id, "moa"), root, "CI_MoA")
+    assert _unreviewed(conn) == [(root, 25, 2)]
+
+    conn.execute("UPDATE drugref.ci_axis SET expands_descendants = false "
+                 "WHERE relationship = 'CI_MoA'")
+    assert _unreviewed(conn) == [(root, 25, 1)]

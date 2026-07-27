@@ -109,6 +109,20 @@ def test_a_third_decision_value_is_refused(conn):
             "VALUES ('MED-RT', 'N0000000999', 'maybe', 'X', 'y', 'test', '2026.07.06')")
 
 
+def test_a_policy_row_cannot_name_an_unknown_authority(conn):
+    """db/012. Every other `source` column in the schema is CHECK-constrained to the
+    known authority spellings (substance_class in db/003, class_contraindication in
+    db/004); db/010 left this one free text. The join is on (source, source_code), so
+    'MEDRT' inserts cleanly and then matches no class for ever -- a deny that reads as
+    working and denies nothing. expansion_policy_unresolved would list it, but a
+    constraint refuses it at the point the typo is made."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+            "class_name, rationale, reviewed_by, reviewed_against) "
+            "VALUES ('MEDRT', 'N0000000997', 'deny', 'X', 'y', 'test', '2026.07.06')")
+
+
 def test_a_policy_row_cannot_be_filed_without_a_rationale(conn):
     """Every other column is supplied, so this isolates the rationale constraint
     rather than tripping over whichever NOT NULL happens to be checked first."""
@@ -129,13 +143,46 @@ def test_ci_predicates_expand_descendants_unless_told_otherwise(conn):
         "ORDER BY relationship").fetchall() == [("CI_MoA", True), ("CI_PE", True)]
 
 
-def test_replaying_the_migrations_neither_errors_nor_duplicates_the_seed(_migrated):
-    """Migrations are replayed whole on every apply_migrations, so a seed that is not
-    ON CONFLICT DO NOTHING would either raise or double the table."""
-    with psycopg.connect(_migrated) as c:
-        db.apply_migrations(c)
-        assert c.execute("SELECT count(*) FROM drugref.class_expansion_policy"
-                         ).fetchone()[0] == len(DENIED) + len(ALLOWED)
+def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, conn):
+    """The property a node operator depends on: CURATOR JUDGEMENT SURVIVES A DEPLOY.
+
+    This is the table no ingest clears, and the seed is drugref's opinion at FIRST
+    INSTALL rather than a value re-imposed on every startup -- so an operator who
+    reviews `Vasoconstriction`, disagrees, and denies it must still find it denied
+    after the next migration run. Two mechanisms hold it up -- the ledger
+    (db.apply_migrations never re-runs an applied file) and the seed's own ON CONFLICT
+    DO NOTHING -- so what this test catches is a future migration that RE-SEEDS the
+    table unconditionally, or one that upgrades that clause to DO UPDATE. Either
+    would silently reinstate drugref's opinion over the operator's.
+
+    Note db/010's comment justifies the ON CONFLICT by saying migrations are "replayed
+    whole", which the ledger has since made untrue -- the clause is still right, for
+    the reason above rather than the one stated. Asserted as UNCHANGED rather than
+    against a literal row count, so a later curator migration that legitimately adds a
+    decision does not fail a test about deploys; the seed's exact contents are pinned
+    by test_the_seed_holds_the_fourteen_roots_the_measurement_found instead.
+
+    apply_migrations commits, so this restores the seeded decision explicitly rather
+    than relying on the conn fixture's rollback -- the same reason test_db.py's replay
+    tests clean up after themselves.
+    """
+    revised = "N0000009908"                    # Vasoconstriction, seeded as `allow`
+    before = conn.execute(
+        "SELECT count(*) FROM drugref.class_expansion_policy").fetchone()[0]
+    conn.execute("UPDATE drugref.class_expansion_policy SET decision = 'deny' "
+                 "WHERE source = 'MED-RT' AND source_code = %s", (revised,))
+    conn.commit()
+    try:
+        with psycopg.connect(_migrated) as c:
+            db.apply_migrations(c)
+        assert _decisions(conn)[revised] == "deny", "a deploy overwrote curator judgement"
+        assert conn.execute(
+            "SELECT count(*) FROM drugref.class_expansion_policy").fetchone()[0] == before
+    finally:
+        conn.rollback()
+        conn.execute("UPDATE drugref.class_expansion_policy SET decision = 'allow' "
+                     "WHERE source = 'MED-RT' AND source_code = %s", (revised,))
+        conn.commit()
 
 
 def test_a_root_the_release_no_longer_defines_is_reported_not_silent(conn):

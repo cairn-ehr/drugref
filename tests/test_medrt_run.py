@@ -5,6 +5,7 @@ The expected numbers come from the real MED-RT release the fixture was extracted
 from, so they assert against upstream reality rather than against a fixture that
 merely agrees with our assumptions.
 """
+import logging
 import pathlib
 
 import pytest
@@ -427,3 +428,44 @@ def test_re_ingesting_does_not_duplicate_the_register(seeded):
     _ingest(seeded)
     assert seeded.execute(
         "SELECT count(*) FROM drugref.open_question").fetchone()[0] == first
+
+
+# ---- the expansion policy's other rot direction (db/012) ---------------------
+
+
+def test_the_ingest_reports_expansion_decisions_the_release_no_longer_resolves(seeded):
+    """db/010 wrote `expansion_policy_unresolved` for exactly the right reason -- "a
+    deny that matches nothing looks exactly like a deny that is working" -- and then
+    gave it no consumer: it is not a gap_kind, no orchestrator read it, and no test
+    asserted on it. A detector nobody runs is the failure mode it was built to catch,
+    so the ingest that could invalidate a decision is the thing that has to report it.
+
+    Asserted against the view rather than against a literal, because WHICH of the 14
+    seeded roots resolve is a property of the fixture, not of this wiring; `> 0` is
+    what proves the orchestrator reads the view instead of reporting a hardcoded 0
+    (the partial fixture defines only two of the seeded classes)."""
+    summary = _ingest(seeded)
+    from_view = seeded.execute(
+        "SELECT count(*) FROM drugref.expansion_policy_unresolved "
+        "WHERE source = 'MED-RT'").fetchone()[0]
+    assert summary.unresolved_expansion_policy == from_view > 0
+
+
+def test_an_unresolved_expansion_decision_is_logged_not_only_counted(seeded, caplog):
+    """The count lands in the summary, which is logged at INFO as one line -- fine for
+    a number that is usually zero, useless for acting on. The identities go out at
+    WARNING, naming the codes, because the operator's next move is to look at those
+    specific decisions."""
+    with caplog.at_level(logging.WARNING, logger="drugref.ingest.medrt_run"):
+        _ingest(seeded)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+
+    # WHICH codes go unresolved is a property of the fixture, so the assertion asks
+    # the view rather than naming one -- a literal NUI here would break the day the
+    # fixture happens to define that class.
+    unresolved = [r[0] for r in seeded.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved "
+        "WHERE source = 'MED-RT'").fetchall()]
+    assert unresolved, "fixture is meant to be partial, so some decisions must dangle"
+    assert any("expansion" in m and any(c in m for c in unresolved) for m in warnings), \
+        warnings

@@ -26,6 +26,34 @@ def clear_source_contraindications(conn: psycopg.Connection, source: str) -> Non
         (source,))
 
 
+def unresolved_expansion_policy(conn: psycopg.Connection, source: str) -> list[str]:
+    """The `source_code`s of `source`'s expansion decisions that resolve to no class.
+
+    A read rather than a write, kept in this module because it reads
+    class_expansion_policy, which is contraindication-expansion policy and so this
+    module's business.
+
+    WHY AN ORCHESTRATOR HAS TO ASK, AND NOT MERELY A VIEW EXIST. A deny that matches
+    nothing looks exactly like a deny that is working: the pair set is silently wider
+    and nothing fails. The condition only ever arises FROM AN INGEST -- upstream
+    re-keys or withdraws a class the curator ruled on -- so the ingest that can cause
+    it is the thing that has to report it. db/010 shipped the detector
+    (expansion_policy_unresolved) with no consumer at all, which is precisely the
+    failure mode it was written to catch.
+
+    NOT an error: a re-keyed class is upstream's prerogative, and aborting an ingest
+    over a stale curator note would be worse than the stale note. It is a worklist
+    number, in the same class as the unmatched-ingredient counts.
+
+    Scoped by source so a MED-RT run reports on MED-RT's decisions only -- a
+    MeSH-keyed decision dangling because MeSH has not been ingested yet is not MED-RT's
+    news to report.
+    """
+    return [row[0] for row in conn.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved "
+        "WHERE source = %s ORDER BY source_code", (source,)).fetchall()]
+
+
 def add_contraindication(conn: psycopg.Connection, subject_moiety_uuid: uuid.UUID,
                          object_class_uuid: uuid.UUID, relationship: str,
                          source: str, ingest_run_id: int) -> bool:

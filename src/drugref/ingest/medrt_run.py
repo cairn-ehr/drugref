@@ -58,6 +58,11 @@ class MedrtSummary:
     * ambiguous_codes       -- one published code claimed by several concepts, so
                                every edge referencing it was refused rather than
                                resolved to an arbitrary one of them
+    * unresolved_expansion_policy -- curator expansion decisions (db/010's deny-list)
+                               naming a class THIS release does not define, so they no
+                               longer bind. Reported here for the same reason as the
+                               rest: a deny that matches nothing looks exactly like a
+                               deny that is working.
     """
     classes_in_release: int
     classes_added: int
@@ -69,6 +74,7 @@ class MedrtSummary:
     inactive_concepts: int
     unidentified_concepts: int
     ambiguous_codes: int
+    unresolved_expansion_policy: int
 
 
 def _checksum(path) -> str:
@@ -195,6 +201,21 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    somebody has to remember to refresh.
     questions.register_from_gaps(conn, run_id)
 
+    # 7. Did this release invalidate a curator's expansion decision? Only an ingest
+    #    can cause that -- upstream re-keys or withdraws a class somebody ruled on --
+    #    and the effect is silent: the deny stops denying and the pair set quietly
+    #    widens. So the run that could cause it is the run that reports it. Read AFTER
+    #    step 1 has upserted this release's classes, or every decision would look
+    #    unresolved. The identities go out at WARNING, not just the count into the
+    #    summary, because the operator's next move is to look at those exact rows.
+    unresolved = interactions.unresolved_expansion_policy(conn, SOURCE)
+    if unresolved:
+        log.warning(
+            "MED-RT: %d class-expansion decision(s) name a class this release does "
+            "not define, so they no longer bind: %s. Re-key or withdraw them in "
+            "drugref.class_expansion_policy.",
+            len(unresolved), ", ".join(unresolved))
+
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))
     conn.commit()
@@ -205,4 +226,5 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
                         unmatched_ci_rxcuis=len(unmatched_ci),
                         inactive_concepts=parsed.inactive_concepts,
                         unidentified_concepts=parsed.unidentified_concepts,
-                        ambiguous_codes=parsed.ambiguous_codes)
+                        ambiguous_codes=parsed.ambiguous_codes,
+                        unresolved_expansion_policy=len(unresolved))
