@@ -70,6 +70,12 @@ def test_apply_migrations_is_idempotent(conn):
         # slice 8a, db/009: the local (AU/PBS) tier -- a rebuildable projection
         # bridged to the global moiety spine, plus its unmatched-ingredient ledger.
         "local_product", "local_product_moiety", "local_unmatched_ingredient",
+        # Plan B, db/010: descendant expansion. The policy table is CURATOR DATA --
+        # no ingest clears it -- plus the two views that stop it rotting silently:
+        # one for a large root nobody has ruled on, one for a ruling whose class the
+        # release no longer defines.
+        "class_expansion_policy", "gap_unreviewed_expansion_root",
+        "expansion_policy_unresolved",
     }
 
 

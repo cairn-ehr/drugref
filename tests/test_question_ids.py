@@ -47,6 +47,16 @@ def test_unmatched_ingredient_question_matches_frozen_literal():
     )) == "4eb8b1b9-489b-5318-b86c-1479247c4d5c"
 
 
+def test_unreviewed_expansion_root_question_matches_frozen_literal():
+    """Plan B's kind. Pinned separately because the `gap_key` format is frozen PER
+    KIND, not globally -- and this is the first question an external notifier could
+    answer with a policy decision rather than with literature."""
+    class_uuid = ids.mint_class_uuid("MED-RT", "N0000009065")  # Hematologic Act. Alt.
+    assert str(ids.mint_question_uuid(
+        "unreviewed_expansion_root", f"CLASS:{class_uuid}"
+    )) == "a7db9f19-7a1b-56db-8f8d-b9d7b63d5d2e"
+
+
 def test_a_gap_kind_containing_the_joiner_is_rejected():
     """`f"{gap_kind}:{gap_key}"` is ambiguous if gap_kind may itself contain ':' --
     kind 'a:b' with key 'c' and kind 'a' with key 'b:c' both build "a:b:c" and mint
@@ -92,7 +102,18 @@ def test_question_namespace_cannot_collide_with_the_others():
     ("unpopulated_contraindication", "CLASS:84a81016-7abe-5716-bf37-2f949fcabf0b"),
     ("unclassified_moiety", "MOIETY:84a81016-7abe-5716-bf37-2f949fcabf0b"),
     ("unmatched_ingredient", "RXNORM_IN:5640"),
+    ("unreviewed_expansion_root", "CLASS:84a81016-7abe-5716-bf37-2f949fcabf0b"),
 ])
 def test_every_shipped_gap_kind_mints(gap_kind, gap_key):
-    """Plan A ships exactly these three kinds; each must mint without special-casing."""
+    """Plan A shipped three kinds and Plan B adds a fourth; each must mint without
+    special-casing."""
     assert isinstance(ids.mint_question_uuid(gap_kind, gap_key), uuid.UUID)
+
+
+def test_two_kinds_about_the_same_class_are_two_questions():
+    """`unpopulated_contraindication` and `unreviewed_expansion_root` share the
+    CLASS:{uuid} gap_key format, so only gap_kind separates them. A class that is both
+    unpopulated and unreviewed must raise two distinct, separately-citable questions."""
+    key = f"CLASS:{ids.mint_class_uuid('MED-RT', 'N0000009065')}"
+    assert (ids.mint_question_uuid("unpopulated_contraindication", key)
+            != ids.mint_question_uuid("unreviewed_expansion_root", key))

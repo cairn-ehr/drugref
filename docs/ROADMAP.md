@@ -94,14 +94,15 @@ regulatory-derived content, then the **append-only signed curated overlay** (5c)
 defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable value-add
 built on top. Sequenced by licence-cleanliness, not by coverage.
 
-#### Slice 5a — MED-RT mechanism/effect contraindications ← next
+#### Slice 5a — MED-RT mechanism/effect contraindications ✅ DONE
 The smallest first cut: MED-RT **`CI_MoA`/`CI_PE`** ("contraindicated mechanism/physiological-effect of a
 **co-administered ingredient**") = ~739 **class-level drug–drug** rules, mined from the **MED-RT file slice
 2a already parses** — **no new source, no new join, no new UUID minting** (both endpoints — RxNorm subject,
 MoA/PE class object — are already ingested). New table `class_contraindication` (`db/004`), a rebuildable
 projection like `class_membership`; concrete drug pairs **expand at read time** over the existing class DAG
-(`ddi_candidate_pair` view). **Candidate tier only** — MED-RT does not track label updates, so rows carry
-provenance and feed review; nothing here auto-alerts. Design:
+(`ddi_candidate_pair` view — since Plan B that expansion descends the DAG, see below). **Candidate tier
+only** — MED-RT does not track label updates, so rows carry provenance and feed review; nothing here
+auto-alerts. Design:
 [slice-5a spec](superpowers/specs/2026-07-25-drugref-slice-5a-medrt-contraindication-design.md) · plan:
 [slice-5a plan](superpowers/plans/2026-07-25-slice-5a-medrt-contraindication.md).
 
@@ -182,8 +183,8 @@ other jurisdictions.
   once applied. Parser/identity fixes: UNII rows with no identity key are refused (they were merging
   unrelated drugs onto one immortal UUID), TSV read with `QUOTE_NONE`, ambiguous MED-RT published codes
   refused, claim values canonicalised, orchestrators roll back and log. **CI added** (PG18 service; the
-  DB-gated majority now fails rather than skips). 220 tests. Remaining: #15 (DAG-descendant expansion,
-  measure first), #16 (crashed-ingest visibility + CLI), #17 (last no-silent-drop gaps).
+  DB-gated majority now fails rather than skips). 220 tests. Remaining: #16 (crashed-ingest visibility +
+  CLI), #17 (last no-silent-drop gaps).
 - **Open-question registry ✅ DONE** (Plan A of the additive-effect design). `db/007` adds
   `open_question` (a rebuildable projection keyed on a deterministic `question_uuid` external tooling can
   cite) plus three append-only curated tables — `question_state`, `question_source_check`,
@@ -199,8 +200,20 @@ other jurisdictions.
   yields no pair — reading it relationship-blind hides real gaps, and slice 5b (MeSH `has_PA`) is where the
   axes stop coinciding. **A closed gap carrying curator work is retired, not deleted**
   (`open_question.is_current`): the curated tables cascade from `open_question` *and* refuse `DELETE`, so
-  deleting one aborts the ingest outright. Plans B (DAG-descendant expansion, #15) and C (the accumulation
-  model) remain.
+  deleting one aborts the ingest outright.
+- **Descendant expansion ✅ DONE** (Plan B of the additive-effect design; the work #15 asked for). `db/010`
+  makes `ddi_candidate_pair` descend the class DAG — **for a contraindication, fewer rows is the harm
+  direction**, and direct-only hid 21.9% of `CI_MoA` and **85.2%** of `CI_PE` pairs because MED-RT files
+  membership at the specific node while writing rules against the parent. New columns `member_class` and
+  `is_direct`, so `WHERE is_direct` reproduces the old row set exactly and a consumer who forgets the filter
+  errs toward recall. Bounded by **`class_expansion_policy`** — a deny-list held as data a pharmacist can
+  read, seeded with the 14 CI object classes over the `>20 descendant classes` discovery heuristic (**all
+  PE, not one MoA**): 11 denied as abstract organ-system buckets, 3 explicitly allowed. **The deny-list
+  filters the rule's object class, never the walk** — `Decreased Coagulation Activity` is a descendant of a
+  denied root and must still expand, which is how a rule reaches warfarin, apixaban and aspirin. Plus
+  `ci_axis.expands_descendants` per predicate (slice 5b's MeSH tree has a different shape) and
+  `gap_unreviewed_expansion_root`, a fourth question kind, so the list cannot rot silently across releases.
+  384 tests. Residue filed as #31. **Plan C (the accumulation model) remains, gated on slice 5b.**
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling** (corrected, slice-8a review round — the prior count of three was wrong

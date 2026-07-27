@@ -57,6 +57,21 @@ _GAP_SOURCES = {
             "' have an active moiety drugref should carry? It is classified "
             "upstream but no moiety in the registry claims it.'"),
     },
+    # Plan B. The one kind here that drugref can answer ITSELF -- by recording a
+    # decision in class_expansion_policy -- rather than by consulting a source. It
+    # shares the CLASS:{uuid} gap_key format with unpopulated_contraindication, and
+    # only gap_kind separates the two: a sprawling class nothing is filed under
+    # legitimately raises both questions, independently answerable.
+    "unreviewed_expansion_root": {
+        "view": "gap_unreviewed_expansion_root",
+        "key_sql": "'CLASS:' || class_uuid",
+        "text_sql": (
+            "'Should a contraindication naming ' || class_name || ' expand over its ' "
+            "|| descendant_class_count || ' descendant classes, or is the class too "
+            "abstract to pair on? ' || ci_rule_count || ' rule(s) ride on the answer. "
+            "It expands by default until a decision is recorded in "
+            "class_expansion_policy.'"),
+    },
 }
 
 
