@@ -64,7 +64,7 @@ def test_ingests_exactly_the_six_classification_concept_types():
 
 
 def test_ingests_every_class_in_the_fixture():
-    assert len(parsed().classes) == 49
+    assert len(parsed().classes) == 62
 
 
 def test_excludes_hc_navigation_bins():
@@ -160,7 +160,7 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 
 
 def test_builds_the_expected_number_of_dag_edges():
-    assert len(parsed().parents) == 39
+    assert len(parsed().parents) == 49
 
 
 def test_a_class_can_have_two_parents():
@@ -182,23 +182,50 @@ def test_drops_hierarchy_into_unlicensed_or_uningested_endpoints():
     assert "<from_namespace>SNOMED CT</from_namespace>" in FIX.read_text(encoding="utf-8")
 
 
-def test_the_fixture_redistributes_no_out_of_scope_terms_or_codes():
-    """A licence rule about the REPOSITORY, not the database.
+# Namespaces whose terms this repository may redistribute, restated here rather than
+# imported from make_medrt_subset.py ON PURPOSE: this test is the INDEPENDENT check on
+# the generator, so widening the generator's set must make it fail, not follow along.
+REDISTRIBUTABLE_NAMESPACES = {"MED-RT", "RxNorm", "MeSH"}
 
-    The parser refusing a SNOMED edge keeps unlicensed content out of the DB, but
-    the fixture is a committed file in an AGPL-licensed repo: a SNOMED term sitting
-    in it is redistributed no matter what the parser does, and would contradict
-    NOTICE. make_medrt_subset.py therefore redacts the term and code of every
-    endpoint outside MED-RT/RxNorm; this fails if a regeneration ever drops that.
+
+def test_the_fixture_redacts_snomed_but_keeps_mesh():
+    """A licence rule about the REPOSITORY, not the database -- and it has two halves.
+
+    The parser refusing a SNOMED edge keeps unlicensed content out of the DB, but the
+    fixture is a committed file in an AGPL-licensed repo: a SNOMED term sitting in it
+    is redistributed no matter what the parser does, and would contradict NOTICE.
+    SNOMED CT is not redistributable under drugref's licence at all, so its endpoints
+    must stay redacted, permanently and without exception.
+
+    MeSH is the other half, and the reason this is not simply "redact everything
+    foreign": MeSH was licence-cleared in slice 2b (NLM terms -- attribution, no
+    endorsement, version currency; no NonCommercial, no NoDerivatives), this repo
+    already commits mesh_*_subset.xml beside this fixture, and slice 5b's CI_with /
+    CI_ChemClass are keyed by MeSH ConceptUI -- a redacted object code would make
+    those two predicates untestable. So MeSH endpoints must come through intact.
+
+    Asserting only one half would let a regeneration break the other silently.
     """
     text = FIX.read_text(encoding="utf-8")
-    out_of_scope = re.findall(
-        r"<(from|to)_namespace>(?!MED-RT<|RxNorm<)([^<]+)</\1_namespace>\s*"
+    endpoints = re.findall(
+        r"<(from|to)_namespace>([^<]+)</\1_namespace>\s*"
         r"<\1_name>([^<]*)</\1_name>\s*<\1_code>([^<]*)</\1_code>", text)
-    assert out_of_scope, "fixture no longer exercises an out-of-scope endpoint"
-    for _side, namespace, name, code in out_of_scope:
-        assert (name, code) == ("REDACTED", "REDACTED"), \
-            f"unredacted {namespace} content in the committed fixture: {name!r} / {code!r}"
+    namespaces = {namespace for _side, namespace, _name, _code in endpoints}
+
+    # Half one: SNOMED CT (and anything else unlicensed) is present but redacted.
+    assert "SNOMED CT" in namespaces, "fixture no longer exercises an unlicensed endpoint"
+    for _side, namespace, name, code in endpoints:
+        if namespace not in REDISTRIBUTABLE_NAMESPACES:
+            assert (name, code) == ("REDACTED", "REDACTED"), \
+                f"unredacted {namespace} content in the committed fixture: {name!r} / {code!r}"
+
+    # Half two: MeSH is present and NOT redacted, carrying real ConceptUIs.
+    mesh = [(name, code) for _side, namespace, name, code in endpoints if namespace == "MeSH"]
+    assert mesh, "fixture no longer exercises a MeSH endpoint"
+    for name, code in mesh:
+        assert (name, code) != ("REDACTED", "REDACTED"), \
+            "MeSH endpoints are licence-cleared and must survive extraction intact"
+        assert re.fullmatch(r"M\d+", code), f"not a MeSH ConceptUI: {code!r}"
 
 
 # ---- membership ------------------------------------------------------------
@@ -225,7 +252,8 @@ def test_membership_counts_per_ingredient():
     assert counts["161"] == 8       # 1 MoA + 4 PE + 2 PK + 1 TC, no EPC
     assert counts["17767"] == 9     # 3 MoA + 2 PE + 2 TC + 2 EPC
     assert counts["5640"] == 9      # ibuprofen: parsed here, unmatched at ingest time
-    assert "6853" not in counts     # magnesium sulfate: only an HC bin, so unclassified
+    assert counts["272"] == 5       # activated charcoal: 1 MoA + 3 PE + 1 TC, no EPC
+    assert "6853" not in counts     # methoxamine: only an HC bin, so unclassified
 
 
 def test_indication_and_contraindication_are_not_membership():
@@ -235,15 +263,21 @@ def test_indication_and_contraindication_are_not_membership():
 
 
 def test_has_sc_into_mesh_is_dropped():
-    """has_SC targets MeSH, which belongs to slice 2b and is not ours to bundle here.
+    """has_SC ('has chemical structure') targets MeSH, and is an indications-era
+    predicate drugref does not ingest on any axis.
 
-    Asserted against the fixture's own has_SC count rather than against the shape of
-    a MeSH code: those codes are redacted in the fixture, so a code-shape assertion
-    would pass whether or not the parser did anything.
+    Slice 5b made MeSH endpoints readable for CI_with / CI_ChemClass, which is
+    exactly why this needs pinning now: "the object is MeSH" stopped being a reason
+    to drop an edge, so has_SC has to be dropped on its NAME instead. Asserted
+    against the fixture's own has_SC count, so it cannot pass by the fixture quietly
+    losing the edges it is meant to exercise.
     """
     text = FIX.read_text(encoding="utf-8")
     assert text.count("<name>has_SC</name>") == 2, "fixture no longer exercises has_SC"
     assert all(m.relationship != "has_SC" for m in parsed().memberships)
+    # ...and it must not have leaked into the MeSH-keyed contraindications either.
+    assert all(a.relationship != "has_SC" for a in parsed().mesh_contraindications)
+    assert "has_SC" in parsed().skipped_predicates
 
 
 def test_every_membership_points_at_an_ingested_class():
@@ -389,3 +423,97 @@ def test_the_fixture_exercises_a_real_contraindication_edge():
         "fixture no longer exercises a contraindication edge"
     assert medrt.ContraindicationAssertion("17767", "N0000178477", "CI_PE") \
         in parsed().contraindications
+
+
+# ---- MeSH-keyed contraindications (slice 5b) -------------------------------
+#
+# CI_with ("contraindicated in a patient WITH <condition>") and CI_ChemClass ("do
+# not co-administer with <this chemical>") were skipped through slices 2a and 5a
+# for one reason only: their object is a bare MeSH ConceptUI, and this parser reads
+# the MED-RT file alone, so it cannot say what that code names. It still cannot --
+# ingest/mesh_concepts.py resolves the code against the MeSH release, and the
+# orchestrator joins the two. What changes here is that the assertion is HANDED ON
+# rather than discarded, raw code and all.
+
+
+def test_mesh_keyed_contraindications_are_parsed():
+    """The headline: CI_with and CI_ChemClass now come out of the parser."""
+    parsed_fixture = parsed()
+    assert parsed_fixture.mesh_contraindications, "no MeSH-keyed contraindications parsed"
+    predicates = {a.relationship for a in parsed_fixture.mesh_contraindications}
+    assert predicates <= {"CI_with", "CI_ChemClass"}
+    for assertion in parsed_fixture.mesh_contraindications:
+        assert assertion.rxcui and assertion.mesh_code
+        # A MeSH ConceptUI, not a DescriptorUI: 'M' + digits. Worth pinning because
+        # MED-RT publishes both shapes elsewhere and mesh_concepts.py looks the code
+        # up as a ConceptUI -- a DescriptorUI would resolve to nothing, silently.
+        assert re.fullmatch(r"M\d+", assertion.mesh_code), assertion
+
+
+def test_the_fixture_exercises_both_mesh_keyed_predicates():
+    """Without this, the test above passes on a fixture carrying only CI_with, and
+    CI_ChemClass -- the half of slice 5b whose object is usually a SPECIFIC DRUG
+    rather than a condition -- would go completely unexercised."""
+    predicates = {a.relationship for a in parsed().mesh_contraindications}
+    assert predicates == {"CI_with", "CI_ChemClass"}
+
+
+def test_a_mesh_keyed_contraindication_names_the_drug_as_subject(tmp_path):
+    """Direction, pinned on controlled input exactly as CI_MoA's is: the subject is
+    the drug the statement is ABOUT (an RxCUI), the object is the MeSH concept it is
+    contraindicated with or in. Reversing it inverts the clinical meaning."""
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N0000000301", "Some Mechanism [MoA]", cty="MoA"),
+        _assoc("CI_with", "RxNorm", "161", "MeSH", "M0012644")
+        + _assoc("CI_ChemClass", "RxNorm", "272", "MeSH", "M0000711"))
+    assert medrt.parse(path).mesh_contraindications == [
+        medrt.MeshObjectAssertion(rxcui="161", mesh_code="M0012644",
+                                  relationship="CI_with"),
+        medrt.MeshObjectAssertion(rxcui="272", mesh_code="M0000711",
+                                  relationship="CI_ChemClass"),
+    ]
+
+
+def test_a_ci_object_outside_mesh_is_refused_and_counted(tmp_path):
+    """Two CI_with assertions in the 2026.07.06 release point at a MED-RT EXT concept
+    ('Current Non-smoker') instead of MeSH, and EXT is deliberately not an ingested
+    concept type -- so that object can never be resolved. It is refused, but COUNTED,
+    the same posture inactive_concepts takes: a number an operator can act on beats a
+    row that vanishes. Asserted on controlled input because the fixture's own
+    ingredients happen to carry only MeSH-keyed ones."""
+    path = _write(
+        tmp_path,
+        _concept("C-MOA", "N0000000302", "Some Mechanism [MoA]", cty="MoA"),
+        _assoc("CI_with", "RxNorm", "1", "MED-RT", "N0000191637")
+        + _assoc("CI_with", "RxNorm", "1", "MeSH", "M0001885"))
+    result = medrt.parse(path)
+    assert result.mesh_contraindications == [
+        medrt.MeshObjectAssertion(rxcui="1", mesh_code="M0001885",
+                                  relationship="CI_with")]
+    assert result.non_mesh_ci_objects == 1
+
+
+def test_the_real_fixture_carries_no_non_mesh_ci_object():
+    """Every CI_with/CI_ChemClass the fixture's ingredients carry is MeSH-keyed in
+    this release, so the refusal counter must read zero here. If it ever fires,
+    upstream started keying one of them somewhere else and we need to know."""
+    assert parsed().non_mesh_ci_objects == 0
+
+
+def test_mesh_ci_predicates_left_the_skipped_list():
+    """skipped_predicates is the release-to-release change detector. A predicate we
+    now INGEST must leave it, or the detector stops meaning anything."""
+    skipped = parsed().skipped_predicates
+    assert "CI_with" not in skipped
+    assert "CI_ChemClass" not in skipped
+
+
+def test_class_level_ci_is_unaffected():
+    """CI_MoA/CI_PE must be untouched by this change -- slice 5a's class_contraindication
+    rows are load-bearing for ddi_candidate_pair. A MeSH-keyed assertion must not leak
+    into the class-level list, nor a class-level one into the MeSH-keyed list."""
+    result = parsed()
+    assert {c.relationship for c in result.contraindications} <= {"CI_MoA", "CI_PE"}
+    assert {c.relationship for c in result.mesh_contraindications} <= {
+        "CI_with", "CI_ChemClass"}

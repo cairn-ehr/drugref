@@ -63,7 +63,7 @@ def _classes_of(conn, unii, relationship=None):
 
 def test_registers_every_ingested_class(seeded):
     summary = _ingest(seeded)
-    assert (summary.classes_in_release, summary.classes_added) == (49, 49)
+    assert (summary.classes_in_release, summary.classes_added) == (62, 62)
     # Nothing in the real release is retired or unidentified; if either ever fires
     # it is a shape change upstream, reported rather than silently absorbed.
     assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
@@ -72,7 +72,7 @@ def test_registers_every_ingested_class(seeded):
     assert summary.ambiguous_codes == 0
     types = dict(seeded.execute(
         "SELECT concept_type, count(*) FROM drugref.substance_class GROUP BY 1").fetchall())
-    assert types == {"MoA": 12, "PE": 18, "EPC": 3, "TC": 5, "PK": 6, "APC": 5}
+    assert types == {"MoA": 15, "PE": 27, "EPC": 3, "TC": 6, "PK": 6, "APC": 5}
 
 
 def test_a_failed_ingest_leaves_the_connection_usable(seeded, monkeypatch):
@@ -149,7 +149,7 @@ def test_builds_the_dag_the_right_way_up(seeded):
 
 
 def test_a_class_keeps_both_of_its_parents(seeded):
-    assert _ingest(seeded).parent_edges == 39
+    assert _ingest(seeded).parent_edges == 49
     child = ids.mint_class_uuid("MED-RT", "N0000193892")
     parents = {r[0] for r in seeded.execute(
         "SELECT parent_class_uuid FROM drugref.class_parent WHERE child_class_uuid = %s",
@@ -178,8 +178,15 @@ def test_amlodipine_gets_both_of_its_epc_classes(seeded):
 
 
 def test_magnesium_sulfate_is_left_unclassified(seeded):
-    """Its only MED-RT parent is the 'M [Preparations]' bin. Filing it under "M"
-    would be worse than leaving it unclassified."""
+    """A registered moiety this partial fixture says nothing about must come out
+    unclassified: the ingest classifies from what MED-RT asserts, never by inference.
+
+    Note the fixture's own [HC]-bin-only ingredient is RxCUI 6853, which is
+    METHOXAMINE and not magnesium sulfate -- make_medrt_subset.py carried that
+    mislabel until slice 5b. Magnesium sulfate is RxCUI 6585, which the release
+    classifies richly; it is simply absent from this fixture, which is why it lands
+    here with nothing. The 'filed under M would be worse than unclassified' rule the
+    fixture demonstrates is real, it just belongs to 6853."""
     _ingest(seeded)
     assert _classes_of(seeded, MAGNESIUM_SULFATE) == {}
 
@@ -188,7 +195,8 @@ def test_unmatched_ingredient_is_skipped_and_counted_not_silently_dropped(seeded
     """Ibuprofen is classified upstream but absent from our registry; it must be
     reported as a worklist number rather than vanishing."""
     summary = _ingest(seeded)
-    assert summary.memberships == 17          # paracetamol 8 + amlodipine 9 + magnesium 0
+    # paracetamol 8 + amlodipine 9 + activated charcoal 5 + methoxamine 0
+    assert summary.memberships == 22
     assert summary.unmatched_rxcuis == 1      # ibuprofen (RxCUI 5640)
 
 
@@ -211,7 +219,7 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
 
     summary = _ingest(seeded)
     # Paracetamol's 8 memberships are now written for both claimants.
-    assert summary.memberships == 25          # 17 + a second set of paracetamol's 8
+    assert summary.memberships == 30          # 22 + a second set of paracetamol's 8
     assert len(_classes_of(seeded, PARACETAMOL)) == 8
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
@@ -238,12 +246,12 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
            (first.classes_in_release, first.parent_edges, first.memberships)
     # ...but the second run ADDED nothing: classes accumulate, edges are rebuilt.
     # Reporting one number for both would have hidden exactly this distinction.
-    assert (first.classes_added, second.classes_added) == (49, 0)
+    assert (first.classes_added, second.classes_added) == (62, 0)
     counts = seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "
         "       (SELECT count(*) FROM drugref.class_membership)").fetchone()
-    assert counts == (49, 39, 17)
+    assert counts == (62, 49, 22)
 
 
 def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
@@ -273,7 +281,7 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
         ([ids.mint_class_uuid("MED-RT", n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
     ).fetchone()[0]
     assert surviving == 3
-    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 50
+    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 63
 
 
 # ---- contraindications (slice 5a) ------------------------------------------
@@ -319,7 +327,7 @@ def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edg
         "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 1
     assert seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.class_membership), "
-        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (17, 39)
+        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (22, 49)
 
 
 def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted(seeded, tmp_path):
