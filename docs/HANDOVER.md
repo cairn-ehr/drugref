@@ -18,16 +18,26 @@ inter-node wire core**.
 **Merged to `main`:** slice 1 (identity spine, PR #1) · slice 2a (MED-RT classification, #9) · slice 2a.1
 (source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
 foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
-(DAG-descendant expansion, #32) · the identity-spine fix round (#34).
+(DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38).
 
-**⇒ IN FLIGHT: `fix/plan-b-review-round` — the review round on Plan B (#32).**
-**419 tests green** (412 → 419), `ruff check` clean. `db/012` closes five gaps between what `db/010`'s
-comments legislate and what its DDL does — see "The Plan B review round" below. `ddi_candidate_pair`'s row
-set is unchanged; the one semantic fix narrows a worklist view. Follow-ups filed as #35, #36, #37.
+**Nothing in flight.** `main` is clean at `965e9e1`: **419 tests green**, `ruff check` clean, `db/012`
+applied. Verified this session, not carried over from the last one.
 
-**Just merged: the identity-spine fix round — #27, #17, #26 (PR #34), 412 tests.** The round that made every
-other slice's numbers real: the registry was silently unlabelled, the gate silently excluded amoxicillin and
-morphine, and the PBS bridge could not see either problem. Detail two sections down.
+**Just merged: the Plan B review round (PR #38), 419 tests.** `db/012` closes five gaps between what
+`db/010`'s comments legislate and what its DDL does. `ddi_candidate_pair`'s row set is unchanged; the one
+semantic fix narrows a worklist view. Detail below.
+
+**⇒ Issue-tracker hygiene — two issues are closed but not fixed.** Both verified against the code on
+`main` this session, not inferred:
+- **[#35](https://github.com/cairn-ehr/drugref/issues/35)** was swept closed by commit `8ce55fb`'s message
+  even though that commit records it as *filed, not fixed*. `class_expansion_policy` still has no
+  `updated_at`, no history table and no rewrite trigger. **Same failure mode as #31**, which a previous
+  session already had to reopen — a closing keyword naming a follow-up issue in a commit body.
+- **[#17](https://github.com/cairn-ehr/drugref/issues/17)** was closed by hand, but only its allow-list half
+  landed (in #34). The other half is still live: `ingest/mesh.py` does `if not dui: continue`, silently
+  dropping any MeSH PA record with no `DescriptorUI`, uncounted — the exact no-silent-drop gap the issue
+  names. This section and the follow-up list below both still describe it as open, so the tracker and the
+  docs disagree.
 
 **⇒ Next candidates:**
 
@@ -204,7 +214,7 @@ regression** — those rules returned nothing before Plan B too; Plan B shrank t
 `db/010` narrows `gap_unpopulated_contraindication`'s `COMMENT ON` to say so rather than deleting the
 now-mostly-stale caveat.
 
-## The Plan B review round (`fix/plan-b-review-round`) — `db/012`
+## The Plan B review round (merged, #38) — `db/012`
 
 The review of #32 found no defect in the expanded read path — the `DISTINCT ON` grain is deterministic (the
 `class_contraindication` primary key makes the collapsed provenance columns functionally dependent), the
@@ -245,7 +255,8 @@ its subtree comes from — so the 6,395/+46.6% figures above still stand. **419 
 
 **Filed, not fixed:** [#35](https://github.com/cairn-ehr/drugref/issues/35) (the policy table has no
 history: a revised decision overwrites its own rationale, and unlike `question_state` it has no rewrite
-trigger — Plan C's append-only overlay is the design-consistent answer) ·
+trigger — Plan C's append-only overlay is the design-consistent answer; **note the issue is closed on
+GitHub, swept by this commit's own message — see the hygiene note at the top**) ·
 [#36](https://github.com/cairn-ehr/drugref/issues/36) (the discovery heuristic counts descendant *classes*,
 not reachable *members* — `Increased Sympathetic Activity` spent a curator `allow` on a provable no-op;
 retuning it needs a curator and a re-measure, which `db/010` says explicitly) ·
@@ -390,7 +401,7 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 - **Schema:** `db/001` identity spine · `002` classification · `003` registry generalised · `004`
   contraindication projection · `005` supersession/floor hardening · `006` `ci_axis` + view contract · `007`
   question registry · `008` gap views · `009` local (PBS) tier · `010` descendant expansion · `011`
-  moiety admission evidence.
+  moiety admission evidence · `012` expansion-policy review round (`ci_class_subtree`, axis-aware gate).
   **Read the LATEST file that touches an object for its actual shape** — 002 still shows superseded
   MED-RT-specific columns, 004's relationship CHECK is replaced by 006's FK, and 006's `ddi_candidate_pair`
   is replaced by 010's.
@@ -428,7 +439,9 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 - [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** — structural re-key by
   InChIKey, deferred.
 - [#17](https://github.com/cairn-ehr/drugref/issues/17) **Remaining no-silent-drop gaps** — *half done*:
-  the allow-list is now UNII-keyed. Still open: MeSH PA records with no `DescriptorUI`.
+  the allow-list is now UNII-keyed (#34). Still live in the code: `ingest/mesh.py`'s `if not dui: continue`
+  drops MeSH PA records with no `DescriptorUI` uncounted. **The issue is CLOSED on GitHub** (closed by hand
+  2026-07-27) while the gap it names is still there — reopen it or fix it, but do not leave both.
 
 **Ingest correctness (all found by measuring the real releases)**
 - [#33](https://github.com/cairn-ehr/drugref/issues/33) **MeSH CAS keys name specific forms** — D008278 is
@@ -465,6 +478,7 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 - [#35](https://github.com/cairn-ehr/drugref/issues/35) **`class_expansion_policy` has no history** — a
   revised decision overwrites its own rationale, and unlike the `question_*` tables it has no rewrite
   trigger, on a table that gates recall. Plan C's append-only overlay is the design-consistent fix.
+  **CLOSED on GitHub but unfixed** — swept by `8ce55fb`'s commit message; verified absent from the schema.
 - [#36](https://github.com/cairn-ehr/drugref/issues/36) **The discovery heuristic counts descendant classes,
   not reachable members** — `Increased Sympathetic Activity` spent a curator `allow` on a provable no-op
   (all 21 children empty). Changing the metric moves which roots get asked about, so it needs a curator and

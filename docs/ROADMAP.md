@@ -251,7 +251,7 @@ other jurisdictions.
   `ci_axis.expands_descendants` per predicate (slice 5b's MeSH tree has a different shape) and
   `gap_unreviewed_expansion_root`, a fourth question kind, so the list cannot rot silently across releases.
   384 tests. Residue filed as #31.
-- **Plan B review round** (`db/012`, on `fix/plan-b-review-round`). The review of #32 found no defect in the
+- **Plan B review round ✅ DONE** (`db/012`, PR #38). The review of #32 found no defect in the
   expanded read path, and **five gaps between what `db/010`'s comments legislate and its DDL does**: the
   recursive walk becomes one view (**`ci_class_subtree`**) instead of three copies of itself;
   `gap_unreviewed_expansion_root` joins `ci_axis`, so it stops asking whether a class should expand when its
