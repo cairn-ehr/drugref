@@ -92,6 +92,11 @@ def test_apply_migrations_is_idempotent(conn):
         # object is another moiety -- different kinds of thing, different tables.
         "condition_ci_axis", "moiety_condition_contraindication",
         "moiety_contraindication", "ingest_unresolved_ci_object",
+        # slice 5b, db/015: the read path over the condition DAG -- the same
+        # recursion shape as db/012's ci_class_subtree, over condition_parent
+        # instead of class_parent. Two VIEWs, named explicitly for the same reason
+        # ddi_candidate_pair is above: information_schema.tables lists views too.
+        "condition_subtree", "condition_contraindication_expanded",
     }
 
 
