@@ -87,15 +87,24 @@ def _open(path: StrPath):
 
 
 def _stream(path: StrPath, tag: str):
-    """Yield each `tag` element, clearing it after use.
+    """Yield each `tag` element, clearing it (and its parent) after use.
 
     Bounded memory by construction: nothing accumulates but what the caller keeps.
+    Clearing only the yielded element is not enough -- iterparse still leaves each
+    retired sibling hanging off the growing root underneath, so peak memory would
+    climb with the FILE instead of the query. Grabbing the root from the first
+    "start" event and clearing it too (same idiom as mesh._iter_records) drops
+    those retired siblings as well, which is what keeps this flat on the ~750 MB
+    supp file regardless of how many records it holds.
     """
     with _open(path) as fh:
-        for _event, el in ET.iterparse(fh, events=("end",)):
-            if el.tag == tag:
+        context = ET.iterparse(fh, events=("start", "end"))
+        _event, root = next(context)                    # grab the root to clear it
+        for event, el in context:
+            if event == "end" and el.tag == tag:
                 yield el
                 el.clear()
+                root.clear()
 
 
 def _record(el, ui_tag: str, name_tag: str, kind: str, concept_ui: str,
