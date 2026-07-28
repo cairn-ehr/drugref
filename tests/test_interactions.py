@@ -6,6 +6,8 @@ dedupe, and a per-source clear lets a re-ingest replace the prior release.
 """
 import uuid
 
+import pytest
+
 from drugref import interactions, ids
 
 
@@ -58,3 +60,110 @@ def test_clear_source_contraindications_removes_only_that_sources_rows(conn):
         "SELECT relationship FROM drugref.class_contraindication "
         "WHERE subject_moiety_uuid = %s", (m,)).fetchall()
     assert survivors == [("CI_PE",)]
+
+
+# ---- slice 5b: moiety<->condition and moiety<->moiety contraindications --------
+
+
+@pytest.fixture
+def a_condition(conn, ingest_run_id):
+    """One registered condition, for tests that need a live FK target. Mirrors
+    test_schema_mesh_contraindications.py's fixture of the same name."""
+    cu = ids.mint_condition_uuid("MeSH", "D004827")
+    conn.execute(
+        "INSERT INTO drugref.condition (condition_uuid, source, source_code, name, "
+        "record_kind, first_seen_ingest) "
+        "VALUES (%s,'MeSH','D004827','Epilepsy','DESCRIPTOR',%s)", (cu, ingest_run_id))
+    return cu
+
+
+def test_add_condition_contraindication(conn, a_moiety, a_condition, ingest_run_id):
+    assert interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "MED-RT", ingest_run_id)
+
+
+def test_repeated_condition_contraindication_is_harmless(conn, a_moiety, a_condition,
+                                                         ingest_run_id):
+    """A release that states one assertion twice must not fail the ingest."""
+    interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "MED-RT", ingest_run_id)
+    assert not interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "MED-RT", ingest_run_id)
+
+
+def test_add_moiety_contraindication_is_directional(conn, a_moiety, ingest_run_id):
+    """Subject and object are not interchangeable: the subject is the drug the
+    statement is ABOUT. Both directions are storable and mean different things."""
+    other = conn.execute(
+        "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, "
+        "first_seen_ingest) VALUES (gen_random_uuid(),'pimozide',%s) "
+        "RETURNING moiety_uuid", (ingest_run_id,)).fetchone()[0]
+    assert interactions.add_moiety_contraindication(
+        conn, a_moiety, other, "CI_ChemClass", "MED-RT", ingest_run_id)
+    assert interactions.add_moiety_contraindication(
+        conn, other, a_moiety, "CI_ChemClass", "MED-RT", ingest_run_id)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 2
+
+
+def test_clear_source_removes_both_relations(conn, a_moiety, a_condition,
+                                             ingest_run_id):
+    """A re-ingest must fully REPLACE the previous release, across both tables --
+    and must leave ANOTHER source's rows alone.
+
+    NOTE: conftest's `ingest_run_id` fixture creates its run with source='PBS', so
+    this test opens its OWN run under 'MED-RT' and uses the fixture's run as the
+    other source. Clearing one must not touch the other.
+
+    db/014 (as tightened after Task 5's review) constrains
+    moiety_condition_contraindication.source to CHECK (source IN ('MED-RT')) --
+    production only knows one authority so far. This test needs a SECOND source to
+    prove clear-by-source leaves it alone, so it widens the CHECK the same way
+    test_two_sources_may_each_assert_the_same_contraindication
+    (tests/test_schema_interactions.py) does: inside this test's transaction only,
+    which the `conn` fixture rolls back after the test, so the widening never
+    reaches the schema other tests see.
+    """
+    conn.execute(
+        "ALTER TABLE drugref.moiety_condition_contraindication "
+        "DROP CONSTRAINT moiety_condition_contraindication_source")
+    conn.execute(
+        "ALTER TABLE drugref.moiety_condition_contraindication "
+        "ADD CONSTRAINT moiety_condition_contraindication_source "
+        "CHECK (source IN ('MED-RT', 'PBS'))")
+
+    medrt_run = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT','test','x') RETURNING ingest_run_id").fetchone()[0]
+    other = conn.execute(
+        "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, "
+        "first_seen_ingest) VALUES (gen_random_uuid(),'x',%s) RETURNING moiety_uuid",
+        (ingest_run_id,)).fetchone()[0]
+
+    # One row per relation under MED-RT, plus one condition row under PBS.
+    interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "MED-RT", medrt_run)
+    interactions.add_moiety_contraindication(
+        conn, a_moiety, other, "CI_ChemClass", "MED-RT", medrt_run)
+    interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "PBS", ingest_run_id)
+
+    interactions.clear_source_mesh_contraindications(conn, "MED-RT")
+
+    # MED-RT's rows are gone from BOTH relations...
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 0
+    # ...while the other source's row survives untouched.
+    assert conn.execute(
+        "SELECT source FROM drugref.moiety_condition_contraindication"
+    ).fetchall() == [("PBS",)]
+
+
+def test_record_unresolved_ci_objects(conn, ingest_run_id):
+    written = interactions.record_unresolved_ci_objects(
+        conn, [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides", 36)],
+        ingest_run_id)
+    assert written == 1
+    assert conn.execute(
+        "SELECT object_name, assertion_count FROM drugref.ingest_unresolved_ci_object"
+    ).fetchone() == ("Sulfonamides", 36)
