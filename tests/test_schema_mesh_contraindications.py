@@ -50,7 +50,21 @@ def test_source_is_in_the_condition_ci_primary_key(conn, a_moiety, a_condition,
                                                    ingest_run_id):
     """db/006 finding 2: without source in the key, a second authority's identical
     assertion is swallowed by ON CONFLICT and then destroyed by the FIRST source's
-    next rebuild. Slice 5c plans exactly that second source."""
+    next rebuild. Slice 5c plans exactly that second source.
+
+    MED-RT is still the only authority the production CHECK admits (slice 5c is
+    what adds one), so the second source is admitted only inside this test's
+    transaction, which the conn fixture rolls back. Widening the CHECK for real
+    without this PK would be the breaking change; that is the point of fixing it
+    while the table holds one source's data.
+    """
+    conn.execute(
+        "ALTER TABLE drugref.moiety_condition_contraindication "
+        "DROP CONSTRAINT moiety_condition_contraindication_source")
+    conn.execute(
+        "ALTER TABLE drugref.moiety_condition_contraindication "
+        "ADD CONSTRAINT moiety_condition_contraindication_source "
+        "CHECK (source IN ('MED-RT', 'DRUGREF'))")
     for src in ("MED-RT", "DRUGREF"):
         conn.execute(
             "INSERT INTO drugref.moiety_condition_contraindication "
@@ -60,6 +74,16 @@ def test_source_is_in_the_condition_ci_primary_key(conn, a_moiety, a_condition,
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_contraindication"
     ).fetchone()[0] == 2
+
+
+def test_source_must_be_a_known_authority(conn, a_moiety, a_condition, ingest_run_id):
+    """Widened per source exactly as substance_class.source was; MED-RT only today."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.moiety_condition_contraindication "
+            "(subject_moiety_uuid, object_condition_uuid, relationship, source, "
+            " ingest_run) VALUES (%s,%s,'CI_with','DrugBank',%s)",
+            (a_moiety, a_condition, ingest_run_id))
 
 
 def test_moiety_contraindication_round_trips(conn, a_moiety, ingest_run_id):

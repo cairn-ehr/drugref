@@ -48,13 +48,19 @@ CREATE TABLE IF NOT EXISTS drugref.moiety_condition_contraindication (
     subject_moiety_uuid   uuid   NOT NULL REFERENCES drugref.substance_moiety(moiety_uuid),
     object_condition_uuid uuid   NOT NULL REFERENCES drugref.condition(condition_uuid),
     relationship          text   NOT NULL REFERENCES drugref.condition_ci_axis(relationship),
-    source                text   NOT NULL,
+    -- Symmetric with class_contraindication.source; widened per source as authorities land.
+    source                text   NOT NULL
+        CONSTRAINT moiety_condition_contraindication_source
+        CHECK (source IN ('MED-RT')),
     ingest_run            bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     -- SOURCE IS IN THE KEY (db/006 finding 2). Without it, a second authority
     -- asserting what MED-RT already recorded is swallowed by ON CONFLICT DO NOTHING
     -- -- and the next routine MED-RT rebuild, which deletes by ingest_run, takes the
     -- shared row away with it, destroying the other source's independent assertion.
-    -- Slice 5c plans exactly that second source.
+    -- Slice 5c plans exactly that second source. That protection depends on a
+    -- mis-typed source NOT slipping past silently (db/012 finding 3: an
+    -- unconstrained class_expansion_policy.source once let 'MEDRT' insert cleanly
+    -- and then match nothing, ever) -- hence the CHECK above, not a bare NOT NULL.
     PRIMARY KEY (subject_moiety_uuid, object_condition_uuid, relationship, source)
 );
 
@@ -89,7 +95,10 @@ CREATE TABLE IF NOT EXISTS drugref.moiety_contraindication (
     relationship        text   NOT NULL
         CONSTRAINT moiety_contraindication_relationship
         CHECK (relationship IN ('CI_ChemClass')),
-    source              text   NOT NULL,
+    -- Symmetric with class_contraindication.source; widened per source as authorities land.
+    source              text   NOT NULL
+        CONSTRAINT moiety_contraindication_source
+        CHECK (source IN ('MED-RT')),
     ingest_run          bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     PRIMARY KEY (subject_moiety_uuid, object_moiety_uuid, relationship, source),
     CONSTRAINT moiety_contraindication_not_self
@@ -122,7 +131,10 @@ COMMENT ON TABLE drugref.moiety_contraindication IS
 -- unqueryable, and the same mistake is not repeated here.
 CREATE TABLE IF NOT EXISTS drugref.ingest_unresolved_ci_object (
     ingest_run      bigint NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
-    source          text   NOT NULL,
+    -- Symmetric with class_contraindication.source; widened per source as authorities land.
+    source          text   NOT NULL
+        CONSTRAINT ingest_unresolved_ci_object_source
+        CHECK (source IN ('MED-RT')),
     relationship    text   NOT NULL,
     object_source   text   NOT NULL,
     object_code     text   NOT NULL,
