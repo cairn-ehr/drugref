@@ -17,10 +17,11 @@ The full release is ~45 MB and is NOT committed (see .gitignore); download it
 from NCI EVS (https://evs.nci.nih.gov/ftp1/MED-RT/) when you need to regenerate.
 
 WHAT IT SELECTS: five real drug ingredients chosen to exercise every acceptance
-case -- four that our tests/fixtures/unii_subset.tsv registry carries and one it
-deliberately does not -- plus every MED-RT class they reference, those classes'
-ancestors, and a deliberate sprinkling of out-of-scope material (an HC bin, a
-SNOMED endpoint, a MeSH has_SC, an overlay may_treat) that the parser must drop.
+case -- three that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
+272) and two it deliberately does not (6853, 5640) -- plus every MED-RT class they
+reference, those classes' ancestors, and a deliberate sprinkling of out-of-scope
+material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay may_treat) that
+the parser must drop.
 
 WHAT IT REDACTS, AND WHY THAT IS A LICENCE RULE AND NOT TIDINESS: those
 out-of-scope edges name their far endpoint, and for the SNOMED one that endpoint
@@ -180,11 +181,17 @@ def main(path: str) -> None:
     # em-dash-style aside anywhere in the header above silently produces a fixture that
     # no XML parser will read. Caught here, at generation time, rather than as 20
     # confusing ParseErrors in the test suite.
+    #
+    # SystemExit rather than assert: this is a script people run directly, and `python
+    # -O` strips asserts -- which would silently restore exactly the failure mode this
+    # guard exists to prevent.
     # out[0] is the XML declaration and out[1] opens the comment, so the BODY is
     # out[1] minus its '<!--' delimiter, plus everything after it.
     body = [out[1].removeprefix("<!--"), *out[2:]]
-    assert not any("--" in line for line in body), \
-        "the fixture header comment contains '--', which XML does not allow"
+    if any("--" in line for line in body):
+        raise SystemExit(
+            "make_medrt_subset.py: the fixture header comment contains '--', which XML "
+            "does not allow inside a comment. Reword it and re-run.")
     out += ["-->", "<terminology>",
             "\t<namespace>", "\t\t<name>MED-RT</name>",
             "\t\t<version>2026.07.06</version>", "\t</namespace>"]

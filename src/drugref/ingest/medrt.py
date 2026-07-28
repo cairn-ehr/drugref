@@ -93,19 +93,23 @@ MEMBERSHIP_RELATIONSHIPS = frozenset({"has_MoA", "has_PE", "has_TC", "has_PK"})
 # list and their own record type, immediately below.
 CI_RELATIONSHIPS = frozenset({"CI_MoA", "CI_PE"})
 
-# MeSH-keyed contraindications (slice 5b). Both run RxNorm -> MeSH, so their OBJECT
-# is a MeSH ConceptUI this parser cannot resolve on its own -- ingest/mesh_concepts.py
-# does that, from the MeSH release. The parser therefore hands the raw code on rather
-# than resolving or dropping it.
+# MeSH-keyed contraindications (slice 5b). These normally run RxNorm -> MeSH, so
+# their OBJECT is a MeSH ConceptUI this parser cannot resolve on its own --
+# ingest/mesh_concepts.py does that, from the MeSH release. The parser therefore
+# hands the raw code on rather than resolving or dropping it. "Normally" is doing
+# real work in that sentence: a handful of rows run elsewhere, and parse() refuses
+# and counts them rather than assuming the object is MeSH (non_mesh_ci_objects).
 #
-#   CI_with       -- "contraindicated in a patient with <condition>". 11,524
-#                    assertions in the 2026.07.06 release; the object is usually a
-#                    disease, but also pregnancy, lactation, a procedure or a
+#   CI_with       -- "contraindicated in a patient with <condition>". 11,524 of the
+#                    2026.07.06 release's 11,526 CI_with assertions are MeSH-keyed;
+#                    the other 2 point at a MED-RT EXT concept. The object is usually
+#                    a disease, but also pregnancy, lactation, a procedure or a
 #                    demographic.
-#   CI_ChemClass  -- "do not co-administer with <this chemical>". 1,939 assertions,
-#                    and mostly a SPECIFIC DRUG (Pimozide, Cisapride, Ritonavir)
-#                    rather than a class, which is why slice 5b resolves its object
-#                    against the moiety registry first.
+#   CI_ChemClass  -- "do not co-administer with <this chemical>". All 1,939 assertions
+#                    are MeSH-keyed, and the object is mostly a SPECIFIC DRUG
+#                    (Pimozide, Cisapride, Ritonavir) rather than a class, which is
+#                    why slice 5b resolves its object against the moiety registry
+#                    first.
 MESH_CI_RELATIONSHIPS = frozenset({"CI_with", "CI_ChemClass"})
 
 # The namespace a MeSH-keyed contraindication's object must live in. MeSH is
@@ -190,9 +194,12 @@ class ParsedMedrt:
     memberships: list[MembershipAssertion]
     contraindications: list[ContraindicationAssertion] = field(default_factory=list)
     mesh_contraindications: list[MeshObjectAssertion] = field(default_factory=list)
-    # CI_with/CI_ChemClass assertions whose object is NOT in the MeSH namespace. Two
-    # exist in the 2026.07.06 release, both pointing at the MED-RT EXT concept
-    # 'Current Non-smoker' -- and EXT is deliberately not an ingested concept type.
+    # CI_with/CI_ChemClass assertions this parse could not use. Strictly, it counts
+    # any endpoint pair OTHER than RxNorm -> MeSH, so a subject outside RxNorm lands
+    # here too -- the name describes the only case the release actually contains, not
+    # the only case that increments it. Two such rows exist in the 2026.07.06 release,
+    # both RxNorm -> MED-RT pointing at the EXT concept 'Current Non-smoker', and EXT
+    # is deliberately not an ingested concept type.
     # Counted rather than dropped, the same posture as inactive_concepts.
     non_mesh_ci_objects: int = 0
     inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
@@ -354,10 +361,12 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
             # A MeSH-keyed contraindication (slice 5b). Endpoint-scoped exactly as
             # the branches above are, but to the MeSH namespace instead of MED-RT:
             # the object is a MeSH ConceptUI, resolved later against the MeSH release
-            # by ingest/mesh_concepts.py, so there is nothing to look up here. An
-            # object in any OTHER namespace is refused and COUNTED -- in the real
-            # release two such rows point at a MED-RT EXT concept, which drugref does
-            # not ingest, so silently dropping them would hide a real gap.
+            # by ingest/mesh_concepts.py, so there is nothing to look up here. Any
+            # OTHER endpoint pair is refused and COUNTED -- not just a non-MeSH
+            # object, but also a subject outside RxNorm, since neither can be
+            # resolved. In the real release two such rows point at a MED-RT EXT
+            # concept, which drugref does not ingest, so silently dropping them would
+            # hide a real gap.
             if from_ns == RXNORM_NAMESPACE and to_ns == MESH_NAMESPACE:
                 mesh_contraindications.append(MeshObjectAssertion(
                     rxcui=from_code, mesh_code=to_code, relationship=name))

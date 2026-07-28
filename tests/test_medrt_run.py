@@ -177,7 +177,7 @@ def test_amlodipine_gets_both_of_its_epc_classes(seeded):
         "Dihydropyridine Calcium Channel Blocker [EPC]", "Calcium Channel Blocker [EPC]"}
 
 
-def test_magnesium_sulfate_is_left_unclassified(seeded):
+def test_a_moiety_medrt_says_nothing_about_is_left_unclassified(seeded):
     """A registered moiety this partial fixture says nothing about must come out
     unclassified: the ingest classifies from what MED-RT asserts, never by inference.
 
