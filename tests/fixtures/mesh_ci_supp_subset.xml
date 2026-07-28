@@ -1,0 +1,203 @@
+<SupplementalRecordSet>
+<SupplementalRecord SCRClass="3">
+  <SupplementalRecordUI>C536778</SupplementalRecordUI>
+  <SupplementalRecordName>
+   <String>Systemic carnitine deficiency</String>
+  </SupplementalRecordName>
+  <LastUpdated>
+   <Year>2015</Year>
+   <Month>08</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>08</Month>
+   <Day>25</Day>
+  </DateIntroduced>
+  <Note>A heriditary autosomal recessive disorder caused by mutations in the high-affinity carnitine transporter (SLC22A5 gene) that is expressed in muscle, heart, kidney, LYMPHOBLASTS, and FIBROBLASTS. This results in impaired fatty acid oxidation in skeletal and heart muscle. Renal wasting of carnitine results in low serum levels and diminished hepatic uptake of carnitine . It can be treated by supplementation of carnitine in early stages, but will result in lethal heart failure if untreated. OMIM: 212140
+  </Note>
+  <Frequency>131</Frequency>
+  <HeadingMappedToList>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>D002331</DescriptorUI>
+     <DescriptorName>
+      <String>Carnitine</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+    <QualifierReferredTo>
+     <QualifierUI>Q000172</QualifierUI>
+     <QualifierName>
+      <String>deficiency</String>
+     </QualifierName>
+    </QualifierReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D009135</DescriptorUI>
+     <DescriptorName>
+      <String>Muscular Diseases</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D009202</DescriptorUI>
+     <DescriptorName>
+      <String>Cardiomyopathies</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D022124</DescriptorUI>
+     <DescriptorName>
+      <String>Hyperammonemia</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+  </HeadingMappedToList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0531239</ConceptUI>
+    <ConceptName>
+     <String>Systemic carnitine deficiency</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <TermList>
+     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
+      <TermUI>T740406</TermUI>
+      <String>Systemic carnitine deficiency</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T740407</TermUI>
+      <String>Carnitine deficiency, systemic primary</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T740408</TermUI>
+      <String>Carnitine uptake defect</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T740409</TermUI>
+      <String>Carnitine deficiency, systemic, due to defect in renal reabsorption of carnitine</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T740410</TermUI>
+      <String>Carnitine deficiency, primary</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T740411</TermUI>
+      <String>Carnitine transporter, plasma-membrane, deficiency of</String>
+      <DateCreated>
+       <Year>2009</Year>
+       <Month>02</Month>
+       <Day>24</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>OMIM (2013)</ThesaurusID>
+       <ThesaurusID>ORD (2010)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T842314</TermUI>
+      <String>Primary Carnitine Deficiency</String>
+      <DateCreated>
+       <Year>2013</Year>
+       <Month>04</Month>
+       <Day>18</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T842315</TermUI>
+      <String>Carnitine Transporter Deficiency</String>
+      <DateCreated>
+       <Year>2013</Year>
+       <Month>04</Month>
+       <Day>18</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T842316</TermUI>
+      <String>Carnitine Uptake Deficiency</String>
+      <DateCreated>
+       <Year>2013</Year>
+       <Month>04</Month>
+       <Day>18</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
+      <TermUI>T842317</TermUI>
+      <String>Renal Carnitine Transport Defect</String>
+      <DateCreated>
+       <Year>2013</Year>
+       <Month>04</Month>
+       <Day>18</Day>
+      </DateCreated>
+      <ThesaurusIDlist>
+       <ThesaurusID>GHR (2014)</ThesaurusID>
+      </ThesaurusIDlist>
+     </Term>
+    </TermList>
+   </Concept>
+  </ConceptList>
+ </SupplementalRecord>
+
+</SupplementalRecordSet>
