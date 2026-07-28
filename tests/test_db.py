@@ -86,6 +86,12 @@ def test_apply_migrations_is_idempotent(conn):
         # drug-condition contraindication. Not a substance_class: nothing is a
         # MEMBER of pregnancy, so this is its own table pair, not a widened axis.
         "condition", "condition_parent",
+        # slice 5b, db/014: the two contraindication relations (drug-condition,
+        # drug-drug) plus their vocabularies/worklist. Two relations, not one,
+        # because CI_with's object is a condition and CI_ChemClass's moiety arm's
+        # object is another moiety -- different kinds of thing, different tables.
+        "condition_ci_axis", "moiety_condition_contraindication",
+        "moiety_contraindication", "ingest_unresolved_ci_object",
     }
 
 
