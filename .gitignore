@@ -21,3 +21,7 @@ Core_MEDRT_*.xml
 
 # MkDocs build output for the docs-site/ project (a CI artifact, never committed).
 docs-site/site/
+
+# Coding-agent scratch: per-plan ledgers, task briefs and review packages written
+# while a plan is being executed. Disposable by design -- git history is the record.
+.superpowers/
