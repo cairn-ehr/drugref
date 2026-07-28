@@ -1583,25 +1583,38 @@ def test_add_moiety_contraindication_is_directional(conn, a_moiety, ingest_run_i
 
 def test_clear_source_removes_both_relations(conn, a_moiety, a_condition,
                                              ingest_run_id):
-    """A re-ingest must fully REPLACE the previous release, across both tables."""
+    """A re-ingest must fully REPLACE the previous release, across both tables --
+    and must leave ANOTHER source's rows alone.
+
+    NOTE: conftest's `ingest_run_id` fixture creates its run with source='PBS', so
+    this test opens its OWN run under 'MED-RT' and uses the fixture's run as the
+    other source. Clearing one must not touch the other.
+    """
+    medrt_run = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT','test','x') RETURNING ingest_run_id").fetchone()[0]
     other = conn.execute(
         "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, "
         "first_seen_ingest) VALUES (gen_random_uuid(),'x',%s) RETURNING moiety_uuid",
         (ingest_run_id,)).fetchone()[0]
+
+    # One row per relation under MED-RT, plus one condition row under PBS.
     interactions.add_condition_contraindication(
-        conn, a_moiety, a_condition, "CI_with", "MED-RT", ingest_run_id)
+        conn, a_moiety, a_condition, "CI_with", "MED-RT", medrt_run)
     interactions.add_moiety_contraindication(
-        conn, a_moiety, other, "CI_ChemClass", "MED-RT", ingest_run_id)
+        conn, a_moiety, other, "CI_ChemClass", "MED-RT", medrt_run)
+    interactions.add_condition_contraindication(
+        conn, a_moiety, a_condition, "CI_with", "PBS", ingest_run_id)
 
-    interactions.clear_source_mesh_contraindications(conn, "PBS")   # another source
-    assert conn.execute(
-        "SELECT count(*) FROM drugref.moiety_condition_contraindication"
-    ).fetchone()[0] == 1
+    interactions.clear_source_mesh_contraindications(conn, "MED-RT")
 
-    interactions.clear_source_mesh_contraindications(conn, "PBS")
-    # ingest_run_id's fixture source IS 'PBS' in conftest -- clearing it empties both.
+    # MED-RT's rows are gone from BOTH relations...
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 0
+    # ...while the other source's row survives untouched.
+    assert conn.execute(
+        "SELECT source FROM drugref.moiety_condition_contraindication"
+    ).fetchall() == [("PBS",)]
 
 
 def test_record_unresolved_ci_objects(conn, ingest_run_id):
@@ -1614,9 +1627,10 @@ def test_record_unresolved_ci_objects(conn, ingest_run_id):
     ).fetchone() == ("Sulfonamides", 36)
 ```
 
-> **Note for the implementer:** `conftest.ingest_run_id` creates a run with `source = 'PBS'`. Check that
-> before writing the clear-source assertions and adjust the source strings so the test asserts what it
-> claims to. If it is simpler, create a second `ingest_run` row with `source='MED-RT'` inside the test.
+> **Note for the implementer:** `conftest.ingest_run_id` creates its run with `source = 'PBS'`, which is why
+> the clear-source test above opens its own `MED-RT` run rather than reusing the fixture's. Verify that is
+> still true of `conftest.py` before relying on it; if the fixture's source has changed, adjust the literals
+> so the test still exercises *clear one source, leave the other alone*.
 
 - [ ] **Step 2: Run to verify they fail**
 
