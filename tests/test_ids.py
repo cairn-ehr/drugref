@@ -105,3 +105,41 @@ def test_local_product_namespace_matches_frozen_literal():
     # every local_product_uuid in the database depends on this namespace and a
     # rebuild would silently re-key every PBS product if it ever drifted.
     assert str(ids.LOCAL_PRODUCT_NAMESPACE) == "2886bb06-5c2f-544a-bdeb-23bdc074b4bc"
+
+
+# ---- slice 5b: condition identity -------------------------------------------
+
+
+def test_condition_uuid_is_deterministic():
+    """Same (source, code) -> same UUID, always. Two drugref instances ingesting
+    the same MeSH release derive identical condition UUIDs with no coordination."""
+    assert ids.mint_condition_uuid("MeSH", "D004827") == \
+           ids.mint_condition_uuid("MeSH", "D004827")
+
+
+def test_condition_uuid_is_frozen():
+    """PINNED LITERAL. condition_uuid is immortal, externally citable, and is the
+    join key of condition_parent -- so a drift would orphan every edge on the next
+    rebuild with no error anywhere. Exactly the guard class UUIDs carry."""
+    assert str(ids.mint_condition_uuid("MeSH", "D004827")) == \
+        "8387d349-b330-57eb-b3c5-e9179186ef04"
+
+
+def test_condition_uuid_folds_source_spelling():
+    """'mesh', 'MESH' and 'MeSH' are one authority, so they must mint one UUID --
+    the same fold canonical_source applies before the value is stored."""
+    assert ids.mint_condition_uuid("mesh", "D004827") == \
+           ids.mint_condition_uuid("MeSH", "D004827")
+
+
+def test_condition_uuid_folds_code_case():
+    assert ids.mint_condition_uuid("MeSH", "d004827") == \
+           ids.mint_condition_uuid("MeSH", "D004827")
+
+
+def test_condition_and_class_uuids_never_collide():
+    """A MeSH descriptor may be BOTH a PA class (slice 2b) and a condition. The
+    per-level namespaces are what stop one code minting one UUID for two different
+    kinds of thing."""
+    assert ids.mint_condition_uuid("MeSH", "D004827") != \
+           ids.mint_class_uuid("MeSH", "D004827")
