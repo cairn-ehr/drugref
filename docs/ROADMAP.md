@@ -116,14 +116,23 @@ MeSH licence already cleared in slice 2b): **`CI_with`** (drug–disease contrai
 `induces`** (~18k drug–disease indications + drug-induced states) — a public-domain, drugref-owned drug–
 disease dataset (a MeDIC-alternative it holds outright). Still projection tier, still candidate-only.
 
+**Split in two by the 5b design round** (spec:
+[slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md)) — **5b** is the
+contraindication half (`CI_with` + `CI_ChemClass`'s moiety arm) over a new MeSH **condition** registry;
+**5b.2** is the indication half (`may_treat`/`may_prevent`/`may_diagnose`/`induces`), which reuses that
+registry unchanged. Measured: `CI_with` yields **9,482** rows over 2,900 moieties / 667 conditions, and
+`CI_ChemClass` yields **1,443 exact moiety↔moiety pairs** — drugref's first genuinely pairwise DDI content.
+
 **Three things this slice must not forget** (each is a one-liner, and each is invisible until it bites):
-decide `ci_axis.expands_descendants` per new predicate rather than inheriting the `true` default (MeSH's
-tree is a different shape — the default is recall-safe, not correct); wire **`mesh_run`** to report
+decide `expands_descendants` per new predicate rather than inheriting the `true` default (MeSH's tree is a
+different shape — the default is recall-safe, not correct); wire **`mesh_run`** to report
 `interactions.unresolved_expansion_policy('MeSH')` as `medrt_run` already does for MED-RT, the moment any
-MeSH-keyed row can exist in `class_expansion_policy`; and revisit the **source-blind walk** —
-`class_parent` and `class_membership` carry no `source` column, so a rule from one authority expands over
-every authority's edges and members (harmless only while the reachable axes belong to one source, which
-5b ends). All three are stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
+MeSH-keyed row can exist in `class_expansion_policy`; and the **source-blind walk** — `class_parent` and
+`class_membership` carry no `source` column, so a rule from one authority expands over every authority's
+edges and members. **Corrected by the 5b design round: 5b does NOT end that.** 5b registers no MeSH
+chemical classes in `substance_class` (its class arm is deferred, §7 of the spec) and conditions live in
+their own tables with their own MeSH-only DAG, so the hazard stays **latent** until `has_SC` or the class
+arm lands. All three are stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
 
 #### Slice 5c — The curated overlay (the moat)
 Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
