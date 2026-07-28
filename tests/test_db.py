@@ -82,6 +82,10 @@ def test_apply_migrations_is_idempotent(conn):
         # db/012: the class-DAG descent, hoisted out of the three views that each
         # carried a copy of it. One recursion in the codebase, not three.
         "ci_class_subtree",
+        # slice 5b, db/013: the MeSH condition registry -- the object side of a
+        # drug-condition contraindication. Not a substance_class: nothing is a
+        # MEMBER of pregnancy, so this is its own table pair, not a widened axis.
+        "condition", "condition_parent",
     }
 
 
