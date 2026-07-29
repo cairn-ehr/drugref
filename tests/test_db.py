@@ -82,6 +82,25 @@ def test_apply_migrations_is_idempotent(conn):
         # db/012: the class-DAG descent, hoisted out of the three views that each
         # carried a copy of it. One recursion in the codebase, not three.
         "ci_class_subtree",
+        # slice 5b, db/013: the MeSH condition registry -- the object side of a
+        # drug-condition contraindication. Not a substance_class: nothing is a
+        # MEMBER of pregnancy, so this is its own table pair, not a widened axis.
+        "condition", "condition_parent",
+        # slice 5b, db/014: the two contraindication relations (drug-condition,
+        # drug-drug) plus their vocabularies/worklist. Two relations, not one,
+        # because CI_with's object is a condition and CI_ChemClass's moiety arm's
+        # object is another moiety -- different kinds of thing, different tables.
+        "condition_ci_axis", "moiety_condition_contraindication",
+        "moiety_contraindication", "ingest_unresolved_ci_object",
+        # slice 5b, db/015: the read path over the condition DAG -- the same
+        # recursion shape as db/012's ci_class_subtree, over condition_parent
+        # instead of class_parent. Two VIEWs, named explicitly for the same reason
+        # ddi_candidate_pair is above: information_schema.tables lists views too.
+        "condition_subtree", "condition_contraindication_expanded",
+        # slice 5b, db/016: the review gate for the withheld CI_ChemClass class arm --
+        # a fourth gap VIEW of db/008's kind, publishing each withheld MeSH object as
+        # a citable question instead of dropping it silently.
+        "gap_unresolved_ci_object",
     }
 
 

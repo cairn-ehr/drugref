@@ -72,6 +72,46 @@ _GAP_SOURCES = {
             "It expands by default until a decision is recorded in "
             "class_expansion_policy.'"),
     },
+    # Slice 5b. CI_ChemClass objects that reached no moiety. The gap_key scheme is
+    # MESH:{code} because the subject is an upstream RECORD drugref never registered:
+    # it has no drugref UUID to cite, which is exactly why it is a gap.
+    #
+    # TWO KINDS, TWO QUESTIONS, one gap_kind (db/014). Both are objects drugref did
+    # not ingest, so both belong on this worklist -- but the remedies are opposites
+    # and so the text must be too:
+    #   * CHEMICAL_CLASS         -- a policy question drugref answers ITSELF, like
+    #                               unreviewed_expansion_root: may this class expand
+    #                               over MeSH's structural tree?
+    #   * UNREGISTERED_SUBSTANCE -- a COVERAGE question, like unmatched_ingredient:
+    #                               the object names a real substance the registry
+    #                               does not carry. Asking whether a leaf drug
+    #                               descriptor should "expand over the tree" is a
+    #                               category error, and asking it was the defect
+    #                               db/014's object_kind closed.
+    # The CASE has NO ELSE deliberately. open_question.question_text is NOT NULL, so
+    # a third object_kind added without its own question aborts the ingest loudly
+    # instead of shipping a curator the wrong sentence -- the same force-a-declaration
+    # discipline db/014 gave condition_ci_axis.expands_descendants.
+    "unresolved_ci_object": {
+        "view": "gap_unresolved_ci_object",
+        "key_sql": "'MESH:' || object_code",
+        "text_sql": (
+            "CASE object_kind "
+            "WHEN 'CHEMICAL_CLASS' THEN "
+            "  'Should contraindications naming ' "
+            "  || COALESCE(object_name, object_code) "
+            "  || ' be expanded to the drugs beneath it in MeSH''s structural tree? ' "
+            "  || ci_rule_count || ' upstream rule(s) ride on the answer, and they "
+            "are withheld until it is decided -- MeSH structural classes do not map "
+            "cleanly onto clinical ones.' "
+            "WHEN 'UNREGISTERED_SUBSTANCE' THEN "
+            "  'MED-RT contraindicates ' || ci_rule_count || ' drug(s) with ' "
+            "  || COALESCE(object_name, object_code) "
+            "  || ', a substance drugref registers no moiety for, so those rule(s) "
+            "were not ingested. Should it be registered? This is a registry-coverage "
+            "gap -- do NOT answer it by expanding anything over MeSH''s tree.' "
+            "END"),
+    },
 }
 
 

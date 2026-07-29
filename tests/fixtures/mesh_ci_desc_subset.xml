@@ -1,0 +1,1479 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_ci_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_ci_subset.py DESC.gz SUPP.gz OUT_DIR
+     and regenerate it AFTER make_medrt_subset.py: the wanted set is read out of
+     medrt_subset.xml, so the two fixtures cannot be left describing disjoint worlds.
+     Records are COPIED from the release, never invented or reconstructed; only the
+     AllowableQualifiersList and TermList subtrees, which no drugref code path reads,
+     are removed. Courtesy of the U.S. National Library of Medicine.
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
+<DescriptorRecordSet>
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000080445</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma-Chronic Obstructive Pulmonary Disease Overlap Syndrome</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>03</Month>
+   <Day>12</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2020</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2020
+  </HistoryNote>
+  <PublicMeSHNote>2020
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (2013-2019)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.688</TreeNumber>
+   <TreeNumber>C08.381.495.108.500</TreeNumber>
+   <TreeNumber>C08.381.495.389.250</TreeNumber>
+   <TreeNumber>C08.674.095.688</TreeNumber>
+   <TreeNumber>C20.543.103</TreeNumber>
+   <TreeNumber>C23.550.291.500.875.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M000647365</ConceptUI>
+    <ConceptName>
+     <String>Asthma-Chronic Obstructive Pulmonary Disease Overlap Syndrome</String>
+    </ConceptName>
+    <ScopeNote>Syndrome with clinical features of both ASTHMA and COPD.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000096823</DescriptorUI>
+  <DescriptorName>
+   <String>Cough-Variant Asthma</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2024
+  </HistoryNote>
+  <PublicMeSHNote>2024
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1982-2023)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.784</TreeNumber>
+   <TreeNumber>C08.381.495.108.750</TreeNumber>
+   <TreeNumber>C08.674.095.784</TreeNumber>
+   <TreeNumber>C20.543.480.680.095.688</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M000762642</ConceptUI>
+    <ConceptName>
+     <String>Cough-Variant Asthma</String>
+    </ConceptName>
+    <ScopeNote>Asthma which is characterized by CHRONIC COUGH that is nonproductive without other asthmatic symptoms, e.g., WHEEZING, and PAROXYSMAL DYSPNEA. Cough-variant asthma is accompanied by AIRWAY HYPERSENSITIVITY and may progress to classical asthma without treatment.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000096825</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinosinusitis</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2024
+  </HistoryNote>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <PublicMeSHNote>2024
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Rhinitis(1965-2023)</PreviousIndexing>
+   <PreviousIndexing>Sinusitis (1964-2023)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C01.748.674.500</TreeNumber>
+   <TreeNumber>C01.748.749.703</TreeNumber>
+   <TreeNumber>C08.460.692.752.703</TreeNumber>
+   <TreeNumber>C08.460.799.955</TreeNumber>
+   <TreeNumber>C08.730.674.500</TreeNumber>
+   <TreeNumber>C08.730.749.703</TreeNumber>
+   <TreeNumber>C09.603.692.752.703</TreeNumber>
+   <TreeNumber>C09.603.799.955</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M000762651</ConceptUI>
+    <ConceptName>
+     <String>Rhinosinusitis</String>
+    </ConceptName>
+    <ScopeNote>Obstruction of sinus drainage into the NASAL CAVITY and inflammation of the NASAL MUCOSA in the PARANASAL SINUSES.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000468</DescriptorUI>
+  <DescriptorName>
+   <String>Alkalies</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>1999</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>singular form is "alkali"; /adv eff: consider also MILK-ALKALI SYNDROME see HYPERCALCEMIA
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D006934</DescriptorUI>
+     <DescriptorName>
+      <String>Hypercalcemia</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>D01.045</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0000711</ConceptUI>
+    <ConceptName>
+     <String>Alkalies</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ScopeNote>Usually a hydroxide of lithium, sodium, potassium, rubidium or cesium, but also the carbonates of these metals, ammonia, and the amines. (Grant &amp; Hackh's Chemical Dictionary, 5th ed)
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001249</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2011</Year>
+   <Month>06</Month>
+   <Day>24</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>note specifics; ASTHMA, CARDIAC see DYSPNEA, PAROXYSMAL is also available; in historical literature consider indexing "phthisic" here; "phthisis" probably goes under TUBERCULOSIS, PULMONARY
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D018927</DescriptorUI>
+     <DescriptorName>
+      <String>Anti-Asthmatic Agents</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108</TreeNumber>
+   <TreeNumber>C08.381.495.108</TreeNumber>
+   <TreeNumber>C08.674.095</TreeNumber>
+   <TreeNumber>C20.543.480.680.095</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0001885</ConceptUI>
+    <ConceptName>
+     <String>Asthma</String>
+    </ConceptName>
+    <ScopeNote>A form of bronchial disorder with three distinct components: airway hyper-responsiveness (RESPIRATORY HYPERSENSITIVITY), airway INFLAMMATION, and intermittent AIRWAY OBSTRUCTION. It is characterized by spasmodic contraction of airway smooth muscle, WHEEZING, and dyspnea (DYSPNEA, PAROXYSMAL).
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001250</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma, Exercise-Induced</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>10</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1991</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>91(79); was see under ASTHMA 1979-90
+  </HistoryNote>
+  <NLMClassificationNumber>WF 553</NLMClassificationNumber>
+  <PublicMeSHNote>91; was see under ASTHMA 1979-90
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1966-1978)</PreviousIndexing>
+   <PreviousIndexing>Bronchial Spasm (1966-1978)</PreviousIndexing>
+   <PreviousIndexing>Exertion (1966-1978)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D064706</DescriptorUI>
+     <DescriptorName>
+      <String>Vocal Cord Dysfunction</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.110</TreeNumber>
+   <TreeNumber>C08.674.095.110</TreeNumber>
+   <TreeNumber>C20.543.480.363.500</TreeNumber>
+   <TreeNumber>C20.543.480.680.095.110</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0001886</ConceptUI>
+    <ConceptName>
+     <String>Asthma, Exercise-Induced</String>
+    </ConceptName>
+    <ScopeNote>Asthma attacks following a period of exercise. Usually the induced attack is short-lived and regresses spontaneously. The magnitude of postexertional airway obstruction is strongly influenced by the environment in which exercise is performed (i.e. inhalation of cold air during physical exertion markedly augments the severity of the airway obstruction; conversely, warm humid air blunts or abolishes it).
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0001886</Concept1UI>
+     <Concept2UI>M0001887</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0001887</ConceptUI>
+    <ConceptName>
+     <String>Bronchospasm, Exercise-Induced</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0001886</Concept1UI>
+     <Concept2UI>M0001887</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D004342</DescriptorUI>
+  <DescriptorName>
+   <String>Drug Hypersensitivity</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2022</Year>
+   <Month>07</Month>
+   <Day>11</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>use in conventional sense and not for allergy to every category D term; allergy to non-drug chemical substance=substance /ad eff + HYPERSENSITIVITY or its specifics /etiol
+  </Annotation>
+  <HistoryNote>66; was DRUG ALLERGY 1963-65
+  </HistoryNote>
+  <NLMClassificationNumber>QW 906</NLMClassificationNumber>
+  <PublicMeSHNote>66; was DRUG ALLERGY 1963-65
+  </PublicMeSHNote>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D063926</DescriptorUI>
+     <DescriptorName>
+      <String>Drug Hypersensitivity Syndrome</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C25.100.468</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0006829</ConceptUI>
+    <ConceptName>
+     <String>Drug Hypersensitivity</String>
+    </ConceptName>
+    <ScopeNote>Immunologically mediated adverse reactions to medicinal substances used legally or illegally.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D004827</DescriptorUI>
+  <DescriptorName>
+   <String>Epilepsy</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2017</Year>
+   <Month>02</Month>
+   <Day>24</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified; prefer specifics
+  </Annotation>
+  <NLMClassificationNumber>WL 385</NLMClassificationNumber>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D012640</DescriptorUI>
+     <DescriptorName>
+      <String>Seizures</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C10.228.140.490</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0007564</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy</String>
+    </ConceptName>
+    <ScopeNote>A disorder characterized by recurrent episodes of paroxysmal brain dysfunction due to a sudden, disorderly, and excessive neuronal discharge. Epilepsy classification systems are generally based upon: (1) clinical features of the seizure episodes (e.g., motor seizure), (2) etiology (e.g., post-traumatic), (3) anatomic site of seizure origin (e.g., frontal lobe seizure), (4) tendency to spread to other structures in the brain, and (5) temporal patterns (e.g., nocturnal epilepsy). (From Adams et al., Principles of Neurology, 6th ed, p313)
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0007565</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="REL">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0334957</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0334958</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0007565</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy, Cryptogenic</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0007565</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0334957</ConceptUI>
+    <ConceptName>
+     <String>Aura</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="REL">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0334957</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0334958</ConceptUI>
+    <ConceptName>
+     <String>Awakening Epilepsy</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007564</Concept1UI>
+     <Concept2UI>M0334958</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D004829</DescriptorUI>
+  <DescriptorName>
+   <String>Epilepsy, Generalized</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2001</Year>
+   <Month>07</Month>
+   <Day>25</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1992</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>"generalized" as opposed to "focal" or partial ( = EPILEPSIES, PARTIAL); prefer specific indentions; note entry term EPILEPSY, TONIC: do not confuse with EPILEPSY, TONIC-CLONIC
+  </Annotation>
+  <HistoryNote>1992; was EPILEPSY, GENERALIZED (NON MESH) 1977-1991
+  </HistoryNote>
+  <PublicMeSHNote>1992
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Epilepsy (1966-1991)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C10.228.140.490.375</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0007570</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy, Generalized</String>
+    </ConceptName>
+    <ScopeNote>Recurrent conditions characterized by epileptic seizures which arise diffusely and simultaneously from both hemispheres of the brain. Classification is generally based upon motor manifestations of the seizure (e.g., convulsive, nonconvulsive, akinetic, atonic, etc.) or etiology (e.g., idiopathic, cryptogenic, and symptomatic). (From Mayo Clin Proc, 1996 Apr;71(4):405-14)
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0007571</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0007572</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335029</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335030</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335038</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335040</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0007571</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy, Atonic</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0007571</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0007572</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy, Tonic</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0007572</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335029</ConceptUI>
+    <ConceptName>
+     <String>Convulsive Generalized Seizure Disorder</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335029</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335030</ConceptUI>
+    <ConceptName>
+     <String>Generalized Nonconvulsive Seizure Disorder</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335030</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335038</ConceptUI>
+    <ConceptName>
+     <String>Epilepsy, Akinetic</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335038</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335040</ConceptUI>
+    <ConceptName>
+     <String>Symptomatic Generalized Epilepsy</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0007570</Concept1UI>
+     <Concept2UI>M0335040</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D005955</DescriptorUI>
+  <DescriptorName>
+   <String>Glucosephosphate Dehydrogenase Deficiency</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2023</Year>
+   <Month>02</Month>
+   <Day>26</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1964</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>64
+  </HistoryNote>
+  <NLMClassificationNumber>WH 170</NLMClassificationNumber>
+  <PublicMeSHNote>64
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C15.378.050.141.150.480</TreeNumber>
+   <TreeNumber>C16.320.070.480</TreeNumber>
+   <TreeNumber>C16.320.565.202.402</TreeNumber>
+   <TreeNumber>C18.452.648.202.402</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0009353</ConceptUI>
+    <ConceptName>
+     <String>Glucosephosphate Dehydrogenase Deficiency</String>
+    </ConceptName>
+    <ScopeNote>A disease-producing enzyme deficiency subject to many variants, some of which cause a deficiency of GLUCOSE-6-PHOSPHATE DEHYDROGENASE activity in erythrocytes, leading to hemolytic anemia.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D007022</DescriptorUI>
+  <DescriptorName>
+   <String>Hypotension</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2007</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>only blood pressure; INTRACRANIAL HYPOTENSION and OCULAR HYPOTENSION are also available; relation to BLOOD PRESSURE: Manual 23.27+
+  </Annotation>
+  <NLMClassificationNumber>WG 350</NLMClassificationNumber>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D019462</DescriptorUI>
+     <DescriptorName>
+      <String>Syncope, Vasovagal</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C14.907.514</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0010927</ConceptUI>
+    <ConceptName>
+     <String>Hypotension</String>
+    </ConceptName>
+    <ScopeNote>Abnormally low BLOOD PRESSURE that can result in inadequate blood flow to the brain and other vital organs. Common symptom is DIZZINESS but greater negative impacts on the body occur when there is prolonged depravation of oxygen and nutrients.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D008107</DescriptorUI>
+  <DescriptorName>
+   <String>Liver Diseases</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2016</Year>
+   <Month>07</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1960</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general; prefer specifics; inflammatory disease = HEPATITIS &amp; its specifics; specialty is HEPATOLOGY see GASTROENTEROLOGY; be careful: do not confuse "hepatic disease" with "intrahepatic disease": "intrahepatic disease" may refer to BILE DUCT DISEASES with regard to BILE DUCTS, INTRAHEPATIC, not LIVER DISEASES
+  </Annotation>
+  <HistoryNote>ACUTE YELLOW ATROPHY was heading 1963-96
+  </HistoryNote>
+  <PublicMeSHNote>ACUTE YELLOW ATROPHY was heading 1963-96
+  </PublicMeSHNote>
+  <EntryCombinationList>
+   <EntryCombination>
+    <ECIN>
+     <DescriptorReferredTo>
+      <DescriptorUI>D008107</DescriptorUI>
+      <DescriptorName>
+       <String>Liver Diseases</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+     <QualifierReferredTo>
+      <QualifierUI>Q000139</QualifierUI>
+      <QualifierName>
+       <String>chemically induced</String>
+      </QualifierName>
+     </QualifierReferredTo>
+    </ECIN>
+    <ECOUT>
+     <DescriptorReferredTo>
+      <DescriptorUI>D056486</DescriptorUI>
+      <DescriptorName>
+       <String>Chemical and Drug Induced Liver Injury</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+    </ECOUT>
+   </EntryCombination>
+  </EntryCombinationList>
+  <TreeNumberList>
+   <TreeNumber>C06.552</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0012644</ConceptUI>
+    <ConceptName>
+     <String>Liver Diseases</String>
+    </ConceptName>
+    <ScopeNote>Pathological processes of the LIVER.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0012644</Concept1UI>
+     <Concept2UI>M0012645</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0012645</ConceptUI>
+    <ConceptName>
+     <String>Liver Dysfunction</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0012644</Concept1UI>
+     <Concept2UI>M0012645</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D009930</DescriptorUI>
+  <DescriptorName>
+   <String>Organic Chemicals</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2020</Year>
+   <Month>05</Month>
+   <Day>27</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1998</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified; prefer specific groups or specific chemicals
+  </Annotation>
+  <HistoryNote>98; use explode 1967-97
+  </HistoryNote>
+  <PublicMeSHNote>98
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>D02</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0015401</ConceptUI>
+    <ConceptName>
+     <String>Organic Chemicals</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ScopeNote>A broad class of substances containing carbon and its derivatives. Many of these chemicals will frequently contain hydrogen with or without oxygen, nitrogen, sulfur, phosphorus, and other elements. They exist in either carbon chain or carbon ring form.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D010868</DescriptorUI>
+  <DescriptorName>
+   <String>Pimozide</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2017</Year>
+   <Month>05</Month>
+   <Day>24</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1973</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>73
+  </HistoryNote>
+  <PublicMeSHNote>73
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Benzimidazoles (1966-1972)</PreviousIndexing>
+   <PreviousIndexing>Tranquilizing Agents (1966-1972)</PreviousIndexing>
+  </PreviousIndexingList>
+    <PharmacologicalActionList>
+     <PharmacologicalAction>
+      <DescriptorReferredTo>
+       <DescriptorUI>D014150</DescriptorUI>
+        <DescriptorName>
+         <String>Antipsychotic Agents</String>
+        </DescriptorName>
+      </DescriptorReferredTo>
+     </PharmacologicalAction>
+     <PharmacologicalAction>
+      <DescriptorReferredTo>
+       <DescriptorUI>D018492</DescriptorUI>
+        <DescriptorName>
+         <String>Dopamine Antagonists</String>
+        </DescriptorName>
+      </DescriptorReferredTo>
+     </PharmacologicalAction>
+     <PharmacologicalAction>
+      <DescriptorReferredTo>
+       <DescriptorUI>D018726</DescriptorUI>
+        <DescriptorName>
+         <String>Anti-Dyskinesia Agents</String>
+        </DescriptorName>
+      </DescriptorReferredTo>
+     </PharmacologicalAction>
+    </PharmacologicalActionList>
+  <TreeNumberList>
+   <TreeNumber>D03.633.100.103.732</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0016871</ConceptUI>
+    <ConceptName>
+     <String>Pimozide</String>
+    </ConceptName>
+    <CASN1Name>2H-Benzimidazol-2-one, 1-(1-(4,4-bis(4-fluorophenyl)butyl)-4-piperidinyl)-1,3-dihydro-</CASN1Name>
+    <RegistryNumberList>
+    <RegistryNumber>1HIZ4DL86F</RegistryNumber>
+    </RegistryNumberList>
+    <ScopeNote>A diphenylbutylpiperidine that is effective as an antipsychotic agent and as an alternative to HALOPERIDOL for the suppression of vocal and motor tics in patients with Tourette syndrome. Although the precise mechanism of action is unknown, blockade of postsynaptic dopamine receptors has been postulated. (From AMA Drug Evaluations Annual, 1994, p403)
+    </ScopeNote>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>2062-78-4 (Pimozide)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0353569</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0474773</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0474774</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0353569</ConceptUI>
+    <ConceptName>
+     <String>R-6238</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0353569</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0474773</ConceptUI>
+    <ConceptName>
+     <String>Antalon</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0474773</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0474774</ConceptUI>
+    <ConceptName>
+     <String>Orap</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0016871</Concept1UI>
+     <Concept2UI>M0474774</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011041</DescriptorUI>
+  <DescriptorName>
+   <String>Poisoning</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2010</Year>
+   <Month>06</Month>
+   <Day>25</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>a disease concept: the discipline = TOXICOLOGY; general only; prefer /pois with Category D &amp; J terms: Manual 19.7+, 19.8.57, 19.9+, 25.11.4; sometimes called "toxicoses" &amp; often called "intoxication" in foreign literature.
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D000931</DescriptorUI>
+     <DescriptorName>
+      <String>Antidotes</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C25.723</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017099</ConceptUI>
+    <ConceptName>
+     <String>Poisoning</String>
+    </ConceptName>
+    <ScopeNote>A condition or physical state produced by the ingestion, injection, inhalation of or exposure to a deleterious agent.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011247</DescriptorUI>
+  <DescriptorName>
+   <String>Pregnancy</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2024</Year>
+   <Month>08</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>IM for articles on normal pregnancy, NIM as check tag; in children or adolescents, see note under PREGNANCY IN ADOLESCENCE; surrogate pregnancy = Gestational Carriers; for "pregnancy" in non-placental organisms (fish, reptiles, monotremes for example): use OVIPARITY; OVOVIVIPARITY; or VIVIPARITY, NONMAMMALIAN
+  </Annotation>
+  <HistoryNote>1963
+  </HistoryNote>
+  <PublicMeSHNote>1963
+  </PublicMeSHNote>
+  <EntryCombinationList>
+   <EntryCombination>
+    <ECIN>
+     <DescriptorReferredTo>
+      <DescriptorUI>D011247</DescriptorUI>
+      <DescriptorName>
+       <String>Pregnancy</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+     <QualifierReferredTo>
+      <QualifierUI>Q000150</QualifierUI>
+      <QualifierName>
+       <String>complications</String>
+      </QualifierName>
+     </QualifierReferredTo>
+    </ECIN>
+    <ECOUT>
+     <DescriptorReferredTo>
+      <DescriptorUI>D011248</DescriptorUI>
+      <DescriptorName>
+       <String>Pregnancy Complications</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+    </ECOUT>
+   </EntryCombination>
+  </EntryCombinationList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D008098</DescriptorUI>
+     <DescriptorName>
+      <String>Litter Size</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D011295</DescriptorUI>
+     <DescriptorName>
+      <String>Prenatal Care</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D011555</DescriptorUI>
+     <DescriptorName>
+      <String>Pseudopregnancy</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D033261</DescriptorUI>
+     <DescriptorName>
+      <String>Maternal-Fetal Relations</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D037841</DescriptorUI>
+     <DescriptorName>
+      <String>Pregnant People</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>G08.686.784.769</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017471</ConceptUI>
+    <ConceptName>
+     <String>Pregnancy</String>
+    </ConceptName>
+    <ScopeNote>The status during which female mammals carry their developing young (EMBRYOS or FETUSES) in utero before birth, beginning from FERTILIZATION to BIRTH.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011263</DescriptorUI>
+  <DescriptorName>
+   <String>Pregnancy Trimester, Third</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2008</Year>
+   <Month>07</Month>
+   <Day>08</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1975</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>human only; check tags HUMANS &amp; FEMALE &amp; PREGNANCY; "at term": consider better LABOR, OBSTETRIC
+  </Annotation>
+  <HistoryNote>76; was PREGNANCY, THIRD TRIMESTER 1975
+  </HistoryNote>
+  <OnlineNote>use PREGNANCY TRIMESTER, THIRD to search PREGNANCY, THIRD TRIMESTER 1975
+  </OnlineNote>
+  <PublicMeSHNote>76; was PREGNANCY, THIRD TRIMESTER 1975
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Gestational Age (1968-1974)</PreviousIndexing>
+   <PreviousIndexing>Pregnancy (1966-1974)</PreviousIndexing>
+   <PreviousIndexing>Time Factors (1967-1974)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>G08.686.707.520</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017490</ConceptUI>
+    <ConceptName>
+     <String>Pregnancy Trimester, Third</String>
+    </ConceptName>
+    <ScopeNote>The last third of a human PREGNANCY, from the beginning of the 29th through the 42nd completed week (197 to 294 days) of gestation.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011269</DescriptorUI>
+  <DescriptorName>
+   <String>Pregnancy, Abdominal</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <NLMClassificationNumber>WQ 220</NLMClassificationNumber>
+  <TreeNumberList>
+   <TreeNumber>C12.050.703.733.536</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017497</ConceptUI>
+    <ConceptName>
+     <String>Pregnancy, Abdominal</String>
+    </ConceptName>
+    <ScopeNote>A type of ectopic pregnancy in which the EMBRYO, MAMMALIAN implants in the ABDOMINAL CAVITY instead of in the ENDOMETRIUM of the UTERUS.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D012220</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinitis</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2019</Year>
+   <Month>06</Month>
+   <Day>17</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified; prefer specifics; do not confuse NASAL CATARRH with CATARRH; rhinosinusitis: index RHINITIS + SINUSITIS
+  </Annotation>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <TreeNumberList>
+   <TreeNumber>C01.748.674</TreeNumber>
+   <TreeNumber>C08.460.799</TreeNumber>
+   <TreeNumber>C08.730.674</TreeNumber>
+   <TreeNumber>C09.603.799</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0019019</ConceptUI>
+    <ConceptName>
+     <String>Rhinitis</String>
+    </ConceptName>
+    <ScopeNote>Inflammation of the NASAL MUCOSA, the mucous membrane lining the NASAL CAVITIES.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D016535</DescriptorUI>
+  <DescriptorName>
+   <String>Bronchial Hyperreactivity</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>1999</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1992</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>note category; if present in asthma, coord IM with ASTHMA /physiopathol (IM)
+  </Annotation>
+  <HistoryNote>92
+  </HistoryNote>
+  <PublicMeSHNote>92
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1970-1991)</PreviousIndexing>
+   <PreviousIndexing>Bronchi (1970-1991)</PreviousIndexing>
+   <PreviousIndexing>Respiratory Hypersensitivity (1970-1991)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D001249</DescriptorUI>
+     <DescriptorName>
+      <String>Asthma</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.210</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0025237</ConceptUI>
+    <ConceptName>
+     <String>Bronchial Hyperreactivity</String>
+    </ConceptName>
+    <ScopeNote>Tendency of the smooth muscle of the tracheobronchial tree to contract more intensely in response to a given stimulus than it does in the response seen in normal individuals. This condition is present in virtually all symptomatic patients with asthma. The most prominent manifestation of this smooth muscle contraction is a decrease in airway caliber that can be readily measured in the pulmonary function laboratory.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D019896</DescriptorUI>
+  <DescriptorName>
+   <String>alpha 1-Antitrypsin Deficiency</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2013</Year>
+   <Month>07</Month>
+   <Day>08</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1998</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>Pi or PiZZ goes here + PHENOTYPE
+  </Annotation>
+  <HistoryNote>98
+  </HistoryNote>
+  <PublicMeSHNote>98
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>alpha 1-Antitrypsin (1974)</PreviousIndexing>
+   <PreviousIndexing>alpha 1-Antitrypsin/deficiency (1975-1997)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C06.552.074</TreeNumber>
+   <TreeNumber>C08.381.112</TreeNumber>
+   <TreeNumber>C16.320.060</TreeNumber>
+   <TreeNumber>C23.550.325.500.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0029552</ConceptUI>
+    <ConceptName>
+     <String>alpha 1-Antitrypsin Deficiency</String>
+    </ConceptName>
+    <ScopeNote>Deficiency of the protease inhibitor ALPHA 1-ANTITRYPSIN that manifests primarily as PULMONARY EMPHYSEMA and LIVER CIRRHOSIS.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D055963</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma, Aspirin-Induced</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2023</Year>
+   <Month>05</Month>
+   <Day>22</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2010
+  </HistoryNote>
+  <PublicMeSHNote>2010
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma/chemically induced (1973-2009)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.054</TreeNumber>
+   <TreeNumber>C08.674.095.054</TreeNumber>
+   <TreeNumber>C20.543.480.149</TreeNumber>
+   <TreeNumber>C25.100.468.189</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0523646</ConceptUI>
+    <ConceptName>
+     <String>Asthma, Aspirin-Induced</String>
+    </ConceptName>
+    <ScopeNote>Asthmatic adverse reaction (e.g., BRONCHOCONSTRICTION) to conventional NSAIDS including aspirin use.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0523646</Concept1UI>
+     <Concept2UI>M000763905</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M000763905</ConceptUI>
+    <ConceptName>
+     <String>NSAID-Exacerbated Respiratory Disease</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0523646</Concept1UI>
+     <Concept2UI>M000763905</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D056486</DescriptorUI>
+  <DescriptorName>
+   <String>Chemical and Drug Induced Liver Injury</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2018</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>coordinate with specific substance /adv eff /pois or /tox; CHEMICAL AND DRUG INDUCED LIVER INJURY, CHRONIC is also available
+  </Annotation>
+  <HistoryNote>2017(2010)
+  </HistoryNote>
+  <NLMClassificationNumber>WI 710</NLMClassificationNumber>
+  <PublicMeSHNote>2017; for HEPATITIS, DRUG-INDUCED see HEPATITIS, TOXIC 1996-2009; for HEPATITIS, TOXIC see HEPATITIS, TOXIC 1966-2009; was DRUG-INDUCED LIVER INJURY 2010-2017
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Liver Diseases/chemically induced (1973-2009)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C06.552.100</TreeNumber>
+   <TreeNumber>C25.100.562</TreeNumber>
+   <TreeNumber>C25.723.260</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0527454</ConceptUI>
+    <ConceptName>
+     <String>Chemical and Drug Induced Liver Injury</String>
+    </ConceptName>
+    <ScopeNote>A spectrum of clinical liver diseases ranging from mild biochemical abnormalities to ACUTE LIVER FAILURE, caused by drugs, drug metabolites, herbal and dietary supplements and chemicals from the environment.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0010231</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0454320</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0580006</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617465</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617466</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0010231</ConceptUI>
+    <ConceptName>
+     <String>Hepatitis, Toxic</String>
+    </ConceptName>
+    <ScopeNote>INFLAMMATION of the LIVER due to hepatocellular toxicity, caused by drug metabolites and chemicals from the environment.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0010231</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0454320</ConceptUI>
+    <ConceptName>
+     <String>Hepatitis, Drug-Induced</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0454320</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0580006</ConceptUI>
+    <ConceptName>
+     <String>Drug-Induced Acute Liver Injury</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0580006</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M000617465</ConceptUI>
+    <ConceptName>
+     <String>Drug-Induced Liver Disease</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617465</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M000617466</ConceptUI>
+    <ConceptName>
+     <String>Chemically-Induced Liver Toxicity</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617466</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D065631</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinitis, Allergic</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2015</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2015</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2015
+  </HistoryNote>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <PublicMeSHNote>2015
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C08.460.799.315</TreeNumber>
+   <TreeNumber>C08.674.453</TreeNumber>
+   <TreeNumber>C09.603.799.315</TreeNumber>
+   <TreeNumber>C20.543.480.680.443</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0567378</ConceptUI>
+    <ConceptName>
+     <String>Rhinitis, Allergic</String>
+    </ConceptName>
+    <ScopeNote>An inflammation of the NASAL MUCOSA triggered by ALLERGENS.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+</DescriptorRecordSet>

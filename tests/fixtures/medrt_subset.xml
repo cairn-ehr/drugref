@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!-- EXTRACTED FROM A REAL MED-RT RELEASE by make_medrt_subset.py. Do not hand-edit.
      Regenerate with:  python tests/fixtures/make_medrt_subset.py <Core_MEDRT_*.xml>
-     Association endpoints outside MED-RT/RxNorm carry REDACTED in place of their
-     term and code: this repository may not redistribute SNOMED CT content, and
-     MeSH is not attributed until slice 2b. The namespace is kept, which is what
-     the parser rejects the edge on, so the fixture loses no discriminating power.
+     Association endpoints outside MED-RT/RxNorm/MeSH carry REDACTED in place of
+     their term and code: this repository may not redistribute SNOMED CT content.
+     The namespace is kept, which is what the parser rejects the edge on, so the
+     fixture loses no discriminating power. MeSH endpoints are NOT redacted, because
+     MeSH is licence-cleared (slice 2b) and slice 5b's CI_with / CI_ChemClass are
+     keyed by MeSH ConceptUI: redacting them would leave those predicates untestable.
      Ingredients covered:
        RxCUI 161: paracetamol / has_MoA, has_PE, has_PK, has_TC; no EPC; sits under an HC bin
-       RxCUI 17767: amlodipine / carries TWO EPC parents plus a MeSH has_SC
-       RxCUI 6853: magnesium sulfate / HC bin only, must end up unclassified
+       RxCUI 17767: amlodipine / carries TWO EPC parents, a MeSH has_SC and a real CI_PE
+       RxCUI 6853: methoxamine / HC bin only, must end up unclassified
        RxCUI 5640: ibuprofen / NOT in our registry, so membership must be skipped and counted
+       RxCUI 272: activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC
+       RxCUI 321988: escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA
 -->
 <terminology>
 	<namespace>
@@ -130,6 +134,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Physiochemical Activity [MoA]</name>
+		<code>N0000000065</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000065</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Calcium Channel Antagonists [MoA]</name>
 		<code>N0000000069</code>
 		<status>A</status>
@@ -146,6 +166,38 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Chelating Activity [MoA]</name>
+		<code>N0000000087</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000087</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Neurotransmitter Transporter Interactions [MoA]</name>
+		<code>N0000000105</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000105</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Prostaglandin Receptor Antagonists [MoA]</name>
 		<code>N0000000108</code>
 		<status>A</status>
@@ -158,6 +210,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000000108</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Serotonin Uptake Inhibitors [MoA]</name>
+		<code>N0000000109</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000109</value>
 		</property>
 	</concept>
 	<concept>
@@ -254,6 +322,38 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000000163</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Serotonin Transporter Interactions [MoA]</name>
+		<code>N0000000167</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000167</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Monoamine Oxidase Inhibitors [MoA]</name>
+		<code>N0000000184</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000184</value>
 		</property>
 	</concept>
 	<concept>
@@ -450,6 +550,134 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Increased Central Nervous System Serotonin Activity [PE]</name>
+		<code>N0000009198</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009198</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Increased Immunologically Active Biogenic Amine Activity [PE]</name>
+		<code>N0000009354</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009354</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Increased Renal Organic Ion Excretion [PE]</name>
+		<code>N0000009556</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009556</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Increased Serotonin Activity [PE]</name>
+		<code>N0000009585</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009585</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Inhibition Large Intestine Fluid/Electrolyte Absorption [PE]</name>
+		<code>N0000009726</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009726</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Inhibition Small Intestine Fluid/Electrolyte Absorption [PE]</name>
+		<code>N0000009730</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009730</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Large Intestine Fluid/Electrolyte Absorption Alteration [PE]</name>
+		<code>N0000009736</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009736</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Large Intestine Fluid/Electrolyte Alteration [PE]</name>
+		<code>N0000009737</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009737</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Nervous System Activity Alteration [PE]</name>
 		<code>N0000009759</code>
 		<status>A</status>
@@ -478,6 +706,86 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000009770</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Renal Organic Ion Transport Alteration [PE]</name>
+		<code>N0000009831</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009831</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Renal/Urological Activity Alteration [PE]</name>
+		<code>N0000009832</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009832</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Serotonin Activity Alteration [PE]</name>
+		<code>N0000009844</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009844</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Small Intestine Fluid/Electrolyte Absorption Alteration [PE]</name>
+		<code>N0000009845</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009845</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Small Intestine Fluid/Electrolyte Alteration [PE]</name>
+		<code>N0000009846</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009846</value>
 		</property>
 	</concept>
 	<concept>
@@ -530,6 +838,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>E [Preparations]</name>
+		<code>N0000010587</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010587</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>I [Preparations]</name>
 		<code>N0000010591</code>
 		<status>A</status>
@@ -578,6 +902,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Binding Activity [MoA]</name>
+		<code>N0000175355</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175355</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Dihydropyridine Calcium Channel Blocker [EPC]</name>
 		<code>N0000175421</code>
 		<status>A</status>
@@ -606,6 +946,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000175566</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Serotonin Reuptake Inhibitor [EPC]</name>
+		<code>N0000175696</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>EPC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175696</value>
 		</property>
 	</concept>
 	<concept>
@@ -674,6 +1030,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Antidotes, Deterrents, and Toxicologic Agents [TC]</name>
+		<code>N0000178294</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178294</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Anti-inflammatory Agent [TC]</name>
 		<code>N0000178306</code>
 		<status>A</status>
@@ -722,6 +1094,38 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Central Nervous System Agent [TC]</name>
+		<code>N0000178312</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178312</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Antidepressive Agent [TC]</name>
+		<code>N0000178314</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000178314</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Blood Pressure Alteration [PE]</name>
 		<code>N0000178476</code>
 		<status>A</status>
@@ -766,6 +1170,38 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000182136</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Symporter Interactions [MoA]</name>
+		<code>N0000188375</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000188375</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Preparations by FDA Established Pharmacologic Class</name>
+		<code>N0000189939</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000189939</value>
 		</property>
 	</concept>
 	<concept>
@@ -880,6 +1316,22 @@
 			<value>N0000193904</value>
 		</property>
 	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Nervous System Agent [APC]</name>
+		<code>N0000193905</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193905</value>
+		</property>
+	</concept>
 	<association>
 		<namespace>MED-RT</namespace>
 		<name>has_MoA</name>
@@ -889,6 +1341,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Prostaglandin Receptor Antagonists [MoA]</to_name>
 		<to_code>N0000000108</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Serotonin Uptake Inhibitors [MoA]</to_name>
+		<to_code>N0000000109</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -914,11 +1376,31 @@
 		<namespace>MED-RT</namespace>
 		<name>has_MoA</name>
 		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Chelating Activity [MoA]</to_name>
+		<to_code>N0000000087</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
 		<from_name>ibuprofen</from_name>
 		<from_code>5640</from_code>
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Cyclooxygenase Inhibitors [MoA]</to_name>
 		<to_code>N0000000160</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Monoamine Oxidase Inhibitors [MoA]</to_name>
+		<to_code>N0000000184</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -972,6 +1454,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Central Nervous System Serotonin Activity [PE]</to_name>
+		<to_code>N0000009198</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
 		<from_name>Dihydropyridine Calcium Channel Blocker [EPC]</from_name>
@@ -987,8 +1479,8 @@
 		<from_name>amlodipine</from_name>
 		<from_code>17767</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Dihydropyridines</to_name>
+		<to_code>M0006414</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -999,6 +1491,56 @@
 		<to_namespace>RxNorm</to_namespace>
 		<to_name>amlodipine</to_name>
 		<to_code>17767</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Antidepressive Agent [TC]</to_name>
+		<to_code>N0000178314</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Serotonin Reuptake Inhibitor [EPC]</from_name>
+		<from_code>N0000175696</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>escitalopram</to_name>
+		<to_code>321988</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Antidotes, Deterrents, and Toxicologic Agents [TC]</to_name>
+		<to_code>N0000178294</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>may_treat</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Poisoning</to_name>
+		<to_code>M0017099</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Poisoning</to_name>
+		<to_code>M0017099</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1057,8 +1599,8 @@
 		<from_name>ibuprofen</from_name>
 		<from_code>5640</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Anti-Inflammatory Agents, Non-Steroidal</to_name>
+		<to_code>M0001335</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1072,6 +1614,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Renal Organic Ion Excretion [PE]</to_name>
+		<to_code>N0000009556</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>has_TC</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>amlodipine</from_name>
@@ -1082,23 +1634,63 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Inhibition Large Intestine Fluid/Electrolyte Absorption [PE]</to_name>
+		<to_code>N0000009726</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>CI_with</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>ibuprofen</from_name>
 		<from_code>5640</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
-		<name>may_treat</name>
+		<name>CI_with</name>
 		<from_namespace>RxNorm</from_namespace>
-		<from_name>ibuprofen</from_name>
-		<from_code>5640</from_code>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>may_prevent</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Toxicity</to_name>
+		<to_code>M0006855</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1117,18 +1709,38 @@
 		<from_name>A [Preparations]</from_name>
 		<from_code>N0000010583</from_code>
 		<to_namespace>RxNorm</to_namespace>
+		<to_name>activated charcoal</to_name>
+		<to_code>272</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>A [Preparations]</from_name>
+		<from_code>N0000010583</from_code>
+		<to_namespace>RxNorm</to_namespace>
 		<to_name>amlodipine</to_name>
 		<to_code>17767</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
-		<name>may_prevent</name>
+		<name>CI_ChemClass</name>
 		<from_namespace>RxNorm</from_namespace>
-		<from_name>ibuprofen</from_name>
-		<from_code>5640</from_code>
+		<from_name>escitalopram</from_name>
+		<from_code>321988</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Pimozide</to_name>
+		<to_code>M0016871</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Liver Diseases</to_name>
+		<to_code>M0012644</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1152,13 +1764,83 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Bronchial Hyperreactivity</to_name>
+		<to_code>M0025237</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>Synonym Of</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>methoxamine</from_name>
 		<from_code>6853</from_code>
 		<to_namespace>MeSH</to_namespace>
-		<to_name>REDACTED</to_name>
-		<to_code>REDACTED</to_code>
+		<to_name>Methoxamine</to_name>
+		<to_code>M0013598</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Pregnancy, Abdominal</to_name>
+		<to_code>M0017497</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>E [Preparations]</from_name>
+		<from_code>N0000010587</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>escitalopram</to_name>
+		<to_code>321988</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Asthma</to_name>
+		<to_code>M0001885</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Rhinitis</to_name>
+		<to_code>M0019019</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>ibuprofen</from_name>
+		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Pregnancy Trimester, Third</to_name>
+		<to_code>M0017490</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>acetaminophen</from_name>
+		<from_code>161</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Glucosephosphate Dehydrogenase Deficiency</to_name>
+		<to_code>M0009353</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1189,6 +1871,46 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Decreased Blood Pressure [PE]</to_name>
 		<to_code>N0000178477</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>amlodipine</from_name>
+		<from_code>17767</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Hypotension</to_name>
+		<to_code>M0010927</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Inhibition Small Intestine Fluid/Electrolyte Absorption [PE]</to_name>
+		<to_code>N0000009730</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_ChemClass</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Alkalies</to_name>
+		<to_code>M0000711</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_ChemClass</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Organic Chemicals</to_name>
+		<to_code>M0015401</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1274,6 +1996,36 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Neurotransmitter Transporter Interactions [MoA]</from_name>
+		<from_code>N0000000105</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Serotonin Transporter Interactions [MoA]</to_name>
+		<to_code>N0000000167</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Serotonin Transporter Interactions [MoA]</from_name>
+		<from_code>N0000000167</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Serotonin Uptake Inhibitors [MoA]</to_name>
+		<to_code>N0000000109</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Symporter Interactions [MoA]</from_name>
+		<from_code>N0000188375</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Serotonin Transporter Interactions [MoA]</to_name>
+		<to_code>N0000000167</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Ion Channel Interactions [MoA]</from_name>
 		<from_code>N0000000193</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -1304,6 +2056,26 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Physiochemical Activity [MoA]</from_name>
+		<from_code>N0000000065</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Binding Activity [MoA]</to_name>
+		<to_code>N0000175355</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Binding Activity [MoA]</from_name>
+		<from_code>N0000175355</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Chelating Activity [MoA]</to_name>
+		<to_code>N0000000087</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Enzyme Interactions [MoA]</from_name>
 		<from_code>N0000000163</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -1319,6 +2091,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Cyclooxygenase Inhibitors [MoA]</to_name>
 		<to_code>N0000000160</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Enzyme Inhibitors [MoA]</from_name>
+		<from_code>N0000000133</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Monoamine Oxidase Inhibitors [MoA]</to_name>
+		<to_code>N0000000184</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1397,8 +2179,88 @@
 		<from_name>Pharmaceutical and Biological Preparations</from_name>
 		<from_code>N0000000001</from_code>
 		<to_namespace>MED-RT</to_namespace>
+		<to_name>Preparations by FDA Established Pharmacologic Class</to_name>
+		<to_code>N0000189939</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Pharmaceutical and Biological Preparations</from_name>
+		<from_code>N0000000001</from_code>
+		<to_namespace>MED-RT</to_namespace>
 		<to_name>Preparations by Generic Ingredient</to_name>
 		<to_code>N0000010582</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Ion Channel or Pump Agent [APC]</to_name>
+		<to_code>N0000193904</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Nervous System Agent [APC]</to_name>
+		<to_code>N0000193905</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Enzyme Interaction [APC]</to_name>
+		<to_code>N0000193898</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cardiovascular Agent [APC]</to_name>
+		<to_code>N0000193893</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Increased Immunologically Active Biogenic Amine Activity [PE]</from_name>
+		<from_code>N0000009354</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Serotonin Activity [PE]</to_name>
+		<to_code>N0000009585</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Increased Serotonin Activity [PE]</from_name>
+		<from_code>N0000009585</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Central Nervous System Serotonin Activity [PE]</to_name>
+		<to_code>N0000009198</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Serotonin Activity Alteration [PE]</from_name>
+		<from_code>N0000009844</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Serotonin Activity [PE]</to_name>
+		<to_code>N0000009585</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1439,6 +2301,36 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Calcium Channel Agent [APC]</to_name>
 		<to_code>N0000193892</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Nervous System Agent [APC]</from_name>
+		<from_code>N0000193905</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Serotonin Reuptake Inhibitor [EPC]</to_name>
+		<to_code>N0000175696</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Central Nervous System Agent [TC]</from_name>
+		<from_code>N0000178312</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Antidepressive Agent [TC]</to_name>
+		<to_code>N0000178314</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Antidotes, Deterrents, and Toxicologic Agents [TC]</to_name>
+		<to_code>N0000178294</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1534,11 +2426,41 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal Organic Ion Transport Alteration [PE]</from_name>
+		<from_code>N0000009831</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Renal Organic Ion Excretion [PE]</to_name>
+		<to_code>N0000009556</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal/Urological Activity Alteration [PE]</from_name>
+		<from_code>N0000009832</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal Organic Ion Transport Alteration [PE]</to_name>
+		<to_code>N0000009831</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Cardiovascular Agent [TC]</from_name>
 		<from_code>N0000178309</from_code>
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Anti-anginal Agent [TC]</to_name>
 		<to_code>N0000178310</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Large Intestine Fluid/Electrolyte Absorption Alteration [PE]</from_name>
+		<from_code>N0000009736</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Inhibition Large Intestine Fluid/Electrolyte Absorption [PE]</to_name>
+		<to_code>N0000009726</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1574,6 +2496,16 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by Generic Ingredient</from_name>
+		<from_code>N0000010582</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>E [Preparations]</to_name>
+		<to_code>N0000010587</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Organ System Specific Effects [PE]</from_name>
 		<from_code>N0000009770</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -1589,6 +2521,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Cardiovascular Activity Alteration [PE]</to_name>
 		<to_code>N0000008331</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Organ System Specific Effects [PE]</from_name>
+		<from_code>N0000009770</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal/Urological Activity Alteration [PE]</to_name>
+		<to_code>N0000009832</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1634,6 +2576,36 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Small Intestine Fluid/Electrolyte Alteration [PE]</from_name>
+		<from_code>N0000009846</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Small Intestine Fluid/Electrolyte Absorption Alteration [PE]</to_name>
+		<to_code>N0000009845</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Small Intestine Fluid/Electrolyte Absorption Alteration [PE]</from_name>
+		<from_code>N0000009845</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Inhibition Small Intestine Fluid/Electrolyte Absorption [PE]</to_name>
+		<to_code>N0000009730</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Large Intestine Fluid/Electrolyte Alteration [PE]</from_name>
+		<from_code>N0000009737</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Large Intestine Fluid/Electrolyte Absorption Alteration [PE]</to_name>
+		<to_code>N0000009736</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Nervous System Activity Alteration [PE]</from_name>
 		<from_code>N0000009759</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -1659,6 +2631,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Analgesics [TC]</to_name>
 		<to_code>N0000193809</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Central Nervous System Agent [TC]</to_name>
+		<to_code>N0000178312</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>

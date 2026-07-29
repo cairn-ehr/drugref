@@ -23,6 +23,7 @@ MOIETY_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "moiety")
 CLASS_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "class")
 QUESTION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "question")
 LOCAL_PRODUCT_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "local_product")
+CONDITION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "condition")
 
 
 def mint_moiety_uuid(unii: str) -> uuid.UUID:
@@ -134,6 +135,29 @@ def mint_class_uuid(source: str, code: str) -> uuid.UUID:
     prefix = _SOURCE_KEY_PREFIX.get(canon, canon.upper())
     key = f"{prefix}:{code.strip().upper()}"
     return uuid.uuid5(CLASS_NAMESPACE, key)
+
+
+def mint_condition_uuid(source: str, code: str) -> uuid.UUID:
+    """Derive a condition's immortal UUID from (authority, record code).
+
+    A CONDITION is the patient state a drug must not be given in -- a disease, but
+    also pregnancy, lactation or a procedure (slice-5b spec §4.3). `code` is the
+    authority's own stable record identifier: a MeSH DescriptorUI ("D004827") or a
+    SupplementalRecordUI ("C536778").
+
+    Derived and re-derived on every ingest, never pinned -- the same discipline as
+    mint_class_uuid and deliberately unlike mint_moiety_uuid. That is what lets the
+    condition registry be dropped and rebuilt while every surviving condition comes
+    back with exactly the UUID it had before.
+
+    A SEPARATE NAMESPACE FROM CLASS_NAMESPACE, and that is load-bearing: a MeSH
+    descriptor can be both a PA class (slice 2b) and a condition, and sharing a
+    namespace would mint ONE UUID for two different kinds of thing, silently
+    joining a condition row to a class row through either edge table.
+    """
+    canon = canonical_source(source)
+    key = f"{canon.upper()}:{code.strip().upper()}"
+    return uuid.uuid5(CONDITION_NAMESPACE, key)
 
 
 # ---- local-tier product identity (slice 8a) --------------------------------

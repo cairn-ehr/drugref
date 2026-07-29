@@ -17,17 +17,26 @@ WHAT THIS MODULE READS, AND WHY ONLY THIS
   the RxCUI. That is the join key back to our moiety registry, because slice 1
   already records an RXNORM_IN identity claim for every moiety.
 
+* MeSH concepts appear as association endpoints only, and are read for exactly two
+  predicates -- CI_with and CI_ChemClass, see MESH_CI_RELATIONSHIPS. Their object
+  code is handed on RAW, never resolved here; ingest/mesh_concepts.py resolves it
+  against the MeSH release.
+
 LICENCE-CRITICAL: MED-RT is built partly from SNOMED CT US Edition and MeSH, and
 its hierarchy genuinely maps out into both (761 SNOMED->MED-RT edges in the
-2026.07.06 release). SNOMED is NOT redistributable under our licence. Usefully,
-only MED-RT-namespace concepts are *defined* in the file -- SNOMED and MeSH appear
-only as association endpoints -- so unlicensed content can enter through exactly
-one door: an edge. This parser closes that door by requiring both endpoints of any
-edge to be classes we ingested. Do not relax that check.
+2026.07.06 release). SNOMED is NOT redistributable under our licence; MeSH IS
+licence-cleared (slice 2b, NLM terms). Usefully, only MED-RT-namespace concepts are
+*defined* in the file -- SNOMED and MeSH appear only as association endpoints -- so
+unlicensed content can enter through exactly one door: an edge. This parser closes
+that door by scoping every edge to a NAMED namespace pair: class hierarchy and
+membership require both endpoints to be classes we ingested, and the two MeSH-keyed
+contraindications require RxNorm -> MeSH specifically. No branch admits an endpoint
+just because it is "not MED-RT", so SNOMED has nowhere to enter. Do not relax that.
 
 The parser is not the only channel, though: a committed TEST FIXTURE naming an
 out-of-scope endpoint redistributes that term whatever this code does with it, so
-tests/fixtures/make_medrt_subset.py redacts those terms and codes on extraction.
+tests/fixtures/make_medrt_subset.py redacts the terms and codes of endpoints
+outside the namespaces drugref may redistribute (SNOMED among them) on extraction.
 
 TWO FACTS ESTABLISHED FROM THE REAL RELEASE, NOT FROM THE DOCUMENTATION
 -----------------------------------------------------------------------
@@ -52,7 +61,9 @@ from xml.etree import ElementTree
 # re-imported here so medrt.ClassConcept and ParsedMedrt keep working unchanged.
 from drugref.classes import ClassConcept
 
-# The only two namespaces we are licensed to read (see the module docstring).
+# The namespaces this parser reads. MED-RT owns the class concepts, RxNorm names the
+# ingredients; MeSH (below, MESH_NAMESPACE) reaches only the two contraindication
+# predicates. See the module docstring for why the list is closed and named.
 MEDRT_NAMESPACE = "MED-RT"
 RXNORM_NAMESPACE = "RxNorm"
 
@@ -78,9 +89,34 @@ MEMBERSHIP_RELATIONSHIPS = frozenset({"has_MoA", "has_PE", "has_TC", "has_PK"})
 # drugs that are). Both run RxNorm -> MED-RT, so both endpoints are already-ingested
 # drugref content. Kept in lockstep with the CHECK on
 # drugref.class_contraindication.relationship. NOT here: CI_with / CI_ChemClass,
-# whose object is a MeSH descriptor (slice 5b), so admitting them would reach a
-# namespace this parse cannot resolve.
+# whose object is a MeSH concept rather than a MED-RT class -- they have their own
+# list and their own record type, immediately below.
 CI_RELATIONSHIPS = frozenset({"CI_MoA", "CI_PE"})
+
+# MeSH-keyed contraindications (slice 5b). These normally run RxNorm -> MeSH, so
+# their OBJECT is a MeSH ConceptUI this parser cannot resolve on its own --
+# ingest/mesh_concepts.py does that, from the MeSH release. The parser therefore
+# hands the raw code on rather than resolving or dropping it. "Normally" is doing
+# real work in that sentence: a handful of rows run elsewhere, and parse() refuses
+# and counts them rather than assuming the object is MeSH (non_mesh_ci_objects).
+#
+#   CI_with       -- "contraindicated in a patient with <condition>". 11,524 of the
+#                    2026.07.06 release's 11,526 CI_with assertions are MeSH-keyed;
+#                    the other 2 point at a MED-RT EXT concept. The object is usually
+#                    a disease, but also pregnancy, lactation, a procedure or a
+#                    demographic.
+#   CI_ChemClass  -- "do not co-administer with <this chemical>". All 1,939 assertions
+#                    are MeSH-keyed, and the object is mostly a SPECIFIC DRUG
+#                    (Pimozide, Cisapride, Ritonavir) rather than a class, which is
+#                    why slice 5b resolves its object against the moiety registry
+#                    first.
+MESH_CI_RELATIONSHIPS = frozenset({"CI_with", "CI_ChemClass"})
+
+# The namespace a MeSH-keyed contraindication's object must live in. MeSH is
+# licence-cleared for drugref (NLM terms: attribution, no-endorsement,
+# version-currency), which is what makes reading these two predicates possible at
+# all -- SNOMED CT endpoints remain unreadable and unredistributable.
+MESH_NAMESPACE = "MeSH"
 
 # The hierarchical relationship, which does double duty: MED-RT -> MED-RT builds
 # the subclass DAG, while EPC -> RxNorm expresses a drug's membership of an
@@ -128,11 +164,28 @@ class ContraindicationAssertion:
 
 
 @dataclass(frozen=True)
+class MeshObjectAssertion:
+    """MED-RT asserts a contraindication whose OBJECT is a MeSH concept.
+
+    `rxcui` is the drug the statement is ABOUT and `mesh_code` is what it is
+    contraindicated with or in -- the same subject/object direction as
+    ContraindicationAssertion, and reversing it inverts the clinical meaning.
+
+    `mesh_code` is a MeSH ConceptUI ("M0004868") -- NOT a DescriptorUI. It is left
+    unresolved here on purpose: this module is pure and reads only the MED-RT file,
+    while resolving the code needs the MeSH release. The orchestrator joins the two.
+    """
+    rxcui: str
+    mesh_code: str
+    relationship: str
+
+
+@dataclass(frozen=True)
 class ParsedMedrt:
     """Everything one MED-RT file yields, already scoped to what we may ingest.
 
-    The two counts are not decoration: a concept this parser refuses is a concept
-    that will never be classified, so it is reported as a worklist number rather
+    The counts are not decoration: a concept or assertion this parser refuses is one
+    that will never reach the registry, so it is reported as a worklist number rather
     than dropped invisibly -- the same posture the slice-1 gate takes, and the same
     one MedrtSummary.unmatched_rxcuis takes for the membership join.
     """
@@ -140,11 +193,20 @@ class ParsedMedrt:
     parents: list[ParentEdge]
     memberships: list[MembershipAssertion]
     contraindications: list[ContraindicationAssertion] = field(default_factory=list)
+    mesh_contraindications: list[MeshObjectAssertion] = field(default_factory=list)
+    # CI_with/CI_ChemClass assertions this parse could not use. Strictly, it counts
+    # any endpoint pair OTHER than RxNorm -> MeSH, so a subject outside RxNorm lands
+    # here too -- the name describes the only case the release actually contains, not
+    # the only case that increments it. Two such rows exist in the 2026.07.06 release,
+    # both RxNorm -> MED-RT pointing at the EXT concept 'Current Non-smoker', and EXT
+    # is deliberately not an ingested concept type.
+    # Counted rather than dropped, the same posture as inactive_concepts.
+    non_mesh_ci_objects: int = 0
     inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
     ambiguous_codes: int = 0          # one published code claimed by several concepts
     # The DISTINCT names this parse saw and ignored, sorted. Not errors -- HC/EXT
-    # and may_treat/CI_with are deliberately out of scope -- but an upstream RENAME
+    # and may_treat/has_SC are deliberately out of scope -- but an upstream RENAME
     # of something we DO ingest looks identical to an ignore, so the vocabulary we
     # skipped is reported rather than assumed. A release-to-release diff of these
     # two tuples is what makes such a change visible at all.
@@ -253,6 +315,8 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
     parents: list[ParentEdge] = []
     memberships: list[MembershipAssertion] = []
     contraindications: list[ContraindicationAssertion] = []
+    mesh_contraindications: list[MeshObjectAssertion] = []
+    non_mesh_ci_objects = 0
     skipped_predicates: set[str] = set()
     for assoc in root.findall("association"):
         name = _text(assoc, "name")
@@ -293,16 +357,33 @@ def parse(path: str | pathlib.Path) -> ParsedMedrt:
                     and to_code in nui_by_code):
                 contraindications.append(ContraindicationAssertion(
                     rxcui=from_code, class_nui=nui_by_code[to_code], relationship=name))
+        elif name in MESH_CI_RELATIONSHIPS:
+            # A MeSH-keyed contraindication (slice 5b). Endpoint-scoped exactly as
+            # the branches above are, but to the MeSH namespace instead of MED-RT:
+            # the object is a MeSH ConceptUI, resolved later against the MeSH release
+            # by ingest/mesh_concepts.py, so there is nothing to look up here. Any
+            # OTHER endpoint pair is refused and COUNTED -- not just a non-MeSH
+            # object, but also a subject outside RxNorm, since neither can be
+            # resolved. In the real release two such rows point at a MED-RT EXT
+            # concept, which drugref does not ingest, so silently dropping them would
+            # hide a real gap.
+            if from_ns == RXNORM_NAMESPACE and to_ns == MESH_NAMESPACE:
+                mesh_contraindications.append(MeshObjectAssertion(
+                    rxcui=from_code, mesh_code=to_code, relationship=name))
+            else:
+                non_mesh_ci_objects += 1
         else:
-            # Everything else (may_treat, CI_with, CI_ChemClass, has_SC, Synonym Of,
-            # ...) is either curated-overlay/indication data or MeSH-keyed CI content
-            # for a later slice, or points at a namespace we may not read. Recorded
-            # by NAME so that an upstream rename of a predicate we DO ingest -- which
-            # otherwise looks exactly like one of these deliberate skips -- shows up
-            # as a new entry rather than as edges quietly going missing.
+            # Everything else (may_treat, may_prevent, has_SC, Synonym Of, ...) is
+            # either curated-overlay/indication data for a later slice, or points at
+            # a namespace we may not read. Recorded by NAME so that an upstream
+            # rename of a predicate we DO ingest -- which otherwise looks exactly
+            # like one of these deliberate skips -- shows up as a new entry rather
+            # than as edges quietly going missing.
             skipped_predicates.add(name)
     return ParsedMedrt(classes=classes, parents=parents, memberships=memberships,
                        contraindications=contraindications,
+                       mesh_contraindications=mesh_contraindications,
+                       non_mesh_ci_objects=non_mesh_ci_objects,
                        inactive_concepts=inactive, unidentified_concepts=unidentified,
                        ambiguous_codes=ambiguous,
                        skipped_concept_types=tuple(sorted(skipped_types)),

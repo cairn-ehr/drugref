@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_ci_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_ci_subset.py DESC.gz SUPP.gz OUT_DIR
+     and regenerate it AFTER make_medrt_subset.py: the wanted set is read out of
+     medrt_subset.xml, so the two fixtures cannot be left describing disjoint worlds.
+     Records are COPIED from the release, never invented or reconstructed; only the
+     AllowableQualifiersList and TermList subtrees, which no drugref code path reads,
+     are removed. Courtesy of the U.S. National Library of Medicine.
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
+<SupplementalRecordSet>
+<SupplementalRecord SCRClass="3">
+  <SupplementalRecordUI>C536778</SupplementalRecordUI>
+  <SupplementalRecordName>
+   <String>Systemic carnitine deficiency</String>
+  </SupplementalRecordName>
+  <LastUpdated>
+   <Year>2015</Year>
+   <Month>08</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>08</Month>
+   <Day>25</Day>
+  </DateIntroduced>
+  <Note>A heriditary autosomal recessive disorder caused by mutations in the high-affinity carnitine transporter (SLC22A5 gene) that is expressed in muscle, heart, kidney, LYMPHOBLASTS, and FIBROBLASTS. This results in impaired fatty acid oxidation in skeletal and heart muscle. Renal wasting of carnitine results in low serum levels and diminished hepatic uptake of carnitine . It can be treated by supplementation of carnitine in early stages, but will result in lethal heart failure if untreated. OMIM: 212140
+  </Note>
+  <Frequency>131</Frequency>
+  <HeadingMappedToList>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>D002331</DescriptorUI>
+     <DescriptorName>
+      <String>Carnitine</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+    <QualifierReferredTo>
+     <QualifierUI>Q000172</QualifierUI>
+     <QualifierName>
+      <String>deficiency</String>
+     </QualifierName>
+    </QualifierReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D009135</DescriptorUI>
+     <DescriptorName>
+      <String>Muscular Diseases</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D009202</DescriptorUI>
+     <DescriptorName>
+      <String>Cardiomyopathies</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+   <HeadingMappedTo>
+    <DescriptorReferredTo>
+     <DescriptorUI>*D022124</DescriptorUI>
+     <DescriptorName>
+      <String>Hyperammonemia</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </HeadingMappedTo>
+  </HeadingMappedToList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0531239</ConceptUI>
+    <ConceptName>
+     <String>Systemic carnitine deficiency</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    </Concept>
+  </ConceptList>
+ </SupplementalRecord>
+
+</SupplementalRecordSet>

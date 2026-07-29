@@ -9,11 +9,15 @@ Seed data attributions:
 - MED-RT (Medication Reference Terminology) — U.S. Department of Veterans Affairs /
   Veterans Health Administration, distributed via NCI Enterprise Vocabulary Services
   (a work of the U.S. federal government; public domain in the US, UMLS restriction
-  level 0). drugref ingests only MED-RT-namespace class concepts and RxNorm-namespace
-  ingredient references; no SNOMED CT content is ingested or redistributed.
+  level 0). drugref ingests only MED-RT-namespace class concepts, RxNorm-namespace
+  ingredient references and, for the two contraindication predicates CI_with and
+  CI_ChemClass, the MeSH-namespace endpoint codes they are keyed by (attributed
+  below); no SNOMED CT content is ingested or redistributed.
 - MeSH (Medical Subject Headings), Pharmacological Actions — Courtesy of the U.S.
   National Library of Medicine. drugref does not claim NLM endorsement. Source data:
   MeSH 2026 (desc/supp/pa). Used under the NLM Terms and Conditions (attribution,
   no-endorsement and version-currency; no NonCommercial or NoDerivatives restriction).
   The committed slice-2b test fixtures (tests/fixtures/mesh_*_subset.xml) are extracts
-  of this MeSH release; they contain MeSH content only.
+  of this MeSH release; they contain MeSH content only. The committed MED-RT fixture
+  (tests/fixtures/medrt_subset.xml) additionally carries the MeSH concept names and
+  ConceptUIs named as endpoints by the MED-RT associations it extracts.

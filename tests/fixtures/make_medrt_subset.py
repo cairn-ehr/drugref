@@ -16,11 +16,12 @@ USAGE:
 The full release is ~45 MB and is NOT committed (see .gitignore); download it
 from NCI EVS (https://evs.nci.nih.gov/ftp1/MED-RT/) when you need to regenerate.
 
-WHAT IT SELECTS: four real drug ingredients chosen to exercise every acceptance
-case -- three that our tests/fixtures/unii_subset.tsv registry carries and one it
-deliberately does not -- plus every MED-RT class they reference, those classes'
-ancestors, and a deliberate sprinkling of out-of-scope material (an HC bin, a
-SNOMED endpoint, a MeSH has_SC, an overlay may_treat) that the parser must drop.
+WHAT IT SELECTS: six real drug ingredients chosen to exercise every acceptance
+case -- four that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
+272, 321988) and two it deliberately does not (6853, 5640) -- plus every MED-RT
+class they reference, those classes' ancestors, and a deliberate sprinkling of
+out-of-scope material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay
+may_treat) that the parser must drop.
 
 WHAT IT REDACTS, AND WHY THAT IS A LICENCE RULE AND NOT TIDINESS: those
 out-of-scope edges name their far endpoint, and for the SNOMED one that endpoint
@@ -31,29 +32,64 @@ it regardless of what the parser does, and would falsify the claim NOTICE makes.
 Every endpoint outside REDISTRIBUTABLE_NAMESPACES therefore has its term and code
 replaced before the fixture is written. The edges stay, and stay exactly as
 discriminating: the parser rejects them on their NAMESPACE, which is preserved.
+
+The redaction is by NAMESPACE, not blanket, and that distinction is the whole point.
+SNOMED CT is redacted, permanently and without exception, because drugref is not
+licensed to redistribute it at all. MeSH is NOT redacted, as of slice 5b, for three
+reasons: it was licence-cleared in slice 2b under the NLM terms (attribution, no
+endorsement, version currency; no NonCommercial and no NoDerivatives clause); this
+repository already commits MeSH fixtures beside this one (mesh_*_subset.xml), so
+retaining a MeSH code here is established practice rather than new exposure; and
+slice 5b's CI_with / CI_ChemClass are keyed by MeSH ConceptUI, so a redacted object
+code would leave those two predicates untestable. Do not "tidy" MeSH back into the
+redacted set, and never lift SNOMED out of it.
 """
 import re
 import sys
 from xml.sax.saxutils import escape
 
-# RxCUIs chosen for coverage. The first three appear in unii_subset.tsv; 5640
-# (ibuprofen) deliberately does not, so it exercises the skipped-and-counted path.
+# RxCUIs chosen for coverage. 161, 17767 and 272 appear in unii_subset.tsv; 5640
+# (ibuprofen) deliberately does not, so it exercises the skipped-and-counted path,
+# and 6853 carries no classifying association at all.
+#
+# NOTE ON 6853: it is METHOXAMINE, not magnesium sulfate -- this entry was
+# mislabelled until slice 5b. Magnesium sulfate is RxCUI 6585, which the release
+# classifies richly, so swapping it in would NOT leave it unclassified. What 6853
+# genuinely demonstrates (an ingredient whose only MED-RT parent is an alphabetical
+# [HC] bin) is what the fixture needs, so the RxCUI stays and the label is corrected.
 INGREDIENTS = {
     "161": "paracetamol / has_MoA, has_PE, has_PK, has_TC; no EPC; sits under an HC bin",
-    "17767": "amlodipine / carries TWO EPC parents plus a MeSH has_SC",
-    "6853": "magnesium sulfate / HC bin only, must end up unclassified",
+    "17767": "amlodipine / carries TWO EPC parents, a MeSH has_SC and a real CI_PE",
+    "6853": "methoxamine / HC bin only, must end up unclassified",
     "5640": "ibuprofen / NOT in our registry, so membership must be skipped and counted",
+    # Slice 5b: the only ingredient here carrying CI_ChemClass ('do not co-administer
+    # with <this chemical>'). Our other four have CI_with but no CI_ChemClass, so
+    # without this one half of slice 5b's parse would go unexercised.
+    "272": "activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC",
+    # Slice 5b, THE OTHER ARM. CI_ChemClass splits at ingest: an object that resolves
+    # to a registered moiety becomes an exact drug-drug row, one that does not is a
+    # genuine chemical CLASS and is withheld. Charcoal's two objects (Alkalies,
+    # Organic Chemicals) are BOTH classes and carry no UNII or CAS in MeSH at all, so
+    # with charcoal alone the ingested arm was exercised by nothing and the fixture
+    # could not tell a working split from a split that never fires. Escitalopram is
+    # the smallest-footprint ingredient in the real release whose CI_ChemClass object
+    # is a substance: 321988 -> MeSH M0016871 = D010868 Pimozide, whose MeSH record
+    # carries UNII 1HIZ4DL86F. Both ends are in unii_subset.tsv (see its WANTED map),
+    # so the pair resolves end to end. It also brings the release's only CI_MoA edge
+    # for these ingredients, which slice 5a's class arm had likewise never seen.
+    "321988": "escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA",
 }
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
 INGESTED_CTY = {"MoA", "PE", "TC", "PK", "EPC", "APC"}
 
 # The only namespaces whose terms this repository may redistribute: MED-RT (VA,
-# public domain) and RxNorm (NLM, public domain), both attributed in NOTICE. An
-# endpoint in any other namespace -- SNOMED CT, which we are not licensed to
-# redistribute at all, and MeSH, which is not attributed until slice 2b -- is
-# emitted with its term and code redacted. See the module docstring.
-REDISTRIBUTABLE_NAMESPACES = {"MED-RT", "RxNorm"}
+# public domain), RxNorm (NLM, public domain) and MeSH (NLM, licence-cleared in
+# slice 2b), all attributed in NOTICE. An endpoint in any other namespace -- above
+# all SNOMED CT, which drugref is not licensed to redistribute at all -- is emitted
+# with its term and code redacted. See the module docstring for why MeSH is in this
+# set and SNOMED must never be.
+REDISTRIBUTABLE_NAMESPACES = {"MED-RT", "RxNorm", "MeSH"}
 REDACTED = "REDACTED"
 
 
@@ -99,14 +135,18 @@ def main(path: str) -> None:
             if (a["fns"] == "RxNorm" and a["fc"] in INGREDIENTS)
             or (a["tns"] == "RxNorm" and a["tc"] in INGREDIENTS)]
     # Trim the noisiest overlay relations: keep just a couple as proof they're dropped.
-    # CI_MoA / CI_PE are deliberately NOT trimmed -- they are slice-5a's drug-drug
-    # contraindications, extracted into class_contraindication, and the fixture must
-    # keep exercising them (amlodipine's real CI_PE -> N0000178477 is the edge the
-    # release provides for these ingredients). CI_with stays trimmed: it is MeSH-keyed
-    # (slice 5b) and its endpoint is redacted here anyway.
+    # NOT trimmed, because the parser ingests them and the fixture is what proves it:
+    #   CI_MoA / CI_PE      -- slice 5a's drug-drug contraindications (amlodipine's
+    #                          real CI_PE -> N0000178477 is the edge the release
+    #                          provides for these ingredients);
+    #   CI_with / CI_ChemClass -- slice 5b's MeSH-keyed contraindications. CI_with was
+    #                          trimmed to one while its MeSH endpoint was redacted and
+    #                          the parser discarded it; both are now parsed and their
+    #                          object codes are retained, so trimming them would throw
+    #                          away the only real data the new branch has to run on.
     trimmed, seen_overlay = [], {}
     for a in keep:
-        if a["name"] in ("may_treat", "may_prevent", "CI_with", "Synonym Of"):
+        if a["name"] in ("may_treat", "may_prevent", "Synonym Of"):
             seen_overlay[a["name"]] = seen_overlay.get(a["name"], 0) + 1
             if seen_overlay[a["name"]] > 1:
                 continue
@@ -140,13 +180,30 @@ def main(path: str) -> None:
     out = ['<?xml version="1.0" encoding="UTF-8" ?>',
            "<!-- EXTRACTED FROM A REAL MED-RT RELEASE by make_medrt_subset.py. Do not hand-edit.",
            "     Regenerate with:  python tests/fixtures/make_medrt_subset.py <Core_MEDRT_*.xml>",
-           "     Association endpoints outside MED-RT/RxNorm carry REDACTED in place of their",
-           "     term and code: this repository may not redistribute SNOMED CT content, and",
-           "     MeSH is not attributed until slice 2b. The namespace is kept, which is what",
-           "     the parser rejects the edge on, so the fixture loses no discriminating power.",
+           "     Association endpoints outside MED-RT/RxNorm/MeSH carry REDACTED in place of",
+           "     their term and code: this repository may not redistribute SNOMED CT content.",
+           "     The namespace is kept, which is what the parser rejects the edge on, so the",
+           "     fixture loses no discriminating power. MeSH endpoints are NOT redacted, because",
+           "     MeSH is licence-cleared (slice 2b) and slice 5b's CI_with / CI_ChemClass are",
+           "     keyed by MeSH ConceptUI: redacting them would leave those predicates untestable.",
            "     Ingredients covered:"]
     for rx, why in INGREDIENTS.items():
         out.append(f"       RxCUI {rx}: {why}")
+    # XML forbids '--' INSIDE a comment (it is the closing delimiter's prefix), so an
+    # em-dash-style aside anywhere in the header above silently produces a fixture that
+    # no XML parser will read. Caught here, at generation time, rather than as 20
+    # confusing ParseErrors in the test suite.
+    #
+    # SystemExit rather than assert: this is a script people run directly, and `python
+    # -O` strips asserts -- which would silently restore exactly the failure mode this
+    # guard exists to prevent.
+    # out[0] is the XML declaration and out[1] opens the comment, so the BODY is
+    # out[1] minus its '<!--' delimiter, plus everything after it.
+    body = [out[1].removeprefix("<!--"), *out[2:]]
+    if any("--" in line for line in body):
+        raise SystemExit(
+            "make_medrt_subset.py: the fixture header comment contains '--', which XML "
+            "does not allow inside a comment. Reword it and re-run.")
     out += ["-->", "<terminology>",
             "\t<namespace>", "\t\t<name>MED-RT</name>",
             "\t\t<version>2026.07.06</version>", "\t</namespace>"]

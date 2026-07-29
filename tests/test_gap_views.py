@@ -15,7 +15,7 @@ import uuid
 import pytest
 import psycopg
 
-from drugref import ids
+from drugref import ids, questions
 
 
 @pytest.fixture(autouse=True)
@@ -391,3 +391,123 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
     conn.execute("UPDATE drugref.ci_axis SET expands_descendants = false "
                  "WHERE relationship = 'CI_MoA'")
     assert _unreviewed(conn) == [(root, 25, 1)]
+
+
+# ---- gap_unresolved_ci_object -------------------------------------------------
+#
+# The review gate for the class arm slice 5b deliberately withholds. CI_ChemClass's
+# class arm (405 assertions over 103 MeSH chemical classes, MEASURED against the real
+# 2026.07.06 release) is real upstream safety content drugref does not ingest --
+# expanding it over MeSH's STRUCTURAL chemical tree would make a rule on Sulfonamides
+# reach bendroflumethiazide and bosentan, the discredited sulfa cross-reactivity
+# inference. Withholding it is the right call; withholding it silently is not, so each
+# withheld object becomes a citable question.
+#
+# ON 103, NOT 108. 108 counts MeSH ConceptUIs; this worklist is keyed on the MeSH
+# RECORD ui, because ONE RECORD IS ONE CURATOR DECISION, and five records are each
+# named by two withheld concepts. db/014 and db/016 were corrected to 103 before merge
+# -- the checksum ledger binds a DATABASE, not the repo, so a migration no database
+# outside a disposable local one has ever seen is still editable; immutability starts
+# at merge. The slice-5b SPEC still says 108 and cannot be corrected at all (specs
+# under docs/superpowers/specs/ are immutable by project rule), so the standing
+# correction for it is the docs-site decision record "A structural chemical tree is
+# not a clinical class".
+
+
+def test_unresolved_ci_object_becomes_a_question(conn, ingest_run_id):
+    """The 405 withheld CI_ChemClass assertions are PUBLISHED as questions, not
+    dropped -- Plan B's precedent, where a pharmacist ruled on each expansion root
+    before drugref expanded over it."""
+    conn.execute(
+        "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D013449',"
+        "'Sulfonamides','CHEMICAL_CLASS',36)",
+        (ingest_run_id,))
+    counts = questions.register_from_gaps(conn, ingest_run_id)
+    assert counts["unresolved_ci_object"] == 1
+
+    row = conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ci_object'").fetchone()
+    assert row[0] == "MESH:D013449"
+    assert "Sulfonamides" in row[1]
+    assert "36" in row[1]
+    assert "structural tree" in row[1]
+
+
+def test_an_unregistered_substance_gets_the_other_question(conn, ingest_run_id):
+    """THE CATEGORY ERROR THIS GUARDS. Both object kinds sit on one worklist, but a
+    substance drugref simply does not carry must NOT be asked the class question.
+
+    Before object_kind existed, every unresolved object got the class text, so a run
+    against a registry missing Pimozide -- a leaf drug descriptor with nothing beneath
+    it at all -- asked a curator whether contraindications naming it should "be
+    expanded to the drugs beneath it in MeSH's structural tree". The remedy for this
+    kind is to register the moiety; saying so is the whole point of the split.
+    """
+    conn.execute(
+        "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D010868',"
+        "'Pimozide','UNREGISTERED_SUBSTANCE',1)",
+        (ingest_run_id,))
+    questions.register_from_gaps(conn, ingest_run_id)
+    text = conn.execute(
+        "SELECT question_text FROM drugref.open_question "
+        "WHERE gap_key = 'MESH:D010868'").fetchone()[0]
+    assert "Pimozide" in text
+    assert "registers no moiety" in text
+    # The class question, and only it, offers tree expansion as the remedy.
+    assert "be expanded to the drugs beneath it" not in text
+
+
+def test_an_unhandled_object_kind_aborts_rather_than_mislabels(conn, ingest_run_id):
+    """The CASE in questions.py has no ELSE, deliberately.
+
+    A third object_kind added without its own question text yields NULL, and
+    open_question.question_text is NOT NULL -- so the ingest dies loudly at the
+    register step instead of handing a curator a confidently wrong sentence. That is
+    the force-a-declaration discipline db/014 gave condition_ci_axis, applied to the
+    consumer side. The CHECK is widened inside this test's transaction only; the
+    `conn` fixture rolls it back.
+    """
+    conn.execute("ALTER TABLE drugref.ingest_unresolved_ci_object "
+                 "DROP CONSTRAINT ingest_unresolved_ci_object_kind")
+    conn.execute(
+        "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D999999',"
+        "'Something New','A_THIRD_KIND',7)",
+        (ingest_run_id,))
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        questions.register_from_gaps(conn, ingest_run_id)
+
+
+def test_unresolved_ci_object_question_uuid_is_stable(conn, ingest_run_id):
+    """Re-running an ingest must not re-mint the question: external tools cite it."""
+    conn.execute(
+        "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D013449',"
+        "'Sulfonamides','CHEMICAL_CLASS',36)",
+        (ingest_run_id,))
+    questions.register_from_gaps(conn, ingest_run_id)
+    first = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind='unresolved_ci_object'").fetchone()[0]
+    questions.register_from_gaps(conn, ingest_run_id)
+    second = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind='unresolved_ci_object'").fetchone()[0]
+    assert first == second
+    assert first == ids.mint_question_uuid("unresolved_ci_object", "MESH:D013449")
+
+
+def test_gap_kind_admits_the_fifth_kind(conn):
+    """register_from_gaps INSERTs at the very LAST step of an ingest, so a kind the
+    CHECK does not admit aborts the whole transaction after everything was rebuilt."""
+    definition = conn.execute(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conname = 'open_question_gap_kind'").fetchone()[0]
+    assert "unresolved_ci_object" in definition

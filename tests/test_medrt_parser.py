@@ -20,12 +20,16 @@ def parsed():
     return medrt.parse(FIX)
 
 
-def _write(tmp_path, concepts: str, associations: str = "") -> pathlib.Path:
+def write_medrt(tmp_path, concepts: str, associations: str = "") -> pathlib.Path:
     """Write a minimal MED-RT file for the shape-variation tests below.
 
     The acceptance tests all run against the real extracted fixture; this exists
     only for shapes the current release does not contain (a retired concept, a
     concept whose code differs from its NUI), which cannot be extracted from it.
+
+    PUBLIC, not `_write`, because tests/test_medrt_mesh_ci_parser.py imports it too:
+    the slice-5b predicates are parsed by the same parser and deserve the same
+    controlled-input idiom rather than a second copy of it.
     """
     path = tmp_path / "medrt.xml"
     path.write_text(
@@ -37,7 +41,7 @@ def _write(tmp_path, concepts: str, associations: str = "") -> pathlib.Path:
     return path
 
 
-def _concept(code: str, nui: str, name: str, cty: str = "MoA", status: str = "A") -> str:
+def concept(code: str, nui: str, name: str, cty: str = "MoA", status: str = "A") -> str:
     return (f"\t<concept><namespace>MED-RT</namespace><name>{name}</name>"
             f"<code>{code}</code><status>{status}</status>"
             f"<property><namespace>MED-RT</namespace><name>CTY</name>"
@@ -47,7 +51,7 @@ def _concept(code: str, nui: str, name: str, cty: str = "MoA", status: str = "A"
             + "</concept>\n")
 
 
-def _assoc(name: str, fns: str, fc: str, tns: str, tc: str) -> str:
+def assoc(name: str, fns: str, fc: str, tns: str, tc: str) -> str:
     return (f"\t<association><namespace>MED-RT</namespace><name>{name}</name>"
             f"<from_namespace>{fns}</from_namespace><from_name>x</from_name>"
             f"<from_code>{fc}</from_code>"
@@ -64,7 +68,7 @@ def test_ingests_exactly_the_six_classification_concept_types():
 
 
 def test_ingests_every_class_in_the_fixture():
-    assert len(parsed().classes) == 49
+    assert len(parsed().classes) == 75
 
 
 def test_excludes_hc_navigation_bins():
@@ -95,8 +99,10 @@ def test_the_real_release_holds_no_inactive_or_unidentified_concepts():
 def test_a_retired_concept_is_refused_and_counted(tmp_path):
     """substance_class never deletes, so a concept upstream has stopped asserting
     must not get in -- and must be reported, not dropped in silence."""
-    path = _write(tmp_path, _concept("N0000000001", "N0000000001", "Live [MoA]")
-                  + _concept("N0000000002", "N0000000002", "Dead [MoA]", status="R"))
+    path = write_medrt(tmp_path,
+                       concept("N0000000001", "N0000000001", "Live [MoA]")
+                       + concept("N0000000002", "N0000000002", "Dead [MoA]",
+                                 status="R"))
     result = medrt.parse(path)
     assert [c.nui for c in result.classes] == ["N0000000001"]
     assert result.inactive_concepts == 1
@@ -105,8 +111,9 @@ def test_a_retired_concept_is_refused_and_counted(tmp_path):
 def test_a_concept_with_no_identifier_at_all_is_refused_and_counted(tmp_path):
     """Minting from an empty key would collapse every such concept onto ONE
     class_uuid, so they would silently overwrite each other's names."""
-    path = _write(tmp_path, _concept("", "", "Anonymous [MoA]")
-                  + _concept("", "", "Also Anonymous [MoA]"))
+    path = write_medrt(tmp_path,
+                       concept("", "", "Anonymous [MoA]")
+                       + concept("", "", "Also Anonymous [MoA]"))
     result = medrt.parse(path)
     assert result.classes == []
     assert result.unidentified_concepts == 2
@@ -115,7 +122,7 @@ def test_a_concept_with_no_identifier_at_all_is_refused_and_counted(tmp_path):
 def test_either_identifier_alone_is_enough(tmp_path):
     """A concept with only a code is still identifiable; the code stands in as the
     NUI (and vice versa). Only carrying neither is fatal."""
-    path = _write(tmp_path, _concept("N0000000003", "", "Code Only [MoA]"))
+    path = write_medrt(tmp_path, concept("N0000000003", "", "Code Only [MoA]"))
     only = medrt.parse(path).classes
     assert [(c.nui, c.code) for c in only] == [("N0000000003", "N0000000003")]
 
@@ -125,11 +132,11 @@ def test_edges_resolve_when_code_and_nui_differ(tmp_path):
     are equal in the 2026.07.06 release, so matching endpoint codes against NUIs
     works by luck today; were upstream to let them diverge, every edge would fail
     to match and the DAG would come back EMPTY with no error and no count."""
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-PARENT", "N0000000004", "Parent [MoA]")
-        + _concept("C-CHILD", "N0000000005", "Child [MoA]"),
-        _assoc("Parent Of", "MED-RT", "C-PARENT", "MED-RT", "C-CHILD"))
+        concept("C-PARENT", "N0000000004", "Parent [MoA]")
+        + concept("C-CHILD", "N0000000005", "Child [MoA]"),
+        assoc("Parent Of", "MED-RT", "C-PARENT", "MED-RT", "C-CHILD"))
     # Edges are emitted in terms of NUIs, because that is what class_uuid derives
     # from -- but they are FOUND by code.
     assert medrt.parse(path).parents == [
@@ -138,10 +145,10 @@ def test_edges_resolve_when_code_and_nui_differ(tmp_path):
 
 def test_epc_membership_also_resolves_by_code(tmp_path):
     """The same code-vs-NUI rule on the hierarchical EPC membership path."""
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-EPC", "N0000000006", "Some Class [EPC]", cty="EPC"),
-        _assoc("Parent Of", "MED-RT", "C-EPC", "RxNorm", "161"))
+        concept("C-EPC", "N0000000006", "Some Class [EPC]", cty="EPC"),
+        assoc("Parent Of", "MED-RT", "C-EPC", "RxNorm", "161"))
     assert medrt.parse(path).memberships == [
         medrt.MembershipAssertion("161", "N0000000006", "has_EPC")]
 
@@ -160,7 +167,7 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 
 
 def test_builds_the_expected_number_of_dag_edges():
-    assert len(parsed().parents) == 39
+    assert len(parsed().parents) == 59
 
 
 def test_a_class_can_have_two_parents():
@@ -182,23 +189,50 @@ def test_drops_hierarchy_into_unlicensed_or_uningested_endpoints():
     assert "<from_namespace>SNOMED CT</from_namespace>" in FIX.read_text(encoding="utf-8")
 
 
-def test_the_fixture_redistributes_no_out_of_scope_terms_or_codes():
-    """A licence rule about the REPOSITORY, not the database.
+# Namespaces whose terms this repository may redistribute, restated here rather than
+# imported from make_medrt_subset.py ON PURPOSE: this test is the INDEPENDENT check on
+# the generator, so widening the generator's set must make it fail, not follow along.
+REDISTRIBUTABLE_NAMESPACES = {"MED-RT", "RxNorm", "MeSH"}
 
-    The parser refusing a SNOMED edge keeps unlicensed content out of the DB, but
-    the fixture is a committed file in an AGPL-licensed repo: a SNOMED term sitting
-    in it is redistributed no matter what the parser does, and would contradict
-    NOTICE. make_medrt_subset.py therefore redacts the term and code of every
-    endpoint outside MED-RT/RxNorm; this fails if a regeneration ever drops that.
+
+def test_the_fixture_redacts_snomed_but_keeps_mesh():
+    """A licence rule about the REPOSITORY, not the database -- and it has two halves.
+
+    The parser refusing a SNOMED edge keeps unlicensed content out of the DB, but the
+    fixture is a committed file in an AGPL-licensed repo: a SNOMED term sitting in it
+    is redistributed no matter what the parser does, and would contradict NOTICE.
+    SNOMED CT is not redistributable under drugref's licence at all, so its endpoints
+    must stay redacted, permanently and without exception.
+
+    MeSH is the other half, and the reason this is not simply "redact everything
+    foreign": MeSH was licence-cleared in slice 2b (NLM terms -- attribution, no
+    endorsement, version currency; no NonCommercial, no NoDerivatives), this repo
+    already commits mesh_*_subset.xml beside this fixture, and slice 5b's CI_with /
+    CI_ChemClass are keyed by MeSH ConceptUI -- a redacted object code would make
+    those two predicates untestable. So MeSH endpoints must come through intact.
+
+    Asserting only one half would let a regeneration break the other silently.
     """
     text = FIX.read_text(encoding="utf-8")
-    out_of_scope = re.findall(
-        r"<(from|to)_namespace>(?!MED-RT<|RxNorm<)([^<]+)</\1_namespace>\s*"
+    endpoints = re.findall(
+        r"<(from|to)_namespace>([^<]+)</\1_namespace>\s*"
         r"<\1_name>([^<]*)</\1_name>\s*<\1_code>([^<]*)</\1_code>", text)
-    assert out_of_scope, "fixture no longer exercises an out-of-scope endpoint"
-    for _side, namespace, name, code in out_of_scope:
-        assert (name, code) == ("REDACTED", "REDACTED"), \
-            f"unredacted {namespace} content in the committed fixture: {name!r} / {code!r}"
+    namespaces = {namespace for _side, namespace, _name, _code in endpoints}
+
+    # Half one: SNOMED CT (and anything else unlicensed) is present but redacted.
+    assert "SNOMED CT" in namespaces, "fixture no longer exercises an unlicensed endpoint"
+    for _side, namespace, name, code in endpoints:
+        if namespace not in REDISTRIBUTABLE_NAMESPACES:
+            assert (name, code) == ("REDACTED", "REDACTED"), \
+                f"unredacted {namespace} content in the committed fixture: {name!r} / {code!r}"
+
+    # Half two: MeSH is present and NOT redacted, carrying real ConceptUIs.
+    mesh = [(name, code) for _side, namespace, name, code in endpoints if namespace == "MeSH"]
+    assert mesh, "fixture no longer exercises a MeSH endpoint"
+    for name, code in mesh:
+        assert (name, code) != ("REDACTED", "REDACTED"), \
+            "MeSH endpoints are licence-cleared and must survive extraction intact"
+        assert re.fullmatch(r"M\d+", code), f"not a MeSH ConceptUI: {code!r}"
 
 
 # ---- membership ------------------------------------------------------------
@@ -225,7 +259,9 @@ def test_membership_counts_per_ingredient():
     assert counts["161"] == 8       # 1 MoA + 4 PE + 2 PK + 1 TC, no EPC
     assert counts["17767"] == 9     # 3 MoA + 2 PE + 2 TC + 2 EPC
     assert counts["5640"] == 9      # ibuprofen: parsed here, unmatched at ingest time
-    assert "6853" not in counts     # magnesium sulfate: only an HC bin, so unclassified
+    assert counts["272"] == 5       # activated charcoal: 1 MoA + 3 PE + 1 TC, no EPC
+    assert counts["321988"] == 4    # escitalopram: 1 MoA + 1 PE + 1 TC + 1 EPC
+    assert "6853" not in counts     # methoxamine: only an HC bin, so unclassified
 
 
 def test_indication_and_contraindication_are_not_membership():
@@ -235,15 +271,21 @@ def test_indication_and_contraindication_are_not_membership():
 
 
 def test_has_sc_into_mesh_is_dropped():
-    """has_SC targets MeSH, which belongs to slice 2b and is not ours to bundle here.
+    """has_SC ('has chemical structure') targets MeSH, and is an indications-era
+    predicate drugref does not ingest on any axis.
 
-    Asserted against the fixture's own has_SC count rather than against the shape of
-    a MeSH code: those codes are redacted in the fixture, so a code-shape assertion
-    would pass whether or not the parser did anything.
+    Slice 5b made MeSH endpoints readable for CI_with / CI_ChemClass, which is
+    exactly why this needs pinning now: "the object is MeSH" stopped being a reason
+    to drop an edge, so has_SC has to be dropped on its NAME instead. Asserted
+    against the fixture's own has_SC count, so it cannot pass by the fixture quietly
+    losing the edges it is meant to exercise.
     """
     text = FIX.read_text(encoding="utf-8")
     assert text.count("<name>has_SC</name>") == 2, "fixture no longer exercises has_SC"
     assert all(m.relationship != "has_SC" for m in parsed().memberships)
+    # ...and it must not have leaked into the MeSH-keyed contraindications either.
+    assert all(a.relationship != "has_SC" for a in parsed().mesh_contraindications)
+    assert "has_SC" in parsed().skipped_predicates
 
 
 def test_every_membership_points_at_an_ingested_class():
@@ -262,21 +304,21 @@ def test_every_membership_points_at_an_ingested_class():
 
 
 def test_skipped_concept_types_are_reported(tmp_path):
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-HC", "N-HC-1", "A [Preparations]", cty="HC")
-        + _concept("C-EXT", "N-EXT-1", "Some Chemical", cty="EXT")
-        + _concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"))
+        concept("C-HC", "N-HC-1", "A [Preparations]", cty="HC")
+        + concept("C-EXT", "N-EXT-1", "Some Chemical", cty="EXT")
+        + concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"))
     assert medrt.parse(path).skipped_concept_types == ("EXT", "HC")
 
 
 def test_skipped_association_names_are_reported(tmp_path):
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"),
-        _assoc("may_treat", "RxNorm", "161", "MeSH", "M0001")
-        + _assoc("has_SC", "MED-RT", "C-MOA", "MeSH", "M0002")
-        + _assoc("has_MoA", "RxNorm", "161", "MED-RT", "C-MOA"))
+        concept("C-MOA", "N-MOA-9", "Real Mechanism [MoA]", cty="MoA"),
+        assoc("may_treat", "RxNorm", "161", "MeSH", "M0001")
+        + assoc("has_SC", "MED-RT", "C-MOA", "MeSH", "M0002")
+        + assoc("has_MoA", "RxNorm", "161", "MED-RT", "C-MOA"))
     result = medrt.parse(path)
     assert result.skipped_predicates == ("has_SC", "may_treat")
     assert len(result.memberships) == 1      # the recognised one still lands
@@ -295,11 +337,11 @@ def test_an_edge_through_a_code_claimed_by_two_concepts_is_refused(tmp_path):
     # Two DIFFERENT classes on DIFFERENT axes publishing one code. Resolving
     # last-write-wins would attach this has_MoA membership to the PE class --
     # a mechanism-of-action fact filed as a physiological effect, silently.
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
-        + _concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE"),
-        _assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED"))
+        concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
+        + concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE"),
+        assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED"))
     result = medrt.parse(path)
     assert result.memberships == []
     assert result.ambiguous_codes == 1
@@ -307,13 +349,13 @@ def test_an_edge_through_a_code_claimed_by_two_concepts_is_refused(tmp_path):
 
 def test_an_unambiguous_code_still_resolves_when_another_code_is_ambiguous(tmp_path):
     # The refusal is scoped to the offending code, not the whole release.
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
-        + _concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE")
-        + _concept("CLEAN", "N-MOA-2", "Clean Mechanism [MoA]", cty="MoA"),
-        _assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED")
-        + _assoc("has_MoA", "RxNorm", "161", "MED-RT", "CLEAN"))
+        concept("SHARED", "N-MOA-1", "Real Mechanism [MoA]", cty="MoA")
+        + concept("SHARED", "N-PE-1", "Unrelated Effect [PE]", cty="PE")
+        + concept("CLEAN", "N-MOA-2", "Clean Mechanism [MoA]", cty="MoA"),
+        assoc("has_MoA", "RxNorm", "161", "MED-RT", "SHARED")
+        + assoc("has_MoA", "RxNorm", "161", "MED-RT", "CLEAN"))
     result = medrt.parse(path)
     assert result.memberships == [
         medrt.MembershipAssertion(rxcui="161", class_nui="N-MOA-2",
@@ -330,20 +372,20 @@ def test_an_unambiguous_code_still_resolves_when_another_code_is_ambiguous(tmp_p
 
 
 def test_ci_moa_is_emitted_with_the_drug_as_subject_and_the_class_as_object(tmp_path):
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-MOA", "N0000000201", "Some Mechanism [MoA]", cty="MoA"),
-        _assoc("CI_MoA", "RxNorm", "12345", "MED-RT", "C-MOA"))
+        concept("C-MOA", "N0000000201", "Some Mechanism [MoA]", cty="MoA"),
+        assoc("CI_MoA", "RxNorm", "12345", "MED-RT", "C-MOA"))
     assert medrt.parse(path).contraindications == [
         medrt.ContraindicationAssertion(rxcui="12345", class_nui="N0000000201",
                                         relationship="CI_MoA")]
 
 
 def test_ci_pe_is_emitted_on_the_pe_axis(tmp_path):
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-PE", "N0000000202", "Some Effect [PE]", cty="PE"),
-        _assoc("CI_PE", "RxNorm", "678", "MED-RT", "C-PE"))
+        concept("C-PE", "N0000000202", "Some Effect [PE]", cty="PE"),
+        assoc("CI_PE", "RxNorm", "678", "MED-RT", "C-PE"))
     assert medrt.parse(path).contraindications == [
         medrt.ContraindicationAssertion(rxcui="678", class_nui="N0000000202",
                                         relationship="CI_PE")]
@@ -352,23 +394,23 @@ def test_ci_pe_is_emitted_on_the_pe_axis(tmp_path):
 def test_a_contraindication_to_an_uningested_class_is_dropped(tmp_path):
     """Endpoint scoping, exactly as for the DAG and membership: the object must be a
     class we ingested, or the edge cannot be resolved to a class_uuid at all."""
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-MOA", "N0000000203", "Some Mechanism [MoA]", cty="MoA"),
+        concept("C-MOA", "N0000000203", "Some Mechanism [MoA]", cty="MoA"),
         # object code C-GONE names no ingested concept
-        _assoc("CI_MoA", "RxNorm", "999", "MED-RT", "C-GONE"))
+        assoc("CI_MoA", "RxNorm", "999", "MED-RT", "C-GONE"))
     assert medrt.parse(path).contraindications == []
 
 
 def test_contraindications_and_membership_do_not_leak_into_each_other(tmp_path):
     """A CI_MoA is not membership; a has_MoA is not a contraindication; and the
     MeSH-keyed CI_with (slice 5b) is neither, here."""
-    path = _write(
+    path = write_medrt(
         tmp_path,
-        _concept("C-MOA", "N0000000204", "Some Mechanism [MoA]", cty="MoA"),
-        _assoc("CI_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
-        + _assoc("has_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
-        + _assoc("CI_with", "RxNorm", "1", "MeSH", "M0001111"))
+        concept("C-MOA", "N0000000204", "Some Mechanism [MoA]", cty="MoA"),
+        assoc("CI_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
+        + assoc("has_MoA", "RxNorm", "1", "MED-RT", "C-MOA")
+        + assoc("CI_with", "RxNorm", "1", "MeSH", "M0001111"))
     result = medrt.parse(path)
     assert [c.relationship for c in result.contraindications] == ["CI_MoA"]
     assert [m.relationship for m in result.memberships] == ["has_MoA"]
