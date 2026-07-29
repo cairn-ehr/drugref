@@ -20,7 +20,8 @@ counted, split by CAUSE so the two stay legible (spec §5.3/§6, tension E):
   * members_key_not_in_registry -- it has a key, but no gated-in moiety holds it
                                 (the moiety gate is the binding constraint, §5.3).
 Both are counted by DISTINCT member, since a member's keys are the same under every
-PA class it belongs to.
+PA class it belongs to. The class side has one refusal of its own, reported the same
+way: a PA record naming no DescriptorUI (pa_records_without_descriptor, #17).
 """
 import hashlib
 import logging
@@ -56,6 +57,11 @@ class MeshSummary:
 
     * members_no_key               -- members exposing neither UNII nor CAS
     * members_key_not_in_registry  -- members whose key no gated moiety carries
+    * pa_records_without_descriptor -- PA records naming no DescriptorUI, so there
+      is no identity to key a class on. Zero against a well-formed release; the
+      parser used to drop these invisibly, which is the last silent refusal #17
+      names. It is a CLASS-side refusal, not a membership one, which is why it is
+      not one of the two buckets above.
     """
     classes_in_release: int
     classes_added: int
@@ -63,6 +69,7 @@ class MeshSummary:
     memberships: int
     members_no_key: int
     members_key_not_in_registry: int
+    pa_records_without_descriptor: int
 
 
 def _checksum(*paths) -> str:
@@ -208,7 +215,9 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))
     conn.commit()
-    return MeshSummary(classes_in_release=len(uuid_by_ui), classes_added=classes_added,
-                       parent_edges=parent_edges, memberships=memberships,
-                       members_no_key=members_no_key,
-                       members_key_not_in_registry=members_key_not_in_registry)
+    return MeshSummary(
+        classes_in_release=len(uuid_by_ui), classes_added=classes_added,
+        parent_edges=parent_edges, memberships=memberships,
+        members_no_key=members_no_key,
+        members_key_not_in_registry=members_key_not_in_registry,
+        pa_records_without_descriptor=parsed.pa_records_without_descriptor)

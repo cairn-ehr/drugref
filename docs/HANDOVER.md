@@ -447,10 +447,10 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   precisely the bypass this closes, so hardening must land with a replacement isolation strategy.
 - [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** — structural re-key by
   InChIKey, deferred.
-- [#17](https://github.com/cairn-ehr/drugref/issues/17) **Remaining no-silent-drop gaps** — *half done*:
-  the allow-list is now UNII-keyed (#34). Still live in the code: `ingest/mesh.py`'s `if not dui: continue`
-  drops MeSH PA records with no `DescriptorUI` uncounted. **The issue is CLOSED on GitHub** (closed by hand
-  2026-07-27) while the gap it names is still there — reopen it or fix it, but do not leave both.
+- **#17 no-silent-drop gaps — CLOSED, both halves landed.** The allow-list became UNII-keyed in #34; this
+  round counted the last silent refusal (`MeshSummary.pa_records_without_descriptor`). Its third part was
+  never a code gap — it is the claim-canonicalisation backfill check, now carried under
+  "Verify-before-production" below so closing the issue does not lose it.
 
 **Ingest correctness (all found by measuring the real releases)**
 - [#33](https://github.com/cairn-ehr/drugref/issues/33) **MeSH CAS keys name specific forms** — D008278 is
@@ -512,7 +512,11 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 
 **Verify-before-production, generally:** re-run each parser against a full current release and re-confirm the
 aggregate numbers. Fixtures from a real release are not the same thing — 5b found five spec errors that way,
-each invisible to a green suite.
+each invisible to a green suite. **Plus one data check, inherited from #17:** `claims.add_claim`
+canonicalises case-bearing claim values (UNII / INCHIKEY / CHEBI) via `ids.canonical_claim_value`, so any
+database populated *before* that change could hold a spelling no lookup matches. Harmless today (no
+production database exists) and cheap to confirm — but the append-only floor means such rows cannot simply
+be deleted, so confirm it BEFORE the first real load, not after.
 
 ## Repo facts
 

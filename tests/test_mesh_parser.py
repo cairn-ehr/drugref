@@ -100,6 +100,46 @@ def test_related_registry_number_parenthetical_is_stripped():
     assert cas == {"50-78-2"}
 
 
+# ---- refusals are counted, never silent (issue #17) ------------------------
+
+
+def test_a_well_formed_release_drops_no_pa_record():
+    """The counter's baseline: the real release names a descriptor on every PA
+    record, so the number an operator sees is zero and any non-zero value means
+    something genuinely changed upstream."""
+    assert parsed().pa_records_without_descriptor == 0
+
+
+def test_a_pa_record_with_no_descriptor_ui_is_counted_not_silently_dropped(tmp_path):
+    """A PA record naming no descriptor cannot become a class -- there is no
+    identity to key one on -- so dropping it is right. Dropping it INVISIBLY is
+    not: every other refusal in this codebase is a reported worklist number, and
+    this one was the last silent `continue` left (#17).
+
+    The input is written here rather than extracted from a release, unlike every
+    other fixture: a well-formed release contains no such record by definition, so
+    there is nothing to extract. What is synthetic is the DEFECT, never a fact
+    about MeSH's shape -- the kept record beside it is copied from the real
+    fixture's D000894, so the parser is proved to keep parsing past the bad one.
+    """
+    pa = tmp_path / "pa.xml"
+    pa.write_text(
+        '<?xml version="1.0"?>\n<PharmacologicalActionSet>\n'
+        ' <PharmacologicalAction><DescriptorReferredTo>'
+        '<DescriptorName><String>nameless</String></DescriptorName>'
+        '</DescriptorReferredTo></PharmacologicalAction>\n'
+        ' <PharmacologicalAction><DescriptorReferredTo>'
+        '<DescriptorUI>D000894</DescriptorUI>'
+        '<DescriptorName><String>Anti-Inflammatory Agents, Non-Steroidal</String>'
+        '</DescriptorName></DescriptorReferredTo></PharmacologicalAction>\n'
+        '</PharmacologicalActionSet>\n', encoding="utf-8")
+
+    result = mesh.parse(pa_path=pa, desc_path=DESC, supp_path=SUPP)
+    assert result.pa_records_without_descriptor == 1
+    # The good record beside it still becomes a class: the refusal is per-record.
+    assert [c.descriptor_ui for c in result.classes] == ["D000894"]
+
+
 # ---- the class side of the axis -------------------------------------------
 
 

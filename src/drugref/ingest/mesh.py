@@ -108,10 +108,18 @@ class ParsedMesh:
     `classes`     -- the PA class descriptors (enriched with name + tree numbers);
     `parents`     -- the tree-number-derived subclass DAG (both endpoints PA);
     `memberships` -- one row per (member, PA class), each carrying the member's keys.
+
+    `pa_records_without_descriptor` is a REFUSAL COUNT, not a payload: a PA record
+    naming no DescriptorUI has no identity to key a class on, so it cannot be
+    ingested -- but every other refusal in this codebase is a reported worklist
+    number and this one used to be an invisible `continue` (#17). Zero against a
+    well-formed release; a non-zero value means the release changed shape and is
+    something an operator must see, not something a parser may decide alone.
     """
     classes: list[PaClass]
     parents: list[PaParentEdge]
     memberships: list[PaMembership]
+    pa_records_without_descriptor: int = 0
 
 
 def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
@@ -199,29 +207,38 @@ def _findtext(record, tag: str) -> str:
     return ""
 
 
-def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]]]:
+def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]], int]:
     """Read pa2026: the PA classes and their members.
 
-    Returns (class_name_by_ui, member_uis_by_class):
+    Returns (class_name_by_ui, member_uis_by_class, records_without_descriptor):
     * class_name_by_ui  -- {descriptor_ui: name from the PA rollup} for every PA
       class (order-preserving via dict). A class with no members still appears.
     * member_uis_by_class -- {descriptor_ui: [member RecordUI, ...]} preserving the
       release's order so downstream edge lists are reproducible.
+    * records_without_descriptor -- PA records refused for naming no DescriptorUI.
+      Returned rather than logged so the ORCHESTRATOR reports it, the same way it
+      reports the two membership worklist numbers (#17).
     """
     class_name: dict[str, str] = {}
     members: dict[str, list[str]] = {}
+    without_descriptor = 0
     for pa in iter_records(pa_path, "PharmacologicalAction"):
         # The PA class is named inside DescriptorReferredTo; members inside
         # PharmacologicalActionSubstanceList. Both descriptor and member names sit
         # in <String>, so read the structural UI tags rather than names.
         dui = _findtext(pa, "DescriptorUI")
         if not dui:
+            # No DescriptorUI, no identity: class_uuid is minted from it, so there
+            # is nothing to key a class on and the record cannot be ingested.
+            # COUNTED, because a silent refusal is indistinguishable from a release
+            # that simply stopped containing the record (#17).
+            without_descriptor += 1
             continue
         class_name[dui] = _findtext(pa, "String")      # DescriptorName is first String
         member_uis = [e.text.strip() for e in pa.iter()
                       if _local(e.tag) == "RecordUI" and e.text and e.text.strip()]
         members.setdefault(dui, []).extend(member_uis)
-    return class_name, members
+    return class_name, members, without_descriptor
 
 
 def _parse_desc(desc_path: StrPath, want_classes: set[str], want_members: set[str]):
@@ -329,7 +346,7 @@ def parse(*, pa_path: StrPath, desc_path: StrPath, supp_path: StrPath) -> Parsed
     classes and WHICH substances are members, so the two big files (desc, supp) are
     each streamed once and only the wanted records are retained.
     """
-    class_name, member_uis_by_class = _parse_pa(pa_path)
+    class_name, member_uis_by_class, without_descriptor = _parse_pa(pa_path)
     pa_class_uis = set(class_name)
 
     # Every distinct member, split by record type (D = Descriptor, C = SCR), so
@@ -360,4 +377,5 @@ def parse(*, pa_path: StrPath, desc_path: StrPath, supp_path: StrPath) -> Parsed
     ]
 
     return ParsedMesh(classes=classes, parents=_build_dag(classes),
-                      memberships=memberships)
+                      memberships=memberships,
+                      pa_records_without_descriptor=without_descriptor)
