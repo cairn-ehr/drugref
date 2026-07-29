@@ -17,19 +17,19 @@ consume it; Cairn is its first client on the same public-API footing). A **globa
 **Merged to `main`:** slice 1 (identity spine, PR #1) · slice 2a (MED-RT classification, #9) · slice 2a.1
 (source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
 foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
-(DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38).
+(DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38) ·
+**slice 5b — MeSH-keyed contraindications (#44)**.
 
-**In flight: slice 5b — MeSH-keyed contraindications**, branch `feat/slice-5b-mesh-contraindications`, **494 tests
-green**, `ruff check` + `mkdocs build --strict` clean, `db/013`–`db/016` applied. Verified end-to-end against the real
-releases on a scratch database — measured table in "Slice 5b" below. **The measurement corrected the spec in five
-places**; the final whole-branch review then corrected four stale migration figures, hoisted `mesh.tree_parent_edges`
-(ONE tree-number DAG rule, not two), added the missing worklist-clear test, and filed #40–#43.
+**502 tests green** (315 DB-gated, 187 without a DSN), `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/016`.
+Slice 5b was verified end-to-end against the real releases on a scratch database — measured table in "Slice 5b"
+below. **The measurement corrected the spec in five places**; the final whole-branch review then corrected four
+stale migration figures, hoisted `mesh.tree_parent_edges` (ONE tree-number DAG rule, not two), added the missing
+worklist-clear test, and filed #40–#43 + #45.
 
-**⇒ Issue-tracker hygiene — two issues are CLOSED on GitHub but NOT fixed**, both verified against the code,
-not inferred. **[#35](https://github.com/cairn-ehr/drugref/issues/35)** was swept closed by `8ce55fb`'s commit
-message although that commit records it as *filed, not fixed* — the same failure mode as #31, already
-reopened once. **[#17](https://github.com/cairn-ehr/drugref/issues/17)** was closed by hand with only its
-allow-list half landed. Reopen or fix them, but do not leave the tracker and these docs disagreeing.
+**⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has now happened three times** (#31, #35,
+#40), each time because a commit or PR body that says *filed, not fixed* still names the number. #31 and #35
+are reopened. #17 was closed by hand with only its allow-list half landed, and #40 was swept closed by #44's
+merge. **A number in a commit message is a claim about the code — verify it before writing it.**
 
 **⇒ Next candidates:**
 
@@ -187,7 +187,7 @@ expansion. `db/006` replaced the comment-enforced CHECK↔CASE coupling with a *
 foreign key into**, put `source` in the PK, and moved the clinical contract into `COMMENT ON`. **Candidate tier only**
 — MED-RT does not track label updates, so nothing here auto-alerts.
 
-**Slice 5b — MeSH-keyed contraindications** (`db/013`–`db/016`, in flight). A **third endpoint type**: a `condition`
+**Slice 5b — MeSH-keyed contraindications** (`db/013`–`db/016`, merged #44). A **third endpoint type**: a `condition`
 is neither a moiety nor a `substance_class`, because nothing is a *member of* pregnancy and `substance_class`'s axis
 vocabulary is entirely pharmacological. Hence `condition` + `condition_parent` (a rebuildable projection, MeSH-only,
 DAG from tree-number nesting exactly as 2b built the PA DAG) holding the
@@ -228,7 +228,7 @@ NC+ND) and AMT/SNOMED CT-AU are quarantined **structurally**: `items.csv` has no
 allow-list, no table has anywhere to put them, and a test proves it by ingesting a fixture with **planted**
 `atc_code`/`amt_code` columns and asserting neither reaches any drugref table (matched by **substring**).
 
-## Slice 5b — MeSH-keyed contraindications (in flight)
+## Slice 5b — MeSH-keyed contraindications (merged, #44)
 
 Spec: [slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md). The contraindication half of
 MED-RT's MeSH-keyed content — `CI_with` (drug→condition) and `CI_ChemClass`'s moiety arm (drug↔drug) — over a
@@ -350,7 +350,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 494 tests, of which 309 are DB-gated -- a run without this DSN passes (185 tests)
+# 502 tests, of which 315 are DB-gated -- a run without this DSN passes (187 tests)
 # while exercising none of the schema, floor, views or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .
