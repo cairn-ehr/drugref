@@ -143,7 +143,19 @@ def resolve_concepts(desc_path: StrPath, supp_path: StrPath,
 
     Descriptors win over SCRs when a concept appears in both: a descriptor is the
     fuller record, and preferring it deterministically stops the answer depending on
-    file order.
+    file order. Implemented by reading desc BEFORE supp and subtracting what
+    resolved, so a concept already found in the descriptor file is never looked for
+    in the supplemental one.
+
+    MEASURED, so nobody reads that guarantee as describing today's release: the 2026
+    release defines 61,794 ConceptUIs in desc2026 and 402,107 in supp2026, and
+    **exactly 0 appear in both** -- MeSH partitions concept ids across the two files.
+    The tie-break is therefore a GUARD against a release whose partition changes, not
+    a live case, and it is pinned on controlled input in test_mesh_concepts (#42)
+    because there is nothing in the release to extract. Keep it: preferring the SCR
+    would mint a different -- and immortal -- condition_uuid for the same clinical
+    concept, and an SCR bears no tree numbers, so the condition would silently drop
+    out of the DAG taking its whole descendant expansion with it.
     """
     out: dict[str, MeshRecord] = {}
     remaining = set(wanted)

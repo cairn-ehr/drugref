@@ -38,6 +38,80 @@ def test_unresolvable_code_is_absent_not_invented():
     assert mesh_concepts.resolve_concepts(DESC, SUPP, {"M9999999"}) == {}
 
 
+# ---- the descriptor-wins tie-break (issue #42) ------------------------------
+#
+# MEASURED AGAINST THE REAL 2026 RELEASE, because the fixture rule (#27) is
+# "extract, never invent" and the first question is always whether there is
+# anything to extract: desc2026 defines 61,794 ConceptUIs and supp2026 402,107,
+# and **exactly 0 appear in both**. MeSH partitions concept ids across the two
+# files, so the release cannot exercise this branch at all -- which is precisely
+# why it needed a test and had none.
+#
+# So the guarantee is pinned on controlled input, as the issue directs, and the
+# measurement is recorded rather than the absence being read as "untestable".
+# The branch stays, and stays load-bearing: it is a guard against a release whose
+# partition changes, and the cost of losing it is silent and permanent -- an SCR
+# would mint a DIFFERENT immortal condition_uuid for the same clinical concept
+# and, bearing no tree numbers, drop it out of the DAG with its whole descendant
+# expansion. Nothing would fail; the row count would barely move.
+
+
+def _both_files_defining(tmp_path, concept_ui):
+    """One ConceptUI defined in BOTH a descriptor record and an SCR.
+
+    The record CONTENTS mirror the real files' shape (a descriptor bears tree
+    numbers, an SCR bears none); what is synthetic is only that one concept id
+    appears twice, which the 2026 release never does.
+    """
+    desc = tmp_path / "desc.xml"
+    desc.write_text(
+        '<?xml version="1.0"?>\n<DescriptorRecordSet><DescriptorRecord>'
+        '<DescriptorUI>D000001</DescriptorUI>'
+        '<DescriptorName><String>A Descriptor</String></DescriptorName>'
+        '<TreeNumberList><TreeNumber>C10.228</TreeNumber></TreeNumberList>'
+        f'<ConceptList><Concept PreferredConceptYN="Y">'
+        f'<ConceptUI>{concept_ui}</ConceptUI></Concept></ConceptList>'
+        '</DescriptorRecord></DescriptorRecordSet>\n', encoding="utf-8")
+    supp = tmp_path / "supp.xml"
+    supp.write_text(
+        '<?xml version="1.0"?>\n<SupplementalRecordSet><SupplementalRecord>'
+        '<SupplementalRecordUI>C000001</SupplementalRecordUI>'
+        '<SupplementalRecordName><String>An SCR</String></SupplementalRecordName>'
+        f'<ConceptList><Concept PreferredConceptYN="Y">'
+        f'<ConceptUI>{concept_ui}</ConceptUI></Concept></ConceptList>'
+        '</SupplementalRecord></SupplementalRecordSet>\n', encoding="utf-8")
+    return desc, supp
+
+
+def test_a_descriptor_wins_over_an_scr_defining_the_same_concept(tmp_path):
+    """The tie-break the docstring promises, on the only input that can show it.
+
+    Reversing the read order would pass every other test in this module: the
+    concept still resolves, to a record that still exists, with a name that still
+    reads correctly. Only the identity would differ -- and identity is immortal.
+    """
+    desc, supp = _both_files_defining(tmp_path, "M0000001")
+    got = mesh_concepts.resolve_concepts(desc, supp, {"M0000001"})
+
+    assert got["M0000001"].record_ui == "D000001"
+    assert got["M0000001"].record_kind == mesh_concepts.DESCRIPTOR
+    assert got["M0000001"].tree_numbers == ("C10.228",)   # the SCR carries none
+
+
+def test_the_scr_is_still_reachable_when_no_descriptor_defines_the_concept(tmp_path):
+    """The other half: 'descriptors win' must not become 'SCRs are unreachable'.
+    86 of the release's stragglers resolve only in supp2026, and losing them takes
+    resolution from 99.88% back to 96.4%."""
+    desc, supp = _both_files_defining(tmp_path, "M0000001")
+    empty_desc = tmp_path / "empty_desc.xml"
+    empty_desc.write_text('<?xml version="1.0"?>\n<DescriptorRecordSet/>\n',
+                          encoding="utf-8")
+
+    got = mesh_concepts.resolve_concepts(empty_desc, supp, {"M0000001"})
+    assert got["M0000001"].record_ui == "C000001"
+    assert got["M0000001"].record_kind == mesh_concepts.SCR
+
+
 def test_resolves_a_supplementary_record():
     """86 of the release's stragglers live in supp2026, so the SCR fallback is
     load-bearing: without it resolution stops at 96.4% instead of 99.88%."""
