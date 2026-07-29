@@ -32,7 +32,8 @@ were reopened; **#17 and #40 were closed-but-unfixed and are now genuinely fixed
 tracker is true again. **A number in a commit message is a claim about the code — verify it before writing
 it**, and prefer prose that cannot be parsed as a closing keyword when filing rather than fixing.
 
-**The post-5b debt round is merged/in flight on `fix/post-5b-debt-round`:** #40, #17, #42, #41, #43 fixed,
+**In flight: the post-5b debt round**, branch `fix/post-5b-debt-round`, **[PR
+#46](https://github.com/cairn-ehr/drugref/pull/46)** — #40, #17, #42, #41, #43 fixed,
 `db/017` added, **533 tests green**, and the whole chain **re-verified end-to-end against the real releases**
 (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc/supp/pa 2026, gzipped, on a scratch database). Every slice-5b
 headline figure reproduced exactly; the previously-unmeasured `object_kind` split and a corrected slice-2b
