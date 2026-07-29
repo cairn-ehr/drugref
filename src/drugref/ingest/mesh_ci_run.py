@@ -24,11 +24,11 @@ Order matters:
   4. rebuild the open-question register LAST, before the commit.
 
 WORKLIST NUMBERS, NOT SILENT DROPS -- four distinct losses, each counted separately
-so they stay legible (spec 7). Three of the four are only ever counted; the withheld
-objects are also PERSISTED, because a curator has to rule on each one by name. The
-unmatched SUBJECTS are the exception to the mirror with medrt_run: that worklist
-table is rebuilt per source and both orchestrators run under 'MED-RT', so medrt_run
-owns it and this run reports rather than writes -- see step 6 of _ingest.
+so they stay legible (spec 7). Two of them are also PERSISTED by identity, because a
+count cannot be worked: the withheld objects (a curator rules on each by name) and
+the unmatched subjects. The latter is written but never CLEARED here, which is the
+one place this orchestrator does not mirror medrt_run -- see step 6 of _ingest for
+the measurement behind that, and its caveats.
 """
 import hashlib
 import logging
@@ -64,13 +64,20 @@ class MeshCiSummary:
     Conditions ACCUMULATE while edges and contraindications are REBUILT, so the two
     condition numbers are reported separately rather than as one ambiguous count.
 
+    `conditions_registered` is what THIS RUN put in the registry -- the referenced
+    objects plus their descendant closure -- and is deliberately NOT called
+    "in_release": MeSH 2026 defines ~30,000 descriptors, of which this slice
+    registers the 5,190 that a contraindication can reach. Naming it after the
+    release would invite a reader to check it against MeSH's own record count and
+    conclude the ingest had lost 25,000 records.
+
     The four worklist numbers are reported, never swallowed:
       * unmatched_subject_rxcuis  -- the rule's subject is carried by no moiety
       * withheld_class_objects    -- CI_ChemClass objects that name a CLASS
       * unresolved_object_codes   -- M-codes MeSH no longer defines
       * non_mesh_objects          -- objects outside the MeSH namespace (MED-RT EXT)
     """
-    conditions_in_release: int
+    conditions_registered: int
     conditions_added: int
     condition_parent_edges: int
     condition_contraindications: int
@@ -167,36 +174,48 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
     or in `withheld` (CI_ChemClass on a chemical class), or was already counted as an
     unresolved object code by the caller. Nothing falls off the end.
 
-    The subject test comes FIRST, so a CI_ChemClass whose subject drugref does not
-    carry is reported as an unmatched subject rather than as a withheld object --
-    withholding is a curator decision about the OBJECT, and a rule drugref could not
-    have ingested anyway must not inflate that queue.
+    THE OBJECT QUESTION IS ASKED BEFORE THE SUBJECT TEST, and the order is
+    load-bearing. Withholding is a curator decision about the OBJECT -- "should a
+    contraindication naming this class expand over MeSH's structural tree?" -- and
+    that question does not depend on whether this particular rule's subject happened
+    to resolve. Testing the subject first silently lost every class object ALL of
+    whose subjects are unregistered: measured against the real 2026.07.06 release,
+    370 assertions over 99 objects instead of the 405 over 103 the release contains,
+    with D000963, D003911, D050256 and D056747 dropped outright.
+
+    The two tallies are therefore separate axes, not a partition: one assertion whose
+    object is a class AND whose subject is unmatched is counted in BOTH, because both
+    statements about it are true and each answers a different person's question.
+
+    ON THE OBJECT COUNT, for whoever checks this against spec 7: the worklist is
+    keyed on the MeSH RECORD ui, so the release's 108 withheld ConceptUIs collapse
+    into 103 curator questions. Five records are named by two concepts each (D010406
+    by both "Penicillins" and "Penicillin", plus D001569, D020902, D006993, D000701),
+    and one record is one decision. 103 is correct; do not "fix" it by keying the
+    worklist on the concept, which is the split mesh_concepts.py exists to prevent.
     """
     rxcui_index, unii_index, cas_index = indexes
     out = _Relations()
     for a in assertions:
-        subjects = rxcui_index.get(a.rxcui, ())
-        if not subjects:
-            out.unmatched_rxcuis.add(a.rxcui)       # counted, never dropped
-            continue
         record = records.get(a.mesh_code)
         if record is None:
             continue                                # already counted by the caller
-        if a.relationship == CONDITION_PREDICATE:
-            object_uuid = uuid_by_code.get(record.record_ui)
-            if object_uuid is None:
-                continue                            # not a registered condition
-            for subject in subjects:
-                if interactions.add_condition_contraindication(
-                        conn, subject, object_uuid, a.relationship, SOURCE, run_id):
-                    out.condition_rows += 1
-        else:                                        # CI_ChemClass
+
+        object_moiety = None
+        if a.relationship == PAIR_PREDICATE:
             object_moiety = _resolve_object_moiety(record, unii_index, cas_index)
             if object_moiety is None:
                 # The CLASS arm: withheld pending curator review (db/014, db/016).
                 out.withheld[record.record_ui] += 1
                 out.withheld_names[record.record_ui] = record.name
-                continue
+
+        subjects = rxcui_index.get(a.rxcui, ())
+        if not subjects:
+            out.unmatched_rxcuis.add(a.rxcui)       # counted, never dropped
+            continue
+        if a.relationship == PAIR_PREDICATE:
+            if object_moiety is None:
+                continue                            # withheld, recorded above
             for subject in subjects:
                 if subject == object_moiety:
                     # db/014 forbids a self-pair, and rightly: MED-RT states this
@@ -205,6 +224,14 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
                 if interactions.add_moiety_contraindication(
                         conn, subject, object_moiety, a.relationship, SOURCE, run_id):
                     out.pair_rows += 1
+        else:                                        # CI_with
+            object_uuid = uuid_by_code.get(record.record_ui)
+            if object_uuid is None:
+                continue                            # not a registered condition
+            for subject in subjects:
+                if interactions.add_condition_contraindication(
+                        conn, subject, object_uuid, a.relationship, SOURCE, run_id):
+                    out.condition_rows += 1
     return out
 
 
@@ -234,12 +261,9 @@ def ingest_mesh_contraindications(conn: psycopg.Connection, *, medrt_path,
         log.warning("%d contraindication object(s) withheld pending review; see "
                     "drugref.gap_unresolved_ci_object", summary.withheld_class_objects)
     if summary.unmatched_subject_rxcuis:
-        # Logged rather than persisted, because medrt_run owns that worklist table --
-        # see the long comment in _ingest step 6. Without this line the number would
-        # exist only in a return value the pipeline discards.
         log.warning("%d contraindication subject RxCUI(s) are carried by no moiety, "
-                    "so their rules were not ingested; medrt_run's "
-                    "drugref.gap_unmatched_ingredient lists them",
+                    "so their rules were not ingested; see "
+                    "drugref.gap_unmatched_ingredient",
                     summary.unmatched_subject_rxcuis)
     return summary
 
@@ -307,22 +331,37 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
     #    db/008 drew when the earlier ingest kept only the COUNT of unmatched
     #    ingredients.
     #
-    #    THE UNMATCHED SUBJECTS ARE DELIBERATELY NOT WRITTEN HERE, and this is the
-    #    one place this orchestrator does NOT mirror medrt_run. Both runs are opened
-    #    under source 'MED-RT', and ingest_unmatched_ingredient is rebuilt PER SOURCE
-    #    -- so a clear-and-write here would delete medrt_run's list and replace it
-    #    with this one. On the real 2026.07.06 release that trade is strictly
-    #    destructive: all 3,757 CI subjects are also classified ingredients, so this
-    #    run's list is a SUBSET that adds nothing, while the clear would drop the
-    #    14,720 classified-but-not-contraindicated ingredients medrt_run recorded.
-    #    Writing without clearing is no better: rows would then accumulate run on run
-    #    in a table documented as replaced per run.
+    #    THE UNMATCHED SUBJECTS ARE WRITTEN BUT NEVER CLEARED, and that asymmetry is
+    #    the one place this orchestrator does not mirror medrt_run. Both open their
+    #    runs under source 'MED-RT', and ingest_unmatched_ingredient is rebuilt PER
+    #    SOURCE, so the two cannot both own it:
     #
-    #    So medrt_run owns that projection and this run REPORTS its unmatched
-    #    subjects (summary + the log below) instead of writing them. That is safe
-    #    only while every CI subject is also a classified ingredient, which is a fact
-    #    about the release and not a guarantee -- see issue #39 for giving slice 5b
-    #    its own worklist rather than sharing one keyed by source alone.
+    #      * CLEARING would destroy medrt_run's list. Measured on the real
+    #        2026.07.06 release through the real gate: MED-RT classifies 6,012
+    #        ingredients and states contraindications for 3,757, and 2,271 of the
+    #        classified are not CI subjects at all. Those 2,271 rows are medrt_run's
+    #        alone, and a clear here would drop them.
+    #      * NOT WRITING would lose real rules. 16 CI subjects are never classified
+    #        by MED-RT, so medrt_run -- which builds its list from MEMBERSHIP
+    #        assertions -- can never record them. Three (221083 sulfur colloidal,
+    #        5924 inulin, 89767 colloid sulfur) are also outside the moiety registry,
+    #        one CI_with rule each. Counting those in a summary and a log line is
+    #        exactly the "number that vanishes when the process exits" that spec 7
+    #        exists to prevent.
+    #
+    #    So: write, deduped, and leave the clearing to medrt_run. THE HONEST CAVEAT,
+    #    because a half-fix documented as complete is worse than no fix:
+    #      * ORDER-DEPENDENT. medrt_run's clear is scoped by source, so it removes
+    #        these rows too, and cannot re-add them (they are not classified). Those
+    #        3 rules are therefore absent from the gap view between a medrt_run and
+    #        the next run of this orchestrator.
+    #      * Rows ACCUMULATE across consecutive runs of this orchestrator, since each
+    #        run inserts under its own ingest_run id and only medrt_run collects the
+    #        garbage. gap_unmatched_ingredient is DISTINCT ON (rxcui), so the view a
+    #        curator reads is unaffected; the table is not.
+    #    Issue #39 tracks the real fix -- a discriminator, so each writer can rebuild
+    #    its own rows without touching the other's.
+    class_writer.add_unmatched_ingredients(conn, sorted(rel.unmatched_rxcuis), run_id)
     interactions.record_unresolved_ci_objects(
         conn,
         [(SOURCE, PAIR_PREDICATE, OBJECT_SOURCE, code, rel.withheld_names[code], count)
@@ -338,7 +377,7 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
                  "WHERE ingest_run_id = %s", (run_id,))
     conn.commit()
     return MeshCiSummary(
-        conditions_in_release=len(uuid_by_code), conditions_added=added,
+        conditions_registered=len(uuid_by_code), conditions_added=added,
         condition_parent_edges=parent_edges,
         condition_contraindications=rel.condition_rows,
         moiety_contraindications=rel.pair_rows,

@@ -32,6 +32,7 @@ LIVER_DISEASES = "D008107"          # paracetamol's CI_with object
 DRUG_INDUCED_LIVER_INJURY = "D056486"   # strictly BELOW it: the expansion case
 ALKALIES = "D000468"                # a genuine chemical CLASS: withheld
 ORGANIC_CHEMICALS = "D009930"       # ditto
+PIMOZIDE_RECORD = "D010868"         # the CI_ChemClass object that IS a drug
 
 
 @pytest.fixture(autouse=True)
@@ -85,13 +86,14 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     """The acceptance matrix, every number derived from the two real releases.
 
     The fixture states 16 MeSH-keyed contraindications: 13 CI_with and 3
-    CI_ChemClass. Five of the CI_with name ibuprofen, which no moiety carries, so
-    seven condition rows survive; of the three CI_ChemClass, one names Pimozide (a
-    drug) and two name chemical classes.
+    CI_ChemClass. SIX of the CI_with name ibuprofen, which no moiety carries
+    (161 x3, 17767 x2, 272 x1, 321988 x1, 5640 x6 = 13), so seven condition rows
+    survive; of the three CI_ChemClass, one names Pimozide (a drug) and two name
+    chemical classes.
     """
     summary = _run(conn)
     # 10 referenced conditions + the 8 tree descendants the fixture samples.
-    assert summary.conditions_in_release == 18
+    assert summary.conditions_registered == 18
     assert summary.conditions_added == 18
     assert summary.condition_parent_edges == 10
     # 272->Poisoning, 161/17767/321988->Drug Hypersensitivity, 161->Liver Diseases,
@@ -131,6 +133,39 @@ def test_the_class_arm_is_counted_not_ingested(conn, seeded_moieties):
             (_condition(conn, code),)).fetchone()[0] == 0
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 1
+
+
+def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
+    """THE OBJECT QUESTION DOES NOT DEPEND ON THE SUBJECT.
+
+    Deliberately runs with NO seeded registry, so every subject is unmatched. The
+    curator's question -- "should a contraindication naming this class expand over
+    MeSH's structural tree?" -- is about the OBJECT, so it must still be asked. When
+    the subject test came first, a class object all of whose subjects were
+    unregistered vanished from the worklist entirely: on the real 2026.07.06 release
+    that was 370 assertions over 99 objects instead of 405 over 103, with D000963,
+    D003911, D050256 and D056747 dropped outright.
+
+    The two worklists are separate axes, not a partition: these assertions are
+    counted as withheld objects AND as unmatched subjects, because both are true.
+
+    All THREE objects are withheld here, Pimozide included, and that is correct
+    rather than an artefact: which arm a CI_ChemClass takes is a function of the
+    REGISTRY, not of MeSH. Against an empty registry drugref genuinely cannot tell
+    the drug from the class, and withholding is the safe answer -- which is why
+    test_the_moiety_arm_is_ingested_as_an_exact_pair seeds one and this test does not.
+    """
+    summary = _run(conn)
+    assert summary.withheld_class_objects == 3
+    assert {r[0] for r in conn.execute(
+        "SELECT object_code FROM drugref.ingest_unresolved_ci_object").fetchall()} == \
+        {ALKALIES, ORGANIC_CHEMICALS, PIMOZIDE_RECORD}
+    # Nothing could be ingested, and nothing was invented to compensate.
+    assert (summary.condition_contraindications, summary.moiety_contraindications) \
+        == (0, 0)
+    # All five subject RxCUIs in the fixture, including the two that reach only a
+    # withheld object.
+    assert summary.unmatched_subject_rxcuis == 5
 
 
 def test_the_moiety_arm_is_ingested_as_an_exact_pair(conn, seeded_moieties):
@@ -195,7 +230,7 @@ def test_rerunning_replaces_rather_than_duplicates(conn, seeded_moieties):
         "SELECT count(*) FROM drugref.ingest_unresolved_ci_object").fetchone()[0] == 2
     # Conditions ACCUMULATE while edges and contraindications are REBUILT, which is
     # why the summary reports the two condition numbers separately.
-    assert (second.conditions_in_release, second.conditions_added) == (18, 0)
+    assert (second.conditions_registered, second.conditions_added) == (18, 0)
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent").fetchone()[0] == \
         second.condition_parent_edges
@@ -212,13 +247,46 @@ def test_condition_uuids_survive_a_rebuild(conn, seeded_moieties):
         "SELECT condition_uuid FROM drugref.condition").fetchall()) == before
 
 
-def test_unmatched_subjects_are_counted(conn, seeded_moieties):
-    """22% of CI_with subjects do not join the gated registry. Counted, never
-    dropped -- the slice-1/2a no-silent-exclude posture. Ibuprofen (5640) is the
-    fixture's, and it is deliberately absent from unii_subset.tsv.
+def test_unmatched_subjects_are_recorded_not_only_counted(conn, seeded_moieties):
+    """22% of CI_with subjects do not join the gated registry. Counted AND kept by
+    identity, never dropped -- the slice-1/2a no-silent-exclude posture. Ibuprofen
+    (5640) is the fixture's, and it is deliberately absent from unii_subset.tsv.
+
+    The IDENTITY is the point. medrt_run builds its list from MEMBERSHIP assertions,
+    so the 16 CI subjects the real release never classifies -- three of which are
+    also outside the moiety registry -- can never reach that table by any other
+    route. A summary field and a log line do not survive the process.
     """
     summary = _run(conn)
     assert summary.unmatched_subject_rxcuis == 1
+    assert [r[0] for r in conn.execute(
+        "SELECT rxcui FROM drugref.ingest_unmatched_ingredient").fetchall()] == ["5640"]
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unmatched_ingredient "
+        "WHERE rxcui = '5640'").fetchone()[0] == 1
+
+
+def test_unmatched_rows_accumulate_but_the_gap_view_does_not(conn, seeded_moieties):
+    """THE DOCUMENTED COST of writing this worklist without clearing it.
+
+    ingest_unmatched_ingredient is rebuilt per SOURCE and medrt_run owns that clear,
+    so this orchestrator must not clear (it would destroy medrt_run's 2,271
+    classified-but-not-contraindicated rows). The price is that consecutive runs of
+    THIS orchestrator each insert under their own ingest_run id and nothing collects
+    them until medrt_run next runs. Pinned rather than merely described, so the
+    trade-off stays visible and issue #39 can be checked against it.
+
+    What a curator reads is unaffected: gap_unmatched_ingredient is DISTINCT ON
+    (rxcui), so the duplicate rows collapse to one question.
+    """
+    _run(conn)
+    _run(conn)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ingest_unmatched_ingredient "
+        "WHERE rxcui = '5640'").fetchone()[0] == 2
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unmatched_ingredient "
+        "WHERE rxcui = '5640'").fetchone()[0] == 1
 
 
 def test_the_run_does_not_destroy_medrt_runs_worklist(conn, seeded_moieties):
