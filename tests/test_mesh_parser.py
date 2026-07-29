@@ -12,6 +12,7 @@ never invented. The facts most likely to be got wrong are pinned deliberately:
 * the bridge keys come from **RegistryNumber only** -- a CAS in
   <RelatedRegistryNumber> is NOT a membership key in this slice (design tension B).
 """
+import gzip
 import pathlib
 
 from drugref.ingest import mesh
@@ -27,6 +28,46 @@ PA_CLASSES = {"D000700", "D000893", "D000894", "D012102", "D018501", "D018712"}
 
 def parsed():
     return mesh.parse(pa_path=PA, desc_path=DESC, supp_path=SUPP)
+
+
+# ---- reading the files NLM actually publishes (issue #40) -------------------
+
+
+def _gzipped(tmp_path: pathlib.Path, path: pathlib.Path) -> pathlib.Path:
+    """The same committed fixture, gzipped -- the shape NLM ships desc/supp in.
+
+    Compressed here rather than committed twice: a second copy of a fixture is a
+    second thing that can drift, and what is under test is the READER, not the
+    bytes (which are byte-identical to the file beside it by construction).
+    """
+    out = tmp_path / (path.name + ".gz")
+    out.write_bytes(gzip.compress(path.read_bytes()))
+    return out
+
+
+def test_parses_the_gzipped_files_the_nlm_publishes(tmp_path):
+    """NLM ships desc2026/supp2026 as `.gz`, ~750 MB each once expanded.
+
+    Slice 5b's reader handled that transparently and slice 2b's did not, so half
+    the MeSH ingest needed a manual gunzip and half did not -- an asymmetry
+    invisible from either call site (#40). One reader now serves both, and this
+    pins that a gzipped release parses to EXACTLY what the plain files do rather
+    than merely "not crashing".
+    """
+    from_gz = mesh.parse(pa_path=_gzipped(tmp_path, PA),
+                         desc_path=_gzipped(tmp_path, DESC),
+                         supp_path=_gzipped(tmp_path, SUPP))
+    assert from_gz == parsed()
+
+
+def test_one_reader_serves_both_mesh_parsers():
+    """The hoist itself, pinned: `mesh_concepts` must READ through this module's
+    reader, not carry its own copy. Two copies is how the asymmetry above arose,
+    and a second copy would pass every behavioural test above on the day it was
+    written -- so the sharing is asserted directly.
+    """
+    from drugref.ingest import mesh_concepts
+    assert mesh_concepts.iter_records is mesh.iter_records
 
 
 # ---- registry-number classification (the pure key rule, spec §5.2) ---------

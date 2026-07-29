@@ -16,24 +16,23 @@ The crosswalk route is therefore NOT used: it is worse, and a name is not a key
 
 WHY THIS IS NOT IN mesh.py. That module answers "what are the PA classes and their
 members"; this one answers "which MeSH record is this concept". Different questions,
-and mesh.py already sits around 330 lines against a ~500-line budget (CLAUDE.md
-rule 4). What the two genuinely SHARE -- reading registry numbers, and turning tree
-numbers into DAG edges -- is imported from mesh.py, never copied: see
-`mesh.tree_parent_edges`, which both DAG builders wrap.
+and mesh.py already sits around 380 lines against a ~500-line budget (CLAUDE.md
+rule 4). What the two genuinely SHARE -- READING A RELEASE FILE, reading registry
+numbers, and turning tree numbers into DAG edges -- is imported from mesh.py, never
+copied: `mesh.iter_records` (the one gz-aware streaming reader, #40) and
+`mesh.tree_parent_edges` (the one tree-nesting rule, which both DAG builders wrap).
 
 This module is PURE and STREAMING: it reads files and returns records. No database,
 no network, no UUID minting. The orchestrator (mesh_ci_run.py) does all of that.
 Every file is streamed with iterparse + clear, so peak memory scales with the QUERY
 (the wanted set), never with the release -- supp2026 is ~750 MB uncompressed.
 """
-import gzip
 import pathlib
 from collections.abc import Iterable
 from dataclasses import dataclass
-from xml.etree import ElementTree as ET
 
 from drugref.ingest import mesh
-from drugref.ingest.mesh import registry_keys
+from drugref.ingest.mesh import iter_records, registry_keys
 
 StrPath = str | pathlib.Path
 
@@ -108,32 +107,6 @@ def ancestor_trees(tree_number: str) -> list[str]:
     return [".".join(parts[:i]) for i in range(1, len(parts))]
 
 
-def _open(path: StrPath):
-    """Open a MeSH file, transparently handling the .gz the NLM publishes."""
-    return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
-
-
-def _stream(path: StrPath, tag: str):
-    """Yield each `tag` element, clearing it (and its parent) after use.
-
-    Bounded memory by construction: nothing accumulates but what the caller keeps.
-    Clearing only the yielded element is not enough -- iterparse still leaves each
-    retired sibling hanging off the growing root underneath, so peak memory would
-    climb with the FILE instead of the query. Grabbing the root from the first
-    "start" event and clearing it too (same idiom as mesh._iter_records) drops
-    those retired siblings as well, which is what keeps this flat on the ~750 MB
-    supp file regardless of how many records it holds.
-    """
-    with _open(path) as fh:
-        context = ET.iterparse(fh, events=("start", "end"))
-        _event, root = next(context)                    # grab the root to clear it
-        for event, el in context:
-            if event == "end" and el.tag == tag:
-                yield el
-                el.clear()
-                root.clear()
-
-
 def _record(el, ui_tag: str, name_tag: str, kind: str, concept_ui: str,
             preferred: bool) -> MeshRecord:
     """Build a MeshRecord from a raw MeSH record element."""
@@ -178,7 +151,7 @@ def resolve_concepts(desc_path: StrPath, supp_path: StrPath,
             (desc_path, *_SOURCES[0][1:]), (supp_path, *_SOURCES[1][1:])):
         if not remaining:
             break                                   # everything already resolved
-        for el in _stream(path, tag):
+        for el in iter_records(path, tag):
             for concept in el.findall("ConceptList/Concept"):
                 cui = concept.findtext("ConceptUI") or ""
                 if cui in remaining:
@@ -208,7 +181,7 @@ def descriptors_under(desc_path: StrPath,
     found: list[MeshRecord] = []
     if not tree_prefixes:
         return found
-    for el in _stream(desc_path, "DescriptorRecord"):
+    for el in iter_records(desc_path, "DescriptorRecord"):
         trees = [t.text for t in el.findall("TreeNumberList/TreeNumber") if t.text]
         # Matched by walking each tree number's OWN ancestors and probing the prefix
         # SET, not by testing every prefix against every tree number: same predicate

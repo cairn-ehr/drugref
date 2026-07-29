@@ -20,11 +20,13 @@ The record structure is otherwise minimised to the elements the parser walks.
 USAGE:
     python tests/fixtures/make_mesh_subset.py <downloads_dir> [<out_dir>]
 
-    <downloads_dir> must hold the three real release files pa2026.xml /
-    supp2026.xml / desc2026.xml (NOT committed -- see .gitignore; fetch the
-    compressed desc2026.gz / supp2026.gz from
-    https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/ and gunzip).
-    <out_dir> defaults to the directory this script lives in.
+    <downloads_dir> must hold the three real release files, EXACTLY AS NLM SERVES
+    THEM (NOT committed -- see .gitignore): pa2026.xml plus the gzipped
+    desc2026.gz / supp2026.gz, from
+    https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/. No gunzip step
+    -- reading the compressed files is the whole point of issue #40; a plain
+    `.xml` beside them is also accepted. <out_dir> defaults to the directory this
+    script lives in.
 
 WHAT IT SELECTS -- an aspirin-centred cluster chosen so ONE small connected subset
 exercises every slice-2b acceptance case (see the two curated dicts below). The PA
@@ -40,6 +42,7 @@ and these three files are single-source -- no SNOMED CT or other unlicensed
 namespace appears in them at all. The `NOTICE` MeSH entry must be in place before
 the fixture is committed.
 """
+import gzip
 import pathlib
 import sys
 from xml.etree import ElementTree as ET
@@ -77,16 +80,53 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+# The names one release file can arrive under. NLM serves pa2026 plain but desc2026
+# and supp2026 gzipped, and the gzipped ones are named "<stem>.gz" -- NOT
+# "<stem>.xml.gz". The third form is here for an operator who renamed them.
+_RELEASE_SUFFIXES = (".xml", ".gz", ".xml.gz")
+
+
+def _release_file(dl: pathlib.Path, stem: str) -> pathlib.Path:
+    """Locate one release file in the downloads directory, whatever NLM named it.
+
+    This script used to hardcode "<stem>.xml", so the regeneration command drugref
+    documents found NOTHING when pointed at a directory holding a genuine release
+    (#40). Raising rather than returning None is deliberate and matches
+    make_mesh_ci_subset.py's posture: a fixture written from an unread file would
+    silently delete test cases, which is worse than not regenerating at all.
+    """
+    for suffix in _RELEASE_SUFFIXES:
+        candidate = dl / f"{stem}{suffix}"
+        if candidate.exists():
+            return candidate
+    raise SystemExit(
+        f"make_mesh_subset.py: no {stem} release file in {dl} -- looked for "
+        + ", ".join(f"{stem}{s}" for s in _RELEASE_SUFFIXES))
+
+
+def _open(path: pathlib.Path):
+    """Open a release file, transparently handling the .gz NLM publishes.
+
+    Deliberately a copy of drugref.ingest.mesh.open_release_file rather than an
+    import: every fixture extractor in this directory is stdlib-only and runnable
+    without drugref installed, and one of them (make_medrt_subset.py) is checked by
+    a test that must stay INDEPENDENT of the code it feeds. Two lines is the price
+    of that independence; the production copies were collapsed to one (#40).
+    """
+    return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
+
+
 def _iter(path: pathlib.Path, record_tag: str):
     """Stream top-level records, detaching each from the root to bound memory
-    (supp2026.xml is 750 MB uncompressed)."""
-    context = ET.iterparse(str(path), events=("start", "end"))
-    _, root = next(context)
-    for event, elem in context:
-        if event == "end" and _local(elem.tag) == record_tag:
-            yield elem
-            elem.clear()
-            root.clear()
+    (supp2026 is 750 MB uncompressed)."""
+    with _open(path) as fh:
+        context = ET.iterparse(fh, events=("start", "end"))
+        _, root = next(context)
+        for event, elem in context:
+            if event == "end" and _local(elem.tag) == record_tag:
+                yield elem
+                elem.clear()
+                root.clear()
 
 
 def _texts(record, tag: str) -> list[str]:
@@ -126,7 +166,9 @@ def _members(pa_block) -> list[tuple[str, str]]:
 
 # ----- extraction --------------------------------------------------------
 def extract(dl: pathlib.Path):
-    pa_path, supp_path, desc_path = dl / "pa2026.xml", dl / "supp2026.xml", dl / "desc2026.xml"
+    pa_path = _release_file(dl, "pa2026")
+    supp_path = _release_file(dl, "supp2026")
+    desc_path = _release_file(dl, "desc2026")
 
     # 1. PA membership: keep each kept class' block, substances trimmed to kept
     #    members. Member UI *and* name are copied from the file (never invented).

@@ -388,7 +388,8 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
     (regeneration must keep the endpoint redaction — a test enforces it).
   - **MeSH** — [NLM](https://nlmpubs.nlm.nih.gov/projects/mesh/MESH_FILES/xmlmesh/): `desc2026.gz`,
     `supp2026.gz`, `pa2026.xml`. NLM throttles per connection hard; a segmented byte-range fetch beats it
-    ~18×. Regenerate 2b's with `make_mesh_subset.py downloads tests/fixtures/`, and 5b's with
+    ~18×. **No gunzip step for either half since #40** — both readers take the files as served. Regenerate
+    2b's with `make_mesh_subset.py downloads/mesh tests/fixtures/`, and 5b's with
     `make_mesh_ci_subset.py downloads/mesh/desc2026.gz downloads/mesh/supp2026.gz tests/fixtures/`.
     **Regenerate 5b's AFTER `make_medrt_subset.py`**: its wanted set is read out of `medrt_subset.xml`,
     because the first hand-picked version described a world disjoint from the MED-RT fixture's — every CI

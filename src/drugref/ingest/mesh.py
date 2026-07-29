@@ -36,6 +36,7 @@ no UUID minting. The orchestrator (mesh_run.py) does the bridge join and all DB
 work. The parser STREAMS every file with iterparse + clear (supp2026.xml is
 ~750 MB uncompressed), so it scales to the full release by construction (spec §6).
 """
+import gzip
 import pathlib
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -139,16 +140,49 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _iter_records(path: StrPath, record_tag: str):
-    """Stream top-level `record_tag` elements, detaching each (and the growing
-    root) after use so peak memory stays bounded on the ~750 MB supp file (§6/§F)."""
-    context = ET.iterparse(str(path), events=("start", "end"))
-    _event, root = next(context)                       # grab the root to clear it
-    for event, elem in context:
-        if event == "end" and _local(elem.tag) == record_tag:
-            yield elem
-            elem.clear()
-            root.clear()
+def open_release_file(path: StrPath):
+    """Open a MeSH release file, transparently handling the `.gz` NLM publishes.
+
+    THE ONE PLACE THIS DECISION LIVES. NLM ships desc/supp compressed (~750 MB
+    each expanded), so which half of drugref's MeSH ingest needs a manual gunzip
+    is not a per-module choice to make twice: slice 5b's reader handled `.gz` and
+    slice 2b's did not, and the asymmetry was invisible from either call site
+    until an operator hit it (#40).
+
+    Returns a binary file object, which is what ET.iterparse wants either way --
+    passing a path string instead would push the open() back into the caller and
+    with it the very decision this function exists to centralise.
+    """
+    return gzip.open(path, "rb") if str(path).endswith(".gz") else open(path, "rb")
+
+
+def iter_records(path: StrPath, record_tag: str):
+    """Stream top-level `record_tag` elements from a MeSH file, plain or gzipped.
+
+    THE ONE READER for every MeSH file drugref parses -- this module's PA axis
+    (slice 2b) and `mesh_concepts`' condition resolution (slice 5b) both go
+    through it, which is what keeps `.gz` support from being true of one and not
+    the other.
+
+    Bounded memory by construction: nothing accumulates but what the caller keeps.
+    Clearing only the yielded element is not enough -- iterparse still leaves each
+    retired sibling hanging off the growing root underneath, so peak memory would
+    climb with the FILE rather than with the query. Grabbing the root from the
+    first "start" event and clearing it too drops those retired siblings as well,
+    which is what keeps this flat on the ~750 MB supp file however many records it
+    holds (§6/§F).
+
+    Matching is on the tag's LOCAL name: MeSH ships without an XML namespace
+    today, and stripping any prefix keeps every caller robust to one appearing.
+    """
+    with open_release_file(path) as fh:
+        context = ET.iterparse(fh, events=("start", "end"))
+        _event, root = next(context)                   # grab the root to clear it
+        for event, elem in context:
+            if event == "end" and _local(elem.tag) == record_tag:
+                yield elem
+                elem.clear()
+                root.clear()
 
 
 def _texts(record, tag: str) -> list[str]:
@@ -176,7 +210,7 @@ def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]]]:
     """
     class_name: dict[str, str] = {}
     members: dict[str, list[str]] = {}
-    for pa in _iter_records(pa_path, "PharmacologicalAction"):
+    for pa in iter_records(pa_path, "PharmacologicalAction"):
         # The PA class is named inside DescriptorReferredTo; members inside
         # PharmacologicalActionSubstanceList. Both descriptor and member names sit
         # in <String>, so read the structural UI tags rather than names.
@@ -201,7 +235,7 @@ def _parse_desc(desc_path: StrPath, want_classes: set[str], want_members: set[st
     trees: dict[str, tuple[str, ...]] = {}
     names: dict[str, str] = {}
     keys: dict[str, MemberKeys] = {}
-    for rec in _iter_records(desc_path, "DescriptorRecord"):
+    for rec in iter_records(desc_path, "DescriptorRecord"):
         ui = _findtext(rec, "DescriptorUI")
         if ui in want_classes:
             trees[ui] = tuple(_texts(rec, "TreeNumber"))
@@ -215,7 +249,7 @@ def _parse_desc(desc_path: StrPath, want_classes: set[str], want_members: set[st
 def _parse_supp(supp_path: StrPath, want_members: set[str]) -> dict[str, MemberKeys]:
     """Read supp2026 once, harvesting each wanted SCR member's identity keys."""
     keys: dict[str, MemberKeys] = {}
-    for rec in _iter_records(supp_path, "SupplementalRecord"):
+    for rec in iter_records(supp_path, "SupplementalRecord"):
         ui = _findtext(rec, "SupplementalRecordUI")
         if ui in want_members:
             unii, cas = registry_keys(_texts(rec, "RegistryNumber"))
