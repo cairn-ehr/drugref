@@ -396,11 +396,18 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
 # ---- gap_unresolved_ci_object -------------------------------------------------
 #
 # The review gate for the class arm slice 5b deliberately withholds. CI_ChemClass's
-# class arm (405 assertions over 108 MeSH chemical classes) is real upstream safety
-# content drugref does not ingest -- expanding it over MeSH's STRUCTURAL chemical
-# tree would make a rule on Sulfonamides reach bendroflumethiazide and bosentan, the
-# discredited sulfa cross-reactivity inference. Withholding it is the right call;
-# withholding it silently is not, so each withheld object becomes a citable question.
+# class arm (405 assertions over 103 MeSH chemical classes, MEASURED against the real
+# 2026.07.06 release) is real upstream safety content drugref does not ingest --
+# expanding it over MeSH's STRUCTURAL chemical tree would make a rule on Sulfonamides
+# reach bendroflumethiazide and bosentan, the discredited sulfa cross-reactivity
+# inference. Withholding it is the right call; withholding it silently is not, so each
+# withheld object becomes a citable question.
+#
+# ON 103, NOT 108: db/014 and db/016 both say 108, and both are applied migrations and
+# therefore immutable. 108 counts MeSH ConceptUIs; this worklist is keyed on the MeSH
+# RECORD ui, because one record is one curator decision, and five records are each
+# named by two withheld concepts. The standing correction is the docs-site decision
+# record "A structural chemical tree is not a clinical class".
 
 
 def test_unresolved_ci_object_becomes_a_question(conn, ingest_run_id):

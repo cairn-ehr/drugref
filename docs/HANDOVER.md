@@ -7,11 +7,10 @@
 ## What drugref is
 
 **drugref.org v2** — an open, co-equal **public-good drug-information service** (any EHR / pharmacy / app can
-consume it; Cairn is its first client on the same public-API footing). Two tiers: a **global tier**
-(jurisdiction-independent — substance identity, chemistry, classes, interactions) built first, and a **local
-tier** (country-specific packaging/pricing; Australia/PBS first). Co-resides in a Cairn deployment's
-PostgreSQL **or** runs standalone, but is **advisory reference data — never on Cairn's signed inter-node
-wire core**.
+consume it; Cairn is its first client on the same public-API footing). A **global tier**
+(jurisdiction-independent: identity, chemistry, classes, interactions) built first, then a **local tier**
+(country-specific packaging/pricing; Australia/PBS first). Co-resides in a Cairn deployment's PostgreSQL
+**or** runs standalone, but is **advisory reference data — never on Cairn's signed inter-node wire core**.
 
 ## ⇒ NEXT
 
@@ -80,7 +79,9 @@ releases.
 149 → **5** (0.03%) · MED-RT classified moieties 2,066 → **3,875** · memberships 10,562 → **18,639** ·
 populated CI rules 331 → **635** · `ddi_candidate_pair` 6,402 → **21,664**. Admission evidence: `INN_ID`
 12,588 · `RXCUI` 8,694 · `USAN_ID` 5,404 · `LEGACY_ALLOWLIST` 4 — **5,227 rest on `RXCUI` alone**, the
-weakest evidence and the natural head of a #19 worklist.
+weakest evidence and the natural head of a #19 worklist. **The audit note on the measurement itself:** the
+old-gate arm reproduced Plan B's recorded 6,395 pairs (6,402 here, the two extra being what the allow-list
+re-key added), so the before/after columns are the same instrument read twice.
 
 **Residuals, stated not hidden:** 4,453 records carry both `RXCUI` and `DAILYMED` yet are rejected (3,015
 botanicals/allergens, 821 excipient polymers, 600 mixtures); genuine tail misses (**pancrelipase**, **sodium
@@ -155,10 +156,10 @@ an append-only row-level floor. Own immortal `moiety_uuid` (`UUIDv5` on UNII at 
 are **append-only claims** (UNII, INN, RXNORM_IN, CAS, PUBCHEM_CID, INCHIKEY, CHEBI), so drugref doubles as
 a public cross-walk. Membership gate (since #26) = **`INN_ID | USAN_ID | (RXCUI & drug-like
 SUBSTANCE_TYPE)`** **or** the closed **UNII-keyed** legacy allow-list, with the admitting signal recorded
-in `moiety_admission` (`db/011`). International-by-construction seeding: UNII (public domain) backbone,
-INN display anchor, ChEBI (CC BY 4.0) chemistry, **RxNorm demoted to a claim** (an RxCUI read from the FDA
-file is a gate signal, not an RxNorm ingest), a closed hand-curated USAN↔INN crosswalk.
-**Floor scope:** row-level UPDATE/DELETE only — `TRUNCATE` and the table-owning role remain bypasses
+in `moiety_admission` (`db/011`). International-by-construction seeding: UNII (public domain) backbone, INN
+display anchor, ChEBI (CC BY 4.0) chemistry, **RxNorm demoted to a claim** (an RxCUI read from the FDA file
+is a gate signal, not an RxNorm ingest), a closed hand-curated USAN↔INN crosswalk. **Floor scope:** row-level
+UPDATE/DELETE only — `TRUNCATE` and the owning role remain bypasses
 ([#2](https://github.com/cairn-ehr/drugref/issues/2)).
 
 **Slice 2a / 2a.1 — the classification DAG.** `substance_class`, `class_parent`, `class_membership` seeded
@@ -248,7 +249,8 @@ MED-RT's now names the MeSH-namespace endpoint codes these predicates are keyed 
 RxNorm namespaces only, which stopped being true here.
 
 **Measured end-to-end against the real releases** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc2026 +
-supp2026), on a scratch database, live PG18:
+supp2026), on a scratch database, live PG18. Upstream denominators, so the yield reads without the spec:
+**`CI_with` 11,524 assertions / 708 objects · `CI_ChemClass` 1,939 / 360**.
 
 | | spec §4.5 predicted | **measured** | |
 |---|---:|---:|---|
@@ -283,15 +285,16 @@ exactly against the release:
   Analgesics Opioid, `D001569` Benzodiazepines, `D006993` Hypnotics and Sedatives, `D010406` (concepts
   "Penicillins" *and* "Penicillin") and `D020902` Hypericum. One record is one curator decision.
   **Adjudicated twice; 103 is correct and the code stands** — do not "fix" it by keying the worklist on the
-  concept. Specs are immutable, so the correction is an **erratum in the docs-site living decision record**
-  (`docs-site/docs/decisions/withheld-chemical-class-contraindications.md`). `db/014`'s comment carries the
-  108 too and is likewise immutable; the erratum is the single place that fix lives.
+  concept. **Three artefacts carry the stale 108 and all three are immutable** — the spec, and the comment
+  headers of **both `db/014` and `db/016`** (the checksum ledger forbids editing an applied migration, and a
+  migration whose only content is a re-issued `COMMENT ON` is not worth a ledger slot). The correction lives
+  in ONE place, `docs-site/docs/decisions/withheld-chemical-class-contraindications.md`, naming all three.
 
 The other two have their own causes:
 - **5,190 → 5,203 conditions.** The spec counted **descriptors only**. The registry also holds **13
   supplementary records**, which bear no tree numbers, so they never enter the closure and appear only as
-  themselves. Both figures are right about different things, and `MeshCiSummary`'s docstring says which is
-  which — 5,190 is the *descriptor closure*, 5,203 is the *registry*.
+  themselves. Both are right about different things — 5,190 is the *descriptor closure*, 5,203 is the
+  *registry* — and `MeshCiSummary`'s docstring already says which is which.
 - **1,443 → 1,442 pairs.** Exactly one self-pair — **tranylcypromine** (RxCUI 10734) against MeSH `D014191`
   *Tranylcypromine* — which `db/014`'s `moiety_contraindication_not_self` CHECK forbids and the orchestrator
   skips. MED-RT states these where a salt and its parent moiety collapse to one identity. The spec's §4.4
@@ -299,11 +302,10 @@ The other two have their own causes:
 
 **The two headline clinical checks, confirmed:**
 
-- **Epilepsy (`D004827`) reaches its descendants.** 14 direct rows fan out to **378** over **27**
-  conditions — bethanechol, clozapine, cycloserine, doxapram, maprotiline, mefloquine and metoclopramide now
-  reach a patient coded *Epilepsy, Temporal Lobe*, *Complex Partial*, *Frontal Lobe*, *Reflex*,
-  *Post-Traumatic*, *Benign Neonatal*… A filtered lookup on a leaf condition costs **~10 ms**, comparable
-  to Plan B's 25 ms on the class DAG.
+- **Epilepsy (`D004827`) reaches its descendants.** 14 direct rows fan out to **378** over **27** conditions
+  — bethanechol, clozapine, cycloserine, doxapram, maprotiline, mefloquine and metoclopramide now reach a
+  patient coded *Epilepsy, Temporal Lobe*, *Complex Partial*, *Frontal Lobe*, *Reflex*, *Post-Traumatic*…
+  A filtered lookup on a leaf condition costs **~10 ms**, against Plan B's 25 ms on the class DAG.
 - **Pregnancy + lactation: 615 rows** (`D011247` **549**, `D007774` **66**) — the case that named
   `moiety_condition_contraindication` rather than `drug_disease_*`. A `drug_disease_` table would have
   filed the release's most clinically consequential contraindication axis as a category error.
@@ -313,14 +315,14 @@ dropped**. Expanding a rule on Sulfonamides (36 rules) over MeSH's *structural* 
 moieties including bendroflumethiazide and bosentan — the discredited sulfa cross-reactivity inference,
 generated automatically and shipped as a safety assertion. Only 8.3% of these objects have any `has_SC`
 member, so that route cannot fill the gap either. Published instead as `gap_unresolved_ci_object` + a fifth
-`gap_kind`, one row per object with its rule count — Plan B's 14-expansion-roots precedent. Worklist head:
-Sulfonamides 36, Hypericum 32, Sulfites 24, Barbiturates 13, Ergotamines/Penicillins 12.
+`gap_kind`, one row per object with its rule count — Plan B's precedent. Worklist head: Sulfonamides 36,
+Hypericum 32, Sulfites 24, Barbiturates 13, Ergotamines/Penicillins 12.
 
 **The source-blind walk stays LATENT — 5b does NOT end it**, and ROADMAP's old claim that it would was
 retracted in the design round. 5b registers **no** MeSH chemical class in `substance_class` (the class arm
 is deferred) and conditions live in their own tables with their own MeSH-only DAG, so no rule yet expands
-over another authority's edges. The hazard becomes live when `has_SC` or the class arm lands. (`has_SC`
-itself remains unbuilt: 3,632 assertions, **248 of them targeting MED-RT itself**, needing no bridge.)
+over another authority's edges. It becomes live when `has_SC` or the class arm lands. (`has_SC` itself
+remains unbuilt: 3,632 assertions, **248 targeting MED-RT itself**, needing no bridge.)
 
 **Filed: [#39](https://github.com/cairn-ehr/drugref/issues/39)** — `ingest_unmatched_ingredient` is rebuilt
 per `source`, but `medrt_run` and `mesh_ci_run` both open runs under `MED-RT` and neither set contains the
@@ -336,9 +338,9 @@ extracted from a real release by a committed, re-runnable extractor. **MED-RT:**
 **hierarchical**, not routed through SNOMED/MeSH. **MeSH:** Descriptors **DO** carry UNIIs in
 `RegistryNumber` (aspirin D001241 = `R16CO5Y76E`), and a record may carry several — key extraction is
 set-valued. **And the one 5b turned on:** MED-RT's MeSH `to_code` is a **ConceptUI** (`M0004868`), *not* a
-DescriptorUI, in two shapes (legacy 8-char and modern 10-char, both ConceptUIs — nothing keys off length).
-Resolving it against `desc2026` + `supp2026` reaches **99.88%** of all MeSH-keyed objects; the NDF-RT
-accessory crosswalk manages 85.0% and yields only a **name**, so it is rejected — a name is not a key.
+DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off length). Resolving it against
+`desc2026` + `supp2026` reaches **99.88%** of MeSH-keyed objects; the NDF-RT accessory crosswalk manages
+85.0% and yields only a **name**, so it is rejected — a name is not a key.
 
 ## Architecture in one breath
 
@@ -348,11 +350,10 @@ accessory crosswalk manages 85.0% and yields only a **name**, so it is rejected 
   curator *policy*, edited in place, cleared by nothing.
 - **Two orthogonal structures**: a **composition tree** (moiety → salt → clinical drug → product) and a
   **classification DAG** (class ⊂ class; moiety ∈ many classes). The curated overlay attaches to either and
-  **inherits along the edges** — the key curation-economy lever. Plan B is the first read path that
-  actually walks those edges; 5b adds a **third graph beside them**, the MeSH condition DAG, which is an
-  *object* structure rather than a subject one — nothing is a member of a condition.
-- **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, but **integrity is
-  enforced in the DB, not app code**.
+  **inherits along the edges** — the key curation-economy lever. Plan B is the first read path that actually
+  walks those edges; 5b adds a **third graph beside them**, the MeSH condition DAG — an *object* structure,
+  not a subject one, since nothing is a member of a condition.
+- **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 
 ## How to run / test
 
@@ -485,15 +486,15 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   node-local ingest; needs written Dept-of-Health confirmation.
 
 **Verify-before-production, generally:** re-run each parser against a full current release and re-confirm the
-aggregate numbers. Fixtures extracted from a real release are not the same thing — slice 5b found five spec
-errors that way, and every one was invisible to a green test suite.
+aggregate numbers. Fixtures extracted from a real release are not the same thing — 5b found five spec errors
+that way, every one invisible to a green suite.
 
 ## Repo facts
 
 - GitHub `cairn-ehr/drugref` · default branch `main` · **AGPL-3.0** · attribution in `NOTICE`. Slice 5b adds
   **no new source**, but corrected the MED-RT/MeSH *scope* claims already there (see "Slice 5b" above).
-- Coding rules live in CLAUDE.md and the `nextsession` skill.
+  Coding rules live in CLAUDE.md and the `nextsession` skill.
 - Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by
-  `.github/workflows/docs.yml`. Its **Design decisions** section holds *living* records (revised in place,
-  reversed ones removed), distinct from the immutable per-slice specs. Specs/HANDOVER/ROADMAP are **not**
-  published.
+  `.github/workflows/docs.yml`; `mkdocs build --strict` is its test. Its **Design decisions** section holds
+  *living* records (revised in place, reversed ones removed) and is **where a standing correction to an
+  immutable spec or migration goes** — see the 5b erratum. Specs/HANDOVER/ROADMAP are **not** published.

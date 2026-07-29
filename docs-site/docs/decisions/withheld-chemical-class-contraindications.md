@@ -3,7 +3,7 @@
 **Status:** Active
 **Last reviewed:** 2026-07-29
 **Applies to:** Slice 5b — MeSH-keyed contraindications (`CI_ChemClass`)
-**Full derivation:** the [slice-5b design spec](https://github.com/cairn-ehr/drugref/tree/main/docs/superpowers/specs) and `db/014` / `db/016`
+**Full derivation:** the [slice-5b design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md) (§4.4, §7) and `db/014` / `db/016`
 
 ## Context
 
@@ -55,9 +55,16 @@ expanding over them.
 
 ## Erratum — the withheld arm is **103** objects, not 108
 
-The slice-5b design spec records this arm as *405 assertions over **108** classes*, and
-`db/014`'s comment repeats that figure. **The object count is wrong; the assertion count
-is right.**
+The slice-5b design spec records this arm as *405 assertions over **108** classes* (§4.4
+and §7). **The object count is wrong; the assertion count is right.**
+
+**Three places carry the stale 108, and all three are immutable**, which is why this
+record exists: the spec itself (`docs/superpowers/specs/` is immutable by project rule),
+and the comment headers of **both** `db/014_mesh_contraindications.sql` and
+`db/016_unresolved_ci_object_gap.sql` — applied migrations, which the checksum ledger
+forbids editing. Re-issuing a migration whose entire content is a `COMMENT ON` changing a
+number in prose would consume a ledger slot and leave the next reader reconciling two
+files, so this living record is the single authoritative correction for all three.
 
 The spec counted MeSH **ConceptUIs** — what MED-RT's `to_code` actually points at. A MeSH
 *record* owns one or more concepts, so several concepts can name one record, and the
@@ -74,9 +81,10 @@ Opioid), `D001569` (Benzodiazepines), `D006993` (Hypnotics and Sedatives), `D010
 The **405** is unaffected, because an assertion is an assertion whichever concept names
 its object.
 
-The immutable spec is not edited — this record is the correction, which is what this
-section is for. Do not "fix" the code by keying the worklist on the concept: that is
-precisely the split the record/concept distinction exists to prevent.
+Neither the spec nor the two migrations is edited — this record is the correction, which
+is what this section is for. Do not "fix" the code by keying the worklist on the concept:
+that is precisely the split the record/concept distinction exists to prevent. The code
+itself already explains the collapse, in `ingest/mesh_ci_run.py::_write_relations`.
 
 ## Related
 

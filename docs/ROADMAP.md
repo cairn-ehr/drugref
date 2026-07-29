@@ -318,10 +318,11 @@ other jurisdictions.
   **Plan C (the accumulation model) was gated on 5b, which has now landed its contraindication half.**
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
-  **Note the test-suite coupling** (corrected, slice-8a review round — the prior count of three was wrong
-  and went unverified before being repeated): `grep -l TRUNCATE tests/*.py` finds **seven** modules —
-  `test_chebi.py`, `test_gap_views.py`, `test_ingest_run.py`, `test_medrt_run.py`, `test_mesh_run.py`,
-  `test_pbs_run.py` and `test_questions.py` — each `TRUNCATE`-ing the drugref tables in an autouse fixture
+  **Note the test-suite coupling** (this count has now been wrong twice — three, then seven — so re-run the
+  grep before quoting it): `grep -l TRUNCATE tests/*.py` finds **nine** modules — `test_chebi.py`,
+  `test_gap_views.py`, `test_ingest_run.py`, `test_medrt_run.py`, `test_mesh_ci_run.py`,
+  `test_mesh_run.py`, `test_moiety_admission.py`, `test_pbs_run.py` and `test_questions.py` — each
+  `TRUNCATE`-ing the drugref tables in an autouse fixture
   because their orchestrators commit internally and so escape the `conn` fixture's rollback. Those fixtures
   depend on precisely the bypass this item closes, so hardening the floor must land together with a
   replacement isolation strategy (e.g. a privileged test role, or per-test schemas) or the suite stops being
