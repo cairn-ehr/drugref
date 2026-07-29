@@ -78,5 +78,8 @@ CREATE INDEX IF NOT EXISTS condition_parent_by_parent
 COMMENT ON TABLE drugref.condition_parent IS
     'The condition DAG, derived from MeSH tree-number nesting exactly as slice 2b '
     'derived the PA DAG. MANY-TO-MANY: a descriptor bears several tree numbers, so '
-    '1,690 of the 5,190 conditions in the 2026 release have more than one parent. '
+    '1,690 of the 2026 registry''s 5,203 conditions have more than one parent. That '
+    'registry is 5,190 descriptors + 13 SCRs, and ONLY a descriptor bears tree '
+    'numbers -- so every SCR is parentless here BY CONSTRUCTION, not by omission, '
+    'and a count quoted as 5,190 is the descriptor closure rather than the registry. '
     'A REBUILDABLE PROJECTION -- cleared and rebuilt per source on every ingest.';

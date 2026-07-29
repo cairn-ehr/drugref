@@ -23,7 +23,8 @@ COMMENT ON VIEW drugref.condition_subtree IS
     'condition_contraindication_expanded''s `is_direct` depends on it. Deduped on '
     '(root, condition) rather than on paths, so it terminates under a cycle (db/013 '
     'forbids only self-parenting) and stays linear in a multi-parent DAG, where '
-    '1,690 of 5,190 conditions have several parents. Scoped to CONTRAINDICATED '
+    '1,690 of the registry''s 5,203 conditions (5,190 descriptors + 13 tree-less '
+    'SCRs) have several parents. Scoped to CONTRAINDICATED '
     'conditions: a condition no rule names is ABSENT, not present with only itself.';
 COMMENT ON COLUMN drugref.condition_subtree.root_uuid IS
     'The contraindicated condition the walk started from -- what a rule NAMES.';

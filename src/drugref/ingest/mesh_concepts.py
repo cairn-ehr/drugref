@@ -16,7 +16,10 @@ The crosswalk route is therefore NOT used: it is worse, and a name is not a key
 
 WHY THIS IS NOT IN mesh.py. That module answers "what are the PA classes and their
 members"; this one answers "which MeSH record is this concept". Different questions,
-and mesh.py is already 296 lines against a ~500-line budget (CLAUDE.md rule 4).
+and mesh.py already sits around 330 lines against a ~500-line budget (CLAUDE.md
+rule 4). What the two genuinely SHARE -- reading registry numbers, and turning tree
+numbers into DAG edges -- is imported from mesh.py, never copied: see
+`mesh.tree_parent_edges`, which both DAG builders wrap.
 
 This module is PURE and STREAMING: it reads files and returns records. No database,
 no network, no UUID minting. The orchestrator (mesh_ci_run.py) does all of that.
@@ -29,6 +32,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
+from drugref.ingest import mesh
 from drugref.ingest.mesh import registry_keys
 
 StrPath = str | pathlib.Path
@@ -172,6 +176,8 @@ def descriptors_under(desc_path: StrPath,
     expand into, and the feature would be inert while appearing to work.
 
     Measured on the real release: 664 referenced descriptors -> 5,190 in closure.
+    That 5,190 is the DESCRIPTOR closure, not the registry: 13 referenced SCRs bear
+    no tree numbers, so they never enter a closure and the registry holds 5,203.
 
     Each record is returned under its own PREFERRED concept where it has one, since
     the caller keys conditions by record_ui and only needs a concept for provenance.
@@ -198,25 +204,23 @@ def descriptors_under(desc_path: StrPath,
 def parent_edges(records: Iterable[MeshRecord]) -> list[ConditionParentEdge]:
     """Derive the condition DAG from tree-number nesting.
 
-    The same idiom as mesh._build_dag, deliberately -- one way of turning MeSH tree
-    numbers into a DAG in this codebase, not two. Only the IMMEDIATE tree-parent of
-    each tree number counts, and only when that parent is itself an ingested record;
-    a record whose immediate parent is outside the set is simply a ROOT of the
-    ingested subset, not re-attached to a more distant ancestor.
+    THE RULE IS mesh.tree_parent_edges, and this function only wraps its
+    `(child, parent)` pairs in ConditionParentEdge -- deliberately, so there is ONE
+    way of turning MeSH tree numbers into a DAG in this codebase and not two. Read
+    that docstring for what the rule actually decides (immediate tree-parent only,
+    both endpoints ingested, no self-edges, deterministic order).
+
+    The only thing this layer adds is the CONCEPT-TO-RECORD collapse. `records` is
+    keyed by concept upstream, so several entries can carry the same `record_ui`
+    (that is the whole point of MeshRecord holding both). Grouping their tree numbers
+    under the record ui before applying the rule is what stops one condition being
+    treated as several -- the same collapse the worklist and the registry make.
 
     Multi-parent by construction: a descriptor bears several tree numbers, which is
-    why 1,690 of the 5,190 conditions have more than one parent.
+    why 1,690 of the registry's 5,203 conditions have more than one parent.
     """
-    records = list(records)
-    owner_of_tree = {t: r.record_ui for r in records for t in r.tree_numbers}
-    edges: set[ConditionParentEdge] = set()
-    for r in records:
-        for tree in r.tree_numbers:
-            if "." not in tree:
-                continue                            # a top-level node has no parent
-            owner = owner_of_tree.get(tree.rsplit(".", 1)[0])
-            if owner and owner != r.record_ui:
-                edges.add(ConditionParentEdge(child_code=r.record_ui,
-                                              parent_code=owner))
-    # Sorted so the edge order is reproducible (a set has none).
-    return sorted(edges, key=lambda e: (e.child_code, e.parent_code))
+    trees_by_ui: dict[str, list[str]] = {}
+    for record in records:
+        trees_by_ui.setdefault(record.record_ui, []).extend(record.tree_numbers)
+    return [ConditionParentEdge(child_code=child, parent_code=parent)
+            for child, parent in mesh.tree_parent_edges(trees_by_ui)]

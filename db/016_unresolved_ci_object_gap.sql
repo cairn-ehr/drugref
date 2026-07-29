@@ -1,7 +1,7 @@
 -- db/016_unresolved_ci_object_gap.sql
 -- Publish the contraindication objects slice 5b deliberately withheld.
 --
--- WHY THIS EXISTS. CI_ChemClass's class arm (405 assertions over 108 MeSH chemical
+-- WHY THIS EXISTS. CI_ChemClass's class arm (405 assertions over 103 MeSH chemical
 -- classes) is real upstream safety content that drugref does not ingest, because
 -- expanding it over MeSH's STRUCTURAL chemical tree makes a rule on Sulfonamides
 -- reach bendroflumethiazide and bosentan -- the discredited sulfa cross-reactivity

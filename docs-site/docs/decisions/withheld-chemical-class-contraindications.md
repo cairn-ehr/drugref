@@ -53,18 +53,15 @@ expanding over them.
   registered in `substance_class`, and conditions live in their own tables with their own
   MeSH-only DAG, no rule from one authority yet expands over another's edges.
 
-## Erratum — the withheld arm is **103** objects, not 108
+## Erratum — the spec's withheld arm is **103** objects, not 108
 
 The slice-5b design spec records this arm as *405 assertions over **108** classes* (§4.4
 and §7). **The object count is wrong; the assertion count is right.**
 
-**Three places carry the stale 108, and all three are immutable**, which is why this
-record exists: the spec itself (`docs/superpowers/specs/` is immutable by project rule),
-and the comment headers of **both** `db/014_mesh_contraindications.sql` and
-`db/016_unresolved_ci_object_gap.sql` — applied migrations, which the checksum ledger
-forbids editing. Re-issuing a migration whose entire content is a `COMMENT ON` changing a
-number in prose would consume a ledger slot and leave the next reader reconciling two
-files, so this living record is the single authoritative correction for all three.
+**The spec is the one artefact that cannot be corrected in place** — per-slice specs under
+`docs/superpowers/specs/` are immutable by project rule — which is why this living record
+exists. Everything else already reads **103**: the migrations, the ingest code, and the
+measured tables.
 
 The spec counted MeSH **ConceptUIs** — what MED-RT's `to_code` actually points at. A MeSH
 *record* owns one or more concepts, so several concepts can name one record, and the
@@ -81,10 +78,9 @@ Opioid), `D001569` (Benzodiazepines), `D006993` (Hypnotics and Sedatives), `D010
 The **405** is unaffected, because an assertion is an assertion whichever concept names
 its object.
 
-Neither the spec nor the two migrations is edited — this record is the correction, which
-is what this section is for. Do not "fix" the code by keying the worklist on the concept:
-that is precisely the split the record/concept distinction exists to prevent. The code
-itself already explains the collapse, in `ingest/mesh_ci_run.py::_write_relations`.
+Do not "fix" the code by keying the worklist on the concept: that is precisely the split
+the record/concept distinction exists to prevent. The code itself already explains the
+collapse, in `ingest/mesh_ci_run.py::_write_relations`.
 
 ## Related
 

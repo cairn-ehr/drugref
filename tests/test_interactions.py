@@ -159,6 +159,48 @@ def test_clear_source_removes_both_relations(conn, a_moiety, a_condition,
     ).fetchall() == [("PBS",)]
 
 
+def test_clear_source_removes_the_unresolved_object_worklist(conn, ingest_run_id):
+    """The THIRD table clear_source_mesh_contraindications touches, asserted on its
+    own -- because the test above covers only the two relations, and removing
+    `ingest_unresolved_ci_object` from that function's loop left the whole suite green.
+
+    WHAT RIDES ON IT: gap_unresolved_ci_object reports sum(assertion_count) ACROSS
+    runs (db/016). A worklist that is written but never cleared therefore does not
+    merely go stale -- it MULTIPLIES the curator-facing rule count on every
+    re-ingest, 405 -> 810 -> 1,215, with nothing anywhere failing.
+
+    TWO run sources, because "cleared" and "cleared only where it should be" are
+    different claims and only the second is worth having. db/014 constrains
+    ingest_unresolved_ci_object.source to CHECK (source IN ('MED-RT')) -- production
+    knows one authority so far -- so the second source is admitted INSIDE this test's
+    transaction only, the same idiom as
+    test_two_sources_may_each_assert_the_same_contraindication in
+    tests/test_schema_interactions.py. The `conn` fixture rolls it back, so the
+    widening never reaches the schema any other test sees.
+    """
+    conn.execute("ALTER TABLE drugref.ingest_unresolved_ci_object "
+                 "DROP CONSTRAINT ingest_unresolved_ci_object_source")
+    conn.execute("ALTER TABLE drugref.ingest_unresolved_ci_object "
+                 "ADD CONSTRAINT ingest_unresolved_ci_object_source "
+                 "CHECK (source IN ('MED-RT', 'PBS'))")
+
+    # conftest's `ingest_run_id` fixture opens its run under source='PBS', so it is
+    # already the "other" source; this test opens its own run under 'MED-RT'.
+    medrt_run = _run(conn, "MED-RT")
+    interactions.record_unresolved_ci_objects(
+        conn, [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides", 36)],
+        medrt_run)
+    interactions.record_unresolved_ci_objects(
+        conn, [("PBS", "CI_ChemClass", "MeSH", "D001569", "Benzodiazepines", 13)],
+        ingest_run_id)
+
+    interactions.clear_source_mesh_contraindications(conn, "MED-RT")
+
+    assert conn.execute(
+        "SELECT source, object_code FROM drugref.ingest_unresolved_ci_object"
+    ).fetchall() == [("PBS", "D001569")]
+
+
 def test_record_unresolved_ci_objects(conn, ingest_run_id):
     written = interactions.record_unresolved_ci_objects(
         conn, [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides", 36)],

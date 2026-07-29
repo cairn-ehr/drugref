@@ -1,3 +1,12 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_ci_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_mesh_ci_subset.py DESC.gz SUPP.gz OUT_DIR
+     and regenerate it AFTER make_medrt_subset.py: the wanted set is read out of
+     medrt_subset.xml, so the two fixtures cannot be left describing disjoint worlds.
+     Records are COPIED from the release, never invented or reconstructed; only the
+     AllowableQualifiersList and TermList subtrees, which no drugref code path reads,
+     are removed. Courtesy of the U.S. National Library of Medicine.
+     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->
 <DescriptorRecordSet>
 <DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D000080445</DescriptorUI>

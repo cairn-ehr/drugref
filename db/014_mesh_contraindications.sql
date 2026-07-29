@@ -3,9 +3,9 @@
 --
 -- TWO RELATIONS, NOT ONE, because the objects are different kinds of thing:
 --   * moiety_condition_contraindication -- CI_with. "Do not give drug X to a patient
---     in state C." 9,482 rows against the real release.
+--     in state C." 9,471 rows against the real release.
 --   * moiety_contraindication           -- CI_ChemClass's moiety arm. "Do not
---     co-administer drug X with drug Y." 1,443 rows, and drugref's FIRST genuinely
+--     co-administer drug X with drug Y." 1,442 rows, and drugref's FIRST genuinely
 --     pairwise DDI content: both endpoints are moieties, so nothing expands.
 --
 -- Both are REBUILDABLE PROJECTIONS and CANDIDATE TIER, exactly as
@@ -117,7 +117,7 @@ COMMENT ON TABLE drugref.moiety_contraindication IS
 
 -- ---- 4. what is withheld, preserved as a worklist -----------------------------
 --
--- CI_ChemClass's CLASS arm (405 assertions over 108 MeSH chemical classes) is NOT
+-- CI_ChemClass's CLASS arm (405 assertions over 103 MeSH chemical classes) is NOT
 -- ingested. Expanding it over MeSH's STRUCTURAL chemical tree makes a rule on
 -- Sulfonamides (D013449, 36 rules) reach 61 moieties including bendroflumethiazide
 -- and bosentan -- the discredited sulfa cross-reactivity inference, generated

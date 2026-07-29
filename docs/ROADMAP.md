@@ -116,7 +116,7 @@ the contraindication half — `CI_with` (drug→condition) + `CI_ChemClass`'s mo
 new MeSH **condition** registry; **5b.2** is the indication half
 (`may_treat`/`may_prevent`/`may_diagnose`/`induces`, ~18k), which **reuses that registry unchanged**. Spec:
 [slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md). `db/013`–`db/016`;
-488 tests.
+494 tests.
 
 **Measured yield against the real releases** (UNII 26Feb2026 + MED-RT 2026.07.06 + MeSH desc/supp 2026, live
 PG18) — **the measurement corrected the spec in five places; the measured figures are the true ones**:

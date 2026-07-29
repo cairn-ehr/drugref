@@ -254,10 +254,31 @@ def collect_supplementals(supp_path, wanted):
     return kept
 
 
+# The provenance header every committed release extract carries, matching
+# make_medrt_subset.py's and make_mesh_subset.py's. It exists so a reader who opens
+# the fixture -- rather than this script -- still learns three things they cannot
+# otherwise see: the file is EXTRACTED (so hand-editing it will be silently undone by
+# the next regeneration), the exact command that regenerates it, and, for a MeSH
+# extract, the NLM courtesy line the licence asks for wherever the content travels.
+#
+# NB: an XML comment may not contain a double hyphen, so this text uses none.
+_HEADER = (
+    "<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_mesh_ci_subset.py. Do not hand-edit.\n"
+    "     Regenerate: python tests/fixtures/make_mesh_ci_subset.py DESC.gz SUPP.gz OUT_DIR\n"
+    "     and regenerate it AFTER make_medrt_subset.py: the wanted set is read out of\n"
+    "     medrt_subset.xml, so the two fixtures cannot be left describing disjoint worlds.\n"
+    "     Records are COPIED from the release, never invented or reconstructed; only the\n"
+    "     AllowableQualifiersList and TermList subtrees, which no drugref code path reads,\n"
+    "     are removed. Courtesy of the U.S. National Library of Medicine.\n"
+    "     MeSH is attributable (see NOTICE); nothing is redacted; these files are single source. -->")
+
+
 def write(out_path: pathlib.Path, root_tag: str, records: dict[str, str]) -> None:
     """Write one fixture file, records in UI order so a regeneration diffs cleanly."""
     body = "\n".join(records[ui] for ui in sorted(records))
-    out_path.write_text(f"<{root_tag}>\n{body}\n</{root_tag}>\n", encoding="utf-8")
+    out_path.write_text(
+        f'<?xml version="1.0"?>\n{_HEADER}\n<{root_tag}>\n{body}\n</{root_tag}>\n',
+        encoding="utf-8")
     print(f"{out_path}: {len(records)} records, {out_path.stat().st_size} bytes")
 
 

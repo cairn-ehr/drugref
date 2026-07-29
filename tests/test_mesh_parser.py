@@ -191,3 +191,51 @@ def test_every_dag_endpoint_is_an_ingested_pa_class():
     uis = {c.descriptor_ui for c in parsed().classes}
     for e in parsed().parents:
         assert e.child_ui in uis and e.parent_ui in uis
+
+
+# ---- the SHARED tree-nesting rule (mesh.tree_parent_edges) ------------------
+#
+# drugref derives TWO DAGs from MeSH tree numbers -- slice 2b's PA class DAG
+# (mesh._build_dag) and slice 5b's condition DAG (mesh_concepts.parent_edges) -- and
+# they are the same rule wrapped in two different edge dataclasses. The rule itself
+# now lives in ONE function and is tested here, once, on controlled input; the two
+# wrappers keep their own tests against real fixtures. The tests below are what makes
+# the shared rule safe to share: each pins a decision that is invisible in a passing
+# end-to-end ingest but changes which edges exist.
+
+
+def test_tree_parent_edges_links_only_the_immediate_tree_parent():
+    """A grandchild attaches to its PARENT, never leapfrogging to the grandparent.
+    Leapfrogging would invent hierarchy MeSH does not assert."""
+    edges = mesh.tree_parent_edges(
+        {"A": ("D01",), "B": ("D01.100",), "C": ("D01.100.200",)})
+    assert edges == [("B", "A"), ("C", "B")]
+
+
+def test_tree_parent_edges_needs_both_endpoints_in_the_ingested_set():
+    """The immediate tree-parent is absent from the set, so the child is a ROOT of
+    the ingested subset. It is NOT re-attached to the more distant ancestor that IS
+    present -- that would assert a direct kinship the release never states."""
+    assert mesh.tree_parent_edges({"A": ("D01",), "C": ("D01.100.200",)}) == []
+
+
+def test_tree_parent_edges_never_emits_a_self_edge():
+    """One record bearing both a tree number and its own tree-parent's number would
+    otherwise become its own parent. db/013's condition_parent_not_self CHECK rejects
+    that mid-ingest, so the guard turns a silent oddity into no edge at all."""
+    assert mesh.tree_parent_edges({"A": ("D01", "D01.100")}) == []
+
+
+def test_tree_parent_edges_dedupes_and_sorts():
+    """Deterministic output: two tree numbers under one parent give ONE edge, and the
+    order is sorted rather than whatever a set happened to iterate. Both DAG writers
+    insert in this order, so a non-deterministic answer would make ingests differ."""
+    edges = mesh.tree_parent_edges(
+        {"P": ("D01",), "Z": ("D01.100", "D01.200"), "A": ("D01.300",)})
+    assert edges == [("A", "P"), ("Z", "P")]
+
+
+def test_tree_parent_edges_ignores_a_top_level_tree_number():
+    """A single-segment tree number has no parent segment to strip, so it contributes
+    nothing -- rather than being looked up under a truncated key that could collide."""
+    assert mesh.tree_parent_edges({"A": ("D01",), "B": ("D02",)}) == []

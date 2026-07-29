@@ -38,7 +38,7 @@ work. The parser STREAMS every file with iterparse + clear (supp2026.xml is
 """
 import pathlib
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
@@ -223,36 +223,69 @@ def _parse_supp(supp_path: StrPath, want_members: set[str]) -> dict[str, MemberK
     return keys
 
 
-def _build_dag(classes: list[PaClass]) -> list[PaParentEdge]:
-    """Derive the subclass DAG from tree-number nesting (spec §5.4).
+def tree_parent_edges(
+        trees_by_ui: Mapping[str, Sequence[str]]) -> list[tuple[str, str]]:
+    """Turn MeSH tree numbers into DAG edges: `[(child_ui, parent_ui), ...]`.
 
-    A MeSH tree number nests by dotted segments ("D27.505.954.158.030"); dropping
-    the trailing ".NNN" gives the immediate parent tree number. Emit a child->parent
-    edge only when BOTH the child and its immediate tree-parent are ingested PA
-    classes -- the same endpoint-scoping MED-RT uses to keep the DAG closed over the
-    ingested set.
+    THE ONE PLACE THIS RULE LIVES. drugref derives two different DAGs from MeSH tree
+    numbers -- slice 2b's PA class DAG (`_build_dag` below) and slice 5b's condition
+    DAG (`mesh_concepts.parent_edges`) -- and they are the same rule over different
+    records. It was written out twice once, which is exactly how two copies drift
+    apart without anything failing; each caller now wraps THIS function's plain
+    `(child, parent)` pairs in its own edge dataclass and adds nothing else.
 
-    Only the IMMEDIATE tree-parent is considered, per tree number; this never walks
-    further up a single path. A tree number whose immediate parent is not a PA class
-    simply contributes no edge for THAT path -- it is not re-attached to a more
-    distant PA ancestor along the same path. A class still lands under its nearest
-    ingested PA ancestor whenever it *also* bears another tree number whose immediate
-    parent IS a PA class (a descriptor carries several, so this is the common case,
-    and it is why the axis is a genuine multi-parent DAG). A class none of whose
-    tree numbers has a PA-class immediate parent is a root of the ingested subset.
-    This is the approved design (spec §5.4): of the 1,042 tree numbers PA classes
-    bear, 794 have a PA-class immediate parent; the rest drop, by construction.
+    `trees_by_ui` maps each ingested record's UI to the tree numbers it bears. Four
+    decisions are baked in, and every one of them changes which edges exist:
+
+    * **Dotted nesting.** A MeSH tree number nests by dotted segments
+      ("D27.505.954.158.030"); dropping the trailing ".NNN" names its immediate
+      parent tree number. A single-segment number is top-level and has no parent.
+    * **The IMMEDIATE tree-parent only**, per tree number -- this never walks further
+      up a path. A tree number whose immediate parent is not in `trees_by_ui`
+      contributes no edge for THAT path and is NOT re-attached to a more distant
+      ancestor that happens to be present: the release does not assert that kinship.
+    * **Both endpoints must be in the ingested set** -- the same endpoint-scoping
+      MED-RT uses, which is what keeps the DAG closed over what drugref actually
+      holds. A record none of whose tree numbers has an ingested immediate parent is
+      a ROOT of the ingested subset, not an orphan and not an error.
+    * **No self-edges**, because a record can bear both a tree number and its own
+      tree-parent's; `db/013`'s `condition_parent_not_self` CHECK would reject one
+      mid-ingest.
+
+    Multi-parent by construction: a record bears several tree numbers, so it lands
+    under every ingested immediate parent it has. That is why both axes are genuine
+    multi-parent DAGs rather than trees (spec §5.4 for PA; 1,690 of slice 5b's
+    conditions have more than one parent).
+
+    Returns a DEDUPED, SORTED list: a set has no order, and both callers insert rows
+    in this order, so a non-deterministic answer would make two ingests of one
+    release differ.
     """
-    tree_to_class = {t: c.descriptor_ui for c in classes for t in c.tree_numbers}
-    edges: set[PaParentEdge] = set()
-    for c in classes:
-        for t in c.tree_numbers:
-            parent_tree = t.rsplit(".", 1)[0] if "." in t else None
-            owner = tree_to_class.get(parent_tree)
-            if owner and owner != c.descriptor_ui:
-                edges.add(PaParentEdge(child_ui=c.descriptor_ui, parent_ui=owner))
-    # Sorted for a reproducible edge order (a set has none).
-    return sorted(edges, key=lambda e: (e.child_ui, e.parent_ui))
+    owner_of_tree = {tree: ui for ui, trees in trees_by_ui.items() for tree in trees}
+    edges: set[tuple[str, str]] = set()
+    for ui, trees in trees_by_ui.items():
+        for tree in trees:
+            if "." not in tree:
+                continue                        # a top-level node has no parent
+            owner = owner_of_tree.get(tree.rsplit(".", 1)[0])
+            if owner and owner != ui:
+                edges.add((ui, owner))
+    return sorted(edges)
+
+
+def _build_dag(classes: list[PaClass]) -> list[PaParentEdge]:
+    """Derive the PA subclass DAG from tree-number nesting (spec §5.4).
+
+    The rule is `tree_parent_edges`; this only wraps its pairs in PaParentEdge. Of
+    the 1,042 tree numbers PA classes bear, 794 have a PA-class immediate parent;
+    the rest drop, by construction, and that is the approved design.
+
+    `classes` is built from a dict keyed by DescriptorUI (see `parse`), so each UI
+    appears exactly once and the mapping below loses nothing.
+    """
+    return [PaParentEdge(child_ui=child, parent_ui=parent)
+            for child, parent in tree_parent_edges(
+                {c.descriptor_ui: c.tree_numbers for c in classes})]
 
 
 def parse(*, pa_path: StrPath, desc_path: StrPath, supp_path: StrPath) -> ParsedMesh:
