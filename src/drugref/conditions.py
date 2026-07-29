@@ -15,7 +15,7 @@ import uuid
 
 import psycopg
 
-from drugref import ids
+from drugref import db, ids
 from drugref.ingest.mesh_concepts import MeshRecord
 
 
@@ -57,6 +57,9 @@ def upsert_condition(conn: psycopg.Connection, record: MeshRecord,
     return condition_uuid, first_seen == ingest_run_id
 
 
+CONDITION_EDGE_TABLES = ("condition_parent",)
+
+
 def clear_source_condition_edges(conn: psycopg.Connection, source: str) -> None:
     """Drop every condition DAG edge contributed by `source`.
 
@@ -65,10 +68,7 @@ def clear_source_condition_edges(conn: psycopg.Connection, source: str) -> None:
     rows are NOT deleted -- their UUIDs are immortal and are re-derived identically
     on the way back in.
     """
-    conn.execute(
-        "DELETE FROM drugref.condition_parent WHERE ingest_run IN "
-        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-        (source,))
+    db.clear_source_tables(conn, CONDITION_EDGE_TABLES, source)
 
 
 def add_condition_parent_edge(conn: psycopg.Connection, child_uuid: uuid.UUID,

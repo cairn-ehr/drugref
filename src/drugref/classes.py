@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import ids
+from drugref import db, ids
 
 
 @dataclass(frozen=True)
@@ -87,6 +87,11 @@ def upsert_class(conn: psycopg.Connection, concept: ClassConcept,
     return class_uuid, first_seen == ingest_run_id
 
 
+# The edge tables one classification feed owns. Both are rebuilt wholesale; the
+# substance_class rows they reference are NOT, because a class_uuid is immortal.
+CLASS_EDGE_TABLES = ("class_membership", "class_parent")
+
+
 def clear_source_edges(conn: psycopg.Connection, source: str) -> None:
     """Drop every DAG and membership edge contributed by `source`.
 
@@ -98,11 +103,7 @@ def clear_source_edges(conn: psycopg.Connection, source: str) -> None:
     Class rows themselves are NOT deleted -- their UUIDs are immortal and are
     re-derived identically on the way back in.
     """
-    for table in ("class_membership", "class_parent"):
-        conn.execute(
-            f"DELETE FROM drugref.{table} WHERE ingest_run IN "
-            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-            (source,))
+    db.clear_source_tables(conn, CLASS_EDGE_TABLES, source)
 
 
 def add_parent_edge(conn: psycopg.Connection, child_uuid: uuid.UUID,
@@ -209,6 +210,9 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
     return moieties_by_scheme(conn, "RXNORM_IN")
 
 
+UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
+
+
 def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) -> None:
     """Drop the previous release's unmatched-ingredient list for `source`.
 
@@ -218,10 +222,7 @@ def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) ->
     by its own length on every ingest and never shrink, which is precisely the
     "generated document, stale on write" failure the gap views exist to avoid.
     """
-    conn.execute(
-        "DELETE FROM drugref.ingest_unmatched_ingredient WHERE ingest_run IN "
-        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-        (source,))
+    db.clear_source_tables(conn, UNMATCHED_INGREDIENT_TABLES, source)
 
 
 def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],

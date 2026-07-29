@@ -7,15 +7,14 @@ moiety_uuid, refresh its display-name cache, and append its identity claims
 adds nothing new for unchanged data, and upstream churn attaches new claims
 without ever re-keying an existing moiety.
 """
-import hashlib
 import logging
-import pathlib
 from dataclasses import dataclass
 
 import psycopg
 
 from drugref import claims, ids, questions
 from drugref.ingest import gate, unii
+from drugref.ingest.checksum import checksum
 
 log = logging.getLogger(__name__)
 
@@ -43,10 +42,6 @@ class UniiSummary:
     moieties: int
     gated_out: int
     rows_without_unii: int
-
-
-def _checksum(path: pathlib.Path) -> str:
-    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 
 
 def ingest_unii(conn: psycopg.Connection, *, unii_path, crosswalk_path,
@@ -79,7 +74,7 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
         "VALUES ('UNII', %s, %s) RETURNING ingest_run_id",
-        (upstream_release, _checksum(unii_path))).fetchone()[0]
+        (upstream_release, checksum(unii_path))).fetchone()[0]
 
     # The admission projection is rebuilt, not appended to (db/011): clear it
     # before the loop so a signal upstream has stopped asserting disappears with

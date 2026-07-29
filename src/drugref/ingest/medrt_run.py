@@ -13,9 +13,7 @@ Order matters here:
      so it only ever removes the previous release's rows;
   3. then insert the new edges.
 """
-import hashlib
 import logging
-import pathlib
 import uuid
 from dataclasses import dataclass
 
@@ -24,6 +22,7 @@ import psycopg
 from drugref import classes as class_writer
 from drugref import interactions, questions
 from drugref.ingest import medrt
+from drugref.ingest.checksum import checksum
 
 SOURCE = "MED-RT"
 
@@ -77,10 +76,6 @@ class MedrtSummary:
     unresolved_expansion_policy: int
 
 
-def _checksum(path) -> str:
-    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
-
-
 def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
                  upstream_release: str) -> MedrtSummary:
     """Ingest one MED-RT release file.
@@ -115,7 +110,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
         "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, _checksum(medrt_path))).fetchone()[0]
+        (SOURCE, upstream_release, checksum(medrt_path))).fetchone()[0]
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.
