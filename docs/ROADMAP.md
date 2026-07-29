@@ -92,10 +92,10 @@ relationships**; salt↔base strength-equivalence data. Additive to the slice-1 
 The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tree leaf before product/local.
 
 ### Slice 5 — The interaction & contraindication layer
-Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b) seeded from public-domain
-regulatory-derived content, then the **append-only signed curated overlay** (5c). The projections give a
-defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable value-add
-built on top. Sequenced by licence-cleanliness, not by coverage.
+Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b, 5b.2) seeded from
+public-domain regulatory-derived content, then the **append-only signed curated overlay** (5c). The
+projections give a defensible safety layer *fast*, from sources drugref already holds; the overlay is the
+durable value-add built on top. Sequenced by licence-cleanliness, not by coverage.
 
 #### Slice 5a — MED-RT mechanism/effect contraindications ✅ DONE
 The smallest first cut: MED-RT **`CI_MoA`/`CI_PE`** ("contraindicated mechanism/physiological-effect of a
@@ -109,30 +109,73 @@ auto-alerts. Design:
 [slice-5a spec](superpowers/specs/2026-07-25-drugref-slice-5a-medrt-contraindication-design.md) · plan:
 [slice-5a plan](superpowers/plans/2026-07-25-slice-5a-medrt-contraindication.md).
 
-#### Slice 5b — MeSH-keyed contraindications & indications
-The MeSH-endpoint MED-RT content, unlocked once **MeSH disease/chemical descriptors** are ingested (same NLM
-MeSH licence already cleared in slice 2b): **`CI_with`** (drug–disease contraindication, ~11.5k),
-**`CI_ChemClass`** (drug–drug by chemical class, ~1.9k), and **`may_treat`/`may_prevent`/`may_diagnose`/
-`induces`** (~18k drug–disease indications + drug-induced states) — a public-domain, drugref-owned drug–
-disease dataset (a MeDIC-alternative it holds outright). Still projection tier, still candidate-only.
+#### Slice 5b — MeSH-keyed contraindications ✅ DONE
+The MeSH-endpoint MED-RT content, unlocked by ingesting **MeSH disease/chemical descriptors** (same NLM
+licence already cleared in 2b — **no new source**). The 5b design round **split the work in two**: **5b** is
+the contraindication half — `CI_with` (drug→condition) + `CI_ChemClass`'s moiety arm (drug↔drug) — over a
+new MeSH **condition** registry; **5b.2** is the indication half
+(`may_treat`/`may_prevent`/`may_diagnose`/`induces`, ~18k), which **reuses that registry unchanged**. Spec:
+[slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md). `db/013`–`db/016`;
+488 tests.
 
-**Split in two by the 5b design round** (spec:
-[slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md)) — **5b** is the
-contraindication half (`CI_with` + `CI_ChemClass`'s moiety arm) over a new MeSH **condition** registry;
-**5b.2** is the indication half (`may_treat`/`may_prevent`/`may_diagnose`/`induces`), which reuses that
-registry unchanged. Measured: `CI_with` yields **9,482** rows over 2,900 moieties / 667 conditions, and
-`CI_ChemClass` yields **1,443 exact moiety↔moiety pairs** — drugref's first genuinely pairwise DDI content.
+**Measured yield against the real releases** (UNII 26Feb2026 + MED-RT 2026.07.06 + MeSH desc/supp 2026, live
+PG18) — **the measurement corrected the spec in five places; the measured figures are the true ones**:
 
-**Three things this slice must not forget** (each is a one-liner, and each is invisible until it bites):
-decide `expands_descendants` per new predicate rather than inheriting the `true` default (MeSH's tree is a
-different shape — the default is recall-safe, not correct); wire **`mesh_run`** to report
-`interactions.unresolved_expansion_policy('MeSH')` as `medrt_run` already does for MED-RT, the moment any
-MeSH-keyed row can exist in `class_expansion_policy`; and the **source-blind walk** — `class_parent` and
-`class_membership` carry no `source` column, so a rule from one authority expands over every authority's
-edges and members. **Corrected by the 5b design round: 5b does NOT end that.** 5b registers no MeSH
-chemical classes in `substance_class` (its class arm is deferred, §7 of the spec) and conditions live in
-their own tables with their own MeSH-only DAG, so the hazard stays **latent** until `has_SC` or the class
-arm lands. All three are stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
+| | measured | spec had predicted |
+|---|---:|---:|
+| `condition` (registry) | **5,203** (5,190 descriptors + 13 SCRs) | 5,190 — descriptors only |
+| `condition_parent` | **7,157** (1,690 multi-parent) | 7,157 ✓ |
+| `moiety_condition_contraindication` | **9,471** over 2,900 moieties / 641 conditions | 9,482 / 667 |
+| `moiety_contraindication` (exact pairs) | **1,442** | 1,443 |
+| withheld class objects / their rules | **103** / **405** | 108 / 405 |
+| `condition_contraindication_expanded` | **191,728**, of which 9,471 direct | — |
+
+Three of the five are one cause: the spec counted MeSH **ConceptUIs** while drugref keys on the **record**,
+and several concepts resolve to one record (`mesh_concepts.py` exists to keep them apart). The other two:
+the registry also holds 13 **supplementary records**, which carry no tree numbers and so never enter the
+closure; and exactly one **self-pair** (tranylcypromine), which `db/014` forbids because a drug is not
+contraindicated with itself. The **103-vs-108** correction is published as an erratum in the docs-site
+*Design decisions* section — the specs are immutable, so that living record is where it lives.
+
+Clinically confirmed: a rule on **Epilepsy** now reaches a patient coded *Temporal Lobe*, *Complex Partial*,
+*Frontal Lobe*… (14 direct rows → 378 over 27 conditions, ~10 ms per lookup); and **pregnancy + lactation
+carry 615 rows**, which is why the table is `moiety_condition_contraindication` and not `drug_disease_*` —
+`CI_with`'s object is a *patient state*, not a disease, and a disease-shaped table would have filed the
+release's most consequential contraindication axis as a category error.
+
+**Deferred, deliberately — `CI_ChemClass`'s class arm** (405 assertions over 103 objects): **withheld, not
+dropped.** Expanding it over MeSH's *structural* chemical tree makes a rule on Sulfonamides reach
+bendroflumethiazide and bosentan — the discredited sulfa cross-reactivity inference. Only 8.3% of those
+objects have any `has_SC` member, so that route cannot fill the gap either. Published instead as
+`gap_unresolved_ci_object` + a fifth `gap_kind`, one row per object with its rule count, for a curator to
+rule on — Plan B's 14-expansion-roots precedent.
+
+**Also not done here:** 5b.2 (indications), MED-RT's `has_SC` (3,632 assertions, **248 targeting MED-RT
+itself**), and the `RelatedRegistryNumber` precision pass.
+
+**Two of the three things this slice was told not to forget were honoured; the third was retracted.**
+`condition_ci_axis.expands_descendants` is declared per predicate **with no DEFAULT** (`db/014`), so MeSH's
+differently-shaped tree cannot inherit a recall-safe guess. `mesh_run` still owes
+`unresolved_expansion_policy('MeSH')` — **not yet needed**, since no MeSH-keyed row can exist in
+`class_expansion_policy` until the class arm lands. And **the source-blind walk: 5b does NOT end it**, the
+claim this file used to make. 5b registers no MeSH chemical class in `substance_class` and conditions live
+in their own tables with their own MeSH-only DAG, so the hazard stays **latent** until `has_SC` or the class
+arm lands. Stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
+
+Follow-up filed: [#39](https://github.com/cairn-ehr/drugref/issues/39) — `ingest_unmatched_ingredient` is
+rebuilt per `source` while two orchestrators write under `MED-RT`; two caveats **documented and tested, not
+solved** (order-dependence, cross-run accumulation). See HANDOVER.
+
+#### Slice 5b.2 — MeSH-keyed indications
+The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** (~18k) plus
+**`induces`** (170) — a public-domain, drugref-owned drug–disease dataset (a MeDIC alternative it holds
+outright). **The cheapest slice on this list**, because 5b built everything it needs: the same `condition` /
+`condition_parent` registry **unchanged**, the same `mesh_concepts` ConceptUI→record resolution, the same
+descendant closure, the same rebuildable-projection/candidate-tier posture. What it adds is a relation (or
+relations — an indication is not a contraindication and should not share a table), a vocabulary row per
+predicate with `expands_descendants` **declared, not defaulted**, and its own objects extended into the
+registry closure. Note **`induces` points the other way**: the drug *causes* the state, so it is neither an
+indication nor a contraindication and must not be filed as either.
 
 #### Slice 5c — The curated overlay (the moat)
 Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
@@ -243,10 +286,12 @@ other jurisdictions.
   do we not know" is a number watchable per release. **Watermark, not closure:** no-evidence-found leaves a
   question open; only `withdrawn` is terminal. **Populated is per axis:** the contraindication gap view
   joins `db/006`'s `ci_axis`, because a class populated on an axis the rule does not expand over still
-  yields no pair — reading it relationship-blind hides real gaps, and slice 5b (MeSH `has_PA`) is where the
-  axes stop coinciding. **A closed gap carrying curator work is retired, not deleted**
-  (`open_question.is_current`): the curated tables cascade from `open_question` *and* refuse `DELETE`, so
-  deleting one aborts the ingest outright.
+  yields no pair — reading it relationship-blind hides real gaps. **A closed gap carrying curator work is
+  retired, not deleted** (`open_question.is_current`): the curated tables cascade from `open_question` *and*
+  refuse `DELETE`, so deleting one aborts the ingest outright. **Five gap kinds now** — slice 5b added
+  `unresolved_ci_object`; measured against the real releases: unclassified_moiety 16,089 ·
+  unmatched_ingredient 2,140 · unresolved_ci_object 103 · unpopulated_contraindication 12 ·
+  unreviewed_expansion_root 0.
 - **Descendant expansion ✅ DONE** (Plan B of the additive-effect design; the work #15 asked for). `db/010`
   makes `ddi_candidate_pair` descend the class DAG — **for a contraindication, fewer rows is the harm
   direction**, and direct-only hid 21.9% of `CI_MoA` and **85.2%** of `CI_PE` pairs because MED-RT files
@@ -268,8 +313,9 @@ other jurisdictions.
   `medrt_run`, having shipped as a detector nothing read; `class_expansion_policy.source` gains the CHECK
   every other `source` column has; and two `COMMENT ON`s stop overclaiming — `expands_descendants` is a
   recall-safe *default*, not a gate, and the walk is **source-blind** (`class_parent` carries no `source`, so
-  a transitive walk can cross vocabularies — 5b's problem). Row set unchanged. 419 tests. Follow-ups filed
-  as #35, #36, #37. **Plan C (the accumulation model) remains, gated on slice 5b.**
+  a transitive walk can cross vocabularies — **still latent after 5b**, see above). Row set unchanged. 419
+  tests. Follow-ups filed as #35, #36, #37. The axis-aware review gate, latent then, is **live at 5b**.
+  **Plan C (the accumulation model) was gated on 5b, which has now landed its contraindication half.**
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling** (corrected, slice-8a review round — the prior count of three was wrong

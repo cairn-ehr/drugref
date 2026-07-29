@@ -40,3 +40,6 @@ history is never lost — it remains in the git log and in the dated design spec
   signed overlay.
 - [Licensing is a blocker](licensing-is-a-blocker.md) — AGPL-compatible sources only,
   checked before adding.
+- [A structural chemical tree is not a clinical class](withheld-chemical-class-contraindications.md)
+  — why `CI_ChemClass`'s class arm is withheld as a curator question rather than expanded
+  (carries the 103-vs-108 erratum to the slice-5b spec).

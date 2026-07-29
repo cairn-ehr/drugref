@@ -69,6 +69,7 @@ nav:
       - Append-only claims: decisions/append-only-claims.md
       - The hybrid store: decisions/hybrid-store.md
       - Licensing is a blocker: decisions/licensing-is-a-blocker.md
+      - A structural chemical tree is not a clinical class: decisions/withheld-chemical-class-contraindications.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md
