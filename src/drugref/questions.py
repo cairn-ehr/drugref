@@ -73,8 +73,22 @@ _GAP_SOURCES = {
             "class_expansion_policy.'"),
     },
     # Slice 5b. CI_ChemClass objects that reached no moiety. The gap_key scheme is
-    # MESH:{code} because the subject is an upstream RECORD drugref never registered:
-    # it has no drugref UUID to cite, which is exactly why it is a gap.
+    # {NAMESPACE}:{code} because the subject is an upstream RECORD drugref never
+    # registered: it has no drugref UUID to cite, which is exactly why it is a gap.
+    #
+    # THE NAMESPACE COMES FROM THE DATA (issue #41, with db/017). It was hardcoded
+    # 'MESH:' here while the view collapsed its grouping onto object_code alone, so
+    # the same one-namespace assumption lived in TWO places and fixing either alone
+    # left the other live -- and this is the half no migration can reach. An object
+    # code is not namespace-unique in general, and question_uuid is a pure function
+    # of (gap_kind, gap_key): a collision here does not merely miscount, it hands two
+    # objects ONE immortal question that append-only curator rows then attach to.
+    #
+    # upper(), not object_source verbatim, and the choice is deliberate: it keeps the
+    # frozen SCHEME:value convention every other gap kind uses (MOIETY:, CLASS:,
+    # RXNORM_IN:) AND leaves every existing MeSH question_uuid bit-for-bit unchanged
+    # (object_source is stored 'MeSH'), so a fix to an externally-citable identifier
+    # scheme needed no migration of the identifiers themselves. Pinned by test.
     #
     # TWO KINDS, TWO QUESTIONS, one gap_kind (db/014). Both are objects drugref did
     # not ingest, so both belong on this worklist -- but the remedies are opposites
@@ -94,7 +108,7 @@ _GAP_SOURCES = {
     # discipline db/014 gave condition_ci_axis.expands_descendants.
     "unresolved_ci_object": {
         "view": "gap_unresolved_ci_object",
-        "key_sql": "'MESH:' || object_code",
+        "key_sql": "upper(object_source) || ':' || object_code",
         "text_sql": (
             "CASE object_kind "
             "WHEN 'CHEMICAL_CLASS' THEN "
