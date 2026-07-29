@@ -72,6 +72,21 @@ _GAP_SOURCES = {
             "It expands by default until a decision is recorded in "
             "class_expansion_policy.'"),
     },
+    # Slice 5b. Like unreviewed_expansion_root, a question drugref answers ITSELF --
+    # by deciding whether the named class may expand over MeSH's structural tree --
+    # rather than by consulting a source. The gap_key scheme is MESH:{code} because
+    # the subject is an upstream RECORD drugref never registered: it has no
+    # drugref UUID to cite, which is exactly why it is a gap.
+    "unresolved_ci_object": {
+        "view": "gap_unresolved_ci_object",
+        "key_sql": "'MESH:' || object_code",
+        "text_sql": (
+            "'Should contraindications naming ' || COALESCE(object_name, object_code) "
+            "|| ' be expanded to the drugs beneath it in MeSH''s structural tree? ' "
+            "|| ci_rule_count || ' upstream rule(s) ride on the answer, and they are "
+            "withheld until it is decided -- MeSH structural classes do not map "
+            "cleanly onto clinical ones.'"),
+    },
 }
 
 

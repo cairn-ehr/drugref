@@ -97,6 +97,10 @@ def test_apply_migrations_is_idempotent(conn):
         # instead of class_parent. Two VIEWs, named explicitly for the same reason
         # ddi_candidate_pair is above: information_schema.tables lists views too.
         "condition_subtree", "condition_contraindication_expanded",
+        # slice 5b, db/016: the review gate for the withheld CI_ChemClass class arm --
+        # a fourth gap VIEW of db/008's kind, publishing each withheld MeSH object as
+        # a citable question instead of dropping it silently.
+        "gap_unresolved_ci_object",
     }
 
 
