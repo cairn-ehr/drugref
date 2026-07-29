@@ -53,6 +53,18 @@ def test_release_file_is_found_under_the_name_nlm_publishes(tmp_path, maker):
     assert maker._release_file(tmp_path, "desc2026").name == "desc2026.gz"
 
 
+def test_the_served_file_wins_over_a_hand_gunzipped_one(tmp_path, maker):
+    """An operator who gunzipped a release once can be left with a stale
+    `desc2026.xml` beside a freshly-downloaded `desc2026.gz`. Preferring the form
+    NLM SERVES means the fresh file wins; the other order would regenerate the
+    fixture from the stale copy and say nothing about it.
+    """
+    (tmp_path / "desc2026.xml").write_bytes(b"<DescriptorRecordSet/>")
+    (tmp_path / "desc2026.gz").write_bytes(gzip.compress(b"<DescriptorRecordSet/>"))
+
+    assert maker._release_file(tmp_path, "desc2026").name == "desc2026.gz"
+
+
 def test_a_missing_release_file_is_reported_not_guessed(tmp_path, maker):
     """Every candidate name is listed in the error. A regeneration that cannot find
     its input must say which names it looked for -- silently writing a fixture from

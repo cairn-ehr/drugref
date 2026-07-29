@@ -20,7 +20,7 @@ foundation review · Plan A (open-question registry) · slice 8a (PBS localisati
 (DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38) ·
 **slice 5b — MeSH-keyed contraindications (#44)**.
 
-**533 tests green** (324 DB-gated, 209 without a DSN), `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/017`.
+**536 tests green** (326 DB-gated, 210 without a DSN), `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/017`.
 Slice 5b was verified end-to-end against the real releases on a scratch database — measured table in "Slice 5b"
 below. **The measurement corrected the spec in five places**; the final whole-branch review then corrected four
 stale migration figures, hoisted `mesh.tree_parent_edges` (ONE tree-number DAG rule, not two), added the missing
@@ -34,7 +34,7 @@ it**, and prefer prose that cannot be parsed as a closing keyword when filing ra
 
 **In flight: the post-5b debt round**, branch `fix/post-5b-debt-round`, **[PR
 #46](https://github.com/cairn-ehr/drugref/pull/46)** — #40, #17, #42, #41, #43 fixed,
-`db/017` added, **533 tests green**, and the whole chain **re-verified end-to-end against the real releases**
+`db/017` added, **536 tests green**, and the whole chain **re-verified end-to-end against the real releases**
 (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc/supp/pa 2026, gzipped, on a scratch database). Every slice-5b
 headline figure reproduced exactly; the previously-unmeasured `object_kind` split and a corrected slice-2b
 joinability figure are recorded below.
@@ -305,7 +305,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 533 tests, of which 324 are DB-gated -- a run without this DSN passes (209 tests)
+# 536 tests, of which 326 are DB-gated -- a run without this DSN passes (210 tests)
 # while exercising none of the schema, floor, views or orchestrators:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .
@@ -320,7 +320,7 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   admission evidence · `012` expansion-policy review round (`ci_class_subtree`, axis-aware gate) · `013` MeSH
   condition registry · `014` the two 5b contraindication relations + `condition_ci_axis` +
   `ingest_unresolved_ci_object` · `015` condition read path · `016` `gap_unresolved_ci_object` + the fifth
-  `gap_kind` · `017` that view re-keyed on `(object_source, object_code)` (#41). **Read the LATEST file that
+  `gap_kind` · `017` that view re-keyed on `(upper(object_source), object_code)` (#41). **Read the LATEST file that
   touches an object for its actual shape** — 002 still shows superseded MED-RT-specific columns, 004's
   relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` is replaced by 010's, and 016's
   `gap_unresolved_ci_object` by 017's.
@@ -382,10 +382,16 @@ three issues had already been swept closed while unfixed)
   **desc2026 defines 61,794 ConceptUIs, supp2026 402,107, and 0 appear in both.** So the branch is a guard
   against a release whose partition changes, not a live case; verified by mutation (reversing the read order
   fails that test and only that test).
-- **#41 namespace collision, both sites** — `db/017` groups on `(object_source, object_code)`;
+- **#41 namespace collision, both sites** — `db/017` groups on `(upper(object_source), object_code)`;
   `questions.py` uses `upper(object_source) || ':' || object_code`, which preserves every existing MeSH
   `question_uuid` bit-for-bit. `relationship` is **aggregated, not grouped on**: the grain is per object
   because the decision is, and grouping by it without keying on it would make two view rows mint one UUID.
+  **THE VIEW'S GRAIN MUST BE THE gap_key'S GRAIN, and the first cut of this fix broke that** — it grouped
+  on the *stored* spelling while the key upper()s it, so `'MeSH'` and `'MESH'` were two view rows folding to
+  one `question_uuid`: the same collision one case narrower, found by the PR review and pinned by
+  `test_the_views_grain_is_the_gap_keys_grain`. Case-variants now **merge** (one namespace, counts summed);
+  different namespaces never do. The two `upper()`s are one *rule* stated twice, not #41's two encodings of
+  one *value* — they cannot disagree, and Postgres refuses the view outright if either is dropped alone.
 - **#43 duplicated boilerplate** — one `ingest/checksum.py`, one `db.clear_source_tables`; six writers keep
   their named wrapper and declare a table tuple, each **restated independently** in
   `tests/test_source_clear_contract.py` so a dropped table fails.

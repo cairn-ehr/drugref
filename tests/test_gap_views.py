@@ -531,7 +531,13 @@ def _insert_unresolved(conn, ingest_run_id, *, object_source, object_code, name,
 
 
 def test_two_authorities_naming_the_same_code_stay_two_objects(conn, ingest_run_id):
-    """The collision, made concrete: one code, two namespaces, two objects."""
+    """The collision, made concrete: one code, two namespaces, two objects.
+
+    'MeSH' reads back as 'MESH' because the view publishes the namespace already
+    canonicalised -- see test_the_views_grain_is_the_gap_keys_grain for why that is
+    the grouping key and not a cosmetic choice. What THIS test pins is orthogonal:
+    two DIFFERENT namespaces are never folded together, whatever their spelling.
+    """
     _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
                        object_code="D013449", name="Sulfonamides", count=36)
     _insert_unresolved(conn, ingest_run_id, object_source="CHEBI",
@@ -540,7 +546,7 @@ def test_two_authorities_naming_the_same_code_stay_two_objects(conn, ingest_run_
     rows = conn.execute(
         "SELECT object_source, object_name, ci_rule_count "
         "FROM drugref.gap_unresolved_ci_object ORDER BY object_source").fetchall()
-    assert rows == [("CHEBI", "Something Else", 4), ("MeSH", "Sulfonamides", 36)]
+    assert rows == [("CHEBI", "Something Else", 4), ("MESH", "Sulfonamides", 36)]
 
 
 def test_two_authorities_naming_the_same_code_get_two_questions(conn, ingest_run_id):
@@ -602,6 +608,49 @@ def test_one_object_under_two_predicates_is_still_one_question(conn, ingest_run_
     ).fetchall()
     assert row == [("CI_ChemClass, CI_with", 40)]
     assert questions.register_from_gaps(conn, ingest_run_id)["unresolved_ci_object"] == 1
+
+
+def test_the_views_grain_is_the_gap_keys_grain(conn, ingest_run_id):
+    """THE SAME COLLISION, ONE CASE NARROWER -- and the reason the view groups on
+    upper(object_source) rather than on the stored spelling.
+
+    gap_key is upper(object_source) || ':' || object_code, because the frozen
+    SCHEME:value convention is upper-case. Group the view on the VERBATIM spelling
+    and 'MeSH' and 'MESH' become two view rows folding to ONE gap_key -- two rows
+    minting one question_uuid, with the executemany upsert silently keeping
+    whichever text landed last. That is exactly what db/017 was written to remove;
+    a view row that does not survive to its own gap_key is a collision however it
+    arose.
+
+    So one namespace is one row whatever spelling a writer used, and the counts SUM
+    rather than one silently replacing the other. This is a merge, not a loss: two
+    spellings name the same namespace. Genuinely different namespaces are never
+    merged by upper() -- pinned by the CHEBI cases above.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    _insert_unresolved(conn, ingest_run_id, object_source="MESH",
+                       object_code="D013449", name="Sulfonamides", count=4)
+
+    rows = conn.execute(
+        "SELECT object_source, ci_rule_count "
+        "FROM drugref.gap_unresolved_ci_object").fetchall()
+    assert rows == [("MESH", 40)]           # one row, canonical, counts summed
+    assert questions.register_from_gaps(conn, ingest_run_id)["unresolved_ci_object"] == 1
+
+
+def test_the_view_emits_the_namespace_already_canonicalised(conn, ingest_run_id):
+    """object_source is published UPPER-CASED, not merely grouped that way.
+
+    A consumer reading the namespace off this view must read the same string
+    questions.py keys on; emitting the stored spelling beside a canonicalised
+    grouping would hand a reader 'MeSH' for a row whose question is 'MESH:...'.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    assert conn.execute(
+        "SELECT object_source FROM drugref.gap_unresolved_ci_object"
+    ).fetchone()[0] == "MESH"
 
 
 def test_gap_kind_admits_the_fifth_kind(conn):

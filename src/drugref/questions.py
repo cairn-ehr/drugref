@@ -90,6 +90,15 @@ _GAP_SOURCES = {
     # (object_source is stored 'MeSH'), so a fix to an externally-citable identifier
     # scheme needed no migration of the identifiers themselves. Pinned by test.
     #
+    # db/017 ALSO groups on upper(object_source), and the repetition is deliberate --
+    # it is not #41's defect returning. That defect was the namespace VALUE ('MESH')
+    # written in two places, where correcting one left the other wrong. This is the
+    # same canonicalisation RULE stated twice, where the two cannot disagree: applying
+    # upper() to an already-upper string changes nothing. Kept here because gap_key
+    # defines a FROZEN, externally-citable identifier scheme and must not depend on a
+    # future re-issue of the view remembering to canonicalise -- exactly the way db/016
+    # was re-issued as db/017. Both halves are pinned independently, in test_gap_views.
+    #
     # TWO KINDS, TWO QUESTIONS, one gap_kind (db/014). Both are objects drugref did
     # not ingest, so both belong on this worklist -- but the remedies are opposites
     # and so the text must be too:

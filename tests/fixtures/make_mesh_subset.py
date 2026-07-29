@@ -82,8 +82,15 @@ def _local(tag: str) -> str:
 
 # The names one release file can arrive under. NLM serves pa2026 plain but desc2026
 # and supp2026 gzipped, and the gzipped ones are named "<stem>.gz" -- NOT
-# "<stem>.xml.gz". The third form is here for an operator who renamed them.
-_RELEASE_SUFFIXES = (".xml", ".gz", ".xml.gz")
+# "<stem>.xml.gz". That second form is here for an operator who renamed them; the
+# bare ".xml" is what pa2026 genuinely uses and what a hand-gunzipped file becomes.
+#
+# ORDER IS A PREFERENCE, and it puts what NLM SERVES first. An operator who once
+# gunzipped a release by hand can be left with a stale desc2026.xml beside a fresh
+# desc2026.gz; trying ".xml" first would regenerate the fixture from the stale one
+# and say nothing. Preferring the served form means the freshly-downloaded file
+# wins, which is the whole posture of #40 -- read the release as published.
+_RELEASE_SUFFIXES = (".gz", ".xml.gz", ".xml")
 
 
 def _release_file(dl: pathlib.Path, stem: str) -> pathlib.Path:

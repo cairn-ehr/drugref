@@ -179,7 +179,7 @@ solved** (order-dependence, cross-run accumulation). See HANDOVER.
 
 #### Post-5b debt round ✅ DONE
 The five follow-ups 5b's review filed, cleared before 5b.2 reuses the same code paths — plus the two issues
-the tracker had closed while the code still carried them. `db/017`; **533 tests**.
+the tracker had closed while the code still carried them. `db/017`; **536 tests**.
 [#40](https://github.com/cairn-ehr/drugref/issues/40) one gz-aware MeSH reader (`mesh.iter_records`), which
 also fixed a regeneration command that found nothing against a real release ·
 [#17](https://github.com/cairn-ehr/drugref/issues/17) the last silent refusal counted ·
@@ -187,7 +187,9 @@ also fixed a regeneration command that found nothing against a real release ·
 MeSH's ConceptUIs appear in both desc and supp, so the release cannot exercise that branch and the guard is
 against a future partition change** · [#41](https://github.com/cairn-ehr/drugref/issues/41) the CI object's
 namespace taken from the data in BOTH the view and `questions.py`, preserving every existing
-`question_uuid` · [#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
+`question_uuid` — and, after the PR review, **canonicalised in both**, since a view grouped on the stored
+spelling while the key upper()s it is the same collision one case narrower ·
+[#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
 `db.clear_source_tables`, six declared table tuples each restated independently by test.
 
 **Re-verified end-to-end against the real releases**, which is what this round's claims rest on: every 5b

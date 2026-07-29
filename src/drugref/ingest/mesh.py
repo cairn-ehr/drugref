@@ -115,11 +115,17 @@ class ParsedMesh:
     number and this one used to be an invisible `continue` (#17). Zero against a
     well-formed release; a non-zero value means the release changed shape and is
     something an operator must see, not something a parser may decide alone.
+
+    NO DEFAULT on that count, for the reason db/014 gives object_kind none: a
+    default answers quietly the very question this field exists to stop answering
+    quietly. `= 0` would let a caller construct a ParsedMesh that reports "nothing
+    was refused" without having counted, which is the silence #17 removed wearing
+    a different hat.
     """
     classes: list[PaClass]
     parents: list[PaParentEdge]
     memberships: list[PaMembership]
-    pa_records_without_descriptor: int = 0
+    pa_records_without_descriptor: int
 
 
 def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
