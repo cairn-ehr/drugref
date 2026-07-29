@@ -167,6 +167,33 @@ def test_membership_count_and_relationship(seeded):
     assert rels == {"has_PA"}
 
 
+def test_a_pa_record_with_no_descriptor_reaches_the_summary(seeded, tmp_path):
+    """#17's remaining half, closed end-to-end: the parser counts a PA record it
+    cannot key, and the SUMMARY carries that count out to the operator.
+
+    Counting it inside the parser alone would not close the issue -- the summary
+    is what gets logged, and a number nobody can see is the same silence in a
+    different place. Zero on a well-formed release (pinned in test_mesh_parser),
+    so this asserts the wiring on the only input that can distinguish it.
+    """
+    pa = tmp_path / "pa.xml"
+    pa.write_text(
+        '<?xml version="1.0"?>\n<PharmacologicalActionSet>\n'
+        ' <PharmacologicalAction><DescriptorReferredTo>'
+        '<DescriptorName><String>nameless</String></DescriptorName>'
+        '</DescriptorReferredTo></PharmacologicalAction>\n'
+        '</PharmacologicalActionSet>\n', encoding="utf-8")
+    summary = mesh_run.ingest_mesh(seeded, pa_path=pa, desc_path=DESC, supp_path=SUPP,
+                                   upstream_release="2026")
+    assert summary.pa_records_without_descriptor == 1
+    assert summary.classes_in_release == 0      # the only record was refused
+
+
+def test_a_well_formed_release_reports_no_refused_pa_record(seeded):
+    """The baseline the number above is read against."""
+    assert _ingest(seeded).pa_records_without_descriptor == 0
+
+
 def test_no_key_member_is_counted_never_dropped(seeded):
     """SCR C007609 (aspirin/meprobamate combination) exposes neither UNII nor CAS.
     It must produce no membership and increment the no-key worklist number."""

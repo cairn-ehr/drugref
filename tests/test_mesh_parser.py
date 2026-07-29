@@ -12,6 +12,7 @@ never invented. The facts most likely to be got wrong are pinned deliberately:
 * the bridge keys come from **RegistryNumber only** -- a CAS in
   <RelatedRegistryNumber> is NOT a membership key in this slice (design tension B).
 """
+import gzip
 import pathlib
 
 from drugref.ingest import mesh
@@ -27,6 +28,46 @@ PA_CLASSES = {"D000700", "D000893", "D000894", "D012102", "D018501", "D018712"}
 
 def parsed():
     return mesh.parse(pa_path=PA, desc_path=DESC, supp_path=SUPP)
+
+
+# ---- reading the files NLM actually publishes (issue #40) -------------------
+
+
+def _gzipped(tmp_path: pathlib.Path, path: pathlib.Path) -> pathlib.Path:
+    """The same committed fixture, gzipped -- the shape NLM ships desc/supp in.
+
+    Compressed here rather than committed twice: a second copy of a fixture is a
+    second thing that can drift, and what is under test is the READER, not the
+    bytes (which are byte-identical to the file beside it by construction).
+    """
+    out = tmp_path / (path.name + ".gz")
+    out.write_bytes(gzip.compress(path.read_bytes()))
+    return out
+
+
+def test_parses_the_gzipped_files_the_nlm_publishes(tmp_path):
+    """NLM ships desc2026/supp2026 as `.gz`, ~750 MB each once expanded.
+
+    Slice 5b's reader handled that transparently and slice 2b's did not, so half
+    the MeSH ingest needed a manual gunzip and half did not -- an asymmetry
+    invisible from either call site (#40). One reader now serves both, and this
+    pins that a gzipped release parses to EXACTLY what the plain files do rather
+    than merely "not crashing".
+    """
+    from_gz = mesh.parse(pa_path=_gzipped(tmp_path, PA),
+                         desc_path=_gzipped(tmp_path, DESC),
+                         supp_path=_gzipped(tmp_path, SUPP))
+    assert from_gz == parsed()
+
+
+def test_one_reader_serves_both_mesh_parsers():
+    """The hoist itself, pinned: `mesh_concepts` must READ through this module's
+    reader, not carry its own copy. Two copies is how the asymmetry above arose,
+    and a second copy would pass every behavioural test above on the day it was
+    written -- so the sharing is asserted directly.
+    """
+    from drugref.ingest import mesh_concepts
+    assert mesh_concepts.iter_records is mesh.iter_records
 
 
 # ---- registry-number classification (the pure key rule, spec §5.2) ---------
@@ -57,6 +98,46 @@ def test_related_registry_number_parenthetical_is_stripped():
     pure function; the membership bridge still reads RegistryNumber only.)"""
     _unii, cas = mesh.registry_keys(["50-78-2 (Aspirin)"])
     assert cas == {"50-78-2"}
+
+
+# ---- refusals are counted, never silent (issue #17) ------------------------
+
+
+def test_a_well_formed_release_drops_no_pa_record():
+    """The counter's baseline: the real release names a descriptor on every PA
+    record, so the number an operator sees is zero and any non-zero value means
+    something genuinely changed upstream."""
+    assert parsed().pa_records_without_descriptor == 0
+
+
+def test_a_pa_record_with_no_descriptor_ui_is_counted_not_silently_dropped(tmp_path):
+    """A PA record naming no descriptor cannot become a class -- there is no
+    identity to key one on -- so dropping it is right. Dropping it INVISIBLY is
+    not: every other refusal in this codebase is a reported worklist number, and
+    this one was the last silent `continue` left (#17).
+
+    The input is written here rather than extracted from a release, unlike every
+    other fixture: a well-formed release contains no such record by definition, so
+    there is nothing to extract. What is synthetic is the DEFECT, never a fact
+    about MeSH's shape -- the kept record beside it is copied from the real
+    fixture's D000894, so the parser is proved to keep parsing past the bad one.
+    """
+    pa = tmp_path / "pa.xml"
+    pa.write_text(
+        '<?xml version="1.0"?>\n<PharmacologicalActionSet>\n'
+        ' <PharmacologicalAction><DescriptorReferredTo>'
+        '<DescriptorName><String>nameless</String></DescriptorName>'
+        '</DescriptorReferredTo></PharmacologicalAction>\n'
+        ' <PharmacologicalAction><DescriptorReferredTo>'
+        '<DescriptorUI>D000894</DescriptorUI>'
+        '<DescriptorName><String>Anti-Inflammatory Agents, Non-Steroidal</String>'
+        '</DescriptorName></DescriptorReferredTo></PharmacologicalAction>\n'
+        '</PharmacologicalActionSet>\n', encoding="utf-8")
+
+    result = mesh.parse(pa_path=pa, desc_path=DESC, supp_path=SUPP)
+    assert result.pa_records_without_descriptor == 1
+    # The good record beside it still becomes a class: the refusal is per-record.
+    assert [c.descriptor_ui for c in result.classes] == ["D000894"]
 
 
 # ---- the class side of the axis -------------------------------------------

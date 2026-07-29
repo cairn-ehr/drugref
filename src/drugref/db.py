@@ -9,6 +9,8 @@ convention, so the schema is re-applied idempotently on a fresh database).
 import hashlib
 import os
 import pathlib
+from collections.abc import Sequence
+
 import psycopg
 
 _DB_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "db"
@@ -24,6 +26,40 @@ CREATE TABLE IF NOT EXISTS drugref.schema_migration (
     applied_at timestamptz NOT NULL DEFAULT now()
 );
 """
+
+
+def clear_source_tables(conn: psycopg.Connection,
+                        tables: Sequence[str], source: str) -> None:
+    """Delete every row `source` contributed to each of `tables`, in the order given.
+
+    THE ONE STATEMENT THAT MAKES "REBUILDABLE PROJECTION" TRUE. An ingested feed is
+    replaced wholesale on re-ingest -- a class that lost a parent upstream, a
+    contraindication that was retracted, a de-listed PBS item all have to be able to
+    DISAPPEAR, which an insert-only merge can never express. Scoping the delete
+    through ingest_run.source is what lets one feed rebuild without touching another's
+    rows, and it was written out six times in four modules before this (#43). Six
+    restatements are six chances for one of them to quietly stop being per-source.
+
+    ORDER IS PART OF THE CONTRACT and is preserved exactly: `tables` is deleted
+    front to back, so a caller whose tables reference each other lists CHILDREN
+    FIRST (local_product_moiety before local_product) or the foreign key refuses the
+    delete. Nothing here sorts or de-duplicates.
+
+    Callers keep their own named wrapper -- classes.clear_source_edges,
+    local.clear_source_products and so on -- because the NAME and the "why this table
+    and not that one" belong with the writer that owns the tables. Only the SQL is
+    shared. Each wrapper's table tuple is a module constant with a test that restates
+    it independently, so dropping a table from one fails loudly instead of leaving a
+    projection that grows a little on every ingest.
+
+    Table names are interpolated, not parameterised, because an identifier cannot be
+    a bind parameter; they come only from those module constants, never from input.
+    """
+    for table in tables:
+        conn.execute(
+            f"DELETE FROM drugref.{table} WHERE ingest_run IN "
+            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
+            (source,))
 
 
 def connect(dsn: str | None = None) -> psycopg.Connection:

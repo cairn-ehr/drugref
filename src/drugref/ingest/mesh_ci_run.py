@@ -37,7 +37,6 @@ and the unmatched subjects. The last is written but never CLEARED here, which is
 one place this orchestrator does not mirror medrt_run -- see step 6 of _ingest for
 the measurement behind that, and its caveats.
 """
-import hashlib
 import logging
 import uuid
 from collections import Counter
@@ -49,6 +48,7 @@ from drugref import classes as class_writer
 from drugref import conditions as condition_writer
 from drugref import interactions, questions
 from drugref.ingest import medrt, mesh_concepts
+from drugref.ingest.checksum import checksum
 
 # The authority that STATES the contraindications, and therefore the source this
 # run's ingest_run is opened under. Every per-source rebuild in this module scopes
@@ -148,18 +148,6 @@ class _Relations:
     # CI_ChemClass rules whose subject and object are the SAME moiety. Counted, not
     # merely skipped -- see _write_relations.
     self_pairs: int = 0
-
-
-def _checksum(*paths) -> str:
-    """One checksum over every input file, in a fixed order, so the run's provenance
-    changes if ANY input changes. Chunked: the MeSH files are large and slurping them
-    would undo the streaming parser's bounded memory."""
-    digest = hashlib.sha256()
-    for path in paths:
-        with open(path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _resolve_object_moiety(record: mesh_concepts.MeshRecord, unii_index,
@@ -365,7 +353,7 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
         "VALUES (%s, %s, %s) RETURNING ingest_run_id",
         (SOURCE, upstream_release,
-         _checksum(medrt_path, desc_path, supp_path))).fetchone()[0]
+         checksum(medrt_path, desc_path, supp_path))).fetchone()[0]
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the
     #    condition objects (see _condition_closure).

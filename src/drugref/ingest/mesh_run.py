@@ -20,9 +20,9 @@ counted, split by CAUSE so the two stay legible (spec §5.3/§6, tension E):
   * members_key_not_in_registry -- it has a key, but no gated-in moiety holds it
                                 (the moiety gate is the binding constraint, §5.3).
 Both are counted by DISTINCT member, since a member's keys are the same under every
-PA class it belongs to.
+PA class it belongs to. The class side has one refusal of its own, reported the same
+way: a PA record naming no DescriptorUI (pa_records_without_descriptor, #17).
 """
-import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -33,6 +33,7 @@ from drugref import classes as class_writer
 from drugref import questions
 from drugref.classes import ClassConcept
 from drugref.ingest import mesh
+from drugref.ingest.checksum import checksum
 
 SOURCE = "MeSH"
 RELATIONSHIP = "has_PA"
@@ -56,6 +57,11 @@ class MeshSummary:
 
     * members_no_key               -- members exposing neither UNII nor CAS
     * members_key_not_in_registry  -- members whose key no gated moiety carries
+    * pa_records_without_descriptor -- PA records naming no DescriptorUI, so there
+      is no identity to key a class on. Zero against a well-formed release; the
+      parser used to drop these invisibly, which is the last silent refusal #17
+      names. It is a CLASS-side refusal, not a membership one, which is why it is
+      not one of the two buckets above.
     """
     classes_in_release: int
     classes_added: int
@@ -63,23 +69,7 @@ class MeshSummary:
     memberships: int
     members_no_key: int
     members_key_not_in_registry: int
-
-
-def _checksum(*paths) -> str:
-    """One checksum over all three release files, in a fixed order, so the
-    ingest_run's provenance changes if ANY of the three inputs changes.
-
-    Read in chunks rather than read_bytes(): supp2026.xml is ~750 MB, and slurping
-    it whole would spike peak RSS far above the streaming parser's measured 32.7 MB
-    (spec §F) -- the checksum has no reason to undo that. Chunked hashing keeps the
-    whole run's memory footprint bounded regardless of file size.
-    """
-    digest = hashlib.sha256()
-    for path in paths:
-        with open(path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                digest.update(chunk)
-    return digest.hexdigest()
+    pa_records_without_descriptor: int
 
 
 def _resolve_moieties(keys: mesh.MemberKeys, unii_index, cas_index) -> list[uuid.UUID]:
@@ -140,7 +130,7 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
         "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, _checksum(pa_path, desc_path, supp_path))).fetchone()[0]
+        (SOURCE, upstream_release, checksum(pa_path, desc_path, supp_path))).fetchone()[0]
 
     # 1. Classes. A PA class hands upsert_class the same source-neutral shape a
     #    MED-RT concept does; descriptor_ui is both its identity key and its
@@ -208,7 +198,9 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
                  (run_id,))
     conn.commit()
-    return MeshSummary(classes_in_release=len(uuid_by_ui), classes_added=classes_added,
-                       parent_edges=parent_edges, memberships=memberships,
-                       members_no_key=members_no_key,
-                       members_key_not_in_registry=members_key_not_in_registry)
+    return MeshSummary(
+        classes_in_release=len(uuid_by_ui), classes_added=classes_added,
+        parent_edges=parent_edges, memberships=memberships,
+        members_no_key=members_no_key,
+        members_key_not_in_registry=members_key_not_in_registry,
+        pa_records_without_descriptor=parsed.pa_records_without_descriptor)

@@ -18,6 +18,11 @@ from collections.abc import Iterable
 
 import psycopg
 
+from drugref import db
+
+
+CONTRAINDICATION_TABLES = ("class_contraindication",)
+
 
 def clear_source_contraindications(conn: psycopg.Connection, source: str) -> None:
     """Drop every contraindication contributed by `source`.
@@ -27,10 +32,7 @@ def clear_source_contraindications(conn: psycopg.Connection, source: str) -> Non
     an unrelated feed's rows survive; run before any of this run's rows are written,
     it only ever removes the prior release's.
     """
-    conn.execute(
-        "DELETE FROM drugref.class_contraindication WHERE ingest_run IN "
-        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-        (source,))
+    db.clear_source_tables(conn, CONTRAINDICATION_TABLES, source)
 
 
 def unresolved_expansion_policy(conn: psycopg.Connection, source: str) -> list[str]:
@@ -78,6 +80,16 @@ def add_contraindication(conn: psycopg.Connection, subject_moiety_uuid: uuid.UUI
     return cur.rowcount == 1
 
 
+# All THREE tables one slice-5b ingest writes. The third is the odd one out and is
+# the one whose omission is invisible: drop it and both relations still rebuild
+# correctly, the ingest still succeeds, and only gap_unresolved_ci_object's
+# curator-facing rule counts creep upward release after release (405 -> 810 ->
+# 1,215). Pinned by name in test_source_clear_contract.
+MESH_CONTRAINDICATION_TABLES = ("moiety_condition_contraindication",
+                                "moiety_contraindication",
+                                "ingest_unresolved_ci_object")
+
+
 def clear_source_mesh_contraindications(conn: psycopg.Connection, source: str) -> None:
     """Drop every slice-5b contraindication contributed by `source`.
 
@@ -91,12 +103,7 @@ def clear_source_mesh_contraindications(conn: psycopg.Connection, source: str) -
     gives: an object that starts resolving must LEAVE the list, or the worklist grows
     by its own length every ingest and never shrinks.
     """
-    for table in ("moiety_condition_contraindication", "moiety_contraindication",
-                  "ingest_unresolved_ci_object"):
-        conn.execute(
-            f"DELETE FROM drugref.{table} WHERE ingest_run IN "
-            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-            (source,))
+    db.clear_source_tables(conn, MESH_CONTRAINDICATION_TABLES, source)
 
 
 def add_condition_contraindication(conn: psycopg.Connection,

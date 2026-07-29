@@ -504,6 +504,155 @@ def test_unresolved_ci_object_question_uuid_is_stable(conn, ingest_run_id):
     assert first == ids.mint_question_uuid("unresolved_ci_object", "MESH:D013449")
 
 
+# ---- the object's NAMESPACE is part of its identity (issue #41, db/017) -------
+#
+# The worklist is keyed (ingest_run, source, relationship, object_source,
+# object_code) precisely because a future authority can name an object outside
+# MeSH. The view collapsed that onto object_code alone and questions.py hardcoded
+# the 'MESH:' prefix a second time, so the assumption had to be broken in BOTH
+# places or it was not broken at all -- and the Python half is invisible to any
+# migration-only fix.
+#
+# What rides on it: an object code is not namespace-unique in general, so two
+# different objects would fold into one row with sum() attributing one authority's
+# rules to the other's object -- and, worse, would mint ONE question_uuid. Since
+# question_state and question_evidence are append-only and keyed off that UUID, a
+# curator decision recorded against one object would be permanently attached to
+# the other's. That half no rebuild can repair.
+
+
+def _insert_unresolved(conn, ingest_run_id, *, object_source, object_code, name,
+                       kind="CHEMICAL_CLASS", count=1, relationship="CI_ChemClass"):
+    conn.execute(
+        "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT',%s,%s,%s,%s,%s,%s)",
+        (ingest_run_id, relationship, object_source, object_code, name, kind, count))
+
+
+def test_two_authorities_naming_the_same_code_stay_two_objects(conn, ingest_run_id):
+    """The collision, made concrete: one code, two namespaces, two objects.
+
+    'MeSH' reads back as 'MESH' because the view publishes the namespace already
+    canonicalised -- see test_the_views_grain_is_the_gap_keys_grain for why that is
+    the grouping key and not a cosmetic choice. What THIS test pins is orthogonal:
+    two DIFFERENT namespaces are never folded together, whatever their spelling.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    _insert_unresolved(conn, ingest_run_id, object_source="CHEBI",
+                       object_code="D013449", name="Something Else", count=4)
+
+    rows = conn.execute(
+        "SELECT object_source, object_name, ci_rule_count "
+        "FROM drugref.gap_unresolved_ci_object ORDER BY object_source").fetchall()
+    assert rows == [("CHEBI", "Something Else", 4), ("MESH", "Sulfonamides", 36)]
+
+
+def test_two_authorities_naming_the_same_code_get_two_questions(conn, ingest_run_id):
+    """The half a migration alone cannot fix. The gap_key must carry the namespace,
+    or the two objects share one immortal, externally-citable question_uuid."""
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    _insert_unresolved(conn, ingest_run_id, object_source="CHEBI",
+                       object_code="D013449", name="Something Else", count=4)
+
+    questions.register_from_gaps(conn, ingest_run_id)
+    keys = [r[0] for r in conn.execute(
+        "SELECT gap_key FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ci_object' ORDER BY gap_key").fetchall()]
+    assert keys == ["CHEBI:D013449", "MESH:D013449"]
+
+
+def test_the_existing_mesh_gap_keys_are_preserved_exactly(conn, ingest_run_id):
+    """A DELIBERATE choice, pinned so it cannot be undone by accident.
+
+    Taking the namespace from the data could have re-keyed every existing MeSH
+    question ('MeSH:' != the frozen 'MESH:'), and a question_uuid is meant to be
+    externally citable forever. Upper-casing the namespace keeps the frozen
+    SCHEME:value convention every other gap kind uses (MOIETY:, CLASS:,
+    RXNORM_IN:) AND leaves all 103 existing MeSH question UUIDs bit-for-bit
+    unchanged, so nothing had to be migrated.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    questions.register_from_gaps(conn, ingest_run_id)
+    uuid_now = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ci_object'").fetchone()[0]
+    assert uuid_now == ids.mint_question_uuid("unresolved_ci_object", "MESH:D013449")
+
+
+def test_one_object_under_two_predicates_is_still_one_question(conn, ingest_run_id):
+    """THE GRAIN IS PER OBJECT, and it stays that way -- which is why relationship
+    is NOT in the grouping key.
+
+    "May a rule naming Sulfonamides expand over MeSH's structural tree?" is one
+    decision about one object, whatever predicate asserted it; the rule count is
+    how much rides on that one answer, so it sums across predicates. Splitting the
+    grain by relationship without also putting relationship in the gap_key would
+    be worse than lossy: two view rows would mint the SAME question_uuid and the
+    executemany upsert would silently keep whichever text was written last.
+
+    The predicates are reported rather than picked arbitrarily by max(), so a
+    second predicate becomes visible instead of overwriting the first.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=4,
+                       relationship="CI_with")
+
+    row = conn.execute(
+        "SELECT relationship, ci_rule_count FROM drugref.gap_unresolved_ci_object"
+    ).fetchall()
+    assert row == [("CI_ChemClass, CI_with", 40)]
+    assert questions.register_from_gaps(conn, ingest_run_id)["unresolved_ci_object"] == 1
+
+
+def test_the_views_grain_is_the_gap_keys_grain(conn, ingest_run_id):
+    """THE SAME COLLISION, ONE CASE NARROWER -- and the reason the view groups on
+    upper(object_source) rather than on the stored spelling.
+
+    gap_key is upper(object_source) || ':' || object_code, because the frozen
+    SCHEME:value convention is upper-case. Group the view on the VERBATIM spelling
+    and 'MeSH' and 'MESH' become two view rows folding to ONE gap_key -- two rows
+    minting one question_uuid, with the executemany upsert silently keeping
+    whichever text landed last. That is exactly what db/017 was written to remove;
+    a view row that does not survive to its own gap_key is a collision however it
+    arose.
+
+    So one namespace is one row whatever spelling a writer used, and the counts SUM
+    rather than one silently replacing the other. This is a merge, not a loss: two
+    spellings name the same namespace. Genuinely different namespaces are never
+    merged by upper() -- pinned by the CHEBI cases above.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    _insert_unresolved(conn, ingest_run_id, object_source="MESH",
+                       object_code="D013449", name="Sulfonamides", count=4)
+
+    rows = conn.execute(
+        "SELECT object_source, ci_rule_count "
+        "FROM drugref.gap_unresolved_ci_object").fetchall()
+    assert rows == [("MESH", 40)]           # one row, canonical, counts summed
+    assert questions.register_from_gaps(conn, ingest_run_id)["unresolved_ci_object"] == 1
+
+
+def test_the_view_emits_the_namespace_already_canonicalised(conn, ingest_run_id):
+    """object_source is published UPPER-CASED, not merely grouped that way.
+
+    A consumer reading the namespace off this view must read the same string
+    questions.py keys on; emitting the stored spelling beside a canonicalised
+    grouping would hand a reader 'MeSH' for a row whose question is 'MESH:...'.
+    """
+    _insert_unresolved(conn, ingest_run_id, object_source="MeSH",
+                       object_code="D013449", name="Sulfonamides", count=36)
+    assert conn.execute(
+        "SELECT object_source FROM drugref.gap_unresolved_ci_object"
+    ).fetchone()[0] == "MESH"
+
+
 def test_gap_kind_admits_the_fifth_kind(conn):
     """register_from_gaps INSERTs at the very LAST step of an ingest, so a kind the
     CHECK does not admit aborts the whole transaction after everything was rebuilt."""

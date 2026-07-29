@@ -18,7 +18,7 @@ from collections.abc import Iterable
 
 import psycopg
 
-from drugref import ids
+from drugref import db, ids
 from drugref.ingest.pbs import PbsItem
 
 
@@ -49,21 +49,25 @@ def upsert_product(conn: psycopg.Connection, item: PbsItem, ingest_run_id: int,
     return product_uuid
 
 
+# ORDER IS LOAD-BEARING, not cosmetic: both of the first two reference
+# local_product, so listing the parent first makes the foreign key refuse the
+# delete. This is the one table tuple in the codebase whose order can fail.
+LOCAL_PRODUCT_TABLES = ("local_product_moiety", "local_unmatched_ingredient",
+                        "local_product")
+
+
 def clear_source_products(conn: psycopg.Connection, source: str) -> None:
     """Drop every product, bridge row and unmatched note contributed by `source`.
 
     Called at the start of a re-ingest so a new monthly release fully REPLACES the
     previous one. Order matters: the bridge and the unmatched list are deleted
-    BEFORE the products they reference, or the foreign key refuses the delete.
+    BEFORE the products they reference, or the foreign key refuses the delete --
+    and db.clear_source_tables preserves the order it is given for exactly this.
 
     Scoped by source (via ingest_run) so another jurisdiction's or authority's
     rows survive -- the same per-source discipline classes.clear_source_edges uses.
     """
-    for table in ("local_product_moiety", "local_unmatched_ingredient", "local_product"):
-        conn.execute(
-            f"DELETE FROM drugref.{table} WHERE ingest_run IN "
-            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-            (source,))
+    db.clear_source_tables(conn, LOCAL_PRODUCT_TABLES, source)
 
 
 def add_product_moiety(conn: psycopg.Connection, product_uuid: uuid.UUID,
