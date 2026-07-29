@@ -145,20 +145,27 @@ def add_moiety_contraindication(conn: psycopg.Connection,
 
 def record_unresolved_ci_objects(
         conn: psycopg.Connection,
-        rows: Iterable[tuple[str, str, str, str, str | None, int]],
+        rows: Iterable[tuple[str, str, str, str, str | None, str, int]],
         ingest_run_id: int) -> int:
-    """Persist contraindication objects drugref deliberately did not ingest.
+    """Persist contraindication objects drugref did not ingest, and WHY.
 
-    `rows` is an iterable of
-    (source, relationship, object_source, object_code, object_name, assertion_count).
-    `object_name` is the only optional field -- MeSH's chemical tree always has one,
-    but a future object_source might not, so the type says so rather than assuming.
+    `rows` is an iterable of (source, relationship, object_source, object_code,
+    object_name, object_kind, assertion_count). `object_name` is the only optional
+    field -- MeSH's chemical tree always has one, but a future object_source might
+    not, so the type says so rather than assuming.
 
-    Not an error and not a drop: these are real upstream assertions withheld pending
-    a curator decision (see db/014 on the sulfonamide case). Persisting the IDENTITY
-    rather than only a count is what lets gap_unresolved_ci_object be a query -- the
-    exact lesson db/008 drew when the earlier ingest kept only the COUNT of unmatched
-    ingredients and discarded the RxCUIs.
+    `object_kind` is CHEMICAL_CLASS or UNREGISTERED_SUBSTANCE (db/014), and passing
+    it is MANDATORY because the two get different curator questions: a class is
+    withheld pending a ruling on structural-tree expansion, while an unregistered
+    substance is a coverage gap answered by registering the moiety. Reading "no
+    moiety resolved" as "therefore a class" is the defect db/014's object_kind closes, so this
+    function will not infer the kind on a caller's behalf.
+
+    Not an error and not a drop: these are real upstream assertions drugref could
+    not or would not ingest (see db/014 on the sulfonamide case). Persisting the
+    IDENTITY rather than only a count is what lets gap_unresolved_ci_object be a
+    query -- the exact lesson db/008 drew when the earlier ingest kept only the
+    COUNT of unmatched ingredients and discarded the RxCUIs.
 
     Batched, like classes.add_unmatched_ingredients: nobody needs the per-row
     insert-vs-conflict answer, because the caller already holds the deduped set.
@@ -171,6 +178,7 @@ def record_unresolved_ci_objects(
         cur.executemany(
             "INSERT INTO drugref.ingest_unresolved_ci_object "
             "(ingest_run, source, relationship, object_source, object_code, "
-            " object_name, assertion_count) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            " object_name, object_kind, assertion_count) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT DO NOTHING", batch)
     return len(batch)

@@ -30,11 +30,26 @@ these objects have any `has_SC` member.
 
 **The class arm is withheld, and withheld visibly.** Where the object of a
 `CI_ChemClass` assertion resolves to a moiety, the pair is ingested into
-`moiety_contraindication`. Where it does not — which is precisely how drugref detects
-that the object is a class rather than a substance — the assertion is **not** ingested
-and is instead **preserved as a curator question**: one row per object in
+`moiety_contraindication`. Where it does not, the assertion is **not** ingested and is
+instead **preserved as a curator question**: one row per object in
 `ingest_unresolved_ci_object`, published through `gap_unresolved_ci_object` and the
 open-question register, carrying how many upstream rules ride on it.
+
+**Failing to resolve is not by itself evidence that the object is a class.** That
+inference is tempting — it is how this decision was first implemented — and it is wrong,
+because "no moiety resolved" is the disjunction of two different facts. What tells them
+apart is the **MeSH record**, not the lookup:
+
+| The record carries | It names | `object_kind` | The curator's question |
+|---|---|---|---|
+| no registry key (only MeSH's `'0'` placeholder) | a **class** — Alkalies, Organic Chemicals, Sulfonamides | `CHEMICAL_CLASS` | may this expand over MeSH's structural tree? |
+| a real UNII or CAS | a **substance** drugref's gated registry does not hold | `UNREGISTERED_SUBSTANCE` | should this moiety be registered? |
+
+Collapsing the two asked a curator whether contraindications naming **Pimozide** — a leaf
+drug descriptor at `D03.633.100.103.732`, with nothing beneath it — should "be expanded to
+the drugs beneath it in MeSH's structural tree". A category error, and it simultaneously
+hid the real gap, which was registry coverage. Both kinds stay on the worklist, so the
+totals below are unchanged; only the question each is asked differs.
 
 Withholding is the right call; withholding *silently* is not. A pharmacist rules on each
 object by name, exactly as Plan B made a pharmacist rule on 14 expansion roots before
@@ -44,8 +59,10 @@ expanding over them.
 
 - drugref ships **1,442** exact drug↔drug contraindication pairs — its first genuinely
   pairwise DDI content, where nothing expands because both endpoints are moieties.
-- **405 upstream assertions over 103 objects** are deliberately not ingested. They are
-  counted, named and queryable, not dropped.
+- **405 upstream assertions over 103 objects** are not ingested. They are counted, named
+  and queryable, not dropped — each tagged with `object_kind` so a curator is asked the
+  question their own remedy answers. How the 103 divide between the two kinds is
+  re-measured on the next run against a real release.
 - **Cost:** real upstream safety content is unavailable until a curator rules on it. That
   is the intended trade: a false contraindication a prescriber cannot audit is worse than
   a missing one that is on a published worklist.

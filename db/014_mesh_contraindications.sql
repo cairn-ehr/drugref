@@ -139,6 +139,30 @@ CREATE TABLE IF NOT EXISTS drugref.ingest_unresolved_ci_object (
     object_source   text   NOT NULL,
     object_code     text   NOT NULL,
     object_name     text,
+    -- WHY this object was not ingested, and therefore WHICH question a curator is
+    -- asked about it. Failing to bridge an object to a moiety is the disjunction of
+    -- two different facts, and reading it as one of them ("no moiety resolved,
+    -- therefore a class") asks a leaf drug descriptor whether it should expand over
+    -- the drugs beneath it -- a category error:
+    --   * CHEMICAL_CLASS         -- the MeSH record carries NO registry key at all.
+    --                               Alkalies (D000468) and Organic Chemicals
+    --                               (D009930) carry only MeSH's '0' placeholder,
+    --                               which mesh.registry_keys already discards. There
+    --                               is nothing to bridge to because the record does
+    --                               not name a substance. THE SULFONAMIDE CASE:
+    --                               withheld pending a curator ruling.
+    --   * UNREGISTERED_SUBSTANCE -- the record carries a real UNII or CAS (Pimozide's
+    --                               is 1HIZ4DL86F) but drugref's gated registry holds
+    --                               no moiety for it. A REGISTRY COVERAGE gap, the
+    --                               same family as gap_unmatched_ingredient, whose
+    --                               answer is "register the moiety" and never
+    --                               "expand over the tree".
+    -- Derived from the RECORD, never from the resolution failure. NO DEFAULT, for
+    -- the reason condition_ci_axis.expands_descendants has none: a default answers
+    -- quietly the very question that was answered quietly before.
+    object_kind     text   NOT NULL
+        CONSTRAINT ingest_unresolved_ci_object_kind
+        CHECK (object_kind IN ('CHEMICAL_CLASS', 'UNREGISTERED_SUBSTANCE')),
     -- How many assertions ride on this object. One row per OBJECT, not per
     -- assertion, because the question a curator answers is per class: "should a
     -- contraindication naming Sulfonamides expand over MeSH's structural tree?"
@@ -147,8 +171,16 @@ CREATE TABLE IF NOT EXISTS drugref.ingest_unresolved_ci_object (
 );
 
 COMMENT ON TABLE drugref.ingest_unresolved_ci_object IS
-    'Contraindication assertions whose OBJECT drugref deliberately did not ingest: '
-    'one row per object, carrying how many rules ride on it. Not an error and not a '
-    'drop -- it is the worklist behind gap_unresolved_ci_object. Populated by '
-    'CI_ChemClass objects that name a CLASS rather than a substance, which are '
-    'withheld pending curator review (see the sulfonamide case in this migration).';
+    'Contraindication assertions whose OBJECT drugref did not ingest: one row per '
+    'object, carrying how many rules ride on it and WHY it was not ingested. Not an '
+    'error and not a drop -- it is the worklist behind gap_unresolved_ci_object. '
+    'Populated by CI_ChemClass objects that reached no moiety, of which there are '
+    'TWO kinds that must not be conflated: one names a CLASS and is withheld pending '
+    'curator review (the sulfonamide case in this migration), the other names a '
+    'SUBSTANCE drugref does not register and is a coverage gap. See object_kind.';
+COMMENT ON COLUMN drugref.ingest_unresolved_ci_object.object_kind IS
+    'CHEMICAL_CLASS (the MeSH record carries no registry key, so it names a class -- '
+    'withheld pending a ruling on structural-tree expansion) or UNREGISTERED_SUBSTANCE '
+    '(the record carries a UNII or CAS but drugref registers no moiety for it -- '
+    'answered by registering the moiety, NEVER by expanding a tree). Derived from the '
+    'record, not from the failure to resolve: those are different facts.';

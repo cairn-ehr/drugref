@@ -5,15 +5,21 @@ defines its object. Mirrors medrt_run/mesh_run (open an ingest_run for provenanc
 do the work, stamp finished_at, commit) with two genuinely new pieces:
 
   1. M-CODE RESOLUTION. MED-RT's MeSH endpoint is a ConceptUI, so every object is
-     resolved against the MeSH release (ingest/mesh_concepts.py). 99.81% of this
-     slice's objects resolve; the rest are counted.
+     resolved against the MeSH release (ingest/mesh_concepts.py). 1,051 of THIS
+     SLICE'S 1,053 object codes resolve (99.81%); the rest are counted. Do not
+     reconcile that with the 99.88% in mesh_concepts.py -- that figure is
+     2,471/2,474 over every MeSH endpoint in the release, a wider denominator, and
+     both are right about different populations.
   2. THE TWO ARMS OF CI_ChemClass. Its object is usually a SPECIFIC DRUG (Pimozide,
      Cisapride, Ritonavir), so it is first resolved against the moiety registry via
      slice 2b's two-key UNII->CAS bridge. When it resolves, the assertion is an exact
-     drug-drug pair. When it does not, the object is a genuine chemical CLASS, and
-     the assertion is WITHHELD and recorded as a question -- expanding it over MeSH's
-     structural tree would make a rule on Sulfonamides reach bendroflumethiazide
-     (see db/014 and db/016).
+     drug-drug pair. When it does not, the assertion is not ingested and the object
+     goes on a worklist -- but WHICH worklist question is decided by the MeSH record,
+     not by the resolution failure (db/014): a record with no registry key names a
+     CLASS and is withheld pending a curator ruling, because expanding it over MeSH's
+     structural tree would make a rule on Sulfonamides reach bendroflumethiazide (see
+     db/014 and db/016); a record carrying a real UNII or CAS names a SUBSTANCE
+     drugref does not register, which is a coverage gap and not a policy question.
 
 Order matters:
   1. parse MED-RT (pure) -> the set of MeSH codes to resolve;
@@ -23,10 +29,11 @@ Order matters:
      write the DAG and the two relations;
   4. rebuild the open-question register LAST, before the commit.
 
-WORKLIST NUMBERS, NOT SILENT DROPS -- four distinct losses, each counted separately
-so they stay legible (spec 7). Two of them are also PERSISTED by identity, because a
-count cannot be worked: the withheld objects (a curator rules on each by name) and
-the unmatched subjects. The latter is written but never CLEARED here, which is the
+WORKLIST NUMBERS, NOT SILENT DROPS -- six distinct losses, each counted separately
+so they stay legible (spec 7). Three of them are also PERSISTED by identity, because
+a count cannot be worked: the withheld class objects and the unregistered-substance
+objects (a curator works each by name, and is asked a DIFFERENT question about each)
+and the unmatched subjects. The last is written but never CLEARED here, which is the
 one place this orchestrator does not mirror medrt_run -- see step 6 of _ingest for
 the measurement behind that, and its caveats.
 """
@@ -54,6 +61,12 @@ OBJECT_SOURCE = "MeSH"
 CONDITION_PREDICATE = "CI_with"
 PAIR_PREDICATE = "CI_ChemClass"
 
+# Why a CI_ChemClass object was not ingested (db/014's object_kind vocabulary). Kept
+# in lockstep with that migration's CHECK, and named here rather than spelled inline
+# so the two writers below cannot disagree about the spelling.
+CHEMICAL_CLASS = "CHEMICAL_CLASS"                  # the record carries no registry key
+UNREGISTERED_SUBSTANCE = "UNREGISTERED_SUBSTANCE"  # a real UNII/CAS, but no moiety
+
 log = logging.getLogger(__name__)
 
 
@@ -76,11 +89,23 @@ class MeshCiSummary:
     so they never enter the closure and appear only as themselves. Both figures are
     right about different things, which is why each says which it is counting.
 
-    The four worklist numbers are reported, never swallowed:
-      * unmatched_subject_rxcuis  -- the rule's subject is carried by no moiety
-      * withheld_class_objects    -- CI_ChemClass objects that name a CLASS
-      * unresolved_object_codes   -- M-codes MeSH no longer defines
-      * non_mesh_objects          -- objects outside the MeSH namespace (MED-RT EXT)
+    The six worklist numbers are reported, never swallowed:
+      * unmatched_subject_rxcuis      -- the rule's subject is carried by no moiety
+      * withheld_class_objects        -- CI_ChemClass objects that name a CLASS
+      * unregistered_object_substances -- CI_ChemClass objects that name a SUBSTANCE
+                                         drugref's registry does not carry
+      * self_paired_assertions        -- CI_ChemClass rules whose two ends collapse
+                                         to one moiety, which db/014 forbids storing
+      * unresolved_object_codes       -- M-codes MeSH no longer defines
+      * non_mesh_objects              -- objects outside the MeSH namespace (MED-RT EXT)
+
+    THE TWO OBJECT NUMBERS ARE NOT ONE NUMBER, and separating them is the point of
+    db/014's object_kind. Both are CI_ChemClass objects that failed to bridge, but the
+    reasons differ and so do the remedies: a CLASS (no registry key on the MeSH
+    record at all) is withheld pending a curator ruling on structural-tree expansion,
+    while an UNREGISTERED SUBSTANCE (a real UNII or CAS, no moiety) is a registry
+    coverage gap. Reporting them as one figure is what let a leaf drug descriptor be
+    asked whether it should expand over the drugs beneath it.
     """
     conditions_registered: int
     conditions_added: int
@@ -89,6 +114,8 @@ class MeshCiSummary:
     moiety_contraindications: int
     unmatched_subject_rxcuis: int
     withheld_class_objects: int
+    unregistered_object_substances: int
+    self_paired_assertions: int
     unresolved_object_codes: int
     non_mesh_objects: int
 
@@ -97,18 +124,30 @@ class MeshCiSummary:
 class _Relations:
     """The tally of one pass over the assertions (see _write_relations).
 
-    A mutable scratch record rather than five loose locals: the pass produces two
-    row counts and three worklists, and returning them as one named thing is what
+    A mutable scratch record rather than a handful of loose locals: the pass produces
+    two row counts and four worklists, and returning them as one named thing is what
     keeps _ingest readable and stops a caller pairing them up in the wrong order.
     """
     condition_rows: int = 0
     pair_rows: int = 0
     unmatched_rxcuis: set[str] = field(default_factory=set)
-    # object record_ui -> how many assertions were withheld on it, and its name.
-    # Counted per OBJECT because the curator's decision is per object: "should a
-    # rule naming this class expand over MeSH's structural tree?" (db/016).
+    # object record_ui -> how many assertions ride on it. Counted per OBJECT because
+    # the curator's decision is per object (db/016), and split across TWO counters
+    # because the decision itself differs (db/014): `withheld` holds records naming a
+    # CLASS, `unregistered` holds records naming a SUBSTANCE drugref does not carry.
+    #
+    # A record_ui can never land in both. The kind is a pure function of the MeSH
+    # record -- does it carry a registry key? -- and every concept resolving to one
+    # record resolves to the same record, so the two counters partition the objects
+    # rather than overlapping. That matters downstream: ingest_unresolved_ci_object's
+    # primary key does NOT include object_kind, so one code emitting two kinds would
+    # lose a row to ON CONFLICT DO NOTHING.
     withheld: Counter[str] = field(default_factory=Counter)
-    withheld_names: dict[str, str] = field(default_factory=dict)
+    unregistered: Counter[str] = field(default_factory=Counter)
+    object_names: dict[str, str] = field(default_factory=dict)
+    # CI_ChemClass rules whose subject and object are the SAME moiety. Counted, not
+    # merely skipped -- see _write_relations.
+    self_pairs: int = 0
 
 
 def _checksum(*paths) -> str:
@@ -182,9 +221,13 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
     """Write both contraindication relations, tallying every assertion that is not.
 
     ONE PASS, and every exit from it is counted somewhere: an assertion either
-    becomes a row, or lands in `unmatched_rxcuis` (no moiety carries the subject),
-    or in `withheld` (CI_ChemClass on a chemical class), or was already counted as an
-    unresolved object code by the caller. Nothing falls off the end.
+    becomes a row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or
+    in `withheld` (CI_ChemClass on a chemical class), or in `unregistered`
+    (CI_ChemClass on a substance drugref does not carry), or in `self_pairs` (both
+    ends are one moiety), or was already counted as an unresolved object code by the
+    caller. Nothing falls off the end -- and `self_pairs` is on that list because it
+    once was not: the guard existed, silently, and a skip nobody counts is the exact
+    shape of the drops spec 7 forbids.
 
     THE OBJECT QUESTION IS ASKED BEFORE THE SUBJECT TEST, and the order is
     load-bearing. Withholding is a curator decision about the OBJECT -- "should a
@@ -199,12 +242,26 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
     object is a class AND whose subject is unmatched is counted in BOTH, because both
     statements about it are true and each answers a different person's question.
 
+    WHICH KIND OF UNRESOLVED OBJECT, decided from the RECORD and never from the
+    failure to resolve (db/014). `_resolve_object_moiety` returning None is the
+    disjunction of two different facts, and collapsing them asked a curator whether
+    Pimozide -- a leaf drug descriptor -- should expand over the drugs beneath it:
+      * the record carries NO registry key  -> it names a CLASS (Alkalies and
+        Organic Chemicals carry only MeSH's '0' placeholder, which
+        mesh.registry_keys already discards). Withheld pending a curator ruling.
+      * the record carries a UNII or CAS    -> it names a SUBSTANCE drugref's gated
+        registry does not hold. A coverage gap, not a policy question.
+    Both are recorded by identity; only the question differs.
+
     ON THE OBJECT COUNT, for whoever checks this against spec 7: the worklist is
     keyed on the MeSH RECORD ui, so the release's 108 withheld ConceptUIs collapse
     into 103 curator questions. Five records are named by two concepts each (D010406
     by both "Penicillins" and "Penicillin", plus D001569, D020902, D006993, D000701),
     and one record is one decision. 103 is correct; do not "fix" it by keying the
     worklist on the concept, which is the split mesh_concepts.py exists to prevent.
+    That 103 is the WORKLIST total and is unchanged by the object_kind split -- both
+    kinds stay on it. What the split changed is how those 103 divide between the two
+    counters, a figure the next run against a real release establishes.
     """
     rxcui_index, unii_index, cas_index = indexes
     out = _Relations()
@@ -217,9 +274,14 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
         if a.relationship == PAIR_PREDICATE:
             object_moiety = _resolve_object_moiety(record, unii_index, cas_index)
             if object_moiety is None:
-                # The CLASS arm: withheld pending curator review (db/014, db/016).
-                out.withheld[record.record_ui] += 1
-                out.withheld_names[record.record_ui] = record.name
+                # Not ingested either way -- but the RECORD says which of the two
+                # reasons applies, and therefore which question a curator gets
+                # (db/014). Never inferred from the resolution failure alone.
+                if record.unii or record.cas:
+                    out.unregistered[record.record_ui] += 1
+                else:
+                    out.withheld[record.record_ui] += 1
+                out.object_names[record.record_ui] = record.name
 
         subjects = rxcui_index.get(a.rxcui, ())
         if not subjects:
@@ -232,6 +294,11 @@ def _write_relations(conn, assertions, records, uuid_by_code, indexes,
                 if subject == object_moiety:
                     # db/014 forbids a self-pair, and rightly: MED-RT states this
                     # when a salt and its parent moiety collapse to one identity.
+                    # COUNTED, because storing it is impossible but losing it
+                    # silently is a choice -- and without the count, removing this
+                    # guard would surface as an ingest-aborting CHECK violation
+                    # rather than as a number that moved.
+                    out.self_pairs += 1
                     continue
                 if interactions.add_moiety_contraindication(
                         conn, subject, object_moiety, a.relationship, SOURCE, run_id):
@@ -272,6 +339,15 @@ def ingest_mesh_contraindications(conn: psycopg.Connection, *, medrt_path,
         # unresolved_expansion_policy.
         log.warning("%d contraindication object(s) withheld pending review; see "
                     "drugref.gap_unresolved_ci_object", summary.withheld_class_objects)
+    if summary.unregistered_object_substances:
+        # A DIFFERENT operator action from the line above, which is why it is a
+        # different line: these objects name real substances drugref's registry does
+        # not carry, so the remedy is to widen the registry, never to rule on tree
+        # expansion (db/014).
+        log.warning("%d contraindication object(s) name a substance no moiety "
+                    "carries, so their rules were not ingested; see "
+                    "drugref.gap_unresolved_ci_object",
+                    summary.unregistered_object_substances)
     if summary.unmatched_subject_rxcuis:
         log.warning("%d contraindication subject RxCUI(s) are carried by no moiety, "
                     "so their rules were not ingested; see "
@@ -376,8 +452,11 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
     class_writer.add_unmatched_ingredients(conn, sorted(rel.unmatched_rxcuis), run_id)
     interactions.record_unresolved_ci_objects(
         conn,
-        [(SOURCE, PAIR_PREDICATE, OBJECT_SOURCE, code, rel.withheld_names[code], count)
-         for code, count in sorted(rel.withheld.items())],
+        [(SOURCE, PAIR_PREDICATE, OBJECT_SOURCE, code, rel.object_names[code],
+          kind, count)
+         for kind, counter in ((CHEMICAL_CLASS, rel.withheld),
+                               (UNREGISTERED_SUBSTANCE, rel.unregistered))
+         for code, count in sorted(counter.items())],
         run_id)
 
     # 7. Re-derive the open-question register LAST, for the reason every orchestrator
@@ -395,5 +474,7 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
         moiety_contraindications=rel.pair_rows,
         unmatched_subject_rxcuis=len(rel.unmatched_rxcuis),
         withheld_class_objects=len(rel.withheld),
+        unregistered_object_substances=len(rel.unregistered),
+        self_paired_assertions=rel.self_pairs,
         unresolved_object_codes=unresolved_object_codes,
         non_mesh_objects=parsed.non_mesh_ci_objects)

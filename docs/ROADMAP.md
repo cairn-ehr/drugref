@@ -127,7 +127,7 @@ PG18) — **the measurement corrected the spec in five places; the measured figu
 | `condition_parent` | **7,157** (1,690 multi-parent) | 7,157 ✓ |
 | `moiety_condition_contraindication` | **9,471** over 2,900 moieties / 641 conditions | 9,482 / 667 |
 | `moiety_contraindication` (exact pairs) | **1,442** | 1,443 |
-| withheld class objects / their rules | **103** / **405** | 108 / 405 |
+| unresolved `CI_ChemClass` objects / their rules | **103** / **405** | 108 / 405 |
 | `condition_contraindication_expanded` | **191,728**, of which 9,471 direct | — |
 
 Three of the five are one cause: the spec counted MeSH **ConceptUIs** while drugref keys on the **record**,
@@ -149,6 +149,15 @@ bendroflumethiazide and bosentan — the discredited sulfa cross-reactivity infe
 objects have any `has_SC` member, so that route cannot fill the gap either. Published instead as
 `gap_unresolved_ci_object` + a fifth `gap_kind`, one row per object with its rule count, for a curator to
 rule on — Plan B's 14-expansion-roots precedent.
+
+Those 103 are **two kinds of thing, and `object_kind` (`db/014`) keeps them apart.** Failing to bridge an
+object to a moiety is not by itself evidence that the object is a class: a MeSH record carrying **no
+registry key** (Alkalies, Organic Chemicals — only MeSH's `'0'` placeholder) names no substance and is the
+sulfonamide case, while a record carrying a real **UNII or CAS** names a substance drugref's gated registry
+simply does not hold. Reading the first fact off the second asked a curator whether contraindications naming
+*Pimozide* — a leaf drug descriptor with nothing beneath it — should expand over the drugs below it. Both
+kinds stay on the worklist (so the 103 / 405 totals are unchanged) and each now gets the question its own
+remedy answers: rule on tree expansion, or register the moiety.
 
 **Also not done here:** 5b.2 (indications), MED-RT's `has_SC` (3,632 assertions, **248 targeting MED-RT
 itself**), and the `RelatedRegistryNumber` precision pass.

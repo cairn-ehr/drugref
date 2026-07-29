@@ -196,10 +196,14 @@ def test_clear_source_removes_the_unresolved_object_worklist(conn, ingest_run_id
     # already the "other" source; this test opens its own run under 'MED-RT'.
     medrt_run = _run(conn, "MED-RT")
     interactions.record_unresolved_ci_objects(
-        conn, [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides", 36)],
+        conn,
+        [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides",
+          "CHEMICAL_CLASS", 36)],
         medrt_run)
     interactions.record_unresolved_ci_objects(
-        conn, [("PBS", "CI_ChemClass", "MeSH", "D001569", "Benzodiazepines", 13)],
+        conn,
+        [("PBS", "CI_ChemClass", "MeSH", "D001569", "Benzodiazepines",
+          "CHEMICAL_CLASS", 13)],
         ingest_run_id)
 
     interactions.clear_source_mesh_contraindications(conn, "MED-RT")
@@ -211,7 +215,9 @@ def test_clear_source_removes_the_unresolved_object_worklist(conn, ingest_run_id
 
 def test_record_unresolved_ci_objects(conn, ingest_run_id):
     written = interactions.record_unresolved_ci_objects(
-        conn, [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides", 36)],
+        conn,
+        [("MED-RT", "CI_ChemClass", "MeSH", "D013449", "Sulfonamides",
+          "CHEMICAL_CLASS", 36)],
         ingest_run_id)
     assert written == 1
     assert conn.execute(

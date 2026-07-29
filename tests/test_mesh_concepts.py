@@ -70,6 +70,36 @@ def test_a_prefix_is_not_matched_by_string_prefix_alone():
     assert not mesh_concepts.is_descendant_tree("C10.228.140.490", "C10.228.140.490")
 
 
+def test_ancestor_trees_is_the_same_rule_read_backwards():
+    """THE EQUIVALENCE THE CLOSURE SCAN RELIES ON.
+
+    descriptors_under matches by probing a prefix SET with each tree number's own
+    ancestors, because testing every prefix against every tree number cost 4.49s per
+    scan against release-shaped data where this costs 0.03s. That is only a safe
+    substitution while the two agree EXACTLY, so they are pinned against each other
+    here rather than assumed -- including the two cases a naive startswith gets
+    wrong: a shared text prefix that is not a tree ancestor, and a node's own number.
+    """
+    trees = ["C10", "C10.228", "C10.228.140", "C10.228.140.49", "C10.228.140.490",
+             "C10.228.140.490.100", "D02", "G08.686"]
+    for t in trees:
+        for p in trees:
+            assert mesh_concepts.is_descendant_tree(t, p) == \
+                (p in mesh_concepts.ancestor_trees(t)), f"{t} vs {p}"
+    # A top-level number has no ancestors, so it can never be anyone's descendant.
+    assert mesh_concepts.ancestor_trees("C10") == []
+    assert mesh_concepts.ancestor_trees("C10.228.140") == ["C10", "C10.228"]
+
+
+def test_the_closure_scan_respects_segment_boundaries():
+    """The equivalence above, exercised through descriptors_under itself.
+
+    'C10.228.140.49' is not a real MeSH node, and nothing may be found beneath it --
+    least of all the records under the textually-similar 'C10.228.140.490'.
+    """
+    assert mesh_concepts.descriptors_under(DESC, frozenset({"C10.228.140.49"})) == []
+
+
 def test_parent_edges_come_from_tree_nesting():
     """Mirrors mesh._build_dag: only the IMMEDIATE tree-parent, and only when that
     parent is itself in the ingested set."""

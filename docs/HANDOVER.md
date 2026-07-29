@@ -257,6 +257,15 @@ unresolved_object_codes=2, non_mesh_objects=2`. Whole chain **69 s** (UNII 8.6 s
 is two streaming passes over `desc2026`/`supp2026` plus row-at-a-time inserts
 ([#7](https://github.com/cairn-ehr/drugref/issues/7)/[#29](https://github.com/cairn-ehr/drugref/issues/29)).
 
+**That summary line predates the `object_kind` split, and two of its numbers must be read accordingly.**
+`withheld_class_objects=103` was measured when the field counted *every* unresolved `CI_ChemClass` object.
+It now counts only the `CHEMICAL_CLASS` ones, with `unregistered_object_substances` carrying the rest — so
+**103 is now the SUM of the two**, and how it divides is unmeasured until the next run against a real
+release. Nothing about the worklist itself moved: `gap_unresolved_ci_object` still returns 103 rows summing
+to 405, because both kinds are published there. `self_paired_assertions` did not exist either, but its value
+on that run is **1** — it is precisely the tranylcypromine self-pair the `1,443 → 1,442` line above already
+reconciles. **Re-measure the split on the next real-release run and replace this paragraph with the figures.**
+
 **Five numbers moved, and every one is the spec being wrong, not the code.** Three share a single cause:
 **the spec measured at the MeSH CONCEPT grain, and drugref stores at the RECORD grain.** MED-RT's `to_code`
 is a ConceptUI; a MeSH record owns one or more concepts, and `mesh_concepts.py` exists precisely to keep the
@@ -410,6 +419,23 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
 - [#43](https://github.com/cairn-ehr/drugref/issues/43) **Duplicated ingest boilerplate** — `_checksum` in
   four orchestrators, six body-identical `clear_source_*` bodies. Pre-existing idiom 5b added to; it is
   exactly what made the missing worklist-clear assertion this review found so easy to introduce.
+- [#45](https://github.com/cairn-ehr/drugref/issues/45) **`condition_contraindication_expanded` recomputes
+  the whole walk per query** — Postgres cannot push a predicate into a recursive CTE, so filtering on
+  `member_condition` still walks all 641 roots and builds all 191,728 rows first. ~10 ms today and the same
+  shape `db/012` already has, so not a regression; 5b.2 reusing this DAG is what would multiply it.
+
+**Fixed by the PR-44 review round (not deferred)**
+- **A substance drugref does not carry was being filed as a chemical class.** `_resolve_object_moiety`
+  returning `None` is the disjunction of two facts, and reading it as one asked a curator whether
+  contraindications naming *Pimozide* should expand over the drugs beneath it. `ingest_unresolved_ci_object`
+  now carries **`object_kind`** (`CHEMICAL_CLASS` / `UNREGISTERED_SUBSTANCE`, NO DEFAULT, CHECK-constrained),
+  derived from whether the **MeSH record** carries a registry key; `questions.py` phrases a different
+  question per kind, with **no `ELSE`** so a third kind aborts the ingest loudly rather than mislabelling.
+- **The self-pair skip is now counted** (`self_paired_assertions`). It was a silent exit from the pass whose
+  docstring claimed nothing falls off the end, and removing the guard aborts the ingest on `db/014`'s CHECK.
+- **`descriptors_under` matches via each tree number's own ancestors against the prefix SET**, not every
+  prefix against every tree number: **4.49 s → 0.03 s** on release-shaped data. `is_descendant_tree` remains
+  the statement of the rule and the two are pinned against each other by test.
 
 **Floor & identity**
 - [#2](https://github.com/cairn-ehr/drugref/issues/2) **Floor hardening** — close the `TRUNCATE` +

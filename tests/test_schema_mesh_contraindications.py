@@ -125,9 +125,38 @@ def test_unresolved_ci_object_records_the_class_arm(conn, ingest_run_id):
     """The 405 withheld assertions are PRESERVED as a worklist row, not dropped."""
     conn.execute(
         "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
-        "relationship, object_source, object_code, object_name, assertion_count) "
-        "VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D013449','Sulfonamides',36)",
+        "relationship, object_source, object_code, object_name, object_kind, "
+        "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D013449',"
+        "'Sulfonamides','CHEMICAL_CLASS',36)",
         (ingest_run_id,))
     assert conn.execute(
         "SELECT assertion_count FROM drugref.ingest_unresolved_ci_object"
     ).fetchone()[0] == 36
+
+
+def test_object_kind_is_constrained(conn, ingest_run_id):
+    """Only the two kinds the read path knows how to phrase a question for.
+
+    An unconstrained free-text column here is db/012 finding 3 all over again: a
+    mis-typed kind would insert cleanly and then fall through questions.py's CASE
+    to NULL, blaming the register step for a typo made at ingest time.
+    """
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.ingest_unresolved_ci_object (ingest_run, source, "
+            "relationship, object_source, object_code, object_name, object_kind, "
+            "assertion_count) VALUES (%s,'MED-RT','CI_ChemClass','MeSH','D000468',"
+            "'Alkalies','chemical_class',1)", (ingest_run_id,))
+
+
+def test_object_kind_has_no_default(conn):
+    """The force-a-declaration discipline, the same one condition_ci_axis applies.
+
+    A writer recording a withheld object MUST say which kind it is. A default would
+    answer -- silently, and in whichever direction the default happened to point --
+    exactly the question whose silent answering was the defect this column closes.
+    """
+    assert conn.execute(
+        "SELECT column_default FROM information_schema.columns "
+        "WHERE table_schema='drugref' AND table_name='ingest_unresolved_ci_object' "
+        "AND column_name='object_kind'").fetchone()[0] is None

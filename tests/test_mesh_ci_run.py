@@ -10,12 +10,13 @@ ingest_mesh_contraindications commits internally, so it escapes conftest's
 rollback-based isolation.
 """
 import pathlib
+from collections import Counter
 
 import psycopg
 import pytest
 
 from drugref import ids
-from drugref.ingest import mesh_ci_run, run
+from drugref.ingest import medrt, mesh_ci_run, mesh_concepts, run
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 UNII_FIX = FIXTURES / "unii_subset.tsv"
@@ -102,6 +103,11 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     assert summary.moiety_contraindications == 1        # escitalopram -> pimozide
     assert summary.unmatched_subject_rxcuis == 1        # ibuprofen (RxCUI 5640)
     assert summary.withheld_class_objects == 2          # Alkalies, Organic Chemicals
+    # Pimozide resolves against this seeded registry, so it is an ingested pair and
+    # not an unregistered object; the empty-registry case below is what moves this.
+    assert summary.unregistered_object_substances == 0
+    # No fixture assertion names a drug as its own CI_ChemClass object.
+    assert summary.self_paired_assertions == 0
     # Every object code in this fixture is defined by the 2026 MeSH release, and
     # every one is in the MeSH namespace -- so both loss counters are legitimately
     # zero here and the real-release run (not this fixture) is what exercises them.
@@ -149,14 +155,10 @@ def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
     The two worklists are separate axes, not a partition: these assertions are
     counted as withheld objects AND as unmatched subjects, because both are true.
 
-    All THREE objects are withheld here, Pimozide included, and that is correct
-    rather than an artefact: which arm a CI_ChemClass takes is a function of the
-    REGISTRY, not of MeSH. Against an empty registry drugref genuinely cannot tell
-    the drug from the class, and withholding is the safe answer -- which is why
-    test_the_moiety_arm_is_ingested_as_an_exact_pair seeds one and this test does not.
+    All THREE objects reach the worklist here, Pimozide included -- but NOT all three
+    as the same KIND, and that distinction is the subject of the next test.
     """
     summary = _run(conn)
-    assert summary.withheld_class_objects == 3
     assert {r[0] for r in conn.execute(
         "SELECT object_code FROM drugref.ingest_unresolved_ci_object").fetchall()} == \
         {ALKALIES, ORGANIC_CHEMICALS, PIMOZIDE_RECORD}
@@ -166,6 +168,44 @@ def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
     # All five subject RxCUIs in the fixture, including the two that reach only a
     # withheld object.
     assert summary.unmatched_subject_rxcuis == 5
+
+
+def test_an_unresolved_object_is_classified_by_the_record_not_the_failure(conn):
+    """A SUBSTANCE DRUGREF DOES NOT CARRY IS NOT A CHEMICAL CLASS. Do not delete.
+
+    Runs against an EMPTY registry, so all three CI_ChemClass objects fail to bridge
+    to a moiety. The earlier design read that single failure as "therefore a class"
+    and filed all three identically -- which asked a curator whether contraindications
+    naming Pimozide should "be expanded to the drugs beneath it in MeSH's structural
+    tree". Pimozide (D010868) is a leaf drug descriptor at D03.633.100.103.732. There
+    is nothing beneath it. The question was a category error, and it also hid the real
+    gap, which is that the registry carries no moiety for it.
+
+    The discriminator was always available and simply was not consulted: the MeSH
+    RECORD says which it is. Alkalies and Organic Chemicals carry only MeSH's '0'
+    placeholder, which mesh.registry_keys discards, so they name no substance at all;
+    Pimozide's record carries UNII 1HIZ4DL86F. Nothing about the registry decides it,
+    which is why this holds even here, where the registry is empty.
+    """
+    summary = _run(conn)
+    assert summary.withheld_class_objects == 2          # Alkalies, Organic Chemicals
+    assert summary.unregistered_object_substances == 1  # Pimozide
+
+    kinds = dict(conn.execute(
+        "SELECT object_code, object_kind FROM drugref.ingest_unresolved_ci_object"
+    ).fetchall())
+    assert kinds == {ALKALIES: "CHEMICAL_CLASS",
+                     ORGANIC_CHEMICALS: "CHEMICAL_CLASS",
+                     PIMOZIDE_RECORD: "UNREGISTERED_SUBSTANCE"}
+
+    # And the curator is asked the RIGHT question about each -- the whole point of
+    # keeping the kinds apart rather than merely counting them apart.
+    texts = dict(conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ci_object'").fetchall())
+    assert "structural tree" in texts[f"MESH:{ALKALIES}"]
+    assert "registers no moiety" in texts[f"MESH:{PIMOZIDE_RECORD}"]
+    assert "be expanded to the drugs beneath it" not in texts[f"MESH:{PIMOZIDE_RECORD}"]
 
 
 def test_the_moiety_arm_is_ingested_as_an_exact_pair(conn, seeded_moieties):
@@ -194,6 +234,44 @@ def test_the_moiety_arm_is_ingested_as_an_exact_pair(conn, seeded_moieties):
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition WHERE source_code = 'D010868'"
     ).fetchone()[0] == 0
+
+
+def test_a_self_pair_is_counted_not_silently_skipped(conn, a_moiety, ingest_run_id):
+    """MED-RT states a drug is contraindicated with ITSELF when a salt and its parent
+    moiety collapse to one drugref identity. db/014's CHECK forbids storing that, so
+    the orchestrator has to skip it -- but a skip nobody counts is exactly the silent
+    drop spec 7 forbids, and this branch was uncounted and untested until now.
+
+    Driven through _write_relations directly rather than through a fixture, because
+    the fixture is machine-extracted from the real release (it must not be hand-edited
+    to invent an assertion) and the real release's self-pairs involve ingredients the
+    subset does not carry.
+
+    Removing the guard does not merely change this number: the insert reaches
+    moiety_contraindication_not_self and takes the whole ingest down with it.
+    """
+    record = mesh_concepts.MeshRecord(
+        concept_ui="M0016871", record_ui="D010868", record_kind="DESCRIPTOR",
+        name="Pimozide", tree_numbers=(), unii=frozenset({"1HIZ4DL86F"}),
+        cas=frozenset(), is_preferred_concept=True)
+    assertion = medrt.MeshObjectAssertion(
+        rxcui="321988", mesh_code="M0016871", relationship="CI_ChemClass")
+    # Subject and object are the SAME moiety: the RxCUI resolves to it, and so does
+    # the object record's UNII.
+    indexes = ({"321988": [a_moiety]}, {"1HIZ4DL86F": [a_moiety]}, {})
+
+    rel = mesh_ci_run._write_relations(
+        conn, [assertion], {"M0016871": record}, {}, indexes, ingest_run_id)
+
+    assert rel.self_pairs == 1
+    assert rel.pair_rows == 0
+    # Counted as a self-pair and nothing else: the object DID resolve, so it is
+    # neither withheld nor unregistered, and the subject DID resolve, so it is not
+    # an unmatched RxCUI either.
+    assert (rel.withheld, rel.unregistered, rel.unmatched_rxcuis) == (
+        Counter(), Counter(), set())
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 0
 
 
 def test_the_registry_holds_the_descendant_closure(conn, seeded_moieties):
