@@ -76,8 +76,10 @@ external source**. Unmatched members counted, split no-key vs key-not-in-registr
 
 The measurement that shaped it **refuted the doc-research**: MeSH **Descriptors DO carry UNIIs** in
 `RegistryNumber` (aspirin D001241 = UNII `R16CO5Y76E`, not "CAS only"), and a record may carry several, so
-key extraction is set-valued. **10,505 member substances**, **73% joinable** (27% combinations / research
-compounds); moiety gate is the binding constraint, as for MED-RT. `RelatedRegistryNumber` CAS is **not** a
+key extraction is set-valued. **Re-measured post-#26 (post-5b debt round): 10,506 member substances**, of
+which **72.8% carry an identity key** — the figure this file used to call "73% joinable", which it is not.
+Only **40.6% reach a gated-in moiety** (2,856 no key, 3,381 key-not-in-registry, both counted): the moiety
+gate is the binding constraint, as for MED-RT. `RelatedRegistryNumber` CAS is **not** a
 bridge key in this slice (tension B — deferred precision pass). MeSH licence verified AGPL-compatible (NLM
 terms: attribution + no-endorsement + version-currency; no NC/ND), attributed in `NOTICE`. **ATC stays
 excluded** (NC + no-derivatives). Follow-ups: the RelatedRegistryNumber precision pass, and MED-RT's own
@@ -116,7 +118,7 @@ the contraindication half — `CI_with` (drug→condition) + `CI_ChemClass`'s mo
 new MeSH **condition** registry; **5b.2** is the indication half
 (`may_treat`/`may_prevent`/`may_diagnose`/`induces`, ~18k), which **reuses that registry unchanged**. Spec:
 [slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md). `db/013`–`db/016`;
-494 tests.
+merged as PR #44.
 
 **Measured yield against the real releases** (UNII 26Feb2026 + MED-RT 2026.07.06 + MeSH desc/supp 2026, live
 PG18) — **the measurement corrected the spec in five places; the measured figures are the true ones**:
@@ -174,6 +176,25 @@ arm lands. Stated in `db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT 
 Follow-up filed: [#39](https://github.com/cairn-ehr/drugref/issues/39) — `ingest_unmatched_ingredient` is
 rebuilt per `source` while two orchestrators write under `MED-RT`; two caveats **documented and tested, not
 solved** (order-dependence, cross-run accumulation). See HANDOVER.
+
+#### Post-5b debt round ✅ DONE
+The five follow-ups 5b's review filed, cleared before 5b.2 reuses the same code paths — plus the two issues
+the tracker had closed while the code still carried them. `db/017`; **533 tests**.
+[#40](https://github.com/cairn-ehr/drugref/issues/40) one gz-aware MeSH reader (`mesh.iter_records`), which
+also fixed a regeneration command that found nothing against a real release ·
+[#17](https://github.com/cairn-ehr/drugref/issues/17) the last silent refusal counted ·
+[#42](https://github.com/cairn-ehr/drugref/issues/42) the descriptor-wins tie-break pinned — **measured: 0 of
+MeSH's ConceptUIs appear in both desc and supp, so the release cannot exercise that branch and the guard is
+against a future partition change** · [#41](https://github.com/cairn-ehr/drugref/issues/41) the CI object's
+namespace taken from the data in BOTH the view and `questions.py`, preserving every existing
+`question_uuid` · [#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
+`db.clear_source_tables`, six declared table tuples each restated independently by test.
+
+**Re-verified end-to-end against the real releases**, which is what this round's claims rest on: every 5b
+figure reproduced exactly (5,203 / 7,157 / 9,471 / 1,442 / 191,728, and 103 worklist rows summing to 405).
+Two numbers that were unmeasured or ambiguous are now recorded: the `object_kind` split is **96
+CHEMICAL_CLASS (386 rules) + 7 UNREGISTERED_SUBSTANCE (19 rules)**, and slice 2b's "73% joinable" was
+ambiguous — 72.8% of members carry an identity KEY, but only **40.6% reach a gated-in moiety**.
 
 #### Slice 5b.2 — MeSH-keyed indications
 The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** (~18k) plus
