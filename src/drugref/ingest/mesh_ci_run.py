@@ -64,12 +64,17 @@ class MeshCiSummary:
     Conditions ACCUMULATE while edges and contraindications are REBUILT, so the two
     condition numbers are reported separately rather than as one ambiguous count.
 
-    `conditions_registered` is what THIS RUN put in the registry -- the referenced
-    objects plus their descendant closure -- and is deliberately NOT called
-    "in_release": MeSH 2026 defines ~30,000 descriptors, of which this slice
-    registers the 5,190 that a contraindication can reach. Naming it after the
-    release would invite a reader to check it against MeSH's own record count and
-    conclude the ingest had lost 25,000 records.
+    `conditions_registered` counts CONDITION ROWS this run put in the registry -- the
+    referenced objects plus their descendant closure -- and is deliberately NOT called
+    "in_release". Measured on the real 2026 releases: desc2026 holds 31,110 descriptor
+    records, of which this slice registers 5,203 conditions (5,190 descriptors plus 13
+    supplementary records). Naming it after the release would invite a reader to check
+    it against MeSH's own record count and conclude the ingest had lost 25,000 records.
+
+    Do not confuse it with the closure's DESCRIPTOR count (5,190) quoted in
+    _condition_closure and mesh_concepts.descriptors_under: SCRs bear no tree numbers,
+    so they never enter the closure and appear only as themselves. Both figures are
+    right about different things, which is why each says which it is counting.
 
     The four worklist numbers are reported, never swallowed:
       * unmatched_subject_rxcuis  -- the rule's subject is carried by no moiety
@@ -148,7 +153,14 @@ def _condition_closure(desc_path, records: dict[str, mesh_concepts.MeshRecord],
     The closure is what a rule expands INTO. The descendants are not themselves CI
     objects, so a registry scoped to referenced objects would leave the read path
     with nothing to find and the feature would be inert while appearing to work
-    (spec 5.1). Measured on the real release: 664 referenced descriptors -> 5,190.
+    (spec 5.1).
+
+    Measured on the real 2026.07.06 release, and stated as two numbers because this
+    function returns records of two KINDS: 677 referenced records (664 descriptors +
+    13 SCRs) come in, and 5,203 conditions (5,190 descriptors + the same 13 SCRs)
+    come out. The 5,190 is the figure mesh_concepts.descriptors_under is measured on,
+    because only descriptors carry tree numbers -- an SCR contributes no prefix and
+    gains no descendant, so it appears in the closure only as itself.
 
     Keyed by record_ui, never by concept_ui: many concepts resolve to one record, and
     keying on the concept would split one condition into rows no rebuild could merge.

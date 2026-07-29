@@ -290,15 +290,20 @@ def test_unmatched_rows_accumulate_but_the_gap_view_does_not(conn, seeded_moieti
 
 
 def test_the_run_does_not_destroy_medrt_runs_worklist(conn, seeded_moieties):
-    """THE REASON THIS RUN REPORTS ITS UNMATCHED SUBJECTS INSTEAD OF WRITING THEM.
+    """THE REASON THIS RUN WRITES ITS UNMATCHED SUBJECTS BUT NEVER CLEARS THEM.
 
-    ingest_unmatched_ingredient is rebuilt PER SOURCE, and both orchestrators open
-    their runs under 'MED-RT' -- so a clear-and-write here would delete medrt_run's
-    list. On the real release that is strictly destructive: every one of the 3,757
-    CI subjects is also a classified ingredient, so this run's list adds nothing,
-    while the clear would drop 14,720 rows nothing else records.
+    ingest_unmatched_ingredient is rebuilt PER SOURCE and both orchestrators open
+    their runs under 'MED-RT', so the two cannot both own it. medrt_run keeps the
+    clear; this run only adds. A source-scoped clear here would take medrt_run's rows
+    with it, and on the real 2026.07.06 release 2,271 of the 6,012 classified
+    ingredients are not CI subjects at all -- rows this run could never rewrite,
+    because it never sees those ingredients.
 
-    The marker row stands in for those 14,720: this fixture's two lists are both
+    Writing is the other half, pinned by
+    test_unmatched_subjects_are_recorded_not_only_counted: 16 CI subjects are never
+    classified by MED-RT, so medrt_run cannot record them either.
+
+    The marker row stands in for those 2,271: this fixture's two lists are both
     exactly {5640}, so without it the test could not tell a preserved worklist from
     a clobbered one that happens to be rewritten identically.
     """
