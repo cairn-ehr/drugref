@@ -403,11 +403,15 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
 # inference. Withholding it is the right call; withholding it silently is not, so each
 # withheld object becomes a citable question.
 #
-# ON 103, NOT 108: db/014 and db/016 both say 108, and both are applied migrations and
-# therefore immutable. 108 counts MeSH ConceptUIs; this worklist is keyed on the MeSH
-# RECORD ui, because one record is one curator decision, and five records are each
-# named by two withheld concepts. The standing correction is the docs-site decision
-# record "A structural chemical tree is not a clinical class".
+# ON 103, NOT 108. 108 counts MeSH ConceptUIs; this worklist is keyed on the MeSH
+# RECORD ui, because ONE RECORD IS ONE CURATOR DECISION, and five records are each
+# named by two withheld concepts. db/014 and db/016 were corrected to 103 before merge
+# -- the checksum ledger binds a DATABASE, not the repo, so a migration no database
+# outside a disposable local one has ever seen is still editable; immutability starts
+# at merge. The slice-5b SPEC still says 108 and cannot be corrected at all (specs
+# under docs/superpowers/specs/ are immutable by project rule), so the standing
+# correction for it is the docs-site decision record "A structural chemical tree is
+# not a clinical class".
 
 
 def test_unresolved_ci_object_becomes_a_question(conn, ingest_run_id):

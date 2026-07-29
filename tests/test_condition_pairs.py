@@ -82,8 +82,8 @@ def test_subtree_includes_its_own_root(conn, epilepsy_tree):
 
 
 def test_a_condition_no_rule_names_is_absent_from_the_subtree(conn, epilepsy_tree):
-    """Scoped to contraindicated conditions: computing 5,190 subtrees nothing asks
-    about would be pure waste."""
+    """Scoped to contraindicated conditions: computing a subtree for each of the
+    registry's 5,203 conditions when only 641 are ever named would be pure waste."""
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_subtree WHERE root_uuid = %s",
         (epilepsy_tree["child"],)).fetchone()[0] == 0
