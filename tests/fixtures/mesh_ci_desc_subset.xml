@@ -1,305 +1,337 @@
 <DescriptorRecordSet>
 <DescriptorRecord DescriptorClass="1">
-  <DescriptorUI>D001026</DescriptorUI>
+  <DescriptorUI>D000080445</DescriptorUI>
   <DescriptorName>
-   <String>Coronary Artery Bypass</String>
+   <String>Asthma-Chronic Obstructive Pulmonary Disease Overlap Syndrome</String>
   </DescriptorName>
   <LastUpdated>
-   <Year>2010</Year>
-   <Month>06</Month>
-   <Day>25</Day>
+   <Year>2021</Year>
+   <Month>03</Month>
+   <Day>12</Day>
   </LastUpdated>
   <DateIntroduced>
-   <Year>1973</Year>
+   <Year>2020</Year>
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000009</QualifierUI>
-      <QualifierName>
-      <String>adverse effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000145</QualifierUI>
-      <QualifierName>
-      <String>classification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000191</QualifierUI>
-      <QualifierName>
-      <String>economics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000193</QualifierUI>
-      <QualifierName>
-      <String>education</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ED</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000266</QualifierUI>
-      <QualifierName>
-      <String>history</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>HI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000295</QualifierUI>
-      <QualifierName>
-      <String>instrumentation</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IS</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000331</QualifierUI>
-      <QualifierName>
-      <String>legislation &amp; jurisprudence</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>LJ</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000379</QualifierUI>
-      <QualifierName>
-      <String>methods</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MT</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000401</QualifierUI>
-      <QualifierName>
-      <String>mortality</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000451</QualifierUI>
-      <QualifierName>
-      <String>nursing</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>NU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000523</QualifierUI>
-      <QualifierName>
-      <String>psychology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PX</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000534</QualifierUI>
-      <QualifierName>
-      <String>rehabilitation</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000592</QualifierUI>
-      <QualifierName>
-      <String>standards</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ST</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000639</QualifierUI>
-      <QualifierName>
-      <String>trends</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000662</QualifierUI>
-      <QualifierName>
-      <String>veterinary</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>VE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000706</QualifierUI>
-      <QualifierName>
-      <String>statistics &amp; numerical data</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000941</QualifierUI>
-      <QualifierName>
-      <String>ethics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ES</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
-  <HistoryNote>90; was AORTOCORONARY BYPASS 1973-89 (Prov 1972)
+  <HistoryNote>2020
   </HistoryNote>
-  <NLMClassificationNumber>WG 169</NLMClassificationNumber>
-  <OnlineNote>use CORONARY ARTERY BYPASS to search AORTOCORONARY BYPASS 1972-89 (Prov 1972)
-  </OnlineNote>
-  <PublicMeSHNote>90; was AORTOCORONARY BYPASS 1973-89
+  <PublicMeSHNote>2020
   </PublicMeSHNote>
   <PreviousIndexingList>
-   <PreviousIndexing>Coronary Disease/surgery (1966-1971)</PreviousIndexing>
-   <PreviousIndexing>Coronary Vessels/surgery (1966-1971)</PreviousIndexing>
-   <PreviousIndexing>Myocardial Infarct/surgery (1966-1971)</PreviousIndexing>
+   <PreviousIndexing>Asthma (2013-2019)</PreviousIndexing>
   </PreviousIndexingList>
   <TreeNumberList>
-   <TreeNumber>E04.100.376.719.332</TreeNumber>
-   <TreeNumber>E04.100.814.868.750</TreeNumber>
-   <TreeNumber>E04.928.220.520.220</TreeNumber>
+   <TreeNumber>C08.127.108.688</TreeNumber>
+   <TreeNumber>C08.381.495.108.500</TreeNumber>
+   <TreeNumber>C08.381.495.389.250</TreeNumber>
+   <TreeNumber>C08.674.095.688</TreeNumber>
+   <TreeNumber>C20.543.103</TreeNumber>
+   <TreeNumber>C23.550.291.500.875.500</TreeNumber>
   </TreeNumberList>
   <ConceptList>
    <Concept PreferredConceptYN="Y">
-    <ConceptUI>M0001560</ConceptUI>
+    <ConceptUI>M000647365</ConceptUI>
     <ConceptName>
-     <String>Coronary Artery Bypass</String>
+     <String>Asthma-Chronic Obstructive Pulmonary Disease Overlap Syndrome</String>
     </ConceptName>
-    <ScopeNote>Surgical therapy of ischemic coronary artery disease achieved by grafting a section of saphenous vein, internal mammary artery, or other substitute between the aorta and the obstructed coronary artery distal to the obstructive lesion.
+    <ScopeNote>Syndrome with clinical features of both ASTHMA and COPD.
     </ScopeNote>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T003138</TermUI>
-      <String>Coronary Artery Bypass</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>IOM (1990)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003138</TermUI>
-      <String>Artery Bypass, Coronary</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003138</TermUI>
-      <String>Artery Bypasses, Coronary</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003138</TermUI>
-      <String>Bypasses, Coronary Artery</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003138</TermUI>
-      <String>Coronary Artery Bypasses</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003139</TermUI>
-      <String>Coronary Artery Bypass Grafting</String>
-      <DateCreated>
-       <Year>1989</Year>
-       <Month>04</Month>
-       <Day>13</Day>
-      </DateCreated>
-      <EntryVersion>CABG</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>IOM (1990)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003136</TermUI>
-      <String>Coronary Artery Bypass Surgery</String>
-      <DateCreated>
-       <Year>1989</Year>
-       <Month>04</Month>
-       <Day>13</Day>
-      </DateCreated>
-      <EntryVersion>CORONARY ARTERY BYPASS SURG</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>IOM (1990)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003134</TermUI>
-      <String>Aortocoronary Bypass</String>
-      <DateCreated>
-       <Year>1974</Year>
-       <Month>03</Month>
-       <Day>29</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>UNK (19XX)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003134</TermUI>
-      <String>Aortocoronary Bypasses</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003134</TermUI>
-      <String>Bypass, Aortocoronary</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003134</TermUI>
-      <String>Bypasses, Aortocoronary</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003135</TermUI>
-      <String>Bypass Surgery, Coronary Artery</String>
-      <DateCreated>
-       <Year>1989</Year>
-       <Month>04</Month>
-       <Day>13</Day>
-      </DateCreated>
-      <EntryVersion>BYPASS SURG CORONARY ARTERY</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>IOM (1990)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T003137</TermUI>
-      <String>Bypass, Coronary Artery</String>
-      <DateCreated>
-       <Year>1989</Year>
-       <Month>04</Month>
-       <Day>13</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1990)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000096823</DescriptorUI>
+  <DescriptorName>
+   <String>Cough-Variant Asthma</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2024
+  </HistoryNote>
+  <PublicMeSHNote>2024
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1982-2023)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.784</TreeNumber>
+   <TreeNumber>C08.381.495.108.750</TreeNumber>
+   <TreeNumber>C08.674.095.784</TreeNumber>
+   <TreeNumber>C20.543.480.680.095.688</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M000762642</ConceptUI>
+    <ConceptName>
+     <String>Cough-Variant Asthma</String>
+    </ConceptName>
+    <ScopeNote>Asthma which is characterized by CHRONIC COUGH that is nonproductive without other asthmatic symptoms, e.g., WHEEZING, and PAROXYSMAL DYSPNEA. Cough-variant asthma is accompanied by AIRWAY HYPERSENSITIVITY and may progress to classical asthma without treatment.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000096825</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinosinusitis</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2024</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2024
+  </HistoryNote>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <PublicMeSHNote>2024
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Rhinitis(1965-2023)</PreviousIndexing>
+   <PreviousIndexing>Sinusitis (1964-2023)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C01.748.674.500</TreeNumber>
+   <TreeNumber>C01.748.749.703</TreeNumber>
+   <TreeNumber>C08.460.692.752.703</TreeNumber>
+   <TreeNumber>C08.460.799.955</TreeNumber>
+   <TreeNumber>C08.730.674.500</TreeNumber>
+   <TreeNumber>C08.730.749.703</TreeNumber>
+   <TreeNumber>C09.603.692.752.703</TreeNumber>
+   <TreeNumber>C09.603.799.955</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M000762651</ConceptUI>
+    <ConceptName>
+     <String>Rhinosinusitis</String>
+    </ConceptName>
+    <ScopeNote>Obstruction of sinus drainage into the NASAL CAVITY and inflammation of the NASAL MUCOSA in the PARANASAL SINUSES.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000468</DescriptorUI>
+  <DescriptorName>
+   <String>Alkalies</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>1999</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>singular form is "alkali"; /adv eff: consider also MILK-ALKALI SYNDROME see HYPERCALCEMIA
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D006934</DescriptorUI>
+     <DescriptorName>
+      <String>Hypercalcemia</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>D01.045</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0000711</ConceptUI>
+    <ConceptName>
+     <String>Alkalies</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ScopeNote>Usually a hydroxide of lithium, sodium, potassium, rubidium or cesium, but also the carbonates of these metals, ammonia, and the amines. (Grant &amp; Hackh's Chemical Dictionary, 5th ed)
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001249</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2011</Year>
+   <Month>06</Month>
+   <Day>24</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>note specifics; ASTHMA, CARDIAC see DYSPNEA, PAROXYSMAL is also available; in historical literature consider indexing "phthisic" here; "phthisis" probably goes under TUBERCULOSIS, PULMONARY
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D018927</DescriptorUI>
+     <DescriptorName>
+      <String>Anti-Asthmatic Agents</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108</TreeNumber>
+   <TreeNumber>C08.381.495.108</TreeNumber>
+   <TreeNumber>C08.674.095</TreeNumber>
+   <TreeNumber>C20.543.480.680.095</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0001885</ConceptUI>
+    <ConceptName>
+     <String>Asthma</String>
+    </ConceptName>
+    <ScopeNote>A form of bronchial disorder with three distinct components: airway hyper-responsiveness (RESPIRATORY HYPERSENSITIVITY), airway INFLAMMATION, and intermittent AIRWAY OBSTRUCTION. It is characterized by spasmodic contraction of airway smooth muscle, WHEEZING, and dyspnea (DYSPNEA, PAROXYSMAL).
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001250</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma, Exercise-Induced</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>10</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1991</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>91(79); was see under ASTHMA 1979-90
+  </HistoryNote>
+  <NLMClassificationNumber>WF 553</NLMClassificationNumber>
+  <PublicMeSHNote>91; was see under ASTHMA 1979-90
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1966-1978)</PreviousIndexing>
+   <PreviousIndexing>Bronchial Spasm (1966-1978)</PreviousIndexing>
+   <PreviousIndexing>Exertion (1966-1978)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D064706</DescriptorUI>
+     <DescriptorName>
+      <String>Vocal Cord Dysfunction</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.110</TreeNumber>
+   <TreeNumber>C08.674.095.110</TreeNumber>
+   <TreeNumber>C20.543.480.363.500</TreeNumber>
+   <TreeNumber>C20.543.480.680.095.110</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0001886</ConceptUI>
+    <ConceptName>
+     <String>Asthma, Exercise-Induced</String>
+    </ConceptName>
+    <ScopeNote>Asthma attacks following a period of exercise. Usually the induced attack is short-lived and regresses spontaneously. The magnitude of postexertional airway obstruction is strongly influenced by the environment in which exercise is performed (i.e. inhalation of cold air during physical exertion markedly augments the severity of the airway obstruction; conversely, warm humid air blunts or abolishes it).
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0001886</Concept1UI>
+     <Concept2UI>M0001887</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0001887</ConceptUI>
+    <ConceptName>
+     <String>Bronchospasm, Exercise-Induced</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0001886</Concept1UI>
+     <Concept2UI>M0001887</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D004342</DescriptorUI>
+  <DescriptorName>
+   <String>Drug Hypersensitivity</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2022</Year>
+   <Month>07</Month>
+   <Day>11</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>use in conventional sense and not for allergy to every category D term; allergy to non-drug chemical substance=substance /ad eff + HYPERSENSITIVITY or its specifics /etiol
+  </Annotation>
+  <HistoryNote>66; was DRUG ALLERGY 1963-65
+  </HistoryNote>
+  <NLMClassificationNumber>QW 906</NLMClassificationNumber>
+  <PublicMeSHNote>66; was DRUG ALLERGY 1963-65
+  </PublicMeSHNote>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D063926</DescriptorUI>
+     <DescriptorName>
+      <String>Drug Hypersensitivity Syndrome</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C25.100.468</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0006829</ConceptUI>
+    <ConceptName>
+     <String>Drug Hypersensitivity</String>
+    </ConceptName>
+    <ScopeNote>Immunologically mediated adverse reactions to medicinal substances used legally or illegally.
+    </ScopeNote>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 
@@ -318,323 +350,6 @@
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000097</QualifierUI>
-      <QualifierName>
-      <String>blood</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>BL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000134</QualifierUI>
-      <QualifierName>
-      <String>cerebrospinal fluid</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CF</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000139</QualifierUI>
-      <QualifierName>
-      <String>chemically induced</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000145</QualifierUI>
-      <QualifierName>
-      <String>classification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000150</QualifierUI>
-      <QualifierName>
-      <String>complications</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000151</QualifierUI>
-      <QualifierName>
-      <String>congenital</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000175</QualifierUI>
-      <QualifierName>
-      <String>diagnosis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000178</QualifierUI>
-      <QualifierName>
-      <String>diet therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000188</QualifierUI>
-      <QualifierName>
-      <String>drug therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DT</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000191</QualifierUI>
-      <QualifierName>
-      <String>economics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000196</QualifierUI>
-      <QualifierName>
-      <String>embryology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000201</QualifierUI>
-      <QualifierName>
-      <String>enzymology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000208</QualifierUI>
-      <QualifierName>
-      <String>ethnology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000209</QualifierUI>
-      <QualifierName>
-      <String>etiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ET</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000235</QualifierUI>
-      <QualifierName>
-      <String>genetics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>GE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000266</QualifierUI>
-      <QualifierName>
-      <String>history</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>HI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000276</QualifierUI>
-      <QualifierName>
-      <String>immunology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000378</QualifierUI>
-      <QualifierName>
-      <String>metabolism</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ME</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000382</QualifierUI>
-      <QualifierName>
-      <String>microbiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000401</QualifierUI>
-      <QualifierName>
-      <String>mortality</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000451</QualifierUI>
-      <QualifierName>
-      <String>nursing</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>NU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000453</QualifierUI>
-      <QualifierName>
-      <String>epidemiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000469</QualifierUI>
-      <QualifierName>
-      <String>parasitology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PS</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000473</QualifierUI>
-      <QualifierName>
-      <String>pathology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PA</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000503</QualifierUI>
-      <QualifierName>
-      <String>physiopathology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000517</QualifierUI>
-      <QualifierName>
-      <String>prevention &amp; control</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000523</QualifierUI>
-      <QualifierName>
-      <String>psychology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PX</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000532</QualifierUI>
-      <QualifierName>
-      <String>radiotherapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RT</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000534</QualifierUI>
-      <QualifierName>
-      <String>rehabilitation</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000601</QualifierUI>
-      <QualifierName>
-      <String>surgery</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000628</QualifierUI>
-      <QualifierName>
-      <String>therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000652</QualifierUI>
-      <QualifierName>
-      <String>urine</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>UR</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000662</QualifierUI>
-      <QualifierName>
-      <String>veterinary</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>VE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000821</QualifierUI>
-      <QualifierName>
-      <String>virology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>VI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000000981</QualifierUI>
-      <QualifierName>
-      <String>diagnostic imaging</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DG</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
   <Annotation>general or unspecified; prefer specifics
   </Annotation>
   <NLMClassificationNumber>WL 385</NLMClassificationNumber>
@@ -673,42 +388,7 @@
      <Concept2UI>M0334958</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T014710</TermUI>
-      <String>Epilepsy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>BIOETHICS (1991)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014710</TermUI>
-      <String>Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367712</TermUI>
-      <String>Seizure Disorder</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>08</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367712</TermUI>
-      <String>Seizure Disorders</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0007565</ConceptUI>
     <ConceptName>
@@ -720,33 +400,7 @@
      <Concept2UI>M0007565</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014713</TermUI>
-      <String>Epilepsy, Cryptogenic</String>
-      <DateCreated>
-       <Year>1991</Year>
-       <Month>04</Month>
-       <Day>05</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1992)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014713</TermUI>
-      <String>Cryptogenic Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014713</TermUI>
-      <String>Cryptogenic Epilepsy</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014713</TermUI>
-      <String>Epilepsies, Cryptogenic</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0334957</ConceptUI>
     <ConceptName>
@@ -758,25 +412,7 @@
      <Concept2UI>M0334957</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367713</TermUI>
-      <String>Aura</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>08</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367713</TermUI>
-      <String>Auras</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0334958</ConceptUI>
     <ConceptName>
@@ -788,25 +424,7 @@
      <Concept2UI>M0334958</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367714</TermUI>
-      <String>Awakening Epilepsy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>08</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367714</TermUI>
-      <String>Epilepsy, Awakening</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 
@@ -825,323 +443,6 @@
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000097</QualifierUI>
-      <QualifierName>
-      <String>blood</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>BL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000134</QualifierUI>
-      <QualifierName>
-      <String>cerebrospinal fluid</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CF</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000139</QualifierUI>
-      <QualifierName>
-      <String>chemically induced</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000145</QualifierUI>
-      <QualifierName>
-      <String>classification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000150</QualifierUI>
-      <QualifierName>
-      <String>complications</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000151</QualifierUI>
-      <QualifierName>
-      <String>congenital</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000175</QualifierUI>
-      <QualifierName>
-      <String>diagnosis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000178</QualifierUI>
-      <QualifierName>
-      <String>diet therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000188</QualifierUI>
-      <QualifierName>
-      <String>drug therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DT</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000191</QualifierUI>
-      <QualifierName>
-      <String>economics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000196</QualifierUI>
-      <QualifierName>
-      <String>embryology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000201</QualifierUI>
-      <QualifierName>
-      <String>enzymology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000208</QualifierUI>
-      <QualifierName>
-      <String>ethnology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000209</QualifierUI>
-      <QualifierName>
-      <String>etiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ET</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000235</QualifierUI>
-      <QualifierName>
-      <String>genetics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>GE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000266</QualifierUI>
-      <QualifierName>
-      <String>history</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>HI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000276</QualifierUI>
-      <QualifierName>
-      <String>immunology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000378</QualifierUI>
-      <QualifierName>
-      <String>metabolism</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ME</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000382</QualifierUI>
-      <QualifierName>
-      <String>microbiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000401</QualifierUI>
-      <QualifierName>
-      <String>mortality</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>MO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000451</QualifierUI>
-      <QualifierName>
-      <String>nursing</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>NU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000453</QualifierUI>
-      <QualifierName>
-      <String>epidemiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000469</QualifierUI>
-      <QualifierName>
-      <String>parasitology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PS</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000473</QualifierUI>
-      <QualifierName>
-      <String>pathology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PA</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000503</QualifierUI>
-      <QualifierName>
-      <String>physiopathology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000517</QualifierUI>
-      <QualifierName>
-      <String>prevention &amp; control</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000523</QualifierUI>
-      <QualifierName>
-      <String>psychology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PX</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000532</QualifierUI>
-      <QualifierName>
-      <String>radiotherapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RT</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000534</QualifierUI>
-      <QualifierName>
-      <String>rehabilitation</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000601</QualifierUI>
-      <QualifierName>
-      <String>surgery</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000628</QualifierUI>
-      <QualifierName>
-      <String>therapy</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000652</QualifierUI>
-      <QualifierName>
-      <String>urine</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>UR</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000662</QualifierUI>
-      <QualifierName>
-      <String>veterinary</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>VE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000821</QualifierUI>
-      <QualifierName>
-      <String>virology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>VI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000000981</QualifierUI>
-      <QualifierName>
-      <String>diagnostic imaging</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DG</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
   <Annotation>"generalized" as opposed to "focal" or partial ( = EPILEPSIES, PARTIAL); prefer specific indentions; note entry term EPILEPSY, TONIC: do not confuse with EPILEPSY, TONIC-CLONIC
   </Annotation>
   <HistoryNote>1992; was EPILEPSY, GENERALIZED (NON MESH) 1977-1991
@@ -1188,58 +489,7 @@
      <Concept2UI>M0335040</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T014720</TermUI>
-      <String>Epilepsy, Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1977)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014720</TermUI>
-      <String>Epilepsies, Generalized</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014720</TermUI>
-      <String>Generalized Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014720</TermUI>
-      <String>Generalized Epilepsy</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367833</TermUI>
-      <String>Seizure Disorder, Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS GENERALIZED</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367833</TermUI>
-      <String>Generalized Seizure Disorder</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367833</TermUI>
-      <String>Generalized Seizure Disorders</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367833</TermUI>
-      <String>Seizure Disorders, Generalized</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0007571</ConceptUI>
     <ConceptName>
@@ -1251,33 +501,7 @@
      <Concept2UI>M0007571</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014722</TermUI>
-      <String>Epilepsy, Atonic</String>
-      <DateCreated>
-       <Year>1991</Year>
-       <Month>04</Month>
-       <Day>04</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1992)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014722</TermUI>
-      <String>Atonic Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014722</TermUI>
-      <String>Atonic Epilepsy</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014722</TermUI>
-      <String>Epilepsies, Atonic</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0007572</ConceptUI>
     <ConceptName>
@@ -1289,33 +513,7 @@
      <Concept2UI>M0007572</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014723</TermUI>
-      <String>Epilepsy, Tonic</String>
-      <DateCreated>
-       <Year>1991</Year>
-       <Month>04</Month>
-       <Day>04</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1992)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014723</TermUI>
-      <String>Epilepsies, Tonic</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014723</TermUI>
-      <String>Tonic Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T014723</TermUI>
-      <String>Tonic Epilepsy</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0335029</ConceptUI>
     <ConceptName>
@@ -1327,132 +525,7 @@
      <Concept2UI>M0335029</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367834</TermUI>
-      <String>Convulsive Generalized Seizure Disorder</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>CONVULSIVE GENERALIZED SEIZURE DIS</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367835</TermUI>
-      <String>Convulsive Seizure Disorder, Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>CONVULSIVE SEIZURE DIS GENERALIZED</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Generalized Convulsive Epilepsy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Convulsive Epilepsies, Generalized</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Convulsive Epilepsy, Generalized</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Epilepsies, Generalized Convulsive</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Epilepsy, Generalized Convulsive</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367840</TermUI>
-      <String>Generalized Convulsive Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367857</TermUI>
-      <String>Generalized Seizure Disorder, Convulsive</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>GENERALIZED SEIZURE DIS CONVULSIVE</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367858</TermUI>
-      <String>Seizure Disorder, Convulsive, Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS CONVULSIVE GENERALIZED</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367841</TermUI>
-      <String>Seizure Disorder, Generalized Onset</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS GENERALIZED ONSET</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367859</TermUI>
-      <String>Seizure Disorder, Generalized, Convulsive</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS GENERALIZED CONVULSIVE</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367867</TermUI>
-      <String>Generalized Onset Seizure Disorder</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>GENERALIZED ONSET SEIZURE DIS</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0335030</ConceptUI>
     <ConceptName>
@@ -1464,107 +537,7 @@
      <Concept2UI>M0335030</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367836</TermUI>
-      <String>Generalized Nonconvulsive Seizure Disorder</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>GENERALIZED NONCONVULSIVE SEIZURE DIS</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367860</TermUI>
-      <String>Generalized Nonconvulsive Epilepsy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367860</TermUI>
-      <String>Epilepsy, Generalized Nonconvulsive</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367860</TermUI>
-      <String>Nonconvulsive Epilepsy, Generalized</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367861</TermUI>
-      <String>Generalized Seizure Disorder, Nonconvulsive</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>GENERALIZED SEIZURE DIS NONCONVULSIVE</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367862</TermUI>
-      <String>Nonconvulsive Generalized Seizure Disorder</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>NONCONVULSIVE GENERALIZED SEIZURE DIS</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367863</TermUI>
-      <String>Nonconvulsive Seizure Disorder, Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>NONCONVULSIVE SEIZURE DIS GENERALIZED</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367864</TermUI>
-      <String>Seizure Disorder, Generalized Nonconvulsive</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS GENERALIZED NONCONVULSIVE</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367865</TermUI>
-      <String>Seizure Disorder, Nonconvulsive Generalized</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <EntryVersion>SEIZURE DIS NONCONVULSIVE GENERALIZED</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0335038</ConceptUI>
     <ConceptName>
@@ -1576,33 +549,7 @@
      <Concept2UI>M0335038</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367866</TermUI>
-      <String>Epilepsy, Akinetic</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367866</TermUI>
-      <String>Akinetic Epilepsies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367866</TermUI>
-      <String>Akinetic Epilepsy</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367866</TermUI>
-      <String>Epilepsies, Akinetic</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0335040</ConceptUI>
     <ConceptName>
@@ -1614,29 +561,207 @@
      <Concept2UI>M0335040</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367868</TermUI>
-      <String>Symptomatic Generalized Epilepsy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>11</Month>
-       <Day>09</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2000)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367868</TermUI>
-      <String>Epilepsy, Symptomatic Generalized</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T367868</TermUI>
-      <String>Generalized Epilepsy, Symptomatic</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D005955</DescriptorUI>
+  <DescriptorName>
+   <String>Glucosephosphate Dehydrogenase Deficiency</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2023</Year>
+   <Month>02</Month>
+   <Day>26</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1964</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>64
+  </HistoryNote>
+  <NLMClassificationNumber>WH 170</NLMClassificationNumber>
+  <PublicMeSHNote>64
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C15.378.050.141.150.480</TreeNumber>
+   <TreeNumber>C16.320.070.480</TreeNumber>
+   <TreeNumber>C16.320.565.202.402</TreeNumber>
+   <TreeNumber>C18.452.648.202.402</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0009353</ConceptUI>
+    <ConceptName>
+     <String>Glucosephosphate Dehydrogenase Deficiency</String>
+    </ConceptName>
+    <ScopeNote>A disease-producing enzyme deficiency subject to many variants, some of which cause a deficiency of GLUCOSE-6-PHOSPHATE DEHYDROGENASE activity in erythrocytes, leading to hemolytic anemia.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D007022</DescriptorUI>
+  <DescriptorName>
+   <String>Hypotension</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2007</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>only blood pressure; INTRACRANIAL HYPOTENSION and OCULAR HYPOTENSION are also available; relation to BLOOD PRESSURE: Manual 23.27+
+  </Annotation>
+  <NLMClassificationNumber>WG 350</NLMClassificationNumber>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D019462</DescriptorUI>
+     <DescriptorName>
+      <String>Syncope, Vasovagal</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C14.907.514</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0010927</ConceptUI>
+    <ConceptName>
+     <String>Hypotension</String>
+    </ConceptName>
+    <ScopeNote>Abnormally low BLOOD PRESSURE that can result in inadequate blood flow to the brain and other vital organs. Common symptom is DIZZINESS but greater negative impacts on the body occur when there is prolonged depravation of oxygen and nutrients.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D008107</DescriptorUI>
+  <DescriptorName>
+   <String>Liver Diseases</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2016</Year>
+   <Month>07</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1960</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general; prefer specifics; inflammatory disease = HEPATITIS &amp; its specifics; specialty is HEPATOLOGY see GASTROENTEROLOGY; be careful: do not confuse "hepatic disease" with "intrahepatic disease": "intrahepatic disease" may refer to BILE DUCT DISEASES with regard to BILE DUCTS, INTRAHEPATIC, not LIVER DISEASES
+  </Annotation>
+  <HistoryNote>ACUTE YELLOW ATROPHY was heading 1963-96
+  </HistoryNote>
+  <PublicMeSHNote>ACUTE YELLOW ATROPHY was heading 1963-96
+  </PublicMeSHNote>
+  <EntryCombinationList>
+   <EntryCombination>
+    <ECIN>
+     <DescriptorReferredTo>
+      <DescriptorUI>D008107</DescriptorUI>
+      <DescriptorName>
+       <String>Liver Diseases</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+     <QualifierReferredTo>
+      <QualifierUI>Q000139</QualifierUI>
+      <QualifierName>
+       <String>chemically induced</String>
+      </QualifierName>
+     </QualifierReferredTo>
+    </ECIN>
+    <ECOUT>
+     <DescriptorReferredTo>
+      <DescriptorUI>D056486</DescriptorUI>
+      <DescriptorName>
+       <String>Chemical and Drug Induced Liver Injury</String>
+      </DescriptorName>
+     </DescriptorReferredTo>
+    </ECOUT>
+   </EntryCombination>
+  </EntryCombinationList>
+  <TreeNumberList>
+   <TreeNumber>C06.552</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0012644</ConceptUI>
+    <ConceptName>
+     <String>Liver Diseases</String>
+    </ConceptName>
+    <ScopeNote>Pathological processes of the LIVER.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0012644</Concept1UI>
+     <Concept2UI>M0012645</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0012645</ConceptUI>
+    <ConceptName>
+     <String>Liver Dysfunction</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0012644</Concept1UI>
+     <Concept2UI>M0012645</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D009930</DescriptorUI>
+  <DescriptorName>
+   <String>Organic Chemicals</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2020</Year>
+   <Month>05</Month>
+   <Day>27</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1998</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified; prefer specific groups or specific chemicals
+  </Annotation>
+  <HistoryNote>98; use explode 1967-97
+  </HistoryNote>
+  <PublicMeSHNote>98
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>D02</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0015401</ConceptUI>
+    <ConceptName>
+     <String>Organic Chemicals</String>
+    </ConceptName>
+    <RegistryNumberList>
+    <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <ScopeNote>A broad class of substances containing carbon and its derivatives. Many of these chemicals will frequently contain hydrogen with or without oxygen, nitrogen, sulfur, phosphorus, and other elements. They exist in either carbon chain or carbon ring form.
+    </ScopeNote>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 
@@ -1655,233 +780,6 @@
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000008</QualifierUI>
-      <QualifierName>
-      <String>administration &amp; dosage</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000009</QualifierUI>
-      <QualifierName>
-      <String>adverse effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000031</QualifierUI>
-      <QualifierName>
-      <String>analogs &amp; derivatives</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AA</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000032</QualifierUI>
-      <QualifierName>
-      <String>analysis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000037</QualifierUI>
-      <QualifierName>
-      <String>antagonists &amp; inhibitors</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000097</QualifierUI>
-      <QualifierName>
-      <String>blood</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>BL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000134</QualifierUI>
-      <QualifierName>
-      <String>cerebrospinal fluid</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CF</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000138</QualifierUI>
-      <QualifierName>
-      <String>chemical synthesis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CS</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000145</QualifierUI>
-      <QualifierName>
-      <String>classification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000191</QualifierUI>
-      <QualifierName>
-      <String>economics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000266</QualifierUI>
-      <QualifierName>
-      <String>history</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>HI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000276</QualifierUI>
-      <QualifierName>
-      <String>immunology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000302</QualifierUI>
-      <QualifierName>
-      <String>isolation &amp; purification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000378</QualifierUI>
-      <QualifierName>
-      <String>metabolism</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ME</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000493</QualifierUI>
-      <QualifierName>
-      <String>pharmacokinetics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PK</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000494</QualifierUI>
-      <QualifierName>
-      <String>pharmacology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000506</QualifierUI>
-      <QualifierName>
-      <String>poisoning</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000528</QualifierUI>
-      <QualifierName>
-      <String>radiation effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000592</QualifierUI>
-      <QualifierName>
-      <String>standards</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ST</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000600</QualifierUI>
-      <QualifierName>
-      <String>supply &amp; distribution</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000627</QualifierUI>
-      <QualifierName>
-      <String>therapeutic use</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000633</QualifierUI>
-      <QualifierName>
-      <String>toxicity</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000652</QualifierUI>
-      <QualifierName>
-      <String>urine</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>UR</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000737</QualifierUI>
-      <QualifierName>
-      <String>chemistry</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000819</QualifierUI>
-      <QualifierName>
-      <String>agonists</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AG</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
   <HistoryNote>73
   </HistoryNote>
   <PublicMeSHNote>73
@@ -1948,25 +846,7 @@
      <Concept2UI>M0474774</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T032049</TermUI>
-      <String>Pimozide</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>BAN (19XX)</ThesaurusID>
-       <ThesaurusID>FDA SRS (2014)</ThesaurusID>
-       <ThesaurusID>INN (19XX)</ThesaurusID>
-       <ThesaurusID>USAN (1967)</ThesaurusID>
-       <ThesaurusID>USP (19XX)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0353569</ConceptUI>
     <ConceptName>
@@ -1981,25 +861,7 @@
      <Concept2UI>M0353569</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="LAB" RecordPreferredTermYN="N">
-      <TermUI>T032050</TermUI>
-      <String>R-6238</String>
-      <DateCreated>
-       <Year>1980</Year>
-       <Month>07</Month>
-       <Day>31</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>UNK (19XX)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="LAB" RecordPreferredTermYN="N">
-      <TermUI>T032050</TermUI>
-      <String>R6238</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0474773</ConceptUI>
     <ConceptName>
@@ -2014,21 +876,7 @@
      <Concept2UI>M0474773</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="TRD" RecordPreferredTermYN="N">
-      <TermUI>T616022</TermUI>
-      <String>Antalon</String>
-      <DateCreated>
-       <Year>2004</Year>
-       <Month>10</Month>
-       <Day>28</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>DE</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
     <ConceptUI>M0474774</ConceptUI>
     <ConceptName>
@@ -2043,39 +891,49 @@
      <Concept2UI>M0474774</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="TRD" RecordPreferredTermYN="N">
-      <TermUI>T616024</TermUI>
-      <String>Orap</String>
-      <DateCreated>
-       <Year>2004</Year>
-       <Month>10</Month>
-       <Day>28</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>AU</ThesaurusID>
-       <ThesaurusID>CA</ThesaurusID>
-       <ThesaurusID>ES</ThesaurusID>
-       <ThesaurusID>FR</ThesaurusID>
-       <ThesaurusID>IE</ThesaurusID>
-       <ThesaurusID>NL</ThesaurusID>
-       <ThesaurusID>UK</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="TRD" RecordPreferredTermYN="N">
-      <TermUI>T616026</TermUI>
-      <String>Orap forte</String>
-      <DateCreated>
-       <Year>2004</Year>
-       <Month>10</Month>
-       <Day>28</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>DE</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011041</DescriptorUI>
+  <DescriptorName>
+   <String>Poisoning</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2010</Year>
+   <Month>06</Month>
+   <Day>25</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>a disease concept: the discipline = TOXICOLOGY; general only; prefer /pois with Category D &amp; J terms: Manual 19.7+, 19.8.57, 19.9+, 25.11.4; sometimes called "toxicoses" &amp; often called "intoxication" in foreign literature.
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D000931</DescriptorUI>
+     <DescriptorName>
+      <String>Antidotes</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C25.723</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017099</ConceptUI>
+    <ConceptName>
+     <String>Poisoning</String>
+    </ConceptName>
+    <ScopeNote>A condition or physical state produced by the ingestion, injection, inhalation of or exposure to a deleterious agent.
+    </ScopeNote>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 
@@ -2094,125 +952,6 @@
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000097</QualifierUI>
-      <QualifierName>
-      <String>blood</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>BL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000134</QualifierUI>
-      <QualifierName>
-      <String>cerebrospinal fluid</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CF</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000187</QualifierUI>
-      <QualifierName>
-      <String>drug effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>DE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000208</QualifierUI>
-      <QualifierName>
-      <String>ethnology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000235</QualifierUI>
-      <QualifierName>
-      <String>genetics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>GE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000276</QualifierUI>
-      <QualifierName>
-      <String>immunology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000378</QualifierUI>
-      <QualifierName>
-      <String>metabolism</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ME</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000502</QualifierUI>
-      <QualifierName>
-      <String>physiology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000523</QualifierUI>
-      <QualifierName>
-      <String>psychology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PX</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000528</QualifierUI>
-      <QualifierName>
-      <String>radiation effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000652</QualifierUI>
-      <QualifierName>
-      <String>urine</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>UR</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000706</QualifierUI>
-      <QualifierName>
-      <String>statistics &amp; numerical data</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000941</QualifierUI>
-      <QualifierName>
-      <String>ethics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ES</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
   <Annotation>IM for articles on normal pregnancy, NIM as check tag; in children or adolescents, see note under PREGNANCY IN ADOLESCENCE; surrogate pregnancy = Gestational Carriers; for "pregnancy" in non-placental organisms (fish, reptiles, monotremes for example): use OVIPARITY; OVOVIVIPARITY; or VIVIPARITY, NONMAMMALIAN
   </Annotation>
   <HistoryNote>1963
@@ -2298,378 +1037,433 @@
     </ConceptName>
     <ScopeNote>The status during which female mammals carry their developing young (EMBRYOS or FETUSES) in utero before birth, beginning from FERTILIZATION to BIRTH.
     </ScopeNote>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T033127</TermUI>
-      <String>Pregnancy</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <EntryVersion>PREGN</EntryVersion>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1963)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T033127</TermUI>
-      <String>Pregnancies</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T568876</TermUI>
-      <String>Gestation</String>
-      <DateCreated>
-       <Year>2004</Year>
-       <Month>01</Month>
-       <Day>15</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2005)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
-  <DescriptorUI>D013449</DescriptorUI>
+  <DescriptorUI>D011263</DescriptorUI>
   <DescriptorName>
-   <String>Sulfonamides</String>
+   <String>Pregnancy Trimester, Third</String>
   </DescriptorName>
   <LastUpdated>
-   <Year>2020</Year>
-   <Month>05</Month>
-   <Day>27</Day>
+   <Year>2008</Year>
+   <Month>07</Month>
+   <Day>08</Day>
   </LastUpdated>
   <DateIntroduced>
-   <Year>1960</Year>
+   <Year>1975</Year>
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <AllowableQualifiersList>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000008</QualifierUI>
-      <QualifierName>
-      <String>administration &amp; dosage</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000009</QualifierUI>
-      <QualifierName>
-      <String>adverse effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000032</QualifierUI>
-      <QualifierName>
-      <String>analysis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AN</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000037</QualifierUI>
-      <QualifierName>
-      <String>antagonists &amp; inhibitors</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000097</QualifierUI>
-      <QualifierName>
-      <String>blood</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>BL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000134</QualifierUI>
-      <QualifierName>
-      <String>cerebrospinal fluid</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CF</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000138</QualifierUI>
-      <QualifierName>
-      <String>chemical synthesis</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CS</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000145</QualifierUI>
-      <QualifierName>
-      <String>classification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CL</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000191</QualifierUI>
-      <QualifierName>
-      <String>economics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>EC</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000266</QualifierUI>
-      <QualifierName>
-      <String>history</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>HI</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000276</QualifierUI>
-      <QualifierName>
-      <String>immunology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IM</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000302</QualifierUI>
-      <QualifierName>
-      <String>isolation &amp; purification</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>IP</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000378</QualifierUI>
-      <QualifierName>
-      <String>metabolism</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ME</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000493</QualifierUI>
-      <QualifierName>
-      <String>pharmacokinetics</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PK</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000494</QualifierUI>
-      <QualifierName>
-      <String>pharmacology</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000506</QualifierUI>
-      <QualifierName>
-      <String>poisoning</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>PO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000528</QualifierUI>
-      <QualifierName>
-      <String>radiation effects</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>RE</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000592</QualifierUI>
-      <QualifierName>
-      <String>standards</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>ST</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000600</QualifierUI>
-      <QualifierName>
-      <String>supply &amp; distribution</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>SD</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000627</QualifierUI>
-      <QualifierName>
-      <String>therapeutic use</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TU</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000633</QualifierUI>
-      <QualifierName>
-      <String>toxicity</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>TO</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000652</QualifierUI>
-      <QualifierName>
-      <String>urine</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>UR</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000737</QualifierUI>
-      <QualifierName>
-      <String>chemistry</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>CH</Abbreviation>
-   </AllowableQualifier>
-   <AllowableQualifier>
-    <QualifierReferredTo>
-     <QualifierUI>Q000819</QualifierUI>
-      <QualifierName>
-      <String>agonists</String>
-      </QualifierName>
-    </QualifierReferredTo>
-    <Abbreviation>AG</Abbreviation>
-   </AllowableQualifier>
-  </AllowableQualifiersList>
-  <HistoryNote>SULFONAMIDE MIXTURES was heading 1963-79
+  <Annotation>human only; check tags HUMANS &amp; FEMALE &amp; PREGNANCY; "at term": consider better LABOR, OBSTETRIC
+  </Annotation>
+  <HistoryNote>76; was PREGNANCY, THIRD TRIMESTER 1975
   </HistoryNote>
-  <NLMClassificationNumber>QV 265</NLMClassificationNumber>
-  <OnlineNote>use SULFONAMIDES to search SULFONAMIDE MIXTURES 1966-79
+  <OnlineNote>use PREGNANCY TRIMESTER, THIRD to search PREGNANCY, THIRD TRIMESTER 1975
   </OnlineNote>
-  <PublicMeSHNote>SULFONAMIDE MIXTURES was heading 1963-79
+  <PublicMeSHNote>76; was PREGNANCY, THIRD TRIMESTER 1975
   </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Gestational Age (1968-1974)</PreviousIndexing>
+   <PreviousIndexing>Pregnancy (1966-1974)</PreviousIndexing>
+   <PreviousIndexing>Time Factors (1967-1974)</PreviousIndexing>
+  </PreviousIndexingList>
   <TreeNumberList>
-   <TreeNumber>D02.065.884</TreeNumber>
-   <TreeNumber>D02.886.590.700</TreeNumber>
+   <TreeNumber>G08.686.707.520</TreeNumber>
   </TreeNumberList>
   <ConceptList>
    <Concept PreferredConceptYN="Y">
-    <ConceptUI>M0020790</ConceptUI>
+    <ConceptUI>M0017490</ConceptUI>
     <ConceptName>
-     <String>Sulfonamides</String>
+     <String>Pregnancy Trimester, Third</String>
     </ConceptName>
-    <RegistryNumberList>
-    <RegistryNumber>0</RegistryNumber>
-    </RegistryNumberList>
-    <ScopeNote>A group of compounds that contain the structure SO2NH2.
+    <ScopeNote>The last third of a human PREGNANCY, from the beginning of the 29th through the 42nd completed week (197 to 294 days) of gestation.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011269</DescriptorUI>
+  <DescriptorName>
+   <String>Pregnancy, Abdominal</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <NLMClassificationNumber>WQ 220</NLMClassificationNumber>
+  <TreeNumberList>
+   <TreeNumber>C12.050.703.733.536</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0017497</ConceptUI>
+    <ConceptName>
+     <String>Pregnancy, Abdominal</String>
+    </ConceptName>
+    <ScopeNote>A type of ectopic pregnancy in which the EMBRYO, MAMMALIAN implants in the ABDOMINAL CAVITY instead of in the ENDOMETRIUM of the UTERUS.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D012220</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinitis</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2019</Year>
+   <Month>06</Month>
+   <Day>17</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified; prefer specifics; do not confuse NASAL CATARRH with CATARRH; rhinosinusitis: index RHINITIS + SINUSITIS
+  </Annotation>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <TreeNumberList>
+   <TreeNumber>C01.748.674</TreeNumber>
+   <TreeNumber>C08.460.799</TreeNumber>
+   <TreeNumber>C08.730.674</TreeNumber>
+   <TreeNumber>C09.603.799</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0019019</ConceptUI>
+    <ConceptName>
+     <String>Rhinitis</String>
+    </ConceptName>
+    <ScopeNote>Inflammation of the NASAL MUCOSA, the mucous membrane lining the NASAL CAVITIES.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D016535</DescriptorUI>
+  <DescriptorName>
+   <String>Bronchial Hyperreactivity</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>1999</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1992</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>note category; if present in asthma, coord IM with ASTHMA /physiopathol (IM)
+  </Annotation>
+  <HistoryNote>92
+  </HistoryNote>
+  <PublicMeSHNote>92
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma (1970-1991)</PreviousIndexing>
+   <PreviousIndexing>Bronchi (1970-1991)</PreviousIndexing>
+   <PreviousIndexing>Respiratory Hypersensitivity (1970-1991)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D001249</DescriptorUI>
+     <DescriptorName>
+      <String>Asthma</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.210</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0025237</ConceptUI>
+    <ConceptName>
+     <String>Bronchial Hyperreactivity</String>
+    </ConceptName>
+    <ScopeNote>Tendency of the smooth muscle of the tracheobronchial tree to contract more intensely in response to a given stimulus than it does in the response seen in normal individuals. This condition is present in virtually all symptomatic patients with asthma. The most prominent manifestation of this smooth muscle contraction is a decrease in airway caliber that can be readily measured in the pulmonary function laboratory.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D019896</DescriptorUI>
+  <DescriptorName>
+   <String>alpha 1-Antitrypsin Deficiency</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2013</Year>
+   <Month>07</Month>
+   <Day>08</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1998</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>Pi or PiZZ goes here + PHENOTYPE
+  </Annotation>
+  <HistoryNote>98
+  </HistoryNote>
+  <PublicMeSHNote>98
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>alpha 1-Antitrypsin (1974)</PreviousIndexing>
+   <PreviousIndexing>alpha 1-Antitrypsin/deficiency (1975-1997)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C06.552.074</TreeNumber>
+   <TreeNumber>C08.381.112</TreeNumber>
+   <TreeNumber>C16.320.060</TreeNumber>
+   <TreeNumber>C23.550.325.500.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0029552</ConceptUI>
+    <ConceptName>
+     <String>alpha 1-Antitrypsin Deficiency</String>
+    </ConceptName>
+    <ScopeNote>Deficiency of the protease inhibitor ALPHA 1-ANTITRYPSIN that manifests primarily as PULMONARY EMPHYSEMA and LIVER CIRRHOSIS.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D055963</DescriptorUI>
+  <DescriptorName>
+   <String>Asthma, Aspirin-Induced</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2023</Year>
+   <Month>05</Month>
+   <Day>22</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2010
+  </HistoryNote>
+  <PublicMeSHNote>2010
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Asthma/chemically induced (1973-2009)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C08.127.108.054</TreeNumber>
+   <TreeNumber>C08.674.095.054</TreeNumber>
+   <TreeNumber>C20.543.480.149</TreeNumber>
+   <TreeNumber>C25.100.468.189</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0523646</ConceptUI>
+    <ConceptName>
+     <String>Asthma, Aspirin-Induced</String>
+    </ConceptName>
+    <ScopeNote>Asthmatic adverse reaction (e.g., BRONCHOCONSTRICTION) to conventional NSAIDS including aspirin use.
     </ScopeNote>
     <ConceptRelationList>
-     <ConceptRelation RelationName="REL">
-     <Concept1UI>M0020790</Concept1UI>
-     <Concept2UI>M0020789</Concept2UI>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0523646</Concept1UI>
+     <Concept2UI>M000763905</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="Y">
-      <TermUI>T039491</TermUI>
-      <String>Sulfonamides</String>
-      <DateCreated>
-       <Year>1999</Year>
-       <Month>01</Month>
-       <Day>01</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (1966)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T000999607</TermUI>
-      <String>Sulfonamide</String>
-      <DateCreated>
-       <Year>2019</Year>
-       <Month>11</Month>
-       <Day>26</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2021)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
    <Concept PreferredConceptYN="N">
-    <ConceptUI>M0020789</ConceptUI>
+    <ConceptUI>M000763905</ConceptUI>
     <ConceptName>
-     <String>Sulfonamide Mixtures</String>
+     <String>NSAID-Exacerbated Respiratory Disease</String>
     </ConceptName>
-    <RegistryNumberList>
-    <RegistryNumber>0</RegistryNumber>
-    </RegistryNumberList>
     <ConceptRelationList>
-     <ConceptRelation RelationName="REL">
-     <Concept1UI>M0020790</Concept1UI>
-     <Concept2UI>M0020789</Concept2UI>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0523646</Concept1UI>
+     <Concept2UI>M000763905</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
-    <TermList>
-     <Term ConceptPreferredTermYN="Y" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T039490</TermUI>
-      <String>Sulfonamide Mixtures</String>
-      <DateCreated>
-       <Year>1979</Year>
-       <Month>06</Month>
-       <Day>07</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>UNK (19XX)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T039490</TermUI>
-      <String>Mixtures, Sulfonamide</String>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="N" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T000999608</TermUI>
-      <String>Sulfonamide Mixture</String>
-      <DateCreated>
-       <Year>2019</Year>
-       <Month>11</Month>
-       <Day>26</Day>
-      </DateCreated>
-      <ThesaurusIDlist>
-       <ThesaurusID>NLM (2021)</ThesaurusID>
-      </ThesaurusIDlist>
-     </Term>
-     <Term ConceptPreferredTermYN="N" IsPermutedTermYN="Y" LexicalTag="NON" RecordPreferredTermYN="N">
-      <TermUI>T000999608</TermUI>
-      <String>Mixture, Sulfonamide</String>
-     </Term>
-    </TermList>
-   </Concept>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D056486</DescriptorUI>
+  <DescriptorName>
+   <String>Chemical and Drug Induced Liver Injury</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2018</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2010</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>coordinate with specific substance /adv eff /pois or /tox; CHEMICAL AND DRUG INDUCED LIVER INJURY, CHRONIC is also available
+  </Annotation>
+  <HistoryNote>2017(2010)
+  </HistoryNote>
+  <NLMClassificationNumber>WI 710</NLMClassificationNumber>
+  <PublicMeSHNote>2017; for HEPATITIS, DRUG-INDUCED see HEPATITIS, TOXIC 1996-2009; for HEPATITIS, TOXIC see HEPATITIS, TOXIC 1966-2009; was DRUG-INDUCED LIVER INJURY 2010-2017
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Liver Diseases/chemically induced (1973-2009)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C06.552.100</TreeNumber>
+   <TreeNumber>C25.100.562</TreeNumber>
+   <TreeNumber>C25.723.260</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0527454</ConceptUI>
+    <ConceptName>
+     <String>Chemical and Drug Induced Liver Injury</String>
+    </ConceptName>
+    <ScopeNote>A spectrum of clinical liver diseases ranging from mild biochemical abnormalities to ACUTE LIVER FAILURE, caused by drugs, drug metabolites, herbal and dietary supplements and chemicals from the environment.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0010231</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0454320</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0580006</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617465</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617466</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0010231</ConceptUI>
+    <ConceptName>
+     <String>Hepatitis, Toxic</String>
+    </ConceptName>
+    <ScopeNote>INFLAMMATION of the LIVER due to hepatocellular toxicity, caused by drug metabolites and chemicals from the environment.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0010231</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0454320</ConceptUI>
+    <ConceptName>
+     <String>Hepatitis, Drug-Induced</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0454320</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0580006</ConceptUI>
+    <ConceptName>
+     <String>Drug-Induced Acute Liver Injury</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M0580006</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M000617465</ConceptUI>
+    <ConceptName>
+     <String>Drug-Induced Liver Disease</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617465</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M000617466</ConceptUI>
+    <ConceptName>
+     <String>Chemically-Induced Liver Toxicity</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0527454</Concept1UI>
+     <Concept2UI>M000617466</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D065631</DescriptorUI>
+  <DescriptorName>
+   <String>Rhinitis, Allergic</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2015</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2015</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2015
+  </HistoryNote>
+  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
+  <PublicMeSHNote>2015
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C08.460.799.315</TreeNumber>
+   <TreeNumber>C08.674.453</TreeNumber>
+   <TreeNumber>C09.603.799.315</TreeNumber>
+   <TreeNumber>C20.543.480.680.443</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0567378</ConceptUI>
+    <ConceptName>
+     <String>Rhinitis, Allergic</String>
+    </ConceptName>
+    <ScopeNote>An inflammation of the NASAL MUCOSA triggered by ALLERGENS.
+    </ScopeNote>
+    </Concept>
   </ConceptList>
  </DescriptorRecord>
 

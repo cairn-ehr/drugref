@@ -25,7 +25,7 @@ def _by_name() -> dict[str, unii.MoietyCandidate]:
 
 
 def test_parse_yields_all_rows():
-    assert len(list(unii.parse(FIX))) == 11
+    assert len(list(unii.parse(FIX))) == 13
 
 
 def test_preferred_name_comes_from_the_display_name_column():

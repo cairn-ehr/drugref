@@ -22,6 +22,7 @@ AL = DATA / "legacy_allowlist.tsv"
 PARACETAMOL = "362O9ITL9D"
 AMLODIPINE = "1J444QC288"
 MAGNESIUM_SULFATE = "DE08037SAB"
+ESCITALOPRAM = "4O4S742ANY"
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +64,7 @@ def _classes_of(conn, unii, relationship=None):
 
 def test_registers_every_ingested_class(seeded):
     summary = _ingest(seeded)
-    assert (summary.classes_in_release, summary.classes_added) == (62, 62)
+    assert (summary.classes_in_release, summary.classes_added) == (75, 75)
     # Nothing in the real release is retired or unidentified; if either ever fires
     # it is a shape change upstream, reported rather than silently absorbed.
     assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
@@ -72,7 +73,7 @@ def test_registers_every_ingested_class(seeded):
     assert summary.ambiguous_codes == 0
     types = dict(seeded.execute(
         "SELECT concept_type, count(*) FROM drugref.substance_class GROUP BY 1").fetchall())
-    assert types == {"MoA": 15, "PE": 27, "EPC": 3, "TC": 6, "PK": 6, "APC": 5}
+    assert types == {"MoA": 20, "PE": 31, "EPC": 4, "TC": 8, "PK": 6, "APC": 6}
 
 
 def test_a_failed_ingest_leaves_the_connection_usable(seeded, monkeypatch):
@@ -149,7 +150,7 @@ def test_builds_the_dag_the_right_way_up(seeded):
 
 
 def test_a_class_keeps_both_of_its_parents(seeded):
-    assert _ingest(seeded).parent_edges == 49
+    assert _ingest(seeded).parent_edges == 59
     child = ids.mint_class_uuid("MED-RT", "N0000193892")
     parents = {r[0] for r in seeded.execute(
         "SELECT parent_class_uuid FROM drugref.class_parent WHERE child_class_uuid = %s",
@@ -195,8 +196,9 @@ def test_unmatched_ingredient_is_skipped_and_counted_not_silently_dropped(seeded
     """Ibuprofen is classified upstream but absent from our registry; it must be
     reported as a worklist number rather than vanishing."""
     summary = _ingest(seeded)
-    # paracetamol 8 + amlodipine 9 + activated charcoal 5 + methoxamine 0
-    assert summary.memberships == 22
+    # paracetamol 8 + amlodipine 9 + activated charcoal 5 + escitalopram 4
+    # + methoxamine 0
+    assert summary.memberships == 26
     assert summary.unmatched_rxcuis == 1      # ibuprofen (RxCUI 5640)
 
 
@@ -219,7 +221,7 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
 
     summary = _ingest(seeded)
     # Paracetamol's 8 memberships are now written for both claimants.
-    assert summary.memberships == 30          # 22 + a second set of paracetamol's 8
+    assert summary.memberships == 34          # 26 + a second set of paracetamol's 8
     assert len(_classes_of(seeded, PARACETAMOL)) == 8
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
@@ -246,12 +248,12 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
            (first.classes_in_release, first.parent_edges, first.memberships)
     # ...but the second run ADDED nothing: classes accumulate, edges are rebuilt.
     # Reporting one number for both would have hidden exactly this distinction.
-    assert (first.classes_added, second.classes_added) == (62, 0)
+    assert (first.classes_added, second.classes_added) == (75, 0)
     counts = seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "
         "       (SELECT count(*) FROM drugref.class_membership)").fetchone()
-    assert counts == (62, 49, 22)
+    assert counts == (75, 59, 26)
 
 
 def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
@@ -281,21 +283,31 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
         ([ids.mint_class_uuid("MED-RT", n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
     ).fetchone()[0]
     assert surviving == 3
-    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 63
+    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 76
 
 
 # ---- contraindications (slice 5a) ------------------------------------------
 
 
 def test_contraindications_are_written_from_the_real_fixture(seeded):
-    """The fixture carries amlodipine's real CI_PE edge (17767 -> N0000178477).
-    Ingest resolves the subject to its moiety and the object to its ingested PE
-    class, writing one drug-drug contraindication -- direction pinned on real data:
-    subject is the drug the statement is about, object is the co-administered
-    drug's class."""
+    """The fixture carries amlodipine's real CI_PE edge (17767 -> N0000178477) and
+    escitalopram's real CI_MoA edge (321988 -> N0000000184, MAO inhibitors).
+    Ingest resolves each subject to its moiety and each object to its ingested
+    class, writing one row per edge -- direction pinned on real data: subject is the
+    drug the statement is about, object is the co-administered drug's class.
+
+    BOTH AXES, not one: ci_axis admits CI_MoA and CI_PE, and until slice 5b widened
+    the fixture the release gave these ingredients only a CI_PE, so an ingest that
+    silently dropped every CI_MoA would have passed this file.
+    """
     summary = _ingest(seeded)
-    assert summary.contraindications == 1
+    assert summary.contraindications == 2
     assert summary.unmatched_ci_rxcuis == 0
+    rows = dict(seeded.execute(
+        "SELECT subject_moiety_uuid, relationship FROM drugref.class_contraindication "
+        "WHERE source = 'MED-RT'").fetchall())
+    assert rows == {ids.mint_moiety_uuid(AMLODIPINE): "CI_PE",
+                    ids.mint_moiety_uuid(ESCITALOPRAM): "CI_MoA"}
     row = seeded.execute(
         "SELECT relationship, source FROM drugref.class_contraindication "
         "WHERE subject_moiety_uuid = %s AND object_class_uuid = %s",
@@ -313,7 +325,7 @@ def test_a_contraindication_shares_its_runs_provenance(seeded):
         "ORDER BY ingest_run_id DESC LIMIT 1").fetchone()[0]
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_contraindication WHERE ingest_run = %s",
-        (run_id,)).fetchone()[0] == 1
+        (run_id,)).fetchone()[0] == 2
 
 
 def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edges(seeded):
@@ -322,12 +334,12 @@ def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edg
     (the clear is scoped to class_contraindication alone)."""
     first = _ingest(seeded)
     second = _ingest(seeded, release="2026.08.03")
-    assert first.contraindications == second.contraindications == 1
+    assert first.contraindications == second.contraindications == 2
     assert seeded.execute(
-        "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 1
+        "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 2
     assert seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.class_membership), "
-        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (22, 49)
+        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (26, 59)
 
 
 def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted(seeded, tmp_path):

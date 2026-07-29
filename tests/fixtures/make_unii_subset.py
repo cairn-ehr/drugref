@@ -76,6 +76,22 @@ WANTED = {
     # type constraint exists to exclude: homeopathic botanicals and excipients.
     "0T0DQN8786": "THUJA OCCIDENTALIS LEAF -- RXCUI + `structurallyDiverse`, rejected",
     "6OZP39ZG8H": "POLYSORBATE 80 -- RXCUI + `polymer` excipient, rejected",
+
+    # ---- slice 5b: the MOIETY ARM of CI_ChemClass ---------------------------
+    # These two are a PAIR, and neither earns its place alone. MED-RT's real
+    # 2026.07.06 release states `CI_ChemClass` from escitalopram (RxCUI 321988) to
+    # MeSH M0016871, which is descriptor D010868 Pimozide -- a SPECIFIC DRUG, not a
+    # chemical class. That assertion only becomes an exact drug-drug row if BOTH
+    # ends are registered moieties: the subject through its RXNORM_IN claim (321988)
+    # and the object through the UNII the MeSH record itself carries (1HIZ4DL86F).
+    #
+    # Before they were added, every CI_ChemClass object in medrt_subset.xml was a
+    # genuine class (Alkalies, Organic Chemicals), so only the WITHHELD arm of that
+    # predicate could be tested and the ingested arm was asserted by nobody. Both
+    # rows, the association and the UNII on the MeSH record are read from the real
+    # releases; nothing about the pairing is constructed here.
+    "4O4S742ANY": "ESCITALOPRAM -- CI_ChemClass SUBJECT (RxCUI 321988), INN admission",
+    "1HIZ4DL86F": "PIMOZIDE -- CI_ChemClass OBJECT; MeSH D010868 carries this UNII",
 }
 
 

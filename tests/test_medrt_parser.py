@@ -64,7 +64,7 @@ def test_ingests_exactly_the_six_classification_concept_types():
 
 
 def test_ingests_every_class_in_the_fixture():
-    assert len(parsed().classes) == 62
+    assert len(parsed().classes) == 75
 
 
 def test_excludes_hc_navigation_bins():
@@ -160,7 +160,7 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 
 
 def test_builds_the_expected_number_of_dag_edges():
-    assert len(parsed().parents) == 49
+    assert len(parsed().parents) == 59
 
 
 def test_a_class_can_have_two_parents():
@@ -253,6 +253,7 @@ def test_membership_counts_per_ingredient():
     assert counts["17767"] == 9     # 3 MoA + 2 PE + 2 TC + 2 EPC
     assert counts["5640"] == 9      # ibuprofen: parsed here, unmatched at ingest time
     assert counts["272"] == 5       # activated charcoal: 1 MoA + 3 PE + 1 TC, no EPC
+    assert counts["321988"] == 4    # escitalopram: 1 MoA + 1 PE + 1 TC + 1 EPC
     assert "6853" not in counts     # methoxamine: only an HC bin, so unclassified
 
 

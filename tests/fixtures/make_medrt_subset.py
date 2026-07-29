@@ -16,12 +16,12 @@ USAGE:
 The full release is ~45 MB and is NOT committed (see .gitignore); download it
 from NCI EVS (https://evs.nci.nih.gov/ftp1/MED-RT/) when you need to regenerate.
 
-WHAT IT SELECTS: five real drug ingredients chosen to exercise every acceptance
-case -- three that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
-272) and two it deliberately does not (6853, 5640) -- plus every MED-RT class they
-reference, those classes' ancestors, and a deliberate sprinkling of out-of-scope
-material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay may_treat) that
-the parser must drop.
+WHAT IT SELECTS: six real drug ingredients chosen to exercise every acceptance
+case -- four that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
+272, 321988) and two it deliberately does not (6853, 5640) -- plus every MED-RT
+class they reference, those classes' ancestors, and a deliberate sprinkling of
+out-of-scope material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay
+may_treat) that the parser must drop.
 
 WHAT IT REDACTS, AND WHY THAT IS A LICENCE RULE AND NOT TIDINESS: those
 out-of-scope edges name their far endpoint, and for the SNOMED one that endpoint
@@ -66,6 +66,18 @@ INGREDIENTS = {
     # with <this chemical>'). Our other four have CI_with but no CI_ChemClass, so
     # without this one half of slice 5b's parse would go unexercised.
     "272": "activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC",
+    # Slice 5b, THE OTHER ARM. CI_ChemClass splits at ingest: an object that resolves
+    # to a registered moiety becomes an exact drug-drug row, one that does not is a
+    # genuine chemical CLASS and is withheld. Charcoal's two objects (Alkalies,
+    # Organic Chemicals) are BOTH classes and carry no UNII or CAS in MeSH at all, so
+    # with charcoal alone the ingested arm was exercised by nothing and the fixture
+    # could not tell a working split from a split that never fires. Escitalopram is
+    # the smallest-footprint ingredient in the real release whose CI_ChemClass object
+    # is a substance: 321988 -> MeSH M0016871 = D010868 Pimozide, whose MeSH record
+    # carries UNII 1HIZ4DL86F. Both ends are in unii_subset.tsv (see its WANTED map),
+    # so the pair resolves end to end. It also brings the release's only CI_MoA edge
+    # for these ingredients, which slice 5a's class arm had likewise never seen.
+    "321988": "escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA",
 }
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
