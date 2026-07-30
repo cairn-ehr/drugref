@@ -64,8 +64,9 @@ from xml.etree import ElementTree
 from drugref.classes import ClassConcept
 
 # The namespaces this parser reads. MED-RT owns the class concepts, RxNorm names the
-# ingredients; MeSH (below, MESH_NAMESPACE) reaches only the two contraindication
-# predicates. See the module docstring for why the list is closed and named.
+# ingredients; MeSH (below, MESH_NAMESPACE) reaches only the six MeSH-keyed predicates
+# -- two contraindications, four indications. See the module docstring for why the
+# list is closed and named.
 MEDRT_NAMESPACE = "MED-RT"
 RXNORM_NAMESPACE = "RxNorm"
 
@@ -135,9 +136,9 @@ INDUCES_RELATIONSHIP = "induces"
 # where the MEANING differs. 170 induces assertions, all RxNorm->MeSH.
 MESH_INDICATION_RELATIONSHIPS = INDICATION_RELATIONSHIPS | {INDUCES_RELATIONSHIP}
 
-# The namespace a MeSH-keyed contraindication's object must live in. MeSH is
-# licence-cleared for drugref (NLM terms: attribution, no-endorsement,
-# version-currency), which is what makes reading these two predicates possible at
+# The namespace a MeSH-keyed contraindication or indication's object must live in.
+# MeSH is licence-cleared for drugref (NLM terms: attribution, no-endorsement,
+# version-currency), which is what makes reading these six predicates possible at
 # all -- SNOMED CT endpoints remain unreadable and unredistributable.
 MESH_NAMESPACE = "MeSH"
 
@@ -188,11 +189,18 @@ class ContraindicationAssertion:
 
 @dataclass(frozen=True)
 class MeshObjectAssertion:
-    """MED-RT asserts a contraindication whose OBJECT is a MeSH concept.
+    """One MED-RT assertion whose SUBJECT is an RxNorm ingredient and whose OBJECT
+    is a MeSH concept -- shared by both the MeSH-keyed contraindications
+    (MESH_CI_RELATIONSHIPS) and the MeSH-keyed indications (MESH_INDICATION_RELATIONSHIPS,
+    slice 5b.2). The MEANING lives entirely in `relationship`: a CI_with row is a
+    contraindication, a may_treat row is an indication, and an induces row is neither
+    (MED-RT does not say whether the drug causing the state is the therapeutic point
+    or an adverse effect) -- this record only carries the endpoints, not a judgement
+    about what kind of claim they form.
 
-    `rxcui` is the drug the statement is ABOUT and `mesh_code` is what it is
-    contraindicated with or in -- the same subject/object direction as
-    ContraindicationAssertion, and reversing it inverts the clinical meaning.
+    `rxcui` is the drug the statement is ABOUT and `mesh_code` is the MeSH concept on
+    the other end of `relationship` -- the direction is load-bearing for every one of
+    these predicates, and reversing it inverts the meaning regardless of which one it is.
 
     `mesh_code` is a MeSH ConceptUI ("M0004868") -- NOT a DescriptorUI. It is left
     unresolved here on purpose: this module is pure and reads only the MED-RT file,
