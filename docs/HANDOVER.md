@@ -37,7 +37,8 @@ it**, and prefer prose that cannot be parsed as a closing keyword when filing ra
 headline figure reproduced exactly; the previously-unmeasured `object_kind` split and a corrected slice-2b
 joinability figure are recorded below.
 
-**In flight: the interaction debt round**, branch `fix/interaction-debt-round` — **#39, #31 and #45 fixed**,
+**In flight: the interaction debt round**, branch `fix/interaction-debt-round`, **[PR
+#49](https://github.com/cairn-ehr/drugref/pull/49)** — **#39, #31 and #45 fixed**,
 `db/018` added, **561 tests green**, re-verified end-to-end against the real releases. Details below; residue
 filed as #47 and #48.
 
