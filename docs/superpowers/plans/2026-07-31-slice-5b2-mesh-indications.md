@@ -454,47 +454,68 @@ anything.** The first hand-picked version of that fixture described a world disj
 the MED-RT fixture's — every CI object resolved to nothing while both files looked
 healthy alone.
 
-- [ ] **Step 1: Extend the MED-RT extractor**
+- [ ] **Step 1: Add ONE ingredient — halothane — to both fixture extractors**
 
-`make_medrt_subset.py` keeps "every association that touches one of our four
-ingredients" (step 1 in its `main()`). Indication assertions on those ingredients are
-therefore **already selected** — confirm before changing anything:
+**Measured against the real release before writing this step, so do not re-derive it.**
+The six ingredients `make_medrt_subset.py` already selects carry **29 indication
+assertions** between them: ibuprofen 13 (12 `may_treat` + 1 `may_prevent`), activated
+charcoal 8, paracetamol 4, amlodipine 3, escitalopram 1. `may_treat` and `may_prevent`
+therefore need **no new ingredient**. Ibuprofen is deliberately absent from the moiety
+registry, so its 13 assertions exercise the **unmatched-subject** path — which is what
+Task 8's `reason = 'indication'` test needs.
 
-```bash
-grep -c "may_treat\|may_prevent\|may_diagnose\|induces" tests/fixtures/medrt_subset.xml
+What no existing ingredient carries is **`induces` or `may_diagnose`** — zero of either.
+Leaving them uncovered would mean a whole table (`moiety_induced_condition`) and its
+ingest branch were exercised by no orchestrator test at all.
+
+**Halothane, RxCUI 5095, UNII `UQT9G45D1P`, `INN_ID` 697** fixes that in one addition.
+Its assertions in the 2026.07.06 release:
+
+```
+has_MoA -> N0000009915 · has_PE -> N0000008501, N0000175975 · has_TC -> N0000193810
+CI_with      -> MeSH M0006829
+induces      -> MeSH M0025970, M0022251     <- the two this fixture has never had
+may_treat    -> MeSH M0020462
+may_diagnose -> MeSH M0012932               <- likewise
 ```
 
-If the count is small (it is: 2), widen the extractor's ingredient set rather than
-special-casing predicates — a fixture that carries one assertion per predicate cannot
-exercise a closure. Add to its `WANTED` ingredient map two subjects that carry many
-indications in the real release, and say why in the file's header comment:
+`INN_ID 697` admits it through the moiety gate outright, so its subject bridges without
+relying on the RXCUI branch.
 
-```python
-# 6809  metformin      -- 11 may_treat assertions, whose objects (Diabetes Mellitus,
-#                         Type 2 and its tree neighbours) give the condition closure
-#                         something real to expand over.
-# 42463 clopidogrel    -- may_prevent assertions whose objects are CARDIOVASCULAR,
-#                         i.e. a different MeSH subtree from the CI_with objects, so
-#                         the union closure genuinely widens the DAG (spec 3.6).
-```
+**It must be added in TWO places or it does nothing.** Adding it to
+`make_medrt_subset.py`'s `INGREDIENTS` alone gives the parser assertions whose subject
+no moiety carries, so the ingest would count them as unmatched and write no row:
+
+1. `tests/fixtures/make_medrt_subset.py` → `INGREDIENTS`, keyed by RxCUI `"5095"`.
+2. `tests/fixtures/make_unii_subset.py` → `WANTED`, keyed by UNII `"UQT9G45D1P"`.
+
+Write the entry comments in those files' established voice — each existing entry says
+what that row exists to prove. Halothane's is: *the only fixture ingredient carrying
+`induces` and `may_diagnose`, so the induced-state table and the third indication
+predicate are exercised by the real fixture rather than by controlled input alone.*
 
 Keep the endpoint redaction exactly as it is — `tests/test_medrt_parser.py`'s
 `test_the_fixture_redacts_snomed_but_keeps_mesh` enforces it, and it is what makes the
 committed fixture licence-clean.
 
-- [ ] **Step 2: Regenerate, in this order**
+- [ ] **Step 2: Regenerate, in this order — the order is load-bearing**
+
+UNII first (the registry the MED-RT subjects bridge to), MED-RT second, MeSH CI last
+(its wanted set is read out of `medrt_subset.xml`).
 
 ```bash
 cd /Users/hherb/src/drugref
-python tests/fixtures/make_medrt_subset.py \
-  <(unzip -p downloads/MEDRT/Core_MEDRT_XML.zip Core_MEDRT_2026.07.06_XML.xml) \
-  > tests/fixtures/medrt_subset.xml
+python tests/fixtures/make_unii_subset.py downloads/UNII_Records_26Feb2026.txt \
+  > tests/fixtures/unii_subset.tsv
+unzip -p downloads/MEDRT/Core_MEDRT_XML.zip Core_MEDRT_2026.07.06_XML.xml > /tmp/medrt.xml
+python tests/fixtures/make_medrt_subset.py /tmp/medrt.xml > tests/fixtures/medrt_subset.xml
 python tests/fixtures/make_mesh_ci_subset.py \
   downloads/mesh/desc2026.gz downloads/mesh/supp2026.gz tests/fixtures/
 ```
 
-If the process-substitution form fails on your shell, extract the XML to the scratchpad
-first and pass the path.
+Check each script's stderr self-report before moving on — `make_unii_subset.py` prints
+`found N/N WANTED UNIIs` and **fails** on a miss, which is how you know halothane was
+actually found rather than silently skipped.
 
 - [ ] **Step 3: Run the whole suite and fix the drift**
 
@@ -502,13 +523,23 @@ first and pass the path.
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
-**Expect failures, and read each one before changing it.** Tests that assert fixture
-counts (`test_medrt_parser.py`'s membership counts, `test_mesh_ci_run.py`'s summary
-figures) will move because the fixture now holds more ingredients and more conditions.
+**Expect failures, and read each one before changing it.** Adding halothane moves counts
+in three concentric rings, and you should be able to predict each before you look:
+
+1. **The UNII ring** — `unii_subset.tsv` goes from 13 rows to 14, so any test asserting a
+   registered-moiety count moves by exactly 1 (halothane passes the gate on `INN_ID`).
+   A move of anything other than 1 means something else changed too.
+2. **The MED-RT ring** — `medrt_subset.xml` gains halothane's 10 associations, so class
+   membership counts gain its `has_MoA` + 2 × `has_PE` + `has_TC`, and the MeSH-keyed
+   lists gain 1 `CI_with`, 2 `induces`, 1 `may_treat`, 1 `may_diagnose`.
+3. **The MeSH ring** — `mesh_ci_*_subset.xml` gains halothane's four MeSH objects and
+   their tree neighbours, so condition and edge counts in `test_mesh_ci_run.py` move.
 
 The rule for updating them: a count assertion may be updated to the new measured value
-**only when you can say why it moved**. A moved count you cannot explain is a defect, not
-a stale expectation. Record the explanation in the commit message.
+**only when you can say why it moved**, in the terms above. A moved count you cannot
+explain is a defect, not a stale expectation. Record the explanation in the commit
+message. If a count moves in a direction that makes no sense — a *fall* in memberships,
+say — stop and report BLOCKED rather than updating the number to match.
 
 - [ ] **Step 4: Commit**
 
