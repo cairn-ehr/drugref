@@ -17,7 +17,7 @@ first), and it co-resides in a Cairn deployment's PostgreSQL **or** runs standal
 (source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
 foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
 (DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38) ·
-slice 5b — MeSH-keyed contraindications (#44) · the post-5b debt round (#46).
+slice 5b — MeSH-keyed contraindications (#44) · the post-5b debt round (#46) · the interaction debt round (#49).
 
 **568 tests green** (358 DB-gated, 210 without a DSN), `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/018`.
 Slice 5b was verified end-to-end against the real releases on a scratch database — measured table in "Slice 5b"
@@ -37,10 +37,11 @@ it**, and prefer prose that cannot be parsed as a closing keyword when filing ra
 headline figure reproduced exactly; the previously-unmeasured `object_kind` split and a corrected slice-2b
 joinability figure are recorded below.
 
-**In flight: the interaction debt round**, branch `fix/interaction-debt-round`, **[PR
-#49](https://github.com/cairn-ehr/drugref/pull/49)** — **#39, #31 and #45 fixed**,
+**The interaction debt round is MERGED** ([PR
+#49](https://github.com/cairn-ehr/drugref/pull/49)) — **#39, #31, #45 and #50 fixed**,
 `db/018` added, **568 tests green**, re-verified against the real releases both before AND after its review
-round (the review changed a published figure — see below). Residue filed as #47 and #48.
+round (the review changed a published figure — see below). Residue filed as #47 and #48. `main` is clean;
+nothing is in flight.
 
 **⇒ Next candidates:**
 
