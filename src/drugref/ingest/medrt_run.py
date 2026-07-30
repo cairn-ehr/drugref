@@ -132,7 +132,12 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    run's -- both are rebuildable projections replaced wholesale per release.
     class_writer.clear_source_edges(conn, SOURCE)
     interactions.clear_source_contraindications(conn, SOURCE)
-    class_writer.clear_source_unmatched_ingredients(conn, SOURCE)
+    #    The unmatched list is cleared per (source, REASON) since #39: mesh_ci_run
+    #    writes this same table under this same source, from contraindication
+    #    subjects rather than membership assertions, and 16 of those are ingredients
+    #    MED-RT never classifies -- rows this run could not re-add if it removed them.
+    class_writer.clear_source_unmatched_ingredients(
+        conn, SOURCE, class_writer.CLASSIFICATION)
 
     # 3. The DAG. The parser guaranteed both endpoints are classes we ingested.
     parent_edges = sum(
@@ -167,7 +172,8 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #     identities answer "which drugs", and that is the question worth publishing
     #     (gap_unmatched_ingredient). Written once from the deduped set, after the
     #     loop, so a repeated assertion costs one row rather than many.
-    class_writer.add_unmatched_ingredients(conn, sorted(unmatched), run_id)
+    class_writer.add_unmatched_ingredients(conn, sorted(unmatched), run_id,
+                                           class_writer.CLASSIFICATION)
 
     # 5. Contraindications (slice 5a). The subject is joined by RxCUI through the
     #    same `moieties` index step 4 already built; the object is resolved through

@@ -101,6 +101,15 @@ def test_apply_migrations_is_idempotent(conn):
         # a fourth gap VIEW of db/008's kind, publishing each withheld MeSH object as
         # a citable question instead of dropping it silently.
         "gap_unresolved_ci_object",
+        # db/018 (#31): the SIXTH gap view and sixth gap_kind -- contraindications a
+        # DENIED expansion root leaves reaching nobody, which
+        # gap_unpopulated_contraindication cannot see (it tests the whole subtree) and
+        # gap_unreviewed_expansion_root will not ask about (the class HAS been
+        # reviewed). Plus the reach measure BOTH dead-rule views filter, hoisted out
+        # of the two near-identical CTEs that first carried it -- db/012's move, for
+        # db/012's reason: only one of the two copies had learned that a rule's own
+        # subject is not a partner, and the views disagreed.
+        "ci_rule_partner_reach", "gap_dead_by_expansion_policy",
     }
 
 

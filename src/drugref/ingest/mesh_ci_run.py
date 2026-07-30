@@ -33,9 +33,9 @@ WORKLIST NUMBERS, NOT SILENT DROPS -- six distinct losses, each counted separate
 so they stay legible (spec 7). Three of them are also PERSISTED by identity, because
 a count cannot be worked: the withheld class objects and the unregistered-substance
 objects (a curator works each by name, and is asked a DIFFERENT question about each)
-and the unmatched subjects. The last is written but never CLEARED here, which is the
-one place this orchestrator does not mirror medrt_run -- see step 6 of _ingest for
-the measurement behind that, and its caveats.
+and the unmatched subjects. The last shares a table with medrt_run's own unmatched
+list, so both writers scope their clear on `reason` as well as source (#39, db/018) --
+see step 6 of _ingest for the measurement behind that.
 """
 import logging
 import uuid
@@ -407,37 +407,27 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release) -> MeshCiS
     #    db/008 drew when the earlier ingest kept only the COUNT of unmatched
     #    ingredients.
     #
-    #    THE UNMATCHED SUBJECTS ARE WRITTEN BUT NEVER CLEARED, and that asymmetry is
-    #    the one place this orchestrator does not mirror medrt_run. Both open their
-    #    runs under source 'MED-RT', and ingest_unmatched_ingredient is rebuilt PER
-    #    SOURCE, so the two cannot both own it:
+    #    THE UNMATCHED SUBJECTS ARE THIS RUN'S OWN BUCKET, and since #39 (db/018) it
+    #    both clears and writes them, exactly as medrt_run does with its own. Both
+    #    orchestrators open their runs under source 'MED-RT' and the two lists are
+    #    built from different upstream assertions, so `reason` is what tells them
+    #    apart. Measured on the real 2026.07.06 release through the real gate, which
+    #    is why neither writer may own the whole table: MED-RT classifies 6,012
+    #    ingredients and contraindicates 3,757, 2,271 of the classified are not CI
+    #    subjects (medrt_run's rows alone), and 16 CI subjects are never classified at
+    #    all -- three of them (221083 sulfur colloidal, 5924 inulin, 89767 colloid
+    #    sulfur) outside the moiety registry, one CI_with rule each, which medrt_run
+    #    could never record because it builds its list from MEMBERSHIP assertions.
     #
-    #      * CLEARING would destroy medrt_run's list. Measured on the real
-    #        2026.07.06 release through the real gate: MED-RT classifies 6,012
-    #        ingredients and states contraindications for 3,757, and 2,271 of the
-    #        classified are not CI subjects at all. Those 2,271 rows are medrt_run's
-    #        alone, and a clear here would drop them.
-    #      * NOT WRITING would lose real rules. 16 CI subjects are never classified
-    #        by MED-RT, so medrt_run -- which builds its list from MEMBERSHIP
-    #        assertions -- can never record them. Three (221083 sulfur colloidal,
-    #        5924 inulin, 89767 colloid sulfur) are also outside the moiety registry,
-    #        one CI_with rule each. Counting those in a summary and a log line is
-    #        exactly the "number that vanishes when the process exits" that spec 7
-    #        exists to prevent.
-    #
-    #    So: write, deduped, and leave the clearing to medrt_run. THE HONEST CAVEAT,
-    #    because a half-fix documented as complete is worse than no fix:
-    #      * ORDER-DEPENDENT. medrt_run's clear is scoped by source, so it removes
-    #        these rows too, and cannot re-add them (they are not classified). Those
-    #        3 rules are therefore absent from the gap view between a medrt_run and
-    #        the next run of this orchestrator.
-    #      * Rows ACCUMULATE across consecutive runs of this orchestrator, since each
-    #        run inserts under its own ingest_run id and only medrt_run collects the
-    #        garbage. gap_unmatched_ingredient is DISTINCT ON (rxcui), so the view a
-    #        curator reads is unaffected; the table is not.
-    #    Issue #39 tracks the real fix -- a discriminator, so each writer can rebuild
-    #    its own rows without touching the other's.
-    class_writer.add_unmatched_ingredients(conn, sorted(rel.unmatched_rxcuis), run_id)
+    #    Before the discriminator this run wrote without clearing, and paid for it
+    #    twice: a later medrt_run removed these rows and could not re-add them, and
+    #    consecutive runs of this orchestrator accumulated because only medrt_run
+    #    collected the garbage. Both are gone -- the answer no longer depends on which
+    #    orchestrator ran last.
+    class_writer.clear_source_unmatched_ingredients(
+        conn, SOURCE, class_writer.CONTRAINDICATION)
+    class_writer.add_unmatched_ingredients(conn, sorted(rel.unmatched_rxcuis), run_id,
+                                           class_writer.CONTRAINDICATION)
     interactions.record_unresolved_ci_objects(
         conn,
         [(SOURCE, PAIR_PREDICATE, OBJECT_SOURCE, code, rel.object_names[code],

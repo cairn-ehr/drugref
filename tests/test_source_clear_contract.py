@@ -114,6 +114,52 @@ def test_clear_source_tables_refuses_a_parent_first_order(conn, ingest_run_id, a
         db.clear_source_tables(conn, ("local_product", "local_product_moiety"), "PBS")
 
 
+def test_clear_source_tables_can_narrow_to_one_writers_rows(conn, ingest_run_id):
+    """#39. Two orchestrators write ingest_unmatched_ingredient under source 'MED-RT'
+    -- medrt_run the ingredients MED-RT CLASSIFIES that no moiety carries, mesh_ci_run
+    the SUBJECTS of a contraindication that no moiety carries. Neither set contains
+    the other, so a source-scoped clear let whichever ran last delete the other's
+    rows and be unable to re-add them.
+
+    `match` narrows the same one DELETE to the writer's own bucket. It is a Mapping
+    rather than a second positional string so the call site says WHICH column it is
+    narrowing on -- the reason a bare extra argument would not.
+    """
+    medrt = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT', 'r1', 'test') RETURNING ingest_run_id").fetchone()[0]
+    for reason in ("classification", "contraindication"):
+        conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
+                     "(ingest_run, rxcui, name, reason) VALUES (%s, '5640', 'x', %s)",
+                     (medrt, reason))
+
+    db.clear_source_tables(conn, ("ingest_unmatched_ingredient",), "MED-RT",
+                           match={"reason": "classification"})
+
+    assert conn.execute(
+        "SELECT reason FROM drugref.ingest_unmatched_ingredient").fetchall() == \
+        [("contraindication",)]
+
+
+def test_an_unnarrowed_clear_still_takes_everything(conn, ingest_run_id):
+    """The narrowing is OPT-IN: five of the six writers own their whole table for a
+    source and must keep clearing it wholesale. Pinned so the default cannot drift
+    into "clears nothing unless asked", which fails silently -- the projection simply
+    grows a little on every ingest."""
+    medrt = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT', 'r1', 'test') RETURNING ingest_run_id").fetchone()[0]
+    for reason in ("classification", "contraindication"):
+        conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
+                     "(ingest_run, rxcui, name, reason) VALUES (%s, '5640', 'x', %s)",
+                     (medrt, reason))
+
+    db.clear_source_tables(conn, ("ingest_unmatched_ingredient",), "MED-RT")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.ingest_unmatched_ingredient").fetchone()[0] == 0
+
+
 def test_clear_source_tables_scopes_the_delete_to_one_source(conn, ingest_run_id):
     """THE PROPERTY THE WHOLE REBUILDABLE-PROJECTION MODEL RESTS ON: a MED-RT
     re-ingest must not remove another feed's rows. Six independent restatements of
