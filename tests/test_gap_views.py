@@ -531,11 +531,11 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
 # was the other); it is no longer dead, because the #34 moiety-gate fix gave it 7
 # direct members. The issue text predates that fix -- re-measure before quoting it.
 #
-# THAT MEASUREMENT IS ITSELF NOW PRE-REVIEW AND UNCONFIRMED (#50). It was taken while
-# the direct count still counted the rule's own subject, and the two tests below named
-# for the subject pin exactly the shapes that would move it: a class silent then and
-# reported now, and a class reported then and the other view's now. The SHAPES are
-# settled here; only their population on a real release is open.
+# RE-MEASURED after the review put the subject exclusion on BOTH counts (#50): still
+# ONE class and one rule -- neither shape the exclusion changes occurs in this release
+# -- but 299 drugs held back, not 300. The subject, clomiphene, is itself filed under
+# the class. The two tests below named for the subject pin the shapes that would move
+# it on some other release.
 
 
 def _dead_by_policy(conn):
@@ -701,7 +701,7 @@ def test_dead_rules_on_one_class_are_counted_together(conn):
 
 
 def test_the_subtree_partner_count_is_what_the_deny_costs(conn):
-    """The number a curator weighs: how many drugs the deny is holding back. ~300 for
+    """The number a curator weighs: how many drugs the deny is holding back. 299 for
     Endocrine Activity Alteration on the real release -- large enough that `allow` is
     probably the wrong answer, which is exactly the judgement this view hands over
     rather than making."""

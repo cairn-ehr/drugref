@@ -39,8 +39,8 @@ joinability figure are recorded below.
 
 **In flight: the interaction debt round**, branch `fix/interaction-debt-round`, **[PR
 #49](https://github.com/cairn-ehr/drugref/pull/49)** — **#39, #31 and #45 fixed**,
-`db/018` added, **568 tests green**, re-verified end-to-end against the real releases before its review round.
-Details below; residue filed as #47, #48 and **#50 (a re-measurement the review round owes)**.
+`db/018` added, **568 tests green**, re-verified against the real releases both before AND after its review
+round (the review changed a published figure — see below). Residue filed as #47 and #48.
 
 **⇒ Next candidates:**
 
@@ -133,12 +133,14 @@ now **one view, `ci_rule_partner_reach`** (`subtree_partner_count`, `direct_part
 from both), and the two gap views are complementary filters on one column — `= 0` and `> 0` — so the partition
 is true by construction rather than by assertion. Both shapes are pinned by test.
 
-**The two dead-by-policy figures are therefore PRE-REVIEW and were not re-measured** (`ONE class`,
-`Endocrine Activity Alteration [PE]`, ~300 drugs held back) — the fix moves the row set in both directions, and
-the release files were not on this machine. **[#50](https://github.com/cairn-ehr/drugref/issues/50) owns the
-re-measurement; do not quote either number until it closes.** `12 → 13 / 38 → 39` is unaffected —
-`subtree_partner_count = 0` is the same predicate the pre-review view already applied. #31 lists two classes;
-the other gained 7 direct members in the #34 gate fix — **re-measure before quoting an issue.**
+**Re-measured after the fix, on the same three releases** (#50, closed): still **ONE class**,
+`Endocrine Activity Alteration [PE]`, 1 rule — neither shape the subject exclusion changes occurs anywhere in
+this release, so no class is gained and none moves to the other view — but the cost is **299, not 300**. The
+rule's subject is **clomiphene**, and clomiphene is itself filed under Endocrine Activity Alteration; it was
+being counted as a drug the deny holds back from a rule it can never pair with. `12 → 13 / 38 → 39`,
+`unmatched_ingredient 2,140` and `ddi_candidate_pair 21,664` are all unchanged, and **no class appears in both
+views on the real data**. #31 lists two classes; the other gained 7 direct members in the #34 gate fix —
+**re-measure before quoting an issue.**
 
 **#45 — the same answer from the patient's end.** `contraindications_for_condition(uuid)` walks **UP** from
 the patient's condition instead of down from all 641 roots: **0.7–0.9 ms against 9–10 ms**, ~13×, because the
@@ -215,7 +217,6 @@ tables cascade from `open_question` *and* refuse `DELETE`, so deleting one abort
 rebuilds the register as its last step before commit. **Six** gap kinds now; measured against the real releases:
 **unclassified_moiety 16,089 · unmatched_ingredient 2,140 · unresolved_ci_object 103 ·
 unpopulated_contraindication 13 · dead_by_expansion_policy 1 · unreviewed_expansion_root 0.**
-**`dead_by_expansion_policy 1` is pre-review and owed a re-measure ([#50](https://github.com/cairn-ehr/drugref/issues/50)).**
 
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection
 with **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser),
@@ -406,14 +407,10 @@ CI (`.github/workflows/ci.yml`) runs the suite against a PostgreSQL 18 service c
   could not revive it, so it is a `ci_axis` question with a different remedy and wants its own view.
   Unreachable today (both MED-RT predicates expand); **5b.2 declaring a predicate non-expanding is what makes
   it live**.
-- [#50](https://github.com/cairn-ehr/drugref/issues/50) **`gap_dead_by_expansion_policy`'s two figures are
-  pre-review and unconfirmed** — `ONE class` and `~300 drugs held back` were measured while the DIRECT count
-  still counted the rule's own subject, and making both counts subject-aware moves the row set in **both**
-  directions. The shapes are pinned by test; only their population on a real release is open. Filed rather
-  than fixed because the release files are not on the review machine. **Do not quote either number until it
-  closes**, and note `db/018` will be merged by then, so a corrected `COMMENT ON` needs a new migration.
 
-**Closed by the interaction debt round** (`db/018`, verified against the real releases): **#39** (the
+**Closed by the interaction debt round** (`db/018`, verified against the real releases): **#50** (the
+post-review re-measurement: 300 → **299**, clomiphene is its own rule's subject; every other figure held),
+**#39** (the
 `reason` discriminator), **#31** (`gap_dead_by_expansion_policy`, plus the subject-aware population test that
 found `Urease Inhibitors`), **#45** (`contraindications_for_condition`, ~13× on the patient lookup).
 

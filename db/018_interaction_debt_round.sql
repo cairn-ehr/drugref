@@ -307,21 +307,22 @@ COMMENT ON VIEW drugref.gap_unpopulated_contraindication IS
 -- is no longer dead, because the #34 moiety-gate fix gave it 7 direct members. The
 -- issue text predates that fix.
 --
--- THOSE TWO FIGURES ARE PRE-REVIEW AND ARE NOT RE-MEASURED -- #50, and by this file's
--- own rule they must be re-measured before they are quoted again. The review of this
--- round moved the subject exclusion onto BOTH counts (2a), which can shift the row set
--- in both directions: a class whose only DIRECT member is its rule's subject now
--- appears where it was silent, and a class whose whole subtree holds only the subject
--- now belongs to gap_unpopulated_contraindication instead. `300` likewise becomes 299
--- if the rule's own subject is one of those 300. Both shapes are pinned by test; what
--- is unknown is how many rows of the 2026.07.06 release have them.
+-- RE-MEASURED AFTER THE REVIEW MOVED THE SUBJECT EXCLUSION ONTO BOTH COUNTS (#50, on
+-- the same three releases): still ONE class and one rule -- neither of the two shapes
+-- the exclusion changes occurs anywhere in this release, so no class is gained and
+-- none is handed to gap_unpopulated_contraindication -- but the cost figure is
+-- **299, not 300**. The rule's own subject is CLOMIPHENE, and clomiphene is itself
+-- filed under Endocrine Activity Alteration. It was being counted as a drug the deny
+-- holds back from a rule it can never pair with, which is the arithmetic the review
+-- was about. 12 -> 13 / 38 -> 39 next door is unchanged: `subtree_partner_count = 0`
+-- is the same predicate the pre-review view already applied.
 --
 -- WHY THIS IS WORTH ASKING, and why it is a good question rather than noise: upstream
 -- has vouched that the concern matters, and a curator has vouched that expansion is
 -- not the answer. "This concern is stated, the class it names is too abstract to pair
 -- on, and no drug is filed directly under it" is exactly the kind of thing a register
 -- of open questions exists to hold. The available answers are to record `allow` (for
--- Endocrine Activity Alteration, ~300 partners is fan-out, so probably not), to file a
+-- Endocrine Activity Alteration, 299 partners is fan-out, so probably not), to file a
 -- drug directly under the class, or to accept the rule as unactionable -- and the
 -- question records which.
 CREATE OR REPLACE VIEW drugref.gap_dead_by_expansion_policy AS
@@ -373,11 +374,10 @@ COMMENT ON VIEW drugref.gap_dead_by_expansion_policy IS
     'silently. THE RULE''S OWN SUBJECT IS NOT A PARTNER on either count (see '
     'ci_rule_partner_reach): a class whose only direct member is the subject is dead, '
     'not alive. subtree_partner_count is what the deny holds back and is the priority '
-    'signal: ~300 for Endocrine Activity Alteration, which was the ONE case in the '
-    '2026.07.06 release when the direct count was still subject-blind (#31 lists two; '
-    'the other gained direct members in the #34 gate fix). RE-MEASURE BEFORE QUOTING '
-    'EITHER FIGURE -- #50: making both counts subject-aware can add classes and remove '
-    'them, and neither has been re-run against a real release. '
+    'signal: 299 for Endocrine Activity Alteration, the ONE case in the 2026.07.06 '
+    'release (#31 lists two; the other gained direct members in the #34 gate fix). '
+    'MEASURED WITH THE SUBJECT EXCLUSION ON BOTH COUNTS -- 299 rather than 300 because '
+    'the rule''s own subject, clomiphene, is itself filed under the class (#50). '
     'NO RULE RAISES BOTH THIS QUESTION AND gap_unpopulated_contraindication''s: the '
     'two are complementary filters on subtree_partner_count (`> 0` here, `= 0` there). '
     'A CLASS can still appear in both when two of its rules die of different causes, '

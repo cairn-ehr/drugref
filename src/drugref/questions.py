@@ -83,7 +83,7 @@ _GAP_SOURCES = {
     #
     # The text names BOTH numbers a curator needs to answer it -- how many rules ride
     # on the decision, and how many drugs the deny is holding back -- because the
-    # answer is a judgement between them (~300 partners for Endocrine Activity
+    # answer is a judgement between them (299 partners for Endocrine Activity
     # Alteration is fan-out, so `allow` is probably wrong; a class holding back three
     # is a different conversation). PARTNERS, not members: the count excludes each
     # rule's own subject (ci_rule_partner_reach), so the number the curator weighs is
