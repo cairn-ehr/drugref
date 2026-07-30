@@ -639,24 +639,36 @@ def test_the_three_therapeutic_predicates_are_declared(conn):
     assert "induces" not in rows      # it licenses no walk and has no axis row
 
 
-def test_the_clear_is_scoped_by_source(conn, a_moiety, a_condition, ingest_run_id):
+def test_the_clear_is_scoped_by_source(conn, a_moiety, a_condition):
     """Rebuildable projection: a re-ingest REPLACES this source's rows, and an
-    unrelated feed's survive."""
+    unrelated feed's survive.
+
+    THE RUN IS OPENED HERE, NOT TAKEN FROM THE ingest_run_id FIXTURE, and that is the
+    whole point of the test: clear_source_indications scopes on ingest_run.source, NOT
+    on the row's own `source` column. The fixture's run is opened under 'PBS', so a row
+    written through it would be deleted by a 'PBS' clear while carrying source
+    'MED-RT' -- the test would then assert the opposite of what it claims to prove.
+    """
+    medrt_run = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
+        "VALUES ('MED-RT', 'test', 'test') RETURNING ingest_run_id").fetchone()[0]
     indications.add_condition_indication(conn, a_moiety, a_condition, "may_treat",
-                                         "MED-RT", ingest_run_id)
-    indications.clear_source_indications(conn, "PBS")     # a different source
+                                         "MED-RT", medrt_run)
+
+    indications.clear_source_indications(conn, "PBS")     # an unrelated feed
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication").fetchone()[0] == 1
+
     indications.clear_source_indications(conn, "MED-RT")
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication").fetchone()[0] == 0
 ```
 
-**Note on `ingest_run_id`:** conftest's fixture opens the run under source `'PBS'`, and
-`clear_source_indications` scopes on `ingest_run.source` — so the last test's two calls
-are the right way round only because the row was written under a PBS run. Read
-`tests/conftest.py:50-56` and adjust the source strings if you change the fixture; the
-test must prove scoping, not accidentally pass.
+**`ingest_run.source` vs the row's `source` column — read this before writing any test
+in this slice.** They are different things and the clear uses the former.
+`tests/conftest.py:50-56`'s `ingest_run_id` fixture opens its run under `'PBS'`, so a row
+written through it belongs to a PBS *run* while carrying `source = 'MED-RT'`. Any test
+that means to prove per-source scoping must open its own MED-RT run, as above.
 
 - [ ] **Step 2: Run them and watch them fail**
 
