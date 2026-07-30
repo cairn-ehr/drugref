@@ -199,7 +199,7 @@ CHEMICAL_CLASS (386 rules) + 7 UNREGISTERED_SUBSTANCE (19 rules)**, and slice 2b
 ambiguous — 72.8% of members carry an identity KEY, but only **40.6% reach a gated-in moiety**.
 
 #### Interaction debt round ✅ DONE
-The three interaction-model follow-ups, cleared before 5b.2 reuses these code paths. `db/018`; **561 tests**.
+The three interaction-model follow-ups, cleared before 5b.2 reuses these code paths. `db/018`; **568 tests**.
 Each was **measured against the real releases before it was touched, and two of the three issue texts proved
 stale** — a number in an issue is a claim about a release, not a fact about the code.
 
@@ -211,14 +211,19 @@ later `medrt_run` now leaves all 826 standing, and the `DISTINCT ON (rxcui)` gap
 Both of slice 5b's documented caveats — order-dependence and cross-run accumulation — are gone.
 
 [#31](https://github.com/cairn-ehr/drugref/issues/31) — `gap_dead_by_expansion_policy`, a **sixth gap kind**:
-a contraindication whose object class is *denied* expansion, holds no direct member on the rule's axis, and
-*does* have drugs below, so the rule reaches nobody. **ONE class on the real release** (`Endocrine Activity
-Alteration [PE]`, 1 rule, 300 drugs held back); the issue names two, and the other gained direct members in
-the #34 gate fix. Measuring it turned up a **second, unreported cause**: `gap_unpopulated_contraindication`
-counted the rule's own subject as a member although `ddi_candidate_pair` excludes it, so `acetohydroxamic
-acid` → `Urease Inhibitors [MoA]` was dead and silent. That view now asks the read path's own question —
-**12 → 13 classes, 38 → 39 dead rules** — and the two views are **disjoint by construction**, so one dead
-rule raises one question.
+a contraindication whose object class is *denied* expansion, holds no direct *partner* on the rule's axis, and
+*does* have one below, so the rule reaches nobody. Measuring it turned up a **second, unreported cause**:
+`gap_unpopulated_contraindication` counted the rule's own subject as a member although `ddi_candidate_pair`
+excludes it, so `acetohydroxamic acid` → `Urease Inhibitors [MoA]` was dead and silent. That view now asks the
+read path's own question — **12 → 13 classes, 38 → 39 dead rules**.
+
+**The review of the round found the same defect in the NEW view**, because the reach measure was stated twice
+(`populated` and `reachable`) and only one copy learned the subject exclusion: a denied class whose only direct
+member was its own rule's subject was dead and reported by *nothing*, while a class whose subtree held only the
+subject was reported by *both*. The measure is now one view — **`ci_rule_partner_reach`** — and the two gap
+views are complementary filters on one column (`= 0`, `> 0`), so the partition holds by construction. **The
+dead-by-policy figures are consequently pre-review and owed a re-measure**
+([#50](https://github.com/cairn-ehr/drugref/issues/50)); `12 → 13 / 38 → 39` is unaffected.
 
 [#45](https://github.com/cairn-ehr/drugref/issues/45) — `contraindications_for_condition(uuid)` walks **UP**
 from the patient's condition instead of down from all 641 roots: **0.7–0.9 ms against 9–10 ms**, ~13×. A
@@ -230,7 +235,8 @@ Residue filed: [#47](https://github.com/cairn-ehr/drugref/issues/47) (`medrt_run
 subjects without persisting them — all 99 happen to be covered by other rows today, which is a property of
 the release) and [#48](https://github.com/cairn-ehr/drugref/issues/48) (a non-expanding predicate with no
 direct member is equally dead, needs its own view; unreachable until a predicate declares
-`expands_descendants` false — which 5b.2 may).
+`expands_descendants` false — which 5b.2 may). Plus [#50](https://github.com/cairn-ehr/drugref/issues/50), the
+re-measurement the review round owes: the release files were not on the review machine.
 
 #### Slice 5b.2 — MeSH-keyed indications
 The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** (~18k) plus
@@ -357,7 +363,8 @@ other jurisdictions.
   refuse `DELETE`, so deleting one aborts the ingest outright. **Six gap kinds now** — slice 5b added
   `unresolved_ci_object` and the debt round `dead_by_expansion_policy`; measured against the real releases:
   unclassified_moiety 16,089 · unmatched_ingredient 2,140 · unresolved_ci_object 103 ·
-  unpopulated_contraindication 13 · dead_by_expansion_policy 1 · unreviewed_expansion_root 0.
+  unpopulated_contraindication 13 · dead_by_expansion_policy 1 · unreviewed_expansion_root 0. The last is
+  **pre-review and owed a re-measure** ([#50](https://github.com/cairn-ehr/drugref/issues/50)).
 - **Descendant expansion ✅ DONE** (Plan B of the additive-effect design; the work #15 asked for). `db/010`
   makes `ddi_candidate_pair` descend the class DAG — **for a contraindication, fewer rows is the harm
   direction**, and direct-only hid 21.9% of `CI_MoA` and **85.2%** of `CI_PE` pairs because MED-RT files

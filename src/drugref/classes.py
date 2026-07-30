@@ -220,6 +220,13 @@ UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 # medrt_run's own CI subjects, which it counts today and does not persist.
 CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
 CONTRAINDICATION = "contraindication"  # mesh_ci_run: the SUBJECT of a contraindication
+REASONS = (CLASSIFICATION, CONTRAINDICATION)
+
+# The COLUMN the clear narrows on, named here rather than spelled at the call site:
+# clear_source_tables interpolates it as an identifier (a column name cannot be a bind
+# parameter), and its contract is that every such identifier comes from a module
+# constant. A literal passed inline satisfies that by accident, not by construction.
+REASON_COLUMN = "reason"
 
 
 def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str,
@@ -239,7 +246,7 @@ def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str,
     not silently take another writer's rows with it.
     """
     db.clear_source_tables(conn, UNMATCHED_INGREDIENT_TABLES, source,
-                           match={"reason": reason})
+                           match={REASON_COLUMN: reason})
 
 
 def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],

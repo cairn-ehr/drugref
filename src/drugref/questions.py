@@ -83,19 +83,22 @@ _GAP_SOURCES = {
     #
     # The text names BOTH numbers a curator needs to answer it -- how many rules ride
     # on the decision, and how many drugs the deny is holding back -- because the
-    # answer is a judgement between them (300 partners for Endocrine Activity
+    # answer is a judgement between them (~300 partners for Endocrine Activity
     # Alteration is fan-out, so `allow` is probably wrong; a class holding back three
-    # is a different conversation).
+    # is a different conversation). PARTNERS, not members: the count excludes each
+    # rule's own subject (ci_rule_partner_reach), so the number the curator weighs is
+    # what allowing expansion would actually reach, never one drug more.
     "dead_by_expansion_policy": {
         "view": "gap_dead_by_expansion_policy",
         "key_sql": "'CLASS:' || class_uuid",
         "text_sql": (
             "'Which drugs belong DIRECTLY to ' || class_name || '? ' || ci_rule_count "
-            "|| ' contraindication rule(s) name it, expansion over its ' || "
-            "subtree_member_count || ' descendant member(s) is DENIED in "
-            "class_expansion_policy, and nothing is filed directly under it -- so "
-            "those rule(s) reach nobody. Answer by filing a drug directly, by "
-            "revisiting the deny, or by recording that the rule is unactionable.'"),
+            "|| ' contraindication rule(s) name it, expansion over the ' || "
+            "subtree_partner_count || ' drug(s) below it is DENIED in "
+            "class_expansion_policy, and no drug it could pair with is filed directly "
+            "under it -- so those rule(s) reach nobody. Answer by filing a drug "
+            "directly, by revisiting the deny, or by recording that the rule is "
+            "unactionable.'"),
     },
     # Slice 5b. CI_ChemClass objects that reached no moiety. The gap_key scheme is
     # {NAMESPACE}:{code} because the subject is an upstream RECORD drugref never

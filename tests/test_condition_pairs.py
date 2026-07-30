@@ -186,3 +186,29 @@ def test_the_upward_walk_survives_a_cycle(conn, epilepsy_tree, ingest_run_id):
     conditions.add_condition_parent_edge(
         conn, epilepsy_tree["parent"], epilepsy_tree["child"], ingest_run_id)
     assert len(_by_function(conn, epilepsy_tree["child"])) == 1
+
+
+def test_two_paths_to_one_rule_return_ONE_row(conn, epilepsy_tree, ingest_run_id):
+    """THE TOPOLOGY THE EQUIVALENCE TEST ABOVE CANNOT SEE. A two-node chain reaches
+    every rule exactly one way, so it would pass whether or not either side deduped --
+    and 1,690 of the registry's 5,203 conditions have several parents, so the real DAG
+    is nothing like a chain.
+
+    Here a grandchild reaches the contraindicated root through BOTH its parents. The
+    view dedupes in condition_subtree's UNION and the function in `ancestor`'s, so one
+    rule must still be one row on both sides. A path-counting walk would return two,
+    and a consumer would see one contraindication twice.
+    """
+    second = _condition(conn, ingest_run_id, "D004828", "Epilepsy, Partial",
+                        ("C10.228.140.490.375",))
+    conditions.add_condition_parent_edge(
+        conn, second, epilepsy_tree["parent"], ingest_run_id)
+    grandchild = _condition(conn, ingest_run_id, "D017034", "Epilepsy, Rolandic",
+                            ("C10.228.140.490.360.680", "C10.228.140.490.375.680"))
+    for parent in (epilepsy_tree["child"], second):
+        conditions.add_condition_parent_edge(conn, grandchild, parent, ingest_run_id)
+
+    rows = _by_function(conn, grandchild)
+    assert rows == [(epilepsy_tree["moiety"], epilepsy_tree["parent"], grandchild,
+                     False, "CI_with", "MED-RT")]
+    assert rows == _by_view(conn, grandchild)

@@ -10,12 +10,13 @@ and that is worth stating plainly: the unmatched RxCUIs were only ever COUNTED
 (`unmatched_rxcuis=len(unmatched)`) and the identities discarded, so making them
 queryable needed a persisted table and a change to the ingest path -- not a view.
 """
+import re
 import uuid
 
 import pytest
 import psycopg
 
-from drugref import ids, questions
+from drugref import classes, ids, questions
 
 
 @pytest.fixture(autouse=True)
@@ -312,6 +313,21 @@ def test_an_unknown_reason_is_refused(conn):
         _unmatched(conn, run_id, "5640", "ibuprofen", reason="typo")
 
 
+def test_the_python_reason_constants_are_exactly_what_the_CHECK_admits(conn):
+    """Two statements of one vocabulary -- classes.REASONS and the table's CHECK --
+    and the clears are scoped on it, so a value in one and not the other is a bucket
+    nobody clears (rows accumulate forever) or a writer that cannot insert at all.
+
+    Pinned rather than trusted, because #47 will add a THIRD value and the two places
+    are in different languages, five files apart.
+    """
+    definition = conn.execute(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conname = 'ingest_unmatched_ingredient_reason'").fetchone()[0]
+    admitted = set(re.findall(r"'([a-z_]+)'::text", definition))
+    assert admitted == set(classes.REASONS)
+
+
 def test_one_rxcui_reported_for_BOTH_reasons_is_still_one_gap(conn):
     """The grain the discriminator creates, and the grain the curator reads.
 
@@ -326,6 +342,26 @@ def test_one_rxcui_reported_for_BOTH_reasons_is_still_one_gap(conn):
 
     assert conn.execute("SELECT count(*) FROM "
                         "drugref.gap_unmatched_ingredient").fetchone()[0] == 1
+
+
+def test_which_of_one_runs_two_reason_rows_wins_is_DECIDED(conn):
+    """db/008's tie-break was TOTAL under the old (ingest_run, rxcui) key: one run
+    held at most one row per RxCUI, so `ORDER BY rxcui, ingest_run DESC` named a
+    unique row. The discriminator widened the grain underneath it, and DISTINCT ON
+    with a tie keeps whichever row the plan emits first -- so `name` could flip with
+    no data change.
+
+    db/018 adds `reason` to the ORDER BY. Asserted on the NAME, not merely on the
+    count above: a count of one is satisfied by either row, which is exactly why the
+    non-determinism could sit unnoticed under a passing test.
+    """
+    run_id = _run(conn)
+    _unmatched(conn, run_id, "5640", "ibuprofen", reason="classification")
+    _unmatched(conn, run_id, "5640", None, reason="contraindication")
+
+    assert conn.execute("SELECT rxcui, name FROM "
+                        "drugref.gap_unmatched_ingredient").fetchall() == \
+        [("5640", "ibuprofen")]
 
 
 def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
@@ -494,11 +530,17 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
 # subtree, 0 pairs. Issue #31 recorded TWO (`Cardiovascular Activity Alteration [PE]`
 # was the other); it is no longer dead, because the #34 moiety-gate fix gave it 7
 # direct members. The issue text predates that fix -- re-measure before quoting it.
+#
+# THAT MEASUREMENT IS ITSELF NOW PRE-REVIEW AND UNCONFIRMED (#50). It was taken while
+# the direct count still counted the rule's own subject, and the two tests below named
+# for the subject pin exactly the shapes that would move it: a class silent then and
+# reported now, and a class reported then and the other view's now. The SHAPES are
+# settled here; only their population on a real release is open.
 
 
 def _dead_by_policy(conn):
     return conn.execute(
-        "SELECT class_uuid, class_name, ci_rule_count, subtree_member_count "
+        "SELECT class_uuid, class_name, ci_rule_count, subtree_partner_count "
         "FROM drugref.gap_dead_by_expansion_policy").fetchall()
 
 
@@ -596,6 +638,34 @@ def test_an_EMPTY_denied_subtree_belongs_to_the_OTHER_view(conn):
     assert _dead_by_policy(conn) == []
 
 
+def test_a_CLASS_may_appear_in_both_views_when_its_rules_die_differently(conn):
+    """The limit of the partition, stated so nobody "fixes" it. NO RULE raises both
+    questions -- the two views are `= 0` and `> 0` on one column. A CLASS can, when
+    two of its rules die of different causes, and that is Plan A's
+    independently-answerable case rather than a double-count.
+
+    Here one drug sits below a denied class. The rule whose subject IS that drug has
+    no possible partner at all and wants "file a drug under this class"; the rule
+    whose subject is someone else has a partner the deny is holding back and wants
+    "revisit the deny". Both answers are real, and neither retires the other.
+    """
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900070", name="Denied Root [PE]")
+    child = _class(conn, run_id, "N0000900071")
+    _parent(conn, run_id, child, root)
+    only_drug_below = _moiety(conn, run_id, "the only drug below")
+    _member(conn, run_id, only_drug_below, child)
+    _ci(conn, run_id, only_drug_below, root)                    # no partner anywhere
+    _ci(conn, run_id, _moiety(conn, run_id, "other subj"), root)  # one, denied away
+    _policy(conn, "N0000900070", "deny")
+
+    assert conn.execute(
+        "SELECT class_name, ci_rule_count FROM "
+        "drugref.gap_unpopulated_contraindication").fetchall() == \
+        [("Denied Root [PE]", 1)]
+    assert _dead_by_policy(conn) == [(root, "Denied Root [PE]", 1, 1)]
+
+
 def test_the_direct_membership_test_is_PER_AXIS(conn):
     """Same rule as gap_unpopulated_contraindication's: ddi_candidate_pair pairs a
     CI_PE rule over has_PE members and nothing else, so a direct member on has_MoA
@@ -630,8 +700,8 @@ def test_dead_rules_on_one_class_are_counted_together(conn):
         [(root, "Endocrine Activity Alteration [PE]", 2, 1)]
 
 
-def test_the_subtree_member_count_is_what_the_deny_costs(conn):
-    """The number a curator weighs: how many drugs the deny is holding back. 300 for
+def test_the_subtree_partner_count_is_what_the_deny_costs(conn):
+    """The number a curator weighs: how many drugs the deny is holding back. ~300 for
     Endocrine Activity Alteration on the real release -- large enough that `allow` is
     probably the wrong answer, which is exactly the judgement this view hands over
     rather than making."""
@@ -642,6 +712,80 @@ def test_the_subtree_member_count_is_what_the_deny_costs(conn):
     _member(conn, run_id, _moiety(conn, run_id, "another"), child)
     assert _dead_by_policy(conn) == \
         [(root, "Endocrine Activity Alteration [PE]", 1, 2)]
+
+
+def test_the_partner_count_does_not_count_the_rules_own_subject(conn):
+    """PARTNERS, not members. The count drives the question text, and a curator reads
+    it as "this many drugs would become reachable if I revisited the deny" -- so a
+    subject counted among them overstates the case for `allow` by one, on exactly the
+    rules where the margin is thin enough to matter.
+
+    Here the subject itself is filed below the denied root alongside one other drug:
+    two members, one partner.
+    """
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900040", name="Denied Root [PE]")
+    child = _class(conn, run_id, "N0000900041")
+    _parent(conn, run_id, child, root)
+    subject = _moiety(conn, run_id, "subj")
+    _member(conn, run_id, subject, child)                        # not a partner
+    _member(conn, run_id, _moiety(conn, run_id, "other"), child)  # the only partner
+    _ci(conn, run_id, subject, root)
+    _policy(conn, "N0000900040", "deny")
+
+    assert _dead_by_policy(conn) == [(root, "Denied Root [PE]", 1, 1)]
+
+
+def test_a_denied_root_whose_only_DIRECT_member_is_the_SUBJECT_is_dead(conn):
+    """THE SILENT SHAPE THE REVIEW OF THIS ROUND FOUND, and the reason the subject
+    exclusion had to live in ONE place rather than in each view that needs it.
+
+    A deny leaves DIRECT membership alone, so a direct member normally keeps a rule
+    alive. Not when that member is the rule's own subject: ddi_candidate_pair excludes
+    it, the descendants are out of reach, and the rule pairs with nobody. The first
+    draft of this view tested `NOT EXISTS (a direct member)` subject-blind, so it saw
+    a direct member and stayed silent -- while gap_unpopulated_contraindication, whose
+    subtree test HAD learned the exclusion, saw partners below and stayed silent too.
+    A dead rule reported by nothing, which is the exact failure #31 was filed about.
+    """
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900050", name="Denied Root [PE]")
+    child = _class(conn, run_id, "N0000900051")
+    _parent(conn, run_id, child, root)
+    subject = _moiety(conn, run_id, "subj")
+    _member(conn, run_id, subject, root)                          # DIRECT, the subject
+    _member(conn, run_id, _moiety(conn, run_id, "below"), child)  # denied out of reach
+    _ci(conn, run_id, subject, root)
+    _policy(conn, "N0000900050", "deny")
+
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ddi_candidate_pair").fetchone()[0] == 0
+    assert _dead_by_policy(conn) == [(root, "Denied Root [PE]", 1, 1)]
+
+
+def test_a_denied_root_whose_only_PARTNER_would_be_the_subject_is_the_OTHER_VIEWS(conn):
+    """The partition again, in the shape that first broke it.
+
+    A subtree holding nothing but the rule's own subject has no partner in it, so
+    allowing expansion would reach nobody and the only answerable question is
+    gap_unpopulated_contraindication's "file a drug under this class". While this
+    view's reach test was subject-blind it counted that subject as a drug held back
+    and asked a second, unanswerable question about the same dead rule.
+
+    Both views now read one column: `= 0` there, `> 0` here.
+    """
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900060", name="Denied Root [PE]")
+    child = _class(conn, run_id, "N0000900061")
+    _parent(conn, run_id, child, root)
+    subject = _moiety(conn, run_id, "subj")
+    _member(conn, run_id, subject, child)   # the ONLY member anywhere below
+    _ci(conn, run_id, subject, root)
+    _policy(conn, "N0000900060", "deny")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchone()[0] == 1
+    assert _dead_by_policy(conn) == []
 
 
 def test_a_dead_by_policy_class_becomes_a_question(conn, ingest_run_id):

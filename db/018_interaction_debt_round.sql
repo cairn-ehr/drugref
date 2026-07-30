@@ -10,9 +10,12 @@
 --   1. #39 -- ingest_unmatched_ingredient is rebuilt per SOURCE while TWO
 --             orchestrators write it under 'MED-RT'. A `reason` discriminator gives
 --             each writer its own bucket, and both documented caveats disappear.
+--             gap_unmatched_ingredient is re-issued for the wider grain.
 --   2. #31 -- a contraindication on a DENIED expansion root with no direct member
 --             yields no pair, and no gap view says so. Plus the same silence from a
---             second cause, found while measuring this one.
+--             second cause, found while measuring this one. Both are questions about
+--             ONE quantity -- what a rule can actually pair with -- so
+--             ci_rule_partner_reach states it once and the two gap views filter it.
 --   3. #45 -- condition_contraindication_expanded recomputes the whole condition walk
 --             per query. A function that walks UP from the patient's condition answers
 --             the same question in O(ancestors).
@@ -71,8 +74,11 @@ ALTER TABLE drugref.ingest_unmatched_ingredient
 -- and contraindicated without a moiety, and those are two writers' rows. Under the old
 -- key the second writer's insert would have been swallowed by ON CONFLICT DO NOTHING
 -- and its bucket would then be permanently short of a row it is supposed to own.
+-- IF EXISTS to match every other guarded statement in this file: the name is stable
+-- (db/008 declared the key inline, so Postgres generated it), and a replay drops and
+-- re-adds the same one -- but a guard that only works by coincidence is not a guard.
 ALTER TABLE drugref.ingest_unmatched_ingredient
-    DROP CONSTRAINT ingest_unmatched_ingredient_pkey;
+    DROP CONSTRAINT IF EXISTS ingest_unmatched_ingredient_pkey;
 ALTER TABLE drugref.ingest_unmatched_ingredient
     ADD CONSTRAINT ingest_unmatched_ingredient_pkey
     PRIMARY KEY (ingest_run, reason, rxcui);
@@ -96,6 +102,42 @@ COMMENT ON TABLE drugref.ingest_unmatched_ingredient IS
     'a query: before it, only the COUNT of these survived an ingest and the identities '
     'were discarded.';
 
+-- The gap view needs its tie-break widened with the grain. db/008 wrote
+-- `DISTINCT ON (rxcui) ... ORDER BY rxcui, ingest_run DESC`, which was TOTAL while the
+-- key was (ingest_run, rxcui): one run held at most one row per RxCUI, so the ORDER BY
+-- named a unique row. Under (ingest_run, reason, rxcui) one run can hold two, and
+-- DISTINCT ON would then keep whichever the plan happened to emit first -- so `name`
+-- could flip between plan shapes with no data change.
+--
+-- Unreachable today, because no orchestrator writes both buckets. #47 is a proposal to
+-- add one, which is precisely when a latent non-determinism becomes a bug, and the
+-- rest of this file exists because a grain change outran the code that assumed the old
+-- one. `reason` last, so the row a curator reads is still the most recent RUN's; the
+-- new key only settles a tie the old ORDER BY left open. `classification` wins it,
+-- alphabetically and by being the bucket with a `name` (medrt_run passes ingredient
+-- names, mesh_ci_run has none to pass).
+CREATE OR REPLACE VIEW drugref.gap_unmatched_ingredient AS
+SELECT DISTINCT ON (u.rxcui)
+       u.rxcui,
+       u.name,
+       r.upstream_release
+FROM   drugref.ingest_unmatched_ingredient u
+JOIN   drugref.ingest_run r ON r.ingest_run_id = u.ingest_run
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.identity_claim ic
+                   WHERE  ic.scheme = 'RXNORM_IN'
+                   AND    ic.value  = u.rxcui
+                   AND    ic.superseded_by IS NULL)
+ORDER  BY u.rxcui, u.ingest_run DESC, u.reason;
+
+COMMENT ON VIEW drugref.gap_unmatched_ingredient IS
+    'Ingredients an upstream release names that no moiety in the registry carries -- '
+    'every one is a drug drugref can say nothing about. Closes by itself when a moiety '
+    'claims the RxCUI. Superseded identity claims do not count as carrying it. ONE ROW '
+    'PER RxCUI, from the most recent run that reported it and, within that run, from '
+    'the `classification` bucket first (db/018): gap_key is an input to question_uuid, '
+    'so two rows here would mint one question and register_from_gaps would over-report '
+    'its own live count.';
+
 -- ============================================================================
 -- 2. #31: THE CONTRAINDICATIONS THAT YIELD NOTHING, AND NOTHING SAID SO
 -- ============================================================================
@@ -103,62 +145,130 @@ COMMENT ON TABLE drugref.ingest_unmatched_ingredient IS
 -- drugref's posture is that a coverage gap is a QUERY, never a silence. Two dead-rule
 -- shapes were silent, and measuring the first is what turned up the second.
 
--- ---- 2a. a class whose only member is the rule's own SUBJECT ------------------
+-- ---- 2a. ONE statement of what a rule can actually reach ----------------------
 --
--- ddi_candidate_pair excludes the subject from its own partner list
+-- BOTH dead-rule shapes are questions about the same quantity: how many drugs could
+-- this rule actually pair with. So the quantity is computed ONCE, here, and each gap
+-- view is a filter over it. That is db/006's rule -- the one this migration's own
+-- comments invoke three times -- applied to itself: the first draft of this round
+-- carried two near-identical CTEs, `populated` and `reachable`, and only one of them
+-- learned the subject exclusion below. The views then overlapped in one shape and
+-- went silent in another. A number stated twice is a number that will disagree.
+--
+-- THE SUBJECT IS NOT A PARTNER. ddi_candidate_pair excludes it
 -- (`m.moiety_uuid <> ci.subject_moiety_uuid`) -- a drug is not co-administered with
 -- itself, and slice 5b's db/014 makes the same statement structurally for the MeSH
--- pair table. gap_unpopulated_contraindication's population test did not know that, so
--- a class whose ONLY member is the subject counted as populated and the rule vanished.
+-- pair table. A gap view whose population test does not know that calls a class
+-- populated when its only member IS the subject, and the dead rule vanishes.
 --
 -- MEASURED, one case in the real release: acetohydroxamic acid carries a CI_MoA
 -- against `Urease Inhibitors [MoA]`, and the only urease inhibitor drugref's gated
 -- registry holds is acetohydroxamic acid. The rule yields no pair, and until this
--- re-issue nothing reported it.
+-- round nothing reported it.
 --
--- THE FIX IS TO ASK THE READ PATH'S OWN QUESTION: not "is any drug filed below" but
--- "is any drug filed below that could BE a partner". Two views answering slightly
--- different questions about one row set is the two-lists-in-two-places failure db/006
--- exists to remove; here it had already cost a silent gap.
+-- TWO COUNTS, because the deny-list splits the question in two: what the rule reaches
+-- if it may descend (subtree_partner_count) and what it reaches if it may not
+-- (direct_partner_count). Together they reproduce ddi_candidate_pair's own reachability
+-- test exactly -- a rule yields at least one pair iff
+--     direct_partner_count > 0
+--     OR (expands_descendants AND NOT denied AND subtree_partner_count > 0)
+-- -- which is what lets the two gap views below partition the dead rules with `= 0`
+-- and `> 0` on ONE column instead of two hand-matched predicates.
 --
--- STILL NON-CORRELATED, which is why the subject test is expressed as a count plus one
--- member rather than the obvious `AND m.moiety_uuid <> ci.subject_moiety_uuid`. That
--- clause would correlate the subquery with the outer row and re-run the RECURSIVE
--- ci_class_subtree walk once per contraindication (635 of them). member_count > 1
--- settles every class with two or more members without looking at the subject at all;
--- only_member is read precisely when it does not.
---
--- (array_agg(DISTINCT ...))[1] rather than min(): Postgres has ordering operators for
--- uuid but no min/max AGGREGATE, and casting to text to borrow one would assert an
--- ordering this does not need. The element is read only where member_count = 1, and
--- there the array holds exactly one member -- so which element [1] is cannot matter.
-CREATE OR REPLACE VIEW drugref.gap_unpopulated_contraindication AS
-WITH populated AS (
+-- NON-CORRELATED, DELIBERATELY. The subject test is arithmetic over an aggregate
+-- (`count - 1 if the subject is among the members`) rather than the obvious
+-- `AND m.moiety_uuid <> ci.subject_moiety_uuid` inside a subquery, because that clause
+-- would correlate with the outer row and re-run the RECURSIVE ci_class_subtree walk
+-- once per contraindication (635 of them). Each CTE here is evaluated once and hash
+-- joined; `= ANY(members)` then scans an in-memory array of at most a few hundred
+-- uuids. array_agg rather than min()/max(): Postgres has ordering operators for uuid
+-- but no min/max AGGREGATE, and this needs membership, not an ordering, anyway.
+CREATE OR REPLACE VIEW drugref.ci_rule_partner_reach AS
+WITH subtree_member AS (
+    -- Everything filed anywhere at or below the class a rule names, per (root, axis).
     SELECT s.root_uuid,
-           m.relationship                     AS membership_relationship,
-           count(DISTINCT m.moiety_uuid)      AS member_count,
-           (array_agg(DISTINCT m.moiety_uuid))[1] AS only_member
+           m.relationship                    AS membership_relationship,
+           count(DISTINCT m.moiety_uuid)     AS member_count,
+           array_agg(DISTINCT m.moiety_uuid) AS members
     FROM   drugref.ci_class_subtree s
     JOIN   drugref.class_membership m ON m.class_uuid = s.class_uuid
     GROUP  BY s.root_uuid, m.relationship
+),
+direct_member AS (
+    -- ...and the subset filed ON the class itself, which is all a DENIED rule reaches.
+    -- No recursion here: this is a plain aggregate over class_membership.
+    SELECT m.class_uuid,
+           m.relationship                    AS membership_relationship,
+           count(DISTINCT m.moiety_uuid)     AS member_count,
+           array_agg(DISTINCT m.moiety_uuid) AS members
+    FROM   drugref.class_membership m
+    GROUP  BY m.class_uuid, m.relationship
 )
-SELECT ci.object_class_uuid          AS class_uuid,
+SELECT ci.subject_moiety_uuid,
+       ci.object_class_uuid,
+       ci.relationship,
+       ci.source,
+       ci.ingest_run,
+       -- The axis mapping. A predicate with no ci_axis row cannot be in
+       -- class_contraindication at all (db/006's foreign key), so this join drops
+       -- nothing it should have kept.
+       a.membership_relationship,
+       a.expands_descendants,
+       -- LEFT JOIN misses give NULL, and `x = ANY(NULL)` is NULL, so the CASE takes
+       -- its ELSE branch and an unpopulated class scores 0 rather than NULL.
+       COALESCE(st.member_count, 0)
+         - (CASE WHEN ci.subject_moiety_uuid = ANY(st.members) THEN 1 ELSE 0 END)
+           AS subtree_partner_count,
+       COALESCE(dm.member_count, 0)
+         - (CASE WHEN ci.subject_moiety_uuid = ANY(dm.members) THEN 1 ELSE 0 END)
+           AS direct_partner_count
+FROM   drugref.class_contraindication ci
+JOIN   drugref.ci_axis a ON a.relationship = ci.relationship
+LEFT   JOIN subtree_member st
+       ON st.root_uuid               = ci.object_class_uuid
+      AND st.membership_relationship = a.membership_relationship
+LEFT   JOIN direct_member dm
+       ON dm.class_uuid              = ci.object_class_uuid
+      AND dm.membership_relationship = a.membership_relationship;
+
+COMMENT ON VIEW drugref.ci_rule_partner_reach IS
+    'Per contraindication rule: how many drugs it could actually pair with, counted '
+    'over the whole class subtree and over the class''s DIRECT members only. THE '
+    'RULE''S OWN SUBJECT IS NEVER A PARTNER -- ddi_candidate_pair excludes it, so a '
+    'class whose only member is the subject reaches nobody (acetohydroxamic acid '
+    'against Urease Inhibitors, the one such case in the 2026.07.06 release). PER '
+    'AXIS: a CI_PE rule counts has_PE members and nothing else. THE ONE PLACE drugref '
+    'STATES A RULE''S REACH -- gap_unpopulated_contraindication and '
+    'gap_dead_by_expansion_policy are filters over it and partition the dead rules '
+    'between them, which is only true while the number has one definition. Counts, '
+    'not a pair list: ddi_candidate_pair remains the read path.';
+COMMENT ON COLUMN drugref.ci_rule_partner_reach.subtree_partner_count IS
+    'Distinct drugs, other than the subject, filed anywhere at or below the object '
+    'class on the rule''s axis. Zero means no expansion policy could ever make this '
+    'rule yield a pair.';
+COMMENT ON COLUMN drugref.ci_rule_partner_reach.direct_partner_count IS
+    'The same count restricted to the object class itself -- all a DENIED rule can '
+    'reach, since a deny leaves direct membership alone.';
+
+-- ---- 2b. the rules nothing is filed under -------------------------------------
+--
+-- Re-issued from db/008 (and db/012, which added the subtree walk) for the subject
+-- exclusion, and rewritten as a filter over 2a. The population test now asks the READ
+-- PATH'S OWN QUESTION -- not "is any drug filed below" but "is any drug filed below
+-- that could BE a partner" -- and a rule with no possible partner anywhere in the
+-- subtree is dead under EVERY expansion policy, which is exactly the half of the
+-- dead-rule space this view owns.
+CREATE OR REPLACE VIEW drugref.gap_unpopulated_contraindication AS
+SELECT rr.object_class_uuid    AS class_uuid,
        sc.class_name,
        sc.concept_type,
-       count(*)                      AS ci_rule_count,
-       max(r.upstream_release)       AS upstream_release
-FROM   drugref.class_contraindication ci
-       -- A predicate with no ci_axis row cannot be in the table at all (db/006's
-       -- foreign key), so this join drops nothing it should have kept.
-JOIN   drugref.ci_axis         a  ON a.relationship  = ci.relationship
-JOIN   drugref.substance_class sc ON sc.class_uuid   = ci.object_class_uuid
-JOIN   drugref.ingest_run      r  ON r.ingest_run_id = ci.ingest_run
-WHERE  NOT EXISTS (SELECT 1 FROM populated p
-                   WHERE p.root_uuid               = ci.object_class_uuid
-                   AND   p.membership_relationship = a.membership_relationship
-                   AND   (p.member_count > 1
-                          OR p.only_member <> ci.subject_moiety_uuid))
-GROUP  BY ci.object_class_uuid, sc.class_name, sc.concept_type;
+       count(*)                AS ci_rule_count,
+       max(r.upstream_release) AS upstream_release
+FROM   drugref.ci_rule_partner_reach rr
+JOIN   drugref.substance_class sc ON sc.class_uuid   = rr.object_class_uuid
+JOIN   drugref.ingest_run      r  ON r.ingest_run_id = rr.ingest_run
+WHERE  rr.subtree_partner_count = 0
+GROUP  BY rr.object_class_uuid, sc.class_name, sc.concept_type;
 
 COMMENT ON VIEW drugref.gap_unpopulated_contraindication IS
     'Contraindications whose object class has no drug filed under it ON THE AXIS THE '
@@ -170,15 +280,16 @@ COMMENT ON VIEW drugref.gap_unpopulated_contraindication IS
     'on that class and is the priority signal for this view; question_worklist does '
     'not order by it. TWO CAVEATS. (1) Population is tested over the whole SUBTREE, '
     'while a DENIED class expands over direct members only -- that combination is '
-    'reported by gap_dead_by_expansion_policy instead, so one dead rule raises one '
-    'question. (2) ABSENCE OF A ROW IS NOT COVERAGE: a hazard MED-RT never modelled at '
-    'all appears nowhere here.';
+    'reported by gap_dead_by_expansion_policy instead, and the two are complementary '
+    'filters on ci_rule_partner_reach.subtree_partner_count (`= 0` here, `> 0` there), '
+    'so no rule can raise both questions. (2) ABSENCE OF A ROW IS NOT COVERAGE: a '
+    'hazard MED-RT never modelled at all appears nowhere here.';
 
--- ---- 2b. a rule killed by the deny-list ---------------------------------------
+-- ---- 2c. a rule killed by the deny-list ---------------------------------------
 --
 -- Plan B's residue. A contraindication whose object class is DENIED in
--- class_expansion_policy expands to DIRECT members only; if the class has none on the
--- rule's axis, the rule yields no pair at all -- and nothing surfaced it:
+-- class_expansion_policy expands to DIRECT members only; if the class has no partner
+-- there, the rule yields no pair at all -- and nothing surfaced it:
 --
 --   * gap_unpopulated_contraindication tests the whole SUBTREE, so it calls the class
 --     populated and stays silent -- a drug IS filed below, just not reachably;
@@ -196,84 +307,88 @@ COMMENT ON VIEW drugref.gap_unpopulated_contraindication IS
 -- is no longer dead, because the #34 moiety-gate fix gave it 7 direct members. The
 -- issue text predates that fix.
 --
+-- THOSE TWO FIGURES ARE PRE-REVIEW AND ARE NOT RE-MEASURED -- #50, and by this file's
+-- own rule they must be re-measured before they are quoted again. The review of this
+-- round moved the subject exclusion onto BOTH counts (2a), which can shift the row set
+-- in both directions: a class whose only DIRECT member is its rule's subject now
+-- appears where it was silent, and a class whose whole subtree holds only the subject
+-- now belongs to gap_unpopulated_contraindication instead. `300` likewise becomes 299
+-- if the rule's own subject is one of those 300. Both shapes are pinned by test; what
+-- is unknown is how many rows of the 2026.07.06 release have them.
+--
 -- WHY THIS IS WORTH ASKING, and why it is a good question rather than noise: upstream
 -- has vouched that the concern matters, and a curator has vouched that expansion is
 -- not the answer. "This concern is stated, the class it names is too abstract to pair
 -- on, and no drug is filed directly under it" is exactly the kind of thing a register
 -- of open questions exists to hold. The available answers are to record `allow` (for
--- Endocrine Activity Alteration, 300 partners is fan-out, so probably not), to file a
+-- Endocrine Activity Alteration, ~300 partners is fan-out, so probably not), to file a
 -- drug directly under the class, or to accept the rule as unactionable -- and the
 -- question records which.
 CREATE OR REPLACE VIEW drugref.gap_dead_by_expansion_policy AS
-WITH reachable AS (
-    -- What the deny is holding back: distinct drugs anywhere below, per (root, axis).
-    SELECT s.root_uuid,
-           m.relationship                AS membership_relationship,
-           count(DISTINCT m.moiety_uuid) AS member_count
-    FROM   drugref.ci_class_subtree s
-    JOIN   drugref.class_membership m ON m.class_uuid = s.class_uuid
-    GROUP  BY s.root_uuid, m.relationship
-)
-SELECT ci.object_class_uuid    AS class_uuid,
+SELECT rr.object_class_uuid    AS class_uuid,
        sc.class_name,
        sc.concept_type,
        count(*)                AS ci_rule_count,
-       -- Per (root, axis) while the row is per class. In the real release no class is
-       -- named on two axes (a CI_MoA rule names a MoA class, CI_PE a PE class -- 389
-       -- and 246 rules, zero overlap), so max() picks the only value there is; if a
-       -- release ever crosses them it reports the largest cost among them, which is
-       -- what a priority signal should do. This is an aggregate over a MEASURE, not
-       -- over a key: #41's defect was folding a KEY component with max(), and grouping
-       -- per class is precisely what keeps this view's grain equal to its gap_key's.
-       max(x.member_count)     AS subtree_member_count,
+       -- Per RULE while the row is per class, because the subject exclusion is per
+       -- rule -- so max() picks the largest cost among the class's dead rules, which
+       -- is what a priority signal should do. This is an aggregate over a MEASURE,
+       -- not over a key: #41's defect was folding a KEY component with max(), and
+       -- grouping per class is what keeps this view's grain equal to its gap_key's.
+       max(rr.subtree_partner_count) AS subtree_partner_count,
        max(r.upstream_release) AS upstream_release
-FROM   drugref.class_contraindication ci
-JOIN   drugref.ci_axis         a  ON a.relationship  = ci.relationship
-JOIN   drugref.substance_class sc ON sc.class_uuid   = ci.object_class_uuid
-JOIN   drugref.ingest_run      r  ON r.ingest_run_id = ci.ingest_run
-       -- DENIED, not merely reviewed. `allow` and absent both expand (the view
-       -- COALESCEs a missing policy row to 'allow'), so their rules are not dead --
-       -- and an unreviewed sprawling root is gap_unreviewed_expansion_root's question.
+FROM   drugref.ci_rule_partner_reach rr
+JOIN   drugref.substance_class sc ON sc.class_uuid   = rr.object_class_uuid
+JOIN   drugref.ingest_run      r  ON r.ingest_run_id = rr.ingest_run
+       -- DENIED, not merely reviewed. `allow` and absent both expand
+       -- (ddi_candidate_pair COALESCEs a missing policy row to 'allow'), so their
+       -- rules are not dead -- and an unreviewed sprawling root is
+       -- gap_unreviewed_expansion_root's question.
 JOIN   drugref.class_expansion_policy p
        ON p.source = sc.source AND p.source_code = sc.source_code
       AND p.decision = 'deny'
-       -- The subtree DOES hold drugs on this axis. Without this the view would
-       -- re-report the classes gap_unpopulated_contraindication already owns, minting
-       -- a SECOND immortal question for one dead rule -- and one whose answer changes
-       -- nothing, since allowing expansion over an empty subtree reaches nobody. Plan
-       -- A tolerates two questions on one class only when they are independently
-       -- answerable (unpopulated + unreviewed_expansion_root); these are not.
-JOIN   reachable x ON x.root_uuid               = ci.object_class_uuid
-                  AND x.membership_relationship = a.membership_relationship
        -- A predicate that cannot expand cannot be rescued by allowing expansion, so
        -- no available decision would retire the question. db/012's rule -- the review
-       -- gate must only ask what an answer could change -- in a fourth place.
-WHERE  a.expands_descendants
-       -- ...and nothing is filed DIRECTLY on the class, which is all a denied rule
-       -- can reach. Per axis, exactly as the population test above is: a direct member
-       -- on has_MoA does not save a CI_PE rule.
-AND    NOT EXISTS (SELECT 1 FROM drugref.class_membership m
-                   WHERE  m.class_uuid   = ci.object_class_uuid
-                   AND    m.relationship = a.membership_relationship)
-GROUP  BY ci.object_class_uuid, sc.class_name, sc.concept_type;
+       -- gate must only ask what an answer could change -- in a fourth place. (That
+       -- rule IS dead, and deliberately unreported here: #48.)
+WHERE  rr.expands_descendants
+       -- Nothing the rule could pair with is filed DIRECTLY on the class, which is
+       -- all a denied rule reaches. A direct member that IS the subject does not save
+       -- it -- the shape that made this view silent in review.
+AND    rr.direct_partner_count = 0
+       -- ...but the subtree does hold one, which is what makes the question
+       -- answerable AND what keeps this view disjoint from the one above. Without it
+       -- a class both views can see would mint a SECOND immortal question for one
+       -- dead rule, and one whose answer changes nothing: allowing expansion over a
+       -- subtree with no partner in it reaches nobody. Plan A tolerates two questions
+       -- on one class only when they are independently answerable.
+AND    rr.subtree_partner_count > 0
+GROUP  BY rr.object_class_uuid, sc.class_name, sc.concept_type;
 
 COMMENT ON VIEW drugref.gap_dead_by_expansion_policy IS
     'Contraindications that yield NO pair because their object class is denied '
-    'expansion (class_expansion_policy) and carries no member directly on the rule''s '
-    'axis -- while its subtree does hold drugs, which is what makes the question '
+    'expansion (class_expansion_policy) and carries no PARTNER directly on the rule''s '
+    'axis -- while its subtree does hold one, which is what makes the question '
     'answerable. Upstream vouches the concern matters and a curator vouched that '
     'expansion is not the answer, so the rule reaches nobody and, before db/018, '
-    'silently. subtree_member_count is what the deny holds back and is the priority '
-    'signal: 300 for Endocrine Activity Alteration, the ONE case in the 2026.07.06 '
-    'release (#31 lists two; the other gained direct members in the #34 gate fix). '
-    'DISJOINT FROM gap_unpopulated_contraindication BY CONSTRUCTION -- that view owns '
-    'the empty-subtree case -- so one dead rule raises one question. NOT A REGRESSION '
-    'OF PLAN B: these rules returned nothing before descendant expansion too. ABSENCE '
-    'OF A ROW IS NOT COVERAGE, and one shape is deliberately not reported: a predicate '
-    'with expands_descendants false and no direct member is equally dead, but allowing '
-    'expansion could not revive it, so it is a ci_axis question rather than a policy '
-    'one. No MED-RT predicate is non-expanding today; when one lands it needs its own '
-    'view rather than a widened one, because the remedy differs -- tracked as #48.';
+    'silently. THE RULE''S OWN SUBJECT IS NOT A PARTNER on either count (see '
+    'ci_rule_partner_reach): a class whose only direct member is the subject is dead, '
+    'not alive. subtree_partner_count is what the deny holds back and is the priority '
+    'signal: ~300 for Endocrine Activity Alteration, which was the ONE case in the '
+    '2026.07.06 release when the direct count was still subject-blind (#31 lists two; '
+    'the other gained direct members in the #34 gate fix). RE-MEASURE BEFORE QUOTING '
+    'EITHER FIGURE -- #50: making both counts subject-aware can add classes and remove '
+    'them, and neither has been re-run against a real release. '
+    'NO RULE RAISES BOTH THIS QUESTION AND gap_unpopulated_contraindication''s: the '
+    'two are complementary filters on subtree_partner_count (`> 0` here, `= 0` there). '
+    'A CLASS can still appear in both when two of its rules die of different causes, '
+    'which is Plan A''s independently-answerable case and not a double-count. NOT A '
+    'REGRESSION OF PLAN B: these rules returned nothing before descendant expansion '
+    'too. ABSENCE OF A ROW IS NOT COVERAGE, and one shape is deliberately not '
+    'reported: a predicate with expands_descendants false and no direct partner is '
+    'equally dead, but allowing expansion could not revive it, so it is a ci_axis '
+    'question rather than a policy one. No MED-RT predicate is non-expanding today; '
+    'when one lands it needs its own view rather than a widened one, because the '
+    'remedy differs -- tracked as #48.';
 
 -- Admit the sixth question kind. Guarded on the constraint's TEXT rather than its
 -- name, so a replay against an already-widened database skips the drop/add entirely

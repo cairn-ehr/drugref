@@ -69,8 +69,10 @@ def clear_source_tables(conn: psycopg.Connection,
     failing.
 
     Table AND column names are interpolated, not parameterised, because an identifier
-    cannot be a bind parameter; both come only from module constants, never from input.
-    Values are always bound.
+    cannot be a bind parameter. BOTH MUST COME FROM A MODULE CONSTANT, never from
+    input and never from a literal spelled at the call site -- classes.REASON_COLUMN
+    exists for exactly that reason, next to the table tuple it travels with. Values
+    are always bound.
     """
     extra = "".join(f" AND {column} = %s" for column in (match or {}))
     values = tuple((match or {}).values())
