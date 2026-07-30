@@ -344,46 +344,32 @@ def test_unmatched_subjects_are_recorded_not_only_counted(conn, seeded_moieties)
         "WHERE rxcui = '5640'").fetchone()[0] == 1
 
 
-def test_unmatched_rows_accumulate_but_the_gap_view_does_not(conn, seeded_moieties):
-    """THE DOCUMENTED COST of writing this worklist without clearing it.
+def test_consecutive_runs_rebuild_rather_than_accumulate(conn, seeded_moieties):
+    """#39 FIXED. This orchestrator now CLEARS its own rows before writing them.
 
-    ingest_unmatched_ingredient is rebuilt per SOURCE and medrt_run owns that clear,
-    so this orchestrator must not clear (it would destroy medrt_run's 2,271
-    classified-but-not-contraindicated rows). The price is that consecutive runs of
-    THIS orchestrator each insert under their own ingest_run id and nothing collects
-    them until medrt_run next runs. Pinned rather than merely described, so the
-    trade-off stays visible and issue #39 can be checked against it.
-
-    What a curator reads is unaffected: gap_unmatched_ingredient is DISTINCT ON
-    (rxcui), so the duplicate rows collapse to one question.
+    It could not before: ingest_unmatched_ingredient was rebuilt per SOURCE and both
+    orchestrators open their runs under 'MED-RT', so a clear here would have destroyed
+    medrt_run's rows. The price was that consecutive runs of this one each inserted
+    under their own ingest_run id and nothing collected them until medrt_run next ran.
+    db/018's `reason` gives each writer its own bucket, so the clear is safe and the
+    table stops growing by its own length -- which is what "rebuildable projection"
+    is supposed to mean.
     """
     _run(conn)
     _run(conn)
     assert conn.execute(
         "SELECT count(*) FROM drugref.ingest_unmatched_ingredient "
-        "WHERE rxcui = '5640'").fetchone()[0] == 2
-    assert conn.execute(
-        "SELECT count(*) FROM drugref.gap_unmatched_ingredient "
         "WHERE rxcui = '5640'").fetchone()[0] == 1
 
 
 def test_the_run_does_not_destroy_medrt_runs_worklist(conn, seeded_moieties):
-    """THE REASON THIS RUN WRITES ITS UNMATCHED SUBJECTS BUT NEVER CLEARS THEM.
+    """Half of #39's contract: this run clears `contraindication` and nothing else.
 
-    ingest_unmatched_ingredient is rebuilt PER SOURCE and both orchestrators open
-    their runs under 'MED-RT', so the two cannot both own it. medrt_run keeps the
-    clear; this run only adds. A source-scoped clear here would take medrt_run's rows
-    with it, and on the real 2026.07.06 release 2,271 of the 6,012 classified
-    ingredients are not CI subjects at all -- rows this run could never rewrite,
-    because it never sees those ingredients.
-
-    Writing is the other half, pinned by
-    test_unmatched_subjects_are_recorded_not_only_counted: 16 CI subjects are never
-    classified by MED-RT, so medrt_run cannot record them either.
-
-    The marker row stands in for those 2,271: this fixture's two lists are both
-    exactly {5640}, so without it the test could not tell a preserved worklist from
-    a clobbered one that happens to be rewritten identically.
+    On the real 2026.07.06 release 2,271 of MED-RT's 6,012 classified ingredients are
+    not CI subjects at all -- rows this run could never rewrite, because it never sees
+    those ingredients. The marker row stands in for them: this fixture's two lists are
+    both exactly {5640}, so without it the test could not tell a preserved worklist
+    from a clobbered one that happens to be rewritten identically.
     """
     from drugref.ingest import medrt_run
     medrt_run.ingest_medrt(conn, medrt_path=FIXTURES / "medrt_subset.xml",
@@ -392,8 +378,8 @@ def test_the_run_does_not_destroy_medrt_runs_worklist(conn, seeded_moieties):
         "SELECT ingest_run_id FROM drugref.ingest_run WHERE source = 'MED-RT' "
         "ORDER BY ingest_run_id DESC LIMIT 1").fetchone()[0]
     conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '99999', 'marker')",
-                 (medrt_id,))
+                 "(ingest_run, rxcui, name, reason) "
+                 "VALUES (%s, '99999', 'marker', 'classification')", (medrt_id,))
     conn.commit()
 
     _run(conn)
@@ -401,6 +387,34 @@ def test_the_run_does_not_destroy_medrt_runs_worklist(conn, seeded_moieties):
     assert {r[0] for r in conn.execute(
         "SELECT rxcui FROM drugref.ingest_unmatched_ingredient").fetchall()} == \
         {"5640", "99999"}
+
+
+def test_a_LATER_medrt_run_no_longer_destroys_this_runs_rows(conn, seeded_moieties):
+    """THE OTHER HALF, AND THE ORDER-DEPENDENCE #39 WAS FILED FOR.
+
+    medrt_run's clear used to be scoped by source alone, so it removed this run's rows
+    too -- and could not re-add them, because it builds its list from MEMBERSHIP
+    assertions and 16 CI subjects in the real release are never classified. Three of
+    those (221083 sulfur colloidal, 5924 inulin, 89767 colloid sulfur) carry a
+    CI_with rule each and are outside the registry, so they simply vanished from the
+    worklist between a medrt_run and the next run of this orchestrator.
+
+    Now each writer clears only its own `reason`, and the answer no longer depends on
+    which orchestrator ran last.
+    """
+    from drugref.ingest import medrt_run
+    _run(conn)
+    assert ("contraindication", "5640") in conn.execute(
+        "SELECT reason, rxcui FROM drugref.ingest_unmatched_ingredient").fetchall()
+
+    medrt_run.ingest_medrt(conn, medrt_path=FIXTURES / "medrt_subset.xml",
+                           upstream_release="2026.07.06")
+
+    assert ("contraindication", "5640") in conn.execute(
+        "SELECT reason, rxcui FROM drugref.ingest_unmatched_ingredient").fetchall()
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unmatched_ingredient "
+        "WHERE rxcui = '5640'").fetchone()[0] == 1
 
 
 def test_the_question_register_is_rebuilt(conn, seeded_moieties):

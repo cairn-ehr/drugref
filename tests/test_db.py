@@ -101,6 +101,11 @@ def test_apply_migrations_is_idempotent(conn):
         # a fourth gap VIEW of db/008's kind, publishing each withheld MeSH object as
         # a citable question instead of dropping it silently.
         "gap_unresolved_ci_object",
+        # db/018 (#31): the fifth gap VIEW -- contraindications a DENIED expansion
+        # root leaves reaching nobody, which gap_unpopulated_contraindication cannot
+        # see (it tests the whole subtree) and gap_unreviewed_expansion_root will not
+        # ask about (the class HAS been reviewed).
+        "gap_dead_by_expansion_policy",
     }
 
 

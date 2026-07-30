@@ -98,3 +98,91 @@ def test_the_walk_survives_a_cycle(conn, epilepsy_tree, ingest_run_id):
         "SELECT count(*) FROM drugref.condition_subtree WHERE root_uuid = %s",
         (epilepsy_tree["parent"],)).fetchone()[0]
     assert rows == 2
+
+
+# ---- contraindications_for_condition (#45) -----------------------------------
+#
+# THE SAME ANSWER, REACHED FROM THE OTHER END. condition_contraindication_expanded
+# walks DOWN from every contraindicated condition, so Postgres -- which cannot push a
+# predicate into a recursive CTE -- computes the whole graph before filtering to the
+# handful of rows a patient lookup wanted. This function starts at the PATIENT'S
+# condition and walks UP, which is O(ancestors) instead of O(graph).
+#
+# MEASURED on the real 2026 release (5,203 conditions, 7,157 edges, 9,471 rules), the
+# Epilepsy lookup: the view 9-10 ms, materialising 11,512 subtree rows to return 15;
+# this function 0.7-0.9 ms. Neither is slow today -- the issue was filed because 5b.2
+# (~18k more assertions) reuses this DAG, and the fix had to be measured, not guessed.
+#
+# EQUIVALENCE IS THE CONTRACT, and the tests below assert it directly rather than
+# re-deriving what each side "should" return. Two implementations of one expansion
+# rule is the two-lists-in-two-places footgun db/006 exists to remove; the only thing
+# that makes a second one safe is a test that fails the moment they disagree.
+
+
+def _by_function(conn, condition_uuid):
+    return conn.execute(
+        "SELECT subject_moiety, object_condition, member_condition, is_direct, "
+        "relationship, source FROM drugref.contraindications_for_condition(%s) "
+        "ORDER BY subject_moiety, object_condition", (condition_uuid,)).fetchall()
+
+
+def _by_view(conn, condition_uuid):
+    return conn.execute(
+        "SELECT subject_moiety, object_condition, member_condition, is_direct, "
+        "relationship, source FROM drugref.condition_contraindication_expanded "
+        "WHERE member_condition = %s ORDER BY subject_moiety, object_condition",
+        (condition_uuid,)).fetchall()
+
+
+def test_the_ancestor_walk_answers_exactly_what_the_view_answers(conn, epilepsy_tree):
+    """Both directions of the tree, both non-empty -- an equivalence that holds only
+    because both sides return nothing would prove nothing."""
+    for key in ("parent", "child"):
+        rows = _by_function(conn, epilepsy_tree[key])
+        assert rows == _by_view(conn, epilepsy_tree[key])
+        assert rows, f"{key} must actually match a rule"
+
+
+def test_a_rule_on_an_ANCESTOR_reaches_the_patients_condition(conn, epilepsy_tree):
+    """The clinical point, from the patient's end: a rule written against Epilepsy
+    fires for a patient coded Epilepsy, Generalized, and says so -- object_condition
+    names what the rule actually said, is_direct says it was not the patient's own
+    code."""
+    assert _by_function(conn, epilepsy_tree["child"]) == \
+        [(epilepsy_tree["moiety"], epilepsy_tree["parent"], epilepsy_tree["child"],
+          False, "CI_with", "MED-RT")]
+
+
+def test_a_rule_on_the_patients_OWN_condition_is_direct(conn, epilepsy_tree):
+    assert _by_function(conn, epilepsy_tree["parent"]) == \
+        [(epilepsy_tree["moiety"], epilepsy_tree["parent"], epilepsy_tree["parent"],
+          True, "CI_with", "MED-RT")]
+
+
+def test_the_axis_opt_out_governs_the_function_TOO(conn, epilepsy_tree):
+    """The gate is per predicate and lives in condition_ci_axis, so switching it off
+    must stop BOTH read paths. A function that kept expanding after the data said not
+    to would be the second implementation quietly disagreeing with the first."""
+    conn.execute("UPDATE drugref.condition_ci_axis "
+                 "SET expands_descendants = false WHERE relationship = 'CI_with'")
+    assert _by_function(conn, epilepsy_tree["child"]) == []
+    assert _by_function(conn, epilepsy_tree["parent"]) == _by_view(
+        conn, epilepsy_tree["parent"])
+
+
+def test_a_condition_no_rule_reaches_returns_nothing(conn, epilepsy_tree,
+                                                     ingest_run_id):
+    """An unrelated condition, not merely an unknown UUID: the walk must climb and
+    find nothing, rather than fail to climb at all."""
+    other = _condition(conn, ingest_run_id, "D003920", "Diabetes Mellitus",
+                       ("C18.452.394.750",))
+    assert _by_function(conn, other) == []
+
+
+def test_the_upward_walk_survives_a_cycle(conn, epilepsy_tree, ingest_run_id):
+    """The down-walk's cycle-safety is pinned above; the up-walk needs its own, for
+    the same reason and by the same means (UNION over the node, not the path). A view
+    that never returns is worse than a wrong answer, because nothing reports it."""
+    conditions.add_condition_parent_edge(
+        conn, epilepsy_tree["parent"], epilepsy_tree["child"], ingest_run_id)
+    assert len(_by_function(conn, epilepsy_tree["child"])) == 1

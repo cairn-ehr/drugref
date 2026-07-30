@@ -72,6 +72,31 @@ _GAP_SOURCES = {
             "It expands by default until a decision is recorded in "
             "class_expansion_policy.'"),
     },
+    # #31 (db/018). The rules Plan B's deny-list leaves reaching nobody: the object
+    # class is denied expansion AND carries no direct member on the rule's axis, while
+    # drugs DO sit below it. The third kind drugref can answer ITSELF, by recording a
+    # decision -- and it shares the CLASS:{uuid} gap_key with the two other class-level
+    # kinds, which only gap_kind separates. That is deliberate and already the
+    # established shape: one class can legitimately raise several independently
+    # answerable questions, and question_uuid takes gap_kind as an input precisely so
+    # they do not collide.
+    #
+    # The text names BOTH numbers a curator needs to answer it -- how many rules ride
+    # on the decision, and how many drugs the deny is holding back -- because the
+    # answer is a judgement between them (300 partners for Endocrine Activity
+    # Alteration is fan-out, so `allow` is probably wrong; a class holding back three
+    # is a different conversation).
+    "dead_by_expansion_policy": {
+        "view": "gap_dead_by_expansion_policy",
+        "key_sql": "'CLASS:' || class_uuid",
+        "text_sql": (
+            "'Which drugs belong DIRECTLY to ' || class_name || '? ' || ci_rule_count "
+            "|| ' contraindication rule(s) name it, expansion over its ' || "
+            "subtree_member_count || ' descendant member(s) is DENIED in "
+            "class_expansion_policy, and nothing is filed directly under it -- so "
+            "those rule(s) reach nobody. Answer by filing a drug directly, by "
+            "revisiting the deny, or by recording that the rule is unactionable.'"),
+    },
     # Slice 5b. CI_ChemClass objects that reached no moiety. The gap_key scheme is
     # {NAMESPACE}:{code} because the subject is an upstream RECORD drugref never
     # registered: it has no drugref UUID to cite, which is exactly why it is a gap.

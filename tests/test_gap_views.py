@@ -75,6 +75,15 @@ def _ci(conn, run_id, moiety, klass, relationship="CI_PE"):
         "VALUES (%s, %s, %s, 'MED-RT', %s)", (moiety, klass, relationship, run_id))
 
 
+def _unmatched(conn, run_id, rxcui, name, reason="classification"):
+    """One ingest_unmatched_ingredient row. `reason` is REQUIRED by the table (#39);
+    it defaults here only so the tests that predate the discriminator keep reading as
+    statements about the view rather than about the column."""
+    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
+                 "(ingest_run, rxcui, name, reason) VALUES (%s, %s, %s, %s)",
+                 (run_id, rxcui, name, reason))
+
+
 # ---- gap_unpopulated_contraindication ---------------------------------------
 
 
@@ -112,6 +121,45 @@ def test_a_member_on_a_DESCENDANT_class_closes_the_gap(conn):
     _parent(conn, run_id, child, parent)
     _member(conn, run_id, _moiety(conn, run_id), child)
     _ci(conn, run_id, _moiety(conn, run_id, "other"), parent)
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchone()[0] == 0
+
+
+def test_a_class_whose_ONLY_member_is_the_rules_own_subject_is_a_gap(conn):
+    """MEASURED ON THE REAL RELEASE, and unreported until this round: acetohydroxamic
+    acid carries a CI_MoA against `Urease Inhibitors [MoA]`, and the only urease
+    inhibitor drugref's registry holds is acetohydroxamic acid itself.
+
+    ddi_candidate_pair excludes the subject from its own partners
+    (`m.moiety_uuid <> ci.subject_moiety_uuid`) -- a drug is not co-administered with
+    itself -- so the rule yields nothing. This view's population test has to ask the
+    same question the read path asks: is there a drug below that could BE a partner,
+    not merely a drug below. Otherwise it calls the class populated and stays silent
+    about a rule that can never fire.
+    """
+    run_id = _run(conn)
+    klass = _class(conn, run_id, "N0000000031", "MoA", name="Urease Inhibitors [MoA]")
+    subject = _moiety(conn, run_id, "acetohydroxamic acid")
+    _member(conn, run_id, subject, klass, "has_MoA")
+    _ci(conn, run_id, subject, klass, "CI_MoA")
+
+    assert conn.execute(
+        "SELECT class_name, ci_rule_count FROM "
+        "drugref.gap_unpopulated_contraindication").fetchall() == \
+        [("Urease Inhibitors [MoA]", 1)]
+
+
+def test_one_OTHER_member_is_enough_to_close_that_gap(conn):
+    """The other half: the subject exclusion must not report a class that does hold a
+    partner. A second urease inhibitor makes the rule yield a pair, so the question is
+    answered and must leave the worklist."""
+    run_id = _run(conn)
+    klass = _class(conn, run_id, "N0000000032", "MoA")
+    subject = _moiety(conn, run_id, "acetohydroxamic acid")
+    _member(conn, run_id, subject, klass, "has_MoA")
+    _member(conn, run_id, _moiety(conn, run_id, "other inhibitor"), klass, "has_MoA")
+    _ci(conn, run_id, subject, klass, "CI_MoA")
 
     assert conn.execute("SELECT count(*) FROM "
                         "drugref.gap_unpopulated_contraindication").fetchone()[0] == 0
@@ -211,8 +259,7 @@ def test_an_unmatched_rxcui_is_queryable(conn):
     than pass drugref's moiety gate, and each one is a drug the registry cannot say
     anything about -- which is a question, not a silent statistic."""
     run_id = _run(conn)
-    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (run_id,))
+    _unmatched(conn, run_id, "5640", "ibuprofen")
     rows = conn.execute("SELECT rxcui, name FROM "
                         "drugref.gap_unmatched_ingredient").fetchall()
     assert rows == [("5640", "ibuprofen")]
@@ -226,23 +273,59 @@ def test_an_rxcui_the_registry_later_carries_is_no_longer_a_gap(conn):
     conn.execute("INSERT INTO drugref.identity_claim "
                  "(moiety_uuid, scheme, value, ingest_run) "
                  "VALUES (%s, 'RXNORM_IN', '5640', %s)", (m, run_id))
-    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (run_id,))
+    _unmatched(conn, run_id, "5640", "ibuprofen")
     assert conn.execute("SELECT count(*) FROM "
                         "drugref.gap_unmatched_ingredient").fetchone()[0] == 0
 
 
-def test_one_run_cannot_store_an_rxcui_twice(conn):
-    """The (ingest_run, rxcui) primary key. Named for what it actually asserts:
-    replacement ACROSS runs is a different property and is tested against the real
-    ingest in test_medrt_run.py, which is the only place it can be exercised."""
+def test_one_run_cannot_store_an_rxcui_twice_for_one_reason(conn):
+    """The (ingest_run, reason, rxcui) primary key. Named for what it actually
+    asserts: replacement ACROSS runs is a different property and is tested against the
+    real ingest in test_medrt_run.py, which is the only place it can be exercised."""
     run_id = _run(conn)
-    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (run_id,))
+    _unmatched(conn, run_id, "5640", "ibuprofen")
     with pytest.raises(psycopg.errors.UniqueViolation):
+        _unmatched(conn, run_id, "5640", "ibuprofen")
+
+
+def test_the_reason_must_be_DECLARED(conn):
+    """NOT NULL with NO DEFAULT (#39), the discipline db/014 gave
+    condition_ci_axis.expands_descendants.
+
+    The reason scopes the per-writer clear, so a default would let a new writer insert
+    rows into another writer's bucket -- which is #39 itself, silently restored. A
+    writer that does not say why it is reporting an RxCUI aborts its ingest instead.
+    """
+    run_id = _run(conn)
+    with pytest.raises(psycopg.errors.NotNullViolation):
         conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
                      "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')",
                      (run_id,))
+
+
+def test_an_unknown_reason_is_refused(conn):
+    """The clear branches on this literal, exactly as class_expansion_policy.decision
+    does: a row spelled 'contraindications' would be cleared by nobody and accumulate
+    forever."""
+    run_id = _run(conn)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _unmatched(conn, run_id, "5640", "ibuprofen", reason="typo")
+
+
+def test_one_rxcui_reported_for_BOTH_reasons_is_still_one_gap(conn):
+    """The grain the discriminator creates, and the grain the curator reads.
+
+    An RxCUI can be both classified-but-uncarried and contraindicated-but-uncarried;
+    those are two writers' rows, which is the whole point of #39. It is still ONE
+    question -- gap_key is an input to question_uuid, so two view rows would mint one
+    question and register_from_gaps would over-report its own live count.
+    """
+    run_id = _run(conn)
+    _unmatched(conn, run_id, "5640", "ibuprofen", reason="classification")
+    _unmatched(conn, run_id, "5640", "ibuprofen", reason="contraindication")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unmatched_ingredient").fetchone()[0] == 1
 
 
 def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
@@ -252,10 +335,8 @@ def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
     question and register_from_gaps would over-report its own live count. The row
     kept is the most recent run's."""
     older, newer = _run(conn), _run(conn, source="MeSH")
-    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '5640', NULL)", (older,))
-    conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
-                 "(ingest_run, rxcui, name) VALUES (%s, '5640', 'ibuprofen')", (newer,))
+    _unmatched(conn, older, "5640", None)
+    _unmatched(conn, newer, "5640", "ibuprofen")
 
     assert conn.execute("SELECT rxcui, name FROM "
                         "drugref.gap_unmatched_ingredient").fetchall() == [("5640", "ibuprofen")]
@@ -391,6 +472,190 @@ def test_the_rule_count_counts_only_the_rules_that_actually_expand(conn):
     conn.execute("UPDATE drugref.ci_axis SET expands_descendants = false "
                  "WHERE relationship = 'CI_MoA'")
     assert _unreviewed(conn) == [(root, 25, 1)]
+
+
+# ---- gap_dead_by_expansion_policy (#31) --------------------------------------
+#
+# The residue Plan B left. A contraindication whose object class is DENIED expands to
+# DIRECT members only; if the class has none on the rule's axis, the rule yields no
+# pair at all -- and until this view, nothing said so:
+#
+#   * gap_unpopulated_contraindication tests population over the whole SUBTREE, so it
+#     calls the class populated and stays silent (a drug IS filed somewhere below);
+#   * gap_unreviewed_expansion_root is silent too -- the class HAS been reviewed, and
+#     the deny is the point.
+#
+# NOT A REGRESSION, A RESIDUE: these rules returned nothing before Plan B as well,
+# when the view expanded over direct membership only. Plan B closed the hole
+# everywhere except under a denied root.
+#
+# MEASURED against the real 2026.07.06 release at db/017: ONE class, `Endocrine
+# Activity Alteration [PE]` -- 1 rule, 0 direct has_PE members, 300 distinct drugs in its
+# subtree, 0 pairs. Issue #31 recorded TWO (`Cardiovascular Activity Alteration [PE]`
+# was the other); it is no longer dead, because the #34 moiety-gate fix gave it 7
+# direct members. The issue text predates that fix -- re-measure before quoting it.
+
+
+def _dead_by_policy(conn):
+    return conn.execute(
+        "SELECT class_uuid, class_name, ci_rule_count, subtree_member_count "
+        "FROM drugref.gap_dead_by_expansion_policy").fetchall()
+
+
+def _denied_root_with_members_only_below(conn, run_id, code="N0000900000"):
+    """The Endocrine Activity Alteration shape: denied, no direct member, drugs below.
+
+    A SYNTHETIC NUI, not the real N0000009036: db/010 seeds fourteen real policy rows
+    and class_expansion_policy is curator data that no ingest -- and no autouse
+    TRUNCATE here -- clears, so a fixture reusing a seeded code collides with it. The
+    class NAME is the real one, because that is what the assertions read.
+    """
+    root = _class(conn, run_id, code, name="Endocrine Activity Alteration [PE]")
+    child = _class(conn, run_id, "N0000900001")
+    _parent(conn, run_id, child, root)
+    _member(conn, run_id, _moiety(conn, run_id, "below"), child)
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), root)
+    _policy(conn, code, "deny")
+    return root
+
+
+def test_a_denied_root_with_no_direct_member_is_a_gap(conn):
+    """THE CASE #31 EXISTS FOR. Upstream vouches the concern matters, the deny-list
+    vouches that expansion is not the answer, and the rule reaches nobody. That is a
+    genuine, actionable open question -- arguably a better curation target than most,
+    which is why drugref publishes it rather than leaving it silent."""
+    run_id = _run(conn)
+    root = _denied_root_with_members_only_below(conn, run_id)
+    assert _dead_by_policy(conn) == \
+        [(root, "Endocrine Activity Alteration [PE]", 1, 1)]
+
+
+def test_the_rule_yields_no_pair_at_all(conn):
+    """The premise the whole view rests on, asserted rather than assumed: if
+    ddi_candidate_pair returned something here, this would be noise on a worklist."""
+    run_id = _run(conn)
+    _denied_root_with_members_only_below(conn, run_id)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ddi_candidate_pair").fetchone()[0] == 0
+
+
+def test_a_denied_root_WITH_a_direct_member_is_not_a_gap(conn):
+    """A deny does not make a rule dead -- it makes it direct-only. With a direct
+    member the rule still pairs, which is exactly `Cardiovascular Activity Alteration`
+    after the #34 gate fix gave it 7."""
+    run_id = _run(conn)
+    root = _denied_root_with_members_only_below(conn, run_id)
+    _member(conn, run_id, _moiety(conn, run_id, "direct"), root)
+    assert _dead_by_policy(conn) == []
+
+
+def test_an_ALLOWED_root_is_never_dead_by_policy(conn):
+    """The view is named for the CAUSE, so it must not report a class whose rules die
+    of something else. An allowed root expands, so its members below are reachable."""
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900010")
+    child = _class(conn, run_id, "N0000900011")
+    _parent(conn, run_id, child, root)
+    _member(conn, run_id, _moiety(conn, run_id, "below"), child)
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), root)
+    _policy(conn, "N0000900010", "allow")
+    assert _dead_by_policy(conn) == []
+
+
+def test_an_UNREVIEWED_root_is_not_dead_either(conn):
+    """Absent is not denied. COALESCE(decision,'allow') in ddi_candidate_pair means an
+    unreviewed class EXPANDS -- unreviewed is the recall-safe default, and
+    gap_unreviewed_expansion_root is what asks about it."""
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900020")
+    child = _class(conn, run_id, "N0000900021")
+    _parent(conn, run_id, child, root)
+    _member(conn, run_id, _moiety(conn, run_id, "below"), child)
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), root)
+    assert _dead_by_policy(conn) == []
+
+
+def test_an_EMPTY_denied_subtree_belongs_to_the_OTHER_view(conn):
+    """THE PARTITION THAT KEEPS ONE DEAD RULE FROM MINTING TWO QUESTIONS.
+
+    If nothing is filed anywhere below, gap_unpopulated_contraindication already
+    reports the class and the remedy is to populate it. Reporting it here as well
+    would ask a second question -- "reconsider the deny?" -- whose answer changes
+    nothing, because allowing expansion over an empty subtree reaches no one.
+
+    Plan A tolerates a class raising two questions only when they are INDEPENDENTLY
+    ANSWERABLE (unpopulated + unreviewed_expansion_root). These are not.
+    """
+    run_id = _run(conn)
+    root = _class(conn, run_id, "N0000900030")
+    _ci(conn, run_id, _moiety(conn, run_id, "subj"), root)
+    _policy(conn, "N0000900030", "deny")
+
+    assert conn.execute("SELECT count(*) FROM "
+                        "drugref.gap_unpopulated_contraindication").fetchone()[0] == 1
+    assert _dead_by_policy(conn) == []
+
+
+def test_the_direct_membership_test_is_PER_AXIS(conn):
+    """Same rule as gap_unpopulated_contraindication's: ddi_candidate_pair pairs a
+    CI_PE rule over has_PE members and nothing else, so a direct member on has_MoA
+    does not save the rule -- and an axis-blind test would call it alive and hide the
+    gap."""
+    run_id = _run(conn)
+    root = _denied_root_with_members_only_below(conn, run_id)
+    _member(conn, run_id, _moiety(conn, run_id, "wrong axis"), root, "has_MoA")
+    assert [r[0] for r in _dead_by_policy(conn)] == [root]
+
+
+def test_a_non_expanding_predicate_is_not_asked_about(conn):
+    """db/012's rule, applied in a fourth place. The question here is "should this deny
+    be reconsidered?" -- and for a predicate that does not expand at all, ALLOWING
+    expansion would change nothing, so no available decision retires the question. A
+    dead rule of that shape is real but has a different remedy, and reporting it under
+    this name would attribute it to a policy that did not cause it."""
+    run_id = _run(conn)
+    _denied_root_with_members_only_below(conn, run_id)
+    conn.execute("UPDATE drugref.ci_axis SET expands_descendants = false "
+                 "WHERE relationship = 'CI_PE'")
+    assert _dead_by_policy(conn) == []
+
+
+def test_dead_rules_on_one_class_are_counted_together(conn):
+    """Per CLASS, because the decision is per class -- the same grain, and the same
+    priority signal, as gap_unpopulated_contraindication."""
+    run_id = _run(conn)
+    root = _denied_root_with_members_only_below(conn, run_id)
+    _ci(conn, run_id, _moiety(conn, run_id, "second"), root)
+    assert _dead_by_policy(conn) == \
+        [(root, "Endocrine Activity Alteration [PE]", 2, 1)]
+
+
+def test_the_subtree_member_count_is_what_the_deny_costs(conn):
+    """The number a curator weighs: how many drugs the deny is holding back. 300 for
+    Endocrine Activity Alteration on the real release -- large enough that `allow` is
+    probably the wrong answer, which is exactly the judgement this view hands over
+    rather than making."""
+    run_id = _run(conn)
+    root = _denied_root_with_members_only_below(conn, run_id)
+    child = conn.execute(
+        "SELECT child_class_uuid FROM drugref.class_parent").fetchone()[0]
+    _member(conn, run_id, _moiety(conn, run_id, "another"), child)
+    assert _dead_by_policy(conn) == \
+        [(root, "Endocrine Activity Alteration [PE]", 1, 2)]
+
+
+def test_a_dead_by_policy_class_becomes_a_question(conn, ingest_run_id):
+    """The sixth gap kind. The question names the class and says what the decision
+    governs, so it is answerable without opening a database."""
+    root = _denied_root_with_members_only_below(conn, ingest_run_id)
+    counts = questions.register_from_gaps(conn, ingest_run_id)
+    assert counts["dead_by_expansion_policy"] == 1
+
+    gap_key, text = conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'dead_by_expansion_policy'").fetchone()
+    assert gap_key == f"CLASS:{root}"
+    assert "Endocrine Activity Alteration [PE]" in text
 
 
 # ---- gap_unresolved_ci_object -------------------------------------------------

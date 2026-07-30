@@ -9,7 +9,7 @@ convention, so the schema is re-applied idempotently on a fresh database).
 import hashlib
 import os
 import pathlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import psycopg
 
@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS drugref.schema_migration (
 
 
 def clear_source_tables(conn: psycopg.Connection,
-                        tables: Sequence[str], source: str) -> None:
+                        tables: Sequence[str], source: str,
+                        match: Mapping[str, str] | None = None) -> None:
     """Delete every row `source` contributed to each of `tables`, in the order given.
 
     THE ONE STATEMENT THAT MAKES "REBUILDABLE PROJECTION" TRUE. An ingested feed is
@@ -52,14 +53,33 @@ def clear_source_tables(conn: psycopg.Connection,
     it independently, so dropping a table from one fails loudly instead of leaving a
     projection that grows a little on every ingest.
 
-    Table names are interpolated, not parameterised, because an identifier cannot be
-    a bind parameter; they come only from those module constants, never from input.
+    `match` NARROWS THE CLEAR TO ONE WRITER'S ROWS, for the one table a source has two
+    writers for (#39). ingest_unmatched_ingredient is written both by medrt_run (the
+    ingredients MED-RT classifies that no moiety carries) and by mesh_ci_run (the
+    subjects of a contraindication that no moiety carries), and both open their runs
+    under source 'MED-RT'. Neither set contains the other, so a source-only clear let
+    whichever ran last delete the other's rows -- and be unable to re-add them.
+    Passing {"reason": "classification"} scopes the same DELETE to the bucket the
+    caller re-derives. It is a Mapping rather than another positional string so the
+    call site names the column it narrows on.
+
+    The narrowing is OPT-IN: five of the six writers own their whole table for a
+    source and must keep clearing it wholesale, and a helper that quietly cleared less
+    than asked would leave a projection growing a little on every ingest with nothing
+    failing.
+
+    Table AND column names are interpolated, not parameterised, because an identifier
+    cannot be a bind parameter; both come only from module constants, never from input.
+    Values are always bound.
     """
+    extra = "".join(f" AND {column} = %s" for column in (match or {}))
+    values = tuple((match or {}).values())
     for table in tables:
         conn.execute(
             f"DELETE FROM drugref.{table} WHERE ingest_run IN "
-            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)",
-            (source,))
+            "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = %s)"
+            + extra,
+            (source, *values))
 
 
 def connect(dsn: str | None = None) -> psycopg.Connection:

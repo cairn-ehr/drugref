@@ -212,28 +212,51 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
 
 UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 
+# Why an RxCUI is on the unmatched worklist -- and, because the clear is scoped on it,
+# WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these two,
+# and the invariant a third writer must preserve is ONE WRITER PER (source, reason):
+# add a value here rather than sharing one, or the clears collide again exactly as
+# medrt_run's and mesh_ci_run's did. #47 is the next candidate for a third value --
+# medrt_run's own CI subjects, which it counts today and does not persist.
+CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
+CONTRAINDICATION = "contraindication"  # mesh_ci_run: the SUBJECT of a contraindication
 
-def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str) -> None:
-    """Drop the previous release's unmatched-ingredient list for `source`.
+
+def clear_source_unmatched_ingredients(conn: psycopg.Connection, source: str,
+                                       reason: str) -> None:
+    """Drop the previous release's unmatched-ingredient list for `(source, reason)`.
 
     Same rebuildable-projection discipline as clear_source_edges, and needed for the
     same reason: an ingredient that starts matching (because the moiety gate widened,
     or the registry grew) must LEAVE the list. Without this the worklist would grow
     by its own length on every ingest and never shrink, which is precisely the
     "generated document, stale on write" failure the gap views exist to avoid.
+
+    SCOPED BY REASON AS WELL AS SOURCE, and `reason` is required rather than
+    defaulted: two orchestrators write this table under source 'MED-RT' from different
+    upstream assertions, so a source-only clear made the worklist depend on which ran
+    last (#39). A caller that does not say which bucket it rebuilds must fail here,
+    not silently take another writer's rows with it.
     """
-    db.clear_source_tables(conn, UNMATCHED_INGREDIENT_TABLES, source)
+    db.clear_source_tables(conn, UNMATCHED_INGREDIENT_TABLES, source,
+                           match={"reason": reason})
 
 
 def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
-                              ingest_run_id: int,
+                              ingest_run_id: int, reason: str,
                               names: Mapping[str, str] | None = None) -> int:
-    """Record that each RxCUI was classified upstream but is carried by no moiety.
+    """Record that each RxCUI was named upstream but is carried by no moiety.
 
     Not an error, and not a silent drop: MED-RT classifies far more ingredients than
     pass drugref's moiety gate, and each one is a drug the registry can say nothing
     about. Persisting the identity (rather than only counting it, as the ingest did
     before Plan A) is what lets gap_unmatched_ingredient be a query.
+
+    `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION or
+    CONTRAINDICATION above -- and is what its own clear is scoped on. Required, and
+    positional before the optional `names`, so a writer cannot inherit a bucket it
+    does not own; the column has no DEFAULT either, so a forgotten reason fails in the
+    database as well as here.
 
     Batched rather than one call per RxCUI -- this is thousands of rows on a real
     release, and its siblings (add_membership, add_parent_edge) are per-row only
@@ -246,11 +269,12 @@ def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
     a worklist a human cannot read is a worklist nobody works.
     """
     names = names or {}
-    rows = [(ingest_run_id, rxcui, names.get(rxcui)) for rxcui in rxcuis]
+    rows = [(ingest_run_id, rxcui, names.get(rxcui), reason) for rxcui in rxcuis]
     if not rows:
         return 0
     with conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO drugref.ingest_unmatched_ingredient (ingest_run, rxcui, name) "
-            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", rows)
+            "INSERT INTO drugref.ingest_unmatched_ingredient "
+            "(ingest_run, rxcui, name, reason) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING", rows)
     return len(rows)
