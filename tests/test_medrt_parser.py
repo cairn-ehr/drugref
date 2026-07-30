@@ -265,7 +265,9 @@ def test_membership_counts_per_ingredient():
 
 
 def test_indication_and_contraindication_are_not_membership():
-    """may_treat / may_prevent / CI_* are curated-overlay data for a later slice."""
+    """may_treat / may_prevent (now ingested as mesh_indications, slice 5b.2) and
+    CI_* are NOT membership -- being a drug's indication or contraindication is not
+    the same claim as being a member of a class, so neither may reach class_membership."""
     relationships = {m.relationship for m in parsed().memberships}
     assert relationships <= {"has_MoA", "has_PE", "has_TC", "has_PK", "has_EPC"}
 
@@ -320,8 +322,9 @@ def test_skipped_association_names_are_reported(tmp_path):
         + assoc("has_SC", "MED-RT", "C-MOA", "MeSH", "M0002")
         + assoc("has_MoA", "RxNorm", "161", "MED-RT", "C-MOA"))
     result = medrt.parse(path)
-    assert result.skipped_predicates == ("has_SC", "may_treat")
+    assert result.skipped_predicates == ("has_SC",)
     assert len(result.memberships) == 1      # the recognised one still lands
+    assert len(result.mesh_indications) == 1  # may_treat is INGESTED now, not skipped
 
 
 # ---- ambiguous published codes ---------------------------------------------
