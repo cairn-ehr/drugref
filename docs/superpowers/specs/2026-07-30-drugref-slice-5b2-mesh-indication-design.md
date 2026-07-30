@@ -172,6 +172,32 @@ drugref stores the published value and **claims no meaning for 5 and 6** — inv
 one is how a plausible bug gets shipped. Only `3` is load-bearing, and only in one
 place (§5.6). Of the 34 SCRs the registry will hold, 29 are class 3 and 5 are class 1.
 
+### 3.6 The registry is shared, so the contraindication half moves too — upward
+
+The closure is taken over **all** MeSH-keyed objects at once, which means slice 5b's
+DAG gains edges. Measured: `condition_parent` **7,157 → 8,507** (+1,350). The
+consequence was predicted wrongly at design time and the measurement corrected it —
+**`condition_subtree` over unchanged `CI_with` roots grows 12,311 → 12,415**, so
+`condition_contraindication_expanded` grows too.
+
+The mechanism is worth stating, because it will recur every time the registry widens: a
+condition bears **several tree numbers**, and `mesh.tree_parent_edges` writes an edge
+only when **both** endpoints are registered. A condition already in the CI closure via
+one tree number can have a second tree parent that was never registered — until the
+indication half registers it. The edge then appears and the condition becomes reachable
+from a CI root it could not be reached from before. **11 of 677** CI roots are affected:
+*Nervous System Diseases* +59 (gaining *Acute Pain*, *Abdominal Pain*), *Immune System
+Diseases* +11, *Neuromuscular Diseases* +10.
+
+**This is a completion, not a regression, and it runs in the safe direction.** *Acute
+Pain* really is filed under nervous-system disease in MeSH, and a contraindication on
+that root really should reach it; the old registry was simply too narrow to see the
+edge. Assertion-weighted, the expansion grows **0.39%**.
+
+So the verification criterion in §10 is *not* "no 5b figure moves". The **direct** rows
+must not move — they are what the release asserts — while the **expanded** figures are
+expected to grow by this much and no more.
+
 ## 4. What is added, in one breath
 
 Two relations, one vocabulary table, one cached column, one read-path function, one
@@ -459,10 +485,15 @@ Re-run the whole chain on a scratch database — UNII 26Feb2026 → MED-RT 2026.
 MeSH pa/desc/supp 2026 → this slice — and record the measured table. Three things must
 hold, and one must move:
 
-- **must not move**: every slice-5b headline figure — `condition_parent` 7,157 edges over
-  the CI closure, `moiety_condition_contraindication` **9,471**, `moiety_contraindication`
-  **1,442**, 103 withheld objects summing to 405 rules, `ddi_candidate_pair` **21,664**;
-- **must move, to exactly this**: `condition` **5,203 → 5,963**;
+- **must not move — the DIRECT rows, which are what the release asserts**:
+  `moiety_condition_contraindication` **9,471**, `moiety_contraindication` **1,442**, 103
+  withheld objects summing to 405 rules, `ddi_candidate_pair` **21,664**;
+- **must move, to exactly this**: `condition` **5,203 → 5,963**, `condition_parent`
+  **7,157 → 8,507**, `condition_subtree` over `CI_with` roots **12,311 → 12,415** (§3.6);
+- **must move, by about this much**: `condition_contraindication_expanded` **191,728 →
+  ≈192,500**, i.e. +0.39% assertion-weighted. The exact figure depends on which subjects
+  pass the moiety gate and so is measured, not predicted; a much larger move means the
+  closure took in more than the referenced objects and their descendants;
 - **must be measured, against the §3.1 ceilings**: the two relations' row counts after the
   moiety gate — at most **18,125** and **170** distinct pairs — plus the unmatched
   indication subjects, and the gap view against its predicted **66**;
