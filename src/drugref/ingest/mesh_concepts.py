@@ -63,6 +63,15 @@ class MeshRecord:
     unii: frozenset[str]
     cas: frozenset[str]
     is_preferred_concept: bool
+    # MeSH's SCRClass, AS PUBLISHED, and None for a descriptor (which carries
+    # DescriptorClass, a different vocabulary). Stored rather than interpreted because
+    # supp2026 publishes SIX values -- 1: 249,245 · 4: 65,236 · 3: 6,542 · 5: 1,763 ·
+    # 2: 1,236 · 6: 23 -- while the documentation describes four, so drugref asserts a
+    # meaning for none of them here. Exactly one consumer reads it, and it reads only
+    # '3' (rare disease): db/019's gap_condition_without_indication, which needs to tell
+    # 'Short QT Syndrome' from 'aliskiren' among records that bear no tree numbers and
+    # so have no DAG position to reason about.
+    scr_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +128,10 @@ def _record(el, ui_tag: str, name_tag: str, kind: str, concept_ui: str,
                       name=el.findtext(name_tag) or "",
                       tree_numbers=trees,
                       unii=frozenset(uniis), cas=frozenset(cas),
-                      is_preferred_concept=preferred)
+                      is_preferred_concept=preferred,
+                      # .get() returns None on a DescriptorRecord, which has no such
+                      # attribute -- the desired answer, arrived at structurally.
+                      scr_class=el.get("SCRClass"))
 
 
 # (file, record tag, UI tag, name tag, record kind) -- descriptors FIRST, because a

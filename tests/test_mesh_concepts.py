@@ -190,6 +190,49 @@ def test_parent_edges_never_self_parent():
         assert edge.child_code != edge.parent_code
 
 
+def test_a_supplementary_record_carries_its_scr_class(tmp_path):
+    """MeSH's SCRClass is what tells a rare disease (3) from a chemical (1) among
+    records that bear NO tree numbers, and therefore no DAG position at all. It is the
+    only thing that lets gap_condition_without_indication publish 'Short QT Syndrome'
+    while excluding 'aliskiren'."""
+    supp = tmp_path / "supp.xml"
+    supp.write_text(
+        '<?xml version="1.0"?><SupplementalRecordSet>'
+        '<SupplementalRecord SCRClass="3">'
+        '<SupplementalRecordUI>C536914</SupplementalRecordUI>'
+        '<SupplementalRecordName><String>Thyroid cancer, medullary</String>'
+        '</SupplementalRecordName>'
+        '<ConceptList><Concept PreferredConceptYN="Y">'
+        '<ConceptUI>M0999001</ConceptUI></Concept></ConceptList>'
+        '</SupplementalRecord></SupplementalRecordSet>', encoding="utf-8")
+    empty = tmp_path / "desc.xml"
+    empty.write_text('<?xml version="1.0"?><DescriptorRecordSet/>', encoding="utf-8")
+
+    got = mesh_concepts.resolve_concepts(empty, supp, {"M0999001"})["M0999001"]
+    assert got.record_kind == mesh_concepts.SCR
+    assert got.scr_class == "3"
+
+
+def test_a_descriptor_carries_no_scr_class(tmp_path):
+    """DescriptorRecord publishes DescriptorClass, a different vocabulary. Reading it
+    into this field would make descriptors indistinguishable from SCR chemicals."""
+    desc = tmp_path / "desc.xml"
+    desc.write_text(
+        '<?xml version="1.0"?><DescriptorRecordSet>'
+        '<DescriptorRecord DescriptorClass="1">'
+        '<DescriptorUI>D004827</DescriptorUI>'
+        '<DescriptorName><String>Epilepsy</String></DescriptorName>'
+        '<ConceptList><Concept PreferredConceptYN="Y">'
+        '<ConceptUI>M0007720</ConceptUI></Concept></ConceptList>'
+        '</DescriptorRecord></DescriptorRecordSet>', encoding="utf-8")
+    empty = tmp_path / "supp.xml"
+    empty.write_text('<?xml version="1.0"?><SupplementalRecordSet/>', encoding="utf-8")
+
+    got = mesh_concepts.resolve_concepts(desc, empty, {"M0007720"})["M0007720"]
+    assert got.record_kind == mesh_concepts.DESCRIPTOR
+    assert got.scr_class is None
+
+
 def _concept_uis(path, tag):
     """Every ConceptUI in a fixture file -- test scaffolding, not production code."""
     from xml.etree import ElementTree as ET
