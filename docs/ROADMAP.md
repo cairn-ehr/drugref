@@ -116,7 +116,8 @@ The MeSH-endpoint MED-RT content, unlocked by ingesting **MeSH disease/chemical 
 licence already cleared in 2b — **no new source**). The 5b design round **split the work in two**: **5b** is
 the contraindication half — `CI_with` (drug→condition) + `CI_ChemClass`'s moiety arm (drug↔drug) — over a
 new MeSH **condition** registry; **5b.2** is the indication half
-(`may_treat`/`may_prevent`/`may_diagnose`/`induces`, ~18k), which **reuses that registry unchanged**. Spec:
+(`may_treat`/`may_prevent`/`may_diagnose`/`induces`), which reuses that registry — and, as it turned out,
+**widens** it, since one closure is taken over both halves' objects. Spec:
 [slice-5b](superpowers/specs/2026-07-28-drugref-slice-5b-mesh-contraindication-design.md). `db/013`–`db/016`;
 merged as PR #44.
 
@@ -161,8 +162,8 @@ simply does not hold. Reading the first fact off the second asked a curator whet
 kinds stay on the worklist (so the 103 / 405 totals are unchanged) and each now gets the question its own
 remedy answers: rule on tree expansion, or register the moiety.
 
-**Also not done here:** 5b.2 (indications), MED-RT's `has_SC` (3,632 assertions, **248 targeting MED-RT
-itself**), and the `RelatedRegistryNumber` precision pass.
+**Also not done here:** MED-RT's `has_SC` (3,632 assertions, **248 targeting MED-RT itself**) and the
+`RelatedRegistryNumber` precision pass. 5b.2 has since landed — see below.
 
 **Two of the three things this slice was told not to forget were honoured; the third was retracted.**
 `condition_ci_axis.expands_descendants` is declared per predicate **with no DEFAULT** (`db/014`), so MeSH's
@@ -199,7 +200,7 @@ CHEMICAL_CLASS (386 rules) + 7 UNREGISTERED_SUBSTANCE (19 rules)**, and slice 2b
 ambiguous — 72.8% of members carry an identity KEY, but only **40.6% reach a gated-in moiety**.
 
 #### Interaction debt round ✅ DONE
-The three interaction-model follow-ups, cleared before 5b.2 reuses these code paths. `db/018`; **568 tests**.
+The three interaction-model follow-ups, cleared before 5b.2 reused these code paths. `db/018`; 568 tests.
 Each was **measured against the real releases before it was touched, and two of the three issue texts proved
 stale** — a number in an issue is a claim about a release, not a fact about the code.
 
@@ -237,19 +238,65 @@ Residue filed: [#47](https://github.com/cairn-ehr/drugref/issues/47) (`medrt_run
 subjects without persisting them — all 99 happen to be covered by other rows today, which is a property of
 the release) and [#48](https://github.com/cairn-ehr/drugref/issues/48) (a non-expanding predicate with no
 direct member is equally dead, needs its own view; unreachable until a predicate declares
-`expands_descendants` false — which 5b.2 may). [#50](https://github.com/cairn-ehr/drugref/issues/50), the
-post-review re-measurement, is **closed**.
+`expands_descendants` false — **and 5b.2 did not make it live**, since `induces` holds no axis row at all
+and an indication always reaches its own condition).
+[#50](https://github.com/cairn-ehr/drugref/issues/50), the post-review re-measurement, is **closed**.
 
-#### Slice 5b.2 — MeSH-keyed indications
-The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** (~18k) plus
-**`induces`** (170) — a public-domain, drugref-owned drug–disease dataset (a MeDIC alternative it holds
-outright). **The cheapest slice on this list**, because 5b built everything it needs: the same `condition` /
-`condition_parent` registry **unchanged**, the same `mesh_concepts` ConceptUI→record resolution, the same
-descendant closure, the same rebuildable-projection/candidate-tier posture. What it adds is a relation (or
-relations — an indication is not a contraindication and should not share a table), a vocabulary row per
-predicate with `expands_descendants` **declared, not defaulted**, and its own objects extended into the
-registry closure. Note **`induces` points the other way**: the drug *causes* the state, so it is neither an
-indication nor a contraindication and must not be filed as either.
+#### Slice 5b.2 — MeSH-keyed indications ✅ DONE
+The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** plus **`induces`**
+— a public-domain, drugref-owned drug–disease indication dataset (the MeDIC alternative it holds outright).
+**No new source.** Spec:
+[slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). `db/019`; **619
+tests**. It reuses 5b's machinery entirely — the same registry, the same ConceptUI→record resolution, the
+same closure, the same candidate-tier posture — and adds **no new mechanism**. One orchestrator
+(`ingest/mesh_rel_run.py`) now owns **both** halves, because `condition_parent` edges are derived by both
+closures and so cannot be split by a discriminator.
+
+**Measured end-to-end against the real releases** (UNII 26Feb2026 + MED-RT 2026.07.06 + MeSH desc/supp/pa
+2026, live PG18) — **the measurement corrected the spec again, in three related places**:
+
+| | measured | spec §10 had predicted |
+|---|---:|---:|
+| `moiety_condition_indication` | **14,674** over 3,632 moieties / 1,305 conditions | ≤ 18,125 |
+| — by predicate | may_treat **12,662** · may_prevent **1,888** · may_diagnose **124** | — |
+| `moiety_induced_condition` | **154** over 108 moieties / 49 conditions | ≤ 170 |
+| `condition` (registry) / `condition_parent` | **5,963** / **8,507** | 5,963 / 8,507 ✓ |
+| registered `scr_class` | **29 × `3`, 5 × `1`** | 29 / 5 ✓ |
+| `gap_condition_without_indication` | **97** (80 C/F-tree + 17 rare-disease SCRs) | 66 |
+| `condition_subtree` (CI roots) | **11,512 → 11,605** | 12,311 → 12,415 |
+| `condition_contraindication_expanded` | **191,728 → 192,161** (+0.226%) | ≈192,500 (+0.39%) |
+| **the direct 5b rows — must not move** | **9,471 · 1,442 · 103/405 · 21,664** | unchanged ✓ |
+
+`indications_for_condition` was checked against `condition_indication_reach` for **every** registry
+condition — **5,963 checked, 276,343 rows, zero disagreements**, the same pin #45 established for the
+contraindication pair.
+
+**The three corrections share one cause: the spec measured before the moiety gate.** 1,426 indication
+subject RxCUIs are carried by no moiety, and `condition_subtree` walks the **641** roots that *stored* rules
+name rather than the **677** the release references. Re-measured pre-gate, the spec's figures reproduce
+exactly — so both are right about different populations, exactly as 5b's concept-vs-record grain was. The
+standing correction is the docs-site living record `decisions/indications-do-not-expand.md`.
+
+**What the slice decides, and why it is not a contraindication with the sign flipped.** A contraindication
+expands **down** the condition DAG (a patient coded *Temporal Lobe Epilepsy* is a patient with epilepsy). An
+indication must not: the same walk distributes a therapeutic claim over the object's subclasses, and one
+`may_treat` on *Neoplasms* would manufacture 702 claims MED-RT never made (13×/41×/75× across the
+predicates). So **nothing derived is stored**; `indications_for_condition` walks **UP** and labels every
+derived row `is_direct = false`, meaning a **weaker** claim rather than a wider one. That read path is not
+optional decoration — **3,719 of 5,963 registry conditions have no direct indication but do have an ancestor
+with one**, and get nothing from the stored rows alone. `induces` gets its **own table** and no axis row: the
+drug *causes* the state, which is neither an indication nor a contraindication, and a shared table plus a
+forgotten filter reads "carbamazepine treats agranulocytosis".
+
+**Registry widening moves 5b's expanded figures — upward, and that is a completion.** One closure is now
+taken over every MeSH-keyed object, so the DAG gains edges: a condition bearing several tree numbers can have
+a second parent that only the indication half registers. 10 of 641 contraindication roots grew (*Nervous
+System Diseases* +59, gaining *Acute Pain*), none shrank, the root set is byte-identical, and every direct
+figure is unchanged. **Expect this every time the registry widens.**
+
+**Also not done here:** the 193 class-subject indications (filed against #8), `has_SC`, and any read path
+that ranks or prefers among indications — MED-RT asserts no line of therapy, no evidence strength and no
+ordering, and inventing one is slice 5c's curated work rather than a projection's.
 
 #### Slice 5c — The curated overlay (the moat)
 Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
@@ -362,10 +409,12 @@ other jurisdictions.
   joins `db/006`'s `ci_axis`, because a class populated on an axis the rule does not expand over still
   yields no pair — reading it relationship-blind hides real gaps. **A closed gap carrying curator work is
   retired, not deleted** (`open_question.is_current`): the curated tables cascade from `open_question` *and*
-  refuse `DELETE`, so deleting one aborts the ingest outright. **Six gap kinds now** — slice 5b added
-  `unresolved_ci_object` and the debt round `dead_by_expansion_policy`; measured against the real releases:
-  unclassified_moiety 16,089 · unmatched_ingredient 2,140 · unresolved_ci_object 103 ·
-  unpopulated_contraindication 13 · dead_by_expansion_policy 1 · unreviewed_expansion_root 0.
+  refuse `DELETE`, so deleting one aborts the ingest outright. **Seven gap kinds now** — slice 5b added
+  `unresolved_ci_object`, the debt round `dead_by_expansion_policy`, and 5b.2
+  `condition_without_indication`; measured against the real releases:
+  unclassified_moiety 16,089 · unmatched_ingredient 2,150 · unresolved_ci_object 103 ·
+  condition_without_indication 97 · unpopulated_contraindication 13 · dead_by_expansion_policy 1 ·
+  unreviewed_expansion_root 0.
 - **Descendant expansion ✅ DONE** (Plan B of the additive-effect design; the work #15 asked for). `db/010`
   makes `ddi_candidate_pair` descend the class DAG — **for a contraindication, fewer rows is the harm
   direction**, and direct-only hid 21.9% of `CI_MoA` and **85.2%** of `CI_PE` pairs because MED-RT files
@@ -393,10 +442,11 @@ other jurisdictions.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling** (this count has now been wrong twice — three, then seven — so re-run the
-  grep before quoting it): `grep -l TRUNCATE tests/*.py` finds **nine** modules — `test_chebi.py`,
-  `test_gap_views.py`, `test_ingest_run.py`, `test_medrt_run.py`, `test_mesh_ci_run.py`,
-  `test_mesh_run.py`, `test_moiety_admission.py`, `test_pbs_run.py` and `test_questions.py` — each
-  `TRUNCATE`-ing the drugref tables in an autouse fixture
+  grep before quoting it): `grep -l TRUNCATE tests/*.py` finds **nine** files — `test_chebi.py`,
+  `test_gap_views.py`, `test_ingest_run.py`, `test_medrt_run.py`, `test_mesh_run.py`,
+  `test_moiety_admission.py`, `test_pbs_run.py`, `test_questions.py` and, since 5b.2,
+  **`mesh_rel_fixtures.py`** — a shared helper rather than a test module, holding the one truncate both
+  MeSH-keyed test modules use — each `TRUNCATE`-ing the drugref tables in an autouse fixture
   because their orchestrators commit internally and so escape the `conn` fixture's rollback. Those fixtures
   depend on precisely the bypass this item closes, so hardening the floor must land together with a
   replacement isolation strategy (e.g. a privileged test role, or per-test schemas) or the suite stops being
