@@ -1841,14 +1841,41 @@ argument with its measured numbers — it is a decision that currently stands, w
 exactly what that section is for. Add it to `mkdocs.yml`'s nav and check
 `mkdocs build --strict`.
 
-- [ ] **Step 5: Update HANDOVER.md and ROADMAP.md**
+- [ ] **Step 5: Clear the debt this slice carried, before it becomes someone else's**
+
+Rule 5 says fix it now or file it. These are all small, all known, and all traceable to a
+review that deferred them so the task under review could close:
+
+1. **`src/drugref/ingest/mesh_rel_run.py` is at exactly 500/500 lines.** It has not
+   broken CLAUDE.md rule 4, but it has no headroom, so the *next* line added to it does —
+   silently, with nobody deciding. Extract the four frozen tally dataclasses
+   (`RegistryTally`, `CiTally`, `IndicationTally`, `MeshRelSummary`) into
+   `ingest/mesh_rel_summary.py` and re-export them, so existing imports keep working.
+   Zero behaviour change: no number may move.
+2. **`tests/test_mesh_ci_run.py` is named after a module that no longer exists** and now
+   holds only the contraindication half. Rename it to match what it tests.
+3. **`src/drugref/ingest/mesh_ind_relations.py`'s `object_uuid is None` guard has a
+   comment that argues against itself** — it claims the guard makes a narrowed closure
+   fail visibly at the foreign key, when the guard is precisely what would make that loss
+   silent. One sentence, not code.
+4. **`tests/mesh_rel_fixtures.py`'s truncate list omits `ingest_unmatched_ingredient`**,
+   which three tests assert on directly; it is cleared only by cascade today. That
+   contradicts the module's own stated principle that a table cleared by accident is one
+   nobody knows is cleared. One line.
+5. **`src/drugref/classes.py:222` says "a fourth writer"** where it means "a fourth
+   value" — there are three values and two writers, and the sentence conflates them in
+   the very change that proves they differ.
+6. **`src/drugref/ingest/medrt.py`'s `skipped_concept_types` docstring still lists
+   `may_treat` as "deliberately out of scope".** It is ingested now.
+
+- [ ] **Step 6: Update HANDOVER.md and ROADMAP.md**
 
 Per nextsession rule 9: concise, under 500 lines, focused on what remains. ROADMAP's
 slice 5b.2 section becomes ✅ DONE with the measured table. HANDOVER gains the traps a
 future change can still break — the generalisation direction, the two-table split, the
 scoped gap view, and §3.6's registry-widening effect on 5b's expanded figures.
 
-- [ ] **Step 6: Final check and PR**
+- [ ] **Step 7: Final check and PR**
 
 ```bash
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
