@@ -110,6 +110,12 @@ def test_apply_migrations_is_idempotent(conn):
         # db/012's reason: only one of the two copies had learned that a rule's own
         # subject is not a partner, and the views disagreed.
         "ci_rule_partner_reach", "gap_dead_by_expansion_policy",
+        # slice 5b.2, db/019: the two indication relations (drug-condition
+        # therapeutic, drug-condition induced) plus their vocabulary. Two tables,
+        # not one, for the reason db/014 split contraindications: an unfiltered read
+        # of each must be one true sentence, "used for" vs "causes".
+        "condition_indication_axis", "moiety_condition_indication",
+        "moiety_induced_condition",
     }
 
 

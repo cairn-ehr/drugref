@@ -27,7 +27,7 @@ test_gap_views. This module is about the contract those tests cannot see.
 import psycopg
 import pytest
 
-from drugref import classes, conditions, db, interactions, local
+from drugref import classes, conditions, db, indications, interactions, local
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -44,6 +44,9 @@ EXPECTED_TABLES = {
         classes.UNMATCHED_INGREDIENT_TABLES, ("ingest_unmatched_ingredient",)),
     "conditions.CONDITION_EDGE_TABLES": (
         conditions.CONDITION_EDGE_TABLES, ("condition_parent",)),
+    "indications.INDICATION_TABLES": (
+        indications.INDICATION_TABLES,
+        ("moiety_condition_indication", "moiety_induced_condition")),
     "interactions.CONTRAINDICATION_TABLES": (
         interactions.CONTRAINDICATION_TABLES, ("class_contraindication",)),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
