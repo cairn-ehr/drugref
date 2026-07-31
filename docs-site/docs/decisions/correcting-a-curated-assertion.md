@@ -4,9 +4,9 @@
 **Last reviewed:** 2026-08-01
 **Applies to:** every append-only curated assertion table — `question_state` (`db/007`) and Plan C's
 `additive_effect`, `effect_contribution`, `interaction_group_assertion`, `interaction_group_member`
-(`db/020`)
+(`db/020`, `db/023`)
 **Full derivation:** the [additive-effect & open-question design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-07-25-drugref-additive-effect-and-open-question-design.md)
-(§5.0, §5.4) and `db/005`, `db/007`, `db/020`
+(§5.0, §5.4) and `db/005`, `db/007`, `db/020`, `db/023`
 
 ## Context
 
@@ -45,8 +45,15 @@ Enforce single-live with a **`DEFERRABLE INITIALLY DEFERRED` constraint trigger*
 
 `db/007` reached this first for `question_state`. `db/020` adopts it for all four Plan C assertion tables
 through one generic function, `forbid_multiple_live_assertions()`, parameterised by the natural-key
-columns and comparing a `jsonb` projection of them — so one rule lives in one place rather than in four
-near-copies that can drift apart.
+columns — so one rule lives in one place rather than in four near-copies that can drift apart.
+
+**Generic must not mean unindexable.** `db/020` compared a `jsonb` projection of the natural key
+(`to_jsonb(t) @> $1`), which is readable, generic, and which no index can serve. Because this is a
+`FOR EACH ROW` trigger, a transaction inserting *n* rows then performed *n* sequential scans of a table
+*n* rows longer by the end — measured at 236 ms for 400 rows and **5,773 ms for 2,000**, quadratic.
+`db/023` rebuilds the same check as an **equality predicate per natural-key column**, composed from the
+same trigger arguments, backed by a partial `<table>_live_key` index over live rows: 42 ms for the same
+2,000 rows, and linear. The generality was never the problem — the comparison was.
 
 The partial unique index remains correct, and remains in use, wherever a correction changes the natural
 key: `identity_claim` (`db/005`) and `question_evidence` (`db/007`), whose key includes the reference.
@@ -74,6 +81,12 @@ checked eagerly and needs `SET CONSTRAINTS ALL DEFERRED` first.
   accumulate). Both were required by behaviour the spec asks for and could not otherwise have been built:
   §5.3's "superseding the last member of a role removes the role", and §5.2's principle that *reviewed*
   must be distinguishable from *nobody looked* so a worklist stops nagging.
+- **Every table with this shape needs that column** — the rule generalises, and `db/020` stopped one
+  table short of it. `interaction_group_assertion` has the same shape and so had the same hole: a group
+  always keeps exactly one live assertion once it has any, so there was no way to say "drugref no longer
+  asserts this group". `db/023` gives it an `applies` boolean. When adding a fifth assertion table, ask
+  what *withdrawing* one of its statements looks like **before** deciding it needs no ruling column;
+  supersession will not do it.
 
 ## Related
 

@@ -146,34 +146,122 @@ def test_a_non_pe_class_is_never_asked_about(conn):
 
 def test_an_effect_firing_purely_on_defaults_is_reported(conn):
     """Tension A made visible: (0, 2) with nothing graded fires on any two members of
-    a subtree nobody has reviewed. Legal -- and exactly the risky case."""
+    a subtree nobody has reviewed. Legal -- and exactly the risky case.
+
+    THE EFFECT NEEDS REAL MEMBERS for this to be the risky case at all; before db/023
+    this test asserted it over an effect with none, which the old row-counting gate
+    reported anyway."""
     run_id = _run(conn)
-    effect = _class(conn, run_id, "G010")
-    accumulation.curate_effect(conn, effect, run_id, accumulates=True,
-                               threshold_major=0, threshold_total=2, severity="major")
+    effect, _holders = _effect_over_members(conn, run_id, "G010", 2)
     assert effect in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
 
 
+def test_an_effect_with_too_few_members_to_fire_is_not_reported(conn):
+    """The behaviour db/023 changed, pinned so it stays deliberate. An effect with fewer
+    contributors than threshold_total cannot fire on ANYBODY, reviewed or not, so
+    "would fire on members nobody reviewed" is false of it. It reappears by itself the
+    moment an ingest brings enough members in -- a gap is a query, not a report."""
+    run_id = _run(conn)
+    effect, _holders = _effect_over_members(conn, run_id, "G017", 1)
+    assert effect not in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
+
+
 def test_requiring_a_major_is_not_reported(conn):
-    """threshold_major >= 1 filters the noise, which is why it is the recommendation."""
+    """threshold_major >= 1 filters the noise, which is why it is the recommendation.
+
+    Given four ungraded members -- more than enough to trip the gate if the effect were
+    (0, 4) -- so what keeps it off the queue is the threshold and nothing else."""
     run_id = _run(conn)
     effect = _class(conn, run_id, "G011")
+    for i in range(4):
+        _member(conn, run_id, _moiety(conn, run_id, f"G011U{i}"), effect)
     accumulation.curate_effect(conn, effect, run_id, accumulates=True,
                                threshold_major=1, threshold_total=2, severity="major")
     assert effect not in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
 
 
-def test_enough_graded_contributors_clears_the_threshold_gap(conn):
-    """(0, 2) is the CORRECT encoding for a fully curated effect, so the view must
-    stop reporting one once the curation is actually there."""
-    run_id = _run(conn)
-    effect = _class(conn, run_id, "G012")
+def _effect_over_members(conn, run_id, code, n_members, total=2):
+    """A (0, `total`) effect whose members each sit in their own gradeable class.
+
+    Each member gets its own class so that grading is a decision a curator can make
+    one member at a time -- which is what lets these tests move the graded/ungraded
+    boundary a single drug at a time.
+    """
+    effect = _class(conn, run_id, code)
+    holders = []
+    for i in range(n_members):
+        holder = _class(conn, run_id, f"{code}H{i}")
+        _edge(conn, run_id, effect, holder)
+        _member(conn, run_id, _moiety(conn, run_id, f"{code}U{i}"), holder)
+        holders.append(holder)
     accumulation.curate_effect(conn, effect, run_id, accumulates=True,
-                               threshold_major=0, threshold_total=2, severity="major")
-    for code in ("G012A", "G012B"):
-        accumulation.grade_contribution(conn, effect, _class(conn, run_id, code),
-                                        "major", run_id)
+                               threshold_major=0, threshold_total=total,
+                               severity="major")
+    return effect, holders
+
+
+def test_grading_every_member_clears_the_threshold_gap(conn):
+    """(0, 2) is the CORRECT encoding for a fully curated effect, so the view must
+    stop reporting one once the curation is actually there -- which means once too few
+    UNREVIEWED members remain to trip the threshold on their own."""
+    run_id = _run(conn)
+    effect, holders = _effect_over_members(conn, run_id, "G012", 2)
+    for holder in holders:
+        accumulation.grade_contribution(conn, effect, holder, "major", run_id)
     assert effect not in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
+
+
+def test_grading_too_few_members_does_not_clear_the_threshold_gap(conn):
+    """Two of four graded still leaves TWO members nobody looked at, and the effect
+    fires on any two. The gap must survive until the unreviewed population can no
+    longer trip the threshold by itself."""
+    run_id = _run(conn)
+    effect, holders = _effect_over_members(conn, run_id, "G013", 4)
+    for holder in holders[:2]:
+        accumulation.grade_contribution(conn, effect, holder, "major", run_id)
+    assert effect in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
+
+
+def test_grading_explicitly_MINOR_still_counts_as_reviewed(conn):
+    """An explicit `minor` is a curator LOOKING, so it clears the member the same way
+    a `major` does -- the distinction the whole model rests on (spec 5.2). What it must
+    NOT do is clear members it never reached, which is the next test."""
+    run_id = _run(conn)
+    effect, holders = _effect_over_members(conn, run_id, "G014", 2)
+    for holder in holders:
+        accumulation.grade_contribution(conn, effect, holder, "minor", run_id)
+    assert effect not in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
+
+
+def test_grading_classes_that_reach_nobody_does_not_clear_the_threshold_gap(conn):
+    """THE HOLE THIS VIEW HAD. Counting live effect_contribution ROWS let a curator
+    clear the gap with promotions that regrade nobody: both UUIDs are valid classes, so
+    two no-op rows satisfied `graded >= threshold_total` while every member the effect
+    actually fires on stayed unreviewed. The gate is the UNGRADED MEMBER count, so a
+    promotion that reaches nothing moves it by nothing."""
+    run_id = _run(conn)
+    effect, _holders = _effect_over_members(conn, run_id, "G015", 4)
+    for i in range(2):
+        stranger = _class(conn, run_id, f"G015X{i}", concept_type="EPC")
+        _member(conn, run_id, _moiety(conn, run_id, f"G015XU{i}"), stranger, "has_EPC")
+        accumulation.grade_contribution(conn, effect, stranger, "major", run_id)
+    assert effect in _keys(conn, "gap_uncurated_threshold", "effect_class_uuid")
+
+
+def test_the_threshold_gap_counts_only_promotions_that_bite(conn):
+    """`graded_contributor_count` is what the question text quotes back to a curator,
+    so a no-op promotion inflating it would report review that never happened."""
+    run_id = _run(conn)
+    effect, holders = _effect_over_members(conn, run_id, "G016", 4)
+    accumulation.grade_contribution(conn, effect, holders[0], "major", run_id)
+    stranger = _class(conn, run_id, "G016X", concept_type="EPC")
+    _member(conn, run_id, _moiety(conn, run_id, "G016XU"), stranger, "has_EPC")
+    accumulation.grade_contribution(conn, effect, stranger, "major", run_id)
+    graded, ungraded = conn.execute(
+        "SELECT graded_contributor_count, ungraded_member_count "
+        "FROM drugref.gap_uncurated_threshold WHERE effect_class_uuid = %s",
+        (effect,)).fetchone()
+    assert (graded, ungraded) == (1, 3)
 
 
 # ---- gap_ineffective_contribution -------------------------------------------

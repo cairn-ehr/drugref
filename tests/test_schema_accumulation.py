@@ -24,7 +24,7 @@ moiety_uuid alive while its claims come and go.
 import pytest
 import psycopg
 
-from drugref import ids
+from drugref import accumulation, ids
 
 
 def _run(conn, source="DRUGREF"):
@@ -167,8 +167,8 @@ def test_interaction_group_assertion_is_keyed_on_a_surrogate(conn):
     for name in ("triple whammy", "triple whammy (revised)"):
         ids_.append(conn.execute(
             "INSERT INTO drugref.interaction_group_assertion (group_uuid, name, "
-            "severity, clinical_note, source, ingest_run) "
-            "VALUES (%s, %s, 'major', 'AKI risk', 'DRUGREF', %s) "
+            "severity, clinical_note, applies, source, ingest_run) "
+            "VALUES (%s, %s, 'major', 'AKI risk', true, 'DRUGREF', %s) "
             "RETURNING interaction_group_assertion_id", (grp, name, run_id)).fetchone()[0])
     conn.execute("UPDATE drugref.interaction_group_assertion SET superseded_by = %s "
                  "WHERE interaction_group_assertion_id = %s", (ids_[1], ids_[0]))
@@ -235,7 +235,8 @@ def two_rows(conn, request):
     if table == "interaction_group_assertion":
         made = [conn.execute(
             "INSERT INTO drugref.interaction_group_assertion (group_uuid, name, "
-            "severity, source, ingest_run) VALUES (%s, 'g', 'major', 'DRUGREF', %s) "
+            "severity, applies, source, ingest_run) "
+            "VALUES (%s, 'g', 'major', true, 'DRUGREF', %s) "
             "RETURNING interaction_group_assertion_id", (grp, run_id)).fetchone()[0]
             for _ in range(2)]
         return table, pk, made[0], made[1]
@@ -435,3 +436,62 @@ def test_accumulates_has_no_default(conn):
         conn.execute(
             "INSERT INTO drugref.additive_effect (effect_class_uuid, source, ingest_run) "
             "VALUES (%s, 'DRUGREF', %s)", (cls, run_id))
+
+
+def test_applies_has_no_default(conn):
+    """The third table that needed a retirement column (db/023). `additive_effect` and
+    `interaction_group_member` each got one in db/020 for the same reason -- supersession
+    must point at a later row carrying the SAME natural key, so a group would otherwise
+    always keep exactly one live assertion and could never be withdrawn as a whole."""
+    run_id = _run(conn)
+    grp = _group(conn, run_id, "R006")
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute(
+            "INSERT INTO drugref.interaction_group_assertion (group_uuid, name, "
+            "severity, source, ingest_run) VALUES (%s, 'g', 'major', 'DRUGREF', %s)",
+            (grp, run_id))
+
+
+def test_a_group_can_be_retired_as_a_whole(conn):
+    """Retiring a GROUP is an insert of `applies = false` that supersedes the true row,
+    exactly as retiring a member is an insert of `satisfies_role = false`. Before db/023
+    the only route was retiring every member one at a time, which left a live assertion
+    still claiming a severity for a group that could never fire."""
+    run_id = _run(conn)
+    grp = _group(conn, run_id, "R007")
+    accumulation.assert_group(conn, grp, "triple whammy", "major", run_id)
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    accumulation.assert_group(conn, grp, "triple whammy", "major", run_id, applies=False)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT applies FROM drugref.interaction_group_assertion "
+        "WHERE group_uuid = %s AND superseded_by IS NULL", (grp,)).fetchone()[0] is False
+    # ...and the identity every member and external citation points at is untouched
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.interaction_group WHERE group_uuid = %s",
+        (grp,)).fetchone()[0] == 1
+
+
+# ---- the single-live check must stay INDEXABLE (db/023) ----------------------
+
+
+@pytest.mark.parametrize("index_name,table", [
+    ("additive_effect_live_key", "additive_effect"),
+    ("effect_contribution_live_key", "effect_contribution"),
+    ("interaction_group_assertion_live_key", "interaction_group_assertion"),
+    ("interaction_group_member_live_key", "interaction_group_member"),
+])
+def test_every_assertion_table_has_a_live_natural_key_index(conn, index_name, table):
+    """db/020's first single-live trigger asked `to_jsonb(t) @> $1`, which no index can
+    serve -- so the deferred check at COMMIT was a SEQUENTIAL SCAN PER ROW, measured at
+    5.8 s to load 2,000 promotions and rising quadratically. db/023 rewrote it to
+    equality predicates; these partial indexes are what make that rewrite pay, and this
+    test is what stops one being dropped as "unused" (nothing but the trigger reads it).
+    """
+    definition = conn.execute(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND tablename = %s AND indexname = %s", (table, index_name)).fetchone()
+    assert definition is not None, f"{index_name} is missing from drugref.{table}"
+    assert "superseded_by IS NULL" in definition[0], (
+        "the index must be PARTIAL over live rows -- a full index would not answer "
+        "the trigger's question, and a UNIQUE one is what this whole design cannot use")

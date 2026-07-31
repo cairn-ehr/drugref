@@ -16,9 +16,10 @@ registry, #10) · 2b (MeSH PA) · 5a (MED-RT CI_MoA/CI_PE) · the foundation rev
 review round (#38) · 5b (#44) · the post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · **the
 #53 population-label round (#56)**, which closed #53.
 
-**IN FLIGHT — Plan C, the accumulation model**, on `feat/plan-c-accumulation-model`: complete, **730 tests green**,
-`ruff check` + `mkdocs build --strict` clean, verified end-to-end against the real releases. Details under "Plan C"
-below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's.
+**IN FLIGHT — Plan C, the accumulation model**, on `feat/plan-c-accumulation-model`: complete **plus its review
+round (`db/023`)**, **747 tests green**, `ruff check` + `mkdocs build --strict` clean, verified end-to-end against the
+real releases. Details under "Plan C" below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice,
+plus Plan C's.
 
 **`db/019` is now MERGED, so it is immutable** — it was edited in place on the branch (which the ledger permits) to
 carry post-gate figures; any further correction needs a new `db/NNN`, or the living record for prose. Its final wave
@@ -246,7 +247,7 @@ predicates — `Synonym Of` shares their endpoint shape and would otherwise be e
 mannitol is a new **subject**, and a subject states its own contraindications. All three fixtures regenerate
 byte-identically.
 
-## Plan C — the accumulation model (`db/020`–`db/022`)
+## Plan C — the accumulation model (`db/020`–`db/023`)
 
 Plan: [plan-c](superpowers/plans/2026-08-01-plan-c-accumulation-model.md); design: §4–§8 / §11 steps 6–7 of the
 [additive-effect spec](superpowers/specs/2026-07-25-drugref-additive-effect-and-open-question-design.md). The model the
@@ -256,7 +257,7 @@ source**; drugref becomes an authority in its own registry (`source = 'DRUGREF'`
 four are curated assertions on the §5.0 overlay shape, `interaction_group` is the deliberate exception (a
 deterministic UUID and its provenance — nothing about it can be wrong). Read contract:
 `additive_effect_contributor` + `interaction_group_member_moiety`. Review gate: four gap views, **gap kinds 8–11**.
-730 tests.
+**`db/023` is the review round on all three** — see its own traps below. 747 tests.
 
 **Measured end-to-end** (same chain, 110 s). **Every prior figure reproduced exactly** — 19,438 · 3,634/3,961/18,639 ·
 568/549/22,179 · 5,963/8,507 · 9,471 · 1,442 · 103 · 14,674/154 · 168/422 · the seven gap counts:
@@ -280,10 +281,12 @@ deterministic UUID and its provenance — nothing about it can be wrong). Read c
   rows are live between the INSERT and the UPDATE; `db/007` met this on `question_state` first. One **deferred**
   constraint trigger, generalised over the key. **A test that never commits proves nothing** — force it with `SET
   CONSTRAINTS ALL IMMEDIATE`, which then switches the mode for the REST of the transaction.
-- **Two columns the spec does not have, both because NOTHING COULD BE RETIRED** (supersession must point at a later
+- **THREE columns the spec does not have, all because NOTHING COULD BE RETIRED** (supersession must point at a later
   row with the same key, so every correction leaves one live). `interaction_group_member.satisfies_role` makes §5.3's
   "superseding the last member of a role removes the role" implementable at all; `additive_effect.accumulates` lets a
-  curator rule *no* and leave the worklist. Neither has a DEFAULT.
+  curator rule *no* and leave the worklist; **`interaction_group_assertion.applies` (`db/023`) retires a GROUP as a
+  whole** — `db/020` stopped one table short of its own rule. None has a DEFAULT. **When adding a fifth assertion
+  table, ask what WITHDRAWING one of its statements looks like before deciding it needs no ruling column.**
 - **Promotion REGRADES, never RECRUITS**, structurally: the contributor set is computed from membership first and
   promotions are LEFT JOINed on. **`gap_ungraded_contribution` lists classes with NO row at all, not classes graded
   `minor`** — an explicit `minor` is *reviewed* and leaves the queue, and that absence is the only place the
@@ -292,6 +295,27 @@ deterministic UUID and its provenance — nothing about it can be wrong). Read c
   fires a fully-retired group on **every** regimen, including an empty one.
 - **First COMPOUND `gap_key`** (`CLASS:a/CLASS:b`): one contributor class can be sound for one effect and a no-op for
   another, so folding onto either half hands two gaps one immortal `question_uuid`. Pinned per kind.
+
+**The `db/023` review round — four findings, each measured or probed, none from reading alone.**
+- **GENERIC MUST NOT MEAN UNINDEXABLE.** `db/020`'s single-live trigger compared `to_jsonb(t) @> $1` — readable,
+  generic, and servable by no index (`EXPLAIN`: Seq Scan). As a FOR EACH ROW constraint trigger that made a bulk load
+  **quadratic**: 400 rows 236 ms, **2,000 rows 5,773 ms**. Rebuilt as one equality predicate per natural-key column
+  from the same `TG_ARGV`, backed by partial `<table>_live_key` indexes: **42 ms at 2,000 rows, linear** (137×). Still
+  one function for four tables. `db/020` claimed "the same shape as `db/007`" — the *reasoning* was; the shape was
+  not, in the one respect that costs. **Nothing but the trigger reads those indexes**, so a test names each one.
+- **`gap_uncurated_threshold` counted the wrong population** and cleared on curation that reviewed nothing: two
+  promotions of classes holding NO member of the effect satisfied the old row-count gate while all four members stayed
+  unreviewed. The gate is now `ungraded_member_count >= threshold_total` — with `threshold_major = 0` that is exactly
+  "the unreviewed population can trip this by itself". An explicit `minor` still clears the members it *reaches*
+  (spec §5.2); a promotion reaching none clears nothing. **An effect with fewer contributors than `threshold_total`
+  now drops out** — it cannot fire on anybody — and returns by itself when an ingest brings members in.
+- **`interaction_group_member_moiety` is deliberately NOT unique** on (group, role, moiety): a moiety reached through
+  both a class and its descendant appears once per route, because `via_class` is what a curator needs to correct a
+  member. Safe — the consumer takes a SET of roles — but its sibling `additive_effect_contributor` *promises*
+  uniqueness, so silence read as the same guarantee. Now stated in the `COMMENT ON` and asserted by a test.
+- **A test whose fixture does not build the case its docstring describes proves nothing.** Two threshold tests
+  asserted over an effect with **no members at all**; the old row-counting gate reported it anyway, so both passed for
+  the wrong reason. Give the effect real members before asserting anything about which members it fires on.
 
 **Curation probe on the real release** (rolled back, not committed) — the curation-economy argument, confirmed:
 *Decreased Coagulation Activity [PE]* gives **83 contributors**; **3** promoted EPC classes regrade **9** to major
@@ -328,7 +352,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 
 ```bash
 uv sync
-# 730 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
+# 747 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
 # floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
@@ -345,9 +369,11 @@ set — so the DB layer can never go green by being skipped.
   `017` that view re-keyed on `(upper(object_source), object_code)` (#41) · `018` the interaction debt round
   (`ingest_unmatched_ingredient.reason`, `ci_rule_partner_reach`, `contraindications_for_condition`) · `019` the two
   5b.2 indication relations + `condition_indication_axis` + `condition.scr_class` + `condition_indication_reach` +
-  `indications_for_condition` + `gap_condition_without_indication` · **`020`–`022` Plan C** (five curated
+  `indications_for_condition` + `gap_condition_without_indication` · **`020`–`023` Plan C** (five curated
   accumulation tables + the generic overlay floor; `class_subtree` + the two spec-8 read views + a re-issued
-  `ci_class_subtree` COMMENT; four curation gap views + gap kinds 8–11). **Read the LATEST file that touches an
+  `ci_class_subtree` COMMENT; four curation gap views + gap kinds 8–11; `023` the review round — an indexable
+  single-live trigger + its four partial indexes, `interaction_group_assertion.applies`, and a re-cut
+  `gap_uncurated_threshold`). **Read the LATEST file that touches an
   object for its actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by
   010's, 016's `gap_unresolved_ci_object` by 017's, and 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's.

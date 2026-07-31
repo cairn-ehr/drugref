@@ -222,10 +222,15 @@ _GAP_SOURCES = {
         # established shape (one class legitimately raises several independently
         # answerable questions) and question_uuid takes gap_kind as an input precisely
         # so they cannot collide.
+        # Quotes the UNGRADED count, which since db/023 is the number the gap gates on
+        # -- a curator told "only N graded" could satisfy that by grading classes the
+        # effect never reaches, which is exactly the hole db/023 closed. "How many of
+        # the drugs this would fire on has nobody looked at" is the actual question.
         "text_sql": (
             "'Which drugs are MAJOR contributors to ' || class_name || '? It fires on "
-            "any ' || threshold_total || ' contributor(s) with no major required, "
-            "while only ' || graded_contributor_count || ' class(es) have been graded "
+            "any ' || threshold_total || ' contributor(s) with no major required, and "
+            "' || ungraded_member_count || ' of its drug(s) have no grade at all "
+            "(across ' || graded_contributor_count || ' promotion(s) that reach it) "
             "-- so it currently fires on members nobody has reviewed. Answer by "
             "grading contributors, or by raising threshold_major.'"),
     },

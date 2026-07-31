@@ -21,6 +21,7 @@ constraint trigger rather than a partial unique index.
 import uuid
 
 import psycopg
+from psycopg import sql
 
 from drugref import ids
 
@@ -29,7 +30,7 @@ from drugref import ids
 
 
 def fires(majors: int, contributors: int,
-          threshold_major: int, threshold_total: int) -> bool:
+          threshold_major: int | None, threshold_total: int | None) -> bool:
     """Does an additive effect reach the threshold at which it is worth saying?
 
     `majors` and `contributors` are counted over `additive_effect_contributor` for one
@@ -47,6 +48,12 @@ def fires(majors: int, contributors: int,
     miscounted inputs is worse than an error: it is a clinical judgement resting on a
     number nobody checked, and `majors > contributors` means the caller counted two
     different populations.
+
+    THE THRESHOLDS MAY ARRIVE AS None. They are nullable in the schema, because a
+    curator who rules that an effect does NOT accumulate states none of them. Calling
+    this with such a row asks a question the row does not answer, so it gets the same
+    deliberate ValueError as the other impossible inputs -- not a bare TypeError from
+    the `>=` below, which reads as a bug in here rather than a mistake out there.
     """
     if majors < 0 or contributors < 0:
         raise ValueError(
@@ -55,6 +62,12 @@ def fires(majors: int, contributors: int,
         raise ValueError(
             f"majors ({majors}) exceeds contributors ({contributors}): every major is "
             "itself a contributor, so these must be counted over ONE population")
+    if threshold_major is None or threshold_total is None:
+        raise ValueError(
+            f"both thresholds are required (threshold_major={threshold_major}, "
+            f"threshold_total={threshold_total}). A row with NULL thresholds is a "
+            "ruling that the effect does NOT accumulate -- read `accumulates` and do "
+            "not evaluate it")
     return majors >= threshold_major and contributors >= threshold_total
 
 
@@ -83,17 +96,26 @@ def group_fires(required_roles: set[str], covered_roles: set[str]) -> bool:
 # ---- the writers ------------------------------------------------------------
 
 
-def _supersede(conn: psycopg.Connection, table: str, pk_column: str,
-               new_id: int, where_sql: str, params: tuple) -> None:
+def _supersede(conn: psycopg.Connection, table: str, pk_column: str, new_id: int,
+               key_columns: tuple[str, ...], key_values: tuple) -> None:
     """Point whatever was live at `new_id`. Called AFTER the new row exists.
 
     Kept in one place because the ordering is the part that is easy to get wrong, and
     getting it wrong fails only at COMMIT -- long after the call that caused it.
+
+    The natural key arrives as COLUMN NAMES rather than a pre-built SQL fragment, and
+    the statement is composed with psycopg.sql. Every call site passes literals, so
+    there was never an injection here -- but proving that took reading all four of
+    them, and composition makes it visible at a glance instead. It also puts the
+    columns in the same shape db/020's triggers take them, which is what they are.
     """
+    where = sql.SQL(" AND ").join(
+        sql.SQL("{} = %s").format(sql.Identifier(col)) for col in key_columns)
     conn.execute(
-        f"UPDATE drugref.{table} SET superseded_by = %s "
-        f"WHERE {where_sql} AND superseded_by IS NULL AND {pk_column} <> %s",
-        (new_id, *params, new_id))
+        sql.SQL("UPDATE drugref.{table} SET superseded_by = %s "
+                "WHERE {where} AND superseded_by IS NULL AND {pk} <> %s").format(
+            table=sql.Identifier(table), where=where, pk=sql.Identifier(pk_column)),
+        (new_id, *key_values, new_id))
 
 
 def curate_effect(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
@@ -116,7 +138,7 @@ def curate_effect(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
         (effect_class_uuid, accumulates, threshold_major, threshold_total, severity,
          clinical_note, ingest_run_id)).fetchone()[0]
     _supersede(conn, "additive_effect", "additive_effect_id", new_id,
-               "effect_class_uuid = %s", (effect_class_uuid,))
+               ("effect_class_uuid",), (effect_class_uuid,))
     return new_id
 
 
@@ -137,7 +159,7 @@ def grade_contribution(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
         (effect_class_uuid, contributor_class_uuid, magnitude,
          ingest_run_id)).fetchone()[0]
     _supersede(conn, "effect_contribution", "effect_contribution_id", new_id,
-               "effect_class_uuid = %s AND contributor_class_uuid = %s",
+               ("effect_class_uuid", "contributor_class_uuid"),
                (effect_class_uuid, contributor_class_uuid))
     return new_id
 
@@ -161,19 +183,38 @@ def register_group(conn: psycopg.Connection, source_code: str,
 
 def assert_group(conn: psycopg.Connection, group_uuid: uuid.UUID, name: str,
                  severity: str, ingest_run_id: int,
-                 clinical_note: str | None = None) -> int:
-    """Record (or correct) what drugref claims ABOUT a group.
+                 clinical_note: str | None = None, *, applies: bool = True) -> int:
+    """Record (or correct) what drugref claims ABOUT a group -- including "no longer".
 
     Separate from the identity so that retiring or restating a group never touches the
     UUID its members and any external citation point at.
+
+    RETIRING A GROUP IS `applies=False` (db/023), the same move `satisfies_role=False`
+    makes for a single member. Supersession must point at a later row carrying the same
+    natural key, so an explicit false is the only way an append-only table can say
+    "drugref no longer asserts this". Retiring every member one at a time also stops
+    the group firing -- an empty required-role set never fires, see `group_fires` --
+    but it takes one INSERT per member and leaves a live assertion still claiming a
+    severity for a group that cannot fire.
+
+    WHY THIS DEFAULTS TO True WHEN THE COLUMN REFUSES A DEFAULT, since `accumulates`
+    and `satisfies_role` are both required of their callers. Those two are curation
+    OUTCOMES -- a curator weighs the evidence and rules either way, so letting either
+    end of that be assumed is letting the answer be guessed. `applies` is not an
+    outcome but an ACT: asserting and retiring are different things to do, and a caller
+    reaching `assert_group` with a name and a severity has already chosen the first.
+    The column still refuses a DEFAULT, so nothing reaching the table by any other
+    route gets to leave it unanswered.
     """
     new_id = conn.execute(
         "INSERT INTO drugref.interaction_group_assertion (group_uuid, name, severity, "
-        "clinical_note, source, ingest_run) VALUES (%s, %s, %s, %s, 'DRUGREF', %s) "
+        "clinical_note, applies, source, ingest_run) "
+        "VALUES (%s, %s, %s, %s, %s, 'DRUGREF', %s) "
         "RETURNING interaction_group_assertion_id",
-        (group_uuid, name, severity, clinical_note, ingest_run_id)).fetchone()[0]
+        (group_uuid, name, severity, clinical_note, applies,
+         ingest_run_id)).fetchone()[0]
     _supersede(conn, "interaction_group_assertion", "interaction_group_assertion_id",
-               new_id, "group_uuid = %s", (group_uuid,))
+               new_id, ("group_uuid",), (group_uuid,))
     return new_id
 
 
@@ -194,7 +235,7 @@ def set_group_member(conn: psycopg.Connection, group_uuid: uuid.UUID, role: str,
         "RETURNING interaction_group_member_id",
         (group_uuid, role, class_uuid, satisfies_role, ingest_run_id)).fetchone()[0]
     _supersede(conn, "interaction_group_member", "interaction_group_member_id", new_id,
-               "group_uuid = %s AND role = %s AND class_uuid = %s",
+               ("group_uuid", "role", "class_uuid"),
                (group_uuid, role, class_uuid))
     return new_id
 

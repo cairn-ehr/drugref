@@ -204,6 +204,48 @@ def test_effect_counts_counts_drugs_not_rows(conn):
     assert not accumulation.fires(*accumulation.effect_counts(conn, effect, [drug]), 1, 2)
 
 
+def test_a_role_containing_quotes_is_stored_and_checked_intact(conn):
+    """`role` is FREE TEXT a curator types, and since db/023 it is the one value that
+    reaches composed SQL: the single-live trigger builds `t.role = <literal>` rather
+    than comparing a jsonb projection, because only the equality form can use an index.
+    format's %L is what makes that safe, so this pins both halves -- the value survives
+    a round trip unmangled, AND the single-live rule still fires on it."""
+    run_id = _run(conn)
+    grp = accumulation.register_group(conn, "QUOTED_ROLE", run_id)
+    cls = _class(conn, run_id, "W060", concept_type="EPC")
+    role = "O'Brien's ''role''; DROP TABLE drugref.additive_effect; --"
+
+    accumulation.set_group_member(conn, grp, role, cls, True, run_id)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT role FROM drugref.interaction_group_member WHERE group_uuid = %s",
+        (grp,)).fetchone()[0] == role
+    assert conn.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'drugref' "
+        "AND table_name = 'additive_effect'").fetchone()[0] == 1
+
+    # ...and the check the quoting exists to serve still rejects two live rows
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    conn.execute(
+        "INSERT INTO drugref.interaction_group_member (group_uuid, role, class_uuid, "
+        "satisfies_role, source, ingest_run) VALUES (%s, %s, %s, true, 'DRUGREF', %s)",
+        (grp, role, cls, run_id))
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_effect_counts_of_an_empty_regimen_is_zero(conn):
+    """A patient on nothing is an ordinary call, not an edge case to be guarded against
+    by the caller -- and an empty list is the one array argument whose adaptation can
+    fail at the driver rather than returning no rows."""
+    run_id = _run(conn)
+    effect = _class(conn, run_id, "W050")
+    accumulation.curate_effect(conn, effect, run_id, accumulates=True,
+                               threshold_major=1, threshold_total=2, severity="major")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert accumulation.effect_counts(conn, effect, []) == (0, 0)
+
+
 def test_effect_counts_ignores_drugs_outside_the_regimen(conn):
     run_id = _run(conn)
     effect = _class(conn, run_id, "W040")

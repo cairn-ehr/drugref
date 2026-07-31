@@ -55,6 +55,17 @@ def test_fires_rejects_a_negative_count():
         accumulation.fires(-1, 2, 1, 2)
 
 
+@pytest.mark.parametrize("t_major,t_total", [(None, 2), (1, None), (None, None)])
+def test_fires_rejects_the_thresholds_of_a_non_accumulating_ruling(t_major, t_total):
+    """The thresholds are NULLABLE in the schema: a curator who rules that an effect
+    does NOT accumulate states none of them. A consumer that reads such a row and calls
+    this anyway is asking a question the row does not answer, and must get the same
+    deliberate ValueError the other impossible inputs get -- not a bare TypeError from
+    the `>=` deep inside, which reads as a library bug rather than a caller error."""
+    with pytest.raises(ValueError, match="accumulates"):
+        accumulation.fires(1, 2, t_major, t_total)
+
+
 # ---- group firing (spec 5.3) -------------------------------------------------
 
 

@@ -297,6 +297,43 @@ def test_group_roles_expand_over_descendants(conn, whammy):
     assert celecoxib in [m for (m,) in covered]
 
 
+def test_the_role_view_is_deliberately_not_unique_on_group_role_moiety(conn, whammy):
+    """THE ASYMMETRY WITH additive_effect_contributor, asserted so it stays deliberate.
+
+    That view PROMISES uniqueness on (effect, moiety) because its consumer COUNTS, and
+    one drug emitted twice is the difference between firing and not firing. This one
+    makes no such promise, and must not: `via_class` -- the class the CURATOR named --
+    is part of what it publishes, so a moiety filed under one role through both a class
+    and that class's descendant legitimately appears once per route. Its consumer takes
+    a SET of roles, where a duplicate changes nothing.
+
+    Collapsing this to one row per (group, role, moiety) would throw away which curated
+    row is doing the work, which is what a curator needs to correct one.
+    """
+    run_id = whammy["run_id"]
+    parent = whammy["roles"]["NSAID"]["class"]
+    child = _class(conn, run_id, "COXIB2", concept_type="EPC")
+    _edge(conn, run_id, parent, child)
+    both = _moiety(conn, run_id, "BOTH01")
+    _member(conn, run_id, both, parent, "has_EPC")
+    _member(conn, run_id, both, child, "has_EPC")
+    conn.execute(
+        "INSERT INTO drugref.interaction_group_member (group_uuid, role, class_uuid, "
+        "satisfies_role, source, ingest_run) "
+        "VALUES (%s, 'NSAID', %s, true, 'DRUGREF', %s)", (whammy["group"], child, run_id))
+
+    routes = conn.execute(
+        "SELECT via_class FROM drugref.interaction_group_member_moiety "
+        "WHERE group_uuid = %s AND role = 'NSAID' AND moiety_uuid = %s",
+        (whammy["group"], both)).fetchall()
+    assert sorted(r for (r,) in routes) == sorted([parent, child])
+    # ...and the consumer's actual operation -- the SET of covered roles -- is unmoved
+    assert {r for (r,) in conn.execute(
+        "SELECT DISTINCT role FROM drugref.interaction_group_member_moiety "
+        "WHERE group_uuid = %s AND moiety_uuid = %s",
+        (whammy["group"], both)).fetchall()} == {"NSAID"}
+
+
 def _retire_member(conn, run_id, group_uuid, role, class_uuid):
     """Retire a role member the only way an append-only overlay can: assert `false`,
     then point the `true` row at it."""
