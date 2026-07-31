@@ -1544,14 +1544,21 @@ be lost in the move.
 
 - [ ] **Step 2: Create the orchestrator**
 
-`ingest/mesh_rel_run.py` holds what is now `_ingest`, extended so that:
-- the closure is taken over **all** MeSH-keyed objects — CI_with **and** all four
-  indication predicates — in one call (spec §6.1);
+`ingest/mesh_rel_run.py` holds what is now `_ingest`, restructured so that:
+- the registry, the clears, the DAG and the moiety indexes are built **once**, in the
+  orchestrator, and handed to the relation pass;
 - `condition_writer.upsert_condition` is called once per closure record;
-- the moiety indexes are built **once** and passed to both passes.
+- the moiety indexes are read once and passed in, as they are today.
 
-Carry `mesh_ci_run.py`'s module docstring across, updated: it now describes a run that
-reads five predicates rather than two.
+**The closure still covers `CI_with` objects only, at this task.** Widening it over the
+indication objects is what makes `condition` and `condition_parent` grow (spec §6.1 and
+§3.6), and growth is a *number changing* — which this task forbids. **Task 8 widens the
+closure**, in the same commit as the indication pass whose rows justify it, so that any
+figure that moves has a cause standing right beside it. Structure the closure call so
+Task 8 widens it by passing a larger code set, not by rewriting the function.
+
+Carry `mesh_ci_run.py`'s module docstring across, updated only where the module's
+*structure* changed. It still describes a run that reads two predicates at this task.
 
 - [ ] **Step 3: Store `scr_class`**
 
@@ -1741,9 +1748,20 @@ because there is no object-side bridge — an indication's object is always a co
                 out.indication_rows += 1
 ```
 
-- [ ] **Step 4: Call it from the orchestrator**
+- [ ] **Step 4: Widen the closure, then call the pass**
 
-In `mesh_rel_run._ingest`, after the contraindication pass:
+**This is where the registry grows, and it is deliberately in the same commit as the
+rows that justify it.** Widen the closure's input from the `CI_with` object codes to
+those **plus every indication object code** — one closure over every MeSH-keyed object,
+which is what makes `condition` 5,203 → 5,963 and `condition_parent` 7,157 → 8,507 on
+the real releases. Expect fixture condition counts in `test_mesh_ci_run.py` to rise, and
+expect `condition_subtree` over unchanged `CI_with` roots to rise **too** — a condition
+already in the CI closure can have a second tree parent that only the indication half
+registers, which completes an edge that was missing (spec §3.6). That is a completion in
+the recall-safe direction, not a regression; explain each moved number in the commit
+message.
+
+Then, in `mesh_rel_run._ingest`, after the contraindication pass:
 - call `indications.clear_source_indications(conn, SOURCE)` **with the other clears** in
   step 3, not here — a clear that happens after some rows are written deletes them;
 - run the pass;
