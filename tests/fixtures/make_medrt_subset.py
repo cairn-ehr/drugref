@@ -86,7 +86,25 @@ INGREDIENTS = {
     # its assertions are meant to MATCH, not to exercise the unmatched-subject path.
     "5095": "halothane / induces (x2) + may_diagnose + CI_with, has_MoA/PE/TC "
              "(its real may_treat is dropped by the cap below)",
+    # Issue #53. The ONLY ingredient here whose release states TWO therapeutic
+    # predicates AND a contraindication against ONE object: may_treat, may_prevent
+    # and CI_with all point at M0001524 (D001002 Anuria). Everything else in this
+    # fixture overlaps at most one therapeutic predicate per object, which made the
+    # collision counter's PAIR grain indistinguishable from a ROW grain -- 1 == 1 --
+    # so the test asserting it pinned the grain passed against a mutant that dropped
+    # SELECT DISTINCT. With mannitol the fixture holds 2 pairs over 3 rows.
+    #
+    # A REAL RELEASE FACT, not a constructed one, and a clinically famous tension:
+    # mannitol is used to prevent and treat oliguria and is contraindicated once
+    # anuria is established. MED-RT asserts both with no qualifier, exactly as it
+    # does for carvedilol / Heart Failure (#51).
+    "6628": "mannitol / may_treat + may_prevent + CI_with on ONE object (M0001524)",
 }
+
+# Overlay relations trimmed to one survivor apiece (see the cap in main()).
+# `Synonym Of` is genuine noise the parser drops outright; may_treat / may_prevent
+# are ingested, and one real example of each is all the predicate needs.
+TRIMMED_OVERLAY = ("may_treat", "may_prevent", "Synonym Of")
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
 INGESTED_CTY = {"MoA", "PE", "TC", "PK", "EPC", "APC"}
@@ -167,9 +185,21 @@ def main(path: str) -> None:
     #                          either, so capping them the way may_treat/may_prevent
     #                          are capped would leave both predicates with ZERO
     #                          examples in the fixture rather than one.
+    #
+    # ONE EXEMPTION FROM THE CAP, AND IT IS THE POINT OF THE CAP'S EXISTENCE RATHER
+    # THAN A HOLE IN IT (#53). A therapeutic assertion whose (subject, object) pair
+    # ALSO carries a CI_with from the same subject is not noise -- it is the hardest
+    # data in the release (#51), and it is the only thing that makes the collision
+    # counter's PAIR grain observable: without it every overlapping pair holds exactly
+    # one indication row, so `count(DISTINCT ...)` and `count(*)` agree on the fixture
+    # and a counter that drifted to rows would pass. Mannitol contributes two such
+    # assertions (may_treat + may_prevent on M0001524), so the fixture now holds 2
+    # overlapping pairs across 3 overlapping rows and the two grains disagree.
+    overlapping = {(a["fc"], a["tc"]) for a in keep
+                   if a["name"] == "CI_with" and a["fns"] == "RxNorm"}
     trimmed, seen_overlay = [], {}
     for a in keep:
-        if a["name"] in ("may_treat", "may_prevent", "Synonym Of"):
+        if a["name"] in TRIMMED_OVERLAY and (a["fc"], a["tc"]) not in overlapping:
             seen_overlay[a["name"]] = seen_overlay.get(a["name"], 0) + 1
             if seen_overlay[a["name"]] > 1:
                 continue

@@ -66,7 +66,8 @@ def test_registers_every_ingested_class(seeded):
     summary = _ingest(seeded)
     # 75 + 8 (slice 5b.2): halothane's own has_MoA/has_PE/has_TC classes (4) plus
     # their 2-level MED-RT ancestors the extractor pulls in alongside them (4).
-    assert (summary.classes_in_release, summary.classes_added) == (83, 83)
+    # + 10 (#53): mannitol's axis classes and their ancestors (see the parser test).
+    assert (summary.classes_in_release, summary.classes_added) == (93, 93)
     # Nothing in the real release is retired or unidentified; if either ever fires
     # it is a shape change upstream, reported rather than silently absorbed.
     assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
@@ -79,7 +80,13 @@ def test_registers_every_ingested_class(seeded):
     # +5 PE (halothane's two, N0000008501/N0000175975, plus three ancestors),
     # +1 TC (halothane's own N0000193810). EPC/PK/APC untouched: halothane carries
     # none of those axes.
-    assert types == {"MoA": 22, "PE": 36, "EPC": 4, "TC": 9, "PK": 6, "APC": 6}
+    #
+    # Then #53's mannitol, +10 in total and the first fixture ingredient to move the
+    # EPC and APC counts: +1 MoA (Osmotic Activity), +6 PE (its three plus three
+    # ancestors), +1 EPC (Osmotic Diuretic) and +2 APC (Diuretic, Physical or
+    # Chemical Agent -- the two parents that EPC sits under). Its has_TC names
+    # Cardiovascular Agent, which amlodipine already registered, so TC does not move.
+    assert types == {"MoA": 23, "PE": 42, "EPC": 5, "TC": 9, "PK": 6, "APC": 8}
 
 
 def test_a_failed_ingest_leaves_the_connection_usable(seeded, monkeypatch):
@@ -157,8 +164,9 @@ def test_builds_the_dag_the_right_way_up(seeded):
 
 def test_a_class_keeps_both_of_its_parents(seeded):
     # 59 + 8: halothane's 4 new classes each contribute at least one Parent Of
-    # edge into the DAG built in step 3 above.
-    assert _ingest(seeded).parent_edges == 67
+    # edge into the DAG built in step 3 above. + 9 (#53): mannitol's, one of which
+    # (Osmotic Diuretic [EPC]) is itself multi-parent.
+    assert _ingest(seeded).parent_edges == 76
     child = ids.mint_class_uuid("MED-RT", "N0000193892")
     parents = {r[0] for r in seeded.execute(
         "SELECT parent_class_uuid FROM drugref.class_parent WHERE child_class_uuid = %s",
@@ -206,7 +214,8 @@ def test_unmatched_ingredient_is_skipped_and_counted_not_silently_dropped(seeded
     summary = _ingest(seeded)
     # paracetamol 8 + amlodipine 9 + activated charcoal 5 + escitalopram 4
     # + halothane 4 (1 has_MoA + 2 has_PE + 1 has_TC) + methoxamine 0
-    assert summary.memberships == 30
+    # + mannitol 6 (1 has_MoA + 3 has_PE + 1 has_TC + 1 has_EPC), #53
+    assert summary.memberships == 36
     assert summary.unmatched_rxcuis == 1      # ibuprofen (RxCUI 5640)
 
 
@@ -229,7 +238,7 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
 
     summary = _ingest(seeded)
     # Paracetamol's 8 memberships are now written for both claimants.
-    assert summary.memberships == 38          # 30 + a second set of paracetamol's 8
+    assert summary.memberships == 44          # 36 + a second set of paracetamol's 8
     assert len(_classes_of(seeded, PARACETAMOL)) == 8
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
@@ -256,12 +265,12 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
            (first.classes_in_release, first.parent_edges, first.memberships)
     # ...but the second run ADDED nothing: classes accumulate, edges are rebuilt.
     # Reporting one number for both would have hidden exactly this distinction.
-    assert (first.classes_added, second.classes_added) == (83, 0)
+    assert (first.classes_added, second.classes_added) == (93, 0)
     counts = seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "
         "       (SELECT count(*) FROM drugref.class_membership)").fetchone()
-    assert counts == (83, 67, 30)
+    assert counts == (93, 76, 36)
 
 
 def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
@@ -299,8 +308,9 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
         ([ids.mint_class_uuid("MED-RT", n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
     ).fetchone()[0]
     assert surviving == 3
-    # 83 (the real fixture, slice 5b.2) + 1 (N-LONE-1, genuinely new this release).
-    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 84
+    # 93 (the real fixture, after #53 added mannitol) + 1 (N-LONE-1, genuinely new
+    # this release).
+    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 94
 
 
 # ---- contraindications (slice 5a) ------------------------------------------
@@ -356,7 +366,7 @@ def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edg
         "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 2
     assert seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.class_membership), "
-        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (30, 67)
+        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (36, 76)
 
 
 def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted(seeded, tmp_path):

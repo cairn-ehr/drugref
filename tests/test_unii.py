@@ -27,7 +27,10 @@ def _by_name() -> dict[str, unii.MoietyCandidate]:
 def test_parse_yields_all_rows():
     # 13 + 1 (slice 5b.2): halothane, added so the fixture carries a registered
     # subject for `induces` / `may_diagnose` (see make_unii_subset.py's WANTED).
-    assert len(list(unii.parse(FIX))) == 14
+    # + 1 (#53): mannitol, the only subject whose release states may_treat AND
+    # may_prevent AND CI_with against ONE object, which is what makes the collision
+    # counter's PAIR grain distinguishable from a ROW grain at all.
+    assert len(list(unii.parse(FIX))) == 15
 
 
 def test_preferred_name_comes_from_the_display_name_column():

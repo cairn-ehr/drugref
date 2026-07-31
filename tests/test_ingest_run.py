@@ -28,13 +28,13 @@ def _ingest(conn, release="2026-07"):
 
 
 def test_registers_only_gated_moieties(conn):
-    """The whole gate, end to end: 11 of the fixture's 14 rows are moieties.
+    """The whole gate, end to end: 12 of the fixture's 15 rows are moieties.
 
     Admitted, one per branch of the #26 rule --
       INN_ID:           paracetamol, amlodipine, heparin sodium,
                         escitalopram, pimozide, halothane
       USAN_ID:          iron sucrose
-      RXCUI+drug-like:  amoxicillin, morphine
+      RXCUI+drug-like:  amoxicillin, morphine, mannitol
       allow-list:       magnesium sulfate, activated charcoal
     Rejected -- an excipient, another excipient, and a homeopathic botanical,
     all three carrying an RXCUI and excluded purely by substance type.
@@ -45,10 +45,13 @@ def test_registers_only_gated_moieties(conn):
     gate test that ignored rows added for another slice would stop being end to end.
     Halothane (slice 5b.2) is the same story one axis over: it joins no new BRANCH
     either (INN_ID, same as paracetamol), and is here so `induces` / `may_diagnose`
-    have a registered subject rather than only ibuprofen's unmatched one.
+    have a registered subject rather than only ibuprofen's unmatched one. Mannitol
+    (#53) likewise adds no branch -- it is admitted on RXCUI + drug-like type, the
+    same arm as amoxicillin -- and is here so the fixture holds one (drug, condition)
+    pair carrying TWO therapeutic predicates alongside a contraindication.
     """
     n = _ingest(conn).moieties
-    assert n == 11
+    assert n == 12
     names = {r[0] for r in conn.execute("SELECT display_name FROM drugref.substance_moiety").fetchall()}
     # Note "magnesium sulfate, unspecified form": that IS what the real UNII
     # release calls it, and the display name is a LABEL sourced from upstream,
@@ -58,7 +61,7 @@ def test_registers_only_gated_moieties(conn):
     assert names == {"paracetamol", "amlodipine", "heparin sodium", "iron sucrose",
                      "amoxicillin", "morphine", "escitalopram", "pimozide",
                      "magnesium sulfate, unspecified form", "activated charcoal",
-                     "halothane"}
+                     "halothane", "mannitol"}
     for excluded in ("microcrystalline cellulose", "polysorbate 80",
                      "thuja occidentalis leaf"):
         assert excluded not in names
@@ -117,14 +120,16 @@ def test_reingest_is_idempotent(conn):
     _ingest(conn)  # run again — same UUIDs, no duplicate claims
     n_moiety = conn.execute("SELECT count(*) FROM drugref.substance_moiety").fetchone()[0]
     n_claim = conn.execute("SELECT count(*) FROM drugref.identity_claim").fetchone()[0]
-    assert n_moiety == 11
+    assert n_moiety == 12
     # Counted from the REAL release rows the fixture extracts, so the arithmetic
     # is upstream's, not ours. Each moiety contributes UNII + (INN if has_inn) +
     # one claim per populated cross-ref column:
     #   paracetamol 6, amlodipine 6, escitalopram 6, pimozide 6, halothane 6,
-    #   morphine 5, amoxicillin 5, heparin sodium 4, iron sucrose 4,
-    #   activated charcoal 3, magnesium sulfate 2  ->  53
-    assert n_claim == 53
+    #   morphine 5, amoxicillin 5, mannitol 5, heparin sodium 4, iron sucrose 4,
+    #   activated charcoal 3, magnesium sulfate 2  ->  58
+    # Mannitol carries no INN (it is admitted on RXCUI + type), so its five are
+    # UNII + CAS + RXNORM_IN + PUBCHEM_CID + INCHIKEY.
+    assert n_claim == 58
 
 
 def test_immortality_uuid_survives_upstream_rxcui_remap(conn, tmp_path):

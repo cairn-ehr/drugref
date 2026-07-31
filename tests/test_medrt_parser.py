@@ -70,7 +70,10 @@ def test_ingests_exactly_the_six_classification_concept_types():
 def test_ingests_every_class_in_the_fixture():
     # 75 + 8 (slice 5b.2): halothane's own has_MoA/has_PE/has_TC classes (4) plus
     # the 2-level MED-RT ancestors the extractor pulls in alongside them (4).
-    assert len(parsed().classes) == 83
+    # + 10 (#53): mannitol's own axis classes -- Osmotic Activity [MoA], three
+    # [PE]s and Osmotic Diuretic [EPC] -- plus the 2-level ancestors above them
+    # (Diuresis Alteration [PE], Diuretic [APC], ...). Nothing was removed.
+    assert len(parsed().classes) == 93
 
 
 def test_excludes_hc_navigation_bins():
@@ -171,7 +174,12 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 def test_builds_the_expected_number_of_dag_edges():
     # 59 + 8: halothane's 4 new classes each contribute at least one Parent Of
     # edge (see test_ingests_every_class_in_the_fixture for the class-count side).
-    assert len(parsed().parents) == 67
+    # + 9 (#53): mannitol's 10 new classes contribute 9 edges, not 10 -- two of
+    # them (Diuretic [APC], Physical or Chemical Agent [APC]) are the top of what
+    # the extractor pulled in and so have no parent here, while Osmotic Diuretic
+    # [EPC] sits under BOTH of them and contributes two. That is the multi-parent
+    # DAG this fixture exists to carry, arriving a second time.
+    assert len(parsed().parents) == 76
 
 
 def test_a_class_can_have_two_parents():

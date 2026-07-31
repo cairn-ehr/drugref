@@ -242,9 +242,7 @@ direct member is equally dead, needs its own view; unreachable until a predicate
 and an indication always reaches its own condition).
 [#50](https://github.com/cairn-ehr/drugref/issues/50), the post-review re-measurement, is **closed**.
 
-#### Slice 5b.2 — MeSH-keyed indications ✅ DONE — **not yet merged**
-On `feat/slice-5b2-mesh-indications`; PR not yet opened, unlike 5b (merged as PR #44 above). A reader of
-this file alone must not conclude it is on `main`.
+#### Slice 5b.2 — MeSH-keyed indications ✅ DONE — merged as PR #54
 The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** plus **`induces`**
 — a public-domain, drugref-owned drug–disease indication dataset (the MeDIC alternative it holds outright).
 **No new source.** Spec:
@@ -310,6 +308,39 @@ makes it queryable. Both are new
 stated in `COMMENT ON`, both are pinned by tests, and both have a curated follow-up:
 [#51](https://github.com/cairn-ehr/drugref/issues/51) (how a consumer is told) and
 [#52](https://github.com/cairn-ehr/drugref/issues/52) (store `concept_ui` so the rows are detectable).
+
+**Residue filed by the merge review:** [#55](https://github.com/cairn-ehr/drugref/issues/55) — the read path
+offers its generalisations through an `is_direct` boolean rather than through structure, which is the very
+mitigation `db/019` rejected when it gave `induces` its own table. **Deferred to 5c by decision**, which is
+already revisiting how a consumer is told about #51 and #52; whichever option wins revises the living record.
+[#53](https://github.com/cairn-ehr/drugref/issues/53) is **closed by the round below**.
+
+#### The #53 population-label round ✅ DONE
+The three residuals 5b.2's final review adjudicated and filed rather than fixed. **No migration and no
+production logic change** — two docstrings, one published page, and one fixture that could not tell two grains
+apart. **622 tests**, all three fixtures byte-reproducible from the real releases.
+
+Each claim was **re-measured against the real releases before it was touched**, and all three held. Two were
+prose: `550 of 13,463` → **`550 of 13,458`** (5 assertions name the 2 codes MeSH withdrew, and an unresolved
+code has no concept to test for subordinacy), and `this slice's 1,053` → **the 2,198 codes one run resolves**
+(1,053 CI + 1,528 IND, 383 named by both) in a module now serving both halves. Newly measured: the 81 concepts
+collapse onto **79** records, and **the indication half has no resolution gap** (1,528/1,528), which is what
+makes 4.09% and 2.30% comparable.
+
+**The third was a test claiming to pin a grain its fixture could not distinguish.** The collision counter
+reports **pairs**; the test said a drift to **rows** would fail there, and it would not — the fixture held one
+overlapping row and one overlapping pair, so removing the production query's `SELECT DISTINCT` left the suite
+green (verified by mutation). Fixed by **strengthening the fixture rather than weakening the claim**: an
+eighth ingredient, **mannitol**, the only subject in the release asserting `may_treat` *and* `may_prevent`
+*and* `CI_with` against one object (*Anuria*) — the same clinical tension as carvedilol/*Heart Failure*. The
+fixture now holds **2 pairs across 3 rows**; the extractor's cap gained one exemption for exactly these
+overlap assertions, because they are the hardest data in the release (#51) rather than the noise it trims.
+
+Fixture movement, verified by diffing identities rather than counts: moieties 11 → 12, classes 83 → **93**,
+DAG edges 67 → **76**, memberships 30 → **36**, conditions 22 → **27** with nothing displaced, `condition_rows`
+8 → **13**. That last is *not* a spec-10 violation, and the round wrote the distinction down: "the direct rows
+must not move" is about **widening the closure**, while mannitol is a new **subject**, and a subject states
+its own contraindications.
 
 **Also not done here:** the 193 class-subject indications (filed against #8), `has_SC`, and any read path
 that ranks or prefers among indications — MED-RT asserts no line of therapy, no evidence strength and no
