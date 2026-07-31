@@ -64,7 +64,9 @@ def _classes_of(conn, unii, relationship=None):
 
 def test_registers_every_ingested_class(seeded):
     summary = _ingest(seeded)
-    assert (summary.classes_in_release, summary.classes_added) == (75, 75)
+    # 75 + 8 (slice 5b.2): halothane's own has_MoA/has_PE/has_TC classes (4) plus
+    # their 2-level MED-RT ancestors the extractor pulls in alongside them (4).
+    assert (summary.classes_in_release, summary.classes_added) == (83, 83)
     # Nothing in the real release is retired or unidentified; if either ever fires
     # it is a shape change upstream, reported rather than silently absorbed.
     assert (summary.inactive_concepts, summary.unidentified_concepts) == (0, 0)
@@ -73,7 +75,11 @@ def test_registers_every_ingested_class(seeded):
     assert summary.ambiguous_codes == 0
     types = dict(seeded.execute(
         "SELECT concept_type, count(*) FROM drugref.substance_class GROUP BY 1").fetchall())
-    assert types == {"MoA": 20, "PE": 31, "EPC": 4, "TC": 8, "PK": 6, "APC": 6}
+    # +2 MoA (halothane's own class N0000009915 plus its ancestor N0000000223),
+    # +5 PE (halothane's two, N0000008501/N0000175975, plus three ancestors),
+    # +1 TC (halothane's own N0000193810). EPC/PK/APC untouched: halothane carries
+    # none of those axes.
+    assert types == {"MoA": 22, "PE": 36, "EPC": 4, "TC": 9, "PK": 6, "APC": 6}
 
 
 def test_a_failed_ingest_leaves_the_connection_usable(seeded, monkeypatch):
@@ -150,7 +156,9 @@ def test_builds_the_dag_the_right_way_up(seeded):
 
 
 def test_a_class_keeps_both_of_its_parents(seeded):
-    assert _ingest(seeded).parent_edges == 59
+    # 59 + 8: halothane's 4 new classes each contribute at least one Parent Of
+    # edge into the DAG built in step 3 above.
+    assert _ingest(seeded).parent_edges == 67
     child = ids.mint_class_uuid("MED-RT", "N0000193892")
     parents = {r[0] for r in seeded.execute(
         "SELECT parent_class_uuid FROM drugref.class_parent WHERE child_class_uuid = %s",
@@ -197,8 +205,8 @@ def test_unmatched_ingredient_is_skipped_and_counted_not_silently_dropped(seeded
     reported as a worklist number rather than vanishing."""
     summary = _ingest(seeded)
     # paracetamol 8 + amlodipine 9 + activated charcoal 5 + escitalopram 4
-    # + methoxamine 0
-    assert summary.memberships == 26
+    # + halothane 4 (1 has_MoA + 2 has_PE + 1 has_TC) + methoxamine 0
+    assert summary.memberships == 30
     assert summary.unmatched_rxcuis == 1      # ibuprofen (RxCUI 5640)
 
 
@@ -221,7 +229,7 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
 
     summary = _ingest(seeded)
     # Paracetamol's 8 memberships are now written for both claimants.
-    assert summary.memberships == 34          # 26 + a second set of paracetamol's 8
+    assert summary.memberships == 38          # 30 + a second set of paracetamol's 8
     assert len(_classes_of(seeded, PARACETAMOL)) == 8
     assert seeded.execute(
         "SELECT count(*) FROM drugref.class_membership WHERE moiety_uuid = %s",
@@ -248,12 +256,12 @@ def test_reingest_rebuilds_edges_without_duplicating(seeded):
            (first.classes_in_release, first.parent_edges, first.memberships)
     # ...but the second run ADDED nothing: classes accumulate, edges are rebuilt.
     # Reporting one number for both would have hidden exactly this distinction.
-    assert (first.classes_added, second.classes_added) == (75, 0)
+    assert (first.classes_added, second.classes_added) == (83, 0)
     counts = seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.substance_class), "
         "       (SELECT count(*) FROM drugref.class_parent), "
         "       (SELECT count(*) FROM drugref.class_membership)").fetchone()
-    assert counts == (75, 59, 26)
+    assert counts == (83, 67, 30)
 
 
 def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
@@ -261,13 +269,21 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
     must lose it here too, which an insert-only merge could never express."""
     _ingest(seeded)
     shrunk = tmp_path / "medrt_shrunk.xml"
+    # A CLEARLY SYNTHETIC code (N-LONE-1, not NNNNNNNNNN), not a real MED-RT NUI --
+    # this test needs one that is guaranteed ABSENT from medrt_subset.xml, and a
+    # real code cannot promise that release to release. It used to borrow the real
+    # root N0000000223 ("Cellular or Molecular Interactions [MoA]"), which slice
+    # 5b.2 broke: that root is now one of halothane's own 2-level MED-RT ancestors,
+    # so it is already IN the fixture's 83 classes, and reusing it here would test
+    # "re-assert a known class" rather than "add a genuinely new one" -- the wrong
+    # behaviour for a test named for what happens when a class VANISHES upstream.
     shrunk.write_text(
         '<?xml version="1.0" encoding="UTF-8" ?>\n<terminology>\n'
         "\t<namespace><name>MED-RT</name><version>x</version></namespace>\n"
         "\t<concept><namespace>MED-RT</namespace><name>Lone Class [MoA]</name>"
-        "<code>N0000000223</code><status>A</status>"
+        "<code>N-LONE-1</code><status>A</status>"
         "<property><namespace>MED-RT</namespace><name>CTY</name><value>MoA</value></property>"
-        "<property><namespace>MED-RT</namespace><name>NUI</name><value>N0000000223</value></property>"
+        "<property><namespace>MED-RT</namespace><name>NUI</name><value>N-LONE-1</value></property>"
         "</concept>\n</terminology>\n", encoding="utf-8")
     summary = medrt_run.ingest_medrt(seeded, medrt_path=shrunk, upstream_release="2026.09.07")
     assert summary.parent_edges == 0 and summary.memberships == 0
@@ -283,7 +299,8 @@ def test_rebuild_drops_edges_that_vanished_upstream(seeded, tmp_path):
         ([ids.mint_class_uuid("MED-RT", n) for n in ("N0000175421", "N0000175566", "N0000193892")],)
     ).fetchone()[0]
     assert surviving == 3
-    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 76
+    # 83 (the real fixture, slice 5b.2) + 1 (N-LONE-1, genuinely new this release).
+    assert seeded.execute("SELECT count(*) FROM drugref.substance_class").fetchone()[0] == 84
 
 
 # ---- contraindications (slice 5a) ------------------------------------------
@@ -339,7 +356,7 @@ def test_reingest_rebuilds_contraindications_without_duplicating_or_touching_edg
         "SELECT count(*) FROM drugref.class_contraindication").fetchone()[0] == 2
     assert seeded.execute(
         "SELECT (SELECT count(*) FROM drugref.class_membership), "
-        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (26, 59)
+        "       (SELECT count(*) FROM drugref.class_parent)").fetchone() == (30, 67)
 
 
 def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted(seeded, tmp_path):

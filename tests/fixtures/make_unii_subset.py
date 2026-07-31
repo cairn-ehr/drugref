@@ -92,6 +92,15 @@ WANTED = {
     # releases; nothing about the pairing is constructed here.
     "4O4S742ANY": "ESCITALOPRAM -- CI_ChemClass SUBJECT (RxCUI 321988), INN admission",
     "1HIZ4DL86F": "PIMOZIDE -- CI_ChemClass OBJECT; MeSH D010868 carries this UNII",
+
+    # ---- slice 5b.2: the only ingredient carrying `induces` / `may_diagnose` ------
+    # HALOTHANE (RxCUI 5095) is admitted on INN_ID 697, the strong-signal branch, so
+    # it bridges the moiety gate outright and does not depend on the RXCUI branch.
+    # Without this row make_medrt_subset.py's halothane associations would parse as
+    # UNMATCHED SUBJECTS -- correct for ibuprofen, wrong here, since this is the
+    # fixture's only ingredient exercising moiety_induced_condition and the
+    # `may_diagnose` predicate at all.
+    "UQT9G45D1P": "HALOTHANE -- INN admission; subject for induces / may_diagnose",
 }
 
 

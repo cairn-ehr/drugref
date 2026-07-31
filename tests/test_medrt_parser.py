@@ -68,7 +68,9 @@ def test_ingests_exactly_the_six_classification_concept_types():
 
 
 def test_ingests_every_class_in_the_fixture():
-    assert len(parsed().classes) == 75
+    # 75 + 8 (slice 5b.2): halothane's own has_MoA/has_PE/has_TC classes (4) plus
+    # the 2-level MED-RT ancestors the extractor pulls in alongside them (4).
+    assert len(parsed().classes) == 83
 
 
 def test_excludes_hc_navigation_bins():
@@ -167,7 +169,9 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 
 
 def test_builds_the_expected_number_of_dag_edges():
-    assert len(parsed().parents) == 59
+    # 59 + 8: halothane's 4 new classes each contribute at least one Parent Of
+    # edge (see test_ingests_every_class_in_the_fixture for the class-count side).
+    assert len(parsed().parents) == 67
 
 
 def test_a_class_can_have_two_parents():
@@ -261,6 +265,7 @@ def test_membership_counts_per_ingredient():
     assert counts["5640"] == 9      # ibuprofen: parsed here, unmatched at ingest time
     assert counts["272"] == 5       # activated charcoal: 1 MoA + 3 PE + 1 TC, no EPC
     assert counts["321988"] == 4    # escitalopram: 1 MoA + 1 PE + 1 TC + 1 EPC
+    assert counts["5095"] == 4      # halothane: 1 MoA + 2 PE + 1 TC, no EPC/PK
     assert "6853" not in counts     # methoxamine: only an HC bin, so unclassified
 
 

@@ -16,11 +16,11 @@ USAGE:
 The full release is ~45 MB and is NOT committed (see .gitignore); download it
 from NCI EVS (https://evs.nci.nih.gov/ftp1/MED-RT/) when you need to regenerate.
 
-WHAT IT SELECTS: six real drug ingredients chosen to exercise every acceptance
-case -- four that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
-272, 321988) and two it deliberately does not (6853, 5640) -- plus every MED-RT
-class they reference, those classes' ancestors, and a deliberate sprinkling of
-out-of-scope material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay
+WHAT IT SELECTS: seven real drug ingredients chosen to exercise every acceptance
+case -- five that our tests/fixtures/unii_subset.tsv registry carries (161, 17767,
+272, 321988, 5095) and two it deliberately does not (6853, 5640) -- plus every
+MED-RT class they reference, those classes' ancestors, and a deliberate sprinkling
+of out-of-scope material (an HC bin, a SNOMED endpoint, a MeSH has_SC, an overlay
 may_treat) that the parser must drop.
 
 WHAT IT REDACTS, AND WHY THAT IS A LICENCE RULE AND NOT TIDINESS: those
@@ -78,6 +78,13 @@ INGREDIENTS = {
     # so the pair resolves end to end. It also brings the release's only CI_MoA edge
     # for these ingredients, which slice 5a's class arm had likewise never seen.
     "321988": "escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA",
+    # Slice 5b.2. The only fixture ingredient carrying `induces` and `may_diagnose`,
+    # so the induced-state table (moiety_induced_condition) and the third indication
+    # predicate are exercised by the real fixture rather than by controlled input
+    # alone. Admitted to unii_subset.tsv on INN_ID 697, so its subject bridges the
+    # moiety gate outright without relying on the RXCUI branch -- unlike ibuprofen,
+    # its assertions are meant to MATCH, not to exercise the unmatched-subject path.
+    "5095": "halothane / induces (x2) + may_diagnose + may_treat + CI_with, has_MoA/PE/TC",
 }
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
@@ -130,12 +137,22 @@ def main(path: str) -> None:
         for b in re.findall(r"<association>(.*?)</association>", data, re.S)
     ]
 
-    # 1. Every association that touches one of our four ingredients.
+    # 1. Every association that touches one of our INGREDIENTS.
     keep = [a for a in assocs
             if (a["fns"] == "RxNorm" and a["fc"] in INGREDIENTS)
             or (a["tns"] == "RxNorm" and a["tc"] in INGREDIENTS)]
-    # Trim the noisiest overlay relations: keep just a couple as proof they're dropped.
-    # NOT trimmed, because the parser ingests them and the fixture is what proves it:
+    # Trim the noisiest overlay relations to one survivor apiece, in FILE order.
+    # Synonym Of is genuine noise the parser drops. may_treat / may_prevent are NOT
+    # noise since slice 5b.2 -- both are ingested as mesh_indications -- but this
+    # fixture only needs ONE real example of each to exercise the predicate: ibuprofen
+    # alone carries 12 real may_treat edges in the release, and keeping every one of
+    # them would bloat the file for no new coverage. Today's single survivor of each
+    # is activated charcoal's, which is why halothane's own may_treat (MeSH M0020462)
+    # does NOT appear in the generated fixture even though it is a real release fact --
+    # halothane was added for induces / may_diagnose (see INGREDIENTS), which this cap
+    # does not touch.
+    # NOT trimmed AT ALL, because the parser ingests them and the fixture is what
+    # proves it:
     #   CI_MoA / CI_PE      -- slice 5a's drug-drug contraindications (amlodipine's
     #                          real CI_PE -> N0000178477 is the edge the release
     #                          provides for these ingredients);
@@ -144,6 +161,11 @@ def main(path: str) -> None:
     #                          the parser discarded it; both are now parsed and their
     #                          object codes are retained, so trimming them would throw
     #                          away the only real data the new branch has to run on.
+    #   induces / may_diagnose -- slice 5b.2's other two MeSH-keyed indication
+    #                          predicates. Halothane is the only ingredient carrying
+    #                          either, so capping them the way may_treat/may_prevent
+    #                          are capped would leave both predicates with ZERO
+    #                          examples in the fixture rather than one.
     trimmed, seen_overlay = [], {}
     for a in keep:
         if a["name"] in ("may_treat", "may_prevent", "Synonym Of"):

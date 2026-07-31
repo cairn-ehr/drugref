@@ -86,20 +86,26 @@ def _condition(conn, source_code):
 def test_ingest_reports_a_summary(conn, seeded_moieties):
     """The acceptance matrix, every number derived from the two real releases.
 
-    The fixture states 16 MeSH-keyed contraindications: 13 CI_with and 3
+    The fixture states 17 MeSH-keyed contraindications: 14 CI_with and 3
     CI_ChemClass. SIX of the CI_with name ibuprofen, which no moiety carries
-    (161 x3, 17767 x2, 272 x1, 321988 x1, 5640 x6 = 13), so seven condition rows
-    survive; of the three CI_ChemClass, one names Pimozide (a drug) and two name
-    chemical classes.
+    (161 x3, 17767 x2, 272 x1, 321988 x1, 5095 x1, 5640 x6 = 14), so eight
+    condition rows survive; of the three CI_ChemClass, one names Pimozide (a drug)
+    and two name chemical classes.
+
+    Halothane (slice 5b.2, RxCUI 5095) adds the 14th CI_with, but NOT an 18th
+    referenced condition: its object is MeSH M0006829 (Drug Hypersensitivity),
+    which 161/17767/321988 already name, so mesh_ci_desc_subset.xml did not need
+    to grow to carry it -- see make_mesh_ci_subset.py, whose wanted set is read
+    out of medrt_subset.xml's CI_with/CI_ChemClass edges only.
     """
     summary = _run(conn)
     # 10 referenced conditions + the 8 tree descendants the fixture samples.
     assert summary.conditions_registered == 18
     assert summary.conditions_added == 18
     assert summary.condition_parent_edges == 10
-    # 272->Poisoning, 161/17767/321988->Drug Hypersensitivity, 161->Liver Diseases,
-    # 161->G6PD Deficiency, 17767->Hypotension.
-    assert summary.condition_contraindications == 7
+    # 272->Poisoning, 161/17767/321988/5095->Drug Hypersensitivity, 161->Liver
+    # Diseases, 161->G6PD Deficiency, 17767->Hypotension.
+    assert summary.condition_contraindications == 8
     assert summary.moiety_contraindications == 1        # escitalopram -> pimozide
     assert summary.unmatched_subject_rxcuis == 1        # ibuprofen (RxCUI 5640)
     assert summary.withheld_class_objects == 2          # Alkalies, Organic Chemicals
@@ -165,9 +171,10 @@ def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
     # Nothing could be ingested, and nothing was invented to compensate.
     assert (summary.condition_contraindications, summary.moiety_contraindications) \
         == (0, 0)
-    # All five subject RxCUIs in the fixture, including the two that reach only a
+    # All six subject RxCUIs in the fixture (slice 5b.2 adds halothane, 5095,
+    # alongside 161/17767/272/321988/5640), including the two that reach only a
     # withheld object.
-    assert summary.unmatched_subject_rxcuis == 5
+    assert summary.unmatched_subject_rxcuis == 6
 
 
 def test_an_unresolved_object_is_classified_by_the_record_not_the_failure(conn):

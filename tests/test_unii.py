@@ -25,7 +25,9 @@ def _by_name() -> dict[str, unii.MoietyCandidate]:
 
 
 def test_parse_yields_all_rows():
-    assert len(list(unii.parse(FIX))) == 13
+    # 13 + 1 (slice 5b.2): halothane, added so the fixture carries a registered
+    # subject for `induces` / `may_diagnose` (see make_unii_subset.py's WANTED).
+    assert len(list(unii.parse(FIX))) == 14
 
 
 def test_preferred_name_comes_from_the_display_name_column():

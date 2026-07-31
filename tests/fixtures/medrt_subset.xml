@@ -14,6 +14,7 @@
        RxCUI 5640: ibuprofen / NOT in our registry, so membership must be skipped and counted
        RxCUI 272: activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC
        RxCUI 321988: escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA
+       RxCUI 5095: halothane / induces (x2) + may_diagnose + may_treat + CI_with, has_MoA/PE/TC
 -->
 <terminology>
 	<namespace>
@@ -374,6 +375,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Cellular or Molecular Interactions [MoA]</name>
+		<code>N0000000223</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000000223</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Arterial Vasodilation [PE]</name>
 		<code>N0000008299</code>
 		<status>A</status>
@@ -422,6 +439,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Decreased Central Nervous System Organized Electrical Activity [PE]</name>
+		<code>N0000008501</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008501</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Decreased Eicosanoid Production [PE]</name>
 		<code>N0000008592</code>
 		<status>A</status>
@@ -466,6 +499,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000008686</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Decreased Organized Electrical Activity [PE]</name>
+		<code>N0000008768</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000008768</value>
 		</property>
 	</concept>
 	<concept>
@@ -710,6 +759,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Organized Electrical Activity Alteration [PE]</name>
+		<code>N0000009774</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009774</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Renal Organic Ion Transport Alteration [PE]</name>
 		<code>N0000009831</code>
 		<status>A</status>
@@ -806,6 +871,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Unknown Cellular or Molecular Interaction [MoA]</name>
+		<code>N0000009915</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009915</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Preparations by Generic Ingredient</name>
 		<code>N0000010582</code>
 		<status>A</status>
@@ -850,6 +931,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000010587</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>H [Preparations]</name>
+		<code>N0000010590</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>HC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010590</value>
 		</property>
 	</concept>
 	<concept>
@@ -1010,6 +1107,38 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000175725</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Central Nervous System Depression [PE]</name>
+		<code>N0000175728</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175728</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>General Anesthesia [PE]</name>
+		<code>N0000175975</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175975</value>
 		</property>
 	</concept>
 	<concept>
@@ -1238,6 +1367,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Anesthetics [TC]</name>
+		<code>N0000193810</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>TC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193810</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Calcium Channel Agent [APC]</name>
 		<code>N0000193892</code>
 		<status>A</status>
@@ -1332,6 +1477,16 @@
 			<value>N0000193905</value>
 		</property>
 	</concept>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Unknown Cellular or Molecular Interaction [MoA]</to_name>
+		<to_code>N0000009915</to_code>
+	</association>
 	<association>
 		<namespace>MED-RT</namespace>
 		<name>has_MoA</name>
@@ -1514,6 +1669,26 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Central Nervous System Organized Electrical Activity [PE]</to_name>
+		<to_code>N0000008501</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>General Anesthesia [PE]</to_name>
+		<to_code>N0000175975</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>has_TC</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>activated charcoal</from_name>
@@ -1656,6 +1831,16 @@
 		<namespace>MED-RT</namespace>
 		<name>CI_with</name>
 		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
 		<from_name>amlodipine</from_name>
 		<from_code>17767</from_code>
 		<to_namespace>MeSH</to_namespace>
@@ -1691,6 +1876,16 @@
 		<to_namespace>MeSH</to_namespace>
 		<to_name>Drug Toxicity</to_name>
 		<to_code>M0006855</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>induces</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Liver Failure</to_name>
+		<to_code>M0025970</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1744,6 +1939,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>induces</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Unconsciousness</to_name>
+		<to_code>M0022251</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
 		<from_name>I [Preparations]</from_name>
@@ -1751,6 +1956,16 @@
 		<to_namespace>RxNorm</to_namespace>
 		<to_name>ibuprofen</to_name>
 		<to_code>5640</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>H [Preparations]</from_name>
+		<from_code>N0000010590</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>halothane</to_name>
+		<to_code>5095</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1944,6 +2159,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>may_diagnose</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Malignant Hyperthermia</to_name>
+		<to_code>M0012932</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>has_TC</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>amlodipine</from_name>
@@ -1971,6 +2196,46 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Anti-inflammatory Agent [TC]</to_name>
 		<to_code>N0000178306</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>halothane</from_name>
+		<from_code>5095</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anesthetics [TC]</to_name>
+		<to_code>N0000193810</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cellular or Molecular Interactions [MoA]</from_name>
+		<from_code>N0000000223</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Unknown Cellular or Molecular Interaction [MoA]</to_name>
+		<to_code>N0000009915</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cellular or Molecular Interactions [MoA]</from_name>
+		<from_code>N0000000223</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Physiochemical Activity [MoA]</to_name>
+		<to_code>N0000000065</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Cellular or Molecular Interactions [MoA]</from_name>
+		<from_code>N0000000223</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Enzyme Interactions [MoA]</to_name>
+		<to_code>N0000000163</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2326,6 +2591,36 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Decreased Organized Electrical Activity [PE]</from_name>
+		<from_code>N0000008768</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Central Nervous System Organized Electrical Activity [PE]</to_name>
+		<to_code>N0000008501</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Central Nervous System Depression [PE]</from_name>
+		<from_code>N0000175728</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>General Anesthesia [PE]</to_name>
+		<to_code>N0000175975</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Central Nervous System Activity Alteration [PE]</from_name>
+		<from_code>N0000175724</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Central Nervous System Depression [PE]</to_name>
+		<to_code>N0000175728</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Therapeutic Categories [TC]</from_name>
 		<from_code>N0000178293</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -2489,6 +2784,16 @@
 		<from_name>Preparations by Generic Ingredient</from_name>
 		<from_code>N0000010582</from_code>
 		<to_namespace>MED-RT</to_namespace>
+		<to_name>H [Preparations]</to_name>
+		<to_code>N0000010590</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by Generic Ingredient</from_name>
+		<from_code>N0000010582</from_code>
+		<to_namespace>MED-RT</to_namespace>
 		<to_name>M [Preparations]</to_name>
 		<to_code>N0000010595</to_code>
 	</association>
@@ -2626,6 +2931,16 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Organized Electrical Activity Alteration [PE]</from_name>
+		<from_code>N0000009774</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Decreased Organized Electrical Activity [PE]</to_name>
+		<to_code>N0000008768</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Therapeutic Categories [TC]</from_name>
 		<from_code>N0000178293</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -2661,6 +2976,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Anti-inflammatory Agent [TC]</to_name>
 		<to_code>N0000178306</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Therapeutic Categories [TC]</from_name>
+		<from_code>N0000178293</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Anesthetics [TC]</to_name>
+		<to_code>N0000193810</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
