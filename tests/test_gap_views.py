@@ -82,19 +82,18 @@ def _register_condition(conn, ingest_run_id, ui, name, trees=(), record_kind=DES
     """Register one condition through the REAL writer (conditions.upsert_condition),
     not a hand-rolled INSERT -- so these tests exercise the same path an ingest does.
 
-    A follow-up UPDATE sets scr_class: conditions.upsert_condition does not write it
-    (db/019's comment on condition.scr_class -- MeshRecord already carries the field,
-    but wiring the ingest path through is Task 7's job, not this gap view's). Kept as
-    a plain UPDATE rather than a second writer function because it is scaffolding for
-    a gap this table's real writer will close next task, not a permanent API.
+    `scr_class` GOES THROUGH THE WRITER TOO, and it did not always: while
+    upsert_condition still ignored the field this helper set it with a follow-up
+    UPDATE, which made the view's rare-disease arm pass over a value no ingest could
+    ever have produced. The whole 11-row SCRClass = '3' carve-out rides on that one
+    column, and its failure mode is a gap view going quiet rather than an error, so
+    the scaffolding is gone and the real path is what these tests measure.
     """
     record = MeshRecord(concept_ui=f"M{ui}", record_ui=ui, record_kind=record_kind,
                         name=name, tree_numbers=trees, unii=frozenset(),
-                        cas=frozenset(), is_preferred_concept=True)
+                        cas=frozenset(), is_preferred_concept=True,
+                        scr_class=scr_class)
     condition_uuid, _ = conditions.upsert_condition(conn, record, ingest_run_id, "MeSH")
-    if scr_class is not None:
-        conn.execute("UPDATE drugref.condition SET scr_class = %s "
-                     "WHERE condition_uuid = %s", (scr_class, condition_uuid))
     return condition_uuid
 
 
@@ -1148,7 +1147,15 @@ def test_a_surgical_procedure_is_never_a_gap(conn, ingest_run_id):
 def test_a_rare_disease_SCR_is_a_gap_but_a_chemical_SCR_is_not(conn, ingest_run_id):
     """An SCR bears no tree numbers, so it has no DAG position and 'nothing above it'
     is vacuously true. SCRClass is the only thing that separates the 11 real rare
-    diseases from records like aliskiren."""
+    diseases from records like aliskiren.
+
+    BOTH VALUES ARE ROUND-TRIPPED THROUGH conditions.upsert_condition, so this is also
+    what holds the ingest's scr_class write in place -- the column has exactly one
+    writer and exactly one reader (this view's second arm), and neither an INSERT that
+    dropped the value nor a SET list that stopped refreshing it would fail anywhere
+    else. The refresh is asserted separately below because it is the branch a future
+    edit is most likely to drop: it only fires on a re-ingest.
+    """
     rare = _register_condition(conn, ingest_run_id, "C580439", "Short QT Syndrome",
                                trees=(), record_kind="SCR", scr_class="3")
     chemical = _register_condition(conn, ingest_run_id, "C446481", "aliskiren",
@@ -1157,6 +1164,18 @@ def test_a_rare_disease_SCR_is_a_gap_but_a_chemical_SCR_is_not(conn, ingest_run_
         "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
     assert rare in rows
     assert chemical not in rows
+
+    # THE ON CONFLICT ARM. Upstream re-files records between releases, so a rebuild
+    # must be able to move one OUT of the carve-out as well as into it -- and a
+    # condition_uuid is immortal, so the second upsert is the same row, not a new one.
+    reclassified = _register_condition(conn, ingest_run_id, "C580439",
+                                       "Short QT Syndrome", trees=(),
+                                       record_kind="SCR", scr_class="1")
+    assert reclassified == rare
+    assert conn.execute("SELECT scr_class FROM drugref.condition "
+                        "WHERE condition_uuid = %s", (rare,)).fetchone()[0] == "1"
+    assert rare not in [r[0] for r in conn.execute(
+        "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
 
 
 def test_the_gap_reaches_the_question_register(conn, ingest_run_id):

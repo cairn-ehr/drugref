@@ -63,10 +63,11 @@ from drugref.ingest.checksum import checksum
 
 # The authority that STATES the relations, and therefore the source this run's
 # ingest_run is opened under. Every per-source rebuild in this module scopes on it,
-# because every row this module writes hangs off this run. Each relation pass declares
-# the same value for the rows it stamps (mesh_ci_relations.SOURCE) -- the import runs
-# one way only, and the CHECK constraints on every source column make a divergence
-# unstorable rather than merely undetected.
+# because every row this module writes hangs off this run.
+#
+# THE ONLY DECLARATION FOR THIS RUN, and each relation pass is HANDED it rather than
+# repeating it: one run opens one ingest_run under one source, so a copy in a pass
+# would be one answer written down twice with no way to disagree usefully (#43).
 SOURCE = "MED-RT"
 # The authority that DEFINES the objects. It is the condition registry's source
 # (a condition_uuid is minted from 'MeSH' + a DescriptorUI), which is a different
@@ -301,8 +302,11 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     indexes = (class_writer.moieties_by_rxcui(conn),
                class_writer.moieties_by_scheme(conn, "UNII"),
                class_writer.moieties_by_scheme(conn, "CAS"))
+    #    The pass is TOLD which run it writes for -- SOURCE and run_id travel
+    #    together, because both are provenance of the ingest_run opened above.
     ci = mesh_ci_relations.write_contraindications(conn, ci_assertions, records,
-                                                  uuid_by_code, indexes, run_id)
+                                                  uuid_by_code, indexes, SOURCE,
+                                                  run_id)
 
     # 6. Persist the withheld objects' IDENTITIES, not merely their count: a worklist
     #    that says "2 objects were withheld" cannot be worked, which is the lesson

@@ -303,7 +303,8 @@ def test_a_self_pair_is_counted_not_silently_skipped(conn, a_moiety, ingest_run_
     indexes = ({"321988": [a_moiety]}, {"1HIZ4DL86F": [a_moiety]}, {})
 
     rel = mesh_ci_relations.write_contraindications(
-        conn, [assertion], {"M0016871": record}, {}, indexes, ingest_run_id)
+        conn, [assertion], {"M0016871": record}, {}, indexes, mesh_rel_run.SOURCE,
+        ingest_run_id)
 
     assert rel.self_pairs == 1
     assert rel.pair_rows == 0

@@ -9,8 +9,14 @@ edges (spec 6.1: #39 one layer deeper, and unfixable by a discriminator, since a
 true of CI_with and CI_ChemClass in particular.
 
 So this module writes rows and returns a tally: it opens no transaction, commits
-nothing, registers no condition, and reads no index it was not given. That is what
-lets the orchestrator build the registry once and hand the same one to every pass.
+nothing, registers no condition, reads no index it was not given, and does not name
+the authority it writes under -- `source` is an ARGUMENT, because the rows belong to
+the run that called this pass. Declaring 'MED-RT' here as well would be one answer to
+one question written down twice, in a module that could never disagree with the
+orchestrator usefully: same run, same ingest_run row, same source (#43's shape).
+
+That is also what lets the orchestrator build the registry once and hand the same one
+to every pass.
 """
 import uuid
 from collections import Counter
@@ -18,15 +24,6 @@ from dataclasses import dataclass, field
 
 from drugref import interactions
 from drugref.ingest import mesh_concepts
-
-# The authority whose assertions these rows carry, and therefore the `source` stamped
-# on every one of them. Declared here rather than imported because the import runs the
-# other way -- the orchestrator imports this module -- exactly as medrt_run.py and this
-# module's predecessor each declared their own. It MUST equal mesh_rel_run.SOURCE, and
-# a divergence is unstorable rather than merely wrong: db/014 CHECK-constrains every
-# source column written below (db/012 finding 3 -- an unconstrained source once let
-# 'MEDRT' insert cleanly and match nothing, ever).
-SOURCE = "MED-RT"
 
 # The two MeSH-keyed CI predicates, named together because the pair is the point: they
 # share an endpoint shape (RxNorm -> MeSH) and differ in what the object IS, which is
@@ -96,7 +93,7 @@ def _resolve_object_moiety(record: mesh_concepts.MeshRecord, unii_index,
 
 
 def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
-                            run_id: int) -> CiRelations:
+                            source: str, run_id: int) -> CiRelations:
     """Write both contraindication relations, tallying every assertion that is not.
 
     ONE PASS, and every exit from it is counted somewhere: an assertion either
@@ -141,6 +138,12 @@ def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
     That 103 is the WORKLIST total and is unchanged by the object_kind split -- both
     kinds stay on it. What the split changed is how those 103 divide between the two
     counters, a figure the next run against a real release establishes.
+
+    `source` and `run_id` are the run's provenance, taken as arguments and forwarded
+    together to every writer call below, in the order interactions.add_* takes them.
+    The source is not a constant here because this pass does not decide it: the
+    orchestrator opened the ingest_run, and these rows belong to it (see the module
+    docstring).
     """
     rxcui_index, unii_index, cas_index = indexes
     out = CiRelations()
@@ -180,7 +183,7 @@ def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
                     out.self_pairs += 1
                     continue
                 if interactions.add_moiety_contraindication(
-                        conn, subject, object_moiety, a.relationship, SOURCE, run_id):
+                        conn, subject, object_moiety, a.relationship, source, run_id):
                     out.pair_rows += 1
         else:                                        # CI_with
             object_uuid = uuid_by_code.get(record.record_ui)
@@ -188,6 +191,6 @@ def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
                 continue                            # not a registered condition
             for subject in subjects:
                 if interactions.add_condition_contraindication(
-                        conn, subject, object_uuid, a.relationship, SOURCE, run_id):
+                        conn, subject, object_uuid, a.relationship, source, run_id):
                     out.condition_rows += 1
     return out
