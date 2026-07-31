@@ -1,3 +1,4 @@
+# tests/test_mesh_rel_run_ci.py
 """End-to-end slice-5b ingest against the committed fixtures.
 
 Every number here is a fact about the REAL releases the fixtures were extracted
@@ -11,7 +12,7 @@ ingest/mesh_ci_relations.py, which is the pass itself). The summary is nested fo
 reason spec 6.1 gives: the registry figures are one fact about one closure, so they
 are stated once under `registry` while each relation family reports its own rows and
 losses under its own name. The INDICATION half is next door, in
-tests/test_mesh_ind_run.py, which imports this module's entry point, truncate and
+tests/test_mesh_rel_run_ind.py, which imports this module's entry point, truncate and
 seeded registry rather than restating them.
 
 THE REGISTRY FIGURES HERE ARE NOW SHAPED BY BOTH HALVES, and that is the design rather

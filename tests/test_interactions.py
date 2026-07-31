@@ -166,7 +166,7 @@ def test_clear_source_removes_the_unresolved_object_worklist(conn, ingest_run_id
 
     MEASURED, NOT ASSUMED. Removing `ingest_unresolved_ci_object` from that
     function's loop fails exactly two tests: this one, and
-    test_mesh_ci_run.py::test_rerunning_replaces_rather_than_duplicates. The second
+    test_mesh_rel_run_ci.py::test_rerunning_replaces_rather_than_duplicates. The second
     is an INCIDENTAL detector -- an end-to-end check that a re-run does not duplicate
     rows, which happens to notice, and which would stop noticing the moment that
     fixture stopped re-running the ingest. Before this test, that was the only thing

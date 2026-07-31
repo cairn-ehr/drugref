@@ -109,10 +109,16 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
         object_uuid = uuid_by_code.get(record.record_ui)
         if object_uuid is None:
             # Defensive rather than live: the orchestrator's closure covers every
-            # indication object code, so a resolved record is always registered. Kept
-            # because the guarantee lives at the CALL SITE (which set the closure was
-            # taken over), and a narrowed closure must lose rows visibly at the
-            # database's foreign key rather than silently here.
+            # indication object code, so a resolved record is always registered, and on
+            # the real 2026 releases this branch is never taken.
+            #
+            # BE CLEAR ABOUT WHAT IT COSTS IF IT EVER IS. This guard makes such a loss
+            # SILENT -- the assertion is skipped, no tally counts it, and the ingest
+            # reports success -- which is the opposite of letting the foreign key refuse
+            # the row. It is kept because a crash is worse than a skip for a condition
+            # the CALLER is responsible for establishing, but that makes the row counts
+            # the only evidence: a change that narrows the closure must be checked
+            # against them, never trusted to fail loudly here.
             continue
         if any(t.startswith(CHEMICAL_TREE) for t in record.tree_numbers):
             out.chemical_object_assertions += 1     # ingested anyway -- see above

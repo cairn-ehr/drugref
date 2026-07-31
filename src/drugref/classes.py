@@ -214,10 +214,15 @@ UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 
 # Why an RxCUI is on the unmatched worklist -- and, because the clear is scoped on it,
 # WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these
-# three, and the invariant a fourth writer must preserve is ONE WRITER PER
+# three VALUES, written today by TWO writers (medrt_run owns one bucket, mesh_rel_run
+# owns two), and the invariant a fourth VALUE must preserve is ONE WRITER PER
 # (source, reason): add a value here rather than sharing one, or the clears collide
 # again exactly as medrt_run's and the MeSH-keyed run's did. #47 is the next candidate --
 # medrt_run's own CI subjects, which it counts today and does not persist.
+#
+# VALUES AND WRITERS ARE COUNTED SEPARATELY ON PURPOSE. They were equal until this
+# slice and the sentence above conflated them; INDICATION is the change that proves
+# they differ, so a reader must not infer "three values" from "three writers" again.
 #
 # INDICATION is what one orchestrator owning TWO buckets looks like, and it does not
 # weaken the invariant: mesh_rel_run writes both, so each bucket still has exactly one

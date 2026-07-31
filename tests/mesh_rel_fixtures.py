@@ -2,12 +2,17 @@
 """Shared setup for the TWO test modules that exercise ONE MeSH-keyed relation run.
 
 `ingest/mesh_rel_run.py` runs both relation families over one condition registry
-(spec 6.1), so tests/test_mesh_ci_run.py and tests/test_mesh_ind_run.py drive the SAME
-entry point over the SAME fixtures and differ only in what they assert. What they must
-not each own a copy of is written down here: the list of tables one run touches, the
-registry ingest's arguments, and the file set the entry point is called with. A second
-copy of any of those is the "one quantity stated twice" trap -- db/018's round is the
-standing evidence that only one copy ever learns the next correction.
+(spec 6.1), so tests/test_mesh_rel_run_ci.py and tests/test_mesh_rel_run_ind.py drive
+the SAME entry point over the SAME fixtures and differ only in what they assert. What
+they must not each own a copy of is written down here: the list of tables one run
+touches, the registry ingest's arguments, and the file set the entry point is called
+with. A second copy of any of those is the "one quantity stated twice" trap -- db/018's
+round is the standing evidence that only one copy ever learns the next correction.
+
+BOTH MODULES ARE NAMED AFTER `mesh_rel_run`, the orchestrator they actually drive. They
+were `test_mesh_ci_run.py` / `test_mesh_ind_run.py` until slice 5b.2 finished, naming a
+`mesh_ci_run.py` that the one-orchestrator refactor had already deleted and a
+`mesh_ind_run.py` that never existed at all.
 
 PLAIN FUNCTIONS, NOT PYTEST FIXTURES, and the reason is mechanical rather than a
 preference: a fixture imported into a second module and then named as a test parameter
@@ -36,12 +41,18 @@ def truncate(conn) -> None:
     reach them through `condition`: this list is what a reader consults to learn which
     tables one run touches, and a table that is only cleared by accident is one nobody
     knows is cleared.
+
+    ingest_unmatched_ingredient is named for that same reason, and it had been left to
+    the CASCADE from `ingest_run` while three tests asserted on it directly -- the exact
+    shape the paragraph above forbids. Naming it is also what keeps the list honest
+    about the run's THIRD `reason` bucket (db/019 section 7).
     """
     conn.execute(
         "TRUNCATE drugref.moiety_condition_indication, "
         "drugref.moiety_induced_condition, "
         "drugref.moiety_condition_contraindication, "
         "drugref.moiety_contraindication, drugref.ingest_unresolved_ci_object, "
+        "drugref.ingest_unmatched_ingredient, "
         "drugref.condition_parent, drugref.condition, "
         "drugref.open_question, drugref.class_contraindication, "
         "drugref.class_membership, drugref.class_parent, drugref.substance_class, "

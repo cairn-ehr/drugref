@@ -247,10 +247,15 @@ class ParsedMedrt:
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
     ambiguous_codes: int = 0          # one published code claimed by several concepts
     # The DISTINCT names this parse saw and ignored, sorted. Not errors -- HC/EXT
-    # and may_treat/has_SC are deliberately out of scope -- but an upstream RENAME
-    # of something we DO ingest looks identical to an ignore, so the vocabulary we
-    # skipped is reported rather than assumed. A release-to-release diff of these
-    # two tuples is what makes such a change visible at all.
+    # concept types and has_SC/site_of_metabolism are deliberately out of scope -- but
+    # an upstream RENAME of something we DO ingest looks identical to an ignore, so the
+    # vocabulary we skipped is reported rather than assumed. A release-to-release diff
+    # of these two tuples is what makes such a change visible at all.
+    #
+    # may_treat USED TO BE NAMED HERE and no longer is, because slice 5b.2 ingests it
+    # (with may_prevent, may_diagnose and induces). That is exactly the direction of
+    # drift these tuples exist to catch: a predicate that leaves the skip list must
+    # leave this sentence too, or the comment starts describing a previous release.
     skipped_concept_types: tuple[str, ...] = ()
     skipped_predicates: tuple[str, ...] = ()
 

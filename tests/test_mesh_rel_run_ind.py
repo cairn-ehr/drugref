@@ -1,4 +1,4 @@
-# tests/test_mesh_ind_run.py
+# tests/test_mesh_rel_run_ind.py
 """End-to-end slice-5b.2 ingest: the INDICATION half of the one MeSH-keyed run.
 
 Every number here is a fact about the REAL releases the fixtures were extracted from
@@ -6,7 +6,7 @@ Every number here is a fact about the REAL releases the fixtures were extracted 
 tests/fixtures/make_mesh_ci_subset.py, whose wanted set is DERIVED from the MED-RT
 subset precisely so the two files cannot drift apart and quietly resolve nothing.
 
-The SIBLING of tests/test_mesh_ci_run.py. One orchestrator (ingest/mesh_rel_run.py)
+The SIBLING of tests/test_mesh_rel_run_ci.py. One orchestrator (ingest/mesh_rel_run.py)
 runs both halves over one condition registry -- the shape spec 6.1 requires, because
 `condition_parent` edges are derived by BOTH closures and so cannot be split by a
 `reason` discriminator the way ingest_unmatched_ingredient was (#39 one layer deeper).
