@@ -151,49 +151,42 @@ that route cannot fill the gap either. Published instead as `gap_unresolved_ci_o
 per object with its rule count, for a curator to rule on — Plan B's 14-expansion-roots precedent.
 
 Those 103 are **two kinds of thing, and `object_kind` (`db/014`) keeps them apart.** Failing to bridge an object to a
-moiety is not by itself evidence that the object is a class: a MeSH record carrying **no registry key** (Alkalies,
-Organic Chemicals — only MeSH's `'0'` placeholder) names no substance and is the sulfonamide case, while a record
-carrying a real **UNII or CAS** names a substance drugref's gated registry simply does not hold. Reading the first
-fact off the second asked a curator whether contraindications naming *Pimozide* — a leaf drug descriptor with nothing
-beneath it — should expand over the drugs below it. Both kinds stay on the worklist (so the 103 / 405 totals are
-unchanged) and each now gets the question its own remedy answers: rule on tree expansion, or register the moiety.
+moiety is not itself evidence that the object is a class: a MeSH record carrying **no registry key** (Alkalies,
+Organic Chemicals) names no substance and is the sulfonamide case, while one carrying a real **UNII or CAS** names a
+substance drugref's gated registry simply does not hold. Reading the first fact off the second asked a curator whether
+contraindications naming *Pimozide* — a leaf drug descriptor — should expand over the drugs below it. Both kinds stay
+on the worklist (the 103 / 405 totals are unchanged), each with the question its own remedy answers.
 
 **Also not done here:** MED-RT's `has_SC` (3,632 assertions, **248 targeting MED-RT itself**) and the
-`RelatedRegistryNumber` precision pass. 5b.2 has since landed — see below.
+`RelatedRegistryNumber` precision pass.
 
 **Two of the three things this slice was told not to forget were honoured; the third was retracted.**
 `condition_ci_axis.expands_descendants` is declared per predicate **with no DEFAULT** (`db/014`), so MeSH's
 differently-shaped tree cannot inherit a recall-safe guess. `mesh_run` still owes
 `unresolved_expansion_policy('MeSH')` — **not yet needed**, since no MeSH-keyed row can exist in
-`class_expansion_policy` until the class arm lands. And **the source-blind walk: 5b does NOT end it**, the claim this
-file used to make. 5b registers no MeSH chemical class in `substance_class` and conditions live in their own tables
-with their own MeSH-only DAG, so the hazard stays **latent** until `has_SC` or the class arm lands. Stated in
-`db/012`'s comments and in `ddi_candidate_pair`'s `COMMENT ON`.
+`class_expansion_policy` until the class arm lands. And **the source-blind walk: 5b does NOT end it.** 5b registers no
+MeSH chemical class in `substance_class` and conditions live in their own MeSH-only DAG, so the hazard stays
+**latent** until `has_SC` or the class arm lands.
 
-Follow-up filed: [#39](https://github.com/cairn-ehr/drugref/issues/39) — `ingest_unmatched_ingredient` is
-rebuilt per `source` while two orchestrators write under `MED-RT`, leaving two caveats documented and tested
-rather than solved. **Closed by the interaction debt round below** (`db/018`'s `reason` discriminator).
+Follow-up filed: [#39](https://github.com/cairn-ehr/drugref/issues/39) — `ingest_unmatched_ingredient` rebuilt per
+`source` while two orchestrators write under `MED-RT`. **Closed by the interaction debt round below.**
 
 #### Post-5b debt round ✅ DONE
-The five follow-ups 5b's review filed, cleared before 5b.2 reuses the same code paths — plus the two issues
-the tracker had closed while the code still carried them. `db/017`; **536 tests**.
-[#40](https://github.com/cairn-ehr/drugref/issues/40) one gz-aware MeSH reader (`mesh.iter_records`), which
-also fixed a regeneration command that found nothing against a real release ·
-[#17](https://github.com/cairn-ehr/drugref/issues/17) the last silent refusal counted ·
-[#42](https://github.com/cairn-ehr/drugref/issues/42) the descriptor-wins tie-break pinned — **measured: 0 of
-MeSH's ConceptUIs appear in both desc and supp, so the release cannot exercise that branch and the guard is
-against a future partition change** · [#41](https://github.com/cairn-ehr/drugref/issues/41) the CI object's
-namespace taken from the data in BOTH the view and `questions.py`, preserving every existing
-`question_uuid` — and, after the PR review, **canonicalised in both**, since a view grouped on the stored
-spelling while the key upper()s it is the same collision one case narrower ·
-[#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
+The five follow-ups 5b's review filed, cleared before 5b.2 reuses the same code paths, plus the two issues the tracker
+had closed while the code still carried them. `db/017`; **536 tests**.
+[#40](https://github.com/cairn-ehr/drugref/issues/40) one gz-aware MeSH reader (`mesh.iter_records`), which also fixed
+a regeneration command that found nothing against a real release · [#17](https://github.com/cairn-ehr/drugref/issues/17)
+the last silent refusal counted · [#42](https://github.com/cairn-ehr/drugref/issues/42) the descriptor-wins tie-break
+pinned — **measured: 0 of MeSH's ConceptUIs appear in both desc and supp, so the release cannot exercise that branch
+and the guard is against a future partition change** · [#41](https://github.com/cairn-ehr/drugref/issues/41) the CI
+object's namespace taken from the data in BOTH the view and `questions.py`, preserving every existing `question_uuid`
+and **canonicalised in both** · [#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
 `db.clear_source_tables`, six declared table tuples each restated independently by test.
 
-**Re-verified end-to-end against the real releases**, which is what this round's claims rest on: every 5b figure
-reproduced exactly (5,203 / 7,157 / 9,471 / 1,442 / 191,728, and 103 worklist rows summing to 405). Two numbers that
-were unmeasured or ambiguous are now recorded: the `object_kind` split is **96 CHEMICAL_CLASS (386 rules) + 7
-UNREGISTERED_SUBSTANCE (19 rules)**, and slice 2b's "73% joinable" was ambiguous — 72.8% of members carry an identity
-KEY, but only **40.6% reach a gated-in moiety**.
+**Re-verified end-to-end against the real releases**: every 5b figure reproduced exactly (5,203 / 7,157 / 9,471 /
+1,442 / 191,728, and 103 worklist rows summing to 405). Two previously unmeasured numbers are now recorded: the
+`object_kind` split is **96 CHEMICAL_CLASS (386 rules) + 7 UNREGISTERED_SUBSTANCE (19 rules)**, and slice 2b's "73%
+joinable" was ambiguous — 72.8% of members carry an identity KEY, but only **40.6% reach a gated-in moiety**.
 
 #### Interaction debt round ✅ DONE
 The three interaction-model follow-ups, cleared before 5b.2 reused these code paths. `db/018`; 568 tests. Each was
@@ -202,10 +195,9 @@ number in an issue is a claim about a release, not a fact about the code.
 
 [#39](https://github.com/cairn-ehr/drugref/issues/39) — `ingest_unmatched_ingredient` gains a `reason`
 discriminator (`classification` | `contraindication`, NOT NULL, **no DEFAULT**, in the PK), so each of the two
-orchestrators writing it under source `MED-RT` clears exactly what it re-derives. `db.clear_source_tables`
-grew an opt-in `match=` narrowing rather than a seventh copy of the DELETE. Measured **2,137 + 826** rows; a
-later `medrt_run` now leaves all 826 standing, and the `DISTINCT ON (rxcui)` gap view is unchanged at 2,140.
-Both of slice 5b's documented caveats — order-dependence and cross-run accumulation — are gone.
+orchestrators writing it under source `MED-RT` clears exactly what it re-derives. `db.clear_source_tables` grew an
+opt-in `match=` narrowing rather than a seventh copy of the DELETE. Measured **2,137 + 826** rows; the `DISTINCT ON
+(rxcui)` gap view is unchanged at 2,140. Both of slice 5b's documented caveats are gone.
 
 [#31](https://github.com/cairn-ehr/drugref/issues/31) — `gap_dead_by_expansion_policy`, a **sixth gap kind**:
 a contraindication whose object class is *denied* expansion, holds no direct *partner* on the rule's axis, and
@@ -214,15 +206,12 @@ a contraindication whose object class is *denied* expansion, holds no direct *pa
 excludes it, so `acetohydroxamic acid` → `Urease Inhibitors [MoA]` was dead and silent. That view now asks the
 read path's own question — **12 → 13 classes, 38 → 39 dead rules**.
 
-**The review of the round found the same defect in the NEW view**, because the reach measure was stated twice
-(`populated` and `reachable`) and only one copy learned the subject exclusion: a denied class whose only direct member
-was its own rule's subject was dead and reported by *nothing*, while a class whose subtree held only the subject was
-reported by *both*. The measure is now one view — **`ci_rule_partner_reach`** — and the two gap views are
-complementary filters on one column (`= 0`, `> 0`), so the partition holds by construction.
-**Re-measured after the fix** ([#50](https://github.com/cairn-ehr/drugref/issues/50)): still **ONE class**
-(`Endocrine Activity Alteration [PE]`, 1 rule) — neither changed shape occurs in this release — but **299
-drugs held back, not 300**, because the rule's own subject *clomiphene* is filed under the class. Everything
-else held: `12 → 13 / 38 → 39`, 2,140 unmatched, 21,664 pairs, and no class in both views.
+**The review of the round found the same defect in the NEW view**, because the reach measure was stated twice and only
+one copy learned the subject exclusion. The measure is now one view — **`ci_rule_partner_reach`** — with the two gap
+views as complementary filters on one column (`= 0`, `> 0`), so the partition holds by construction. **Re-measured**
+([#50](https://github.com/cairn-ehr/drugref/issues/50)): still **ONE class** (`Endocrine Activity Alteration [PE]`,
+1 rule), but **299 drugs held back, not 300**, because the rule's own subject *clomiphene* is filed under the class.
+Everything else held: 2,140 unmatched, 21,664 pairs, no class in both views.
 
 [#45](https://github.com/cairn-ehr/drugref/issues/45) — `contraindications_for_condition(uuid)` walks **UP**
 from the patient's condition instead of down from all 641 roots: **0.7–0.9 ms against 9–10 ms**, ~13×. A
@@ -273,31 +262,27 @@ record `decisions/indications-do-not-expand.md`.
 **What the slice decides, and why it is not a contraindication with the sign flipped.** A contraindication expands
 **down** the condition DAG (a patient coded *Temporal Lobe Epilepsy* is a patient with epilepsy). An indication must
 not: the same walk distributes a therapeutic claim over the object's subclasses, and one `may_treat` on *Neoplasms*
-would manufacture 708 claims MED-RT never made (14×/47×/77× across the predicates, re-measured on 5b.2's widened
-registry; the spec's 702 and 13×/41×/75× were 5b's). So **nothing derived is stored**; `indications_for_condition`
-walks **UP** and labels every derived row `is_direct = false`, meaning a **weaker** claim rather than a wider one.
-That read path is not optional decoration — **3,719 of 5,963 registry conditions have no direct indication but do
-have an ancestor with one**, and get nothing from the stored rows alone. `induces` gets its **own table** and no axis
-row: the drug *causes* the state, which is neither an indication nor a contraindication, and a shared table plus a
-forgotten filter reads "carbamazepine treats agranulocytosis".
+would manufacture 708 claims MED-RT never made (14×/47×/77× across the predicates). So **nothing derived is stored**;
+`indications_for_condition` walks **UP** and labels every derived row `is_direct = false`, a **weaker** claim rather
+than a wider one. That read path is not optional decoration — **3,719 of 5,963 registry conditions have no direct
+indication but do have an ancestor with one**. `induces` gets its **own table** and no axis row: the drug *causes* the
+state, and a shared table plus a forgotten filter reads "carbamazepine treats agranulocytosis".
 
-**Registry widening moves 5b's expanded figures — upward, and that is a completion.** One closure is now taken over
-every MeSH-keyed object, so the DAG gains edges: a condition bearing several tree numbers can have a second parent
-that only the indication half registers. 10 of 641 contraindication roots grew (*Nervous System Diseases* +59,
-gaining *Acute Pain*), none shrank, the root set is byte-identical, and every direct figure is unchanged. **Expect
-this every time the registry widens.**
+**Registry widening moves 5b's expanded figures — upward, and that is a completion.** One closure is taken over every
+MeSH-keyed object, so the DAG gains edges a condition's second tree number only the indication half registers. 10 of
+641 contraindication roots grew (*Nervous System Diseases* +59), none shrank, the root set is byte-identical, every
+direct figure unchanged. **Expect this every time the registry widens.**
 
 **Two widenings survive the upward walk, and 5b.2 COUNTS rather than resolves them.** **168 (drug, condition) pairs**
-are asserted as an indication *and* a contraindication — carvedilol/*Heart Failure*, alteplase/*Stroke*,
-budesonide/*Asthma* — real distinctions (chronic HFrEF vs acute decompensation) the MeSH descriptor grain cannot
-carry, and MED-RT states both with no qualifier. And **422 of 18,314 assertions name a subordinate concept**, so every
-row that follows sits on a BROADER record than MED-RT named, because MED-RT keys on a MeSH ConceptUI while a condition
-is keyed on the record: 90 subordinate concepts collapse onto 85 records, and `may_treat` "Seizures, Focal" for
-eslicarbazepine is stored on *Seizures*, which it aggravates when generalised. That 422 is **release-grain, counted
-above the moiety gate** — it describes MED-RT, not how many rows landed; the row figure is unmeasured until
-[#52](https://github.com/cairn-ehr/drugref/issues/52) makes it queryable. Both are new `MeshRelSummary` fields
-(`also_contraindicated_pairs`, `indications.broadened_object_assertions`), both are stated in `COMMENT ON`, both are
-pinned by tests, and both have a curated follow-up: [#51](https://github.com/cairn-ehr/drugref/issues/51) (how a
+are asserted as an indication *and* a contraindication — carvedilol/*Heart Failure*, alteplase/*Stroke* — real
+distinctions (chronic HFrEF vs acute decompensation) the MeSH descriptor grain cannot carry, stated by MED-RT with no
+qualifier. And **422 of 18,314 assertions name a subordinate concept**, so every row that follows sits on a BROADER
+record than MED-RT named (MED-RT keys on a ConceptUI, a condition on the record): 90 subordinate concepts collapse
+onto 85 records, and `may_treat` "Seizures, Focal" for eslicarbazepine is stored on *Seizures*, which it aggravates
+when generalised. That 422 is **release-grain, above the moiety gate** — it describes MED-RT, not how many rows
+landed; the row figure is unmeasured until [#52](https://github.com/cairn-ehr/drugref/issues/52) makes it queryable.
+Both are `MeshRelSummary` fields, both stated in `COMMENT ON`, both pinned by tests, and both have a curated
+follow-up: [#51](https://github.com/cairn-ehr/drugref/issues/51) (how a
 consumer is told) and [#52](https://github.com/cairn-ehr/drugref/issues/52) (store `concept_ui`).
 
 **Residue filed by the merge review:** [#55](https://github.com/cairn-ehr/drugref/issues/55) — the read path offers
@@ -306,45 +291,40 @@ its generalisations through an `is_direct` boolean rather than through structure
 how a consumer is told about #51 and #52; whichever option wins revises the living record.
 [#53](https://github.com/cairn-ehr/drugref/issues/53) is **closed by the round below**.
 
-#### The #53 population-label round ✅ DONE
-The three residuals 5b.2's final review adjudicated and filed rather than fixed, plus the six its own review round
-then found. **No migration and no production logic change** — docstrings, one published page, and one fixture that
-could not tell two grains apart. **623 tests**, all three fixtures byte-reproducible from the real releases.
+#### The #53 population-label round ✅ DONE — merged as PR #56
+The three residuals 5b.2's final review filed rather than fixed, plus the six its own review round then found. **No
+migration and no production logic change** — docstrings, one published page, and one fixture that could not tell two
+grains apart. **623 tests**; all three fixtures byte-reproducible from the real releases.
 
 Each claim was **re-measured against the real releases before it was touched**, and all three held. Two were prose:
-`550 of 13,463` → **`550 of 13,458`** (5 assertions name the 2 codes MeSH withdrew, and an unresolved code has no
-concept to test for subordinacy), and `this slice's 1,053` → **the 2,198 codes one run resolves** (1,053 CI + 1,528
-IND, 383 named by both) in a module now serving both halves. Newly measured: the 81 concepts collapse onto **79**
-records, and **the indication half has no resolution gap** (1,528/1,528), which is what makes 4.09% and 2.30%
-comparable.
+`550 of 13,463` → **`550 of 13,458`**, and `this slice's 1,053` → **the 2,198 codes one run resolves** (1,053 CI +
+1,528 IND, 383 named by both). Newly measured: the 81 concepts collapse onto **79** records, and **the indication half
+has no resolution gap** (1,528/1,528), which is what makes 4.09% and 2.30% comparable.
 
 **The third was a test claiming to pin a grain its fixture could not distinguish.** The collision counter reports
-**pairs**; the test said a drift to **rows** would fail there, and it would not — the fixture held one overlapping row
-and one overlapping pair, so removing the production query's `SELECT DISTINCT` left the suite green (verified by
-mutation). Fixed by **strengthening the fixture rather than weakening the claim**: an eighth ingredient, **mannitol**,
-the only subject in the release asserting `may_treat` *and* `may_prevent` *and* `CI_with` against one object
-(*Anuria*) — the same clinical tension as carvedilol/*Heart Failure*. The fixture now holds **2 pairs across 3 rows**;
-the extractor's cap gained one exemption for exactly these overlap assertions, because they are the hardest data in
-the release (#51) rather than the noise it trims — scoped to the therapeutic predicates by `is_cap_exempt`, since
-`Synonym Of` shares their endpoint shape and would otherwise be exempted by coincidence.
-
-Fixture movement, verified by diffing identities rather than counts: moieties 11 → 12, classes 83 → **93**, DAG edges
-67 → **76**, memberships 30 → **36**, conditions 22 → **27** with nothing displaced, `condition_rows` 8 → **13**. That
-last is *not* a spec-10 violation, and the round wrote the distinction down: "the direct rows must not move" is about
-**widening the closure**, while mannitol is a new **subject**, and a subject states its own contraindications.
+**pairs**; the test said a drift to **rows** would fail there, and it would not — one overlapping row and one
+overlapping pair cannot tell them apart, so removing the production query's `SELECT DISTINCT` left the suite green
+(verified by mutation). Fixed by **strengthening the fixture rather than weakening the claim**: an eighth ingredient,
+**mannitol**, the only subject in the release asserting `may_treat` *and* `may_prevent` *and* `CI_with` against one
+object (*Anuria*). The fixture now holds **2 pairs across 3 rows**; the extractor's cap exempts exactly these overlap
+assertions, scoped to the therapeutic predicates by `is_cap_exempt` since `Synonym Of` shares their endpoint shape.
+Fixture movement (diffed by identity, not count): moieties 11 → 12, classes 83 → **93**, edges 67 → **76**,
+memberships 30 → **36**, conditions 22 → **27** with nothing displaced, `condition_rows` 8 → **13** — *not* a spec-10
+violation, because "the direct rows must not move" is about **widening the closure** and mannitol is a new **subject**.
 
 **Also not done here:** the 193 class-subject indications (filed against #8), `has_SC`, and any read path that ranks
 or prefers among indications — MED-RT asserts no line of therapy, no evidence strength and no ordering, and inventing
 one is slice 5c's curated work rather than a projection's.
 
 #### Slice 5c — The curated overlay (the moat)
-Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the
-dimensions the projections lack — **referencing** the 5a/5b candidate rows. Layered by licence-safety:
-**ONC high-priority floor** (re-encoded from the papers; RAND/government-licensed) → **SPL/DailyMed-mined**
-(ONSIDES-*method*, MIT precedent) → DDInter *if its licence confirms* → drugref's own hand-curation as the
-durable value-add. The **"moat" is quality-control — who may assert — not access or leverage**: data ships
-paywall-free under copyleft (derivatives shared alike; code AGPL-3.0). Institutionally-owned, never a
-volunteer wiki. Plus core pharmacology prose.
+Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the dimensions the
+projections lack — **referencing** the 5a/5b candidate rows. **Plan C has already built the overlay MECHANISM**
+(surrogate key + deferred single-live + one-way supersession, generalised over four tables), so 5c inherits a working
+correction shape rather than inventing one, and owns #51, #52, #55. Layered by licence-safety: **ONC high-priority
+floor** (re-encoded from the papers; RAND/government-licensed) → **SPL/DailyMed-mined** (ONSIDES-*method*, MIT
+precedent) → DDInter *if its licence confirms* → drugref's own hand-curation as the durable value-add. The **"moat" is
+quality-control — who may assert — not access or leverage**: data ships paywall-free under copyleft. Institutionally
+owned, never a volunteer wiki. Plus core pharmacology prose.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is
@@ -378,20 +358,17 @@ outside slice 1's append-only floor since a de-listed PBS item must be able to d
 global moiety spine **by name alone**, the only licence-clean join: PBS carries no UNII, CAS or InChIKey.
 Design: [slice-8a spec](superpowers/specs/2026-07-25-drugref-slice-8a-pbs-localisation-design.md).
 
-Measured against the real July-2026 release (14,840 items): the bridge sat at **85.5%** against a **92.4%**
-ceiling (all UNII substance names), and slice 8a's reading — **the moiety gate, not the bridge, is the
-binding constraint** ([#26](https://github.com/cairn-ehr/drugref/issues/26)) — proved right: after the
-identity-spine fix round the bridge reaches **13,719 = 92.4%, exactly that ceiling**, with unmatched
-components down 3,140 → 347. It took *two* fixes to show it, since the gate change alone moved nothing
-until the bridge stopped indexing `INN` claims (see the fix round below). The salt-strip heuristic (an
-admitted slice-3 stand-in) is now **5 bridge rows, 0.03%** — reported as near-worthless rather than left to
-quietly imply otherwise (rule 5); slice 3's GSRS salt relationships are the real fix. The residual is
-otherwise AU/INN-vs-USAN spelling divergence (cefalexin, ciclosporin, …) and non-drugs the moiety gate
-correctly excludes (vitamins, dressings). 334 tests at the initial build; 341 after the final whole-branch
-review round (all 12 findings fixed), **347** after the PR-review fix round (5 findings fixed, 2 deferred to
-[#29](https://github.com/cairn-ehr/drugref/issues/29)/[#30](https://github.com/cairn-ehr/drugref/issues/30)
-— see HANDOVER.md). No `NOTICE` change — the ingest path redistributes nothing; the test fixture noted
-above is the sole committed PBS data and is tracked under #25.
+Measured against the real July-2026 release (14,840 items): the bridge sat at **85.5%** against a **92.4%** ceiling
+(all UNII substance names), and slice 8a's reading — **the moiety gate, not the bridge, is the binding constraint**
+([#26](https://github.com/cairn-ehr/drugref/issues/26)) — proved right: after the identity-spine fix round the bridge
+reaches **13,719 = 92.4%, exactly that ceiling**, with unmatched components down 3,140 → 347. It took *two* fixes to
+show it, since the gate change alone moved nothing until the bridge stopped indexing `INN` claims. The salt-strip
+heuristic (an admitted slice-3 stand-in) is now **5 bridge rows, 0.03%** — reported as near-worthless rather than left
+to quietly imply otherwise (rule 5); slice 3's GSRS salt relationships are the real fix. The residual is otherwise
+AU/INN-vs-USAN spelling divergence and non-drugs the moiety gate correctly excludes. **347** tests after the PR-review
+fix round (2 findings deferred to [#29](https://github.com/cairn-ehr/drugref/issues/29) /
+[#30](https://github.com/cairn-ehr/drugref/issues/30)). No `NOTICE` change — the ingest path redistributes nothing;
+the test fixture noted above is the sole committed PBS data and is tracked under #25.
 
 Remaining slice-8 scope (not built): pricing (AEMP/DPMQ/premiums/fees), restriction texts/criteria, TGA
 ARTG, the composition tree's salt/clinical-drug levels underneath the bridge, and the same shape applied to
@@ -399,28 +376,23 @@ other jurisdictions.
 
 ## Cross-cutting hardening (not a single slice)
 
-- **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). The round that made every other
-  slice's coverage number real, and every defect in it was invisible to the committed fixtures.
-  `ingest/unii.py` read a **`PT` column the real UNII release does not have** (it is `Display Name`;
-  `PT` is a *value* of the TYPE column in the separate names file), so `row.get("PT") or ""` produced an
-  empty label for all 168,046 rows — a production run would have completed "successfully" over an
-  **entirely unlabelled registry** with a dead allow-list and a dead USAN↔INN crosswalk. Required columns
-  are now **declared and checked**; the lesson taken was not "that column was renamed" but "`or ""`
-  absorbed a structural mismatch". The legacy allow-list moved to **UNII keys** (#17) after its flagship
-  entry was measured to match nothing (`MAGNESIUM SULFATE, UNSPECIFIED FORM`). And the membership gate
-  (#26) became **`INN_ID | USAN_ID | (RXCUI & drug-like SUBSTANCE_TYPE)`** plus the allow-list: `INN_ID`
-  is a sparse cross-reference, not a has-INN flag, and was empty for amoxicillin, morphine, codeine,
-  doxycycline, tacrolimus and aspirin. **The asymmetry is the design** — a strong identifier admits
-  outright, because uniformly type-filtering would delete heparin, enoxaparin, protamine and 346 gene/cell
-  therapies from a drug-interaction service. **Strictly monotone**, pinned by a test. `db/011` records the
-  admitting signal as a rebuildable projection (the moiety is immortal; the evidence is per-release).
-  A fourth defect surfaced only on measurement: the gate change moved **no** downstream number until the
-  PBS bridge stopped indexing `INN` claims — the new moieties have none — and indexed `display_name`
-  instead, which is lossless and is what a *name* bridge should match. Measured against the real releases:
-  moieties **12,591 → 19,438**, PBS bridge **85.5% → 92.4%** (exactly the ceiling slice 8a identified),
-  unmatched PBS components **3,140 → 347**, MED-RT classified moieties **2,066 → 3,875**, and
-  `ddi_candidate_pair` **6,402 → 21,664**. 412 tests. Residue filed as
-  [#33](https://github.com/cairn-ehr/drugref/issues/33) (MeSH form-specific CAS keys, closed by slice 3).
+- **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). The round that made every other slice's
+  coverage number real, and every defect in it was invisible to the committed fixtures. `ingest/unii.py` read a
+  **`PT` column the real UNII release does not have** (it is `Display Name`), so `row.get("PT") or ""` produced an
+  empty label for all 168,046 rows — a production run would have completed "successfully" over an **entirely
+  unlabelled registry** with a dead allow-list and a dead USAN↔INN crosswalk. Required columns are now **declared and
+  checked**; the lesson taken was not "that column was renamed" but "`or ""` absorbed a structural mismatch". The
+  legacy allow-list moved to **UNII keys** (#17) after its flagship entry was measured to match nothing. And the
+  membership gate (#26) became **`INN_ID | USAN_ID | (RXCUI & drug-like SUBSTANCE_TYPE)`** plus the allow-list:
+  `INN_ID` is a sparse cross-reference, not a has-INN flag, and was empty for amoxicillin, morphine and aspirin.
+  **The asymmetry is the design** — a strong identifier admits outright, because uniformly type-filtering would delete
+  heparin, enoxaparin, protamine and 346 gene/cell therapies from a drug-interaction service. **Strictly monotone**,
+  pinned by a test. `db/011` records the admitting signal as a rebuildable projection. A fourth defect surfaced only
+  on measurement: the gate change moved **no** downstream number until the PBS bridge stopped indexing `INN` claims —
+  the new moieties have none — and indexed `display_name` instead. Measured: moieties **12,591 → 19,438**, PBS bridge
+  **85.5% → 92.4%**, unmatched PBS components **3,140 → 347**, MED-RT classified moieties **2,066 → 3,875**, and
+  `ddi_candidate_pair` **6,402 → 21,664**. 412 tests. Residue:
+  [#33](https://github.com/cairn-ehr/drugref/issues/33) (closed by slice 3).
   Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md).
 
 - **Foundation review ✅ DONE** (post-slice-5a, whole-codebase). `db/005` made the correction overlay
@@ -477,7 +449,35 @@ other jurisdictions.
   recall-safe *default*, not a gate, and the walk is **source-blind** (`class_parent` carries no `source`, so
   a transitive walk can cross vocabularies — **still latent after 5b**, see above). Row set unchanged. 419
   tests. Follow-ups filed as #35, #36, #37. The axis-aware review gate, latent then, is **live at 5b**.
-  **Plan C (the accumulation model) was gated on 5b, which has now landed its contraindication half.**
+- **Plan C — the accumulation model ✅ DONE** (`db/020`–`db/022`; spec §4–§8 / §11 steps 6–7; plan:
+  [plan-c](superpowers/plans/2026-08-01-plan-c-accumulation-model.md)). The gate was 5b, which has landed. The model
+  the pairwise projection cannot express — **many drugs, one effect that adds up** — plus **groups**, the role-based
+  exception where members play different parts and a count is meaningless (the triple whammy). Five curated tables,
+  two read views (spec §8's output contract), four gap views, **gap kinds 8–11**, and `accumulation.py` — the single
+  writer plus the two PURE rules a consumer applies. **Ships with an EMPTY curation set**, which is exactly what §11
+  step 7 asks for; curation is step 8. **No new source**, but drugref becomes an authority in its own registry
+  (`source = 'DRUGREF'`, all three places extended together). **730 tests.**
+
+  **Measured against the real releases**, whole chain 110 s, **every prior figure reproduced exactly** (19,438 ·
+  3,634/3,961/18,639 · 5,963/8,507 · 9,471 · 1,442 · 103 · 14,674/154 · 168/422 · the seven gap counts).
+  `ddi_candidate_pair` **unchanged at 21,664** and its filtered lookup **3.1 ms**, which was the regression this
+  slice most had to avoid. New: `class_subtree` **22,754** · `gap_uncurated_additive_effect` **381** of 1,873 PE
+  classes · the other three gap views and both read views **0**, correct with nothing curated · **18,834** questions
+  across 11 kinds in 0.7 s.
+
+  **Three things the design document was wrong about, each found by test or measurement.** (1) Spec §5.0 prescribes a
+  partial unique index for single-live; it **cannot work** on a table whose corrections preserve the natural key, so
+  the deferred constraint trigger `db/007` invented for `question_state` is adopted and generalised — published as
+  the living record `decisions/correcting-a-curated-assertion.md`. (2) **Nothing could be RETIRED**: supersession must
+  point at a later row with the same key, so `interaction_group_member.satisfies_role` and `additive_effect.accumulates`
+  are what make §5.3's "superseding the last member of a role removes the role" and §5.2's reviewed-vs-unreviewed
+  distinction implementable at all. (3) Generalising `ci_class_subtree` instead of adding a second walk was measured
+  and **rejected**: identical rows, **5× slower** on the hot path, because root-scoping is what makes it cheap.
+
+  **Not done here, deliberately:** any curation, and any `DRUGREF`-minted class — §6 says mint only where the release
+  genuinely says nothing, and 5b.2's `induces` has since landed the nephrotoxicity content §3.4 flagged. **#35 is NOT
+  closed**: the append-only shape now exists beside `class_expansion_policy`, but moving that table onto it is its own
+  change.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
   **Note the test-suite coupling** (this count has now been wrong twice — three, then seven — so re-run the
@@ -490,10 +490,9 @@ other jurisdictions.
   depend on precisely the bypass this item closes, so hardening the floor must land together with a
   replacement isolation strategy (e.g. a privileged test role, or per-test schemas) or the suite stops being
   able to reset itself.
-- **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (real UNII
-  headers/`INN_ID`; ChEBI/UNII/MED-RT licence deeds; grow the closed crosswalk + allow-list toward
-  completeness). Note the moiety gate is the binding constraint on classification yield: MED-RT classifies
-  6,012 ingredients, so class coverage grows with the registry, not with more MED-RT parsing.
+- **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (ChEBI/UNII/MED-RT
+  licence deeds; grow the closed crosswalk + allow-list toward completeness). Note the moiety gate is the binding
+  constraint on classification yield: MED-RT classifies 6,012 ingredients, so class coverage grows with the registry,
+  not with more MED-RT parsing.
 - **`EPC`-adjacent MED-RT content not yet used** — `EXT` concepts, and the class→class `has_*` assertions
   (an EPC declaring its own mechanism/effect) which would let class-level knowledge inherit along the DAG.
-- **Governance** — consider adding a CLAUDE.md (coding rules) and an ADR log as the design surface grows.
