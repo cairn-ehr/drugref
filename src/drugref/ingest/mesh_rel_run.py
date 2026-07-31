@@ -62,10 +62,18 @@ AND THREE NUMBERS THAT ARE NOT LOSSES, reported for the mirror-image reason. A c
 assertions that never became rows is worthless if the rows that DID land are quietly
 wrong or quietly contradictory, so the summary also carries: `chemical_object_assertions`
 (the object is a MeSH chemical, not a patient state), `broadened_object_assertions` (MED-RT
-named a subordinate concept, so the row sits on a BROADER condition than the release
-said -- 422 of 18,314, #52), and `also_contraindicated_pairs` (one drug is both indicated
-and contraindicated for one condition -- 168 pairs, #51). Each is stored AND counted;
-none has a worklist yet, because each is a curated question rather than a coverage gap.
+named a subordinate concept, so every row that follows sits on a BROADER condition than
+the release said -- 422 of 18,314, #52), and `also_contraindicated_pairs` (one drug is
+both indicated and contraindicated for one condition -- 168 pairs, #51). Nothing is
+refused on account of any of them, and none has a worklist yet, because each is a curated
+question rather than a coverage gap.
+
+THE FIRST TWO ARE RELEASE-GRAIN AND THE THIRD IS ROW-GRAIN, and the difference is not a
+detail: the two indication counters are taken ABOVE the moiety gate (mesh_ind_relations
+explains why), so they describe MED-RT's own content and match its totals, while
+`also_contraindicated_pairs` is measured by querying the two stored tables and therefore
+describes drugref. Reading either kind as the other is the pre-gate/post-gate confusion
+this slice already had to publish an erratum for.
 """
 import logging
 import uuid
@@ -207,9 +215,14 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
                     "the pair as a contradiction to resolve automatically (#51)",
                     summary.also_contraindicated_pairs)
     if summary.indications.broadened_object_assertions:
-        log.warning("%d indication assertion(s) name a SUBORDINATE MeSH concept and "
-                    "are stored against a BROADER condition than the release named "
-                    "(#52)", summary.indications.broadened_object_assertions)
+        # RELEASE-GRAIN, like the counter itself: this says how many assertions the
+        # release keys to a subordinate concept, not how many rows drugref stored --
+        # an assertion whose subject no moiety carries is counted here and stored
+        # nowhere. Phrased so an operator cannot read it as a row count (#52).
+        log.warning("%d indication assertion(s) in this release name a SUBORDINATE "
+                    "MeSH concept, so every row they produce sits on a BROADER "
+                    "condition than the release named (#52)",
+                    summary.indications.broadened_object_assertions)
     return summary
 
 

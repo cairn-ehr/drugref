@@ -21,7 +21,7 @@ registry) · 8a (PBS localisation, #28) · Plan B (DAG-descendant expansion, #32
 
 **IN FLIGHT — slice 5b.2, MeSH-keyed indications**, on `feat/slice-5b2-mesh-indications`: complete,
 **verified end-to-end against the real releases**, whole-branch review fixed, PR **not yet opened**.
-**621 tests green**, `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/019`. Measured table under
+**622 tests green**, `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/019`. Measured table under
 "Slice 5b.2" below; the erratum is `docs-site/docs/decisions/indications-do-not-expand.md`.
 
 **The final review's fix wave** added the two counters in the traps below (**168** / **422**, both confirmed
@@ -277,12 +277,18 @@ read function, one reach view, one gap view, a seventh `gap_kind` and a third `r
 - **Two widenings survive the upward walk; both are COUNTED, not fixed.** (1) **168 pairs** are indicated
   *and* contraindicated for one condition (carvedilol/*Heart Failure* — chronic HFrEF vs acute
   decompensation), and the two read paths walk opposite ways so it multiplies below the object. (2) **422 of
-  18,314** assertions land on a **broader** record than MED-RT named, because MED-RT keys on a ConceptUI and
-  a condition on the record — `may_treat` "Seizures, Focal" for eslicarbazepine lands on *Seizures*, which it
-  aggravates when generalised; safe on the CI half, unsafe here. `also_contraindicated_pairs` and
+  18,314** assertions **name a subordinate concept**, so their rows sit on a **broader** record than MED-RT
+  named, because MED-RT keys on a ConceptUI and a condition on the record — `may_treat` "Seizures, Focal" for
+  eslicarbazepine lands on *Seizures*, which it aggravates when generalised; safe on the CI half, unsafe here.
+  **Mind the grain:** 422 is RELEASE-grain (counted above the moiety gate, so it matches MED-RT's own totals
+  and is not a row count — the row figure is unmeasured), while 168 is ROW-grain (a query over both stored
+  tables). Reading either as the other is the same pre/post-gate slip the erratum below is about; pinned by
+  `test_the_widening_counters_are_release_grain_not_row_grain`. `also_contraindicated_pairs` and
   `indications.broadened_object_assertions` report them every run, tests pin both, and both tables'
   `COMMENT ON` state (1). Worked cases in the living record; remedies are
   [#51](https://github.com/cairn-ehr/drugref/issues/51) / [#52](https://github.com/cairn-ehr/drugref/issues/52) (5c).
+  The read path's own exposure — a consumer who ignores `is_direct` gets the full 276,343-row generalisation
+  set — is stated in the living record and open as [#55](https://github.com/cairn-ehr/drugref/issues/55).
 - **The spec's 66 / 12,311 / ≈192,500 were computed BEFORE the moiety gate** and reproduce exactly when
   re-measured that way — right about different populations, as 5b's concept-vs-record grain was. `db/019`'s
   comments now carry the post-gate figures (edited in place, unmerged); `db/015`'s cannot be and stay 5b's.
@@ -318,7 +324,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 621 tests; the DB-gated majority SKIP without this DSN, exercising none of the
+# 622 tests; the DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .

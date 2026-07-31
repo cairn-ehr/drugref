@@ -122,6 +122,20 @@ diagnosis") gets fewer rows than a naive expansion would give them, and must han
 `is_direct` flag to use the rest. That is the intended trade — a manufactured therapeutic
 claim is worse than an absent one.
 
+**And the flag is the whole of the protection, which this record has to say plainly.**
+The 276,343 above is not only an equivalence check; it is the size of what a consumer who
+*ignores* `is_direct` receives. The up-walk and the rejected down-expansion return the
+**same relation** — one `may_treat` rule on *Neoplasms* still reaches all 708 descendants.
+What changes is that every derived row arrives labelled, carrying the ancestor it was
+written against, and that none of it is stored as a fact drugref asserts. Nothing
+*structurally* prevents a caller from dropping the label, which is the same forgetfulness
+`db/019` refused to tolerate one layer down when it gave `induces` its own table instead of
+a `WHERE` clause. It is tolerated here because `indications_for_condition` matches
+`contraindications_for_condition` column for column by design, and breaking that parity is
+its own cost — but the harm directions are opposite, so the parity argument is weaker here
+than it looks. [#55](https://github.com/cairn-ehr/drugref/issues/55) carries the open
+question.
+
 ## Two ways a claim still gets widened, and both are counted
 
 Walking up rather than down removes the *derived* widening. It does not remove every
@@ -160,7 +174,7 @@ drugref's answer today is to **count it and say so**:
 quietly stop counting. Whether a consumer should be told through an eighth gap kind or a
 read-path flag is [#51](https://github.com/cairn-ehr/drugref/issues/51).
 
-### 2. 422 assertions are stored against a **broader** condition than the release named
+### 2. 422 assertions **name** a subordinate concept, so their rows sit on a **broader** condition
 
 MED-RT names a MeSH **ConceptUI**; drugref keys a condition on the **record** that owns it,
 because many concepts resolve to one record and keying on the concept would split one
@@ -172,6 +186,16 @@ said.
 Measured: **422 of 18,314 assertions (2.30%)** — `may_treat` 340, `may_prevent` 80,
 `induces` 2 — arrive through **90 non-preferred ConceptUIs** collapsing onto **85 broader
 records**, over 102 distinct `(predicate, concept, record)` triples.
+
+**That 422 is a release-grain count, taken *before* the moiety gate**, and the distinction
+is the same one the erratum below is about. It says what MED-RT asserts, not how many rows
+drugref stored: an assertion whose subject no moiety carries is counted and stores nothing,
+and one whose subject two moieties carry is counted once and stores twice. The counter sits
+above the gate deliberately — a widening is a property of the two *vocabularies*, and
+making the figure depend on drugref's registry coverage would mean it could not be checked
+against MED-RT's own totals. **The post-gate row figure has not been measured**; when #52
+puts the `concept_ui` on the row it becomes a query, and until then no number here should
+be read as one.
 
 **This is the other way a claim gets widened, and it runs in the unsafe direction.** The
 walk-direction decision above is about rows drugref *derives*; this is about rows drugref
@@ -202,9 +226,9 @@ Neoplasms* is not a loss. A clear minority is genuine narrowing collapsed upward
 | Cardiac Death (`may_prevent`) | Death |
 | Vertigo, Peripheral | Vertigo |
 
-drugref stores all 422 rather than withholding them — dropping every broadened assertion
-would lose far more than it saves, and nothing on the row distinguishes the synonymy from
-the narrowing. So the count is the remedy for now:
+drugref refuses none of them rather than withholding the lot — dropping every broadened
+assertion would lose far more than it saves, and nothing on the row distinguishes the
+synonymy from the narrowing. So the count is the remedy for now:
 `MeshRelSummary.indications.broadened_object_assertions` reports it every run, and it is
 the production reader `MeshRecord.is_preferred_concept`'s own docstring always promised.
 Putting the named `concept_ui` on the row, so a consumer can detect **which** rows were

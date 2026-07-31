@@ -251,9 +251,11 @@ def test_an_object_reached_through_a_SUBORDINATE_concept_is_counted(conn,
     because a patient coded at the broader record (or anywhere below it, since the walk
     goes up) is now offered a drug the release never named for them.
 
-    Measured on the real releases: 422 of 18,314 assertions (2.30%) -- may_treat 340,
-    may_prevent 80, induces 2 -- arrive through 90 non-preferred ConceptUIs and collapse
-    onto 85 broader records. Most are benign synonymy ('Breast Cancer' -> Breast
+    Measured on the real releases, and RELEASE-GRAIN rather than a row count (see
+    test_the_widening_counters_are_release_grain_not_row_grain, which pins that): 422 of
+    18,314 assertions (2.30%) -- may_treat 340, may_prevent 80, induces 2 -- arrive
+    through 90 non-preferred ConceptUIs and collapse onto 85 broader records, whether or
+    not a moiety carries the subject. Most are benign synonymy ('Breast Cancer' -> Breast
     Neoplasms); a minority is genuine narrowing collapsed upward, of which the sharpest
     is M0335931 'Seizures, Focal' -> D012640 'Seizures' for eslicarbazepine, a drug
     licensed for focal-onset seizures that can AGGRAVATE generalised myoclonic and
@@ -492,3 +494,63 @@ def test_a_D_tree_chemical_object_is_ingested_but_counted(conn, a_moiety,
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication "
         "WHERE object_condition_uuid = %s", (condition_uuid,)).fetchone()[0] == 1
+
+
+def test_the_widening_counters_are_release_grain_not_row_grain(conn, ingest_run_id):
+    """BOTH WIDENING COUNTERS SIT ABOVE THE MOIETY GATE, so neither counts stored rows.
+
+    The placement is deliberate (see write_indications: a widening is a property of the
+    two VOCABULARIES, and a figure that moved with drugref's registry coverage could not
+    be checked against MED-RT's own totals). It was never asserted, though, and every
+    other test that touches these counters hands them a subject the registry carries --
+    so the suite passed identically whether the increments sat above the gate or below
+    it. Meanwhile the docstrings, the inline comments, the run's log line, db/019's
+    COMMENT ON and the living record all described the numbers as counts of rows that
+    were STORED, which the code has never done. Nothing could fail; the prose simply
+    drifted, and it drifted in the direction that overstates what drugref holds.
+
+    This is that missing pin, and it is deliberately the UNMATCHED-SUBJECT case: an empty
+    rxcui_index means no assertion here can become a row, so a counter that still reports
+    1 can only be release-grain. Move either increment below the `continue` and this test
+    fails rather than the documentation quietly becoming false again.
+
+    Both records are real. M0012591 is D008078 'Cholesterol, LDL' (a D-tree chemical,
+    preferred concept); M0006855 'Drug Toxicity' is a NON-preferred concept on D064420,
+    which desc2026 marks PreferredConceptYN="N" -- the same pair the subordinate-concept
+    test above drives through the fixture.
+    """
+    chemical = mesh_concepts.MeshRecord(
+        concept_ui="M0012591", record_ui="D008078", record_kind="DESCRIPTOR",
+        name="Cholesterol, LDL", tree_numbers=("D10.532.515.500",),
+        unii=frozenset(), cas=frozenset(), is_preferred_concept=True)
+    subordinate = mesh_concepts.MeshRecord(
+        concept_ui="M0006855", record_ui="D064420", record_kind="DESCRIPTOR",
+        name="Drug-Related Side Effects and Adverse Reactions",
+        tree_numbers=("C25.100",), unii=frozenset(), cas=frozenset(),
+        is_preferred_concept=False)
+    uuid_by_code = {}
+    for record in (chemical, subordinate):
+        uuid_by_code[record.record_ui], _ = conditions.upsert_condition(
+            conn, record, ingest_run_id, "MeSH")
+
+    rel = mesh_ind_relations.write_indications(
+        conn,
+        [medrt.MeshObjectAssertion(rxcui="2588243", mesh_code="M0012591",
+                                   relationship="may_treat"),
+         medrt.MeshObjectAssertion(rxcui="272", mesh_code="M0006855",
+                                   relationship="may_prevent")],
+        {"M0012591": chemical, "M0006855": subordinate},
+        uuid_by_code,
+        {},                                  # NO moiety carries either subject
+        mesh_rel_run.SOURCE, ingest_run_id)
+
+    # Counted, though not one row exists to be counted.
+    assert rel.chemical_object_assertions == 1
+    assert rel.broadened_object_assertions == 1
+    # And the assertions are still reported as the loss they are -- a pre-gate counter
+    # must not swallow the gate's own worklist, which is the whole no-silent-drops
+    # posture (spec 7).
+    assert rel.unmatched_rxcuis == {"2588243", "272"}
+    assert (rel.indication_rows, rel.induced_rows) == (0, 0)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_condition_indication").fetchone()[0] == 0

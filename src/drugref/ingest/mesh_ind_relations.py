@@ -65,12 +65,13 @@ class IndicationRelations:
     # this release is a category error" and the release states 17 of them over 13
     # records -- reporting 13 would understate what it costs to be wrong about them.
     chemical_object_assertions: int = 0
-    # Assertions MED-RT keyed to a SUBORDINATE MeSH concept, and which are therefore
-    # stored against a BROADER record than the release named. Per ASSERTION for the
-    # same reason as the line above: the operator's question is how much of the release
-    # is widened, not how many concepts do the widening. 422 of 18,314 (2.30%) on the
-    # 2026.07.06 release. See write_indications for why this is the UNSAFE direction
-    # for an indication and the safe one for a contraindication (#52).
+    # Assertions MED-RT keyed to a SUBORDINATE MeSH concept, so any row that follows
+    # sits on a BROADER record than the release named. Per ASSERTION for the same reason
+    # as the line above, and PRE-GATE like it: the operator's question is how much of
+    # the RELEASE is widened, not how many concepts do the widening nor how many rows
+    # resulted. 422 of 18,314 (2.30%) on the 2026.07.06 release. See write_indications
+    # for why this is the UNSAFE direction for an indication and the safe one for a
+    # contraindication (#52).
     broadened_object_assertions: int = 0
 
 
@@ -79,10 +80,11 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     """Write both indication relations, tallying every assertion that is not a row.
 
     ONE PASS, and every exit from it is counted somewhere: an assertion either becomes a
-    row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or was already
-    counted as an unresolved object code by the caller. Nothing falls off the end
-    (spec 7) -- and `chemical_object_assertions` is a count of assertions that DO become
-    rows, which is the one place this tally differs in kind from its sibling's.
+    row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or belongs to an
+    object code the caller already counted as unresolved. Nothing falls off the end
+    (spec 7) -- and `chemical_object_assertions` and `broadened_object_assertions` differ
+    in kind from every other number here: they report not a LOSS but what the release
+    SAYS about assertions this pass does not refuse.
 
     THE OBJECT QUESTIONS ARE ASKED BEFORE THE SUBJECT TEST, exactly as in
     write_contraindications, and for the same reason: whether an object is a chemical
@@ -91,6 +93,18 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     rule's subject happened to resolve. Testing the subject first would make both
     reported figures a function of the moiety gate -- the mistake that cost the CI half
     35 assertions over 4 objects before it was found.
+
+    SO BOTH ARE RELEASE-GRAIN, PRE-GATE COUNTS, AND NEITHER COUNTS STORED ROWS. An
+    assertion whose subject no moiety carries increments them and then leaves through
+    `unmatched_rxcuis` having produced nothing; an assertion whose subject TWO moieties
+    carry increments them once and produces two rows. Both directions are deliberate --
+    the question these numbers answer is "how much of the release is like this", which is
+    a fact about MED-RT and MeSH rather than about drugref's registry coverage. So do NOT
+    restate either as "n rows are stored like this": the post-gate row figure has never
+    been measured against a real release, and #52 is what would make the row itself
+    detectable. Pinned by
+    test_mesh_rel_run_ind.test_the_widening_counters_are_release_grain_not_row_grain,
+    which exists because this docstring is the only thing that makes the numbers legible.
 
     BROADENED OBJECTS: THE ONE PLACE is_preferred_concept IS READ IN PRODUCTION, and its
     own docstring promised this reader. MED-RT names a MeSH **ConceptUI**; drugref keys
@@ -119,12 +133,12 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     seizures. The is_direct = false "weaker claim" label cannot help: the claim is not
     weaker, it is wrong.
 
-    COUNTED AND STORED, NEVER WITHHELD, for the reason the D-tree objects are: most of
-    the 102 triples are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so
-    dropping all 422 would lose far more than it saves, and drugref has nothing on the
-    row that tells a consumer which is which. Making the row itself detectable -- by
-    storing the ConceptUI MED-RT named -- is #52, slice 5c's work. Until then this
-    number is the only evidence, so it must be reported rather than derivable.
+    NEVER WITHHELD, for the reason the D-tree objects are not: most of the 102 triples
+    are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so refusing all 422 would
+    lose far more than it saves, and drugref has nothing on the row that tells a consumer
+    which is which. Making the row itself detectable -- by storing the ConceptUI MED-RT
+    named -- is #52, slice 5c's work. Until then this number is the only evidence, so it
+    must be reported rather than derivable.
 
     D-TREE OBJECTS ARE INGESTED, AND THAT IS A RECORDED DECISION (spec 11 tension C).
     17 of the 2026.07.06 release's 18,144 therapeutic assertions (0.09%) -- 14 may_treat
@@ -135,10 +149,10 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2), ... Some are
     defensible treatment targets ("a statin may_treat LDL cholesterol") and some are
     upstream quirks ("may_treat Analgesics"), and MED-RT does not distinguish them. They
-    are stored -- `condition.tree_numbers` lets a consumer scope on the leading letter,
-    and 5b already registered 18 such CI_with objects -- but COUNTED, because withholding
-    17 rows behind a new worklist kind would cost more than it buys while leaving an
-    operator to DISCOVER the split rather than be told it.
+    are not refused -- `condition.tree_numbers` lets a consumer scope on the leading
+    letter, and 5b already registered 18 such CI_with objects -- but COUNTED, because
+    withholding them behind a new worklist kind would cost more than it buys while
+    leaving an operator to DISCOVER the split rather than be told it.
 
     `source` and `run_id` are the run's provenance, taken as arguments and forwarded
     together to every writer call below, in the order indications.add_* takes them. The
@@ -149,7 +163,13 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     for a in assertions:
         record = records.get(a.mesh_code)
         if record is None:
-            continue                                # already counted by the caller
+            # The CODE is counted by the caller (unresolved_object_codes); THIS ASSERTION
+            # is not, and the grain difference is stated rather than glossed -- one dead
+            # code can carry many assertions. Nothing reports that assertion count today,
+            # which is honest only because the figure is 0 on the 2026.07.06 release
+            # (1,528 of 1,528 indication object codes resolve). Should a future release
+            # withdraw a code, the loss is visible as a code, not as its rules.
+            continue
         object_uuid = uuid_by_code.get(record.record_ui)
         if object_uuid is None:
             # Defensive rather than live: the orchestrator's closure covers every
@@ -164,10 +184,14 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
             # the only evidence: a change that narrows the closure must be checked
             # against them, never trusted to fail loudly here.
             continue
+        # BOTH COUNTERS ARE RELEASE-GRAIN AND SIT ABOVE THE SUBJECT GATE ON PURPOSE, so
+        # neither is a count of rows -- see the docstring. Moving either below the
+        # `continue` would silently turn it into a post-gate figure that every comment
+        # about it, here and in db/019, would then be wrong about.
         if any(t.startswith(CHEMICAL_TREE) for t in record.tree_numbers):
-            out.chemical_object_assertions += 1     # ingested anyway -- see above
+            out.chemical_object_assertions += 1     # not refused -- see above
         if not record.is_preferred_concept:
-            out.broadened_object_assertions += 1    # ingested anyway -- see above
+            out.broadened_object_assertions += 1    # not refused -- see above
         subjects = rxcui_index.get(a.rxcui, ())
         if not subjects:
             out.unmatched_rxcuis.add(a.rxcui)       # counted, never dropped

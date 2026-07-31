@@ -18,7 +18,8 @@ Seed data attributions:
   National Library of Medicine. drugref does not claim NLM endorsement. Source data:
   MeSH 2026 (desc/supp/pa). Used under the NLM Terms and Conditions (attribution,
   no-endorsement and version-currency; no NonCommercial or NoDerivatives restriction).
-  The committed test fixtures (tests/fixtures/mesh_*_subset.xml, extracted for slices 2b
-  and 5b) are extracts of this MeSH release; they contain MeSH content only. The committed MED-RT fixture
-  (tests/fixtures/medrt_subset.xml) additionally carries the MeSH concept names and
-  ConceptUIs named as endpoints by the MED-RT associations it extracts.
+  The committed test fixtures (tests/fixtures/mesh_*_subset.xml, extracted for slices
+  2b, 5b and 5b.2) are extracts of this MeSH release; they contain MeSH content only.
+  The committed MED-RT fixture (tests/fixtures/medrt_subset.xml) additionally carries
+  the MeSH concept names and ConceptUIs named as endpoints by the MED-RT associations
+  it extracts.

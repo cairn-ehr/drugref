@@ -248,7 +248,7 @@ this file alone must not conclude it is on `main`.
 The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** plus **`induces`**
 — a public-domain, drugref-owned drug–disease indication dataset (the MeDIC alternative it holds outright).
 **No new source.** Spec:
-[slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). `db/019`; **621
+[slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). `db/019`; **622
 tests**. It reuses 5b's machinery entirely — the same registry, the same ConceptUI→record resolution, the
 same closure, the same candidate-tier posture — and adds **no new mechanism**. One orchestrator
 (`ingest/mesh_rel_run.py`) now owns **both** halves, because `condition_parent` edges are derived by both
@@ -299,10 +299,13 @@ figure is unchanged. **Expect this every time the registry widens.**
 **Two widenings survive the upward walk, and 5b.2 COUNTS rather than resolves them.** **168 (drug, condition)
 pairs** are asserted as an indication *and* a contraindication — carvedilol/*Heart Failure*,
 alteplase/*Stroke*, budesonide/*Asthma* — real distinctions (chronic HFrEF vs acute decompensation) the MeSH
-descriptor grain cannot carry, and MED-RT states both with no qualifier. And **422 of 18,314 assertions land
-on a BROADER record than MED-RT named**, because MED-RT keys on a MeSH ConceptUI while a condition is keyed on
-the record: 90 subordinate concepts collapse onto 85 records, and `may_treat` "Seizures, Focal" for
-eslicarbazepine is stored on *Seizures*, which it aggravates when generalised. Both are new
+descriptor grain cannot carry, and MED-RT states both with no qualifier. And **422 of 18,314 assertions name a
+subordinate concept**, so every row that follows sits on a BROADER record than MED-RT named, because MED-RT
+keys on a MeSH ConceptUI while a condition is keyed on the record: 90 subordinate concepts collapse onto 85
+records, and `may_treat` "Seizures, Focal" for eslicarbazepine is stored on *Seizures*, which it aggravates
+when generalised. That 422 is **release-grain, counted above the moiety gate** — it describes MED-RT, not how
+many rows landed; the row figure is unmeasured until [#52](https://github.com/cairn-ehr/drugref/issues/52)
+makes it queryable. Both are new
 `MeshRelSummary` fields (`also_contraindicated_pairs`, `indications.broadened_object_assertions`), both are
 stated in `COMMENT ON`, both are pinned by tests, and both have a curated follow-up:
 [#51](https://github.com/cairn-ehr/drugref/issues/51) (how a consumer is told) and

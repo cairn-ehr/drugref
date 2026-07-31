@@ -123,20 +123,28 @@ class IndicationTally:
       * chemical_object_assertions  -- the object is a MeSH D-tree CHEMICAL rather than
                                        a patient state. 17 assertions over 13 records
                                        (14 may_treat, 3 may_prevent), 0.09% of the
-                                       18,144 therapeutic ones. INGESTED and counted
-      * broadened_object_assertions -- MED-RT named a SUBORDINATE MeSH concept, so the
-                                       row is stored against a BROADER record than the
-                                       release named. 422 of 18,314 (2.30%): may_treat
-                                       340, may_prevent 80, induces 2, through 90
-                                       concepts onto 85 records. INGESTED and counted
+                                       18,144 therapeutic ones. NOT REFUSED, and counted
+      * broadened_object_assertions -- MED-RT named a SUBORDINATE MeSH concept, so any
+                                       row that follows sits on a BROADER record than
+                                       the release named. 422 of 18,314 (2.30%):
+                                       may_treat 340, may_prevent 80, induces 2, through
+                                       90 concepts onto 85 records. NOT REFUSED, counted
 
     THE LAST TWO ARE NOT LOSSES AT ALL, which is why they are described rather than
-    merely listed: those assertions ARE ingested. The first exists so an operator learns
-    the release's category errors from a figure rather than by meeting them in a query;
-    the second because a broadened indication is stored as a claim the release did not
-    make, and until #52 puts the ConceptUI on the row this count is a consumer's ONLY
-    evidence that any row was widened. See write_indications for the eslicarbazepine
-    case and for why the same collapse is SAFE on the contraindication half.
+    merely listed: this pass refuses none of those assertions. The first exists so an
+    operator learns the release's category errors from a figure rather than by meeting
+    them in a query; the second because a broadened indication becomes a claim the
+    release did not make, and until #52 puts the ConceptUI on the row this count is a
+    consumer's ONLY evidence that any row was widened. See write_indications for the
+    eslicarbazepine case and for why the same collapse is SAFE on the contraindication
+    half.
+
+    AND BOTH ARE RELEASE-GRAIN, COUNTED ABOVE THE MOIETY GATE -- so neither is a count
+    of rows in either direction: an assertion whose subject no moiety carries increments
+    them and stores nothing, and one whose subject two moieties carry increments them
+    once and stores twice. They answer "how much of the RELEASE is like this", which is
+    why they can be read against MED-RT's own totals. The post-gate row figure has never
+    been measured, so do not infer one from these.
 
     Two of these are counted by the PARSER and the ORCHESTRATOR rather than by the pass,
     for the reason CiTally gives: an assertion the parser refused never reaches the pass,
