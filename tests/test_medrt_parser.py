@@ -8,6 +8,7 @@ direction of 'Parent Of', and that [HC] concepts are alphabetical navigation
 bins rather than classifications -- are invisible in a hand-written fixture,
 because a hand-written fixture just encodes whatever the author assumed.
 """
+import importlib.util
 import pathlib
 import re
 
@@ -245,6 +246,52 @@ def test_the_fixture_redacts_snomed_but_keeps_mesh():
         assert (name, code) != ("REDACTED", "REDACTED"), \
             "MeSH endpoints are licence-cleared and must survive extraction intact"
         assert re.fullmatch(r"M\d+", code), f"not a MeSH ConceptUI: {code!r}"
+
+
+def _load_extractor():
+    """Import make_medrt_subset.py by path -- it is a script, on no import path.
+
+    Same technique as tests/test_mesh_extractor_tooling.py uses for the MeSH
+    extractors, and for the same reason: the extractors are deliberately
+    stdlib-only and importable without drugref on the path.
+    """
+    path = FIX.parent / "make_medrt_subset.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_caps_exemption_covers_therapeutic_predicates_only():
+    """`Synonym Of` stays capped even when its endpoints collide with a CI_with pair.
+
+    The cap trims three noisy overlay relations to one survivor apiece, and #53
+    exempted the ones that overlap a contraindication -- an assertion that is both
+    an indication and a CI_with is the hardest data in the release (#51), not the
+    noise the cap exists to remove. That argument is about THERAPEUTIC predicates
+    and does not extend to `Synonym Of`, which the parser drops outright.
+
+    The distinction is not merely tidy: `Synonym Of` and `CI_with` BOTH run RxCUI
+    -> MeSH ConceptUI in this release, so their endpoint pairs are the same shape
+    and a collision is structurally possible rather than type-impossible. Exempting
+    one would quietly restore an unbounded noise relation to the fixture. Pinned
+    here because the release cannot exercise it today -- the fixture's single
+    `Synonym Of` is 6853 -> M0013598, and 6853 states no CI_with at all -- so this
+    is a guard against a future release, per #42's rule.
+    """
+    maker = _load_extractor()
+    overlapping = {("6628", "M0001524")}          # mannitol / Anuria, the real case
+    pair = {"fc": "6628", "tc": "M0001524"}
+
+    assert maker.is_cap_exempt({"name": "may_treat", **pair}, overlapping)
+    assert maker.is_cap_exempt({"name": "may_prevent", **pair}, overlapping)
+    # The one this test exists for.
+    assert not maker.is_cap_exempt({"name": "Synonym Of", **pair}, overlapping)
+    # ...and a therapeutic assertion that overlaps NOTHING is still capped.
+    assert not maker.is_cap_exempt({"name": "may_treat", "fc": "272", "tc": "M0006212"},
+                                   overlapping)
+    # The exemption is a narrowing of the cap, so `Synonym Of` must still be IN it.
+    assert "Synonym Of" in maker.TRIMMED_OVERLAY
 
 
 # ---- membership ------------------------------------------------------------

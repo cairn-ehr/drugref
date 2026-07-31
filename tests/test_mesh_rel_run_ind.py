@@ -252,8 +252,14 @@ def test_a_drug_both_indicated_and_contraindicated_is_COUNTED(conn, seeded_moiet
     assert overlap == 2
     # AND THE TWO GRAINS GENUINELY DIFFER HERE, asserted rather than left implicit:
     # 3 joined ROWS collapse to the 2 PAIRS above, because mannitol / Anuria carries
-    # two therapeutic predicates. This is the assertion that fails if the production
-    # query drops its DISTINCT, so it is what makes the docstring's claim true.
+    # two therapeutic predicates.
+    #
+    # WHAT THIS PINS IS THE FIXTURE SHAPE, NOT THE PRODUCTION QUERY. The assertion
+    # that actually catches a dropped DISTINCT is the `== overlap` one above, and it
+    # can only catch it while 3 != 2 holds here. Let the fixture collapse back to one
+    # row per overlapping pair and that check keeps passing while quietly discriminating
+    # nothing -- which is precisely the state #53 found this test in. So this line is
+    # what KEEPS the check above honest rather than what fails in its place.
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication i "
         "JOIN drugref.moiety_condition_contraindication c "
