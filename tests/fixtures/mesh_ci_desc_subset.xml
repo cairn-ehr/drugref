@@ -51,46 +51,6 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
-  <DescriptorUI>D000096823</DescriptorUI>
-  <DescriptorName>
-   <String>Cough-Variant Asthma</String>
-  </DescriptorName>
-  <LastUpdated>
-   <Year>2024</Year>
-   <Month>01</Month>
-   <Day>01</Day>
-  </LastUpdated>
-  <DateIntroduced>
-   <Year>2024</Year>
-   <Month>01</Month>
-   <Day>01</Day>
-  </DateIntroduced>
-  <HistoryNote>2024
-  </HistoryNote>
-  <PublicMeSHNote>2024
-  </PublicMeSHNote>
-  <PreviousIndexingList>
-   <PreviousIndexing>Asthma (1982-2023)</PreviousIndexing>
-  </PreviousIndexingList>
-  <TreeNumberList>
-   <TreeNumber>C08.127.108.784</TreeNumber>
-   <TreeNumber>C08.381.495.108.750</TreeNumber>
-   <TreeNumber>C08.674.095.784</TreeNumber>
-   <TreeNumber>C20.543.480.680.095.688</TreeNumber>
-  </TreeNumberList>
-  <ConceptList>
-   <Concept PreferredConceptYN="Y">
-    <ConceptUI>M000762642</ConceptUI>
-    <ConceptName>
-     <String>Cough-Variant Asthma</String>
-    </ConceptName>
-    <ScopeNote>Asthma which is characterized by CHRONIC COUGH that is nonproductive without other asthmatic symptoms, e.g., WHEEZING, and PAROXYSMAL DYSPNEA. Cough-variant asthma is accompanied by AIRWAY HYPERSENSITIVITY and may progress to classical asthma without treatment.
-    </ScopeNote>
-    </Concept>
-  </ConceptList>
- </DescriptorRecord>
-
-<DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D000096825</DescriptorUI>
   <DescriptorName>
    <String>Rhinosinusitis</String>
@@ -613,6 +573,93 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D006501</DescriptorUI>
+  <DescriptorName>
+   <String>Hepatic Encephalopathy</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2006</Year>
+   <Month>07</Month>
+   <Day>05</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1984</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>1984; use HEPATIC COMA 1975-83
+  </HistoryNote>
+  <NLMClassificationNumber>WI 712</NLMClassificationNumber>
+  <PublicMeSHNote>1984; see HEPATIC COMA 1975-83; HEPATIC COMA was heading 1963-83
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C06.552.308.500.356</TreeNumber>
+   <TreeNumber>C10.228.140.163.360</TreeNumber>
+   <TreeNumber>C18.452.132.360</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0010200</ConceptUI>
+    <ConceptName>
+     <String>Hepatic Encephalopathy</String>
+    </ConceptName>
+    <ScopeNote>A syndrome characterized by central nervous system dysfunction in association with LIVER FAILURE, including portal-systemic shunts. Clinical features include lethargy and CONFUSION (frequently progressing to COMA); ASTERIXIS; NYSTAGMUS, PATHOLOGIC; brisk oculovestibular reflexes; decorticate and decerebrate posturing; MUSCLE SPASTICITY; and bilateral extensor plantar reflexes (see REFLEX, BABINSKI). ELECTROENCEPHALOGRAPHY may demonstrate triphasic waves. (From Adams et al., Principles of Neurology, 6th ed, pp1117-20; Plum &amp; Posner, Diagnosis of Stupor and Coma, 3rd ed, p222-5)
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0010199</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0335276</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="REL">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0335277</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0010199</ConceptUI>
+    <ConceptName>
+     <String>Hepatic Coma</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0010199</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335276</ConceptUI>
+    <ConceptName>
+     <String>Hepatic Stupor</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0335276</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0335277</ConceptUI>
+    <ConceptName>
+     <String>Fulminant Hepatic Failure with Cerebral Edema</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="REL">
+     <Concept1UI>M0010200</Concept1UI>
+     <Concept2UI>M0335277</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D007022</DescriptorUI>
   <DescriptorName>
    <String>Hypotension</String>
@@ -731,6 +778,57 @@
      <Concept2UI>M0012645</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D008305</DescriptorUI>
+  <DescriptorName>
+   <String>Malignant Hyperthermia</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>10</Month>
+   <Day>18</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1973</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>73
+  </HistoryNote>
+  <NLMClassificationNumber>WO 245</NLMClassificationNumber>
+  <PublicMeSHNote>73
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Anesthesia, General (1966-1972)</PreviousIndexing>
+   <PreviousIndexing>Fever (1966-1972)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D005334</DescriptorUI>
+     <DescriptorName>
+      <String>Fever</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C23.550.505.700</TreeNumber>
+   <TreeNumber>C23.550.767.600</TreeNumber>
+   <TreeNumber>C23.888.119.455.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0012932</ConceptUI>
+    <ConceptName>
+     <String>Malignant Hyperthermia</String>
+    </ConceptName>
+    <ScopeNote>Rapid and excessive rise of temperature accompanied by muscular rigidity following general anesthesia.
+    </ScopeNote>
     </Concept>
   </ConceptList>
  </DescriptorRecord>
@@ -1161,6 +1259,49 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D014474</DescriptorUI>
+  <DescriptorName>
+   <String>Unconsciousness</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2001</Year>
+   <Month>07</Month>
+   <Day>25</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>do not confuse with UNCONSCIOUS (PSYCHOLOGY), unconscious behavior or "the unconscious" in psychol
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D013575</DescriptorUI>
+     <DescriptorName>
+      <String>Syncope</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C10.597.606.358.800</TreeNumber>
+   <TreeNumber>C23.888.592.604.359.800</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0022251</ConceptUI>
+    <ConceptName>
+     <String>Unconsciousness</String>
+    </ConceptName>
+    <ScopeNote>Loss of the ability to maintain awareness of self and environment combined with markedly reduced responsiveness to environmental stimuli. (From Adams et al., Principles of Neurology, 6th ed, pp344-5)
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D016535</DescriptorUI>
   <DescriptorName>
    <String>Bronchial Hyperreactivity</String>
@@ -1206,6 +1347,47 @@
      <String>Bronchial Hyperreactivity</String>
     </ConceptName>
     <ScopeNote>Tendency of the smooth muscle of the tracheobronchial tree to contract more intensely in response to a given stimulus than it does in the response seen in normal individuals. This condition is present in virtually all symptomatic patients with asthma. The most prominent manifestation of this smooth muscle contraction is a decrease in airway caliber that can be readily measured in the pulmonary function laboratory.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D017093</DescriptorUI>
+  <DescriptorName>
+   <String>Liver Failure</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2009</Year>
+   <Month>07</Month>
+   <Day>14</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1993</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>if coma is present, index under HEPATIC ENCEPHALOPATHY; LIVER FAILURE, ACUTE is also available
+  </Annotation>
+  <HistoryNote>1993; for FULMINATING HEPATIC FAILURE; HEPATIC FAILURE, FULMINANT; and LIVER FAILURE, FULMINANT use HEPATIC ENCEPHALOPATHY 1993-1999
+  </HistoryNote>
+  <NLMClassificationNumber>WI 712</NLMClassificationNumber>
+  <PublicMeSHNote>1993; for FULMINATING HEPATIC FAILURE; HEPATIC FAILURE, FULMINANT; and LIVER FAILURE, FULMINANT see HEPATIC ENCEPHALOPATHY 1993-1999
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Hepatic Encephalopathy (1967-1992)</PreviousIndexing>
+   <PreviousIndexing>Liver Diseases (1966-1992)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C06.552.308.500</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0025970</ConceptUI>
+    <ConceptName>
+     <String>Liver Failure</String>
+    </ConceptName>
+    <ScopeNote>Severe inability of the LIVER to perform its normal metabolic functions, as evidenced by severe JAUNDICE and abnormal serum levels of AMMONIA; BILIRUBIN; ALKALINE PHOSPHATASE; ASPARTATE AMINOTRANSFERASE; LACTATE DEHYDROGENASES; and albumin/globulin ratio. (Blakiston's Gould Medical Dictionary, 4th ed)
     </ScopeNote>
     </Concept>
   </ConceptList>
@@ -1439,39 +1621,142 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
-  <DescriptorUI>D065631</DescriptorUI>
+  <DescriptorUI>D058625</DescriptorUI>
   <DescriptorName>
-   <String>Rhinitis, Allergic</String>
+   <String>End Stage Liver Disease</String>
   </DescriptorName>
   <LastUpdated>
-   <Year>2015</Year>
+   <Year>2011</Year>
    <Month>01</Month>
    <Day>01</Day>
   </LastUpdated>
   <DateIntroduced>
-   <Year>2015</Year>
+   <Year>2011</Year>
    <Month>01</Month>
    <Day>01</Day>
   </DateIntroduced>
-  <HistoryNote>2015
+  <Annotation>For "Model for End Stage Liver Disease (MELD)" and related "Pediatric End Stage Liver Disease Model (PELD)" coordinate with SEVERITY OF ILLNESS INDEX and probably LIVER TRANSPLANTATION
+  </Annotation>
+  <HistoryNote>2011
   </HistoryNote>
-  <NLMClassificationNumber>WV 335</NLMClassificationNumber>
-  <PublicMeSHNote>2015
+  <PublicMeSHNote>2011
   </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Liver Diseases (1986-2010)</PreviousIndexing>
+   <PreviousIndexing>Liver Failure (1992-2010)</PreviousIndexing>
+  </PreviousIndexingList>
   <TreeNumberList>
-   <TreeNumber>C08.460.799.315</TreeNumber>
-   <TreeNumber>C08.674.453</TreeNumber>
-   <TreeNumber>C09.603.799.315</TreeNumber>
-   <TreeNumber>C20.543.480.680.443</TreeNumber>
+   <TreeNumber>C06.552.308.500.177</TreeNumber>
   </TreeNumberList>
   <ConceptList>
    <Concept PreferredConceptYN="Y">
-    <ConceptUI>M0567378</ConceptUI>
+    <ConceptUI>M0543760</ConceptUI>
     <ConceptName>
-     <String>Rhinitis, Allergic</String>
+     <String>End Stage Liver Disease</String>
     </ConceptName>
-    <ScopeNote>An inflammation of the NASAL MUCOSA triggered by ALLERGENS.
+    <ScopeNote>Final stage of a liver disease when the liver failure is irreversible and LIVER TRANSPLANTATION is needed.
     </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0543760</Concept1UI>
+     <Concept2UI>M0543761</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0543761</ConceptUI>
+    <ConceptName>
+     <String>Chronic Liver Failure</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0543760</Concept1UI>
+     <Concept2UI>M0543761</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D064420</DescriptorUI>
+  <DescriptorName>
+   <String>Drug-Related Side Effects and Adverse Reactions</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2014</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>general or unspecified only; prefer specific drug-related disorder + specific drug with /adv eff /pois or /tox; for disorders relating to the abuse of drugs use SUBSTANCE-RELATED DISORDERS or specifics
+  </Annotation>
+  <HistoryNote>2014; DRUG-TOXICITY was heading 1998-2013
+  </HistoryNote>
+  <PublicMeSHNote>2014; see DRUG-TOXICITY 1998-2013
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Substance-Related Disorders (1998-2013)</PreviousIndexing>
+  </PreviousIndexingList>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D004347</DescriptorUI>
+     <DescriptorName>
+      <String>Drug Interactions</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D017327</DescriptorUI>
+     <DescriptorName>
+      <String>Clinical Trials, Phase IV as Topic</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D000075203</DescriptorUI>
+     <DescriptorName>
+      <String>Contraindications, Drug</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C25.100</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0581793</ConceptUI>
+    <ConceptName>
+     <String>Drug-Related Side Effects and Adverse Reactions</String>
+    </ConceptName>
+    <ScopeNote>Disorders that result from the intended use of PHARMACEUTICAL PREPARATIONS. Included in this heading are a broad variety of chemically-induced adverse conditions due to toxicity, DRUG INTERACTIONS, and metabolic effects of pharmaceuticals.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0581793</Concept1UI>
+     <Concept2UI>M0006855</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0006855</ConceptUI>
+    <ConceptName>
+     <String>Drug Toxicity</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0581793</Concept1UI>
+     <Concept2UI>M0006855</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
     </Concept>
   </ConceptList>
  </DescriptorRecord>

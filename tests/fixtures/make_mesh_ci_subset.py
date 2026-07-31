@@ -1,4 +1,6 @@
-"""Extract a MeSH desc/supp subset covering slice 5b's contraindication objects.
+"""Extract a MeSH desc/supp subset covering all SIX of MED-RT's MeSH-keyed predicate
+objects: slice 5b's two contraindications (CI_with, CI_ChemClass) AND slice 5b.2's
+four indications (may_treat, may_prevent, may_diagnose, induces).
 
 Run:
     uv run python tests/fixtures/make_mesh_ci_subset.py \
@@ -28,18 +30,40 @@ things went wrong at once:
      over the pair produced zero rows while both fixtures looked healthy alone.
 
 So the wanted set is now READ OUT OF medrt_subset.xml: every MeSH `to_code` of a
-CI_with / CI_ChemClass association, resolved against the real release. Regenerating
-the MED-RT fixture and then this one cannot leave them disagreeing, and no code here
-is ever typed by hand. That removes both failure modes permanently rather than
-fixing the two instances of them.
+CI_with / CI_ChemClass / may_treat / may_prevent / may_diagnose / induces
+association, resolved against the real release. Regenerating the MED-RT fixture and
+then this one cannot leave them disagreeing, and no code here is ever typed by hand.
+That removes both failure modes permanently rather than fixing the two instances of
+them.
+
+SIX PREDICATES, NOT TWO, SINCE SLICE 5b.2 -- AND THAT WIDENING WAS ITSELF A BUG ONCE.
+This script's wanted set originally covered only CI_with / CI_ChemClass, because that
+was the whole of slice 5b. When slice 5b.2 added a seventh MED-RT ingredient
+(halothane, in make_medrt_subset.py) specifically to exercise `induces` and
+`may_diagnose`, this script was left unchanged -- and every one of those objects
+silently resolved to nothing: an unresolved MeSH ConceptUI at ingest time is counted
+and dropped, not an error, so `moiety_induced_condition` would have gained zero rows
+in every orchestrator test while looking green. The fix is CI_PREDICATES itself: it
+now names all six MeSH-keyed predicates medrt.py parses (MESH_CI_RELATIONSHIPS |
+MESH_INDICATION_RELATIONSHIPS), so a fixture that carries an indication assertion
+also carries the MeSH record that assertion's object needs to resolve.
 
 WHAT IS ADDED ON TOP OF THE DERIVED SET, and why that is not a relapse:
 
   * A DESCENDANT CLOSURE SAMPLE (see MAX_CHILDREN_*). The referenced objects are
     what a rule NAMES; the read path expands a rule DOWN the tree, and a descendant
-    is by definition not itself a CI object. Without a few real children the
+    is by definition not itself a wanted object. Without a few real children the
     expansion path has nothing to run on and would look correct while inert. These
-    are found by tree nesting in the release, not named here.
+    are found by tree nesting in the release, not named here. Sampled for every
+    CONDITION_PREDICATES object -- CI_with's, AND (since 5b.2) the four indication
+    predicates' -- because the real ingest takes ONE closure over every referenced
+    object, contraindication and indication alike (design spec 2026-07-30, section
+    6.1: "resolves concepts once, takes the closure over all referenced objects";
+    section 10's verification table: `condition` 5,203 -> 5,963 across that same
+    widening). Sampling only CI_with's descendants here, the way this script did
+    before 5b.2, would model a narrower closure than the orchestrator actually
+    builds. CI_ChemClass is the one predicate excluded: its objects are substances or
+    chemical classes, never conditions, so they are never expanded (db/014, db/016).
   * RESOLVER_TEST_DESC / RESOLVER_TEST_SUPP -- a handful of records that exist for
     tests/test_mesh_concepts.py, which unit-tests the resolver itself and needs a
     known parent/child pair (Epilepsy), a known unrelated branch (Pregnancy) and a
@@ -65,11 +89,23 @@ import re
 import sys
 from xml.etree import ElementTree as ET
 
-# The two slice-5b predicates. CI_with objects are CONDITIONS (a patient state) and
-# are the ones whose descendants matter; CI_ChemClass objects are substances or
-# chemical classes and are never expanded (db/014, db/016).
-CI_PREDICATES = ("CI_with", "CI_ChemClass")
-CONDITION_PREDICATE = "CI_with"
+# slice 5b.2's four MeSH-keyed indication predicates (medrt.INDICATION_RELATIONSHIPS
+# | medrt.INDUCES_RELATIONSHIP, restated rather than imported: this script is
+# stdlib-only by design, see the module docstring's "EXTRACTED FROM THE REAL
+# RELEASE" note and make_medrt_subset.py's own header comment for why).
+INDICATION_PREDICATES = ("may_treat", "may_prevent", "may_diagnose", "induces")
+
+# All SIX MeSH-keyed predicates this fixture must carry resolvable objects for.
+# CI_ChemClass is kept separate below (CONDITION_PREDICATES) because its objects are
+# substances or chemical classes, not conditions, and are never expanded (db/014,
+# db/016) -- the other five are all conditions, an organism, or a treatment target,
+# and all participate in the one closure the real ingest builds over them (see the
+# module docstring's "SIX PREDICATES, NOT TWO" note).
+CI_PREDICATES = ("CI_with", "CI_ChemClass") + INDICATION_PREDICATES
+
+# The predicates whose OBJECTS are conditions, and therefore whose descendants the
+# closure sample (collect_children) must cover -- everything except CI_ChemClass.
+CONDITION_PREDICATES = ("CI_with",) + INDICATION_PREDICATES
 MESH_NAMESPACE = "MeSH"
 
 # Records kept for tests/test_mesh_concepts.py, which tests the RESOLVER rather than
@@ -110,15 +146,17 @@ def _field(block: str, tag: str) -> str:
 
 
 def ci_object_codes(medrt_path) -> tuple[set[str], set[str]]:
-    """The MeSH ConceptUIs `medrt_path` states contraindications against.
+    """The MeSH ConceptUIs `medrt_path` states a CI_PREDICATES relationship against.
 
-    Returns (every CI object code, just the CI_with ones). Read with the same regex
-    idiom make_medrt_subset.py writes the file with -- the fixture is small and flat,
-    and a shared shape between the writer and the reader is easier to keep true than
-    a second parser would be.
+    Returns (every wanted object code across all six MeSH-keyed predicates, just the
+    CONDITION_PREDICATES ones -- the subset whose descendants the closure sample must
+    also cover). Read with the same regex idiom make_medrt_subset.py writes the file
+    with -- the fixture is small and flat, and a shared shape between the writer and
+    the reader is easier to keep true than a second parser would be.
 
-    Scoped to MeSH endpoints: MED-RT also states CI_with against its own EXT
-    concepts, which no MeSH file defines and which the ingest counts separately.
+    Scoped to MeSH endpoints: MED-RT also states these predicates against its own EXT
+    concepts and (for the indication predicates) MED-RT classes, neither of which any
+    MeSH file defines and which the ingest counts separately.
     """
     data = pathlib.Path(medrt_path).read_text(encoding="utf-8")
     wanted: set[str] = set()
@@ -131,7 +169,7 @@ def ci_object_codes(medrt_path) -> tuple[set[str], set[str]]:
             continue
         code = _field(block, "to_code")
         wanted.add(code)
-        if name == CONDITION_PREDICATE:
+        if name in CONDITION_PREDICATES:
             conditions.add(code)
     return wanted, conditions
 
@@ -285,8 +323,13 @@ def write(out_path: pathlib.Path, root_tag: str, records: dict[str, str]) -> Non
 def main(desc_path, supp_path, outdir: pathlib.Path) -> None:
     medrt_path = outdir / "medrt_subset.xml"
     wanted, conditions = ci_object_codes(medrt_path)
-    print(f"{medrt_path}: {len(wanted)} CI object codes "
-          f"({len(conditions)} of them CI_with)")
+    # "conditions" is CONDITION_PREDICATES' union (CI_with + the four indication
+    # predicates), not just CI_with -- see ci_object_codes' docstring. Reported
+    # separately from `wanted` because only these get the descendant-closure sample;
+    # the gap between the two counts is CI_ChemClass's objects (substances/classes).
+    print(f"{medrt_path}: {len(wanted)} MeSH-keyed object codes across all six "
+          f"predicates ({len(conditions)} of them condition-shaped, eligible for "
+          f"the descendant-closure sample)")
 
     descriptors, prefixes = collect_descriptors(desc_path, wanted, conditions)
     children = collect_children(desc_path, prefixes, set(descriptors))

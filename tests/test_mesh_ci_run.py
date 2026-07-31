@@ -92,16 +92,39 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     condition rows survive; of the three CI_ChemClass, one names Pimozide (a drug)
     and two name chemical classes.
 
-    Halothane (slice 5b.2, RxCUI 5095) adds the 14th CI_with, but NOT an 18th
-    referenced condition: its object is MeSH M0006829 (Drug Hypersensitivity),
-    which 161/17767/321988 already name, so mesh_ci_desc_subset.xml did not need
-    to grow to carry it -- see make_mesh_ci_subset.py, whose wanted set is read
-    out of medrt_subset.xml's CI_with/CI_ChemClass edges only.
+    Halothane (slice 5b.2, RxCUI 5095) adds the 14th CI_with, but NOT a new
+    referenced CI condition: its object is MeSH M0006829 (Drug Hypersensitivity),
+    which 161/17767/321988 already name.
+
+    conditions_registered moved anyway (18 -> 19), for a reason that has NOTHING to
+    do with this orchestrator parsing an indication predicate -- it does not yet;
+    that is Task 4+. make_mesh_ci_subset.py's wanted set was widened to cover all
+    six MeSH-keyed predicates (5b.2 review fix), which pulled halothane's `induces`
+    object "Liver Failure" (MeSH M0025970) into mesh_ci_desc_subset.xml. Liver
+    Failure independently turns out to be a genuine MeSH-tree DESCENDANT of "Liver
+    Diseases" (161's real CI_with object) -- so this orchestrator's OWN CI-only
+    closure walk (_condition_closure -> mesh_concepts.descriptors_under, which scans
+    every record the desc file happens to contain for tree-number containment, not
+    only the ones added for CI's sake) now discovers it, plus its own two sampled
+    children (End Stage Liver Disease, Hepatic Encephalopathy). That is +3.
+    Meanwhile the SAME regeneration's descendant-closure sample (shared cap,
+    MAX_CHILDREN_TOTAL=8, now spread over 14 referenced conditions instead of 10)
+    displaced two conditions that used to fit the sample -- Cough-Variant Asthma and
+    Rhinitis, Allergic no longer appear in the fixture at all. That is -2. Net +1,
+    verified against the actual registered condition NAMES (not just the count) by
+    diffing this fixture's ingest output against the pre-fix commit's.
     """
     summary = _run(conn)
-    # 10 referenced conditions + the 8 tree descendants the fixture samples.
-    assert summary.conditions_registered == 18
-    assert summary.conditions_added == 18
+    # 14 referenced conditions (10 CI_with-only + Liver Failure, pulled in as a real
+    # descendant of Liver Diseases once its record entered the fixture for an
+    # unrelated -- `induces` -- reason) + the 8 tree descendants the fixture samples.
+    assert summary.conditions_registered == 19
+    assert summary.conditions_added == 19
+    # Coincidentally UNCHANGED at 10: -2 edges (Asthma->Cough-Variant Asthma,
+    # Rhinitis->Rhinitis, Allergic, both displaced from the descendant sample) +2
+    # edges (Liver Failure->its own two now-sampled children) nets to zero. Verified
+    # by diffing the actual (parent, child) edge pairs before/after, not assumed
+    # from the total alone.
     assert summary.condition_parent_edges == 10
     # 272->Poisoning, 161/17767/321988/5095->Drug Hypersensitivity, 161->Liver
     # Diseases, 161->G6PD Deficiency, 17767->Hypotension.
@@ -315,7 +338,7 @@ def test_rerunning_replaces_rather_than_duplicates(conn, seeded_moieties):
         "SELECT count(*) FROM drugref.ingest_unresolved_ci_object").fetchone()[0] == 2
     # Conditions ACCUMULATE while edges and contraindications are REBUILT, which is
     # why the summary reports the two condition numbers separately.
-    assert (second.conditions_registered, second.conditions_added) == (18, 0)
+    assert (second.conditions_registered, second.conditions_added) == (19, 0)
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent").fetchone()[0] == \
         second.condition_parent_edges
