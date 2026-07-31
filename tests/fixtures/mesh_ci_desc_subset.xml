@@ -142,6 +142,44 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001002</DescriptorUI>
+  <DescriptorName>
+   <String>Anuria</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2021</Year>
+   <Month>06</Month>
+   <Day>30</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>do not confuse with OLIGURIA, diminished amount
+  </Annotation>
+  <NLMClassificationNumber>WJ 146</NLMClassificationNumber>
+  <TreeNumberList>
+   <TreeNumber>C12.050.351.968.419.078</TreeNumber>
+   <TreeNumber>C12.050.351.968.934.070</TreeNumber>
+   <TreeNumber>C12.200.777.419.078</TreeNumber>
+   <TreeNumber>C12.200.777.934.141</TreeNumber>
+   <TreeNumber>C12.950.419.078</TreeNumber>
+   <TreeNumber>C12.950.934.070</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0001524</ConceptUI>
+    <ConceptName>
+     <String>Anuria</String>
+    </ConceptName>
+    <ScopeNote>Absence of urine formation. It is usually associated with complete bilateral ureteral (URETER) obstruction, complete lower urinary tract obstruction, or unilateral ureteral obstruction when a solitary kidney is present.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D001249</DescriptorUI>
   <DescriptorName>
    <String>Asthma</String>
@@ -253,6 +291,142 @@
      <Concept2UI>M0001887</Concept2UI>
      </ConceptRelation>
     </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D003681</DescriptorUI>
+  <DescriptorName>
+   <String>Dehydration</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2013</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>differentiate from DESICCATION, a technique for removing moisture from matter; /ther: coord with ORAL REHYDRATION THERAPY see FLUID THERAPY if pertinent; do not use entry term WATER STRESS for water stress test: consider IMMERSION; permitted (NIM) with microorganisms, lower animals and plants
+  </Annotation>
+  <NLMClassificationNumber>WB 158</NLMClassificationNumber>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D003890</DescriptorUI>
+     <DescriptorName>
+      <String>Desiccation</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D005440</DescriptorUI>
+     <DescriptorName>
+      <String>Fluid Therapy</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D013894</DescriptorUI>
+     <DescriptorName>
+      <String>Thirst</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D015532</DescriptorUI>
+     <DescriptorName>
+      <String>Rehydration Solutions</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C18.452.950.179</TreeNumber>
+   <TreeNumber>C23.550.274</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0005757</ConceptUI>
+    <ConceptName>
+     <String>Dehydration</String>
+    </ConceptName>
+    <ScopeNote>The condition that results from excessive loss of water from a living organism.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0005757</Concept1UI>
+     <Concept2UI>M0410970</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0410970</ConceptUI>
+    <ConceptName>
+     <String>Water Stress</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0005757</Concept1UI>
+     <Concept2UI>M0410970</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D003967</DescriptorUI>
+  <DescriptorName>
+   <String>Diarrhea</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2013</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1966</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>in infants = DIARRHEA, INFANTILE + appropriate check tags
+  </Annotation>
+  <SeeRelatedList>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D000930</DescriptorUI>
+     <DescriptorName>
+      <String>Antidiarrheals</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+   <SeeRelatedDescriptor>
+    <DescriptorReferredTo>
+     <DescriptorUI>D015532</DescriptorUI>
+     <DescriptorName>
+      <String>Rehydration Solutions</String>
+     </DescriptorName>
+    </DescriptorReferredTo>
+   </SeeRelatedDescriptor>
+  </SeeRelatedList>
+  <TreeNumberList>
+   <TreeNumber>C23.888.821.214</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0006212</ConceptUI>
+    <ConceptName>
+     <String>Diarrhea</String>
+    </ConceptName>
+    <ScopeNote>An increased liquidity or decreased consistency of FECES, such as running stool. Fecal consistency is related to the ratio of water-holding capacity of insoluble solids to total water, rather than the amount of water present. Diarrhea is not hyperdefecation or increased fecal weight.
+    </ScopeNote>
     </Concept>
   </ConceptList>
  </DescriptorRecord>
@@ -1223,6 +1397,45 @@
  </DescriptorRecord>
 
 <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011654</DescriptorUI>
+  <DescriptorName>
+   <String>Pulmonary Edema</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2020</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>1960</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <Annotation>entry term WET LUNG: in shock, consider also SHOCK LUNG see RESPIRATORY DISTRESS SYNDROME
+  </Annotation>
+  <HistoryNote>WET LUNG was see RESPIRATORY DISTRESS SYNDROME, ADULT 1977-91; was WET LUNG SYNDROME see PULMONARY EDEMA 1975-76
+  </HistoryNote>
+  <NLMClassificationNumber>WF 630</NLMClassificationNumber>
+  <OnlineNote>use RESPIRATORY DISTRESS SYNDROME, ADULT to search WET LUNG 1977-91; use PULMONARY EDEMA to search WET LUNG SYNDROME 1975-76
+  </OnlineNote>
+  <PublicMeSHNote>WET LUNG was see RESPIRATORY DISTRESS SYNDROME, ADULT 1977-91; was WET LUNG SYNDROME see PULMONARY EDEMA 1975-76
+  </PublicMeSHNote>
+  <TreeNumberList>
+   <TreeNumber>C08.381.742</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0018125</ConceptUI>
+    <ConceptName>
+     <String>Pulmonary Edema</String>
+    </ConceptName>
+    <ScopeNote>Excessive accumulation of extravascular fluid in the lung, an indication of a serious underlying disease or disorder. Pulmonary edema prevents efficient PULMONARY GAS EXCHANGE in the PULMONARY ALVEOLI, and can be life-threatening.
+    </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D012220</DescriptorUI>
   <DescriptorName>
    <String>Rhinitis</String>
@@ -1432,6 +1645,80 @@
     </ConceptName>
     <ScopeNote>Deficiency of the protease inhibitor ALPHA 1-ANTITRYPSIN that manifests primarily as PULMONARY EMPHYSEMA and LIVER CIRRHOSIS.
     </ScopeNote>
+    </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+
+<DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D020300</DescriptorUI>
+  <DescriptorName>
+   <String>Intracranial Hemorrhages</String>
+  </DescriptorName>
+  <LastUpdated>
+   <Year>2007</Year>
+   <Month>07</Month>
+   <Day>09</Day>
+  </LastUpdated>
+  <DateIntroduced>
+   <Year>2000</Year>
+   <Month>01</Month>
+   <Day>01</Day>
+  </DateIntroduced>
+  <HistoryNote>2000
+  </HistoryNote>
+  <NLMClassificationNumber>WL 355</NLMClassificationNumber>
+  <PublicMeSHNote>2000
+  </PublicMeSHNote>
+  <PreviousIndexingList>
+   <PreviousIndexing>Cerebral Hemorrhage (1966-1999)</PreviousIndexing>
+  </PreviousIndexingList>
+  <TreeNumberList>
+   <TreeNumber>C10.228.140.300.535</TreeNumber>
+   <TreeNumber>C14.907.253.573</TreeNumber>
+   <TreeNumber>C23.550.414.913</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>M0328611</ConceptUI>
+    <ConceptName>
+     <String>Intracranial Hemorrhages</String>
+    </ConceptName>
+    <ScopeNote>Bleeding within the SKULL, including hemorrhages in the brain and the three membranes of MENINGES. The escape of blood often leads to the formation of HEMATOMA in the cranial epidural, subdural, and subarachnoid spaces.
+    </ScopeNote>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0328611</Concept1UI>
+     <Concept2UI>M0332724</Concept2UI>
+     </ConceptRelation>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0328611</Concept1UI>
+     <Concept2UI>M0332725</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0332724</ConceptUI>
+    <ConceptName>
+     <String>Brain Hemorrhage</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0328611</Concept1UI>
+     <Concept2UI>M0332724</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
+    </Concept>
+   <Concept PreferredConceptYN="N">
+    <ConceptUI>M0332725</ConceptUI>
+    <ConceptName>
+     <String>Posterior Fossa Hemorrhage</String>
+    </ConceptName>
+    <ConceptRelationList>
+     <ConceptRelation RelationName="NRW">
+     <Concept1UI>M0328611</Concept1UI>
+     <Concept2UI>M0332725</Concept2UI>
+     </ConceptRelation>
+    </ConceptRelationList>
     </Concept>
   </ConceptList>
  </DescriptorRecord>

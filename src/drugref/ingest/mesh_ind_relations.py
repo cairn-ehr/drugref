@@ -122,7 +122,9 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
 
     THE DIRECTION OF THE HARM FLIPS HERE, which is why this counter is new in 5b.2 even
     though the grain is 5b's. The same collapse hits the contraindication half harder
-    (550 of 13,463 assertions via 81 concepts) and there it is SAFE: broadening a
+    (550 of the 13,458 assertions whose object RESOLVED, via 81 concepts -- the release
+    carries 13,463, and the 5-assertion difference is the two withdrawn object codes,
+    which have no concept to test; #53) and there it is SAFE: broadening a
     contraindication widens recall. Broadening an INDICATION offers a drug for a
     condition the release never named it for, and the read path then walks DOWN from
     that broader record to every patient coded below it. Worked case: MED-RT asserts

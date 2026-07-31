@@ -101,6 +101,24 @@ WANTED = {
     # fixture's only ingredient exercising moiety_induced_condition and the
     # `may_diagnose` predicate at all.
     "UQT9G45D1P": "HALOTHANE -- INN admission; subject for induces / may_diagnose",
+
+    # ---- issue #53: the ONE pair carrying TWO therapeutic predicates ------------
+    # MANNITOL (RxCUI 6628) is the fixture's only subject for which the release
+    # states may_treat AND may_prevent AND CI_with against ONE object (M0001524 =
+    # D001002 Anuria). That is what makes `also_contraindicated_pairs` a PAIR count
+    # rather than a row count observable at all: with activated charcoal alone the
+    # fixture held one overlapping row and one overlapping pair, so dropping the
+    # query's SELECT DISTINCT changed nothing and the test claiming to pin the grain
+    # passed against a mutant (#53 part 3).
+    #
+    # Admitted on the RXCUI + drug-like-SUBSTANCE_TYPE branch -- mannitol carries
+    # neither an INN_ID nor a USAN_ID upstream -- so it also happens to be the only
+    # MeSH-keyed relation subject exercising that arm of the gate.
+    #
+    # Clinically this is the same tension as carvedilol / Heart Failure and not a
+    # data error: mannitol is given to prevent and treat oliguria, and is
+    # contraindicated once anuria is established. MED-RT states both flatly (#51).
+    "3OWL53L36A": "MANNITOL -- may_treat + may_prevent + CI_with on ONE object",
 }
 
 

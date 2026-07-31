@@ -8,6 +8,7 @@ direction of 'Parent Of', and that [HC] concepts are alphabetical navigation
 bins rather than classifications -- are invisible in a hand-written fixture,
 because a hand-written fixture just encodes whatever the author assumed.
 """
+import importlib.util
 import pathlib
 import re
 
@@ -70,7 +71,10 @@ def test_ingests_exactly_the_six_classification_concept_types():
 def test_ingests_every_class_in_the_fixture():
     # 75 + 8 (slice 5b.2): halothane's own has_MoA/has_PE/has_TC classes (4) plus
     # the 2-level MED-RT ancestors the extractor pulls in alongside them (4).
-    assert len(parsed().classes) == 83
+    # + 10 (#53): mannitol's own axis classes -- Osmotic Activity [MoA], three
+    # [PE]s and Osmotic Diuretic [EPC] -- plus the 2-level ancestors above them
+    # (Diuresis Alteration [PE], Diuretic [APC], ...). Nothing was removed.
+    assert len(parsed().classes) == 93
 
 
 def test_excludes_hc_navigation_bins():
@@ -171,7 +175,12 @@ def test_parent_edges_run_parent_to_child_not_the_reverse():
 def test_builds_the_expected_number_of_dag_edges():
     # 59 + 8: halothane's 4 new classes each contribute at least one Parent Of
     # edge (see test_ingests_every_class_in_the_fixture for the class-count side).
-    assert len(parsed().parents) == 67
+    # + 9 (#53): mannitol's 10 new classes contribute 9 edges, not 10 -- two of
+    # them (Diuretic [APC], Physical or Chemical Agent [APC]) are the top of what
+    # the extractor pulled in and so have no parent here, while Osmotic Diuretic
+    # [EPC] sits under BOTH of them and contributes two. That is the multi-parent
+    # DAG this fixture exists to carry, arriving a second time.
+    assert len(parsed().parents) == 76
 
 
 def test_a_class_can_have_two_parents():
@@ -237,6 +246,52 @@ def test_the_fixture_redacts_snomed_but_keeps_mesh():
         assert (name, code) != ("REDACTED", "REDACTED"), \
             "MeSH endpoints are licence-cleared and must survive extraction intact"
         assert re.fullmatch(r"M\d+", code), f"not a MeSH ConceptUI: {code!r}"
+
+
+def _load_extractor():
+    """Import make_medrt_subset.py by path -- it is a script, on no import path.
+
+    Same technique as tests/test_mesh_extractor_tooling.py uses for the MeSH
+    extractors, and for the same reason: the extractors are deliberately
+    stdlib-only and importable without drugref on the path.
+    """
+    path = FIX.parent / "make_medrt_subset.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_caps_exemption_covers_therapeutic_predicates_only():
+    """`Synonym Of` stays capped even when its endpoints collide with a CI_with pair.
+
+    The cap trims three noisy overlay relations to one survivor apiece, and #53
+    exempted the ones that overlap a contraindication -- an assertion that is both
+    an indication and a CI_with is the hardest data in the release (#51), not the
+    noise the cap exists to remove. That argument is about THERAPEUTIC predicates
+    and does not extend to `Synonym Of`, which the parser drops outright.
+
+    The distinction is not merely tidy: `Synonym Of` and `CI_with` BOTH run RxCUI
+    -> MeSH ConceptUI in this release, so their endpoint pairs are the same shape
+    and a collision is structurally possible rather than type-impossible. Exempting
+    one would quietly restore an unbounded noise relation to the fixture. Pinned
+    here because the release cannot exercise it today -- the fixture's single
+    `Synonym Of` is 6853 -> M0013598, and 6853 states no CI_with at all -- so this
+    is a guard against a future release, per #42's rule.
+    """
+    maker = _load_extractor()
+    overlapping = {("6628", "M0001524")}          # mannitol / Anuria, the real case
+    pair = {"fc": "6628", "tc": "M0001524"}
+
+    assert maker.is_cap_exempt({"name": "may_treat", **pair}, overlapping)
+    assert maker.is_cap_exempt({"name": "may_prevent", **pair}, overlapping)
+    # The one this test exists for.
+    assert not maker.is_cap_exempt({"name": "Synonym Of", **pair}, overlapping)
+    # ...and a therapeutic assertion that overlaps NOTHING is still capped.
+    assert not maker.is_cap_exempt({"name": "may_treat", "fc": "272", "tc": "M0006212"},
+                                   overlapping)
+    # The exemption is a narrowing of the cap, so `Synonym Of` must still be IN it.
+    assert "Synonym Of" in maker.TRIMMED_OVERLAY
 
 
 # ---- membership ------------------------------------------------------------

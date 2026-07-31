@@ -201,9 +201,15 @@ be read as one.
 walk-direction decision above is about rows drugref *derives*; this is about rows drugref
 *stores*, and the `is_direct = false` label cannot help because these rows are
 `is_direct = true`. Note that the same collapse hits the contraindication half harder —
-**550 of 13,463** assertions via 81 concepts — and there it is **safe**: broadening a
-contraindication widens recall, which is the direction `db/014` wants. Slice 5b.2 is where
-the harm direction flips.
+**550 of 13,458** assertions via 81 concepts collapsing onto **79 broader records** — and
+there it is **safe**: broadening a contraindication widens recall, which is the direction
+`db/014` wants. Slice 5b.2 is where the harm direction flips.
+
+That denominator is the assertions whose object **resolved**, not the 13,463 the release
+carries: the 5-assertion difference is the two object codes MeSH has withdrawn, and an
+unresolved code has no concept to test for subordinacy. The indication half has no such
+gap — all 1,528 of its object codes resolve, so **18,314** is both its carried and its
+resolved denominator, and the two figures are directly comparable only once that is said.
 
 **Worked case.** MED-RT asserts `may_treat` against `M0335931` **"Seizures, Focal"** — a
 non-preferred concept — for eslicarbazepine acetate (RxCUI 1482501) and eslicarbazepine

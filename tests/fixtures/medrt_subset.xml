@@ -15,6 +15,7 @@
        RxCUI 272: activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC
        RxCUI 321988: escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA
        RxCUI 5095: halothane / induces (x2) + may_diagnose + CI_with, has_MoA/PE/TC (its real may_treat is dropped by the cap below)
+       RxCUI 6628: mannitol / may_treat + may_prevent + CI_with on ONE object (M0001524)
 -->
 <terminology>
 	<namespace>
@@ -583,6 +584,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Glomerular Filtration Pressure Alteration [PE]</name>
+		<code>N0000009060</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009060</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Hypothalamic Endocrine Activity Alteration [PE]</name>
 		<code>N0000009072</code>
 		<status>A</status>
@@ -615,6 +632,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Increased Glomerular Filtration Pressure [PE]</name>
+		<code>N0000009337</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009337</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Increased Immunologically Active Biogenic Amine Activity [PE]</name>
 		<code>N0000009354</code>
 		<status>A</status>
@@ -627,6 +660,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000009354</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Increased Renal Ion Excretion [PE]</name>
+		<code>N0000009550</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009550</value>
 		</property>
 	</concept>
 	<concept>
@@ -775,6 +824,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Renal Ion Transport Alteration [PE]</name>
+		<code>N0000009830</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000009830</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Renal Organic Ion Transport Alteration [PE]</name>
 		<code>N0000009831</code>
 		<status>A</status>
@@ -883,6 +948,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000009915</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Osmotic Activity [MoA]</name>
+		<code>N0000010288</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>MoA</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000010288</value>
 		</property>
 	</concept>
 	<concept>
@@ -1015,6 +1096,38 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Diuresis Alteration [PE]</name>
+		<code>N0000175358</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175358</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Increased Diuresis [PE]</name>
+		<code>N0000175359</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>PE</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175359</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Dihydropyridine Calcium Channel Blocker [EPC]</name>
 		<code>N0000175421</code>
 		<status>A</status>
@@ -1123,6 +1236,22 @@
 			<namespace>MED-RT</namespace>
 			<name>NUI</name>
 			<value>N0000175728</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Osmotic Diuretic [EPC]</name>
+		<code>N0000175810</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>EPC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000175810</value>
 		</property>
 	</concept>
 	<concept>
@@ -1383,6 +1512,22 @@
 	</concept>
 	<concept>
 		<namespace>MED-RT</namespace>
+		<name>Diuretic [APC]</name>
+		<code>N0000193873</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193873</value>
+		</property>
+	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
 		<name>Calcium Channel Agent [APC]</name>
 		<code>N0000193892</code>
 		<status>A</status>
@@ -1477,6 +1622,22 @@
 			<value>N0000193905</value>
 		</property>
 	</concept>
+	<concept>
+		<namespace>MED-RT</namespace>
+		<name>Physical or Chemical Agent [APC]</name>
+		<code>N0000193908</code>
+		<status>A</status>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>CTY</name>
+			<value>APC</value>
+		</property>
+		<property>
+			<namespace>MED-RT</namespace>
+			<name>NUI</name>
+			<value>N0000193908</value>
+		</property>
+	</concept>
 	<association>
 		<namespace>MED-RT</namespace>
 		<name>has_MoA</name>
@@ -1526,6 +1687,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>L-Calcium Channel Receptor Antagonists [MoA]</to_name>
 		<to_code>N0000020065</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_MoA</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Osmotic Activity [MoA]</to_name>
+		<to_code>N0000010288</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1646,6 +1817,16 @@
 		<to_namespace>RxNorm</to_namespace>
 		<to_name>amlodipine</to_name>
 		<to_code>17767</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Diuresis [PE]</to_name>
+		<to_code>N0000175359</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -1809,6 +1990,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Osmotic Diuretic [EPC]</from_name>
+		<from_code>N0000175810</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>mannitol</to_name>
+		<to_code>6628</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>has_PE</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>activated charcoal</from_name>
@@ -1819,10 +2010,30 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>may_treat</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>activated charcoal</from_name>
+		<from_code>272</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Diarrhea</to_name>
+		<to_code>M0006212</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>CI_with</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>ibuprofen</from_name>
 		<from_code>5640</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Drug Hypersensitivity</to_name>
+		<to_code>M0006829</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
 		<to_namespace>MeSH</to_namespace>
 		<to_name>Drug Hypersensitivity</to_name>
 		<to_code>M0006829</to_code>
@@ -1959,6 +2170,16 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Dehydration</to_name>
+		<to_code>M0005757</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
 		<from_name>H [Preparations]</from_name>
@@ -1976,6 +2197,16 @@
 		<to_namespace>RxNorm</to_namespace>
 		<to_name>methoxamine</to_name>
 		<to_code>6853</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>M [Preparations]</from_name>
+		<from_code>N0000010595</from_code>
+		<to_namespace>RxNorm</to_namespace>
+		<to_name>mannitol</to_name>
+		<to_code>6628</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2029,6 +2260,36 @@
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
+		<name>may_treat</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Anuria</to_name>
+		<to_code>M0001524</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>may_prevent</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Anuria</to_name>
+		<to_code>M0001524</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Anuria</to_name>
+		<to_code>M0001524</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
 		<name>CI_with</name>
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>ibuprofen</from_name>
@@ -2046,6 +2307,16 @@
 		<to_namespace>MeSH</to_namespace>
 		<to_name>Pregnancy Trimester, Third</to_name>
 		<to_code>M0017490</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Pulmonary Edema</to_name>
+		<to_code>M0018125</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2096,6 +2367,36 @@
 		<to_namespace>MeSH</to_namespace>
 		<to_name>Hypotension</to_name>
 		<to_code>M0010927</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>CI_with</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MeSH</to_namespace>
+		<to_name>Intracranial Hemorrhages</to_name>
+		<to_code>M0328611</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Glomerular Filtration Pressure [PE]</to_name>
+		<to_code>N0000009337</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_PE</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Renal Ion Excretion [PE]</to_name>
+		<to_code>N0000009550</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2173,6 +2474,16 @@
 		<from_namespace>RxNorm</from_namespace>
 		<from_name>amlodipine</from_name>
 		<from_code>17767</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Cardiovascular Agent [TC]</to_name>
+		<to_code>N0000178309</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>has_TC</name>
+		<from_namespace>RxNorm</from_namespace>
+		<from_name>mannitol</from_name>
+		<from_code>6628</from_code>
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Cardiovascular Agent [TC]</to_name>
 		<to_code>N0000178309</to_code>
@@ -2316,6 +2627,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>L-Calcium Channel Receptor Antagonists [MoA]</to_name>
 		<to_code>N0000020065</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Physiochemical Activity [MoA]</from_name>
+		<from_code>N0000000065</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Osmotic Activity [MoA]</to_name>
+		<to_code>N0000010288</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2501,6 +2822,26 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Diuretic [APC]</to_name>
+		<to_code>N0000193873</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Preparations by FDA Established Pharmacologic Class</from_name>
+		<from_code>N0000189939</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Physical or Chemical Agent [APC]</to_name>
+		<to_code>N0000193908</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Increased Immunologically Active Biogenic Amine Activity [PE]</from_name>
 		<from_code>N0000009354</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -2566,6 +2907,16 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Calcium Channel Agent [APC]</to_name>
 		<to_code>N0000193892</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Diuresis Alteration [PE]</from_name>
+		<from_code>N0000175358</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Diuresis [PE]</to_name>
+		<to_code>N0000175359</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>
@@ -2751,6 +3102,26 @@
 		<namespace>MED-RT</namespace>
 		<name>Parent Of</name>
 		<from_namespace>MED-RT</from_namespace>
+		<from_name>Diuretic [APC]</from_name>
+		<from_code>N0000193873</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Osmotic Diuretic [EPC]</to_name>
+		<to_code>N0000175810</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Physical or Chemical Agent [APC]</from_name>
+		<from_code>N0000193908</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Osmotic Diuretic [EPC]</to_name>
+		<to_code>N0000175810</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
 		<from_name>Large Intestine Fluid/Electrolyte Absorption Alteration [PE]</from_name>
 		<from_code>N0000009736</from_code>
 		<to_namespace>MED-RT</to_namespace>
@@ -2876,6 +3247,56 @@
 		<to_namespace>MED-RT</to_namespace>
 		<to_name>Decreased Blood Pressure [PE]</to_name>
 		<to_code>N0000178477</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal/Urological Activity Alteration [PE]</from_name>
+		<from_code>N0000009832</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Diuresis Alteration [PE]</to_name>
+		<to_code>N0000175358</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal/Urological Activity Alteration [PE]</from_name>
+		<from_code>N0000009832</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Glomerular Filtration Pressure Alteration [PE]</to_name>
+		<to_code>N0000009060</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal/Urological Activity Alteration [PE]</from_name>
+		<from_code>N0000009832</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Renal Ion Transport Alteration [PE]</to_name>
+		<to_code>N0000009830</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Glomerular Filtration Pressure Alteration [PE]</from_name>
+		<from_code>N0000009060</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Glomerular Filtration Pressure [PE]</to_name>
+		<to_code>N0000009337</to_code>
+	</association>
+	<association>
+		<namespace>MED-RT</namespace>
+		<name>Parent Of</name>
+		<from_namespace>MED-RT</from_namespace>
+		<from_name>Renal Ion Transport Alteration [PE]</from_name>
+		<from_code>N0000009830</from_code>
+		<to_namespace>MED-RT</to_namespace>
+		<to_name>Increased Renal Ion Excretion [PE]</to_name>
+		<to_code>N0000009550</to_code>
 	</association>
 	<association>
 		<namespace>MED-RT</namespace>

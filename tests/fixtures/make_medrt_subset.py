@@ -86,7 +86,31 @@ INGREDIENTS = {
     # its assertions are meant to MATCH, not to exercise the unmatched-subject path.
     "5095": "halothane / induces (x2) + may_diagnose + CI_with, has_MoA/PE/TC "
              "(its real may_treat is dropped by the cap below)",
+    # Issue #53. The ONLY ingredient here whose release states TWO therapeutic
+    # predicates AND a contraindication against ONE object: may_treat, may_prevent
+    # and CI_with all point at M0001524 (D001002 Anuria). Everything else in this
+    # fixture overlaps at most one therapeutic predicate per object, which made the
+    # collision counter's PAIR grain indistinguishable from a ROW grain -- 1 == 1 --
+    # so the test asserting it pinned the grain passed against a mutant that dropped
+    # SELECT DISTINCT. With mannitol the fixture holds 2 pairs over 3 rows.
+    #
+    # A REAL RELEASE FACT, not a constructed one, and a clinically famous tension:
+    # mannitol is used to prevent and treat oliguria and is contraindicated once
+    # anuria is established. MED-RT asserts both with no qualifier, exactly as it
+    # does for carvedilol / Heart Failure (#51).
+    "6628": "mannitol / may_treat + may_prevent + CI_with on ONE object (M0001524)",
 }
+
+# The two predicates the cap may EXEMPT (see is_cap_exempt). Both are INGESTED as
+# mesh_indications, so an assertion that is also a contraindication is real clinical
+# tension (#51) rather than the noise the cap removes.
+THERAPEUTIC_OVERLAY = ("may_treat", "may_prevent")
+
+# Overlay relations trimmed to one survivor apiece (see the cap in main()). One real
+# example of each is all the predicate needs, EXCEPT where is_cap_exempt says
+# otherwise -- so today three may_treat survive, not one. `Synonym Of` is genuine
+# noise the parser drops outright, and is never exempt.
+TRIMMED_OVERLAY = (*THERAPEUTIC_OVERLAY, "Synonym Of")
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).
 INGESTED_CTY = {"MoA", "PE", "TC", "PK", "EPC", "APC"}
@@ -104,6 +128,22 @@ REDACTED = "REDACTED"
 def field(block: str, tag: str) -> str:
     m = re.search(rf"<{tag}>(.*?)</{tag}>", block, re.S)
     return m.group(1).strip() if m else ""
+
+
+def is_cap_exempt(assoc: dict, overlapping: set) -> bool:
+    """Is this association spared the overlay cap? (#53)
+
+    True only for a THERAPEUTIC assertion whose `(subject, object)` pair also
+    carries a `CI_with` from the same subject. Deliberately NOT every member of
+    TRIMMED_OVERLAY: `Synonym Of` runs RxCUI -> MeSH ConceptUI exactly as CI_with
+    does, so its endpoints could collide with an overlapping pair by coincidence,
+    and exempting it would restore an unbounded noise relation to the fixture for
+    a reason that only makes sense for predicates drugref ingests.
+
+    `overlapping` is the set of `(from_code, to_code)` pairs CI_with asserts.
+    """
+    return (assoc["name"] in THERAPEUTIC_OVERLAY
+            and (assoc["fc"], assoc["tc"]) in overlapping)
 
 
 def endpoint(namespace: str, name: str, code: str) -> tuple[str, str]:
@@ -167,9 +207,22 @@ def main(path: str) -> None:
     #                          either, so capping them the way may_treat/may_prevent
     #                          are capped would leave both predicates with ZERO
     #                          examples in the fixture rather than one.
+    #
+    # ONE EXEMPTION FROM THE CAP, AND IT IS THE POINT OF THE CAP'S EXISTENCE RATHER
+    # THAN A HOLE IN IT (#53). A therapeutic assertion whose (subject, object) pair
+    # ALSO carries a CI_with from the same subject is not noise -- it is the hardest
+    # data in the release (#51), and it is the only thing that makes the collision
+    # counter's PAIR grain observable: without it every overlapping pair holds exactly
+    # one indication row, so `count(DISTINCT ...)` and `count(*)` agree on the fixture
+    # and a counter that drifted to rows would pass. Mannitol contributes two such
+    # assertions (may_treat + may_prevent on M0001524), so the fixture now holds 2
+    # overlapping pairs across 3 overlapping rows and the two grains disagree.
+    # is_cap_exempt() scopes this to the therapeutic predicates -- see its docstring.
+    overlapping = {(a["fc"], a["tc"]) for a in keep
+                   if a["name"] == "CI_with" and a["fns"] == "RxNorm"}
     trimmed, seen_overlay = [], {}
     for a in keep:
-        if a["name"] in ("may_treat", "may_prevent", "Synonym Of"):
+        if a["name"] in TRIMMED_OVERLAY and not is_cap_exempt(a, overlapping):
             seen_overlay[a["name"]] = seen_overlay.get(a["name"], 0) + 1
             if seen_overlay[a["name"]] > 1:
                 continue

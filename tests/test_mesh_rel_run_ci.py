@@ -66,15 +66,22 @@ def seeded_moieties(conn):
 def test_ingest_reports_a_summary(conn, seeded_moieties):
     """The acceptance matrix, every number derived from the two real releases.
 
-    The fixture states 17 MeSH-keyed contraindications: 14 CI_with and 3
+    The fixture states 22 MeSH-keyed contraindications: 19 CI_with and 3
     CI_ChemClass. SIX of the CI_with name ibuprofen, which no moiety carries
-    (161 x3, 17767 x2, 272 x1, 321988 x1, 5095 x1, 5640 x6 = 14), so eight
-    condition rows survive; of the three CI_ChemClass, one names Pimozide (a drug)
-    and two name chemical classes.
+    (161 x3, 17767 x2, 272 x1, 321988 x1, 5095 x1, 6628 x5, 5640 x6 = 19), so
+    thirteen condition rows survive; of the three CI_ChemClass, one names Pimozide
+    (a drug) and two name chemical classes.
 
     Halothane (slice 5b.2, RxCUI 5095) adds the 14th CI_with, but NOT a new
     referenced CI condition: its object is MeSH M0006829 (Drug Hypersensitivity),
     which 161/17767/321988 already name.
+
+    Mannitol (#53, RxCUI 6628) adds the last five, and unlike halothane it DOES
+    bring new referenced conditions -- Anuria, Dehydration, Pulmonary Edema and
+    Intracranial Hemorrhages (its fifth object is Drug Hypersensitivity again). It
+    is here for the INDICATION half (it is the fixture's only subject asserting two
+    therapeutic predicates against one object), and its contraindications come along
+    because the extractor keeps every CI_with an included ingredient states.
 
     conditions_registered had already moved once (18 -> 19) BEFORE this orchestrator
     read an indication predicate at all, and that history is kept because it is the
@@ -108,8 +115,19 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     # objects were already registered -- Poisoning is itself a CI_with object, and
     # Liver Failure arrived as the descendant described above -- and the three new
     # records contribute no descendants the fixture's desc subset contains.
-    assert summary.registry.conditions_registered == 22
-    assert summary.registry.conditions_added == 22
+    #
+    # 22 -> 27 (+5) when #53 added mannitol, and NOTHING was displaced this time
+    # (verified by diffing the registered record UIs, not just the count). Four are
+    # mannitol's own CI_with objects -- Anuria (D001002), Dehydration (D003681),
+    # Pulmonary Edema (D011654), Intracranial Hemorrhages (D020300) -- and the fifth
+    # is Diarrhea (D003967), which arrives for a subtler reason worth recording: the
+    # extractor's cap keeps ONE may_treat that is not part of an indication /
+    # contraindication overlap, and exempting the overlapping ones (see
+    # make_medrt_subset.py) moved that single survivor from charcoal's may_treat on
+    # Poisoning -- now exempt, since charcoal is also CI_with Poisoning -- to
+    # charcoal's may_treat on Diarrhea.
+    assert summary.registry.conditions_registered == 27
+    assert summary.registry.conditions_added == 27
     # 10 -> 12 (+2), and NEITHER new edge hangs off a new leaf: both are edges MeSH
     # already asserted between records the CI closure ALREADY held, which could not be
     # written because their shared PARENT was unregistered. Drug Hypersensitivity
@@ -128,15 +146,24 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     # to zero. Verified by diffing the actual (parent, child) pairs, not assumed.
     assert summary.registry.condition_parent_edges == 12
     ci = summary.contraindications
-    # NOT ONE OF THE EIGHT ASSERTIONS BELOW MOVED WHEN THE REGISTRY WIDENED, which is
+    # NOT ONE OF THE ASSERTIONS BELOW MOVED WHEN THE REGISTRY WIDENED, which is
     # spec 10's criterion and the reason this block is worth reading as a block: the
     # DIRECT rows are what the release asserts, so a widened closure that changed one
     # of them would mean the closure had taken in more than the referenced objects and
     # their descendants.
     #
+    # THAT IS A CLAIM ABOUT WIDENING THE CLOSURE, NOT ABOUT THE FIXTURE NEVER GROWING,
+    # and #53 is what makes the difference worth spelling out. Adding mannitol added a
+    # SUBJECT, and a new subject states its own contraindications, so condition_rows
+    # legitimately went 8 -> 13. What would still be a defect is this number moving
+    # when only the OBJECT side widens -- which is what happened at 5b.2, when the
+    # indication half registered three new conditions and every figure here held.
+    #
     # 272->Poisoning, 161/17767/321988/5095->Drug Hypersensitivity, 161->Liver
-    # Diseases, 161->G6PD Deficiency, 17767->Hypotension.
-    assert ci.condition_rows == 8
+    # Diseases, 161->G6PD Deficiency, 17767->Hypotension (8), plus mannitol's five:
+    # 6628->Anuria, Dehydration, Drug Hypersensitivity, Pulmonary Edema and
+    # Intracranial Hemorrhages.
+    assert ci.condition_rows == 13
     assert ci.pair_rows == 1                            # escitalopram -> pimozide
     assert ci.unmatched_subject_rxcuis == 1             # ibuprofen (RxCUI 5640)
     assert ci.withheld_class_objects == 2               # Alkalies, Organic Chemicals
@@ -202,10 +229,10 @@ def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
     # Nothing could be ingested, and nothing was invented to compensate.
     assert (summary.contraindications.condition_rows,
             summary.contraindications.pair_rows) == (0, 0)
-    # All six subject RxCUIs in the fixture (slice 5b.2 adds halothane, 5095,
-    # alongside 161/17767/272/321988/5640), including the two that reach only a
-    # withheld object.
-    assert summary.contraindications.unmatched_subject_rxcuis == 6
+    # All seven subject RxCUIs in the fixture (slice 5b.2 adds halothane, 5095, and
+    # #53 adds mannitol, 6628, alongside 161/17767/272/321988/5640), including the
+    # two that reach only a withheld object.
+    assert summary.contraindications.unmatched_subject_rxcuis == 7
 
 
 def test_an_unresolved_object_is_classified_by_the_record_not_the_failure(conn):
@@ -347,12 +374,12 @@ def test_rerunning_replaces_rather_than_duplicates(conn, seeded_moieties):
     assert conn.execute(
         "SELECT count(*) FROM drugref.ingest_unresolved_ci_object").fetchone()[0] == 2
     # Conditions ACCUMULATE while edges and contraindications are REBUILT, which is
-    # why the registry tally reports the two condition numbers separately. 22 since
-    # the closure widened to cover indication objects (see test_ingest_reports_a_
-    # summary for the +3); the 0 is the number that carries this test's argument, and
-    # it is unmoved.
+    # why the registry tally reports the two condition numbers separately. 27 since
+    # the closure widened to cover indication objects and then mannitol's four new
+    # CI objects (see test_ingest_reports_a_summary for the +3 and the +5); the 0 is
+    # the number that carries this test's argument, and it is unmoved.
     assert (second.registry.conditions_registered,
-            second.registry.conditions_added) == (22, 0)
+            second.registry.conditions_added) == (27, 0)
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent").fetchone()[0] == \
         second.registry.condition_parent_edges

@@ -96,22 +96,30 @@ def test_one_run_ingests_both_halves(conn, seeded_moieties):
 def test_the_summary_reports_the_indication_half(conn, seeded_moieties):
     """The indication acceptance matrix, every number derived from the real releases.
 
-    The fixture states FIVE MeSH-keyed indication assertions, and each is a real row of
-    the 2026.07.06 release:
+    The fixture states EIGHT MeSH-keyed indication assertions, and each is a real row
+    of the 2026.07.06 release:
       * activated charcoal (272) may_treat Poisoning        -> an indication row
+      * activated charcoal (272) may_treat Diarrhea          -> an indication row
       * activated charcoal (272) may_prevent Drug-Related Side Effects and Adverse
         Reactions                                            -> an indication row
+      * mannitol (6628) may_treat Anuria                     -> an indication row
+      * mannitol (6628) may_prevent Anuria                   -> an indication row
       * halothane (5095) may_diagnose Malignant Hyperthermia -> an indication row
       * halothane (5095) induces Liver Failure               -> an INDUCED row
       * halothane (5095) induces Unconsciousness             -> an INDUCED row
 
-    Both subjects are carried by the seeded registry (ibuprofen, the fixture's one
+    MANNITOL'S TWO ARE ONE (SUBJECT, OBJECT) PAIR, which is the whole reason it is in
+    the fixture (#53): it is the only subject here whose release states two therapeutic
+    predicates against a single object, so it is what makes a PAIR count differ from a
+    ROW count -- see test_a_drug_both_indicated_and_contraindicated_is_COUNTED.
+
+    All three subjects are carried by the seeded registry (ibuprofen, the fixture's one
     unregistered subject, states no indication), so nothing is lost here and the
     unmatched path is exercised by the unseeded tests below instead of by a number
     that would silently be zero for the wrong reason.
     """
     ind = _run(conn).indications
-    assert ind.indication_rows == 3
+    assert ind.indication_rows == 6
     assert ind.induced_rows == 2
     assert ind.unmatched_subject_rxcuis == 0
     # No fixture assertion has a pharmacologic CLASS as its subject. The real release
@@ -216,6 +224,16 @@ def test_a_drug_both_indicated_and_contraindicated_is_COUNTED(conn, seeded_moiet
     drifted to a different grain -- disagrees with the database and fails here.
     The literal is asserted too, so a run that stopped STORING the overlap (by
     withholding one side) also fails rather than passing with 0 == 0.
+
+    THE GRAIN HALF OF THAT CLAIM ONCE OUTRAN THE FIXTURE, and closing that gap is why
+    mannitol is in it (#53). Until then the fixture held exactly ONE overlapping row
+    and ONE overlapping pair, so `count(DISTINCT ...)` and `count(*)` were
+    indistinguishable on it: mutating the production query's `SELECT DISTINCT` away
+    left this test PASSING, and only the *stops counting* half was really pinned.
+    The fixture now holds 2 pairs across 3 rows -- mannitol states may_treat AND
+    may_prevent against Anuria while also being CI_with it -- so the two grains
+    disagree and the mutation fails here. Do not reduce the fixture to one
+    therapeutic predicate per overlapping pair; that silently restores the blind spot.
     """
     summary = _run(conn)
     overlap = conn.execute(
@@ -226,10 +244,27 @@ def test_a_drug_both_indicated_and_contraindicated_is_COUNTED(conn, seeded_moiet
         "    ON  c.subject_moiety_uuid   = i.subject_moiety_uuid "
         "    AND c.object_condition_uuid = i.object_condition_uuid) x").fetchone()[0]
     assert summary.also_contraindicated_pairs == overlap
-    # Activated charcoal / Poisoning, and it is a REAL upstream statement rather than a
-    # wiring accident: the fixture carries MED-RT's own `may_treat` and `CI_with`
-    # associations for RxCUI 272 against M0017099, extracted from the release.
-    assert overlap == 1
+    # Activated charcoal / Poisoning and mannitol / Anuria, both REAL upstream
+    # statements rather than wiring accidents: the fixture carries MED-RT's own
+    # `may_treat` + `CI_with` for RxCUI 272 against M0017099, and its `may_treat` +
+    # `may_prevent` + `CI_with` for RxCUI 6628 against M0001524, all extracted from
+    # the release.
+    assert overlap == 2
+    # AND THE TWO GRAINS GENUINELY DIFFER HERE, asserted rather than left implicit:
+    # 3 joined ROWS collapse to the 2 PAIRS above, because mannitol / Anuria carries
+    # two therapeutic predicates.
+    #
+    # WHAT THIS PINS IS THE FIXTURE SHAPE, NOT THE PRODUCTION QUERY. The assertion
+    # that actually catches a dropped DISTINCT is the `== overlap` one above, and it
+    # can only catch it while 3 != 2 holds here. Let the fixture collapse back to one
+    # row per overlapping pair and that check keeps passing while quietly discriminating
+    # nothing -- which is precisely the state #53 found this test in. So this line is
+    # what KEEPS the check above honest rather than what fails in its place.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_condition_indication i "
+        "JOIN drugref.moiety_condition_contraindication c "
+        "  ON  c.subject_moiety_uuid   = i.subject_moiety_uuid "
+        "  AND c.object_condition_uuid = i.object_condition_uuid").fetchone()[0] == 3
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication i "
         "JOIN drugref.moiety_condition_contraindication c "
@@ -373,26 +408,26 @@ def test_a_rerun_changes_nothing(conn, seeded_moieties):
 def test_unmatched_indication_subjects_are_persisted_under_their_own_reason(conn):
     """A THIRD BUCKET, NEVER A SHARED ONE (db/018's one-writer-per-(source, reason)).
 
-    Deliberately runs with NO seeded registry, because both of the fixture's indication
-    subjects ARE carried by the seeded one -- so this is the only way the fixture can
-    exercise the path at all, and asserting zero against the seeded registry would be a
-    number that is right for a reason nobody checked.
+    Deliberately runs with NO seeded registry, because all three of the fixture's
+    indication subjects ARE carried by the seeded one -- so this is the only way the
+    fixture can exercise the path at all, and asserting zero against the seeded
+    registry would be a number that is right for a reason nobody checked.
 
-    Both RxCUIs land in BOTH buckets here, which is the case the discriminator exists
-    for: they state contraindications and indications alike, and db/018 keyed the table
-    (run, reason, rxcui) precisely so the second writer's row is not swallowed by
-    ON CONFLICT DO NOTHING.
+    All three RxCUIs (272, 5095 and, since #53, 6628) land in BOTH buckets here, which
+    is the case the discriminator exists for: they state contraindications and
+    indications alike, and db/018 keyed the table (run, reason, rxcui) precisely so the
+    second writer's row is not swallowed by ON CONFLICT DO NOTHING.
     """
     summary = _run(conn)
-    assert summary.indications.unmatched_subject_rxcuis == 2
+    assert summary.indications.unmatched_subject_rxcuis == 3
     assert {r[0] for r in conn.execute(
         "SELECT rxcui FROM drugref.ingest_unmatched_ingredient "
-        "WHERE reason = 'indication'").fetchall()} == {"272", "5095"}
+        "WHERE reason = 'indication'").fetchall()} == {"272", "5095", "6628"}
     # The identity is the point, not the count: gap_unmatched_ingredient is a query
     # over these rows, and a summary field does not survive the process.
     assert conn.execute(
         "SELECT count(*) FROM drugref.gap_unmatched_ingredient "
-        "WHERE rxcui IN ('272', '5095')").fetchone()[0] == 2
+        "WHERE rxcui IN ('272', '5095', '6628')").fetchone()[0] == 3
 
 
 def test_consecutive_runs_rebuild_the_indication_bucket_rather_than_accumulate(conn):
@@ -407,7 +442,7 @@ def test_consecutive_runs_rebuild_the_indication_bucket_rather_than_accumulate(c
     _run(conn)
     assert conn.execute(
         "SELECT count(*) FROM drugref.ingest_unmatched_ingredient "
-        "WHERE reason = 'indication'").fetchone()[0] == 2
+        "WHERE reason = 'indication'").fetchone()[0] == 3
 
 
 def test_a_later_contraindication_clear_leaves_indication_rows_standing(conn):

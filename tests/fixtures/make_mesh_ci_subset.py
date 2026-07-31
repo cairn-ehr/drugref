@@ -342,8 +342,12 @@ def main(desc_path, supp_path, outdir: pathlib.Path) -> None:
     write(outdir / "mesh_ci_supp_subset.xml", "SupplementalRecordSet", supplementals)
 
     # A derived code that resolves nowhere is REPORTED, not fatal: 2 of the real
-    # release's 1,053 objects are withdrawn upstream, and the ingest counts exactly
-    # that case. An EXPLICIT record that vanished is fatal, for make_unii_subset.py's
+    # release's 1,053 CONTRAINDICATION objects are withdrawn upstream, and the ingest
+    # counts exactly that case. The population is named because this script is
+    # CI-scoped while the ingest is not (#53): one run resolves 2,198 codes, both
+    # halves together, and the numerator stays 2 only because both withdrawn codes
+    # happen to be CI-only. See mesh_concepts.resolve_concepts.
+    # An EXPLICIT record that vanished is fatal, for make_unii_subset.py's
     # reason -- it would silently delete a test case nobody would notice was gone.
     resolved = {cui for xml in list(descriptors.values()) + list(supplementals.values())
                 for cui in _concept_uis(ET.fromstring(xml))}

@@ -57,11 +57,19 @@ class MeshRecord:
     MEASURED SEPARATELY PER HALF, because the module now serves both and the two
     populations differ in size AND in what the loss costs:
       * contraindications -- 81 of 1,051 resolved objects are subordinate, carrying
-        550 of 13,463 assertions. SAFE: broadening a contraindication widens recall,
-        which is the direction db/014 wants.
+        550 of 13,458 assertions (4.09%) onto 79 broader records. SAFE: broadening a
+        contraindication widens recall, which is the direction db/014 wants.
       * indications       -- 90 of 1,528 resolved objects are subordinate, carrying
         422 of 18,314 assertions (2.30%) onto 85 broader records. UNSAFE: it offers a
         drug for a condition the release never named it for.
+
+    BOTH DENOMINATORS ARE RESOLVED ASSERTIONS, NOT CARRIED ONES, and the two differ on
+    the contraindication side only (#53). The release CARRIES 13,463 MeSH-keyed
+    contraindication assertions (11,524 CI_with + 1,939 CI_ChemClass), but 5 of them
+    name the two object codes MeSH has withdrawn, and an unresolved code has no
+    `is_preferred_concept` to test -- so 550 can only be counted over the 13,458 that
+    resolved. The indication half has no such gap: all 1,528 of its object codes
+    resolve, so 18,314 is both its carried and its resolved denominator.
     The reader that makes the flag do work is mesh_ind_relations.write_indications,
     which counts the second figure on every run; read its docstring for the
     eslicarbazepine case and #52 for making the affected ROWS detectable.
@@ -161,8 +169,16 @@ def resolve_concepts(desc_path: StrPath, supp_path: StrPath,
     Returns {concept_ui: MeshRecord} containing ONLY codes that resolved. A code
     that resolves nowhere is simply ABSENT -- never mapped to a plausible
     substitute -- so the caller can count it as a gap rather than ship a wrong
-    condition. Exactly 2 of this slice's 1,053 object codes are withdrawn upstream
-    and land here.
+    condition. Exactly 2 of the 2,198 object codes ONE RUN resolves are withdrawn
+    upstream and land here.
+
+    THAT DENOMINATOR IS BOTH HALVES, because this module serves both (#53). The
+    orchestrator resolves `ci_wanted | ind_wanted` in a single pass: 1,053
+    contraindication codes and 1,528 indication codes, 383 of them named by both, so
+    2,198 distinct codes go in and 2,196 come out. Do not restate it as slice 5b's
+    1,051 of 1,053 -- that was this same call when the run carried only the
+    contraindication half, and both withdrawn codes happen to be CI-only, which is
+    what lets the numerator stay 2 while the denominator doubles.
 
     Descriptors win over SCRs when a concept appears in both: a descriptor is the
     fuller record, and preferring it deterministically stops the answer depending on
