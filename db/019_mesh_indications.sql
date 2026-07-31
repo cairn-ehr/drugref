@@ -133,3 +133,101 @@ COMMENT ON COLUMN drugref.condition.scr_class IS
     'gap_condition_without_indication: an SCR bears no tree numbers, so nothing else '
     'can tell "Short QT Syndrome" from "aliskiren". drugref asserts no meaning for 5 '
     'and 6, which are published but undocumented.';
+
+-- ============================================================================
+-- 5. THE READ PATH -- one walk, in the only sound direction
+-- ============================================================================
+--
+-- There is deliberately NO condition_indication_expanded view to mirror slice 5b's.
+-- 5b needs one because its rows are stored expandable and whole-set access is a real
+-- use; here nothing is stored expanded, so the base table IS whole-set access and a
+-- second walk would buy nothing while creating exactly the disagreement db/006 warns
+-- about. The ONE other statement of the reach rule is the view below, and a test pins
+-- the two against each other.
+
+CREATE OR REPLACE VIEW drugref.condition_indication_reach AS
+WITH RECURSIVE subtree(root_uuid, condition_uuid) AS (
+    SELECT DISTINCT i.object_condition_uuid, i.object_condition_uuid
+    FROM   drugref.moiety_condition_indication i
+  UNION
+    SELECT s.root_uuid, cp.child_condition_uuid
+    FROM   subtree s
+    JOIN   drugref.condition_parent cp ON cp.parent_condition_uuid = s.condition_uuid
+),
+reached AS (
+    SELECT s.condition_uuid,
+           count(*) FILTER (WHERE s.condition_uuid = i.object_condition_uuid)
+               AS direct_rules,
+           count(*) FILTER (WHERE s.condition_uuid <> i.object_condition_uuid
+                            AND   a.generalises_to_descendants) AS generalised_rules
+    FROM   subtree s
+    JOIN   drugref.moiety_condition_indication i
+           ON i.object_condition_uuid = s.root_uuid
+    JOIN   drugref.condition_indication_axis a ON a.relationship = i.relationship
+    GROUP  BY s.condition_uuid
+)
+SELECT c.condition_uuid,
+       COALESCE(r.direct_rules, 0)      AS direct_indication_rules,
+       COALESCE(r.generalised_rules, 0) AS generalised_indication_rules
+FROM   drugref.condition c
+LEFT   JOIN reached r ON r.condition_uuid = c.condition_uuid;
+
+COMMENT ON VIEW drugref.condition_indication_reach IS
+    'For EVERY registry condition, how many indication rules reach it: directly, and '
+    'by generalisation from an ancestor. One row per condition -- a condition nothing '
+    'reaches is present with zeroes, never absent, which is what lets '
+    'gap_condition_without_indication be a filter on this view rather than a second '
+    'statement of the same walk (db/018: one quantity stated twice will disagree). '
+    'induces is excluded: it holds no axis row and licenses no walk.';
+COMMENT ON COLUMN drugref.condition_indication_reach.generalised_indication_rules IS
+    'Rules written against an ANCESTOR of this condition. A WEAKER claim, not a wider '
+    'one -- the drug is indicated for a more general form of the diagnosis, which is '
+    'not the same as being indicated for the diagnosis.';
+
+CREATE OR REPLACE FUNCTION drugref.indications_for_condition(patient_condition uuid)
+RETURNS TABLE (subject_moiety   uuid,
+               object_condition uuid,
+               member_condition uuid,
+               is_direct        boolean,
+               relationship     text,
+               source           text)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    WITH RECURSIVE ancestor(condition_uuid) AS (
+        SELECT patient_condition
+      UNION
+        SELECT cp.parent_condition_uuid
+        FROM   ancestor an
+        JOIN   drugref.condition_parent cp
+               ON cp.child_condition_uuid = an.condition_uuid
+    )
+    SELECT i.subject_moiety_uuid,
+           i.object_condition_uuid,
+           -- Always the condition asked about: this walk climbs from it, so every row
+           -- returned is a rule that reaches THAT condition. Returned anyway so the
+           -- shape matches contraindications_for_condition column for column.
+           patient_condition,
+           i.object_condition_uuid = patient_condition,
+           i.relationship,
+           i.source
+    FROM   drugref.moiety_condition_indication i
+    JOIN   drugref.condition_indication_axis a ON a.relationship = i.relationship
+    JOIN   ancestor an ON an.condition_uuid = i.object_condition_uuid
+    WHERE  a.generalises_to_descendants
+       OR  i.object_condition_uuid = patient_condition;
+$$;
+
+COMMENT ON FUNCTION drugref.indications_for_condition(uuid) IS
+    'Every indication that reaches a patient coded with this condition, found by '
+    'walking UP the condition DAG from it. THE DIRECTION IS THE POINT: walking DOWN '
+    'from a rule''s object would distribute a therapeutic claim over the object''s '
+    'subclasses, and one may_treat rule on Neoplasms would manufacture 702 claims the '
+    'release never made. Walking up instead yields a WEAKER statement that is true. '
+    'A row with is_direct = false MUST be rendered as "indicated for <object_condition>, '
+    'a more general form of this diagnosis" and NEVER as an indication for the coded '
+    'diagnosis -- object_condition is a column for exactly that reason. CANDIDATE TIER '
+    'and not a recommendation: no severity, no line of therapy, no ordering. UNION over '
+    'the node, not the path, so it terminates under a cycle (db/013 forbids only '
+    'self-parenting).';
