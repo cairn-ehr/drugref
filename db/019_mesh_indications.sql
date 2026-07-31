@@ -284,6 +284,10 @@ COMMENT ON VIEW drugref.gap_condition_without_indication IS
 
 -- Admit the seventh question kind. Guarded on the constraint's TEXT, as db/016 and
 -- db/018 are, and 'condition_without_indication' is distinctive enough to guard on.
+--
+-- ON "DISTINCTIVE ENOUGH", which section 7 below is the counter-example to: the guard
+-- asks "has my widening already landed?" and a substring that the OLD constraint
+-- already contains answers yes when the truth is no.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
@@ -300,3 +304,47 @@ BEGIN
                 'condition_without_indication'));
     END IF;
 END $$;
+
+-- ============================================================================
+-- 7. A THIRD unmatched-ingredient bucket
+-- ============================================================================
+-- db/018's invariant is EXACTLY ONE WRITER PER (source, reason), and this preserves
+-- it: mesh_rel_run owns BOTH 'contraindication' and 'indication', clearing each on its
+-- own, because one orchestrator owns the whole MeSH-keyed run (spec 6.1). One writer
+-- owning two buckets is fine; two writers sharing one bucket is what #39 was.
+--
+-- The two lists are genuinely different populations, which is why a bucket rather than
+-- a wider clear: on the real 2026.07.06 release MED-RT states contraindications and
+-- indications over overlapping-but-unequal ingredient sets, so a subject unmatched for
+-- one may be matched (or simply absent) for the other, and a clear that took both
+-- would make the answer depend on which pass ran last -- #39 exactly.
+--
+-- THE GUARD BELOW MUST NOT MATCH ON '%indication%': 'contraindication' CONTAINS
+-- 'indication', so that pattern is satisfied by the EXISTING constraint, the widening
+-- silently does not happen, and the first reason = 'indication' write fails at ingest
+-- time. Verified against the live constraint before this file was written:
+-- '%indication%' matches it (wrong), '%''indication''::text%' does not (right).
+-- pg_get_constraintdef renders each admitted value as 'x'::text, so the quoted literal
+-- is anchored on both sides and cannot match inside 'contraindication'::text.
+-- Do not "simplify" it back.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'ingest_unmatched_ingredient_reason'
+                   AND    conrelid = 'drugref.ingest_unmatched_ingredient'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%''indication''::text%') THEN
+        ALTER TABLE drugref.ingest_unmatched_ingredient
+            DROP CONSTRAINT IF EXISTS ingest_unmatched_ingredient_reason;
+        ALTER TABLE drugref.ingest_unmatched_ingredient
+            ADD CONSTRAINT ingest_unmatched_ingredient_reason
+            CHECK (reason IN ('classification', 'contraindication', 'indication'));
+    END IF;
+END $$;
+
+COMMENT ON COLUMN drugref.ingest_unmatched_ingredient.reason IS
+    'Why this RxCUI is on the worklist, and therefore WHICH writer owns the row: '
+    'classification (medrt_run -- an ingredient MED-RT classifies), contraindication '
+    'and indication (mesh_rel_run -- the SUBJECT of a MeSH-keyed rule of each kind). '
+    'Every writer clears its own (source, reason) and no other, which is what #39 '
+    'cost to learn. NOT NULL with no DEFAULT, deliberately: a writer that does not say '
+    'which bucket it rebuilds must fail rather than inherit one.';

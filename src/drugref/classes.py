@@ -213,14 +213,19 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
 UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 
 # Why an RxCUI is on the unmatched worklist -- and, because the clear is scoped on it,
-# WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these two,
-# and the invariant a third writer must preserve is ONE WRITER PER (source, reason):
-# add a value here rather than sharing one, or the clears collide again exactly as
-# medrt_run's and mesh_ci_run's did. #47 is the next candidate for a third value --
+# WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these
+# three, and the invariant a fourth writer must preserve is ONE WRITER PER
+# (source, reason): add a value here rather than sharing one, or the clears collide
+# again exactly as medrt_run's and the MeSH-keyed run's did. #47 is the next candidate --
 # medrt_run's own CI subjects, which it counts today and does not persist.
+#
+# INDICATION is what one orchestrator owning TWO buckets looks like, and it does not
+# weaken the invariant: mesh_rel_run writes both, so each bucket still has exactly one
+# writer. Two writers sharing one bucket is what #39 was.
 CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
-CONTRAINDICATION = "contraindication"  # mesh_ci_run: the SUBJECT of a contraindication
-REASONS = (CLASSIFICATION, CONTRAINDICATION)
+CONTRAINDICATION = "contraindication"  # mesh_rel_run: the SUBJECT of a contraindication
+INDICATION = "indication"            # mesh_rel_run: the SUBJECT of an indication
+REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION)
 
 # The COLUMN the clear narrows on, named here rather than spelled at the call site:
 # clear_source_tables interpolates it as an identifier (a column name cannot be a bind

@@ -21,7 +21,7 @@ from drugref.ingest.mesh_concepts import MeshRecord
 
 def upsert_condition(conn: psycopg.Connection, record: MeshRecord,
                      ingest_run_id: int, source: str) -> tuple[uuid.UUID, bool]:
-    """Register a condition (or refresh its cached name and tree numbers).
+    """Register a condition (or refresh its cached name, tree numbers and SCR class).
 
     Returns (condition_uuid, is_new), where is_new is True only the first time
     drugref ever saw this condition. The caller needs the distinction because
@@ -34,7 +34,10 @@ def upsert_condition(conn: psycopg.Connection, record: MeshRecord,
 
     The UUID is derived, never looked up, so this is safe to call on every ingest.
     ON CONFLICT refreshes the caches -- upstream renames records and re-files them
-    in the tree -- while first_seen_ingest is deliberately left out of the SET list,
+    in the tree -- and `scr_class` is one of them for exactly the reason `name` and
+    `tree_numbers` are: it is an upstream value held here so a reader need not open
+    supp2026 (db/019). NULL for every descriptor, which carries a different
+    vocabulary. first_seen_ingest is deliberately left out of the SET list,
     because it records when drugref FIRST saw the condition. That is also what makes
     it the newness test: the row is new exactly when the value returned is this run's.
     """
@@ -47,13 +50,14 @@ def upsert_condition(conn: psycopg.Connection, record: MeshRecord,
     first_seen = conn.execute(
         "INSERT INTO drugref.condition "
         "(condition_uuid, source, source_code, name, record_kind, tree_numbers, "
-        " first_seen_ingest) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+        " scr_class, first_seen_ingest) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (condition_uuid) DO UPDATE SET "
         "  name = EXCLUDED.name, record_kind = EXCLUDED.record_kind, "
-        "  tree_numbers = EXCLUDED.tree_numbers "
+        "  tree_numbers = EXCLUDED.tree_numbers, scr_class = EXCLUDED.scr_class "
         "RETURNING first_seen_ingest",
         (condition_uuid, stored_source, record.record_ui, record.name,
-         record.record_kind, list(record.tree_numbers), ingest_run_id)).fetchone()[0]
+         record.record_kind, list(record.tree_numbers), record.scr_class,
+         ingest_run_id)).fetchone()[0]
     return condition_uuid, first_seen == ingest_run_id
 
 
