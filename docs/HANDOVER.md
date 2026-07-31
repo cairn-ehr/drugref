@@ -22,9 +22,7 @@ below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, 
 
 **`db/019` is now MERGED, so it is immutable** — it was edited in place on the branch (which the ledger permits) to
 carry post-gate figures; any further correction needs a new `db/NNN`, or the living record for prose. Its final wave
-added the two counters in the traps below (**168** / **422**) and filed
-[#51](https://github.com/cairn-ehr/drugref/issues/51), [#52](https://github.com/cairn-ehr/drugref/issues/52) and
-[#55](https://github.com/cairn-ehr/drugref/issues/55) for 5c.
+added the two counters in the traps below (**168** / **422**) and filed #51, #52 and #55 for 5c.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each
 time because a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A
@@ -374,10 +372,11 @@ set — so the DB layer can never go green by being skipped.
   place, and a test pins each**: `mesh.iter_records` (the gz-aware MeSH reader), `ingest/checksum.py`
   (`checksum(*paths)`, every orchestrator's provenance digest) and `db.clear_source_tables`.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
-- **`drugref_planc` on the same server holds the real releases** at every figure above (rebuilt 2026-08-01, ledger
-  current) -- use it to re-measure rather than re-running the 110 s chain. **The older `drugref_verify` /
-  `drugref_remeasure` / `drugref_verify018` are STALE and `apply_migrations` now REFUSES them**: they were built from
-  a branch copy of `db/017` whose checksum no longer matches the merged file. That is the ledger working, not a bug.
+- **`drugref_planc` holds the real releases** at every figure above (rebuilt 2026-08-01, ledger clean) — re-measure
+  there rather than re-running the 110 s chain. It and `drugref_test` are the only two left: four older scratch
+  databases were **dropped 2026-08-01**, their ledgers carrying drifted `db/017`/`db/018` checksums from branch copies
+  that no longer match the merged files, so `apply_migrations` refused them permanently. **A verification database is
+  disposable — rebuild rather than patch**, and expect this whenever a migration is edited on a branch before merge.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the
     fixture with `python tests/fixtures/make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml`
