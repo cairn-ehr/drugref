@@ -143,6 +143,16 @@ def test_apply_migrations_is_idempotent(conn):
         # about it that can be wrong and nothing to correct.
         "additive_effect", "effect_contribution", "interaction_group",
         "interaction_group_assertion", "interaction_group_member",
+        # Plan C, db/021: the SECOND walk down the class DAG, plus the two views that
+        # are spec 8's output contract. class_subtree is unscoped where db/012's
+        # ci_class_subtree is scoped to the classes a contraindication names, and they
+        # are deliberately NOT merged -- that scoping is what makes the hot pair
+        # lookup 3.6 ms instead of 18.8 ms on the real release, for an identical row
+        # set. Both new views are named here for the same reason every other view is:
+        # information_schema.tables lists views too, so this inventory catches any
+        # object created by accident.
+        "class_subtree", "additive_effect_contributor",
+        "interaction_group_member_moiety",
     }
 
 

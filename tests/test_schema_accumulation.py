@@ -46,9 +46,9 @@ def _class(conn, run_id, code, concept_type="PE", source="MED-RT"):
 
 def _effect(conn, run_id, class_uuid, major=1, total=2, severity="major"):
     return conn.execute(
-        "INSERT INTO drugref.additive_effect (effect_class_uuid, threshold_major, "
-        "threshold_total, severity, clinical_note, source, ingest_run) "
-        "VALUES (%s, %s, %s, %s, 'watch it', 'DRUGREF', %s) "
+        "INSERT INTO drugref.additive_effect (effect_class_uuid, accumulates, "
+        "threshold_major, threshold_total, severity, clinical_note, source, ingest_run) "
+        "VALUES (%s, true, %s, %s, %s, 'watch it', 'DRUGREF', %s) "
         "RETURNING additive_effect_id",
         (class_uuid, major, total, severity, run_id)).fetchone()[0]
 
@@ -188,11 +188,13 @@ def test_interaction_group_member_is_keyed_on_a_surrogate(conn):
     cls = _class(conn, run_id, "N0005", concept_type="EPC")
     first = conn.execute(
         "INSERT INTO drugref.interaction_group_member (group_uuid, role, class_uuid, "
-        "source, ingest_run) VALUES (%s, 'diuretic', %s, 'DRUGREF', %s) "
+        "satisfies_role, source, ingest_run) "
+        "VALUES (%s, 'diuretic', %s, true, 'DRUGREF', %s) "
         "RETURNING interaction_group_member_id", (grp, cls, run_id)).fetchone()[0]
     second = conn.execute(
         "INSERT INTO drugref.interaction_group_member (group_uuid, role, class_uuid, "
-        "source, ingest_run) VALUES (%s, 'diuretic', %s, 'DRUGREF', %s) "
+        "satisfies_role, source, ingest_run) "
+        "VALUES (%s, 'diuretic', %s, true, 'DRUGREF', %s) "
         "RETURNING interaction_group_member_id", (grp, cls, run_id)).fetchone()[0]
     conn.execute("UPDATE drugref.interaction_group_member SET superseded_by = %s "
                  "WHERE interaction_group_member_id = %s", (second, first))
@@ -240,7 +242,8 @@ def two_rows(conn, request):
     cls = _class(conn, run_id, "S004")
     made = [conn.execute(
         "INSERT INTO drugref.interaction_group_member (group_uuid, role, class_uuid, "
-        "source, ingest_run) VALUES (%s, 'nsaid', %s, 'DRUGREF', %s) "
+        "satisfies_role, source, ingest_run) "
+        "VALUES (%s, 'nsaid', %s, true, 'DRUGREF', %s) "
         "RETURNING interaction_group_member_id", (grp, cls, run_id)).fetchone()[0]
         for _ in range(2)]
     return table, pk, made[0], made[1]
@@ -372,3 +375,63 @@ def test_magnitude_vocabulary_is_two_values(conn):
             "INSERT INTO drugref.effect_contribution (effect_class_uuid, "
             "contributor_class_uuid, magnitude, source, ingest_run) "
             "VALUES (%s, %s, 'moderate', 'DRUGREF', %s)", (eff, con, run_id))
+
+
+# ---- rulings: how a curator says NO (db/020's addition to spec 5) ------------
+
+
+def test_a_non_accumulating_ruling_carries_no_thresholds(conn):
+    """`accumulates = false` is a real answer, and it must not carry filler numbers:
+    a threshold on a ruling that says the effect does not add up is meaningless data
+    in a clinical table."""
+    run_id = _run(conn)
+    cls = _class(conn, run_id, "R001")
+    assert conn.execute(
+        "INSERT INTO drugref.additive_effect (effect_class_uuid, accumulates, source, "
+        "ingest_run) VALUES (%s, false, 'DRUGREF', %s) RETURNING additive_effect_id",
+        (cls, run_id)).fetchone()[0]
+
+
+def test_a_non_accumulating_ruling_may_not_state_a_threshold(conn):
+    run_id = _run(conn)
+    cls = _class(conn, run_id, "R002")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.additive_effect (effect_class_uuid, accumulates, "
+            "threshold_major, threshold_total, severity, source, ingest_run) "
+            "VALUES (%s, false, 1, 2, 'major', 'DRUGREF', %s)", (cls, run_id))
+
+
+def test_an_accumulating_effect_must_state_all_three_judgements(conn):
+    """An effect that accumulates with no threshold would fire on nothing or on
+    everything depending on how a consumer reads a NULL -- so it is unrepresentable
+    rather than left to a convention nobody enforces."""
+    run_id = _run(conn)
+    cls = _class(conn, run_id, "R003")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.additive_effect (effect_class_uuid, accumulates, "
+            "threshold_major, source, ingest_run) "
+            "VALUES (%s, true, 1, 'DRUGREF', %s)", (cls, run_id))
+
+
+def test_satisfies_role_has_no_default(conn):
+    """db/014's discipline: a later curator must STATE whether the class satisfies the
+    role, never inherit a guess. A DEFAULT would answer the question silently."""
+    run_id = _run(conn)
+    grp = _group(conn, run_id)
+    cls = _class(conn, run_id, "R004", concept_type="EPC")
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute(
+            "INSERT INTO drugref.interaction_group_member (group_uuid, role, "
+            "class_uuid, source, ingest_run) VALUES (%s, 'diuretic', %s, 'DRUGREF', %s)",
+            (grp, cls, run_id))
+
+
+def test_accumulates_has_no_default(conn):
+    run_id = _run(conn)
+    cls = _class(conn, run_id, "R005")
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute(
+            "INSERT INTO drugref.additive_effect (effect_class_uuid, source, ingest_run) "
+            "VALUES (%s, 'DRUGREF', %s)", (cls, run_id))

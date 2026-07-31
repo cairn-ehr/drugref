@@ -213,11 +213,22 @@ COMMENT ON FUNCTION drugref.forbid_multiple_live_assertions() IS
 CREATE TABLE IF NOT EXISTS drugref.additive_effect (
     additive_effect_id bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     effect_class_uuid  uuid        NOT NULL REFERENCES drugref.substance_class(class_uuid),
+    -- "DOES this effect accumulate?" -- a RULING, and `false` is a real answer rather
+    -- than an absent row. The spec gives this table no way to say no, and without one
+    -- a curator who decides a PE class does NOT accumulate has nowhere to record it:
+    -- gap_uncurated_additive_effect would go on asking about that class every release
+    -- forever. That is precisely the nagging failure mode spec 5.2 diagnoses for
+    -- effect_contribution ("an explicit `minor` row is not redundant -- it records
+    -- that a curator LOOKED") and 7.2.1 for questions; this column is the same
+    -- distinction one table over. NO DEFAULT: a ruling must be stated, never guessed.
+    accumulates        boolean     NOT NULL,
     -- Two smallints express the realistic rules: "any two contributors" = (0,2);
     -- "a major plus anything else" = (1,2); "a major alone is worth saying" = (1,1).
-    threshold_major    smallint    NOT NULL,
-    threshold_total    smallint    NOT NULL,
-    severity           text        NOT NULL,
+    -- NULLABLE, because a `NOT accumulates` ruling has no thresholds to state and
+    -- inventing filler ones would put meaningless numbers in a clinical table.
+    threshold_major    smallint,
+    threshold_total    smallint,
+    severity           text,
     clinical_note      text,
     source             text        NOT NULL,
     ingest_run         bigint      NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
@@ -233,6 +244,19 @@ CREATE TABLE IF NOT EXISTS drugref.additive_effect (
         CHECK (threshold_major >= 0
                AND threshold_total >= 1
                AND threshold_total >= threshold_major),
+    -- An accumulating effect must state ALL THREE judgements; a non-accumulating
+    -- ruling must state NONE of them. Written as one CHECK rather than three nullable
+    -- columns nobody cross-checks, so "accumulates with no threshold" -- a row that
+    -- would fire on nothing, or on everything, depending on how a consumer reads a
+    -- NULL -- is unrepresentable.
+    CONSTRAINT additive_effect_ruling_is_complete CHECK (
+        (accumulates
+         AND threshold_major IS NOT NULL AND threshold_total IS NOT NULL
+         AND severity IS NOT NULL)
+        OR
+        (NOT accumulates
+         AND threshold_major IS NULL AND threshold_total IS NULL
+         AND severity IS NULL)),
     -- The same four levels a prescriber-facing consumer already expects, CHECKed
     -- rather than free text so it cannot drift one curator at a time.
     CONSTRAINT additive_effect_severity
@@ -264,6 +288,12 @@ COMMENT ON TABLE drugref.additive_effect IS
     'upstream fact, and are traceable to evidence through question_evidence wherever '
     'they rest on any. CURATED IS NOT VERIFIED: a grade with no evidence behind it is '
     'an opinion, and the question registry is what makes that visible.';
+COMMENT ON COLUMN drugref.additive_effect.accumulates IS
+    'The curator''s RULING. False is a real answer -- "this class was reviewed and its '
+    'effect does not add up" -- and is what lets a reviewed class leave '
+    'gap_uncurated_additive_effect instead of being asked about every release forever. '
+    'A false row carries no thresholds and no severity (see the completeness CHECK), '
+    'and additive_effect_contributor ignores it entirely.';
 COMMENT ON COLUMN drugref.additive_effect.threshold_major IS
     'Minimum `major` contributors. ZERO IS LEGAL AND DANGEROUS: uncurated members '
     'default to `minor`, so (0,2) fires on any two members of a subtree nobody has '
@@ -437,6 +467,16 @@ CREATE TABLE IF NOT EXISTS drugref.interaction_group_member (
     group_uuid    uuid        NOT NULL REFERENCES drugref.interaction_group(group_uuid),
     role          text        NOT NULL,
     class_uuid    uuid        NOT NULL REFERENCES drugref.substance_class(class_uuid),
+    -- "DOES this class satisfy this role?" -- and `false` is how a member is RETIRED.
+    -- Spec 5.3 requires that "superseding the last member of a role REMOVES the role",
+    -- and without this column that sentence cannot be implemented: supersession must
+    -- point at a later row carrying the same natural key, so every correction leaves
+    -- another live member standing and a role can never actually go away. Retiring is
+    -- therefore an INSERT of `false` that supersedes the `true` row -- append-only,
+    -- and the record of what drugref believed when it fired an alert survives intact.
+    -- NO DEFAULT, for the reason db/014 gives expands_descendants: a later curator
+    -- must state the answer rather than inherit a guess.
+    satisfies_role boolean    NOT NULL,
     source        text        NOT NULL,
     ingest_run    bigint      NOT NULL REFERENCES drugref.ingest_run(ingest_run_id),
     asserted_at   timestamptz NOT NULL DEFAULT now(),
@@ -466,6 +506,12 @@ COMMENT ON TABLE drugref.interaction_group_member IS
     'WHERE superseded_by IS NULL -- so a role cannot exist without a live member that '
     'satisfies it, and superseding the last member of a role REMOVES the role rather '
     'than leaving a group that can never fire again.';
+COMMENT ON COLUMN drugref.interaction_group_member.satisfies_role IS
+    'Whether this class satisfies the role. RETIRING A MEMBER IS AN INSERT OF FALSE '
+    'that supersedes the true row -- the only way an append-only overlay whose '
+    'supersession preserves the natural key can express "no longer", and what makes '
+    'spec 5.3''s "superseding the last member of a role removes the role" actually '
+    'true. interaction_group_member_moiety reads only live true rows.';
 COMMENT ON COLUMN drugref.interaction_group_member.role IS
     'The part this class plays, e.g. ''NSAID'' / ''RAAS blocker'' / ''diuretic''. Two '
     'drugs satisfying the SAME role do not cover a second one, which is the whole '
