@@ -97,7 +97,7 @@ its object.
 
 Do not "fix" the code by keying the worklist on the concept: that is precisely the split
 the record/concept distinction exists to prevent. The code itself already explains the
-collapse, in `ingest/mesh_ci_run.py::_write_relations`.
+collapse, in `ingest/mesh_ci_relations.py::write_contraindications`.
 
 ## Related
 

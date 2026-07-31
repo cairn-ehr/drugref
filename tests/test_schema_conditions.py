@@ -76,13 +76,14 @@ def test_condition_cannot_parent_itself(conn, a_condition, ingest_run_id):
 
 
 def test_condition_supports_multiple_parents(conn, a_condition, ingest_run_id):
-    """1,690 of the 5,203 registered conditions in the real release have several
+    """2,149 of the 5,963 registered conditions in the real release have several
     parents, so the DAG must be many-to-many, never a single parent FK.
 
-    That registry is 5,190 descriptors + 13 SCRs, and ONLY a descriptor bears tree
-    numbers -- so a count quoted as 5,190 is the descriptor closure rather than the
-    registry, and the SCRs are parentless here by construction. db/013 and db/015
-    state the same reconciliation."""
+    That registry is 5,929 descriptors + 34 SCRs, and ONLY a descriptor bears tree
+    numbers -- so a count quoted as a descriptor closure is not the registry, and the
+    SCRs are parentless here by construction. db/013 and db/015 state the same
+    reconciliation. (Slice 5b's figures were 1,690 of 5,203 = 5,190 + 13; 5b.2 widened
+    the shared closure over the indication objects too -- spec 3.6.)"""
     for code, name in (("D000001", "P1"), ("D000002", "P2")):
         cu = ids.mint_condition_uuid("MeSH", code)
         conn.execute(

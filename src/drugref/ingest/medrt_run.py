@@ -132,7 +132,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    run's -- both are rebuildable projections replaced wholesale per release.
     class_writer.clear_source_edges(conn, SOURCE)
     interactions.clear_source_contraindications(conn, SOURCE)
-    #    The unmatched list is cleared per (source, REASON) since #39: mesh_ci_run
+    #    The unmatched list is cleared per (source, REASON) since #39: mesh_rel_run
     #    writes this same table under this same source, from contraindication
     #    subjects rather than membership assertions, and 16 of those are ingredients
     #    MED-RT never classifies -- rows this run could not re-add if it removed them.

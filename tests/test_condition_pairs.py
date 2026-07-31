@@ -83,7 +83,8 @@ def test_subtree_includes_its_own_root(conn, epilepsy_tree):
 
 def test_a_condition_no_rule_names_is_absent_from_the_subtree(conn, epilepsy_tree):
     """Scoped to contraindicated conditions: computing a subtree for each of the
-    registry's 5,203 conditions when only 641 are ever named would be pure waste."""
+    registry's 5,963 conditions when only 641 are ever named would be pure waste --
+    and since 5b.2 widened the shared closure the scoping saves more, not less."""
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_subtree WHERE root_uuid = %s",
         (epilepsy_tree["child"],)).fetchone()[0] == 0
@@ -108,7 +109,10 @@ def test_the_walk_survives_a_cycle(conn, epilepsy_tree, ingest_run_id):
 # handful of rows a patient lookup wanted. This function starts at the PATIENT'S
 # condition and walks UP, which is O(ancestors) instead of O(graph).
 #
-# MEASURED on the real 2026 release (5,203 conditions, 7,157 edges, 9,471 rules), the
+# MEASURED on the real 2026 release, on slice 5b's registry as it then stood (5,203
+# conditions, 7,157 edges, 9,471 rules -- 5b.2 has since widened the shared closure to
+# 5,963 and 8,507 without changing the rule count, so the walk is if anything cheaper
+# relative to the view than this reads), the
 # Epilepsy lookup: the view 9-10 ms, materialising 11,512 subtree rows to return 15;
 # this function 0.7-0.9 ms. Neither is slow today -- the issue was filed because 5b.2
 # (~18k more assertions) reuses this DAG, and the fix had to be measured, not guessed.
@@ -191,7 +195,7 @@ def test_the_upward_walk_survives_a_cycle(conn, epilepsy_tree, ingest_run_id):
 def test_two_paths_to_one_rule_return_ONE_row(conn, epilepsy_tree, ingest_run_id):
     """THE TOPOLOGY THE EQUIVALENCE TEST ABOVE CANNOT SEE. A two-node chain reaches
     every rule exactly one way, so it would pass whether or not either side deduped --
-    and 1,690 of the registry's 5,203 conditions have several parents, so the real DAG
+    and 2,149 of the registry's 5,963 conditions have several parents, so the real DAG
     is nothing like a chain.
 
     Here a grandchild reaches the contraindicated root through BOTH its parents. The

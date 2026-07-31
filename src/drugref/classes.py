@@ -213,14 +213,24 @@ def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
 UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 
 # Why an RxCUI is on the unmatched worklist -- and, because the clear is scoped on it,
-# WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these two,
-# and the invariant a third writer must preserve is ONE WRITER PER (source, reason):
-# add a value here rather than sharing one, or the clears collide again exactly as
-# medrt_run's and mesh_ci_run's did. #47 is the next candidate for a third value --
+# WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these
+# three VALUES, written today by TWO writers (medrt_run owns one bucket, mesh_rel_run
+# owns two), and the invariant a fourth VALUE must preserve is ONE WRITER PER
+# (source, reason): add a value here rather than sharing one, or the clears collide
+# again exactly as medrt_run's and the MeSH-keyed run's did. #47 is the next candidate --
 # medrt_run's own CI subjects, which it counts today and does not persist.
+#
+# VALUES AND WRITERS ARE COUNTED SEPARATELY ON PURPOSE. They were equal until this
+# slice and the sentence above conflated them; INDICATION is the change that proves
+# they differ, so a reader must not infer "three values" from "three writers" again.
+#
+# INDICATION is what one orchestrator owning TWO buckets looks like, and it does not
+# weaken the invariant: mesh_rel_run writes both, so each bucket still has exactly one
+# writer. Two writers sharing one bucket is what #39 was.
 CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
-CONTRAINDICATION = "contraindication"  # mesh_ci_run: the SUBJECT of a contraindication
-REASONS = (CLASSIFICATION, CONTRAINDICATION)
+CONTRAINDICATION = "contraindication"  # mesh_rel_run: the SUBJECT of a contraindication
+INDICATION = "indication"            # mesh_rel_run: the SUBJECT of an indication
+REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION)
 
 # The COLUMN the clear narrows on, named here rather than spelled at the call site:
 # clear_source_tables interpolates it as an identifier (a column name cannot be a bind
@@ -259,11 +269,11 @@ def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
     about. Persisting the identity (rather than only counting it, as the ingest did
     before Plan A) is what lets gap_unmatched_ingredient be a query.
 
-    `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION or
-    CONTRAINDICATION above -- and is what its own clear is scoped on. Required, and
-    positional before the optional `names`, so a writer cannot inherit a bucket it
-    does not own; the column has no DEFAULT either, so a forgotten reason fails in the
-    database as well as here.
+    `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION,
+    CONTRAINDICATION or INDICATION above -- and is what its own clear is scoped on.
+    Required, and positional before the optional `names`, so a writer cannot inherit a
+    bucket it does not own; the column has no DEFAULT either, so a forgotten reason
+    fails in the database as well as here.
 
     Batched rather than one call per RxCUI -- this is thousands of rows on a real
     release, and its siblings (add_membership, add_parent_edge) are per-row only

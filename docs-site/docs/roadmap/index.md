@@ -19,11 +19,16 @@ This is a reader-friendly summary; the working roadmap lives in the
   nothing here auto-fires a prescriber alert.
 - **Open-question registry** — coverage gaps published as a queryable register that
   shrinks as coverage improves.
+- **MeSH-keyed contraindications** — drug–disease contraindications over a MeSH condition
+  registry, expanded **down** the disease DAG so a rule written against *Epilepsy* reaches
+  a patient coded *Temporal Lobe Epilepsy*.
+- **MeSH-keyed indications** — what a drug is *for* (`may_treat` / `may_prevent` /
+  `may_diagnose`) and what it *causes* (`induces`), over that same registry. Generalised
+  **up** the DAG at read time and never down, and never stored derived — see
+  [An indication does not expand down the disease tree](../decisions/indications-do-not-expand.md).
 
 ## Next
 
-- **MeSH-keyed contraindications & indications** — drug–disease contraindications and
-  indications, once MeSH disease/chemical descriptors are ingested.
 - **Composition tree** — specific substances (salts / esters / hydrates), then clinical
   drugs (moiety + strength + form).
 - **The curated overlay (the moat)** — an append-only, signed layer adding severity,

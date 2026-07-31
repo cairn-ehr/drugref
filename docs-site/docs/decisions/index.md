@@ -43,3 +43,6 @@ history is never lost — it remains in the git log and in the dated design spec
 - [A structural chemical tree is not a clinical class](withheld-chemical-class-contraindications.md)
   — why `CI_ChemClass`'s class arm is withheld as a curator question rather than expanded
   (carries the 103-vs-108 erratum to the slice-5b spec).
+- [An indication does not expand down the disease tree](indications-do-not-expand.md)
+  — why therapeutic rules are stored unexpanded and generalised *upward* at read time,
+  labelled (carries the pre-gate erratum to the slice-5b.2 spec).

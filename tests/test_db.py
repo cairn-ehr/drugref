@@ -110,6 +110,30 @@ def test_apply_migrations_is_idempotent(conn):
         # db/012's reason: only one of the two copies had learned that a rule's own
         # subject is not a partner, and the views disagreed.
         "ci_rule_partner_reach", "gap_dead_by_expansion_policy",
+        # slice 5b.2, db/019: the two indication relations (drug-condition
+        # therapeutic, drug-condition induced) plus their vocabulary. Two tables,
+        # not one, for the reason db/014 split contraindications: an unfiltered read
+        # of each must be one true sentence, "used for" vs "causes".
+        "condition_indication_axis", "moiety_condition_indication",
+        "moiety_induced_condition",
+        # slice 5b.2, db/019 section 5: the read path over the same condition DAG.
+        # THE TWO HALVES WALK OPPOSITE WAYS, and that is the slice's central safety
+        # distinction rather than a detail: indications_for_condition walks UP from the
+        # patient's condition to its ancestors, because walking DOWN from a rule's
+        # object would manufacture therapeutic claims the release never made (db/015's
+        # contraindication expansion does walk down, soundly, for the opposite reason).
+        # condition_indication_reach then walks DOWN from each rule's object to COUNT
+        # what that upward walk will find -- the same set, enumerated from the other
+        # end, which is why a test pins the two against each other. One VIEW --
+        # named explicitly for the same reason as db/015's and db/018's views above;
+        # indications_for_condition is a FUNCTION and does not appear in
+        # information_schema.tables.
+        "condition_indication_reach",
+        # slice 5b.2, db/019 section 6: the seventh gap kind -- diseases drugref
+        # holds no indication for, direct or generalised. A VIEW, complementary
+        # filter on condition_indication_reach rather than a table of its own, named
+        # explicitly for the same reason as every other gap_* view above.
+        "gap_condition_without_indication",
     }
 
 

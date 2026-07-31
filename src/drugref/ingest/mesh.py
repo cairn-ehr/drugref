@@ -311,8 +311,8 @@ def tree_parent_edges(
 
     Multi-parent by construction: a record bears several tree numbers, so it lands
     under every ingested immediate parent it has. That is why both axes are genuine
-    multi-parent DAGs rather than trees (spec §5.4 for PA; 1,690 of slice 5b's
-    conditions have more than one parent).
+    multi-parent DAGs rather than trees (spec §5.4 for PA; 2,149 of the 5,963
+    conditions slice 5b.2 registers have more than one parent).
 
     Returns a DEDUPED, SORTED list: a set has no order, and both callers insert rows
     in this order, so a non-deterministic answer would make two ingests of one

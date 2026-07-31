@@ -52,10 +52,25 @@ _GAP_SOURCES = {
     "unmatched_ingredient": {
         "view": "gap_unmatched_ingredient",
         "key_sql": "'RXNORM_IN:' || rxcui",
+        # "NAMED upstream", NOT "classified upstream", and the widening is a correction
+        # rather than a hedge. Since db/019 the bucket has THREE reasons, and 13 of the
+        # 2,150 RxCUIs on this worklist are never classified at all -- 10 reach it only
+        # as the subject of an indication rule and 3 only as the subject of a
+        # contraindication and an indication. The old text asserted a classification for
+        # all 2,150, so those 13 became EXTERNALLY CITABLE questions (question_uuid is
+        # immortal) carrying a false premise about the release.
+        #
+        # DELIBERATELY NOT REASON-SPECIFIC: gap_unmatched_ingredient is DISTINCT ON
+        # (rxcui) and does not project `reason`, precisely so its grain matches the
+        # question's -- one RxCUI, one question, however many reasons named it. Naming
+        # the reason here would mean either widening the view (splitting one question
+        # into three, which db/008's DISTINCT ON exists to prevent) or picking one reason
+        # arbitrarily. The disjunction is what is actually true of every row.
         "text_sql": (
             "'Does RxCUI ' || rxcui || COALESCE(' (' || name || ')', '') || "
-            "' have an active moiety drugref should carry? It is classified "
-            "upstream but no moiety in the registry claims it.'"),
+            "' have an active moiety drugref should carry? An upstream release names "
+            "it -- as a classified ingredient, or as the subject of a contraindication "
+            "or indication rule -- but no moiety in the registry claims it.'"),
     },
     # Plan B. The one kind here that drugref can answer ITSELF -- by recording a
     # decision in class_expansion_policy -- rather than by consulting a source. It
@@ -162,6 +177,22 @@ _GAP_SOURCES = {
             "were not ingested. Should it be registered? This is a registry-coverage "
             "gap -- do NOT answer it by expanding anything over MeSH''s tree.' "
             "END"),
+    },
+    # Slice 5b.2. Diseases nothing in the registry treats, prevents or diagnoses --
+    # directly or from above. The gap_key is the REGISTERED-OBJECT form (MOIETY:,
+    # CLASS:) rather than unresolved_ci_object's {NAMESPACE}:{code}, and the difference
+    # is real: this subject IS registered and has a drugref UUID to cite, whereas that
+    # one is an upstream record drugref never registered, which is exactly why it is a
+    # gap. The text names the disease AND its MeSH code so the row is usable as a
+    # literature search on its own.
+    "condition_without_indication": {
+        "view": "gap_condition_without_indication",
+        "key_sql": "'CONDITION:' || condition_uuid",
+        "text_sql": (
+            "'Which drugs treat, prevent or diagnose ' || name || ' (MeSH ' || "
+            "source_code || ')? No may_treat, may_prevent or may_diagnose assertion "
+            "names it or any condition above it in the MeSH tree, so drugref can offer "
+            "nothing for a patient coded with it.'"),
     },
 }
 

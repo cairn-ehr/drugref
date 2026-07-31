@@ -23,7 +23,7 @@ copied: `mesh.iter_records` (the one gz-aware streaming reader, #40) and
 `mesh.tree_parent_edges` (the one tree-nesting rule, which both DAG builders wrap).
 
 This module is PURE and STREAMING: it reads files and returns records. No database,
-no network, no UUID minting. The orchestrator (mesh_ci_run.py) does all of that.
+no network, no UUID minting. The orchestrator (mesh_rel_run.py) does all of that.
 Every file is streamed with iterparse + clear, so peak memory scales with the QUERY
 (the wanted set), never with the release -- supp2026 is ~750 MB uncompressed.
 """
@@ -50,10 +50,21 @@ class MeshRecord:
     condition into several rows that no rebuild could ever merge.
 
     `is_preferred_concept` is recorded rather than discarded because a SUBORDINATE
-    concept may be NARROWER than the record it belongs to -- 81 of this slice's
-    1,051 resolved objects are subordinate. Storing the condition at record grain
-    loses that nuance; this flag makes the loss visible and measurable instead of
-    silent (spec §10 tension C).
+    concept may be NARROWER than the record it belongs to. Storing the condition at
+    record grain loses that nuance; this flag makes the loss visible and measurable
+    instead of silent (spec §10 tension C).
+
+    MEASURED SEPARATELY PER HALF, because the module now serves both and the two
+    populations differ in size AND in what the loss costs:
+      * contraindications -- 81 of 1,051 resolved objects are subordinate, carrying
+        550 of 13,463 assertions. SAFE: broadening a contraindication widens recall,
+        which is the direction db/014 wants.
+      * indications       -- 90 of 1,528 resolved objects are subordinate, carrying
+        422 of 18,314 assertions (2.30%) onto 85 broader records. UNSAFE: it offers a
+        drug for a condition the release never named it for.
+    The reader that makes the flag do work is mesh_ind_relations.write_indications,
+    which counts the second figure on every run; read its docstring for the
+    eslicarbazepine case and #52 for making the affected ROWS detectable.
     """
     concept_ui: str
     record_ui: str
@@ -63,6 +74,15 @@ class MeshRecord:
     unii: frozenset[str]
     cas: frozenset[str]
     is_preferred_concept: bool
+    # MeSH's SCRClass, AS PUBLISHED, and None for a descriptor (which carries
+    # DescriptorClass, a different vocabulary). Stored rather than interpreted because
+    # supp2026 publishes SIX values -- 1: 249,245 · 4: 65,236 · 3: 6,542 · 5: 1,763 ·
+    # 2: 1,236 · 6: 23 -- while the documentation describes four, so drugref asserts a
+    # meaning for none of them here. Exactly one consumer reads it, and it reads only
+    # '3' (rare disease): db/019's gap_condition_without_indication, which needs to tell
+    # 'Short QT Syndrome' from 'aliskiren' among records that bear no tree numbers and
+    # so have no DAG position to reason about.
+    scr_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +139,10 @@ def _record(el, ui_tag: str, name_tag: str, kind: str, concept_ui: str,
                       name=el.findtext(name_tag) or "",
                       tree_numbers=trees,
                       unii=frozenset(uniis), cas=frozenset(cas),
-                      is_preferred_concept=preferred)
+                      is_preferred_concept=preferred,
+                      # .get() returns None on a DescriptorRecord, which has no such
+                      # attribute -- the desired answer, arrived at structurally.
+                      scr_class=el.get("SCRClass"))
 
 
 # (file, record tag, UI tag, name tag, record kind) -- descriptors FIRST, because a
@@ -183,9 +206,13 @@ def descriptors_under(desc_path: StrPath,
     CI_with object. A registry scoped to referenced objects would have nothing to
     expand into, and the feature would be inert while appearing to work.
 
-    Measured on the real release: 664 referenced descriptors -> 5,190 in closure.
-    That 5,190 is the DESCRIPTOR closure, not the registry: 13 referenced SCRs bear
-    no tree numbers, so they never enter a closure and the registry holds 5,203.
+    Measured on the real 2026 releases, over every MeSH-keyed object slice 5b.2
+    registers: 1,730 referenced descriptors -> 4,294 tree prefixes -> 5,718 descriptors
+    strictly below them. That 5,718 is the DESCRIPTOR CLOSURE, and it is neither the
+    registry nor the registry's descriptor count. The caller unions it with the records
+    that were REFERENCED (mesh_rel_run._condition_closure), which brings the registry to
+    5,963: 5,929 descriptors plus 34 SCRs, which bear no tree numbers and so can only
+    ever appear as themselves. Three numbers, three different questions.
 
     Each record is returned under its own PREFERRED concept where it has one, since
     the caller keys conditions by record_ui and only needs a concept for provenance.
@@ -228,7 +255,10 @@ def parent_edges(records: Iterable[MeshRecord]) -> list[ConditionParentEdge]:
     treated as several -- the same collapse the worklist and the registry make.
 
     Multi-parent by construction: a descriptor bears several tree numbers, which is
-    why 1,690 of the registry's 5,203 conditions have more than one parent.
+    why 2,149 of the registry's 5,963 conditions have more than one parent. That is
+    not a curiosity -- it is the mechanism behind spec 3.6: an edge is written only
+    when BOTH endpoints are registered, so widening the registry COMPLETES edges an
+    already-registered condition was missing rather than merely adding new leaves.
     """
     trees_by_ui: dict[str, list[str]] = {}
     for record in records:

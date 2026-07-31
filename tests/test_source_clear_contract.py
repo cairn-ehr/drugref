@@ -1,7 +1,7 @@
 # tests/test_source_clear_contract.py
 """The per-source clear is what makes "rebuildable projection" true (#43).
 
-Six writers dropped a source's rows with six copies of one DELETE, differing only
+Seven writers dropped a source's rows with seven copies of one DELETE, differing only
 in the table list. That duplication has already produced a real defect once: the
 final slice-5b review found `ingest_unresolved_ci_object` missing from a test's
 assertions, and removing a table from one of those tuples is a ONE-TOKEN edit with
@@ -21,13 +21,13 @@ WHICH tables it owns. This module pins both halves:
   defect above. (Same reasoning as test_medrt_parser's REDISTRIBUTABLE_NAMESPACES.)
 
 The rows themselves are still proved to disappear by each writer's own tests --
-test_schema_classes, test_interactions, test_conditions_writer, test_local_writer,
-test_gap_views. This module is about the contract those tests cannot see.
+test_schema_classes, test_interactions, test_conditions_writer, test_indications_writer,
+test_local_writer, test_gap_views. This module is about the contract those tests cannot see.
 """
 import psycopg
 import pytest
 
-from drugref import classes, conditions, db, interactions, local
+from drugref import classes, conditions, db, indications, interactions, local
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -44,6 +44,9 @@ EXPECTED_TABLES = {
         classes.UNMATCHED_INGREDIENT_TABLES, ("ingest_unmatched_ingredient",)),
     "conditions.CONDITION_EDGE_TABLES": (
         conditions.CONDITION_EDGE_TABLES, ("condition_parent",)),
+    "indications.INDICATION_TABLES": (
+        indications.INDICATION_TABLES,
+        ("moiety_condition_indication", "moiety_induced_condition")),
     "interactions.CONTRAINDICATION_TABLES": (
         interactions.CONTRAINDICATION_TABLES, ("class_contraindication",)),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
@@ -116,7 +119,7 @@ def test_clear_source_tables_refuses_a_parent_first_order(conn, ingest_run_id, a
 
 def test_clear_source_tables_can_narrow_to_one_writers_rows(conn, ingest_run_id):
     """#39. Two orchestrators write ingest_unmatched_ingredient under source 'MED-RT'
-    -- medrt_run the ingredients MED-RT CLASSIFIES that no moiety carries, mesh_ci_run
+    -- medrt_run the ingredients MED-RT CLASSIFIES that no moiety carries, mesh_rel_run
     the SUBJECTS of a contraindication that no moiety carries. Neither set contains
     the other, so a source-scoped clear let whichever ran last delete the other's
     rows and be unable to re-add them.
@@ -142,7 +145,7 @@ def test_clear_source_tables_can_narrow_to_one_writers_rows(conn, ingest_run_id)
 
 
 def test_an_unnarrowed_clear_still_takes_everything(conn, ingest_run_id):
-    """The narrowing is OPT-IN: five of the six writers own their whole table for a
+    """The narrowing is OPT-IN: six of the seven writers own their whole table for a
     source and must keep clearing it wholesale. Pinned so the default cannot drift
     into "clears nothing unless asked", which fails silently -- the projection simply
     grows a little on every ingest."""
@@ -162,8 +165,8 @@ def test_an_unnarrowed_clear_still_takes_everything(conn, ingest_run_id):
 
 def test_clear_source_tables_scopes_the_delete_to_one_source(conn, ingest_run_id):
     """THE PROPERTY THE WHOLE REBUILDABLE-PROJECTION MODEL RESTS ON: a MED-RT
-    re-ingest must not remove another feed's rows. Six independent restatements of
-    this DELETE were six chances for one of them to quietly stop being per-source.
+    re-ingest must not remove another feed's rows. Seven independent restatements of
+    this DELETE were seven chances for one of them to quietly stop being per-source.
 
     `ingest_run_id` is a PBS run (see conftest); the second run below is MED-RT, so
     clearing MED-RT must leave the PBS product standing.
