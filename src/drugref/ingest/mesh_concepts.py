@@ -195,9 +195,13 @@ def descriptors_under(desc_path: StrPath,
     CI_with object. A registry scoped to referenced objects would have nothing to
     expand into, and the feature would be inert while appearing to work.
 
-    Measured on the real release: 664 referenced descriptors -> 5,190 in closure.
-    That 5,190 is the DESCRIPTOR closure, not the registry: 13 referenced SCRs bear
-    no tree numbers, so they never enter a closure and the registry holds 5,203.
+    Measured on the real 2026 releases, over every MeSH-keyed object slice 5b.2
+    registers: 1,730 referenced descriptors -> 4,294 tree prefixes -> 5,718 descriptors
+    strictly below them. That 5,718 is the DESCRIPTOR CLOSURE, and it is neither the
+    registry nor the registry's descriptor count. The caller unions it with the records
+    that were REFERENCED (mesh_rel_run._condition_closure), which brings the registry to
+    5,963: 5,929 descriptors plus 34 SCRs, which bear no tree numbers and so can only
+    ever appear as themselves. Three numbers, three different questions.
 
     Each record is returned under its own PREFERRED concept where it has one, since
     the caller keys conditions by record_ui and only needs a concept for provenance.
@@ -240,7 +244,10 @@ def parent_edges(records: Iterable[MeshRecord]) -> list[ConditionParentEdge]:
     treated as several -- the same collapse the worklist and the registry make.
 
     Multi-parent by construction: a descriptor bears several tree numbers, which is
-    why 1,690 of the registry's 5,203 conditions have more than one parent.
+    why 2,149 of the registry's 5,963 conditions have more than one parent. That is
+    not a curiosity -- it is the mechanism behind spec 3.6: an edge is written only
+    when BOTH endpoints are registered, so widening the registry COMPLETES edges an
+    already-registered condition was missing rather than merely adding new leaves.
     """
     trees_by_ui: dict[str, list[str]] = {}
     for record in records:

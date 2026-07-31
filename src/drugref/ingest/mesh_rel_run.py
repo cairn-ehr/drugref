@@ -30,35 +30,39 @@ unfixable the way #39 was fixed: a (child, parent) edge is derived by BOTH closu
 so no `reason` discriminator can split it. So this module owns the shared machinery
 (the run, the registry, the closure, the DAG, the moiety indexes) and each relation
 family is a PASS over assertions in its own module, handed what it needs. Today that
-is the two contraindication predicates; the shape is what lets a second family be a
-second pass rather than a second writer of the same tables.
+is TWO families -- the contraindication predicates (ingest/mesh_ci_relations.py) and
+the indication predicates (ingest/mesh_ind_relations.py) -- over ONE closure taken
+across every MeSH-keyed object at once.
 
 Order matters:
   1. parse MED-RT (pure) -> the set of MeSH codes to resolve;
   2. resolve those codes, then walk their tree positions for the DESCENDANT CLOSURE,
      without which a rule on Epilepsy has nothing to expand into;
-  3. upsert conditions, then clear this source's edges and contraindications, then
-     write the DAG and the two relations;
+  3. upsert conditions, then clear this source's edges, contraindications and
+     indications, then write the DAG and the relation passes;
   4. rebuild the open-question register LAST, before the commit.
 
-WORKLIST NUMBERS, NOT SILENT DROPS -- six distinct losses, each counted separately
-so they stay legible (spec 7). Three of them are also PERSISTED by identity, because
+WORKLIST NUMBERS, NOT SILENT DROPS -- nine distinct losses, each counted separately
+so they stay legible (spec 7). Four of them are also PERSISTED by identity, because
 a count cannot be worked: the withheld class objects and the unregistered-substance
 objects (a curator works each by name, and is asked a DIFFERENT question about each)
-and the unmatched subjects. The last shares a table with medrt_run's own unmatched
-list, so both writers scope their clear on `reason` as well as source (#39, db/018) --
-see step 6 of _ingest for the measurement behind that.
+and the unmatched subjects of EACH half. The last two share a table with medrt_run's
+own unmatched list, so every writer scopes its clear on `reason` as well as source
+(#39, db/018) -- see step 6 of _ingest for the measurement behind that. This run owns
+two of those buckets, which does not weaken db/018's invariant: it is still exactly
+one writer per (source, reason), and two writers sharing one bucket is what #39 was.
 """
 import logging
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 
 import psycopg
 
 from drugref import classes as class_writer
 from drugref import conditions as condition_writer
-from drugref import interactions, questions
-from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts
+from drugref import indications, interactions, questions
+from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_ind_relations
 from drugref.ingest.checksum import checksum
 
 # The authority that STATES the relations, and therefore the source this run's
@@ -87,11 +91,11 @@ class RegistryTally:
     `conditions_registered` counts CONDITION ROWS this run put in the registry -- the
     referenced objects plus their descendant closure -- and is deliberately NOT called
     "in_release". Measured on the real 2026 releases: desc2026 holds 31,110 descriptor
-    records, of which this slice registers 5,203 conditions (5,190 descriptors plus 13
+    records, of which this slice registers 5,963 conditions (5,929 descriptors plus 34
     supplementary records). Naming it after the release would invite a reader to check
     it against MeSH's own record count and conclude the ingest had lost 25,000 records.
 
-    Do not confuse it with the closure's DESCRIPTOR count (5,190) quoted in
+    Do not confuse it with the closure's DESCRIPTOR count (5,929) quoted in
     _condition_closure and mesh_concepts.descriptors_under: SCRs bear no tree numbers,
     so they never enter the closure and appear only as themselves. Both figures are
     right about different things, which is why each says which it is counting.
@@ -105,6 +109,14 @@ class RegistryTally:
     conditions_registered: int
     conditions_added: int
     condition_parent_edges: int
+    # How many registered conditions carry each MeSH SCRClass, sorted, descriptors
+    # (which carry none) excluded. THE DRIFT DETECTOR FOR A COLUMN WITH NO CHECK:
+    # db/019 stores scr_class as published because supp2026 already publishes six
+    # values against a documented four, so a constraint would abort an ingest the first
+    # time NLM adds a seventh. A reported count catches the same drift without that risk
+    # (the posture skipped_predicates takes), and is the column's ONLY reader outside
+    # gap_condition_without_indication. 29 x '3' and 5 x '1' on the real 2026 releases.
+    scr_class_counts: tuple[tuple[str, int], ...]
 
 
 @dataclass(frozen=True)
@@ -150,6 +162,48 @@ class CiTally:
 
 
 @dataclass(frozen=True)
+class IndicationTally:
+    """What the INDICATION pass produced -- rows written, and every loss.
+
+    `indication_rows` and `induced_rows` are db/019's two relations, named for the
+    TABLE each lands in rather than for the predicates, because that split is the
+    slice's one structural decision: may_treat / may_prevent / may_diagnose say what a
+    drug is FOR, `induces` says what it CAUSES, and a shared table would let a consumer
+    who forgets a `relationship` filter read the second as the first (spec 5.1).
+
+    The four worklist numbers are reported, never swallowed (spec 7):
+      * unmatched_subject_rxcuis    -- the rule's subject is carried by no moiety
+      * class_subject_assertions    -- the subject is a pharmacologic CLASS, not an
+                                       ingredient, so there is no RxCUI to bridge: 193
+                                       in the real release (may_treat 100, may_prevent
+                                       90, may_diagnose 3), filed against #8
+      * unresolved_object_codes     -- M-codes MeSH no longer defines. 0 in the real
+                                       release, where all 1,528 resolve -- kept because
+                                       that is a fact about a release, not a guarantee
+      * chemical_object_assertions  -- the object is a MeSH D-tree CHEMICAL rather than
+                                       a patient state. 17 assertions over 13 records,
+                                       0.09% of may_treat. INGESTED and counted, unlike
+                                       every other number here: see write_indications
+
+    THE LAST ONE IS NOT A LOSS AT ALL, which is why it is described rather than merely
+    listed: those assertions ARE ingested, and the number exists so an operator learns
+    the release's category errors from a figure rather than by meeting them in a query.
+
+    Two of these are counted by the PARSER and the ORCHESTRATOR rather than by the pass,
+    for the reason CiTally gives: an assertion the parser refused never reaches the pass,
+    and an M-code that resolves to no record never reaches it either. They are reported
+    here anyway, because a reader asking "what did the indication half lose?" must find
+    every answer in one place.
+    """
+    indication_rows: int
+    induced_rows: int
+    unmatched_subject_rxcuis: int
+    class_subject_assertions: int
+    unresolved_object_codes: int
+    chemical_object_assertions: int
+
+
+@dataclass(frozen=True)
 class MeshRelSummary:
     """What one MeSH-keyed relation run did -- for a caller or a test to assert on.
 
@@ -162,6 +216,7 @@ class MeshRelSummary:
     """
     registry: RegistryTally
     contraindications: CiTally
+    indications: IndicationTally
 
 
 def _condition_closure(desc_path, records: dict[str, mesh_concepts.MeshRecord],
@@ -173,12 +228,16 @@ def _condition_closure(desc_path, records: dict[str, mesh_concepts.MeshRecord],
     with nothing to find and the feature would be inert while appearing to work
     (spec 5.1).
 
-    Measured on the real 2026.07.06 release, and stated as two numbers because this
-    function returns records of two KINDS: 677 referenced records (664 descriptors +
-    13 SCRs) come in, and 5,203 conditions (5,190 descriptors + the same 13 SCRs)
-    come out. The 5,190 is the figure mesh_concepts.descriptors_under is measured on,
-    because only descriptors carry tree numbers -- an SCR contributes no prefix and
-    gains no descendant, so it appears in the closure only as itself.
+    Measured on the real 2026 releases, and stated as two numbers because this function
+    returns records of two KINDS: 1,764 referenced records come in, and 5,963 conditions
+    (5,929 descriptors + 34 SCRs) come out. Only descriptors carry tree numbers -- an
+    SCR contributes no prefix and gains no descendant, so it appears in the closure only
+    as itself, which is why mesh_concepts.descriptors_under is measured on descriptors.
+
+    THESE ARE 5b.2's NUMBERS. A reader checking against slice 5b's documents will find
+    the CI-only pair instead: 677 referenced records -> 5,203 conditions (5,190
+    descriptors + 13 SCRs) and 7,157 DAG edges, against 8,507 now. Nothing in this
+    function changed; the caller's SET did (spec 3.6).
 
     Keyed by record_ui, never by concept_ui: many concepts resolve to one record, and
     keying on the concept would split one condition into rows no rebuild could merge.
@@ -239,6 +298,15 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
         log.warning("%d contraindication subject RxCUI(s) are carried by no moiety, "
                     "so their rules were not ingested; see "
                     "drugref.gap_unmatched_ingredient", ci.unmatched_subject_rxcuis)
+    if summary.indications.unmatched_subject_rxcuis:
+        # A SEPARATE LINE FROM THE ONE ABOVE, naming the same view, because the two
+        # counts are different populations and land in different `reason` buckets: the
+        # release contraindicates and indicates over overlapping-but-unequal ingredient
+        # sets, so summing them would report a number that matches neither query.
+        log.warning("%d indication subject RxCUI(s) are carried by no moiety, so "
+                    "their rules were not ingested; see "
+                    "drugref.gap_unmatched_ingredient",
+                    summary.indications.unmatched_subject_rxcuis)
     return summary
 
 
@@ -247,6 +315,7 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     """The body of one MeSH-keyed relation ingest (see ingest_mesh_relations)."""
     parsed = medrt.parse(medrt_path)
     ci_assertions = parsed.mesh_contraindications
+    ind_assertions = parsed.mesh_indications
 
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
@@ -256,14 +325,38 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the
     #    condition objects (see _condition_closure).
-    wanted = {a.mesh_code for a in ci_assertions}
-    records = mesh_concepts.resolve_concepts(desc_path, supp_path, wanted)
-    unresolved_object_codes = len(wanted - set(records))
+    #
+    #    RESOLVED IN ONE PASS OVER THE MeSH FILES (supp2026 is ~750 MB), but the two
+    #    halves' WANTED SETS stay apart, because each reports its own unresolved-code
+    #    loss: a code both halves name and MeSH no longer defines costs each of them an
+    #    assertion, so it is counted twice on purpose -- one number per question.
+    ci_wanted = {a.mesh_code for a in ci_assertions}
+    ind_wanted = {a.mesh_code for a in ind_assertions}
+    records = mesh_concepts.resolve_concepts(desc_path, supp_path,
+                                             ci_wanted | ind_wanted)
+    unresolved_object_codes = len(ci_wanted - set(records))
+    unresolved_indication_codes = len(ind_wanted - set(records))
     # The registry covers the objects named as CONDITIONS, and this expression is the
     # whole statement of which those are -- one set, built here, closed over below.
+    #
+    # ONE CLOSURE OVER EVERY MeSH-KEYED OBJECT (spec 3.6), which is what makes the
+    # registry 5,203 -> 5,963 and condition_parent 7,157 -> 8,507 on the real releases.
+    # EVERY indication object is a condition -- unlike CI_ChemClass there is no second
+    # arm to fall back to -- so a registry scoped to CI_with would leave the indication
+    # pass resolving records it then found no condition row for, and the assertions
+    # would vanish while the ingest reported success.
+    #
+    # THE CONTRAINDICATION HALF MOVES TOO, UPWARD, and that is a completion rather than
+    # scope creep: a condition bears several tree numbers and an edge is written only
+    # when BOTH endpoints are registered, so a condition already in the CI closure can
+    # have a second tree parent that only the indication half registers. The edge then
+    # appears and the condition becomes reachable from a CI root it could not be reached
+    # from before -- 11 of 677 roots, condition_subtree 12,311 -> 12,415, +0.39%
+    # assertion-weighted. Acute Pain really is filed under nervous system disease in
+    # MeSH; the old registry was simply too narrow to see the edge.
     condition_codes = {a.mesh_code for a in ci_assertions
                        if a.relationship == mesh_ci_relations.CONDITION_PREDICATE}
-    closure = _condition_closure(desc_path, records, condition_codes)
+    closure = _condition_closure(desc_path, records, condition_codes | ind_wanted)
 
     # 2. Conditions first: every edge and every contraindication references one.
     #    Their source is MeSH -- a condition is a MeSH record whoever cites it.
@@ -284,8 +377,14 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     #    instead would match no run this module ever opened, so a parent that
     #    vanished upstream would survive every rebuild -- the projection would be
     #    append-only in all but name.
+    #
+    #    EVERY ROW CLEAR HAPPENS HERE, BEFORE ANY PASS RUNS, and that placement is the
+    #    correctness argument: a clear running AFTER its pass deletes the rows that pass
+    #    just wrote, and the projection comes back EMPTY on every run while every count
+    #    in the summary still looks right. A new relation family adds its clear here.
     condition_writer.clear_source_condition_edges(conn, SOURCE)
     interactions.clear_source_mesh_contraindications(conn, SOURCE)
+    indications.clear_source_indications(conn, SOURCE)
 
     # 4. The condition DAG. Edges into records outside the closure are dropped rather
     #    than re-attached to a more distant ancestor: such a record is simply a ROOT
@@ -298,15 +397,23 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
 
     # 5. The relation passes. Read every index ONCE -- a subject appears in many
     #    assertions, and a pass re-reading them would re-ask an answered question --
-    #    then hand the same three to every pass.
-    indexes = (class_writer.moieties_by_rxcui(conn),
+    #    then hand each pass the indexes it actually reads.
+    #
+    #    THE INDICATION PASS GETS ONE INDEX, NOT THREE, and the interface is saying
+    #    something true: an indication's object is always a patient state, never a drug,
+    #    so the UNII and CAS indexes have no reader there. Handing them over invites one.
+    rxcui_index = class_writer.moieties_by_rxcui(conn)
+    indexes = (rxcui_index,
                class_writer.moieties_by_scheme(conn, "UNII"),
                class_writer.moieties_by_scheme(conn, "CAS"))
-    #    The pass is TOLD which run it writes for -- SOURCE and run_id travel
+    #    Each pass is TOLD which run it writes for -- SOURCE and run_id travel
     #    together, because both are provenance of the ingest_run opened above.
     ci = mesh_ci_relations.write_contraindications(conn, ci_assertions, records,
                                                   uuid_by_code, indexes, SOURCE,
                                                   run_id)
+    ind = mesh_ind_relations.write_indications(conn, ind_assertions, records,
+                                               uuid_by_code, rxcui_index, SOURCE,
+                                               run_id)
 
     # 6. Persist the withheld objects' IDENTITIES, not merely their count: a worklist
     #    that says "2 objects were withheld" cannot be worked, which is the lesson
@@ -334,6 +441,17 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
         conn, SOURCE, class_writer.CONTRAINDICATION)
     class_writer.add_unmatched_ingredients(conn, sorted(ci.unmatched_rxcuis), run_id,
                                            class_writer.CONTRAINDICATION)
+    #    THE INDICATION BUCKET IS THE SAME PAIR, NEVER A BARE WRITE -- #39 restated.
+    #    The table is keyed (ingest_run, reason, rxcui), so a writer that inserts without
+    #    first collecting its own garbage adds a fresh copy of every row under each new
+    #    run id, forever. Nor may it widen the clear to cover the bucket above: the two
+    #    lists are different populations (a subject unmatched for one half may be matched,
+    #    or absent, for the other), so a shared clear would make the answer depend on
+    #    which pass ran last. One writer per (source, reason); this run owns two.
+    class_writer.clear_source_unmatched_ingredients(
+        conn, SOURCE, class_writer.INDICATION)
+    class_writer.add_unmatched_ingredients(conn, sorted(ind.unmatched_rxcuis), run_id,
+                                           class_writer.INDICATION)
     interactions.record_unresolved_ci_objects(
         conn,
         [(SOURCE, mesh_ci_relations.PAIR_PREDICATE, OBJECT_SOURCE, code,
@@ -353,9 +471,17 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
                  "WHERE ingest_run_id = %s", (run_id,))
     conn.commit()
     return MeshRelSummary(
-        registry=RegistryTally(conditions_registered=len(uuid_by_code),
-                               conditions_added=added,
-                               condition_parent_edges=parent_edges),
+        registry=RegistryTally(
+            conditions_registered=len(uuid_by_code),
+            conditions_added=added,
+            condition_parent_edges=parent_edges,
+            # Counted off the CLOSURE, which is the set actually registered, and sorted
+            # so two runs over one release produce comparable summaries. Descriptors
+            # carry no SCRClass and are excluded by the falsy test rather than by a
+            # record_kind test: the question is "which published values did this run
+            # store", and a None is not one.
+            scr_class_counts=tuple(sorted(
+                Counter(r.scr_class for r in closure.values() if r.scr_class).items()))),
         contraindications=CiTally(
             condition_rows=ci.condition_rows,
             pair_rows=ci.pair_rows,
@@ -364,4 +490,11 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
             unregistered_object_substances=len(ci.unregistered),
             self_paired_assertions=ci.self_pairs,
             unresolved_object_codes=unresolved_object_codes,
-            non_mesh_objects=parsed.non_mesh_ci_objects))
+            non_mesh_objects=parsed.non_mesh_ci_objects),
+        indications=IndicationTally(
+            indication_rows=ind.indication_rows,
+            induced_rows=ind.induced_rows,
+            unmatched_subject_rxcuis=len(ind.unmatched_rxcuis),
+            class_subject_assertions=parsed.class_subject_indications,
+            unresolved_object_codes=unresolved_indication_codes,
+            chemical_object_assertions=ind.chemical_object_assertions))

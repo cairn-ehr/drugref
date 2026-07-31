@@ -10,24 +10,30 @@ Exercises the CONTRAINDICATION half of the one MeSH-keyed orchestrator
 ingest/mesh_ci_relations.py, which is the pass itself). The summary is nested for the
 reason spec 6.1 gives: the registry figures are one fact about one closure, so they
 are stated once under `registry` while each relation family reports its own rows and
-losses under its own name.
+losses under its own name. The INDICATION half is next door, in
+tests/test_mesh_ind_run.py, which imports this module's entry point, truncate and
+seeded registry rather than restating them.
 
-Uses an autouse TRUNCATE fixture for the reason the other orchestrator tests do:
-ingest_mesh_relations commits internally, so it escapes conftest's rollback-based
-isolation.
+THE REGISTRY FIGURES HERE ARE NOW SHAPED BY BOTH HALVES, and that is the design rather
+than a leak: one closure is taken over every MeSH-keyed object at once, so registering
+an indication object changes numbers a reader of this file will look for. What must
+NOT move is the contraindication half's own rows -- they are what the release asserts
+(spec 10) -- and test_ingest_reports_a_summary states which is which.
+
+The setup both modules need -- the truncate, the seeded registry, the entry point --
+lives in tests/mesh_rel_fixtures.py, written down once.
 """
-import pathlib
 from collections import Counter
 
 import psycopg
 import pytest
 
 from drugref import ids
-from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_rel_run, run
-
-FIXTURES = pathlib.Path(__file__).parent / "fixtures"
-UNII_FIX = FIXTURES / "unii_subset.tsv"
-DATA = pathlib.Path("src/drugref/data")
+from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_rel_run
+from tests import mesh_rel_fixtures
+from tests.mesh_rel_fixtures import FIXTURES
+from tests.mesh_rel_fixtures import condition_uuid as _condition
+from tests.mesh_rel_fixtures import ingest as _run
 
 # The four moieties whose RxCUIs the MED-RT subset states contraindications for.
 PARACETAMOL = "362O9ITL9D"          # RxCUI 161
@@ -45,49 +51,12 @@ PIMOZIDE_RECORD = "D010868"         # the CI_ChemClass object that IS a drug
 
 @pytest.fixture(autouse=True)
 def _clean(conn):
-    conn.execute(
-        "TRUNCATE drugref.moiety_condition_contraindication, "
-        "drugref.moiety_contraindication, drugref.ingest_unresolved_ci_object, "
-        "drugref.condition_parent, drugref.condition, "
-        "drugref.open_question, drugref.class_contraindication, "
-        "drugref.class_membership, drugref.class_parent, drugref.substance_class, "
-        "drugref.identity_claim, drugref.substance_moiety, drugref.ingest_run "
-        "RESTART IDENTITY CASCADE")
-    conn.commit()
+    mesh_rel_fixtures.truncate(conn)
 
 
 @pytest.fixture
 def seeded_moieties(conn):
-    """The slice-1 moiety registry this slice joins against.
-
-    Built by running the real identity ingest over unii_subset.tsv, exactly as
-    tests/test_medrt_run.py's `seeded` does, rather than by hand-inserting rows: the
-    subject bridge reads RXNORM_IN claims and the object bridge reads UNII claims,
-    and both are things ingest_unii produces. Seeding them directly would test the
-    orchestrator against a registry no ingest could actually build.
-
-    It carries all four subject RxCUIs the MED-RT subset asserts against except
-    ibuprofen (5640), which is deliberately absent so the unmatched-subject path is
-    exercised, and it carries pimozide, which is the CI_ChemClass OBJECT.
-    """
-    run.ingest_unii(conn, unii_path=UNII_FIX,
-                    crosswalk_path=DATA / "usan_inn_crosswalk.tsv",
-                    allowlist_path=DATA / "legacy_allowlist.tsv",
-                    upstream_release="2026-07")
-    return conn
-
-
-def _run(conn):
-    return mesh_rel_run.ingest_mesh_relations(
-        conn,
-        medrt_path=FIXTURES / "medrt_subset.xml",
-        desc_path=FIXTURES / "mesh_ci_desc_subset.xml",
-        supp_path=FIXTURES / "mesh_ci_supp_subset.xml",
-        upstream_release="test")
-
-
-def _condition(conn, source_code):
-    return ids.mint_condition_uuid("MeSH", source_code)
+    return mesh_rel_fixtures.seed_moieties(conn)
 
 
 def test_ingest_reports_a_summary(conn, seeded_moieties):
@@ -103,40 +72,64 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     referenced CI condition: its object is MeSH M0006829 (Drug Hypersensitivity),
     which 161/17767/321988 already name.
 
-    conditions_registered moved anyway (18 -> 19), for a reason that has NOTHING to
-    do with this orchestrator parsing an indication predicate -- it does not yet;
-    that is Task 4+. make_mesh_ci_subset.py's wanted set was widened to cover all
-    six MeSH-keyed predicates (5b.2 review fix), which pulled halothane's `induces`
-    object "Liver Failure" (MeSH M0025970) into mesh_ci_desc_subset.xml. Liver
-    Failure independently turns out to be a genuine MeSH-tree DESCENDANT of "Liver
-    Diseases" (161's real CI_with object) -- so this orchestrator's OWN CI-only
-    closure walk (_condition_closure -> mesh_concepts.descriptors_under, which scans
-    every record the desc file happens to contain for tree-number containment, not
-    only the ones added for CI's sake) now discovers it, plus its own two sampled
-    children (End Stage Liver Disease, Hepatic Encephalopathy). That is +3.
+    conditions_registered had already moved once (18 -> 19) BEFORE this orchestrator
+    read an indication predicate at all, and that history is kept because it is the
+    easiest number here to misattribute. make_mesh_ci_subset.py's wanted set was
+    widened to cover all six MeSH-keyed predicates (5b.2 review fix), which pulled
+    halothane's `induces` object "Liver Failure" (MeSH M0025970) into
+    mesh_ci_desc_subset.xml. Liver Failure independently turns out to be a genuine
+    MeSH-tree DESCENDANT of "Liver Diseases" (161's real CI_with object) -- so the
+    CI-only closure walk (_condition_closure -> mesh_concepts.descriptors_under, which
+    scans every record the desc file happens to contain for tree-number containment,
+    not only the ones added for CI's sake) discovered it, plus its own two sampled
+    children (End Stage Liver Disease, Hepatic Encephalopathy). That was +3.
     Meanwhile the SAME regeneration's descendant-closure sample (shared cap,
     MAX_CHILDREN_TOTAL=8, now spread over 14 referenced conditions instead of 10)
     displaced two conditions that used to fit the sample -- Cough-Variant Asthma and
-    Rhinitis, Allergic no longer appear in the fixture at all. That is -2. Net +1,
+    Rhinitis, Allergic no longer appear in the fixture at all. That was -2. Net +1,
     verified against the actual registered condition NAMES (not just the count) by
     diffing this fixture's ingest output against the pre-fix commit's.
     """
     summary = _run(conn)
     # THE REGISTRY IS ONE FACT ABOUT ONE CLOSURE, so it is asserted once, under its
-    # own tally, rather than once per relation family (spec 6.1).
+    # own tally, rather than once per relation family (spec 6.1). And since 5b.2 the
+    # closure is taken over EVERY MeSH-keyed object, so these three numbers answer for
+    # both halves -- which is why the contraindication figures below are the ones that
+    # must not move (spec 10).
     #
-    # 14 referenced conditions (10 CI_with-only + Liver Failure, pulled in as a real
-    # descendant of Liver Diseases once its record entered the fixture for an
-    # unrelated -- `induces` -- reason) + the 8 tree descendants the fixture samples.
-    assert summary.registry.conditions_registered == 19
-    assert summary.registry.conditions_added == 19
-    # Coincidentally UNCHANGED at 10: -2 edges (Asthma->Cough-Variant Asthma,
-    # Rhinitis->Rhinitis, Allergic, both displaced from the descendant sample) +2
-    # edges (Liver Failure->its own two now-sampled children) nets to zero. Verified
-    # by diffing the actual (parent, child) edge pairs before/after, not assumed
-    # from the total alone.
-    assert summary.registry.condition_parent_edges == 10
+    # 19 -> 22 (+3), and each one is a named indication OBJECT the CI closure had no
+    # reason to hold: Drug-Related Side Effects and Adverse Reactions (D064420,
+    # charcoal may_prevent), Malignant Hyperthermia (D008305, halothane may_diagnose)
+    # and Unconsciousness (D014474, halothane induces). The other two indication
+    # objects were already registered -- Poisoning is itself a CI_with object, and
+    # Liver Failure arrived as the descendant described above -- and the three new
+    # records contribute no descendants the fixture's desc subset contains.
+    assert summary.registry.conditions_registered == 22
+    assert summary.registry.conditions_added == 22
+    # 10 -> 12 (+2), and NEITHER new edge hangs off a new leaf: both are edges MeSH
+    # already asserted between records the CI closure ALREADY held, which could not be
+    # written because their shared PARENT was unregistered. Drug Hypersensitivity
+    # (C25.100.468, a CI_with object) and Chemical and Drug Induced Liver Injury
+    # (C25.100.562, a CI descendant) both sit under C25.100 = D064420, which only the
+    # indication half names. This is spec 3.6's completion -- on the real releases 11
+    # of 677 CI roots gain reach and condition_subtree goes 12,311 -> 12,415, in the
+    # recall-safe direction. On THIS fixture the completion is visible as edges only:
+    # measured before and after, condition_subtree over CI_with roots stays 9 and
+    # condition_contraindication_expanded stays 15, because D064420 is not itself
+    # below any CI_with root here.
+    #
+    # The 10 that was there before was a coincidence worth keeping recorded: -2 edges
+    # (Asthma->Cough-Variant Asthma, Rhinitis->Rhinitis, Allergic, displaced from the
+    # descendant sample) +2 edges (Liver Failure->its own two sampled children) netted
+    # to zero. Verified by diffing the actual (parent, child) pairs, not assumed.
+    assert summary.registry.condition_parent_edges == 12
     ci = summary.contraindications
+    # NOT ONE OF THE EIGHT ASSERTIONS BELOW MOVED WHEN THE REGISTRY WIDENED, which is
+    # spec 10's criterion and the reason this block is worth reading as a block: the
+    # DIRECT rows are what the release asserts, so a widened closure that changed one
+    # of them would mean the closure had taken in more than the referenced objects and
+    # their descendants.
+    #
     # 272->Poisoning, 161/17767/321988/5095->Drug Hypersensitivity, 161->Liver
     # Diseases, 161->G6PD Deficiency, 17767->Hypotension.
     assert ci.condition_rows == 8
@@ -176,7 +169,7 @@ def test_the_class_arm_is_counted_not_ingested(conn, seeded_moieties):
         assert conn.execute(
             "SELECT count(*) FROM drugref.moiety_condition_contraindication "
             "WHERE object_condition_uuid = %s",
-            (_condition(conn, code),)).fetchone()[0] == 0
+            (_condition(code),)).fetchone()[0] == 0
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_contraindication").fetchone()[0] == 1
 
@@ -324,8 +317,8 @@ def test_the_registry_holds_the_descendant_closure(conn, seeded_moieties):
     feature would be inert while appearing to work (spec 5.1).
     """
     _run(conn)
-    named, descendant = (_condition(conn, LIVER_DISEASES),
-                         _condition(conn, DRUG_INDUCED_LIVER_INJURY))
+    named, descendant = (_condition(LIVER_DISEASES),
+                         _condition(DRUG_INDUCED_LIVER_INJURY))
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent "
         "WHERE child_condition_uuid = %s AND parent_condition_uuid = %s",
@@ -350,9 +343,12 @@ def test_rerunning_replaces_rather_than_duplicates(conn, seeded_moieties):
     assert conn.execute(
         "SELECT count(*) FROM drugref.ingest_unresolved_ci_object").fetchone()[0] == 2
     # Conditions ACCUMULATE while edges and contraindications are REBUILT, which is
-    # why the registry tally reports the two condition numbers separately.
+    # why the registry tally reports the two condition numbers separately. 22 since
+    # the closure widened to cover indication objects (see test_ingest_reports_a_
+    # summary for the +3); the 0 is the number that carries this test's argument, and
+    # it is unmoved.
     assert (second.registry.conditions_registered,
-            second.registry.conditions_added) == (19, 0)
+            second.registry.conditions_added) == (22, 0)
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent").fetchone()[0] == \
         second.registry.condition_parent_edges

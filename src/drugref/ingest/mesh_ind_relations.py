@@ -1,0 +1,136 @@
+"""The INDICATION relation pass: MED-RT's MeSH-keyed indication assertions -> rows.
+
+The second relation family of the run mesh_rel_run.py orchestrates, and the sibling of
+mesh_ci_relations.py in every structural respect: everything SHARED -- the ingest_run,
+the condition registry and its DAG, the moiety index -- belongs to that orchestrator and
+is handed in here, because `condition` and `condition_parent` are rebuilt per
+`ingest_run.source` and a second orchestrator would clear this one's edges (spec 6.1:
+#39 one layer deeper, and unfixable by a discriminator, since a (child, parent) edge is
+derived by BOTH closures). What lives here is only what is true of may_treat,
+may_prevent, may_diagnose and induces in particular.
+
+So this module writes rows and returns a tally: it opens no transaction, commits
+nothing, registers no condition, reads no index it was not given, and does not name the
+authority it writes under -- `source` is an ARGUMENT, because the rows belong to the run
+that called this pass (#43's shape, and the reason exactly one SOURCE = 'MED-RT' exists
+for this run, in the orchestrator).
+
+SIMPLER THAN ITS SIBLING, AND THE ASYMMETRY IS THE MEANING RATHER THAN AN OMISSION.
+CI_ChemClass's object is usually a DRUG, so that pass has to bridge its object into the
+moiety registry and decide what a failure to bridge means. An indication's object is
+ALWAYS a patient state: MED-RT never says "this drug may_treat that drug". So there is
+no object-side bridge here, no withheld/unregistered split, no self-pair to refuse --
+and this pass therefore takes only the RxCUI index rather than its sibling's three,
+because the UNII and CAS indexes would have no reader.
+
+WHERE THE ROW GOES IS DECIDED HERE, ONCE. may_treat / may_prevent / may_diagnose are
+therapeutic and land in `moiety_condition_indication`; `induces` says the drug CAUSES
+the state and lands in `moiety_induced_condition`. db/019 made that a table split rather
+than a WHERE clause because the unfiltered read of a table must be one true sentence: a
+consumer who forgets a `relationship` filter on a shared table would read "carbamazepine
+treats agranulocytosis" off an induces row (spec 5.1).
+"""
+from dataclasses import dataclass, field
+
+from drugref import indications
+from drugref.ingest import medrt
+
+# MeSH's top-level tree letter for CHEMICALS AND DRUGS. Named rather than spelled inline
+# because it is a claim about MeSH's tree, not a string: db/013 stores tree_numbers
+# precisely so the leading letter distinguishes a disease (C) from a physiological state
+# (G) from a procedure (E) -- and, here, from a substance.
+CHEMICAL_TREE = "D"
+
+
+@dataclass
+class IndicationRelations:
+    """The tally of one pass over the indication assertions (see write_indications).
+
+    A mutable scratch record rather than a handful of loose locals, for the reason
+    CiRelations gives: the pass produces two row counts and two worklists, and returning
+    them as one named thing is what keeps the orchestrator readable and stops a caller
+    pairing them up in the wrong order.
+
+    The two row counts are separate because the two TABLES are (db/019 section 5.1), not
+    because the predicates are interesting apart: adding them would report a number that
+    matches neither table.
+    """
+    indication_rows: int = 0
+    induced_rows: int = 0
+    # Subjects no moiety carries. A SET, so a subject stating many indications is one
+    # worklist entry -- the grain gap_unmatched_ingredient and the question register use.
+    unmatched_rxcuis: set[str] = field(default_factory=set)
+    # Assertions whose OBJECT is a MeSH chemical rather than a patient state. Counted
+    # per ASSERTION, not per record, because the operator's question is "how much of
+    # this release is a category error" and the release states 17 of them over 13
+    # records -- reporting 13 would understate what it costs to be wrong about them.
+    chemical_object_assertions: int = 0
+
+
+def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
+                      source: str, run_id: int) -> IndicationRelations:
+    """Write both indication relations, tallying every assertion that is not a row.
+
+    ONE PASS, and every exit from it is counted somewhere: an assertion either becomes a
+    row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or was already
+    counted as an unresolved object code by the caller. Nothing falls off the end
+    (spec 7) -- and `chemical_object_assertions` is a count of assertions that DO become
+    rows, which is the one place this tally differs in kind from its sibling's.
+
+    THE OBJECT QUESTION IS ASKED BEFORE THE SUBJECT TEST, exactly as in
+    write_contraindications, and for the same reason: whether an object is a chemical
+    rather than a patient state is a fact about the OBJECT, and it does not depend on
+    whether this particular rule's subject happened to resolve. Testing the subject
+    first would make the reported figure a function of the moiety gate -- the mistake
+    that cost the CI half 35 assertions over 4 objects before it was found.
+
+    D-TREE OBJECTS ARE INGESTED, AND THAT IS A RECORDED DECISION (spec 11 tension C).
+    17 of the 2026.07.06 release's 18,144 therapeutic assertions -- 0.09% of may_treat --
+    name a MeSH CHEMICAL: LDL Cholesterol (2), Antioxidants (2), Prostate-Specific
+    Antigen (2), Analgesics, Antiemetics, Antiparkinson Agents, Deodorants,
+    Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2), ... Some are
+    defensible treatment targets ("a statin may_treat LDL cholesterol") and some are
+    upstream quirks ("may_treat Analgesics"), and MED-RT does not distinguish them. They
+    are stored -- `condition.tree_numbers` lets a consumer scope on the leading letter,
+    and 5b already registered 18 such CI_with objects -- but COUNTED, because withholding
+    17 rows behind a new worklist kind would cost more than it buys while leaving an
+    operator to DISCOVER the split rather than be told it.
+
+    `source` and `run_id` are the run's provenance, taken as arguments and forwarded
+    together to every writer call below, in the order indications.add_* takes them. The
+    source is not a constant here because this pass does not decide it: the orchestrator
+    opened the ingest_run, and these rows belong to it (see the module docstring).
+    """
+    out = IndicationRelations()
+    for a in assertions:
+        record = records.get(a.mesh_code)
+        if record is None:
+            continue                                # already counted by the caller
+        object_uuid = uuid_by_code.get(record.record_ui)
+        if object_uuid is None:
+            # Defensive rather than live: the orchestrator's closure covers every
+            # indication object code, so a resolved record is always registered. Kept
+            # because the guarantee lives at the CALL SITE (which set the closure was
+            # taken over), and a narrowed closure must lose rows visibly at the
+            # database's foreign key rather than silently here.
+            continue
+        if any(t.startswith(CHEMICAL_TREE) for t in record.tree_numbers):
+            out.chemical_object_assertions += 1     # ingested anyway -- see above
+        subjects = rxcui_index.get(a.rxcui, ())
+        if not subjects:
+            out.unmatched_rxcuis.add(a.rxcui)       # counted, never dropped
+            continue
+        for subject in subjects:
+            # THE ONE BRANCH THAT DECIDES WHICH TABLE. `induces` is neither an
+            # indication nor a contraindication -- MED-RT does not say whether the
+            # caused state is the therapeutic point or the adverse effect -- so it gets
+            # its own table and its own counter, and the writer supplies the predicate
+            # so this call cannot file a may_treat row there by passing a string.
+            if a.relationship == medrt.INDUCES_RELATIONSHIP:
+                if indications.add_induced_condition(conn, subject, object_uuid,
+                                                     source, run_id):
+                    out.induced_rows += 1
+            elif indications.add_condition_indication(conn, subject, object_uuid,
+                                                      a.relationship, source, run_id):
+                out.indication_rows += 1
+    return out
