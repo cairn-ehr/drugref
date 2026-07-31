@@ -23,7 +23,7 @@ copied: `mesh.iter_records` (the one gz-aware streaming reader, #40) and
 `mesh.tree_parent_edges` (the one tree-nesting rule, which both DAG builders wrap).
 
 This module is PURE and STREAMING: it reads files and returns records. No database,
-no network, no UUID minting. The orchestrator (mesh_ci_run.py) does all of that.
+no network, no UUID minting. The orchestrator (mesh_rel_run.py) does all of that.
 Every file is streamed with iterparse + clear, so peak memory scales with the QUERY
 (the wanted set), never with the release -- supp2026 is ~750 MB uncompressed.
 """

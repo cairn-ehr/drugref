@@ -119,7 +119,7 @@ def test_clear_source_tables_refuses_a_parent_first_order(conn, ingest_run_id, a
 
 def test_clear_source_tables_can_narrow_to_one_writers_rows(conn, ingest_run_id):
     """#39. Two orchestrators write ingest_unmatched_ingredient under source 'MED-RT'
-    -- medrt_run the ingredients MED-RT CLASSIFIES that no moiety carries, mesh_ci_run
+    -- medrt_run the ingredients MED-RT CLASSIFIES that no moiety carries, mesh_rel_run
     the SUBJECTS of a contraindication that no moiety carries. Neither set contains
     the other, so a source-scoped clear let whichever ran last delete the other's
     rows and be unable to re-add them.

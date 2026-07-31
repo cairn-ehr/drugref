@@ -5,9 +5,16 @@ from (MED-RT 2026.07.06, MeSH 2026), not about anything this suite invented -- s
 tests/fixtures/make_mesh_ci_subset.py, which derives the MeSH subset from the MED-RT
 subset precisely so the two cannot drift apart and quietly resolve nothing.
 
+Exercises the CONTRAINDICATION half of the one MeSH-keyed orchestrator
+(ingest/mesh_rel_run.py, whose registry machinery is shared, and
+ingest/mesh_ci_relations.py, which is the pass itself). The summary is nested for the
+reason spec 6.1 gives: the registry figures are one fact about one closure, so they
+are stated once under `registry` while each relation family reports its own rows and
+losses under its own name.
+
 Uses an autouse TRUNCATE fixture for the reason the other orchestrator tests do:
-ingest_mesh_contraindications commits internally, so it escapes conftest's
-rollback-based isolation.
+ingest_mesh_relations commits internally, so it escapes conftest's rollback-based
+isolation.
 """
 import pathlib
 from collections import Counter
@@ -16,7 +23,7 @@ import psycopg
 import pytest
 
 from drugref import ids
-from drugref.ingest import medrt, mesh_ci_run, mesh_concepts, run
+from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_rel_run, run
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 UNII_FIX = FIXTURES / "unii_subset.tsv"
@@ -71,7 +78,7 @@ def seeded_moieties(conn):
 
 
 def _run(conn):
-    return mesh_ci_run.ingest_mesh_contraindications(
+    return mesh_rel_run.ingest_mesh_relations(
         conn,
         medrt_path=FIXTURES / "medrt_subset.xml",
         desc_path=FIXTURES / "mesh_ci_desc_subset.xml",
@@ -115,33 +122,37 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     diffing this fixture's ingest output against the pre-fix commit's.
     """
     summary = _run(conn)
+    # THE REGISTRY IS ONE FACT ABOUT ONE CLOSURE, so it is asserted once, under its
+    # own tally, rather than once per relation family (spec 6.1).
+    #
     # 14 referenced conditions (10 CI_with-only + Liver Failure, pulled in as a real
     # descendant of Liver Diseases once its record entered the fixture for an
     # unrelated -- `induces` -- reason) + the 8 tree descendants the fixture samples.
-    assert summary.conditions_registered == 19
-    assert summary.conditions_added == 19
+    assert summary.registry.conditions_registered == 19
+    assert summary.registry.conditions_added == 19
     # Coincidentally UNCHANGED at 10: -2 edges (Asthma->Cough-Variant Asthma,
     # Rhinitis->Rhinitis, Allergic, both displaced from the descendant sample) +2
     # edges (Liver Failure->its own two now-sampled children) nets to zero. Verified
     # by diffing the actual (parent, child) edge pairs before/after, not assumed
     # from the total alone.
-    assert summary.condition_parent_edges == 10
+    assert summary.registry.condition_parent_edges == 10
+    ci = summary.contraindications
     # 272->Poisoning, 161/17767/321988/5095->Drug Hypersensitivity, 161->Liver
     # Diseases, 161->G6PD Deficiency, 17767->Hypotension.
-    assert summary.condition_contraindications == 8
-    assert summary.moiety_contraindications == 1        # escitalopram -> pimozide
-    assert summary.unmatched_subject_rxcuis == 1        # ibuprofen (RxCUI 5640)
-    assert summary.withheld_class_objects == 2          # Alkalies, Organic Chemicals
+    assert ci.condition_rows == 8
+    assert ci.pair_rows == 1                            # escitalopram -> pimozide
+    assert ci.unmatched_subject_rxcuis == 1             # ibuprofen (RxCUI 5640)
+    assert ci.withheld_class_objects == 2               # Alkalies, Organic Chemicals
     # Pimozide resolves against this seeded registry, so it is an ingested pair and
     # not an unregistered object; the empty-registry case below is what moves this.
-    assert summary.unregistered_object_substances == 0
+    assert ci.unregistered_object_substances == 0
     # No fixture assertion names a drug as its own CI_ChemClass object.
-    assert summary.self_paired_assertions == 0
+    assert ci.self_paired_assertions == 0
     # Every object code in this fixture is defined by the 2026 MeSH release, and
     # every one is in the MeSH namespace -- so both loss counters are legitimately
     # zero here and the real-release run (not this fixture) is what exercises them.
-    assert summary.unresolved_object_codes == 0
-    assert summary.non_mesh_objects == 0
+    assert ci.unresolved_object_codes == 0
+    assert ci.non_mesh_objects == 0
 
 
 def test_the_class_arm_is_counted_not_ingested(conn, seeded_moieties):
@@ -192,12 +203,12 @@ def test_a_class_object_is_withheld_even_when_no_subject_resolves(conn):
         "SELECT object_code FROM drugref.ingest_unresolved_ci_object").fetchall()} == \
         {ALKALIES, ORGANIC_CHEMICALS, PIMOZIDE_RECORD}
     # Nothing could be ingested, and nothing was invented to compensate.
-    assert (summary.condition_contraindications, summary.moiety_contraindications) \
-        == (0, 0)
+    assert (summary.contraindications.condition_rows,
+            summary.contraindications.pair_rows) == (0, 0)
     # All six subject RxCUIs in the fixture (slice 5b.2 adds halothane, 5095,
     # alongside 161/17767/272/321988/5640), including the two that reach only a
     # withheld object.
-    assert summary.unmatched_subject_rxcuis == 6
+    assert summary.contraindications.unmatched_subject_rxcuis == 6
 
 
 def test_an_unresolved_object_is_classified_by_the_record_not_the_failure(conn):
@@ -218,8 +229,9 @@ def test_an_unresolved_object_is_classified_by_the_record_not_the_failure(conn):
     which is why this holds even here, where the registry is empty.
     """
     summary = _run(conn)
-    assert summary.withheld_class_objects == 2          # Alkalies, Organic Chemicals
-    assert summary.unregistered_object_substances == 1  # Pimozide
+    ci = summary.contraindications
+    assert ci.withheld_class_objects == 2               # Alkalies, Organic Chemicals
+    assert ci.unregistered_object_substances == 1       # Pimozide
 
     kinds = dict(conn.execute(
         "SELECT object_code, object_kind FROM drugref.ingest_unresolved_ci_object"
@@ -272,10 +284,10 @@ def test_a_self_pair_is_counted_not_silently_skipped(conn, a_moiety, ingest_run_
     the orchestrator has to skip it -- but a skip nobody counts is exactly the silent
     drop spec 7 forbids, and this branch was uncounted and untested until now.
 
-    Driven through _write_relations directly rather than through a fixture, because
-    the fixture is machine-extracted from the real release (it must not be hand-edited
-    to invent an assertion) and the real release's self-pairs involve ingredients the
-    subset does not carry.
+    Driven through write_contraindications directly rather than through a fixture,
+    because the fixture is machine-extracted from the real release (it must not be
+    hand-edited to invent an assertion) and the real release's self-pairs involve
+    ingredients the subset does not carry.
 
     Removing the guard does not merely change this number: the insert reaches
     moiety_contraindication_not_self and takes the whole ingest down with it.
@@ -290,7 +302,7 @@ def test_a_self_pair_is_counted_not_silently_skipped(conn, a_moiety, ingest_run_
     # the object record's UNII.
     indexes = ({"321988": [a_moiety]}, {"1HIZ4DL86F": [a_moiety]}, {})
 
-    rel = mesh_ci_run._write_relations(
+    rel = mesh_ci_relations.write_contraindications(
         conn, [assertion], {"M0016871": record}, {}, indexes, ingest_run_id)
 
     assert rel.self_pairs == 1
@@ -329,19 +341,20 @@ def test_rerunning_replaces_rather_than_duplicates(conn, seeded_moieties):
     """Per-source rebuild: a second run must leave the same row count, not double it."""
     first = _run(conn)
     second = _run(conn)
-    assert first.condition_contraindications == second.condition_contraindications
-    assert first.moiety_contraindications == second.moiety_contraindications
+    assert first.contraindications.condition_rows == second.contraindications.condition_rows
+    assert first.contraindications.pair_rows == second.contraindications.pair_rows
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_contraindication"
-    ).fetchone()[0] == second.condition_contraindications
+    ).fetchone()[0] == second.contraindications.condition_rows
     assert conn.execute(
         "SELECT count(*) FROM drugref.ingest_unresolved_ci_object").fetchone()[0] == 2
     # Conditions ACCUMULATE while edges and contraindications are REBUILT, which is
-    # why the summary reports the two condition numbers separately.
-    assert (second.conditions_registered, second.conditions_added) == (19, 0)
+    # why the registry tally reports the two condition numbers separately.
+    assert (second.registry.conditions_registered,
+            second.registry.conditions_added) == (19, 0)
     assert conn.execute(
         "SELECT count(*) FROM drugref.condition_parent").fetchone()[0] == \
-        second.condition_parent_edges
+        second.registry.condition_parent_edges
 
 
 def test_condition_uuids_survive_a_rebuild(conn, seeded_moieties):
@@ -366,7 +379,7 @@ def test_unmatched_subjects_are_recorded_not_only_counted(conn, seeded_moieties)
     route. A summary field and a log line do not survive the process.
     """
     summary = _run(conn)
-    assert summary.unmatched_subject_rxcuis == 1
+    assert summary.contraindications.unmatched_subject_rxcuis == 1
     assert [r[0] for r in conn.execute(
         "SELECT rxcui FROM drugref.ingest_unmatched_ingredient").fetchall()] == ["5640"]
     assert conn.execute(

@@ -55,8 +55,8 @@ def clear_source_tables(conn: psycopg.Connection,
 
     `match` NARROWS THE CLEAR TO ONE WRITER'S ROWS, for the one table a source has two
     writers for (#39). ingest_unmatched_ingredient is written both by medrt_run (the
-    ingredients MED-RT classifies that no moiety carries) and by mesh_ci_run (the
-    subjects of a contraindication that no moiety carries), and both open their runs
+    ingredients MED-RT classifies that no moiety carries) and by mesh_rel_run (the
+    subjects of a MeSH-keyed rule that no moiety carries), and both open their runs
     under source 'MED-RT'. Neither set contains the other, so a source-only clear let
     whichever ran last delete the other's rows -- and be unable to re-add them.
     Passing {"reason": "classification"} scopes the same DELETE to the bucket the

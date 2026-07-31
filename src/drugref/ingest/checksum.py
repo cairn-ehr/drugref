@@ -6,7 +6,8 @@ runs reporting different figures are either two releases or one bug, and without
 this there is no way to tell which.
 
 WHY IT IS ONE FUNCTION. It was four (#43): `run.py` and `medrt_run.py` hashed a
-single path with `read_bytes()`, while `mesh_run.py` and `mesh_ci_run.py` carried
+single path with `read_bytes()`, while `mesh_run.py` and the MeSH-keyed relation
+run (now `mesh_rel_run.py`) carried
 body-identical chunked multi-path copies, each re-explaining the chunking in its own
 docstring. The single-path form is just this one with one argument -- and, since
 SHA-256 does not care how its input was fed in, the digests are identical, so
