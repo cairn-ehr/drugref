@@ -84,7 +84,8 @@ INGREDIENTS = {
     # alone. Admitted to unii_subset.tsv on INN_ID 697, so its subject bridges the
     # moiety gate outright without relying on the RXCUI branch -- unlike ibuprofen,
     # its assertions are meant to MATCH, not to exercise the unmatched-subject path.
-    "5095": "halothane / induces (x2) + may_diagnose + may_treat + CI_with, has_MoA/PE/TC",
+    "5095": "halothane / induces (x2) + may_diagnose + CI_with, has_MoA/PE/TC "
+             "(its real may_treat is dropped by the cap below)",
 }
 
 # Concept types we ingest as classes (HC and EXT are deliberately absent).

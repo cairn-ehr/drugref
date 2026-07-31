@@ -116,9 +116,15 @@ def test_apply_migrations_is_idempotent(conn):
         # of each must be one true sentence, "used for" vs "causes".
         "condition_indication_axis", "moiety_condition_indication",
         "moiety_induced_condition",
-        # slice 5b.2, db/019 section 5: the read path over the same condition DAG,
-        # walked UPWARD instead of down (db/015's expansion would manufacture claims
-        # an indication rule never made). One VIEW -- condition_indication_reach --
+        # slice 5b.2, db/019 section 5: the read path over the same condition DAG.
+        # THE TWO HALVES WALK OPPOSITE WAYS, and that is the slice's central safety
+        # distinction rather than a detail: indications_for_condition walks UP from the
+        # patient's condition to its ancestors, because walking DOWN from a rule's
+        # object would manufacture therapeutic claims the release never made (db/015's
+        # contraindication expansion does walk down, soundly, for the opposite reason).
+        # condition_indication_reach then walks DOWN from each rule's object to COUNT
+        # what that upward walk will find -- the same set, enumerated from the other
+        # end, which is why a test pins the two against each other. One VIEW --
         # named explicitly for the same reason as db/015's and db/018's views above;
         # indications_for_condition is a FUNCTION and does not appear in
         # information_schema.tables.

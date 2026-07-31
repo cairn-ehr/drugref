@@ -13,21 +13,29 @@ first), and it co-resides in a Cairn deployment's PostgreSQL **or** runs standal
 
 ## ⇒ NEXT
 
-**Merged to `main`:** slice 1 (identity spine, PR #1) · slice 2a (MED-RT classification, #9) · slice 2a.1
-(source-neutral class registry, #10) · slice 2b (MeSH PA) · slice 5a (MED-RT CI_MoA/CI_PE) · the
-foundation review · Plan A (open-question registry) · slice 8a (PBS localisation, #28) · Plan B
-(DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B review round (#38) ·
-slice 5b — MeSH-keyed contraindications (#44) · the post-5b debt round (#46) · the interaction debt round (#49).
+**Merged to `main`:** slice 1 (identity spine, PR #1) · 2a (MED-RT classification, #9) · 2a.1 (source-neutral
+class registry, #10) · 2b (MeSH PA) · 5a (MED-RT CI_MoA/CI_PE) · the foundation review · Plan A (open-question
+registry) · 8a (PBS localisation, #28) · Plan B (DAG-descendant expansion, #32) · the identity-spine fix round
+(#34) · the Plan B review round (#38) · 5b — MeSH-keyed contraindications (#44) · the post-5b debt round (#46)
+· the interaction debt round (#49).
 
 **IN FLIGHT — slice 5b.2, MeSH-keyed indications**, on `feat/slice-5b2-mesh-indications`: complete,
-**verified end-to-end against the real releases**, PR **not yet opened**. **619 tests green**,
-`ruff check` + `mkdocs build --strict` clean, `db/001`–`db/019`. Measured table under "Slice 5b.2" below;
-the erratum it produced is the living record `docs-site/docs/decisions/indications-do-not-expand.md`.
+**verified end-to-end against the real releases**, whole-branch review fixed, PR **not yet opened**.
+**621 tests green**, `ruff check` + `mkdocs build --strict` clean, `db/001`–`db/019`. Measured table under
+"Slice 5b.2" below; the erratum is `docs-site/docs/decisions/indications-do-not-expand.md`.
 
-**⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has now happened three times** (#31, #35,
-#40), each time because a commit or PR body that says *filed, not fixed* still named the number. The tracker
-is true today. **A number in a commit message is a claim about the code — verify it before writing it**, and
-prefer prose that cannot be parsed as a closing keyword when filing rather than fixing.
+**The final review's fix wave** added the two counters in the traps below (**168** / **422**, both confirmed
+end-to-end), filed [#51](https://github.com/cairn-ehr/drugref/issues/51) and
+[#52](https://github.com/cairn-ehr/drugref/issues/52) for 5c, and **edited `db/019` in place** (immutability
+starts at MERGE), correcting every stale figure in it. **⇒ Drop any scratch database that applied the old
+`db/019`** or `apply_migrations` will refuse it. Two figures were stale beyond the review's list: the
+expansion multipliers (**708** Neoplasms descendants, **14×/47×/77×**) moved with the registry widening, and
+`questions.unmatched_ingredient`'s text was false for **13** RxCUIs, not 10.
+
+**⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40),
+each time because a commit or PR body saying *filed, not fixed* still named the number. The tracker is true
+today. **A number in a commit message is a claim about the code — verify it**, and when filing rather than
+fixing, prefer prose that cannot be parsed as a closing keyword.
 
 **⇒ Next candidates:**
 
@@ -195,24 +203,19 @@ MED-RT's MeSH-keyed content — `CI_with` (drug→condition) and `CI_ChemClass`'
 — but its **MED-RT and MeSH scope statements were corrected**: the old text said drugref ingested MED-RT and RxNorm
 namespaces only, which stopped being true here, and `medrt_subset.xml` carries MeSH concept names and ConceptUIs.
 
-**Measured end-to-end against the real releases** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc2026 + supp2026), on
-a scratch database, live PG18. Upstream denominators, so the yield reads without the spec:
-**`CI_with` 11,524 assertions / 708 objects · `CI_ChemClass` 1,939 / 360**.
+**Measured end-to-end against the real releases**, scratch database, live PG18. Upstream denominators, so
+the yield reads without the spec: **`CI_with` 11,524 assertions / 708 objects · `CI_ChemClass` 1,939 / 360**.
+Spec §4.5 → actual: `condition`/`condition_parent` 5,190/7,157 → **5,203 / 7,157** (+13 SCRs);
+`moiety_condition_contraindication` 9,482 → **9,471**; distinct subjects/objects 2,900/667 → **2,900 / 641**;
+`moiety_contraindication` 1,443 → **1,442** (one self-pair, `db/014` forbids it); `gap_unresolved_ci_object`
+108 → **103 rows / 405 rules**; `condition_contraindication_expanded` **191,728**, of which `WHERE is_direct`
+is **9,471** — exactly the base.
 
-| | spec §4.5 predicted | **measured** | |
-|---|---:|---:|---|
-| `condition` | 5,190 | **5,203** | 5,190 descriptors **+ 13 SCRs**; spec counted descriptors only |
-| `condition_parent` | 7,157 | **7,157** | 1,690 children multi-parent, as predicted |
-| `moiety_condition_contraindication` | 9,482 | **9,471** | −11: concept→record collapse, see below |
-| — distinct subjects / objects | 2,900 / 667 | **2,900 / 641** | −26 objects: same collapse |
-| `moiety_contraindication` | 1,443 | **1,442** | −1: one self-pair, `db/014` forbids it |
-| `gap_unresolved_ci_object` rows | 108 | **103** | spec counted ConceptUIs; the worklist keys on records |
-| — `sum(ci_rule_count)` | 405 | **405** | unaffected — an assertion is an assertion |
-| `condition_contraindication_expanded` | — | **191,728** | `WHERE is_direct` → **9,471**, exactly the base |
-
-`MeshCiSummary`: `conditions_registered=5203, conditions_added=5203, condition_parent_edges=7157,
-condition_contraindications=9471, moiety_contraindications=1442, unmatched_subject_rxcuis=826, withheld_class_objects=103,
-unresolved_object_codes=2, non_mesh_objects=2`. Whole chain **69 s** (UNII 8.6 s, MED-RT 3.4 s, 5b **56.8 s**) — the 5b leg
+What the run reported (`registry=5203/5203/7157`; contraindications `condition_rows=9471, pair_rows=1442,
+unmatched_subject_rxcuis=826, withheld_class_objects=103, unresolved_object_codes=2, non_mesh_objects=2`).
+**Do not grep for `MeshCiSummary`** — 5b's flat type became 5b.2's nested `MeshRelSummary`
+(`ingest/mesh_rel_summary.py`), renaming `condition_contraindications`/`moiety_contraindications` →
+`condition_rows`/`pair_rows`. Shape only; no figure moved. Whole chain **69 s** (UNII 8.6 s, MED-RT 3.4 s, 5b **56.8 s**) — the 5b leg
 is two streaming passes over `desc2026`/`supp2026` plus row-at-a-time inserts
 ([#7](https://github.com/cairn-ehr/drugref/issues/7)/[#29](https://github.com/cairn-ehr/drugref/issues/29)).
 
@@ -236,51 +239,53 @@ live when `has_SC` (3,632 assertions, **248 targeting MED-RT itself**) or the cl
 Spec: [slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). The other half
 of MED-RT's MeSH-keyed content — `may_treat` / `may_prevent` / `may_diagnose` and `induces` — over the **same**
 condition registry, which one orchestrator (`ingest/mesh_rel_run.py`) now owns for both halves. **No new
-source**, so `NOTICE` is unchanged. Two relations, one vocabulary table, one cached `condition.scr_class`, one
+source** — but `NOTICE` **was** corrected: it named MED-RT's two contraindication predicates specifically, and
+six MeSH-keyed predicates are now ingested. Two relations, one vocabulary table, one cached `condition.scr_class`, one
 read function, one reach view, one gap view, a seventh `gap_kind` and a third `reason` bucket.
 
-**Measured end-to-end against the real releases** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc/supp/pa
-2026), scratch database, whole chain 108 s (5b.2 leg 55 s):
+**Measured end-to-end** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH desc/supp/pa 2026), whole chain 108 s:
 
-| | spec §10 | **measured** | |
-|---|---:|---:|---|
-| `moiety_condition_indication` | ≤ 18,125 | **14,674** | may_treat 12,662 · may_prevent 1,888 · may_diagnose 124 |
-| `moiety_induced_condition` | ≤ 170 | **154** | 108 moieties, 49 conditions |
-| `condition` / `condition_parent` | 5,963 / 8,507 | **5,963 / 8,507** | exact |
-| `condition.scr_class` | 29×`3`, 5×`1` | **29 / 5** | exact |
-| `gap_condition_without_indication` | 66 | **97** | 80 C/F-tree + 17 tree-less `SCRClass 3` |
-| `condition_subtree` | 12,311 → 12,415 | **11,512 → 11,605** | +93 over 641 roots |
-| `condition_contraindication_expanded` | ≈192,500 | **192,161** | +433 = **+0.226%** |
-| unmatched indication subjects | — | **1,426** | `reason = 'indication'` |
-| **must not move** | | **all held** | 9,471 · 1,442 · 103/405 · 21,664 |
+| | **measured** | |
+|---|---:|---|
+| `moiety_condition_indication` / `moiety_induced_condition` | **14,674 / 154** | may_treat 12,662 · may_prevent 1,888 · may_diagnose 124 |
+| `condition` / `condition_parent` / `scr_class` | **5,963 / 8,507 / 29×`3`+5×`1`** | all exact to spec |
+| `gap_condition_without_indication` | **97** | 80 C/F-tree + 17 tree-less `SCRClass 3` (spec said 66) |
+| `condition_subtree` | **11,512 → 11,605** | +93 over 641 roots (spec said 12,311 → 12,415) |
+| `condition_contraindication_expanded` | **192,161** | +433 = **+0.226%** (spec said ≈192,500) |
+| indicated **and** contraindicated / broadened | **168 pairs / 422** | unmatched indication subjects **1,426** |
+| **must not move** | **all held** | 9,471 · 1,442 · 103/405 · 21,664 |
 
 `indications_for_condition` vs `condition_indication_reach` **on the release**: **5,963 conditions checked,
 276,343 rows, zero disagreements** — the pin that makes two statements of one rule safe.
 
 **Traps a future change can still break.**
-
-- **The generalisation walks UP, never down.** Walking down distributes a therapeutic claim over the object's
-  subclasses — one `may_treat` on *Neoplasms* would manufacture 702 claims the release never made (13×/41×/75×
-  overall). Nothing derived is stored; `indications_for_condition` offers ancestor rules with
-  `is_direct = false`, which means a **weaker** claim, not a wider one. The column is
-  `generalises_to_descendants`, deliberately **not** `expands_descendants`; do not unify the two axes.
-- **The two-table split is structural.** `induces` has its own relation because the unfiltered read of a table
-  must be one true sentence — a shared table plus a forgotten `relationship` filter reads "carbamazepine
-  treats agranulocytosis". `induces` also has **no axis row** and licenses no walk.
-- **The gap view is deliberately scoped** to C/F-tree diseases plus tree-less `SCRClass = 3` rare diseases.
-  789 further unreached conditions are excluded (669 are surgical procedures) because `question_uuid` is
-  externally citable and immortal — minting them for "nothing is indicated for Abdominoplasty" would bury the
-  real rows. Every exclusion is stated with its count in the view's `COMMENT ON`.
-- **One registry, so widening it moves the contraindication half — upward, and that is a completion.** A
-  condition bears several tree numbers and an edge is written only when **both** endpoints are registered, so
-  registering indication objects completes edges the CI closure could not see. 10 of 641 CI roots grew
-  (*Nervous System Diseases* +59, gaining *Acute Pain*), none shrank, the root set is byte-identical, and
-  every **direct** figure is unchanged. **Expect this again every time the registry widens.**
-- **The spec's 66 / 12,311 / ≈192,500 were computed BEFORE the moiety gate.** 1,426 indication subjects match
-  no moiety, and `condition_subtree` walks the 641 roots stored rules name rather than the 677 the release
-  references. Re-measured pre-gate the spec's figures reproduce exactly, so both are right about different
-  populations — the same class of error as 5b's concept-vs-record grain. Standing correction:
-  `docs-site/docs/decisions/indications-do-not-expand.md`.
+- **The generalisation walks UP, never down.** Down distributes a therapeutic claim over the object's
+  subclasses — one `may_treat` on *Neoplasms* manufactures 708 claims (14×/47×/77×; 14,674 rows → 276,343).
+  Nothing derived is stored; ancestor rules come back `is_direct = false`, a **weaker** claim not a wider one.
+  The column is `generalises_to_descendants`, deliberately **not** `expands_descendants`; do not unify them.
+- **The two-table split is structural.** `induces` has its own relation, **no axis row** and no walk: the
+  unfiltered read of a table must be one true sentence, and a shared table plus a forgotten `relationship`
+  filter reads "carbamazepine treats agranulocytosis".
+- **The gap view is deliberately scoped** to C/F-tree diseases plus tree-less `SCRClass = 3` rare diseases:
+  842 further unreached conditions are excluded (670 surgical procedures) because `question_uuid` is
+  externally citable and immortal. Every exclusion is counted in the view's `COMMENT ON`.
+- **One registry, so widening it moves the contraindication half — upward, and that is a completion.** An
+  edge is written only when **both** endpoints are registered, so registering indication objects completes
+  edges the CI closure could not see. 10 of 641 CI roots grew (*Nervous System Diseases* +59, gaining *Acute
+  Pain*), none shrank, the root set is byte-identical, every **direct** figure is unchanged. **Expect this
+  again every time the registry widens.**
+- **Two widenings survive the upward walk; both are COUNTED, not fixed.** (1) **168 pairs** are indicated
+  *and* contraindicated for one condition (carvedilol/*Heart Failure* — chronic HFrEF vs acute
+  decompensation), and the two read paths walk opposite ways so it multiplies below the object. (2) **422 of
+  18,314** assertions land on a **broader** record than MED-RT named, because MED-RT keys on a ConceptUI and
+  a condition on the record — `may_treat` "Seizures, Focal" for eslicarbazepine lands on *Seizures*, which it
+  aggravates when generalised; safe on the CI half, unsafe here. `also_contraindicated_pairs` and
+  `indications.broadened_object_assertions` report them every run, tests pin both, and both tables'
+  `COMMENT ON` state (1). Worked cases in the living record; remedies are
+  [#51](https://github.com/cairn-ehr/drugref/issues/51) / [#52](https://github.com/cairn-ehr/drugref/issues/52) (5c).
+- **The spec's 66 / 12,311 / ≈192,500 were computed BEFORE the moiety gate** and reproduce exactly when
+  re-measured that way — right about different populations, as 5b's concept-vs-record grain was. `db/019`'s
+  comments now carry the post-gate figures (edited in place, unmerged); `db/015`'s cannot be and stay 5b's.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 
@@ -313,7 +318,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 ```bash
 uv sync
 uv run pytest                      # unit tests run anywhere; DB-gated tests SKIP without a DSN
-# 619 tests; the DB-gated majority SKIP without this DSN, exercising none of the
+# 621 tests; the DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check .
@@ -432,7 +437,7 @@ code before closing. **Three standing rules came out of them and outlive the iss
   *name* source, not a membership signal.
 - [#7](https://github.com/cairn-ehr/drugref/issues/7) / [#29](https://github.com/cairn-ehr/drugref/issues/29)
   **Row-at-a-time ingest** — MED-RT (~31k round trips, plus `ElementTree.parse` holding 45 MB) and PBS
-  (~28k). `executemany`/`COPY` + batch commits + `iterparse`. **The MeSH-keyed run now writes ~39k rows**
+  (~28k). `executemany`/`COPY` + batch commits + `iterparse`. **The MeSH-keyed run now writes 40,211 rows**
   (5,963 conditions + 8,507 edges + 10,913 contraindication + 14,828 indication) in **55 s**, the slowest
   leg; the whole chain is 108 s.
 - [#16](https://github.com/cairn-ehr/drugref/issues/16) **A crashed ingest leaves no trace** — the
@@ -484,11 +489,11 @@ be deleted, so confirm it BEFORE the first real load, not after.
 
 ## Repo facts
 
-- GitHub `cairn-ehr/drugref` · default branch `main` · **AGPL-3.0** · attribution in `NOTICE`. Slice 5b adds
-  **no new source** (nor does 5b.2), but corrected the MED-RT/MeSH *scope* claims already there. Coding
-  rules live in CLAUDE.md and the `nextsession` skill.
+- GitHub `cairn-ehr/drugref` · default branch `main` · **AGPL-3.0** · attribution in `NOTICE`. Neither 5b
+  nor 5b.2 adds a source, but each corrected `NOTICE`'s MED-RT/MeSH *scope* claims — 5b.2's names all **six**
+  MeSH-keyed predicates. Coding rules live in CLAUDE.md and the `nextsession` skill.
 - Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by
   `.github/workflows/docs.yml`; `mkdocs build --strict` is its test. Its **Design decisions** section holds
   *living* records (revised in place, reversed ones removed) and is **where a standing correction to an
-  artefact that genuinely cannot be edited — an immutable spec — goes**. Two errata live there now, one per
-  MeSH-keyed slice. Specs/HANDOVER/ROADMAP are **not** published.
+  artefact that genuinely cannot be edited — an immutable spec, or a MERGED migration's `COMMENT ON` — goes**.
+  Two errata live there, one per MeSH-keyed slice. Specs/HANDOVER/ROADMAP are **not** published.

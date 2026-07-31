@@ -70,8 +70,9 @@ def test_a_sibling_branch_is_not_reached(conn, a_moiety, dag, ingest_run_id):
 def test_expansion_never_runs_DOWNWARD(conn, a_moiety, dag, ingest_run_id):
     """THE CENTRAL GUARANTEE OF THIS SLICE. A rule on a SPECIFIC condition must never
     reach the general one: 'treats Frontal Lobe Epilepsy' does not mean 'treats
-    epilepsy', and the inverse direction is what would manufacture 702 claims from one
-    rule on Neoplasms."""
+    epilepsy', and the inverse direction is what would manufacture 708 claims from one
+    rule on Neoplasms -- measured on 5b.2's 5,963-condition registry, where the whole
+    stored set would inflate 14,674 -> 276,343."""
     indications.add_condition_indication(conn, a_moiety, dag["D017034"], "may_treat",
                                          "MED-RT", ingest_run_id)
     assert conn.execute("SELECT count(*) FROM drugref.indications_for_condition(%s)",
@@ -80,7 +81,20 @@ def test_expansion_never_runs_DOWNWARD(conn, a_moiety, dag, ingest_run_id):
 
 def test_a_non_generalising_predicate_returns_only_direct_rows(conn, a_moiety, dag,
                                                                ingest_run_id):
-    """Switching generalisation off is ONE UPDATE and needs no view or function edit."""
+    """Switching generalisation off is ONE UPDATE and needs no view or function edit.
+
+    THE VIEW IS ASSERTED HERE TOO, and that is the whole point of the test rather than
+    extra coverage. The docstring's claim is that no VIEW edit is needed, so checking
+    only the function leaves exactly the statement being made unproven --
+    condition_indication_reach's `count(*) FILTER (... AND a.generalises_to_descendants)`
+    was never evaluated with the flag false anywhere in the suite, and
+    test_the_function_and_the_reach_view_agree runs only under the default.
+
+    This slice's stated safety net is that the reach rule is written TWICE (once in the
+    function, once in the view) and pinned against itself; an unproven pin is not a net.
+    gap_condition_without_indication filters the same column, so a divergence here would
+    silently change the curator's worklist rather than fail anything.
+    """
     conn.execute("UPDATE drugref.condition_indication_axis "
                  "SET generalises_to_descendants = false WHERE relationship = 'may_treat'")
     indications.add_condition_indication(conn, a_moiety, dag["D004827"], "may_treat",
@@ -89,6 +103,22 @@ def test_a_non_generalising_predicate_returns_only_direct_rows(conn, a_moiety, d
                         (dag["D004833"],)).fetchone()[0] == 0
     assert conn.execute("SELECT count(*) FROM drugref.indications_for_condition(%s)",
                         (dag["D004827"],)).fetchone()[0] == 1
+    reach = dict(conn.execute(
+        "SELECT condition_uuid, direct_indication_rules || '/' || "
+        "generalised_indication_rules FROM drugref.condition_indication_reach"
+    ).fetchall())
+    # The descendant is still WALKED TO -- the recursive term does not read the flag --
+    # but contributes no generalised rule, which is what the FILTER decides.
+    assert reach[dag["D004833"]] == "0/0"
+    assert reach[dag["D004827"]] == "1/0"       # the direct rule is unaffected
+    # And the two statements of the rule still agree, which is the pin itself.
+    for condition_uuid in dag.values():
+        assert conn.execute(
+            "SELECT direct_indication_rules + generalised_indication_rules "
+            "FROM drugref.condition_indication_reach WHERE condition_uuid = %s",
+            (condition_uuid,)).fetchone()[0] == conn.execute(
+            "SELECT count(*) FROM drugref.indications_for_condition(%s)",
+            (condition_uuid,)).fetchone()[0], f"disagreement at {condition_uuid}"
 
 
 def test_induced_states_never_appear(conn, a_moiety, dag, ingest_run_id):

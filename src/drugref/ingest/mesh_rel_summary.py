@@ -111,7 +111,7 @@ class IndicationTally:
     drug is FOR, `induces` says what it CAUSES, and a shared table would let a consumer
     who forgets a `relationship` filter read the second as the first (spec 5.1).
 
-    The four worklist numbers are reported, never swallowed (spec 7):
+    The five reported numbers, never swallowed (spec 7):
       * unmatched_subject_rxcuis    -- the rule's subject is carried by no moiety
       * class_subject_assertions    -- the subject is a pharmacologic CLASS, not an
                                        ingredient, so there is no RxCUI to bridge: 193
@@ -121,19 +121,32 @@ class IndicationTally:
                                        release, where all 1,528 resolve -- kept because
                                        that is a fact about a release, not a guarantee
       * chemical_object_assertions  -- the object is a MeSH D-tree CHEMICAL rather than
-                                       a patient state. 17 assertions over 13 records,
-                                       0.09% of may_treat. INGESTED and counted, unlike
-                                       every other number here: see write_indications
+                                       a patient state. 17 assertions over 13 records
+                                       (14 may_treat, 3 may_prevent), 0.09% of the
+                                       18,144 therapeutic ones. INGESTED and counted
+      * broadened_object_assertions -- MED-RT named a SUBORDINATE MeSH concept, so the
+                                       row is stored against a BROADER record than the
+                                       release named. 422 of 18,314 (2.30%): may_treat
+                                       340, may_prevent 80, induces 2, through 90
+                                       concepts onto 85 records. INGESTED and counted
 
-    THE LAST ONE IS NOT A LOSS AT ALL, which is why it is described rather than merely
-    listed: those assertions ARE ingested, and the number exists so an operator learns
-    the release's category errors from a figure rather than by meeting them in a query.
+    THE LAST TWO ARE NOT LOSSES AT ALL, which is why they are described rather than
+    merely listed: those assertions ARE ingested. The first exists so an operator learns
+    the release's category errors from a figure rather than by meeting them in a query;
+    the second because a broadened indication is stored as a claim the release did not
+    make, and until #52 puts the ConceptUI on the row this count is a consumer's ONLY
+    evidence that any row was widened. See write_indications for the eslicarbazepine
+    case and for why the same collapse is SAFE on the contraindication half.
 
     Two of these are counted by the PARSER and the ORCHESTRATOR rather than by the pass,
     for the reason CiTally gives: an assertion the parser refused never reaches the pass,
     and an M-code that resolves to no record never reaches it either. They are reported
     here anyway, because a reader asking "what did the indication half lose?" must find
     every answer in one place.
+
+    WHAT IS DELIBERATELY NOT HERE: the indication/contraindication OVERLAP. It sits on
+    MeshRelSummary itself, because it is a fact about the two halves together and this
+    tally would be the wrong place to look it up -- see MeshRelSummary.
     """
     indication_rows: int
     induced_rows: int
@@ -141,6 +154,7 @@ class IndicationTally:
     class_subject_assertions: int
     unresolved_object_codes: int
     chemical_object_assertions: int
+    broadened_object_assertions: int
 
 
 @dataclass(frozen=True)
@@ -153,7 +167,34 @@ class MeshRelSummary:
     summary would have to either repeat the registry figures per family (one quantity
     stated twice) or leave the reader guessing which family a bare
     `conditions_registered` belonged to.
+
+    AND ONE FIGURE BELONGS TO NEITHER FAMILY, which is why it sits at this level rather
+    than inside a tally. `also_contraindicated_pairs` is a fact about the two halves
+    TOGETHER: neither pass can compute it, and filing it under `indications` would tell
+    a reader that the indication pass produced it while its value depends entirely on
+    what the contraindication pass wrote. The orchestrator measures it after both passes
+    have run, in one query, and reports it where its provenance is honest.
     """
     registry: RegistryTally
     contraindications: CiTally
     indications: IndicationTally
+    # (subject_moiety, object_condition) pairs the release asserts BOTH ways: an
+    # indication row and a contraindication row for one drug and one condition.
+    #
+    # NOT AN ERROR AND NOT A DROP -- both rows are stored, and this is the one counter
+    # here that reports a COLLISION rather than a loss. 168 pairs on the 2026.07.06
+    # release (from 175 indication rows -- 7 pairs carry two therapeutic predicates --
+    # over 154 moieties and 40 conditions). They are the clinically hardest rows in the
+    # release rather than noise: carvedilol may_treat AND CI_with Heart Failure,
+    # alteplase for Stroke, budesonide for Asthma. Each is a real distinction the MeSH
+    # descriptor grain cannot carry -- beta-blockers treat stable chronic HFrEF and are
+    # contraindicated in acute decompensation -- and MED-RT asserts both flatly with no
+    # qualifier to separate them.
+    #
+    # COUNTED HERE BECAUSE NOTHING ELSE SEES IT. The two read paths walk in OPPOSITE
+    # directions (indications generalise UP the DAG, contraindications expand DOWN), so
+    # the collision multiplies across the subtree rather than staying at 168, and no
+    # single-table query would reveal it. Whether a consumer should be told through an
+    # eighth gap kind or a read-path flag is #51, slice 5c's curated work; publishing
+    # the fact that it happens is this slice's.
+    also_contraindicated_pairs: int

@@ -188,7 +188,20 @@ def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
         else:                                        # CI_with
             object_uuid = uuid_by_code.get(record.record_ui)
             if object_uuid is None:
-                continue                            # not a registered condition
+                # Defensive rather than live: the orchestrator's closure covers every
+                # CI_with object code, so a resolved record is always registered, and
+                # on the real 2026 releases this branch is never taken.
+                #
+                # BE CLEAR ABOUT WHAT IT COSTS IF IT EVER IS. This guard makes such a
+                # loss SILENT -- the assertion is skipped, no tally counts it, and the
+                # ingest reports success -- which is the opposite of letting the foreign
+                # key refuse the row. It is kept because a crash is worse than a skip
+                # for a condition the CALLER is responsible for establishing, but that
+                # makes the row counts the only evidence: a change that narrows the
+                # closure must be checked against them, never trusted to fail loudly
+                # here. (The identical guard and the identical argument live in
+                # mesh_ind_relations.write_indications -- one loss, two passes.)
+                continue
             for subject in subjects:
                 if interactions.add_condition_contraindication(
                         conn, subject, object_uuid, a.relationship, source, run_id):

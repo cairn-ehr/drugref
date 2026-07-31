@@ -30,10 +30,18 @@ CREATE TABLE IF NOT EXISTS drugref.condition_indication_axis (
     -- descendant: a patient coded Temporal Lobe Epilepsy IS a patient with epilepsy, so
     -- a contraindication on Epilepsy holds. Applied to an indication the same walk
     -- distributes over the OBJECT's subclasses, which the release never asserted -- one
-    -- may_treat rule on Neoplasms would manufacture 702 therapeutic claims, Infections
-    -- 785, and the whole set inflates 13x/41x/75x. So nothing derived is ever STORED;
-    -- this column governs only whether indications_for_condition may OFFER a rule from
-    -- an ancestor, LABELLED as a generalisation.
+    -- may_treat rule on Neoplasms would manufacture 708 therapeutic claims, Infections
+    -- 812, Cardiovascular Diseases 478, and the whole set inflates 14x/47x/77x
+    -- (may_treat / may_prevent / may_diagnose): 14,674 stored rows would become 276,343.
+    -- So nothing derived is ever STORED; this column governs only whether
+    -- indications_for_condition may OFFER a rule from an ancestor, LABELLED as a
+    -- generalisation.
+    --
+    -- MEASURED ON 5b.2's REGISTRY, not the spec's. The spec said 702/785 and 13x/41x/75x
+    -- over slice 5b's 5,203-condition registry; this slice's closure widened it to 5,963
+    -- (spec 3.6), so every descendant count below a root moved up with it. The argument
+    -- is unchanged and slightly stronger -- which is the point of re-measuring rather
+    -- than carrying a figure forward.
     generalises_to_descendants boolean NOT NULL
 );
 
@@ -79,14 +87,58 @@ COMMENT ON TABLE drugref.moiety_condition_indication IS
     '-- rows feed review and must not auto-alert. NOT A RECOMMENDATION: MED-RT asserts '
     'that a drug may treat a condition, never that it is appropriate for a given '
     'patient, first-line, correctly dosed, or safe in combination, and it asserts no '
-    'ordering among the drugs that treat one condition. NOTHING HERE IS DERIVED -- '
-    'every row is an assertion the release makes; generalisation happens at read time '
-    'in indications_for_condition and is labelled there.';
+    'ordering among the drugs that treat one condition. '
+    'NOTHING HERE IS EXPANDED -- no row is derived by walking the condition DAG; '
+    'generalisation happens at read time in indications_for_condition and is labelled '
+    'there. But 422 of the 2026.07.06 release''s 18,314 assertions (2.3%) ARE stored '
+    'against a BROADER condition than the release named, because MED-RT keys on a MeSH '
+    'ConceptUI while a condition is keyed on the RECORD that owns it, and 90 named '
+    'concepts are subordinate ones collapsing onto 85 broader records. The row carries '
+    'no concept_ui, so a consumer CANNOT yet tell which (#52); the per-run count is '
+    'the only evidence. '
+    'A DRUG MAY BE BOTH INDICATED AND CONTRAINDICATED FOR ONE CONDITION: 168 pairs are '
+    'in this table AND in moiety_condition_contraindication on the same release '
+    '(carvedilol/Heart Failure, alteplase/Stroke, budesonide/Asthma). MED-RT asserts '
+    'no qualifier distinguishing them, so a consumer MUST NOT read such a pair as a '
+    'contradiction to be resolved automatically -- it is a real clinical distinction '
+    '(stable chronic HFrEF vs acute decompensation) that the MeSH descriptor grain '
+    'cannot carry. #51.';
 COMMENT ON COLUMN drugref.moiety_condition_indication.object_condition_uuid IS
     'The condition treated, prevented or diagnosed. Usually a disease, but MED-RT also '
     'names the ORGANISM for prevention (Influenza A virus carries 76 may_prevent '
     'assertions -- these are the vaccines) and, rarely, a treatment target such as LDL '
     'Cholesterol. condition.tree_numbers is what lets a consumer tell them apart.';
+
+-- ---- 2a. the same warning, on the OTHER side of the collision ------------------
+--
+-- RE-ISSUED HERE RATHER THAN EDITED INTO db/014, which created this table and is
+-- MERGED and therefore immutable. A catalog comment has exactly ONE live value, so
+-- there is no way to APPEND to db/014's text; the whole comment has to be restated by
+-- whichever migration last has something to add. The first four sentences below are
+-- db/014's verbatim -- do not "tidy" them, they are load-bearing there too.
+--
+-- IT MUST BE ON BOTH TABLES, not merely on the indication side, because the failure is
+-- symmetrical and a consumer meets it from whichever side they queried first: someone
+-- reading \d+ moiety_condition_contraindication to find out what a CI_with row means
+-- gets no hint that the same drug may be sitting in moiety_condition_indication for the
+-- same condition. 5b.2 is when that became possible -- before it there was no
+-- indication table to collide with -- which is why a 5b.2 migration is what says so.
+COMMENT ON TABLE drugref.moiety_condition_contraindication IS
+    'Drug-CONDITION contraindications: the subject moiety is contraindicated in a '
+    'patient who has the object condition. A REBUILDABLE PROJECTION, CANDIDATE TIER '
+    '-- MED-RT does not track label updates, so rows feed review and must not '
+    'auto-alert. NOT AN ABSOLUTE CONTRAINDICATION: MED-RT asserts the association, '
+    'never its severity nor whether benefit-risk may override it, so a consumer must '
+    'not render "contraindicated in pregnancy" as a hard stop. The curated overlay '
+    '(slice 5c) adds severity, mechanism and management. '
+    'A DRUG MAY BE BOTH CONTRAINDICATED AND INDICATED FOR ONE CONDITION: 168 pairs are '
+    'in this table AND in moiety_condition_indication on the 2026.07.06 release '
+    '(carvedilol/Heart Failure, alteplase/Stroke, budesonide/Asthma). MED-RT asserts '
+    'no qualifier distinguishing them, so a consumer MUST NOT read such a pair as a '
+    'contradiction to be resolved automatically -- it is a real clinical distinction '
+    '(stable chronic HFrEF vs acute decompensation) that the MeSH descriptor grain '
+    'cannot carry. The two read paths walk in OPPOSITE directions, so the collision '
+    'multiplies below the object rather than staying at 168. #51.';
 
 -- ---- 3. drug -> condition, caused --------------------------------------------
 CREATE TABLE IF NOT EXISTS drugref.moiety_induced_condition (
@@ -223,7 +275,7 @@ COMMENT ON FUNCTION drugref.indications_for_condition(uuid) IS
     'Every indication that reaches a patient coded with this condition, found by '
     'walking UP the condition DAG from it. THE DIRECTION IS THE POINT: walking DOWN '
     'from a rule''s object would distribute a therapeutic claim over the object''s '
-    'subclasses, and one may_treat rule on Neoplasms would manufacture 702 claims the '
+    'subclasses, and one may_treat rule on Neoplasms would manufacture 708 claims the '
     'release never made. Walking up instead yields a WEAKER statement that is true. '
     'A row with is_direct = false MUST be rendered as "indicated for <object_condition>, '
     'a more general form of this diagnosis" and NEVER as an indication for the coded '
@@ -241,21 +293,30 @@ COMMENT ON FUNCTION drugref.indications_for_condition(uuid) IS
 -- twice there, only one copy learned a correction, and a whole class of dead rules was
 -- reported by nothing.
 --
--- SCOPED, AND THE SCOPE IS A JUDGEMENT WITH NUMBERS BEHIND IT. 855 registry conditions
--- are unreached; 66 of them are gaps. The 789 excluded are:
---   669  E-tree SURGICAL PROCEDURES (Abdominoplasty, Ablation Techniques)
---    40  D-tree chemicals · 35 B-tree organisms · 32 G-tree phenomena (Beer, Cheese)
---    25  N-tree health care · 13 M-tree demographics (Adolescent, Aged) · 12 J · rest
---     7  tree-less SCRs that are NOT rare diseases (aliskiren, formaldehyde-serum
+-- SCOPED, AND THE SCOPE IS A JUDGEMENT WITH NUMBERS BEHIND IT. 939 registry conditions
+-- are unreached; 97 of them are gaps. The 842 excluded are, attributed by FIRST tree
+-- number (totals exact, measured through the moiety gate on the 2026 releases):
+--   670  E-tree SURGICAL PROCEDURES (Abdominoplasty, Ablation Techniques)
+--    54  B-tree organisms · 52 D-tree chemicals · 40 G-tree phenomena (Beer, Cheese)
+--    14  M-tree demographics (Adolescent, Aged) · 6 H · 1 A · 1 N
+--     4  tree-less SCRs that are NOT rare diseases (aliskiren, formaldehyde-serum
 --        albumin) -- see below
 -- "Nothing is indicated for Abdominoplasty" is a category error, not a gap, and
--- question_uuid is EXTERNALLY CITABLE and immortal: minting 789 of them for noise
--- would bury the 66 real rows on a worklist whose whole value is that a curator can
+-- question_uuid is EXTERNALLY CITABLE and immortal: minting 842 of them for noise
+-- would bury the 97 real rows on a worklist whose whole value is that a curator can
 -- work it.
+--
+-- EVERY FIGURE IN THIS BLOCK IS POST-GATE, and that is why it differs from the spec's.
+-- The spec computed 855/66/789/669 over the objects the RELEASE references; drugref
+-- stores only a rule whose subject some moiety carries, and 1,426 indication subject
+-- RxCUIs match none. The spec's own breakdown ("25 N-tree · 13 M-tree · 12 J") does not
+-- survive the gate at all. Both are right about different populations -- exactly the
+-- concept-grain-vs-record-grain error slice 5b hit five times -- but only the post-gate
+-- number is what this view returns, so only the post-gate number belongs in its comment.
 --
 -- TREE-LESS RECORDS ARE EXCLUDED ON A DIFFERENT GROUND, and the distinction matters:
 -- an SCR holds no DAG position at all, so "no indication above it" is VACUOUSLY true
--- and says nothing. The SCRClass = 3 carve-out recovers exactly the 11 for which the
+-- and says nothing. The SCRClass = 3 carve-out recovers exactly the 17 for which the
 -- vacuous answer is also the clinically right one -- a rare disease with no recorded
 -- indication is the most valuable row on this list (Short QT Syndrome, succinic
 -- semialdehyde dehydrogenase deficiency, Familial medullary thyroid carcinoma).
@@ -275,11 +336,13 @@ AND    (EXISTS (SELECT 1 FROM unnest(c.tree_numbers) t
 
 COMMENT ON VIEW drugref.gap_condition_without_indication IS
     'DISEASES drugref holds no indication for -- not directly, and not from any '
-    'condition above them. 66 rows against the 2026 releases: 55 carrying a C '
-    '(Diseases) or F (Psychiatry) tree number, plus 11 tree-less SCRClass-3 rare '
-    'diseases. Scoped DELIBERATELY: 789 further unreached conditions are excluded, 669 '
+    'condition above them. 97 rows against the 2026 releases: 80 carrying a C '
+    '(Diseases) or F (Psychiatry) tree number, plus 17 tree-less SCRClass-3 rare '
+    'diseases. Scoped DELIBERATELY: 842 further unreached conditions are excluded, 670 '
     'of them surgical procedures, because "nothing is indicated for Abdominoplasty" is '
-    'a category error rather than a gap. Answerable from openFDA-SPL labels (tier 2) '
+    'a category error rather than a gap. Every figure here is POST-GATE (drugref stores '
+    'only rules whose subject a moiety carries), which is why it differs from the '
+    'spec''s pre-gate 66/789. Answerable from openFDA-SPL labels (tier 2) '
     'or MeDIC (tier 3) before literature.';
 
 -- Admit the seventh question kind. Guarded on the constraint's TEXT, as db/016 and

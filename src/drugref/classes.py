@@ -269,11 +269,11 @@ def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
     about. Persisting the identity (rather than only counting it, as the ingest did
     before Plan A) is what lets gap_unmatched_ingredient be a query.
 
-    `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION or
-    CONTRAINDICATION above -- and is what its own clear is scoped on. Required, and
-    positional before the optional `names`, so a writer cannot inherit a bucket it
-    does not own; the column has no DEFAULT either, so a forgotten reason fails in the
-    database as well as here.
+    `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION,
+    CONTRAINDICATION or INDICATION above -- and is what its own clear is scoped on.
+    Required, and positional before the optional `names`, so a writer cannot inherit a
+    bucket it does not own; the column has no DEFAULT either, so a forgotten reason
+    fails in the database as well as here.
 
     Batched rather than one call per RxCUI -- this is thousands of rows on a real
     release, and its siblings (add_membership, add_parent_edge) are per-row only

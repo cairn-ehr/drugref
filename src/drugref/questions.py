@@ -52,10 +52,25 @@ _GAP_SOURCES = {
     "unmatched_ingredient": {
         "view": "gap_unmatched_ingredient",
         "key_sql": "'RXNORM_IN:' || rxcui",
+        # "NAMED upstream", NOT "classified upstream", and the widening is a correction
+        # rather than a hedge. Since db/019 the bucket has THREE reasons, and 13 of the
+        # 2,150 RxCUIs on this worklist are never classified at all -- 10 reach it only
+        # as the subject of an indication rule and 3 only as the subject of a
+        # contraindication and an indication. The old text asserted a classification for
+        # all 2,150, so those 13 became EXTERNALLY CITABLE questions (question_uuid is
+        # immortal) carrying a false premise about the release.
+        #
+        # DELIBERATELY NOT REASON-SPECIFIC: gap_unmatched_ingredient is DISTINCT ON
+        # (rxcui) and does not project `reason`, precisely so its grain matches the
+        # question's -- one RxCUI, one question, however many reasons named it. Naming
+        # the reason here would mean either widening the view (splitting one question
+        # into three, which db/008's DISTINCT ON exists to prevent) or picking one reason
+        # arbitrarily. The disjunction is what is actually true of every row.
         "text_sql": (
             "'Does RxCUI ' || rxcui || COALESCE(' (' || name || ')', '') || "
-            "' have an active moiety drugref should carry? It is classified "
-            "upstream but no moiety in the registry claims it.'"),
+            "' have an active moiety drugref should carry? An upstream release names "
+            "it -- as a classified ingredient, or as the subject of a contraindication "
+            "or indication rule -- but no moiety in the registry claims it.'"),
     },
     # Plan B. The one kind here that drugref can answer ITSELF -- by recording a
     # decision in class_expansion_policy -- rather than by consulting a source. It

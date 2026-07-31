@@ -50,10 +50,21 @@ class MeshRecord:
     condition into several rows that no rebuild could ever merge.
 
     `is_preferred_concept` is recorded rather than discarded because a SUBORDINATE
-    concept may be NARROWER than the record it belongs to -- 81 of this slice's
-    1,051 resolved objects are subordinate. Storing the condition at record grain
-    loses that nuance; this flag makes the loss visible and measurable instead of
-    silent (spec §10 tension C).
+    concept may be NARROWER than the record it belongs to. Storing the condition at
+    record grain loses that nuance; this flag makes the loss visible and measurable
+    instead of silent (spec §10 tension C).
+
+    MEASURED SEPARATELY PER HALF, because the module now serves both and the two
+    populations differ in size AND in what the loss costs:
+      * contraindications -- 81 of 1,051 resolved objects are subordinate, carrying
+        550 of 13,463 assertions. SAFE: broadening a contraindication widens recall,
+        which is the direction db/014 wants.
+      * indications       -- 90 of 1,528 resolved objects are subordinate, carrying
+        422 of 18,314 assertions (2.30%) onto 85 broader records. UNSAFE: it offers a
+        drug for a condition the release never named it for.
+    The reader that makes the flag do work is mesh_ind_relations.write_indications,
+    which counts the second figure on every run; read its docstring for the
+    eslicarbazepine case and #52 for making the affected ROWS detectable.
     """
     concept_ui: str
     record_ui: str

@@ -1,5 +1,8 @@
 # tests/test_mesh_rel_run_ci.py
-"""End-to-end slice-5b ingest against the committed fixtures.
+"""End-to-end MeSH-keyed ingest: the CONTRAINDICATION half of the one relation run.
+
+The relations are slice 5b's; the ORCHESTRATOR is the one slice 5b.2 left behind, which
+is why this module is named after mesh_rel_run rather than after either slice.
 
 Every number here is a fact about the REAL releases the fixtures were extracted
 from (MED-RT 2026.07.06, MeSH 2026), not about anything this suite invented -- see
@@ -112,8 +115,8 @@ def test_ingest_reports_a_summary(conn, seeded_moieties):
     # written because their shared PARENT was unregistered. Drug Hypersensitivity
     # (C25.100.468, a CI_with object) and Chemical and Drug Induced Liver Injury
     # (C25.100.562, a CI descendant) both sit under C25.100 = D064420, which only the
-    # indication half names. This is spec 3.6's completion -- on the real releases 11
-    # of 677 CI roots gain reach and condition_subtree goes 12,311 -> 12,415, in the
+    # indication half names. This is spec 3.6's completion -- on the real releases 10
+    # of 641 CI roots gain reach and condition_subtree goes 11,512 -> 11,605, in the
     # recall-safe direction. On THIS fixture the completion is visible as edges only:
     # measured before and after, condition_subtree over CI_with roots stays 9 and
     # condition_contraindication_expanded stays 15, because D064420 is not itself

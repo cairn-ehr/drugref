@@ -65,6 +65,13 @@ class IndicationRelations:
     # this release is a category error" and the release states 17 of them over 13
     # records -- reporting 13 would understate what it costs to be wrong about them.
     chemical_object_assertions: int = 0
+    # Assertions MED-RT keyed to a SUBORDINATE MeSH concept, and which are therefore
+    # stored against a BROADER record than the release named. Per ASSERTION for the
+    # same reason as the line above: the operator's question is how much of the release
+    # is widened, not how many concepts do the widening. 422 of 18,314 (2.30%) on the
+    # 2026.07.06 release. See write_indications for why this is the UNSAFE direction
+    # for an indication and the safe one for a contraindication (#52).
+    broadened_object_assertions: int = 0
 
 
 def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
@@ -77,16 +84,53 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     (spec 7) -- and `chemical_object_assertions` is a count of assertions that DO become
     rows, which is the one place this tally differs in kind from its sibling's.
 
-    THE OBJECT QUESTION IS ASKED BEFORE THE SUBJECT TEST, exactly as in
+    THE OBJECT QUESTIONS ARE ASKED BEFORE THE SUBJECT TEST, exactly as in
     write_contraindications, and for the same reason: whether an object is a chemical
-    rather than a patient state is a fact about the OBJECT, and it does not depend on
-    whether this particular rule's subject happened to resolve. Testing the subject
-    first would make the reported figure a function of the moiety gate -- the mistake
-    that cost the CI half 35 assertions over 4 objects before it was found.
+    rather than a patient state, and whether it was reached through a subordinate
+    concept, are facts about the OBJECT, and neither depends on whether this particular
+    rule's subject happened to resolve. Testing the subject first would make both
+    reported figures a function of the moiety gate -- the mistake that cost the CI half
+    35 assertions over 4 objects before it was found.
+
+    BROADENED OBJECTS: THE ONE PLACE is_preferred_concept IS READ IN PRODUCTION, and its
+    own docstring promised this reader. MED-RT names a MeSH **ConceptUI**; drugref keys
+    conditions on the **record** that owns it (mesh_concepts.resolve_concepts explains
+    why -- many concepts resolve to one record, and keying on the concept would split one
+    condition into rows no rebuild could merge). When the named concept is the record's
+    preferred one, nothing is lost. When it is SUBORDINATE, the concept may be NARROWER
+    than the record, and the assertion is stored against something BROADER than the
+    release said.
+
+    MEASURED on the 2026.07.06 release: 422 of 18,314 assertions (2.30%) -- may_treat
+    340, may_prevent 80, induces 2 -- arrive through 90 non-preferred ConceptUIs and
+    collapse onto 85 broader records, over 102 distinct (predicate, concept, record)
+    triples.
+
+    THE DIRECTION OF THE HARM FLIPS HERE, which is why this counter is new in 5b.2 even
+    though the grain is 5b's. The same collapse hits the contraindication half harder
+    (550 of 13,463 assertions via 81 concepts) and there it is SAFE: broadening a
+    contraindication widens recall. Broadening an INDICATION offers a drug for a
+    condition the release never named it for, and the read path then walks DOWN from
+    that broader record to every patient coded below it. Worked case: MED-RT asserts
+    may_treat against M0335931 'Seizures, Focal' for eslicarbazepine (RxCUIs 1482501,
+    1482502); drugref stores it on D012640 'Seizures' with is_direct = true.
+    Eslicarbazepine is a sodium-channel blocker licensed for focal-onset seizures that,
+    like carbamazepine and phenytoin, can AGGRAVATE generalised myoclonic and absence
+    seizures. The is_direct = false "weaker claim" label cannot help: the claim is not
+    weaker, it is wrong.
+
+    COUNTED AND STORED, NEVER WITHHELD, for the reason the D-tree objects are: most of
+    the 102 triples are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so
+    dropping all 422 would lose far more than it saves, and drugref has nothing on the
+    row that tells a consumer which is which. Making the row itself detectable -- by
+    storing the ConceptUI MED-RT named -- is #52, slice 5c's work. Until then this
+    number is the only evidence, so it must be reported rather than derivable.
 
     D-TREE OBJECTS ARE INGESTED, AND THAT IS A RECORDED DECISION (spec 11 tension C).
-    17 of the 2026.07.06 release's 18,144 therapeutic assertions -- 0.09% of may_treat --
-    name a MeSH CHEMICAL: LDL Cholesterol (2), Antioxidants (2), Prostate-Specific
+    17 of the 2026.07.06 release's 18,144 therapeutic assertions (0.09%) -- 14 may_treat
+    and 3 may_prevent, over 13 records -- name a MeSH CHEMICAL. The percentage is of ALL
+    therapeutic assertions, not of may_treat: 17/15,319 would be 0.11%, and the 17 are
+    not all may_treat anyway. Objects: LDL Cholesterol (2), Antioxidants (2), Prostate-Specific
     Antigen (2), Analgesics, Antiemetics, Antiparkinson Agents, Deodorants,
     Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2), ... Some are
     defensible treatment targets ("a statin may_treat LDL cholesterol") and some are
@@ -122,6 +166,8 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
             continue
         if any(t.startswith(CHEMICAL_TREE) for t in record.tree_numbers):
             out.chemical_object_assertions += 1     # ingested anyway -- see above
+        if not record.is_preferred_concept:
+            out.broadened_object_assertions += 1    # ingested anyway -- see above
         subjects = rxcui_index.get(a.rxcui, ())
         if not subjects:
             out.unmatched_rxcuis.add(a.rxcui)       # counted, never dropped

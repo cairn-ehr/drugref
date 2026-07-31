@@ -5,11 +5,15 @@ object. Mirrors medrt_run/mesh_run (open an ingest_run for provenance, do the wo
 stamp finished_at, commit) with two genuinely new pieces:
 
   1. M-CODE RESOLUTION. MED-RT's MeSH endpoint is a ConceptUI, so every object is
-     resolved against the MeSH release (ingest/mesh_concepts.py). 1,051 of THIS
-     SLICE'S 1,053 object codes resolve (99.81%); the rest are counted. Do not
-     reconcile that with the 99.88% in mesh_concepts.py -- that figure is
-     2,471/2,474 over every MeSH endpoint in the release, a wider denominator, and
-     both are right about different populations.
+     resolved against the MeSH release (ingest/mesh_concepts.py). This run resolves
+     `ci_wanted | ind_wanted` in ONE pass: 2,196 of 2,198 concepts resolve (99.91%),
+     the two unresolved being CI objects MeSH withdrew (the indication half is
+     1,528/1,528). The rest are counted, and per half -- see step 1 of _ingest for why
+     a code both halves name costs each of them an assertion. Do not reconcile 99.91%
+     with the 99.88% in mesh_concepts.py: that figure is 2,471/2,474 over every MeSH
+     endpoint in the release, a wider denominator, and both are right about different
+     populations. Nor with slice 5b's 1,051/1,053 (99.81%) -- that was this run when
+     it carried only the contraindication half.
   2. THE TWO ARMS OF CI_ChemClass. Its object is usually a SPECIFIC DRUG (Pimozide,
      Cisapride, Ritonavir), so it is first resolved against the moiety registry via
      slice 2b's two-key UNII->CAS bridge. When it resolves, the assertion is an exact
@@ -40,7 +44,9 @@ Order matters:
      without which a rule on Epilepsy has nothing to expand into;
   3. upsert conditions, then clear this source's edges, contraindications and
      indications, then write the DAG and the relation passes;
-  4. rebuild the open-question register LAST, before the commit.
+  4. measure the indication/contraindication OVERLAP -- only possible once both passes
+     have written;
+  5. rebuild the open-question register LAST, before the commit.
 
 WORKLIST NUMBERS, NOT SILENT DROPS -- nine distinct losses, each counted separately
 so they stay legible (spec 7). Four of them are also PERSISTED by identity, because
@@ -51,6 +57,15 @@ own unmatched list, so every writer scopes its clear on `reason` as well as sour
 (#39, db/018) -- see step 6 of _ingest for the measurement behind that. This run owns
 two of those buckets, which does not weaken db/018's invariant: it is still exactly
 one writer per (source, reason), and two writers sharing one bucket is what #39 was.
+
+AND THREE NUMBERS THAT ARE NOT LOSSES, reported for the mirror-image reason. A count of
+assertions that never became rows is worthless if the rows that DID land are quietly
+wrong or quietly contradictory, so the summary also carries: `chemical_object_assertions`
+(the object is a MeSH chemical, not a patient state), `broadened_object_assertions` (MED-RT
+named a subordinate concept, so the row sits on a BROADER condition than the release
+said -- 422 of 18,314, #52), and `also_contraindicated_pairs` (one drug is both indicated
+and contraindicated for one condition -- 168 pairs, #51). Each is stored AND counted;
+none has a worklist yet, because each is a curated question rather than a coverage gap.
 """
 import logging
 import uuid
@@ -180,6 +195,21 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
                     "their rules were not ingested; see "
                     "drugref.gap_unmatched_ingredient",
                     summary.indications.unmatched_subject_rxcuis)
+    # THE TWO LINES BELOW REPORT ROWS THAT WERE WRITTEN, not rows that were lost, and
+    # they are warnings for that reason rather than in spite of it: every other number
+    # here is something an operator can go and look at, while these two are things the
+    # database will state confidently and wrongly unless somebody knows to expect them.
+    # Neither has a worklist yet -- both are curated questions (#51, #52) -- so the log
+    # line is the whole of the surfacing until slice 5c gives them one.
+    if summary.also_contraindicated_pairs:
+        log.warning("%d (drug, condition) pair(s) are asserted as BOTH an indication "
+                    "and a contraindication by this release; consumers must not read "
+                    "the pair as a contradiction to resolve automatically (#51)",
+                    summary.also_contraindicated_pairs)
+    if summary.indications.broadened_object_assertions:
+        log.warning("%d indication assertion(s) name a SUBORDINATE MeSH concept and "
+                    "are stored against a BROADER condition than the release named "
+                    "(#52)", summary.indications.broadened_object_assertions)
     return summary
 
 
@@ -224,9 +254,15 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     # when BOTH endpoints are registered, so a condition already in the CI closure can
     # have a second tree parent that only the indication half registers. The edge then
     # appears and the condition becomes reachable from a CI root it could not be reached
-    # from before -- 11 of 677 roots, condition_subtree 12,311 -> 12,415, +0.39%
-    # assertion-weighted. Acute Pain really is filed under nervous system disease in
-    # MeSH; the old registry was simply too narrow to see the edge.
+    # from before -- 10 of 641 roots, condition_subtree 11,512 -> 11,605 (+93), and
+    # condition_contraindication_expanded 191,728 -> 192,161, +0.226% assertion-weighted.
+    # Acute Pain really is filed under nervous system disease in MeSH; the old registry
+    # was simply too narrow to see the edge.
+    #
+    # POST-GATE FIGURES. The spec's 11 of 677 / 12,311 -> 12,415 / +0.39% counted the
+    # CI_with objects the RELEASE references; condition_subtree (db/015) walks only the
+    # roots that STORED rules name, which the moiety gate cuts to 641. Both are right
+    # about different populations; only the post-gate pair describes the view.
     condition_codes = {a.mesh_code for a in ci_assertions
                        if a.relationship == mesh_ci_relations.CONDITION_PREDICATE}
     closure = _condition_closure(desc_path, records, condition_codes | ind_wanted)
@@ -335,7 +371,43 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
          for code, count in sorted(counter.items())],
         run_id)
 
-    # 7. Re-derive the open-question register LAST, for the reason every orchestrator
+    # 7. Measure what the two halves say about the SAME (drug, condition) pair.
+    #
+    #    ONE QUERY, AFTER BOTH PASSES, AND IT COULD NOT LIVE ANYWHERE ELSE: neither pass
+    #    can see the other's rows, and the overlap is not a loss either pass could count
+    #    on its way past. The no-silent-drops posture (spec 7) is about assertions that
+    #    do not become rows; this is its mirror -- two assertions that DO become rows and
+    #    contradict each other -- and leaving it uncounted would be the same failure in
+    #    the other direction.
+    #
+    #    168 pairs on the 2026.07.06 release, and they are the hardest rows in it rather
+    #    than noise: carvedilol is may_treat AND CI_with for Heart Failure, alteplase for
+    #    Stroke, budesonide for Asthma. MED-RT asserts both with no qualifier, because
+    #    the distinction (stable chronic HFrEF vs acute decompensation; ischaemic vs
+    #    haemorrhagic stroke) is one the MeSH descriptor grain cannot carry. See #51 for
+    #    the curated question of how a consumer should be TOLD, which is 5c's.
+    #
+    #    DISTINCT PAIRS, NOT ROWS, and the grain is the clinical unit: a pair is what a
+    #    consumer asking about one drug and one patient's diagnosis gets both answers
+    #    for. 7 pairs carry two therapeutic predicates, so the indication-row count is
+    #    175 -- reporting that instead would answer a question nobody asks.
+    #
+    #    DELIBERATELY NOT SCOPED ON `source`, unlike every clear above it. Those rebuild
+    #    THIS source's projection and must not touch another's; this one answers "what
+    #    will a consumer see", and a consumer sees both tables whole. Today the question
+    #    does not arise -- db/014 and db/019 CHECK both `source` columns to 'MED-RT'
+    #    alone -- but when a second authority lands, a cross-source collision is exactly
+    #    as visible to a reader as a within-source one, and scoping this query would hide
+    #    it. If a per-source breakdown is ever wanted, add one; do not narrow this.
+    also_contraindicated_pairs = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT i.subject_moiety_uuid, "
+        "                             i.object_condition_uuid "
+        "  FROM drugref.moiety_condition_indication i "
+        "  JOIN drugref.moiety_condition_contraindication c "
+        "    ON  c.subject_moiety_uuid   = i.subject_moiety_uuid "
+        "    AND c.object_condition_uuid = i.object_condition_uuid) x").fetchone()[0]
+
+    # 8. Re-derive the open-question register LAST, for the reason every orchestrator
     #    does: this run rewrote projections the gap views read, and calling it earlier
     #    would read a half-demolished registry.
     questions.register_from_gaps(conn, run_id)
@@ -370,4 +442,6 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
             unmatched_subject_rxcuis=len(ind.unmatched_rxcuis),
             class_subject_assertions=parsed.class_subject_indications,
             unresolved_object_codes=unresolved_indication_codes,
-            chemical_object_assertions=ind.chemical_object_assertions))
+            chemical_object_assertions=ind.chemical_object_assertions,
+            broadened_object_assertions=ind.broadened_object_assertions),
+        also_contraindicated_pairs=also_contraindicated_pairs)

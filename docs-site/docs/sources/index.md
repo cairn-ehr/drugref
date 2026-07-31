@@ -11,7 +11,7 @@ blocker](../decisions/licensing-is-a-blocker.md).
 | --- | --- | --- |
 | **FDA GSRS / UNII** | The global substance-registration backbone; the identity anchor | Public domain |
 | **ChEBI** | Chemical entities of biological interest; chemistry + cross-references | CC BY 4.0 |
-| **MED-RT** | Mechanisms of action, physiologic effects, therapeutic classes, contraindications | Public domain (US NLM / VA) |
+| **MED-RT** | Mechanisms of action, physiologic effects, therapeutic classes, contraindications, and MeSH-keyed indications (`may_treat` / `may_prevent` / `may_diagnose`) and drug-induced states (`induces`) | Public domain (US NLM / VA) |
 | **MeSH** | Pharmacologic actions and descriptors | Public domain / NLM terms |
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
 

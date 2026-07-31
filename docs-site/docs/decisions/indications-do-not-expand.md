@@ -19,18 +19,30 @@ is to reuse the same walk. **It is unsound, and the release shows exactly how ba
 Applied to an indication, walking down the DAG does not narrow a patient's state — it
 **distributes a therapeutic claim over the object's subclasses**:
 
-| predicate | assertions in the release | if expanded down the DAG | multiplier |
+Measured on the rows drugref actually **stores**, over slice 5b.2's 5,963-condition
+registry:
+
+| predicate | rows drugref stores | if expanded down the DAG | multiplier |
 |---|---:|---:|---:|
-| `may_treat` | 15,302 | 199,546 | **13.0×** |
-| `may_prevent` | 2,668 | 109,042 | **40.9×** |
-| `may_diagnose` | 155 | 11,618 | **75.0×** |
-| `induces` | 170 | 1,313 | 7.7× |
+| `may_treat` | 12,662 | 177,953 | **14.1×** |
+| `may_prevent` | 1,888 | 88,897 | **47.1×** |
+| `may_diagnose` | 124 | 9,493 | **76.6×** |
+| `induces` | 154 | 930 | 6.0× |
+
+The design spec's version of this table gave 13.0× / 40.9× / 75.0× over 15,302 / 2,668 /
+155 — a **different population** twice over, and both differences are worth naming because
+they recur throughout this record. Those counts are distinct `(drug, MeSH record)` pairs
+**before** the moiety gate; the release itself asserts **15,319** `may_treat`, **2,670**
+`may_prevent`, **155** `may_diagnose` and **170** `induces`, and drugref stores only the
+rules whose subject a moiety carries. The multipliers were also computed over slice 5b's
+narrower 5,203-condition registry, which this slice widened (§3.6). The argument is
+unaffected and slightly stronger.
 
 The worked cases are the argument, not the multipliers. **One** `may_treat` rule on
-*Neoplasms* (`D009369`, 702 descendants) would manufacture 702 therapeutic claims —
-"treats Adenocarcinoma", "treats Astrocytoma", "treats Basal Cell Carcinoma". *Infections*
-(`D007239`) would manufacture 785; *Cardiovascular Diseases* 470. **MED-RT asserted none
-of them.**
+*Neoplasms* (`D009369`, 708 descendants in this registry) would manufacture 708 therapeutic
+claims — "treats Adenocarcinoma", "treats Astrocytoma", "treats Basal Cell Carcinoma".
+*Infections* (`D007239`) would manufacture 812; *Cardiovascular Diseases* 478. **MED-RT
+asserted none of them.**
 
 So for an indication, **more rows is the harm direction** — the exact inverse of the
 premise drugref's other expansion rests on. A deny-list of "roots too abstract to expand"
@@ -110,6 +122,94 @@ diagnosis") gets fewer rows than a naive expansion would give them, and must han
 `is_direct` flag to use the rest. That is the intended trade — a manufactured therapeutic
 claim is worse than an absent one.
 
+## Two ways a claim still gets widened, and both are counted
+
+Walking up rather than down removes the *derived* widening. It does not remove every
+widening, and this record would be dishonest if it stopped at the walk. Two remain. Both
+are properties of the **stored** rows, both are measured on every run, and neither is
+resolvable from public-domain sources — they are slice 5c's curated work.
+
+### 1. A drug can be both indicated **and** contraindicated for one condition
+
+**168 `(drug, condition)` pairs** are in `moiety_condition_indication` **and**
+`moiety_condition_contraindication` at once on the 2026.07.06 release — from 175
+indication rows (7 pairs carry two therapeutic predicates), over 154 moieties and 40
+conditions. Split by predicate: `may_treat`/`CI_with` 140, `may_prevent`/`CI_with` 32,
+`may_diagnose`/`CI_with` 3.
+
+**Worked case.** MED-RT asserts `may_treat` **and** `CI_with` for carvedilol against
+`D006333` *Heart Failure*. So do atenolol, bisoprolol, metoprolol, propranolol, timolol,
+nadolol, labetalol and esmolol. Both assertions are correct clinically and they are not in
+conflict: beta-blockers are first-line disease-modifying therapy in **stable chronic
+HFrEF** and are contraindicated in **acute decompensated** failure. MeSH has one descriptor
+for both states, so the distinction has nowhere to live, and MED-RT states each flatly with
+no severity, no qualifier and no line of therapy. The same shape covers alteplase for
+*Stroke* (ischaemic vs haemorrhagic), budesonide and flunisolide for *Asthma*, activated
+charcoal and pralidoxime for *Poisoning*, and carboplatin for *Bone Marrow Diseases*.
+
+**These are the hardest rows in the release, not noise.** A consumer calling
+`indications_for_condition()` and `contraindications_for_condition()` for one patient gets
+"carvedilol is indicated" and "carvedilol is contraindicated" with equal confidence. The
+pair **must not be read as a contradiction to be resolved automatically** — discarding
+either side loses a true statement. And because the two read paths walk in **opposite**
+directions, the collision multiplies below the object rather than staying at 168.
+
+drugref's answer today is to **count it and say so**:
+`MeshRelSummary.also_contraindicated_pairs` reports it every run, both tables'
+`COMMENT ON` state it, and a test pins the counter against a direct query so it cannot
+quietly stop counting. Whether a consumer should be told through an eighth gap kind or a
+read-path flag is [#51](https://github.com/cairn-ehr/drugref/issues/51).
+
+### 2. 422 assertions are stored against a **broader** condition than the release named
+
+MED-RT names a MeSH **ConceptUI**; drugref keys a condition on the **record** that owns it,
+because many concepts resolve to one record and keying on the concept would split one
+clinical condition into rows no rebuild could merge. When the named concept is the record's
+*preferred* one, nothing is lost. When it is **subordinate**, the concept can be *narrower*
+than the record — and the assertion is stored against something broader than the release
+said.
+
+Measured: **422 of 18,314 assertions (2.30%)** — `may_treat` 340, `may_prevent` 80,
+`induces` 2 — arrive through **90 non-preferred ConceptUIs** collapsing onto **85 broader
+records**, over 102 distinct `(predicate, concept, record)` triples.
+
+**This is the other way a claim gets widened, and it runs in the unsafe direction.** The
+walk-direction decision above is about rows drugref *derives*; this is about rows drugref
+*stores*, and the `is_direct = false` label cannot help because these rows are
+`is_direct = true`. Note that the same collapse hits the contraindication half harder —
+**550 of 13,463** assertions via 81 concepts — and there it is **safe**: broadening a
+contraindication widens recall, which is the direction `db/014` wants. Slice 5b.2 is where
+the harm direction flips.
+
+**Worked case.** MED-RT asserts `may_treat` against `M0335931` **"Seizures, Focal"** — a
+non-preferred concept — for eslicarbazepine acetate (RxCUI 1482501) and eslicarbazepine
+(1482502). drugref stores `may_treat` on `D012640` **"Seizures"**. Eslicarbazepine is a
+sodium-channel blocker licensed for focal-onset seizures which, like carbamazepine and
+phenytoin, can **aggravate** generalised myoclonic and absence seizures. A patient coded at
+`D012640`, or anywhere below it, now receives it as a therapeutic option. The release never
+said that.
+
+Most of the 102 triples are benign synonymy — `M0002909` "Breast Cancer" → *Breast
+Neoplasms* is not a loss. A clear minority is genuine narrowing collapsed upward:
+
+| MED-RT names | drugref stores |
+|---|---|
+| Cardiomyopathy, Hypertrophic Obstructive | Cardiomyopathy, Hypertrophic |
+| Myasthenia Gravis, Generalized | Myasthenia Gravis |
+| Multiple Sclerosis, Secondary Progressive | MS, Chronic Progressive |
+| Lymphoma, Low-Grade | Lymphoma, Non-Hodgkin |
+| Sarcoma, Epithelioid | Sarcoma |
+| Cardiac Death (`may_prevent`) | Death |
+| Vertigo, Peripheral | Vertigo |
+
+drugref stores all 422 rather than withholding them — dropping every broadened assertion
+would lose far more than it saves, and nothing on the row distinguishes the synonymy from
+the narrowing. So the count is the remedy for now:
+`MeshRelSummary.indications.broadened_object_assertions` reports it every run, and it is
+the production reader `MeshRecord.is_preferred_concept`'s own docstring always promised.
+Putting the named `concept_ui` on the row, so a consumer can detect **which** rows were
+widened, is [#52](https://github.com/cairn-ehr/drugref/issues/52).
+
 ## Erratum — three spec figures were computed **before the moiety gate**
 
 The design spec predicted several figures that the end-to-end run then contradicted. **In
@@ -163,6 +263,18 @@ Every figure the release *asserts* is unchanged, which is the regression signal 
 matters: `moiety_condition_contraindication` **9,471**, `moiety_contraindication`
 **1,442**, `gap_unresolved_ci_object` **103 rows / 405 rules**, `ddi_candidate_pair`
 **21,664**.
+
+**The database catalog lags this record in one place, and cannot be made to catch up.**
+`db/015`'s `COMMENT ON VIEW drugref.condition_subtree` describes the registry as "1,690 of
+the registry's 5,203 conditions (5,190 descriptors + 13 tree-less SCRs)". Slice 5b.2 widened
+that registry to **5,963** (5,929 descriptors + 34 SCRs), of which **2,149** have several
+parents. `db/015` is **merged, and a merged migration is immutable** — its checksum is in
+every applied ledger — so the figures a DBA sees from `\d+ drugref.condition_subtree` are
+slice 5b's and will stay slice 5b's until some later migration has an independent reason to
+re-issue that comment. Re-issuing it *only* to correct a comment would be a migration whose
+whole content is documentation, which is a worse trade than one stale catalog string with a
+correction recorded here. `db/019`'s own comments **were** corrected in place, because that
+migration is on this branch and unmerged — immutability starts at merge (`HANDOVER.md`).
 
 ## Related
 

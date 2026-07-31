@@ -14,7 +14,7 @@
        RxCUI 5640: ibuprofen / NOT in our registry, so membership must be skipped and counted
        RxCUI 272: activated charcoal / TWO real CI_ChemClass edges plus a CI_with, no EPC
        RxCUI 321988: escitalopram / a CI_ChemClass whose object IS a substance, plus a CI_MoA
-       RxCUI 5095: halothane / induces (x2) + may_diagnose + may_treat + CI_with, has_MoA/PE/TC
+       RxCUI 5095: halothane / induces (x2) + may_diagnose + CI_with, has_MoA/PE/TC (its real may_treat is dropped by the cap below)
 -->
 <terminology>
 	<namespace>

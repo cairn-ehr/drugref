@@ -172,10 +172,12 @@ def test_widening_the_registry_COMPLETES_edges_the_CI_closure_could_not_see(
     names. The edges were missing because the registry was too narrow to see them, not
     because MeSH does not assert them.
 
-    On the real releases this is 11 of 677 CI roots and grows condition_subtree
-    12,311 -> 12,415 in the RECALL-SAFE direction. On this fixture nothing moves for
-    the contraindication half, because the newly-registered parent is not itself below
-    any CI root -- so the completion is visible here as edges and not as expansion.
+    On the real releases this is 10 of 641 CI roots and grows condition_subtree
+    11,512 -> 11,605 in the RECALL-SAFE direction (the spec's 11 of 677 / 12,311 ->
+    12,415 counted the roots the RELEASE references, before the moiety gate). On this
+    fixture nothing moves for the contraindication half, because the newly-registered
+    parent is not itself below any CI root -- so the completion is visible here as
+    edges and not as expansion.
     """
     _run(conn)
     parent = _condition(ADVERSE_REACTIONS)
@@ -186,20 +188,93 @@ def test_widening_the_registry_COMPLETES_edges_the_CI_closure_could_not_see(
             (_condition(child_code), parent)).fetchone()[0] == 1
 
 
-def test_indications_and_contraindications_do_not_mix(conn, seeded_moieties):
-    """Two relations over one registry, and no row is filed as both.
+def test_a_drug_both_indicated_and_contraindicated_is_COUNTED(conn, seeded_moieties):
+    """THE RELEASE SAYS BOTH, 168 TIMES, AND THE ONLY HONEST PROPERTY IS THAT WE SEE IT.
 
-    Cheap to assert and expensive to get wrong: the two passes share a uuid_by_code
-    map, a moiety index and an ingest_run, so a mis-wired call site would produce rows
-    that look plausible in either table.
+    This test replaces one called `test_indications_and_contraindications_do_not_mix`,
+    which asserted the opposite and could not fail. It joined the two tables on
+    `c.relationship = i.relationship`, and the two vocabularies are DISJOINT BY
+    CONSTRUCTION -- condition_ci_axis holds only CI_with, condition_indication_axis only
+    the three therapeutic predicates -- so the join was provably empty for every input,
+    including inputs that contradicted its name. This very fixture contains the case it
+    claimed to exclude.
+
+    What the 2026.07.06 release actually asserts, measured through this ingest: **168
+    distinct (subject_moiety, object_condition) pairs** carry an indication AND a
+    contraindication, from 175 indication rows (7 pairs hold two therapeutic
+    predicates) over 154 moieties and 40 conditions -- may_treat/CI_with 140,
+    may_prevent/CI_with 32, may_diagnose/CI_with 3. Carvedilol, atenolol, bisoprolol
+    and metoprolol are all may_treat AND CI_with for Heart Failure; alteplase for
+    Stroke; budesonide for Asthma; activated charcoal for Poisoning.
+    Those are not upstream errors -- they are the distinction MeSH's descriptor grain
+    cannot carry (beta-blockers treat stable chronic HFrEF and are contraindicated in
+    acute decompensation) and MED-RT states both flatly, with no qualifier. #51.
+
+    SO THIS TEST FAILS IF THE COUNTER STOPS COUNTING, which is the property worth
+    pinning: the summary figure is checked against a direct query over both tables
+    rather than against a literal, so a counter that silently returned 0 -- or that
+    drifted to a different grain -- disagrees with the database and fails here.
+    The literal is asserted too, so a run that stopped STORING the overlap (by
+    withholding one side) also fails rather than passing with 0 == 0.
     """
-    _run(conn)
+    summary = _run(conn)
+    overlap = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT i.subject_moiety_uuid, "
+        "                             i.object_condition_uuid "
+        "  FROM drugref.moiety_condition_indication i "
+        "  JOIN drugref.moiety_condition_contraindication c "
+        "    ON  c.subject_moiety_uuid   = i.subject_moiety_uuid "
+        "    AND c.object_condition_uuid = i.object_condition_uuid) x").fetchone()[0]
+    assert summary.also_contraindicated_pairs == overlap
+    # Activated charcoal / Poisoning, and it is a REAL upstream statement rather than a
+    # wiring accident: the fixture carries MED-RT's own `may_treat` and `CI_with`
+    # associations for RxCUI 272 against M0017099, extracted from the release.
+    assert overlap == 1
     assert conn.execute(
         "SELECT count(*) FROM drugref.moiety_condition_indication i "
         "JOIN drugref.moiety_condition_contraindication c "
-        "  ON  c.subject_moiety_uuid = i.subject_moiety_uuid "
+        "  ON  c.subject_moiety_uuid   = i.subject_moiety_uuid "
         "  AND c.object_condition_uuid = i.object_condition_uuid "
-        "  AND c.relationship = i.relationship").fetchone()[0] == 0
+        "WHERE i.subject_moiety_uuid = %s AND i.object_condition_uuid = %s "
+        "AND   i.relationship = 'may_treat' AND c.relationship = 'CI_with'",
+        (ids.mint_moiety_uuid(ACTIVATED_CHARCOAL),
+         _condition(POISONING))).fetchone()[0] == 1
+
+
+def test_an_object_reached_through_a_SUBORDINATE_concept_is_counted(conn,
+                                                                    seeded_moieties):
+    """MED-RT NAMES A ConceptUI; drugref KEYS ON THE RECORD. That collapse is measured.
+
+    A MeSH record owns several concepts, exactly one preferred. When MED-RT names a
+    SUBORDINATE one, the concept can be NARROWER than the record, and the assertion is
+    stored against the BROADER record -- for an indication that is the UNSAFE direction,
+    because a patient coded at the broader record (or anywhere below it, since the walk
+    goes up) is now offered a drug the release never named for them.
+
+    Measured on the real releases: 422 of 18,314 assertions (2.30%) -- may_treat 340,
+    may_prevent 80, induces 2 -- arrive through 90 non-preferred ConceptUIs and collapse
+    onto 85 broader records. Most are benign synonymy ('Breast Cancer' -> Breast
+    Neoplasms); a minority is genuine narrowing collapsed upward, of which the sharpest
+    is M0335931 'Seizures, Focal' -> D012640 'Seizures' for eslicarbazepine, a drug
+    licensed for focal-onset seizures that can AGGRAVATE generalised myoclonic and
+    absence seizures. #52 tracks storing the concept_ui so a consumer can detect it.
+
+    THE FIXTURE CARRIES A REAL ONE, which is why this needs no invented input: MED-RT
+    asserts `may_prevent` for activated charcoal against M0006855 'Drug Toxicity', and
+    desc2026 marks that concept PreferredConceptYN="N" on D064420 'Drug-Related Side
+    Effects and Adverse Reactions' -- MeSH's own ConceptRelation calls it NRW (narrower).
+    """
+    ind = _run(conn).indications
+    assert ind.broadened_object_assertions == 1
+    # STORED, NOT WITHHELD -- the count exists so the collapse is visible, not so the
+    # row is dropped. It lands on the RECORD, which is the whole grain decision.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.moiety_condition_indication i "
+        "JOIN drugref.condition c ON c.condition_uuid = i.object_condition_uuid "
+        "WHERE i.subject_moiety_uuid = %s AND i.relationship = 'may_prevent' "
+        "AND   c.source_code = %s",
+        (ids.mint_moiety_uuid(ACTIVATED_CHARCOAL),
+         ADVERSE_REACTIONS)).fetchone()[0] == 1
 
 
 def test_induced_states_land_in_their_own_table(conn, seeded_moieties):
@@ -228,11 +303,34 @@ def test_induced_states_land_in_their_own_table(conn, seeded_moieties):
         (_condition(UNCONSCIOUSNESS),)).fetchone()[0] == 0
 
 
+def test_may_diagnose_reaches_the_table_under_its_own_name(conn, seeded_moieties):
+    """PINNED BY OBJECT CODE, because the aggregate count cannot pin it.
+
+    `indication_rows == 3` sums three predicates, so dropping may_diagnose from
+    medrt.INDICATION_RELATIONSHIPS while any other therapeutic assertion gained a row
+    would leave that assertion -- and the whole suite -- green. Its sibling `induces` is
+    pinned by object code below; this is the same shape applied to the predicate that
+    was missing it.
+
+    Halothane states exactly one therapeutic assertion in the fixture, and it is a real
+    row of the 2026.07.06 release: may_diagnose Malignant Hyperthermia (D008305).
+    Asserted as a SET rather than a count so a spurious extra predicate fails too.
+    """
+    _run(conn)
+    assert {tuple(r) for r in conn.execute(
+        "SELECT i.relationship, c.source_code "
+        "FROM   drugref.moiety_condition_indication i "
+        "JOIN   drugref.condition c ON c.condition_uuid = i.object_condition_uuid "
+        "WHERE  i.subject_moiety_uuid = %s",
+        (ids.mint_moiety_uuid(HALOTHANE),)).fetchall()} == {
+        ("may_diagnose", MALIGNANT_HYPERTHERMIA)}
+
+
 def test_the_read_path_reaches_a_patient_coded_below_the_rule(conn, seeded_moieties):
     """THE WHOLE POINT, END TO END, and it needs the widened registry to work.
 
     A patient coded Chemical and Drug Induced Liver Injury is coded FINER than any rule
-    MED-RT wrote -- the common case, 3,655 conditions against 1,453 on the real release
+    MED-RT wrote -- the common case, 3,719 conditions against 1,305 on the real release
     -- so the sound statement is the WEAKER one, found by walking UP:
     "activated charcoal is indicated for a more general form of this diagnosis".
 
@@ -354,9 +452,11 @@ def test_the_seventh_gap_kind_reaches_the_register(conn, seeded_moieties):
 
 def test_a_D_tree_chemical_object_is_ingested_but_counted(conn, a_moiety,
                                                           ingest_run_id):
-    """0.09% OF may_treat NAMES A CHEMICAL, NOT A PATIENT STATE. Counted, not hidden.
+    """0.09% OF THE THERAPEUTIC ASSERTIONS NAME A CHEMICAL, NOT A PATIENT STATE.
 
-    17 assertions over 13 records in the 2026.07.06 release -- LDL Cholesterol 2,
+    17 of the 18,144 -- 14 may_treat and 3 may_prevent -- over 13 records in the
+    2026.07.06 release. The denominator is every therapeutic assertion, not may_treat
+    alone: 17/15,319 would be 0.11%, and the 17 are not all may_treat. LDL Cholesterol 2,
     Antioxidants 2, Prostate-Specific Antigen 2, Analgesics, Antiemetics,
     Antiparkinson Agents, Deodorants... Some are defensible treatment targets ("a
     statin may_treat LDL cholesterol") and some are upstream category errors

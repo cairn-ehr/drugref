@@ -339,8 +339,9 @@ def test_the_python_reason_constants_are_exactly_what_the_CHECK_admits(conn):
     and the clears are scoped on it, so a value in one and not the other is a bucket
     nobody clears (rows accumulate forever) or a writer that cannot insert at all.
 
-    Pinned rather than trusted, because #47 will add a THIRD value and the two places
-    are in different languages, five files apart.
+    Pinned rather than trusted, because #47 will add a FOURTH value -- slice 5b.2 took
+    the third ('indication', db/019 section 7) -- and the two places are in different
+    languages, five files apart.
     """
     definition = conn.execute(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
@@ -1099,13 +1100,15 @@ def test_gap_kind_admits_the_fifth_kind(conn):
 # measure stated twice there, only one copy learned a correction, and a whole class
 # of dead rules was reported by nothing.
 #
-# SCOPED ON PURPOSE. 855 registry conditions are unreached; only 66 are gaps. 789 are
-# excluded, 669 of them surgical procedures -- "nothing is indicated for
+# SCOPED ON PURPOSE. 939 registry conditions are unreached; only 97 are gaps. 842 are
+# excluded, 670 of them surgical procedures -- "nothing is indicated for
 # Abdominoplasty" is a category error, not a gap, and question_uuid is immortal and
-# externally citable, so minting 789 of them for noise would bury the 66 real rows.
+# externally citable, so minting 842 of them for noise would bury the 97 real rows.
+# (Every figure here is POST-GATE and therefore differs from the spec's 855/66/789/669,
+# which counted before the moiety gate -- see db/019 section 6.)
 # The tests below pin each edge of that scope: a real gap, a gap closed by an
 # ancestor's indication, an excluded procedure, and the tree-less SCR carve-out that
-# recovers 11 genuine rare diseases while excluding a chemical.
+# recovers 17 genuine rare diseases while excluding a chemical.
 
 
 def test_a_disease_with_no_indication_anywhere_above_it_is_published(conn,
@@ -1134,9 +1137,9 @@ def test_a_disease_reached_by_an_ancestors_indication_is_not_a_gap(conn, a_moiet
 
 
 def test_a_surgical_procedure_is_never_a_gap(conn, ingest_run_id):
-    """669 of the 855 unreached conditions are E-tree procedures. 'Nothing is indicated
-    for Abdominoplasty' is a category error, not a gap, and 789 such rows would bury the
-    66 real ones under externally-citable question_uuids for noise."""
+    """670 of the 939 unreached conditions are E-tree procedures. 'Nothing is indicated
+    for Abdominoplasty' is a category error, not a gap, and 842 such rows would bury the
+    97 real ones under externally-citable question_uuids for noise."""
     procedure = _register_condition(conn, ingest_run_id, "D015917", "Abdominoplasty",
                                     trees=("E04.680",))
     rows = [r[0] for r in conn.execute(
@@ -1146,7 +1149,7 @@ def test_a_surgical_procedure_is_never_a_gap(conn, ingest_run_id):
 
 def test_a_rare_disease_SCR_is_a_gap_but_a_chemical_SCR_is_not(conn, ingest_run_id):
     """An SCR bears no tree numbers, so it has no DAG position and 'nothing above it'
-    is vacuously true. SCRClass is the only thing that separates the 11 real rare
+    is vacuously true. SCRClass is the only thing that separates the 17 real rare
     diseases from records like aliskiren.
 
     BOTH VALUES ARE ROUND-TRIPPED THROUGH conditions.upsert_condition, so this is also

@@ -242,11 +242,13 @@ direct member is equally dead, needs its own view; unreachable until a predicate
 and an indication always reaches its own condition).
 [#50](https://github.com/cairn-ehr/drugref/issues/50), the post-review re-measurement, is **closed**.
 
-#### Slice 5b.2 — MeSH-keyed indications ✅ DONE
+#### Slice 5b.2 — MeSH-keyed indications ✅ DONE — **not yet merged**
+On `feat/slice-5b2-mesh-indications`; PR not yet opened, unlike 5b (merged as PR #44 above). A reader of
+this file alone must not conclude it is on `main`.
 The other half of the MeSH-endpoint content: **`may_treat`/`may_prevent`/`may_diagnose`** plus **`induces`**
 — a public-domain, drugref-owned drug–disease indication dataset (the MeDIC alternative it holds outright).
 **No new source.** Spec:
-[slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). `db/019`; **619
+[slice-5b.2](superpowers/specs/2026-07-30-drugref-slice-5b2-mesh-indication-design.md). `db/019`; **621
 tests**. It reuses 5b's machinery entirely — the same registry, the same ConceptUI→record resolution, the
 same closure, the same candidate-tier posture — and adds **no new mechanism**. One orchestrator
 (`ingest/mesh_rel_run.py`) now owns **both** halves, because `condition_parent` edges are derived by both
@@ -280,8 +282,8 @@ standing correction is the docs-site living record `decisions/indications-do-not
 **What the slice decides, and why it is not a contraindication with the sign flipped.** A contraindication
 expands **down** the condition DAG (a patient coded *Temporal Lobe Epilepsy* is a patient with epilepsy). An
 indication must not: the same walk distributes a therapeutic claim over the object's subclasses, and one
-`may_treat` on *Neoplasms* would manufacture 702 claims MED-RT never made (13×/41×/75× across the
-predicates). So **nothing derived is stored**; `indications_for_condition` walks **UP** and labels every
+`may_treat` on *Neoplasms* would manufacture 708 claims MED-RT never made (14×/47×/77× across the
+predicates, re-measured on 5b.2's widened registry; the spec's 702 and 13×/41×/75× were 5b's). So **nothing derived is stored**; `indications_for_condition` walks **UP** and labels every
 derived row `is_direct = false`, meaning a **weaker** claim rather than a wider one. That read path is not
 optional decoration — **3,719 of 5,963 registry conditions have no direct indication but do have an ancestor
 with one**, and get nothing from the stored rows alone. `induces` gets its **own table** and no axis row: the
@@ -293,6 +295,18 @@ taken over every MeSH-keyed object, so the DAG gains edges: a condition bearing 
 a second parent that only the indication half registers. 10 of 641 contraindication roots grew (*Nervous
 System Diseases* +59, gaining *Acute Pain*), none shrank, the root set is byte-identical, and every direct
 figure is unchanged. **Expect this every time the registry widens.**
+
+**Two widenings survive the upward walk, and 5b.2 COUNTS rather than resolves them.** **168 (drug, condition)
+pairs** are asserted as an indication *and* a contraindication — carvedilol/*Heart Failure*,
+alteplase/*Stroke*, budesonide/*Asthma* — real distinctions (chronic HFrEF vs acute decompensation) the MeSH
+descriptor grain cannot carry, and MED-RT states both with no qualifier. And **422 of 18,314 assertions land
+on a BROADER record than MED-RT named**, because MED-RT keys on a MeSH ConceptUI while a condition is keyed on
+the record: 90 subordinate concepts collapse onto 85 records, and `may_treat` "Seizures, Focal" for
+eslicarbazepine is stored on *Seizures*, which it aggravates when generalised. Both are new
+`MeshRelSummary` fields (`also_contraindicated_pairs`, `indications.broadened_object_assertions`), both are
+stated in `COMMENT ON`, both are pinned by tests, and both have a curated follow-up:
+[#51](https://github.com/cairn-ehr/drugref/issues/51) (how a consumer is told) and
+[#52](https://github.com/cairn-ehr/drugref/issues/52) (store `concept_ui` so the rows are detectable).
 
 **Also not done here:** the 193 class-subject indications (filed against #8), `has_SC`, and any read path
 that ranks or prefers among indications — MED-RT asserts no line of therapy, no evidence strength and no
