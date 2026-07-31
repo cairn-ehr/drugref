@@ -71,6 +71,7 @@ nav:
       - Licensing is a blocker: decisions/licensing-is-a-blocker.md
       - A structural chemical tree is not a clinical class: decisions/withheld-chemical-class-contraindications.md
       - An indication does not expand down the disease tree: decisions/indications-do-not-expand.md
+      - A curated correction needs a deferred check: decisions/correcting-a-curated-assertion.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

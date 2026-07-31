@@ -153,6 +153,11 @@ def test_apply_migrations_is_idempotent(conn):
         # object created by accident.
         "class_subtree", "additive_effect_contributor",
         "interaction_group_member_moiety",
+        # Plan C, db/022: the four curation-dependent gap views -- gap kinds eight
+        # through eleven. Unlike the coverage kinds, all four are questions drugref
+        # ANSWERS ITSELF by recording a decision, so no source tier orders them.
+        "gap_uncurated_additive_effect", "gap_uncurated_threshold",
+        "gap_ineffective_contribution", "gap_ungraded_contribution",
     }
 
 

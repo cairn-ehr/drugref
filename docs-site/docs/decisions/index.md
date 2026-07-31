@@ -46,3 +46,7 @@ history is never lost — it remains in the git log and in the dated design spec
 - [An indication does not expand down the disease tree](indications-do-not-expand.md)
   — why therapeutic rules are stored unexpanded and generalised *upward* at read time,
   labelled (carries the pre-gate erratum to the slice-5b.2 spec).
+- [A curated correction needs a deferred check, not a unique index](correcting-a-curated-assertion.md)
+  — how single-live is enforced on an append-only curated table, and why retirement needs
+  an explicit value rather than a supersession (carries the §5.0 erratum to the
+  additive-effect spec).

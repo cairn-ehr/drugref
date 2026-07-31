@@ -194,6 +194,64 @@ _GAP_SOURCES = {
             "names it or any condition above it in the MeSH tree, so drugref can offer "
             "nothing for a patient coded with it.'"),
     },
+    # ---- Plan C: the four curation-dependent kinds --------------------------
+    #
+    # ALL FOUR ARE QUESTIONS drugref ANSWERS ITSELF, like unreviewed_expansion_root
+    # and dead_by_expansion_policy and unlike unmatched_ingredient -- the remedy is a
+    # curator decision recorded in additive_effect or effect_contribution, never a
+    # source to go and consult. The cost ladder (source_tier) therefore does not order
+    # them: there is no cheaper tier to check first.
+    "uncurated_additive_effect": {
+        "view": "gap_uncurated_additive_effect",
+        "key_sql": "'CLASS:' || class_uuid",
+        # Names BOTH numbers a curator weighs -- how much upstream attention the class
+        # already has, and how many drugs a threshold would range over -- because the
+        # answer is a judgement between them, exactly as dead_by_expansion_policy's is.
+        "text_sql": (
+            "'Does the effect ' || class_name || ' ACCUMULATE across a regimen, and at "
+            "what threshold? ' || ci_rule_count || ' contraindication rule(s) name it "
+            "and ' || subtree_member_count || ' drug(s) sit at or below it. Answer by "
+            "recording an additive_effect row -- including one with accumulates = "
+            "false, which is a real answer and retires this question.'"),
+    },
+    "uncurated_threshold": {
+        "view": "gap_uncurated_threshold",
+        "key_sql": "'CLASS:' || effect_class_uuid",
+        # Shares the CLASS:{uuid} format with uncurated_additive_effect and with the
+        # three class-level kinds above; only gap_kind separates them. That is the
+        # established shape (one class legitimately raises several independently
+        # answerable questions) and question_uuid takes gap_kind as an input precisely
+        # so they cannot collide.
+        "text_sql": (
+            "'Which drugs are MAJOR contributors to ' || class_name || '? It fires on "
+            "any ' || threshold_total || ' contributor(s) with no major required, "
+            "while only ' || graded_contributor_count || ' class(es) have been graded "
+            "-- so it currently fires on members nobody has reviewed. Answer by "
+            "grading contributors, or by raising threshold_major.'"),
+    },
+    "ineffective_contribution": {
+        "view": "gap_ineffective_contribution",
+        # A COMPOUND KEY, joined with '/' per mint_question_uuid's frozen convention.
+        # The gap is about the PAIR: the same contributor class may be a fine promotion
+        # for one effect and a no-op for another, and folding them onto one question
+        # would hand two unrelated gaps a single immortal UUID.
+        "key_sql": ("'CLASS:' || effect_class_uuid || '/CLASS:' || contributor_class_uuid"),
+        "text_sql": (
+            "'Promoting ' || contributor_class_name || ' to ' || magnitude || ' for ' "
+            "|| effect_class_name || ' changes nothing: the two classes share no drug. "
+            "Was the wrong class named, or did an upstream release move the drugs out "
+            "from under one of them?'"),
+    },
+    "ungraded_contribution": {
+        "view": "gap_ungraded_contribution",
+        "key_sql": ("'CLASS:' || effect_class_uuid || '/CLASS:' || contributor_class_uuid"),
+        "text_sql": (
+            "'Is ' || contributor_class_name || ' a MAJOR or a minor contributor to ' "
+            "|| effect_class_name || '? Its ' || member_count || ' member(s) count as "
+            "minor by default because nobody has graded the class. Recording minor "
+            "EXPLICITLY is a real answer and retires this question -- it records that "
+            "a curator looked.'"),
+    },
 }
 
 
