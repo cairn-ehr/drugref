@@ -16,13 +16,11 @@ deployment's PostgreSQL **or** runs standalone.
 **Merged to `main`:** slice 1 (identity spine, PR #1) · 2a (MED-RT classification, #9) · 2a.1 (source-neutral class
 registry, #10) · 2b (MeSH PA) · 5a (MED-RT CI_MoA/CI_PE) · the foundation review · Plan A (open-question registry) ·
 8a (PBS localisation, #28) · Plan B (DAG-descendant expansion, #32) · the identity-spine fix round (#34) · the Plan B
-review round (#38) · 5b (#44) · the post-5b debt round (#46) · the interaction debt round (#49) · **5b.2 (#54)**.
+review round (#38) · 5b (#44) · the post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · **the
+#53 population-label round (#56)**, which closed #53. Baseline on `main`: **623 tests green**.
 
-**IN FLIGHT — the #53 population-label round**, on `fix/population-label-corrections`: complete, **623 tests
-green**, `ruff check` + `mkdocs build --strict` clean, **no migration and no production logic change**. Its own
-review round then fixed six findings, all in the same register (a comment naming the wrong assertion, an
-exemption wider than its rationale, this file over CLAUDE.md's 500-line rule). Details under "The #53 round"
-below; 5b.2's erratum is `docs-site/docs/decisions/indications-do-not-expand.md`.
+**IN FLIGHT — Plan C, the accumulation model**, on `feat/plan-c-accumulation-model`. Details under "Plan C" below.
+5b.2's erratum is `docs-site/docs/decisions/indications-do-not-expand.md`.
 
 **`db/019` is now MERGED, so it is immutable** — it was edited in place on the branch (which the ledger permits) to
 carry post-gate figures; any further correction needs a new `db/NNN`, or the living record for prose. Its final wave

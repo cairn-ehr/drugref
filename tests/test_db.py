@@ -134,6 +134,15 @@ def test_apply_migrations_is_idempotent(conn):
         # filter on condition_indication_reach rather than a table of its own, named
         # explicitly for the same reason as every other gap_* view above.
         "gap_condition_without_indication",
+        # Plan C, db/020: the accumulation model. FIVE tables, all CURATED and all
+        # append-only -- the first content drugref asserts on its own authority
+        # (source = 'DRUGREF') rather than projecting from an upstream release.
+        # Four carry the spec-5.0 overlay shape (surrogate PK + deferred single-live
+        # + one-way supersession); interaction_group is the deliberate exception,
+        # holding only a deterministic UUID and its provenance, so there is nothing
+        # about it that can be wrong and nothing to correct.
+        "additive_effect", "effect_contribution", "interaction_group",
+        "interaction_group_assertion", "interaction_group_member",
     }
 
 
