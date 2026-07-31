@@ -163,6 +163,22 @@ _GAP_SOURCES = {
             "gap -- do NOT answer it by expanding anything over MeSH''s tree.' "
             "END"),
     },
+    # Slice 5b.2. Diseases nothing in the registry treats, prevents or diagnoses --
+    # directly or from above. The gap_key is the REGISTERED-OBJECT form (MOIETY:,
+    # CLASS:) rather than unresolved_ci_object's {NAMESPACE}:{code}, and the difference
+    # is real: this subject IS registered and has a drugref UUID to cite, whereas that
+    # one is an upstream record drugref never registered, which is exactly why it is a
+    # gap. The text names the disease AND its MeSH code so the row is usable as a
+    # literature search on its own.
+    "condition_without_indication": {
+        "view": "gap_condition_without_indication",
+        "key_sql": "'CONDITION:' || condition_uuid",
+        "text_sql": (
+            "'Which drugs treat, prevent or diagnose ' || name || ' (MeSH ' || "
+            "source_code || ')? No may_treat, may_prevent or may_diagnose assertion "
+            "names it or any condition above it in the MeSH tree, so drugref can offer "
+            "nothing for a patient coded with it.'"),
+    },
 }
 
 

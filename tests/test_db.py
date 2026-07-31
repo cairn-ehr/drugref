@@ -123,6 +123,11 @@ def test_apply_migrations_is_idempotent(conn):
         # indications_for_condition is a FUNCTION and does not appear in
         # information_schema.tables.
         "condition_indication_reach",
+        # slice 5b.2, db/019 section 6: the seventh gap kind -- diseases drugref
+        # holds no indication for, direct or generalised. A VIEW, complementary
+        # filter on condition_indication_reach rather than a table of its own, named
+        # explicitly for the same reason as every other gap_* view above.
+        "gap_condition_without_indication",
     }
 
 

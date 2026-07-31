@@ -231,3 +231,72 @@ COMMENT ON FUNCTION drugref.indications_for_condition(uuid) IS
     'and not a recommendation: no severity, no line of therapy, no ordering. UNION over '
     'the node, not the path, so it terminates under a cycle (db/013 forbids only '
     'self-parenting).';
+
+-- ============================================================================
+-- 6. THE SEVENTH GAP KIND -- diseases drugref knows nothing to give for
+-- ============================================================================
+--
+-- A COMPLEMENTARY FILTER ON condition_indication_reach, not a second walk: `= 0` on
+-- the sum of its two columns. db/018's round is why -- the reach measure was stated
+-- twice there, only one copy learned a correction, and a whole class of dead rules was
+-- reported by nothing.
+--
+-- SCOPED, AND THE SCOPE IS A JUDGEMENT WITH NUMBERS BEHIND IT. 855 registry conditions
+-- are unreached; 66 of them are gaps. The 789 excluded are:
+--   669  E-tree SURGICAL PROCEDURES (Abdominoplasty, Ablation Techniques)
+--    40  D-tree chemicals · 35 B-tree organisms · 32 G-tree phenomena (Beer, Cheese)
+--    25  N-tree health care · 13 M-tree demographics (Adolescent, Aged) · 12 J · rest
+--     7  tree-less SCRs that are NOT rare diseases (aliskiren, formaldehyde-serum
+--        albumin) -- see below
+-- "Nothing is indicated for Abdominoplasty" is a category error, not a gap, and
+-- question_uuid is EXTERNALLY CITABLE and immortal: minting 789 of them for noise
+-- would bury the 66 real rows on a worklist whose whole value is that a curator can
+-- work it.
+--
+-- TREE-LESS RECORDS ARE EXCLUDED ON A DIFFERENT GROUND, and the distinction matters:
+-- an SCR holds no DAG position at all, so "no indication above it" is VACUOUSLY true
+-- and says nothing. The SCRClass = 3 carve-out recovers exactly the 11 for which the
+-- vacuous answer is also the clinically right one -- a rare disease with no recorded
+-- indication is the most valuable row on this list (Short QT Syndrome, succinic
+-- semialdehyde dehydrogenase deficiency, Familial medullary thyroid carcinoma).
+CREATE OR REPLACE VIEW drugref.gap_condition_without_indication AS
+SELECT c.condition_uuid,
+       c.name,
+       c.source_code,
+       c.record_kind
+FROM   drugref.condition c
+JOIN   drugref.condition_indication_reach r ON r.condition_uuid = c.condition_uuid
+WHERE  r.direct_indication_rules + r.generalised_indication_rules = 0
+AND    (EXISTS (SELECT 1 FROM unnest(c.tree_numbers) t
+                WHERE  left(t, 1) IN ('C', 'F'))
+        -- 3 = rare disease. The only SCRClass value drugref reads, and the only place
+        -- it is read. See condition.scr_class on why no CHECK constrains it.
+        OR (c.tree_numbers = '{}' AND c.scr_class = '3'));
+
+COMMENT ON VIEW drugref.gap_condition_without_indication IS
+    'DISEASES drugref holds no indication for -- not directly, and not from any '
+    'condition above them. 66 rows against the 2026 releases: 55 carrying a C '
+    '(Diseases) or F (Psychiatry) tree number, plus 11 tree-less SCRClass-3 rare '
+    'diseases. Scoped DELIBERATELY: 789 further unreached conditions are excluded, 669 '
+    'of them surgical procedures, because "nothing is indicated for Abdominoplasty" is '
+    'a category error rather than a gap. Answerable from openFDA-SPL labels (tier 2) '
+    'or MeDIC (tier 3) before literature.';
+
+-- Admit the seventh question kind. Guarded on the constraint's TEXT, as db/016 and
+-- db/018 are, and 'condition_without_indication' is distinctive enough to guard on.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'open_question_gap_kind'
+                   AND    conrelid = 'drugref.open_question'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%condition_without_indication%') THEN
+        ALTER TABLE drugref.open_question
+            DROP CONSTRAINT IF EXISTS open_question_gap_kind;
+        ALTER TABLE drugref.open_question
+            ADD CONSTRAINT open_question_gap_kind CHECK (gap_kind IN (
+                'unpopulated_contraindication', 'unclassified_moiety',
+                'unmatched_ingredient', 'unreviewed_expansion_root',
+                'unresolved_ci_object', 'dead_by_expansion_policy',
+                'condition_without_indication'));
+    END IF;
+END $$;

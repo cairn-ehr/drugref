@@ -16,7 +16,8 @@ import uuid
 import pytest
 import psycopg
 
-from drugref import classes, ids, questions
+from drugref import classes, conditions, ids, indications, questions
+from drugref.ingest.mesh_concepts import DESCRIPTOR, MeshRecord
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +75,27 @@ def _ci(conn, run_id, moiety, klass, relationship="CI_PE"):
         "INSERT INTO drugref.class_contraindication (subject_moiety_uuid, "
         "object_class_uuid, relationship, source, ingest_run) "
         "VALUES (%s, %s, %s, 'MED-RT', %s)", (moiety, klass, relationship, run_id))
+
+
+def _register_condition(conn, ingest_run_id, ui, name, trees=(), record_kind=DESCRIPTOR,
+                        scr_class=None):
+    """Register one condition through the REAL writer (conditions.upsert_condition),
+    not a hand-rolled INSERT -- so these tests exercise the same path an ingest does.
+
+    A follow-up UPDATE sets scr_class: conditions.upsert_condition does not write it
+    (db/019's comment on condition.scr_class -- MeshRecord already carries the field,
+    but wiring the ingest path through is Task 7's job, not this gap view's). Kept as
+    a plain UPDATE rather than a second writer function because it is scaffolding for
+    a gap this table's real writer will close next task, not a permanent API.
+    """
+    record = MeshRecord(concept_ui=f"M{ui}", record_ui=ui, record_kind=record_kind,
+                        name=name, tree_numbers=trees, unii=frozenset(),
+                        cas=frozenset(), is_preferred_concept=True)
+    condition_uuid, _ = conditions.upsert_condition(conn, record, ingest_run_id, "MeSH")
+    if scr_class is not None:
+        conn.execute("UPDATE drugref.condition SET scr_class = %s "
+                     "WHERE condition_uuid = %s", (scr_class, condition_uuid))
+    return condition_uuid
 
 
 def _unmatched(conn, run_id, rxcui, name, reason="classification"):
@@ -1069,3 +1091,98 @@ def test_gap_kind_admits_the_fifth_kind(conn):
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
         "WHERE conname = 'open_question_gap_kind'").fetchone()[0]
     assert "unresolved_ci_object" in definition
+
+
+# ---- gap_condition_without_indication (Task 6, the seventh gap kind) ---------
+#
+# A COMPLEMENTARY FILTER on Task 5's condition_indication_reach (db/019 section 5),
+# never a second walk of the condition DAG -- db/018's round is why: the same reach
+# measure stated twice there, only one copy learned a correction, and a whole class
+# of dead rules was reported by nothing.
+#
+# SCOPED ON PURPOSE. 855 registry conditions are unreached; only 66 are gaps. 789 are
+# excluded, 669 of them surgical procedures -- "nothing is indicated for
+# Abdominoplasty" is a category error, not a gap, and question_uuid is immortal and
+# externally citable, so minting 789 of them for noise would bury the 66 real rows.
+# The tests below pin each edge of that scope: a real gap, a gap closed by an
+# ancestor's indication, an excluded procedure, and the tree-less SCR carve-out that
+# recovers 11 genuine rare diseases while excluding a chemical.
+
+
+def test_a_disease_with_no_indication_anywhere_above_it_is_published(conn,
+                                                                     ingest_run_id):
+    """The gap this kind exists for: drugref holds nothing that treats this disease,
+    and nothing that treats anything above it either."""
+    orphan = _register_condition(conn, ingest_run_id, "D000000", "Rare Disease X",
+                                 trees=("C10.999",))
+    rows = [r[0] for r in conn.execute(
+        "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
+    assert orphan in rows
+
+
+def test_a_disease_reached_by_an_ancestors_indication_is_not_a_gap(conn, a_moiety,
+                                                                   ingest_run_id):
+    parent = _register_condition(conn, ingest_run_id, "D004827", "Epilepsy",
+                                 trees=("C10.228.140.490",))
+    child = _register_condition(conn, ingest_run_id, "D004833", "Epilepsy, Temporal",
+                                trees=("C10.228.140.490.360",))
+    conditions.add_condition_parent_edge(conn, child, parent, ingest_run_id)
+    indications.add_condition_indication(conn, a_moiety, parent, "may_treat",
+                                         "MED-RT", ingest_run_id)
+    rows = [r[0] for r in conn.execute(
+        "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
+    assert child not in rows and parent not in rows
+
+
+def test_a_surgical_procedure_is_never_a_gap(conn, ingest_run_id):
+    """669 of the 855 unreached conditions are E-tree procedures. 'Nothing is indicated
+    for Abdominoplasty' is a category error, not a gap, and 789 such rows would bury the
+    66 real ones under externally-citable question_uuids for noise."""
+    procedure = _register_condition(conn, ingest_run_id, "D015917", "Abdominoplasty",
+                                    trees=("E04.680",))
+    rows = [r[0] for r in conn.execute(
+        "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
+    assert procedure not in rows
+
+
+def test_a_rare_disease_SCR_is_a_gap_but_a_chemical_SCR_is_not(conn, ingest_run_id):
+    """An SCR bears no tree numbers, so it has no DAG position and 'nothing above it'
+    is vacuously true. SCRClass is the only thing that separates the 11 real rare
+    diseases from records like aliskiren."""
+    rare = _register_condition(conn, ingest_run_id, "C580439", "Short QT Syndrome",
+                               trees=(), record_kind="SCR", scr_class="3")
+    chemical = _register_condition(conn, ingest_run_id, "C446481", "aliskiren",
+                                   trees=(), record_kind="SCR", scr_class="1")
+    rows = [r[0] for r in conn.execute(
+        "SELECT condition_uuid FROM drugref.gap_condition_without_indication").fetchall()]
+    assert rare in rows
+    assert chemical not in rows
+
+
+def test_the_gap_reaches_the_question_register(conn, ingest_run_id):
+    _register_condition(conn, ingest_run_id, "D000000", "Rare Disease X",
+                        trees=("C10.999",))
+    questions.register_from_gaps(conn, ingest_run_id)
+    row = conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'condition_without_indication'").fetchone()
+    assert row[0].startswith("CONDITION:")
+    assert "Rare Disease X" in row[1]
+
+
+def test_the_condition_views_grain_is_the_gap_keys_grain(conn, ingest_run_id):
+    """#41's test, restated for this kind -- and RENAMED rather than reusing that
+    test's exact name, because two module-level functions sharing one name is not two
+    tests: Python keeps only the second, and the first silently stops being collected
+    at all. (Caught by ruff's F811, which is why this one runs under a distinct name.)
+
+    question_uuid is a pure function of (gap_kind, gap_key), so two view rows folding
+    to one key would hand two conditions ONE immortal question that append-only
+    curator rows then attach to."""
+    for ui in ("D000001", "D000002"):
+        _register_condition(conn, ingest_run_id, ui, f"Disease {ui}",
+                            trees=(f"C10.99{ui[-1]}",))
+    keys = conn.execute(
+        "SELECT count(*), count(DISTINCT 'CONDITION:' || condition_uuid) "
+        "FROM drugref.gap_condition_without_indication").fetchone()
+    assert keys[0] == keys[1]
