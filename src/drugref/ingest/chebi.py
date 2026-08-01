@@ -6,13 +6,15 @@ carries an INCHIKEY claim matching a ChEBI entry gets that ChEBI id attached as
 another cross-reference claim. This is the cheap public-cross-walk value the user
 asked for; it does not mint or gate moieties.
 """
-import hashlib
-import pathlib
 import csv
+import logging
 
 import psycopg
 
-from drugref import claims
+from drugref import claims, provenance
+from drugref.ingest.checksum import checksum
+
+log = logging.getLogger(__name__)
 
 SOURCE = "CHEBI"
 # WHICH orchestrator this is, as distinct from the authority it reads (db/025). One
@@ -21,15 +23,37 @@ SOURCE = "CHEBI"
 WRITER = "chebi"
 
 
-def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path, upstream_release: str) -> int:
+def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path,
+                      upstream_release: str) -> int:
     """Add a CHEBI claim to every moiety whose INCHIKEY matches a ChEBI row.
-    Returns the number of CHEBI claims newly added (idempotent on re-run)."""
-    checksum = hashlib.sha256(pathlib.Path(chebi_path).read_bytes()).hexdigest()
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run "
-        "(source, upstream_release, source_checksum, writer) "
-        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum, WRITER)).fetchone()[0]
+
+    Returns the number of CHEBI claims newly added (idempotent on re-run).
+
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record first, so a crash leaves it standing with finished_at NULL
+    (ingest_run_incomplete reports it); everything after that is the work, which this
+    function owns, commits on success, and rolls back before re-raising. A caller with
+    pending work has it committed at the provenance boundary, so callers must commit
+    their own work before calling.
+    """
+    log.info("ChEBI enrichment starting (release=%s)", upstream_release)
+    try:
+        added = _enrich_from_chebi(conn, chebi_path, upstream_release)
+    except Exception:
+        conn.rollback()
+        log.exception("ChEBI enrichment failed (release=%s); transaction rolled back",
+                      upstream_release)
+        raise
+    log.info("ChEBI enrichment finished (release=%s): %d claims added",
+             upstream_release, added)
+    return added
+
+
+def _enrich_from_chebi(conn: psycopg.Connection, chebi_path,
+                       upstream_release: str) -> int:
+    """The body of one ChEBI enrichment (see enrich_from_chebi for the contract)."""
+    run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+                                 source_checksum=checksum(chebi_path), writer=WRITER)
 
     added = 0
     with open(chebi_path, newline="", encoding="utf-8") as fh:
@@ -52,6 +76,6 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path, upstream_release:
                 if claims.add_claim(conn, moiety_uuid, "CHEBI", chebi_id, run_id):
                     added += 1
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s", (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return added

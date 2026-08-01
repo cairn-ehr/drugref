@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
-from drugref import interactions, questions
+from drugref import interactions, provenance, questions
 from drugref.ingest import medrt
 from drugref.ingest.checksum import checksum
 
@@ -86,12 +86,12 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
 
     Idempotent: re-running rebuilds to the same state, with the same class UUIDs.
 
-    TRANSACTION OWNERSHIP: this function owns `conn`'s transaction for its whole
-    body and commits at the end. On any failure it rolls back before re-raising, so
-    the caller is handed back a usable connection rather than one stuck in
-    Postgres's aborted-transaction state -- which would otherwise make the NEXT
-    feed's first statement fail for reasons that have nothing to do with it.
-    Callers must therefore commit their own pending work before calling.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record first, so a crash leaves it standing with finished_at NULL
+    (ingest_run_incomplete reports it); everything after that is the work, which this
+    function owns, commits on success, and rolls back before re-raising. A caller with
+    pending work has it committed at the provenance boundary, so callers must commit
+    their own work before calling.
     """
     log.info("MED-RT ingest starting (release=%s)", upstream_release)
     try:
@@ -111,11 +111,8 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     just the transaction/logging boundary and this stays readable top to bottom."""
     parsed = medrt.parse(medrt_path)
 
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run "
-        "(source, upstream_release, source_checksum, writer) "
-        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum(medrt_path), WRITER)).fetchone()[0]
+    run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+                                 source_checksum=checksum(medrt_path), writer=WRITER)
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.
@@ -222,8 +219,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
             "drugref.class_expansion_policy.",
             len(unresolved), ", ".join(unresolved))
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
-                 (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return MedrtSummary(classes_in_release=len(uuid_by_nui), classes_added=classes_added,
                         parent_edges=parent_edges, memberships=memberships,
