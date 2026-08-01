@@ -81,11 +81,16 @@ def _run_pbs(conn, paths, release):
 # reorder these could produce a chain that looks like it worked and bridged nothing.
 #
 # The globs describe the layout a real downloads/ tree has, not a tidy one invented
-# here: UNII_Names_*.txt sits at the root, MED-RT under MEDRT/ (extracted from
-# Core_MEDRT_XML.zip by hand -- teaching this module to open archives would make it
-# feed-aware for one feed's convenience), MeSH under mesh/, PBS under tables_as_csv/.
+# here: UNII_Records_*.txt sits at the root (NOT UNII_Names_*.txt -- Names is the
+# intuitively appealing wrong answer, a real file that sits right beside Records, but
+# it carries only Name/TYPE/UNII/Display Name. The moiety gate in ingest/unii.py's
+# _REQUIRED_COLUMNS reads INN_ID, USAN_ID, RXCUI and SUBSTANCE_TYPE, and only Records
+# carries those -- pointing this glob at Names fails the gate outright, every time),
+# MED-RT under MEDRT/ (extracted from Core_MEDRT_XML.zip by hand -- teaching this
+# module to open archives would make it feed-aware for one feed's convenience), MeSH
+# under mesh/, PBS under tables_as_csv/.
 STEPS = (
-    IngestStep("unii", (("unii", "UNII_Names_*.txt"),), _run_unii),
+    IngestStep("unii", (("unii", "UNII_Records_*.txt"),), _run_unii),
     IngestStep("chebi", (("chebi", "chebi*.tsv"),), _run_chebi),
     IngestStep("medrt", (("medrt", "MEDRT/Core_MEDRT_*_XML.xml"),), _run_medrt),
     IngestStep("mesh", (("pa", "mesh/pa*.xml"), ("desc", "mesh/desc*.gz"),
@@ -117,7 +122,7 @@ def resolve_inputs(downloads: pathlib.Path,
 
     GLOBS RATHER THAN FIXED NAMES, because the real layout is irregular and a tidy
     invented convention would match nothing: releases carry their version in the
-    filename (UNII_Names_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
+    filename (UNII_Records_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
     name would go stale on the next download.
     """
     resolved = {}

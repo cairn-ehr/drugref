@@ -130,3 +130,42 @@ def test_the_chain_runs_selected_steps_in_dependency_order():
 def test_the_chain_needs_at_least_one_release():
     args = cli.build_parser().parse_args(["ingest", "chain", "--downloads", "d"])
     assert cli.selected_steps(args) == ()
+
+
+def test_the_chain_resolves_every_steps_inputs_before_running_any(tmp_path, monkeypatch):
+    """`_handle_chain` builds `plan` as a LIST comprehension, not a generator, so
+    every step's glob is checked before the first runner fires. That property is
+    invisible to a test that only checks the exception propagates -- a generator
+    would raise the same InputResolutionError, just one runner call later than it
+    should. The property only shows up in whether the EARLY step's runner ran, so
+    that is what this test pins.
+
+    Uses two throwaway IngestSteps (not the real STEPS) so the fake runner can be
+    trusted to run only from this code path, and so failure needs no real database:
+    _handle_chain never touches `conn` itself, only forwards it to `runner`.
+    """
+    calls = []
+
+    def _early_runner(conn, paths, release):
+        calls.append("early")
+        return "early ok"
+
+    early = cli.IngestStep("early", (("early", "early.txt"),), _early_runner)
+    late = cli.IngestStep("late", (("late", "late.txt"),),
+                          lambda conn, paths, release: "late ok")
+    monkeypatch.setattr(cli, "STEPS", (early, late))
+
+    (tmp_path / "early.txt").write_text("x")
+    # late.txt is deliberately absent, so resolving "late"'s input is what fails.
+
+    args = cli.build_parser().parse_args(
+        ["ingest", "chain", "--downloads", str(tmp_path),
+         "--early-release", "r1", "--late-release", "r2"])
+
+    with pytest.raises(cli.InputResolutionError):
+        cli._handle_chain(object(), args)
+
+    # The assertion that carries the property: on a generator-based `plan`, "early"
+    # would already have run by the time "late" failed to resolve, and this would
+    # read calls == ["early"] instead.
+    assert calls == []
