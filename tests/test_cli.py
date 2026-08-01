@@ -75,3 +75,58 @@ def test_ingest_unii_end_to_end(_migrated, monkeypatch, capsys):
         assert c.execute(
             "SELECT source, writer, upstream_release FROM drugref.loaded_release"
         ).fetchall() == [("UNII", "unii_run", "2026-07")]
+
+
+def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):
+    (tmp_path / "MEDRT").mkdir()
+    (tmp_path / "MEDRT" / "Core_MEDRT_2026.07.06_XML.xml").write_text("x")
+
+    step = next(s for s in cli.STEPS if s.name == "medrt")
+    assert cli.resolve_inputs(tmp_path, step) == {
+        "medrt": tmp_path / "MEDRT" / "Core_MEDRT_2026.07.06_XML.xml"}
+
+
+def test_resolve_inputs_refuses_a_glob_that_matches_nothing(tmp_path):
+    """A convention that silently matches nothing is worse than no convention: the
+    chain would report success having ingested a feed it never read."""
+    step = next(s for s in cli.STEPS if s.name == "medrt")
+    with pytest.raises(cli.InputResolutionError) as exc:
+        cli.resolve_inputs(tmp_path, step)
+    assert "MEDRT/Core_MEDRT_*_XML.xml" in str(exc.value)
+    assert str(tmp_path) in str(exc.value)
+
+
+def test_resolve_inputs_refuses_an_ambiguous_glob(tmp_path):
+    """Two releases in one directory is the normal way this goes wrong, and picking
+    one would record the wrong bytes as provenance."""
+    (tmp_path / "MEDRT").mkdir()
+    for release in ("2026.05.04", "2026.07.06"):
+        (tmp_path / "MEDRT" / f"Core_MEDRT_{release}_XML.xml").write_text("x")
+
+    step = next(s for s in cli.STEPS if s.name == "medrt")
+    with pytest.raises(cli.InputResolutionError) as exc:
+        cli.resolve_inputs(tmp_path, step)
+    assert "2 files" in str(exc.value)
+
+
+def test_a_source_joins_the_chain_only_if_its_release_is_given():
+    """No default set and no skip-list: supplying a release IS the opt-in, so a run
+    can never quietly include a feed whose release tag nobody stated."""
+    args = cli.build_parser().parse_args(
+        ["ingest", "chain", "--downloads", "d",
+         "--unii-release", "26Feb2026", "--medrt-release", "2026.07.06"])
+    assert [(s.name, r) for s, r in cli.selected_steps(args)] == [
+        ("unii", "26Feb2026"), ("medrt", "2026.07.06")]
+
+
+def test_the_chain_runs_selected_steps_in_dependency_order():
+    """Flags are given in any order; the chain is not."""
+    args = cli.build_parser().parse_args(
+        ["ingest", "chain", "--downloads", "d",
+         "--pbs-release", "2026-07", "--unii-release", "26Feb2026"])
+    assert [s.name for s, _ in cli.selected_steps(args)] == ["unii", "pbs"]
+
+
+def test_the_chain_needs_at_least_one_release():
+    args = cli.build_parser().parse_args(["ingest", "chain", "--downloads", "d"])
+    assert cli.selected_steps(args) == ()

@@ -97,6 +97,75 @@ STEPS = (
 )
 
 
+class InputResolutionError(Exception):
+    """A chain glob matched no file, or more than one.
+
+    BOTH are errors, and the second is the one that bites: two releases left in one
+    directory is the ordinary way this goes wrong, and silently taking either would
+    record the wrong bytes as this run's provenance.
+    """
+
+
+def _release_flag(step: IngestStep) -> str:
+    """`mesh-relations` -> `mesh_relations_release`, the argparse destination."""
+    return f"{step.name.replace('-', '_')}_release"
+
+
+def resolve_inputs(downloads: pathlib.Path,
+                   step: IngestStep) -> dict[str, pathlib.Path]:
+    """Resolve one step's inputs under `downloads`, by the globs it declares.
+
+    GLOBS RATHER THAN FIXED NAMES, because the real layout is irregular and a tidy
+    invented convention would match nothing: releases carry their version in the
+    filename (UNII_Names_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
+    name would go stale on the next download.
+    """
+    resolved = {}
+    for name, pattern in step.inputs:
+        matches = sorted(downloads.glob(pattern))
+        if len(matches) != 1:
+            # "found N files" (not just "found N"): this branch only ever fires for
+            # 0 or 2+ matches, so the plural reads correctly in both cases, and it is
+            # the phrase an operator scanning a wall of stderr can grep for.
+            raise InputResolutionError(
+                f"{step.name}: expected exactly one file matching '{pattern}' under "
+                f"{downloads}, found {len(matches)} files"
+                + (f": {', '.join(m.name for m in matches)}" if matches else ""))
+        resolved[name] = matches[0]
+    return resolved
+
+
+def selected_steps(args: argparse.Namespace) -> tuple[tuple[IngestStep, str], ...]:
+    """The steps this chain invocation includes, in STEPS order, with their releases.
+
+    SUPPLYING A RELEASE IS THE OPT-IN. No default set, no skip-list: a chain that ran
+    feeds nobody named would record provenance nobody stated, and this project does
+    not guess provenance. Returning them in STEPS order rather than flag order is what
+    makes the dependency order unbreakable from the command line.
+    """
+    return tuple((step, getattr(args, _release_flag(step)))
+                 for step in STEPS if getattr(args, _release_flag(step), None))
+
+
+def _handle_chain(conn, args) -> int:
+    steps = selected_steps(args)
+    if not steps:
+        print("drugref: no sources selected; pass at least one --<source>-release",
+              file=sys.stderr)
+        return 2
+
+    # EVERY step's inputs are resolved BEFORE any step runs, so a typo fails in a
+    # second rather than sixty. The feeds are rebuildable projections, so a half-run
+    # chain is recoverable -- but an operator who has to notice that at all has been
+    # failed by the tool.
+    plan = [(step, release, resolve_inputs(args.downloads, step))
+            for step, release in steps]
+    for step, release, paths in plan:
+        log.info("chain: %s (release=%s)", step.name, release)
+        print(f"{step.name}: {step.runner(conn, paths, release)}")
+    return 0
+
+
 def _handle_migrate(conn, args) -> int:
     db.apply_migrations(conn)
     print("migrations applied")
@@ -158,6 +227,16 @@ def build_parser() -> argparse.ArgumentParser:
                              help=f"path to the {name} file (chain glob: {glob})")
         sub.set_defaults(handler=_handle_ingest, step=step)
 
+    chain = sources.add_parser(
+        "chain", help="run several feeds in dependency order from one directory")
+    chain.add_argument("--downloads", required=True, type=pathlib.Path,
+                       help="directory holding the upstream releases")
+    for step in STEPS:
+        chain.add_argument(
+            f"--{step.name}-release",
+            help=f"include {step.name}, recording this release tag")
+    chain.set_defaults(handler=_handle_chain)
+
     return parser
 
 
@@ -174,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
-    except RuntimeError as exc:
+    except (RuntimeError, InputResolutionError) as exc:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
         print(f"drugref: {exc}", file=sys.stderr)
