@@ -23,13 +23,16 @@ ALTER TABLE drugref.ingest_unmatched_ingredient
 
 COMMENT ON COLUMN drugref.ingest_unmatched_ingredient.reason IS
     'WHY this RxCUI is on the worklist, and -- because the clear is scoped on it -- '
-    'WHICH writer owns the row. FOUR values, THREE writers: medrt_run owns '
-    '`classification` (an ingredient the release classifies) and, since db/026, '
-    '`contraindication_class` (the subject of a CI_MoA/CI_PE rule); mesh_rel_run owns '
-    '`contraindication` and `indication`. NO DEFAULT, DELIBERATELY: a writer that does '
-    'not declare its reason must fail, not inherit somebody else''s bucket. EXACTLY '
-    'ONE WRITER PER (source, reason) -- add a value here rather than sharing one, or '
-    'the clears collide again exactly as medrt_run''s and the MeSH-keyed run''s did.';
+    'WHICH writer owns the row. FOUR values, TWO writers, each now owning TWO buckets: '
+    'medrt_run owns `classification` (an ingredient the release classifies) and, since '
+    'db/026, `contraindication_class` (the subject of a CI_MoA/CI_PE rule); mesh_rel_run '
+    'owns `contraindication` and `indication`. The value count and the writer count '
+    'move independently -- db/026 is the second time a new value landed on an existing '
+    'writer''s second bucket rather than minting a third writer, so a reader must not '
+    'infer one count from the other. NO DEFAULT, DELIBERATELY: a writer that does not '
+    'declare its reason must fail, not inherit somebody else''s bucket. EXACTLY ONE '
+    'WRITER PER (source, reason) -- add a value here rather than sharing one, or the '
+    'clears collide again exactly as medrt_run''s and the MeSH-keyed run''s did.';
 
 -- ============================================================================
 -- The tie-break, re-cut to say what it means
