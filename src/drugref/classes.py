@@ -230,7 +230,13 @@ UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
 CONTRAINDICATION = "contraindication"  # mesh_rel_run: the SUBJECT of a contraindication
 INDICATION = "indication"            # mesh_rel_run: the SUBJECT of an indication
-REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION)
+# medrt_run's OWN CI subjects (#47, db/026) -- the subject of a CI_MoA/CI_PE rule that
+# no moiety carries. Its own bucket, never `contraindication`: that one is
+# mesh_rel_run's, and sharing it is #39 with nothing to notice it. Named to sort AFTER
+# `classification`, which the issue's own suggested `class_contraindication` did not --
+# see db/026 for why that matters.
+CONTRAINDICATION_CLASS = "contraindication_class"
+REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION, CONTRAINDICATION_CLASS)
 
 # The COLUMN the clear narrows on, named here rather than spelled at the call site:
 # clear_source_tables interpolates it as an identifier (a column name cannot be a bind

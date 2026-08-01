@@ -408,6 +408,39 @@ def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
                         "drugref.gap_unmatched_ingredient").fetchall() == [("5640", "ibuprofen")]
 
 
+def test_the_unmatched_gap_prefers_the_row_that_carries_a_name(conn, ingest_run_id):
+    """db/026. The tie-break must state its own reason, not coincide with it.
+
+    db/018 widened this ORDER BY to `rxcui, ingest_run DESC, reason` anticipating #47,
+    and its comment justified `classification` winning "alphabetically" and "by being
+    the bucket with a name". BOTH justifications were wrong by the time #47 arrived:
+    `contraindication_class` was very nearly named `class_contraindication`, which
+    sorts BEFORE `classification`, and measured on the real release NO row in ANY
+    bucket carries a name at all.
+
+    So the view now prefers a named row explicitly. THE RELEASE CANNOT EXERCISE THIS
+    -- medrt_run passes no names -- so it is pinned on controlled input, the shape
+    #42 established for the descriptor-wins tie-break.
+
+    THE NAME GOES ON `contraindication_class`, NOT `classification`, and that pairing
+    is itself load-bearing (found running this test's own mutation check, Step 6 of
+    #47's brief): `contraindication_class` sorts AFTER `classification`, so a named
+    `classification` row would already win under db/018's bare `... , u.reason`
+    tie-break -- the mutation would pass either way and prove nothing. Naming the
+    row whose `reason` sorts SECOND is what forces the old tie-break to pick the
+    UNNAMED row, so reverting to it is observably wrong.
+    """
+    for reason, name in (("classification", None), ("contraindication_class", "ibuprofen")):
+        conn.execute(
+            "INSERT INTO drugref.ingest_unmatched_ingredient "
+            "(ingest_run, rxcui, name, reason) VALUES (%s, '99999', %s, %s)",
+            (ingest_run_id, name, reason))
+
+    assert conn.execute(
+        "SELECT name FROM drugref.gap_unmatched_ingredient "
+        "WHERE rxcui = '99999'").fetchall() == [("ibuprofen",)]
+
+
 # ---- gap_unreviewed_expansion_root -------------------------------------------
 #
 # The review gate for Plan B's deny-list. A curated list of abstract roots rots the

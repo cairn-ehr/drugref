@@ -65,6 +65,15 @@ def test_the_declared_table_tuple_is_what_it_should_be(name):
     assert declared == expected
 
 
+def test_the_reason_vocabulary_is_what_it_should_be():
+    """Restated independently, like every writer's table tuple above. A fourth value
+    was added by #47; EXACTLY ONE WRITER PER (source, reason) is what makes them safe,
+    so a value appearing here without a writer -- or a writer sharing one -- is the
+    defect this pins."""
+    assert classes.REASONS == ("classification", "contraindication", "indication",
+                               "contraindication_class")
+
+
 def test_the_mesh_contraindication_clear_still_covers_the_worklist():
     """Called out on its own because it is the entry that WAS lost once.
 
