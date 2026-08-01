@@ -15,8 +15,9 @@ from drugref import accumulation, ids
 
 def _run(conn):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('DRUGREF', 'curation-1', 'deadbeef') RETURNING ingest_run_id"
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('DRUGREF', 'curation-1', 'deadbeef', 'curation') RETURNING ingest_run_id"
     ).fetchone()[0]
 
 

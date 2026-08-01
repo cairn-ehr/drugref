@@ -158,6 +158,11 @@ def test_apply_migrations_is_idempotent(conn):
         # ANSWERS ITSELF by recording a decision, so no source tier orders them.
         "gap_uncurated_additive_effect", "gap_uncurated_threshold",
         "gap_ineffective_contribution", "gap_ungraded_contribution",
+        # #16, db/025: the two run-observability views, complementary filters on
+        # ingest_run.finished_at. Named here for the same reason every other view
+        # is -- information_schema.tables lists views too, so this inventory
+        # catches any object created by accident.
+        "loaded_release", "ingest_run_incomplete",
     }
 
 
@@ -209,8 +214,10 @@ def test_replaying_migrations_preserves_existing_classes(conn):
     orchestrator test modules carry their own cleanup -- see conftest).
     """
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'replay-test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'replay-test', 'deadbeef', 'medrt_run') "
+        "RETURNING ingest_run_id").fetchone()[0]
     class_uuid = ids.mint_class_uuid("MED-RT", "N0000999999")
     conn.execute(
         "INSERT INTO drugref.substance_class "
@@ -248,8 +255,10 @@ def test_migration_003_renames_populated_columns_and_keeps_edges(conn):
     conn.execute("ALTER TABLE drugref.substance_class RENAME COLUMN published_code TO medrt_code")
 
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'rename-test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'rename-test', 'deadbeef', 'medrt_run') "
+        "RETURNING ingest_run_id").fetchone()[0]
     parent = ids.mint_class_uuid("MED-RT", "N0000000010")
     child = ids.mint_class_uuid("MED-RT", "N0000000011")
     for cu, nui, name in ((parent, "N0000000010", "Parent [APC]"),

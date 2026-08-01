@@ -18,6 +18,12 @@ from drugref.ingest.checksum import checksum
 
 log = logging.getLogger(__name__)
 
+SOURCE = "UNII"
+# WHICH orchestrator this is, as distinct from the authority it reads (db/025). One
+# source can have two writers -- MED-RT does -- so a release is only unambiguous per
+# (source, writer).
+WRITER = "unii_run"
+
 
 @dataclass(frozen=True)
 class UniiSummary:
@@ -72,9 +78,10 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
     allowlist = gate.load_allowlist(allowlist_path)
 
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', %s, %s) RETURNING ingest_run_id",
-        (upstream_release, checksum(unii_path))).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
+        (SOURCE, upstream_release, checksum(unii_path), WRITER)).fetchone()[0]
 
     # The admission projection is rebuilt, not appended to (db/011): clear it
     # before the loop so a signal upstream has stopped asserting disappears with

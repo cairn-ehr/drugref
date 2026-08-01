@@ -129,8 +129,10 @@ def test_clear_source_tables_can_narrow_to_one_writers_rows(conn, ingest_run_id)
     narrowing on -- the reason a bare extra argument would not.
     """
     medrt = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'r1', 'test') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'r1', 'test', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     for reason in ("classification", "contraindication"):
         conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
                      "(ingest_run, rxcui, name, reason) VALUES (%s, '5640', 'x', %s)",
@@ -150,8 +152,10 @@ def test_an_unnarrowed_clear_still_takes_everything(conn, ingest_run_id):
     into "clears nothing unless asked", which fails silently -- the projection simply
     grows a little on every ingest."""
     medrt = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'r1', 'test') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'r1', 'test', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     for reason in ("classification", "contraindication"):
         conn.execute("INSERT INTO drugref.ingest_unmatched_ingredient "
                      "(ingest_run, rxcui, name, reason) VALUES (%s, '5640', 'x', %s)",
@@ -173,8 +177,10 @@ def test_clear_source_tables_scopes_the_delete_to_one_source(conn, ingest_run_id
     """
     local.upsert_product(conn, ITEM, ingest_run_id)
     medrt = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'r1', 'test') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'r1', 'test', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
 
     db.clear_source_tables(conn, ("local_product",), "MED-RT")
     assert conn.execute(

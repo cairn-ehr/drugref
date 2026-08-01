@@ -14,15 +14,22 @@ import psycopg
 
 from drugref import claims
 
+SOURCE = "CHEBI"
+# WHICH orchestrator this is, as distinct from the authority it reads (db/025). One
+# source can have two writers -- MED-RT does -- so a release is only unambiguous per
+# (source, writer).
+WRITER = "chebi"
+
 
 def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path, upstream_release: str) -> int:
     """Add a CHEBI claim to every moiety whose INCHIKEY matches a ChEBI row.
     Returns the number of CHEBI claims newly added (idempotent on re-run)."""
     checksum = hashlib.sha256(pathlib.Path(chebi_path).read_bytes()).hexdigest()
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('CHEBI', %s, %s) RETURNING ingest_run_id",
-        (upstream_release, checksum)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
+        (SOURCE, upstream_release, checksum, WRITER)).fetchone()[0]
 
     added = 0
     with open(chebi_path, newline="", encoding="utf-8") as fh:

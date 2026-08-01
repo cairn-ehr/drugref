@@ -225,8 +225,10 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
     leave a real moiety unclassified -- and, being an unordered read, might leave a
     different one unclassified on the next run."""
     run_id = seeded.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', 'test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'test', 'deadbeef', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     twin = ids.mint_moiety_uuid("TWIN-OF-PARACETAMOL")
     seeded.execute("INSERT INTO drugref.substance_moiety "
                    "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",

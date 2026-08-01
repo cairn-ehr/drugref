@@ -197,8 +197,10 @@ def test_a_root_the_release_no_longer_defines_is_reported_not_silent(conn):
     whose outcome depends on module ordering is worse than no test.
     """
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'test', 'deadbeef', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     # A decision about a class the registry does not hold: reported.
     conn.execute(
         "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "

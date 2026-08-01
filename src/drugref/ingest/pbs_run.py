@@ -40,6 +40,10 @@ log = logging.getLogger(__name__)
 # docstring note on local.clear_source_products below.
 JURISDICTION = "AU"
 SOURCE = "PBS"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). One source can have two writers -- MED-RT does -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "pbs_run"
 
 
 @dataclass(frozen=True)
@@ -130,9 +134,10 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
             source_checksum = hashlib.file_digest(fh, "sha256").hexdigest()
     try:
         run_id = conn.execute(
-            "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-            "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-            (SOURCE, upstream_release, source_checksum)).fetchone()[0]
+            "INSERT INTO drugref.ingest_run "
+            "(source, upstream_release, source_checksum, writer) "
+            "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
+            (SOURCE, upstream_release, source_checksum, WRITER)).fetchone()[0]
 
         local.clear_source_products(conn, SOURCE)
         # Index drugref's LABEL, not its INN claims (#26). Since the gate

@@ -15,9 +15,14 @@ def _run(conn, source="MeSH"):
     wrong for anything that must actually be scoped BY source: is_new needs two
     genuinely different runs, and clear_source_condition_edges filters its DELETE
     on ingest_run.source, which the fixture's row would never match 'MeSH'."""
+    # The writer implied by each source this module's tests open a run under
+    # (db/025): a KeyError on an unlisted source beats a silent NotNullViolation.
+    writer = {"MeSH": "mesh_run", "PBS": "pbs_run"}[source]
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'test', 'deadbeef') RETURNING ingest_run_id", (source,)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'test', 'deadbeef', %s) RETURNING ingest_run_id",
+        (source, writer)).fetchone()[0]
 
 
 def test_upsert_returns_the_derived_uuid(conn, ingest_run_id):

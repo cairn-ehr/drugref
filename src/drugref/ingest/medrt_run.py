@@ -25,6 +25,10 @@ from drugref.ingest import medrt
 from drugref.ingest.checksum import checksum
 
 SOURCE = "MED-RT"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). MED-RT has two writers -- this one and mesh_rel_run -- so a release is
+# only unambiguous per (source, writer).
+WRITER = "medrt_run"
 
 log = logging.getLogger(__name__)
 
@@ -108,9 +112,10 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     parsed = medrt.parse(medrt_path)
 
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum(medrt_path))).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
+        (SOURCE, upstream_release, checksum(medrt_path), WRITER)).fetchone()[0]
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.

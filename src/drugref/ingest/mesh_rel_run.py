@@ -111,6 +111,10 @@ SOURCE = "MED-RT"
 # (a condition_uuid is minted from 'MeSH' + a DescriptorUI), which is a different
 # question from who asserted the rule -- hence two constants, not one.
 OBJECT_SOURCE = "MeSH"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). MED-RT has two writers -- this one and medrt_run -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "mesh_rel_run"
 
 log = logging.getLogger(__name__)
 
@@ -234,10 +238,11 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     ind_assertions = parsed.mesh_indications
 
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
         (SOURCE, upstream_release,
-         checksum(medrt_path, desc_path, supp_path))).fetchone()[0]
+         checksum(medrt_path, desc_path, supp_path), WRITER)).fetchone()[0]
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the
     #    condition objects (see _condition_closure).

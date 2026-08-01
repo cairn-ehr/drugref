@@ -37,6 +37,10 @@ from drugref.ingest.checksum import checksum
 
 SOURCE = "MeSH"
 RELATIONSHIP = "has_PA"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). One source can have two writers -- MED-RT does -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "mesh_run"
 
 log = logging.getLogger(__name__)
 
@@ -128,9 +132,11 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     parsed = mesh.parse(pa_path=pa_path, desc_path=desc_path, supp_path=supp_path)
 
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum(pa_path, desc_path, supp_path))).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, %s, %s, %s) RETURNING ingest_run_id",
+        (SOURCE, upstream_release, checksum(pa_path, desc_path, supp_path),
+         WRITER)).fetchone()[0]
 
     # 1. Classes. A PA class hands upsert_class the same source-neutral shape a
     #    MED-RT concept does; descriptor_ui is both its identity key and its
