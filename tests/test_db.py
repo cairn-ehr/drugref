@@ -134,6 +134,30 @@ def test_apply_migrations_is_idempotent(conn):
         # filter on condition_indication_reach rather than a table of its own, named
         # explicitly for the same reason as every other gap_* view above.
         "gap_condition_without_indication",
+        # Plan C, db/020: the accumulation model. FIVE tables, all CURATED and all
+        # append-only -- the first content drugref asserts on its own authority
+        # (source = 'DRUGREF') rather than projecting from an upstream release.
+        # Four carry the spec-5.0 overlay shape (surrogate PK + deferred single-live
+        # + one-way supersession); interaction_group is the deliberate exception,
+        # holding only a deterministic UUID and its provenance, so there is nothing
+        # about it that can be wrong and nothing to correct.
+        "additive_effect", "effect_contribution", "interaction_group",
+        "interaction_group_assertion", "interaction_group_member",
+        # Plan C, db/021: the SECOND walk down the class DAG, plus the two views that
+        # are spec 8's output contract. class_subtree is unscoped where db/012's
+        # ci_class_subtree is scoped to the classes a contraindication names, and they
+        # are deliberately NOT merged -- that scoping is what makes the hot pair
+        # lookup 3.6 ms instead of 18.8 ms on the real release, for an identical row
+        # set. Both new views are named here for the same reason every other view is:
+        # information_schema.tables lists views too, so this inventory catches any
+        # object created by accident.
+        "class_subtree", "additive_effect_contributor",
+        "interaction_group_member_moiety",
+        # Plan C, db/022: the four curation-dependent gap views -- gap kinds eight
+        # through eleven. Unlike the coverage kinds, all four are questions drugref
+        # ANSWERS ITSELF by recording a decision, so no source tier orders them.
+        "gap_uncurated_additive_effect", "gap_uncurated_threshold",
+        "gap_ineffective_contribution", "gap_ungraded_contribution",
     }
 
 

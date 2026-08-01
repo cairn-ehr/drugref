@@ -24,6 +24,7 @@ CLASS_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "class")
 QUESTION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "question")
 LOCAL_PRODUCT_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "local_product")
 CONDITION_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "condition")
+GROUP_NAMESPACE = uuid.uuid5(_DRUGREF_ROOT, "interaction_group")
 
 
 def mint_moiety_uuid(unii: str) -> uuid.UUID:
@@ -49,6 +50,15 @@ _SOURCE_CANONICAL = {
     "MED-RT": "MED-RT",
     "MEDRT":  "MED-RT",   # the UUID-key spelling; must fold into the display one
     "MESH":   "MeSH",
+    # Plan C. drugref is an authority in its own registry, not only an aggregator:
+    # an additive effect the release has no class for is minted under this source.
+    # LISTED EXPLICITLY even though the upper-case fall-through below would produce
+    # the same answer, because relying on that fall-through is what bites the NEXT
+    # source. 'openFDA-SPL' and 'MeDIC' fold to 'OPENFDA-SPL' and 'MEDIC', so a CHECK
+    # written against the mixed-case literal would never match what is stored and a
+    # per-source rebuild would silently delete nothing. 'DRUGREF' survives by luck;
+    # the entry records that the luck was checked rather than assumed.
+    "DRUGREF": "DRUGREF",
 }
 
 # The key prefix each canonical authority contributes to a class UUID.
@@ -158,6 +168,30 @@ def mint_condition_uuid(source: str, code: str) -> uuid.UUID:
     canon = canonical_source(source)
     key = f"{canon.upper()}:{code.strip().upper()}"
     return uuid.uuid5(CONDITION_NAMESPACE, key)
+
+
+# ---- interaction-group identity (Plan C) ------------------------------------
+
+
+def mint_group_uuid(source: str, code: str) -> uuid.UUID:
+    """Derive an interaction group's immortal UUID from (authority, group code).
+
+    An interaction GROUP is the role-based exception to the accumulation model: the
+    triple whammy is one group with three roles (NSAID, RAAS blocker, diuretic),
+    where the members play DIFFERENT parts and simply counting them is meaningless.
+    `code` is drugref's own stable, curator-assigned code (e.g. "TRIPLE_WHAMMY"), so
+    the UUID is reproducible across instances exactly as MED-RT's class UUIDs are.
+
+    A SEPARATE NAMESPACE FROM CLASS_NAMESPACE, for the reason mint_condition_uuid
+    records: a group is not a substance_class, and sharing a namespace would mint ONE
+    UUID for two different kinds of thing -- silently joining a group's members to a
+    class's members through either edge table. The group's identity is append-only
+    and never superseded (there is nothing about a bare UUID that can be wrong); what
+    gets corrected is the ASSERTION about it, which is a separate table.
+    """
+    canon = canonical_source(source)
+    key = f"{canon.upper()}:{code.strip().upper()}"
+    return uuid.uuid5(GROUP_NAMESPACE, key)
 
 
 # ---- local-tier product identity (slice 8a) --------------------------------

@@ -143,3 +143,48 @@ def test_condition_and_class_uuids_never_collide():
     kinds of thing."""
     assert ids.mint_condition_uuid("MeSH", "D004827") != \
            ids.mint_class_uuid("MeSH", "D004827")
+
+
+# ---- Plan C: interaction-group identity, and drugref as its own authority ----
+
+
+def test_group_uuid_is_deterministic():
+    """Re-derived rather than pinned, exactly as class and condition UUIDs are, so
+    two drugref instances curating the same group agree with zero coordination."""
+    assert ids.mint_group_uuid("DRUGREF", "TRIPLE_WHAMMY") == \
+           ids.mint_group_uuid(" drugref ", "  triple_whammy  ")
+
+
+def test_group_uuid_separates_source_and_code():
+    assert ids.mint_group_uuid("DRUGREF", "A") != ids.mint_group_uuid("DRUGREF", "B")
+
+
+def test_group_namespace_cannot_collide_with_any_other_level():
+    """Spec 10 requires this be ASSERTED across all five levels rather than assumed
+    of uuid5: a group is not a class, and minting one UUID for both would silently
+    join a group row to a class row through either edge table -- the same hazard
+    mint_condition_uuid carries against slice 2b's PA classes."""
+    one_string = "TRIPLE_WHAMMY"
+    minted = {
+        ids.mint_moiety_uuid(one_string),
+        ids.mint_class_uuid("DRUGREF", one_string),
+        ids.mint_condition_uuid("DRUGREF", one_string),
+        ids.mint_group_uuid("DRUGREF", one_string),
+        ids.mint_question_uuid("unclassified_moiety", one_string),
+    }
+    assert len(minted) == 5, "one input string must mint five DISTINCT identities"
+
+
+def test_group_namespace_matches_frozen_literal():
+    """PINNED. group_uuid is the immortal identity interaction_group_member and any
+    external citation point at, so a drift would orphan every member row."""
+    assert str(ids.GROUP_NAMESPACE) == "26d1c73b-ab7b-59ea-ae91-9d7a8bea3f26"
+
+
+def test_drugref_is_an_explicit_canonical_source():
+    """Spec 6 is emphatic: add an entry, never rely on the upper-case fall-through.
+    'DRUGREF' survives that fall-through by luck, and a source that did NOT would be
+    stored under a spelling its own CHECK never matches."""
+    assert "DRUGREF" in ids._SOURCE_CANONICAL
+    assert ids.canonical_source("drugref") == "DRUGREF"
+    assert ids.canonical_source("  DrugRef ") == "DRUGREF"

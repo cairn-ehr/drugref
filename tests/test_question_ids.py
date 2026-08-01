@@ -117,3 +117,64 @@ def test_two_kinds_about_the_same_class_are_two_questions():
     key = f"CLASS:{ids.mint_class_uuid('MED-RT', 'N0000009065')}"
     assert (ids.mint_question_uuid("unpopulated_contraindication", key)
             != ids.mint_question_uuid("unreviewed_expansion_root", key))
+
+
+# ---- Plan C: the four curation-dependent kinds ------------------------------
+#
+# Spec 10 requires one pinned literal PER gap_kind, because the gap_key format is
+# frozen per kind rather than globally. An external tool that has cited one of these
+# holds the UUID forever, so a change to the format is a change to a public
+# identifier, not an implementation detail.
+
+_EFFECT_CLASS = "N0000008836"
+_CONTRIB_CLASS = "N0000175722"
+
+
+def test_uncurated_additive_effect_question_matches_frozen_literal():
+    cls = ids.mint_class_uuid("MED-RT", _EFFECT_CLASS)
+    assert str(ids.mint_question_uuid(
+        "uncurated_additive_effect", f"CLASS:{cls}"
+    )) == "f141a451-1b8d-5780-a522-31e92b211cbe"
+
+
+def test_uncurated_threshold_question_matches_frozen_literal():
+    """Shares the CLASS:{uuid} gap_key with the kind above, so this pin is also the
+    proof that gap_kind alone keeps two questions about ONE class apart."""
+    cls = ids.mint_class_uuid("MED-RT", _EFFECT_CLASS)
+    assert str(ids.mint_question_uuid(
+        "uncurated_threshold", f"CLASS:{cls}"
+    )) == "fbbce6a4-c5ef-5d19-a5c4-7251fd49dd73"
+
+
+def test_ineffective_contribution_question_matches_frozen_literal():
+    """The first COMPOUND gap_key -- two schemes joined by '/', per
+    mint_question_uuid's documented convention. Pinned because the joiner and the
+    order of the two halves are both frozen inputs."""
+    eff = ids.mint_class_uuid("MED-RT", _EFFECT_CLASS)
+    con = ids.mint_class_uuid("MED-RT", _CONTRIB_CLASS)
+    assert str(ids.mint_question_uuid(
+        "ineffective_contribution", f"CLASS:{eff}/CLASS:{con}"
+    )) == "431834ca-00de-5c2f-b985-d82d1b74f3c6"
+
+
+def test_ungraded_contribution_question_matches_frozen_literal():
+    eff = ids.mint_class_uuid("MED-RT", _EFFECT_CLASS)
+    con = ids.mint_class_uuid("MED-RT", _CONTRIB_CLASS)
+    assert str(ids.mint_question_uuid(
+        "ungraded_contribution", f"CLASS:{eff}/CLASS:{con}"
+    )) == "4a5eab60-524e-5695-bc55-e395cbc4de61"
+
+
+def test_a_compound_key_does_not_collide_with_its_halves():
+    """The reason the compound key names BOTH classes: the same contributor class may
+    be a sound promotion for one effect and a no-op for another, so folding the pair
+    onto either half would hand two unrelated gaps one immortal question_uuid that
+    append-only curator rows then attach to."""
+    eff = ids.mint_class_uuid("MED-RT", _EFFECT_CLASS)
+    con = ids.mint_class_uuid("MED-RT", _CONTRIB_CLASS)
+    minted = {
+        ids.mint_question_uuid("ungraded_contribution", f"CLASS:{eff}/CLASS:{con}"),
+        ids.mint_question_uuid("ungraded_contribution", f"CLASS:{con}/CLASS:{eff}"),
+        ids.mint_question_uuid("ungraded_contribution", f"CLASS:{eff}"),
+    }
+    assert len(minted) == 3

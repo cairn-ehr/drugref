@@ -382,16 +382,22 @@ def test_recording_a_decision_closes_the_expansion_question(conn):
                         "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()[0] == 0
 
 
-def test_the_same_class_can_raise_two_different_questions(conn):
-    """gap_key is CLASS:{uuid} for both unpopulated_contraindication and
-    unreviewed_expansion_root, so only gap_kind separates them. A sprawling class
-    nothing is filed under is BOTH -- two questions, two UUIDs, answerable
-    independently."""
+def test_the_same_class_can_raise_several_different_questions(conn):
+    """gap_key is CLASS:{uuid} for four kinds now, so only gap_kind separates them. A
+    sprawling PE class nothing is filed under raises all three of these at once --
+    three questions, three UUIDs, each answerable independently and by a different
+    remedy (file a drug / rule on expansion / rule on accumulation). question_uuid
+    takes gap_kind as an input precisely so they cannot collide.
+
+    This list grew from two when Plan C landed, and that is the shape working rather
+    than a regression: a class MED-RT thought worth contraindicating over is exactly a
+    class somebody owes an accumulation ruling on."""
     run_id = _run(conn)
     root = _unreviewed_root(conn, run_id)
     questions.register_from_gaps(conn, run_id)
 
     assert sorted(k for (k,) in conn.execute(
         "SELECT gap_kind FROM drugref.open_question WHERE gap_key = %s",
-        (f"CLASS:{root}",)).fetchall()) == ["unpopulated_contraindication",
+        (f"CLASS:{root}",)).fetchall()) == ["uncurated_additive_effect",
+                                            "unpopulated_contraindication",
                                             "unreviewed_expansion_root"]
