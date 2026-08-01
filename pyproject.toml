@@ -8,6 +8,9 @@ license-files = ["LICENSE"]
 readme = "README.md"
 dependencies = ["psycopg[binary]>=3.2"]
 
+[project.scripts]
+drugref = "drugref.cli:main"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 docs = ["mkdocs-material>=9.5,<10"]
