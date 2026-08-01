@@ -347,9 +347,10 @@ def test_the_python_reason_constants_are_exactly_what_the_CHECK_admits(conn):
     and the clears are scoped on it, so a value in one and not the other is a bucket
     nobody clears (rows accumulate forever) or a writer that cannot insert at all.
 
-    Pinned rather than trusted, because #47 will add a FOURTH value -- slice 5b.2 took
-    the third ('indication', db/019 section 7) -- and the two places are in different
-    languages, five files apart.
+    Pinned rather than trusted: #47 (db/026) added a FOURTH value
+    ('contraindication_class') -- slice 5b.2 had already taken the third ('indication',
+    db/019 section 7) -- and the two places are in different languages, five files
+    apart.
     """
     definition = conn.execute(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
