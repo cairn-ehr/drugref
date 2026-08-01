@@ -283,6 +283,37 @@ def test_a_promotion_sharing_no_member_with_the_effect_is_reported(conn):
                              "contributor_class_uuid")
 
 
+def test_one_contributor_class_can_bite_for_one_effect_and_be_a_no_op_for_another(conn):
+    """WHAT THE db/024 REWRITE MUST NOT LOSE. This view's verdict is per (effect,
+    contributor) PAIR, never per contributor: the same class is a sound promotion for
+    an effect whose drugs it shares and a silent no-op for one it does not. Anything
+    that decides "does this class bite?" once per class -- the obvious way to make the
+    query cheap -- collapses those two answers into one and reports the wrong row.
+
+    It is the same reason the gap_key is compound (`CLASS:a/CLASS:b`), asserted here
+    against the view rather than against the key."""
+    run_id = _run(conn)
+    shared = _class(conn, run_id, "G025", concept_type="EPC")
+    drug = _moiety(conn, run_id, "G025U")
+    _member(conn, run_id, drug, shared, "has_EPC")
+
+    reached = _class(conn, run_id, "G026")     # holds the same drug -> promotion bites
+    _member(conn, run_id, drug, reached)
+    missed = _class(conn, run_id, "G027")      # holds a different drug -> no-op
+    _member(conn, run_id, _moiety(conn, run_id, "G027U"), missed)
+
+    for effect in (reached, missed):
+        accumulation.curate_effect(conn, effect, run_id, accumulates=True,
+                                   threshold_major=1, threshold_total=2, severity="major")
+        accumulation.grade_contribution(conn, effect, shared, "major", run_id)
+
+    reported = {(e, c) for e, c in conn.execute(
+        "SELECT effect_class_uuid, contributor_class_uuid "
+        "FROM drugref.gap_ineffective_contribution").fetchall()}
+    assert (missed, shared) in reported, "the no-op pair must be reported"
+    assert (reached, shared) not in reported, "the biting pair must NOT be reported"
+
+
 def test_a_promotion_that_regrades_someone_is_not_reported(conn):
     run_id = _run(conn)
     effect = _class(conn, run_id, "G022")

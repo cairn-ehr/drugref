@@ -449,21 +449,25 @@ other jurisdictions.
   recall-safe *default*, not a gate, and the walk is **source-blind** (`class_parent` carries no `source`, so
   a transitive walk can cross vocabularies — **still latent after 5b**, see above). Row set unchanged. 419
   tests. Follow-ups filed as #35, #36, #37. The axis-aware review gate, latent then, is **live at 5b**.
-- **Plan C — the accumulation model ✅ DONE** (`db/020`–`db/023`; spec §4–§8 / §11 steps 6–7; plan:
+- **Plan C — the accumulation model ✅ DONE** (`db/020`–`db/024`; spec §4–§8 / §11 steps 6–7; plan:
   [plan-c](superpowers/plans/2026-08-01-plan-c-accumulation-model.md)). The gate was 5b, which has landed. The model
   the pairwise projection cannot express — **many drugs, one effect that adds up** — plus **groups**, the role-based
   exception where members play different parts and a count is meaningless (the triple whammy). Five curated tables,
   two read views (spec §8's output contract), four gap views, **gap kinds 8–11**, and `accumulation.py` — the single
   writer plus the two PURE rules a consumer applies. **Ships with an EMPTY curation set**, which is exactly what §11
   step 7 asks for; curation is step 8. **No new source**, but drugref becomes an authority in its own registry
-  (`source = 'DRUGREF'`, all three places extended together). **747 tests.**
+  (`source = 'DRUGREF'`, all three places extended together). **748 tests.**
 
-  **`db/023` is the review round on it**, four findings each measured rather than reasoned: the generic single-live
+  **`db/023`–`db/024` are the review round on it**, five findings each measured rather than reasoned: the generic single-live
   trigger was **unindexable and therefore quadratic** (2,000 rows 5,773 ms → **42 ms**, linear, via equality
   predicates + partial `<table>_live_key` indexes); `gap_uncurated_threshold` cleared on promotions that regrade
   **nobody**, so it now gates on unreviewed MEMBERS rather than on row count; `interaction_group_assertion` gained
   the `applies` ruling column `db/020` gave the other two tables but not it, so a group can be **retired as a whole**;
-  and `interaction_group_member_moiety`'s deliberate non-uniqueness is now stated instead of merely true.
+  and `interaction_group_member_moiety`'s deliberate non-uniqueness is now stated instead of merely true. Fifth and
+  costliest: `gap_ineffective_contribution` asked its question as a **correlated** subquery naming `class_subtree`
+  twice, re-running the 22,754-row closure **per curated row** — **59 s** for 400 promotions on the real release,
+  **465 ms** after `db/024` hoists the walk out of the loop, identical rows. A synthetic probe missed it entirely
+  because its fixture had no DAG edges: **measure recursion against a real DAG or do not measure it.**
 
   **Measured against the real releases**, whole chain 110 s, **every prior figure reproduced exactly** (19,438 ·
   3,634/3,961/18,639 · 5,963/8,507 · 9,471 · 1,442 · 103 · 14,674/154 · 168/422 · the seven gap counts).

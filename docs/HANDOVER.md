@@ -17,7 +17,7 @@ review round (#38) · 5b (#44) · the post-5b debt round (#46) · the interactio
 #53 population-label round (#56)**, which closed #53.
 
 **IN FLIGHT — Plan C, the accumulation model**, on `feat/plan-c-accumulation-model`: complete **plus its review
-round (`db/023`)**, **747 tests green**, `ruff check` + `mkdocs build --strict` clean, verified end-to-end against the
+round (`db/023`–`db/024`)**, **748 tests green**, `ruff check` + `mkdocs build --strict` clean, verified end-to-end against the
 real releases. Details under "Plan C" below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice,
 plus Plan C's.
 
@@ -247,7 +247,7 @@ predicates — `Synonym Of` shares their endpoint shape and would otherwise be e
 mannitol is a new **subject**, and a subject states its own contraindications. All three fixtures regenerate
 byte-identically.
 
-## Plan C — the accumulation model (`db/020`–`db/023`)
+## Plan C — the accumulation model (`db/020`–`db/024`)
 
 Plan: [plan-c](superpowers/plans/2026-08-01-plan-c-accumulation-model.md); design: §4–§8 / §11 steps 6–7 of the
 [additive-effect spec](superpowers/specs/2026-07-25-drugref-additive-effect-and-open-question-design.md). The model the
@@ -257,7 +257,7 @@ source**; drugref becomes an authority in its own registry (`source = 'DRUGREF'`
 four are curated assertions on the §5.0 overlay shape, `interaction_group` is the deliberate exception (a
 deterministic UUID and its provenance — nothing about it can be wrong). Read contract:
 `additive_effect_contributor` + `interaction_group_member_moiety`. Review gate: four gap views, **gap kinds 8–11**.
-**`db/023` is the review round on all three** — see its own traps below. 747 tests.
+**`db/023`–`db/024` are the review round on all three** — see its own traps below. 748 tests.
 
 **Measured end-to-end** (same chain, 110 s). **Every prior figure reproduced exactly** — 19,438 · 3,634/3,961/18,639 ·
 568/549/22,179 · 5,963/8,507 · 9,471 · 1,442 · 103 · 14,674/154 · 168/422 · the seven gap counts:
@@ -296,7 +296,14 @@ deterministic UUID and its provenance — nothing about it can be wrong). Read c
 - **First COMPOUND `gap_key`** (`CLASS:a/CLASS:b`): one contributor class can be sound for one effect and a no-op for
   another, so folding onto either half hands two gaps one immortal `question_uuid`. Pinned per kind.
 
-**The `db/023` review round — four findings, each measured or probed, none from reading alone.**
+**The `db/023`–`db/024` review round — five findings, each measured or probed, none from reading alone.**
+- **MEASURE RECURSION AGAINST A REAL DAG OR DO NOT MEASURE IT.** `gap_ineffective_contribution` asked its question
+  as a **correlated** `NOT EXISTS` naming `class_subtree` twice, so the planner re-ran the whole 22,754-row closure
+  **per curated row**: on the real release, 400 promotions cost **59 s**. `db/024` hoists the two membership sets out
+  of the row loop — identical rows, **465 ms**, linear. A synthetic probe had reported 582 ms for 2,000 promotions and
+  looked fine: its fixture had 2,000 classes and **no edges**, so the repeated walk cost nothing. **The verdict is per
+  (effect, contributor) PAIR** — one class bites for one effect and is a no-op for another — so `biting` is keyed on
+  the promotion row, never on the contributor class. Deciding it once per class is the cheap-looking wrong answer.
 - **GENERIC MUST NOT MEAN UNINDEXABLE.** `db/020`'s single-live trigger compared `to_jsonb(t) @> $1` — readable,
   generic, and servable by no index (`EXPLAIN`: Seq Scan). As a FOR EACH ROW constraint trigger that made a bulk load
   **quadratic**: 400 rows 236 ms, **2,000 rows 5,773 ms**. Rebuilt as one equality predicate per natural-key column
@@ -352,7 +359,7 @@ DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off 
 
 ```bash
 uv sync
-# 747 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
+# 748 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
 # floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
@@ -369,11 +376,12 @@ set — so the DB layer can never go green by being skipped.
   `017` that view re-keyed on `(upper(object_source), object_code)` (#41) · `018` the interaction debt round
   (`ingest_unmatched_ingredient.reason`, `ci_rule_partner_reach`, `contraindications_for_condition`) · `019` the two
   5b.2 indication relations + `condition_indication_axis` + `condition.scr_class` + `condition_indication_reach` +
-  `indications_for_condition` + `gap_condition_without_indication` · **`020`–`023` Plan C** (five curated
+  `indications_for_condition` + `gap_condition_without_indication` · **`020`–`024` Plan C** (five curated
   accumulation tables + the generic overlay floor; `class_subtree` + the two spec-8 read views + a re-issued
   `ci_class_subtree` COMMENT; four curation gap views + gap kinds 8–11; `023` the review round — an indexable
   single-live trigger + its four partial indexes, `interaction_group_assertion.applies`, and a re-cut
-  `gap_uncurated_threshold`). **Read the LATEST file that touches an
+  `gap_uncurated_threshold`; `024` `gap_ineffective_contribution` with the DAG walk hoisted out of the row loop).
+  **Read the LATEST file that touches an
   object for its actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by
   010's, 016's `gap_unresolved_ci_object` by 017's, and 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's.
