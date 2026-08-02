@@ -888,10 +888,11 @@ ALTER TABLE drugref.ingest_unmatched_ingredient
 
 COMMENT ON COLUMN drugref.ingest_unmatched_ingredient.reason IS
     'WHY this RxCUI is on the worklist, and -- because the clear is scoped on it -- '
-    'WHICH writer owns the row. FOUR values, THREE writers: medrt_run owns '
-    '`classification` (an ingredient the release classifies) and, since db/026, '
-    '`contraindication_class` (the subject of a CI_MoA/CI_PE rule); mesh_rel_run owns '
-    '`contraindication` and `indication`. NO DEFAULT, DELIBERATELY: a writer that does '
+    'WHICH writer owns the row. FOUR values, TWO writers, each owning TWO buckets: '
+    'medrt_run owns `classification` (an ingredient the release classifies) and, '
+    'since db/026, `contraindication_class` (the subject of a CI_MoA/CI_PE rule); '
+    'mesh_rel_run owns `contraindication` and `indication`. '
+    'NO DEFAULT, DELIBERATELY: a writer that does '
     'not declare its reason must fail, not inherit somebody else''s bucket. EXACTLY '
     'ONE WRITER PER (source, reason) -- add a value here rather than sharing one, or '
     'the clears collide again exactly as medrt_run''s and the MeSH-keyed run''s did.';
@@ -1219,11 +1220,13 @@ def _run_pbs(conn, paths, release):
 # reorder these could produce a chain that looks like it worked and bridged nothing.
 #
 # The globs describe the layout a real downloads/ tree has, not a tidy one invented
-# here: UNII_Names_*.txt sits at the root, MED-RT under MEDRT/ (extracted from
-# Core_MEDRT_XML.zip by hand -- teaching this module to open archives would make it
-# feed-aware for one feed's convenience), MeSH under mesh/, PBS under tables_as_csv/.
+# here: UNII_Records_*.txt sits at the root (NOT UNII_Names_*.txt -- a real file
+# beside it carrying none of the moiety gate's four membership signals), MED-RT under
+# MEDRT/ (extracted from Core_MEDRT_XML.zip by hand -- teaching this module to open
+# archives would make it feed-aware for one feed's convenience), MeSH under mesh/,
+# PBS under tables_as_csv/.
 STEPS = (
-    IngestStep("unii", (("unii", "UNII_Names_*.txt"),), _run_unii),
+    IngestStep("unii", (("unii", "UNII_Records_*.txt"),), _run_unii),
     IngestStep("chebi", (("chebi", "chebi*.tsv"),), _run_chebi),
     IngestStep("medrt", (("medrt", "MEDRT/Core_MEDRT_*_XML.xml"),), _run_medrt),
     IngestStep("mesh", (("pa", "mesh/pa*.xml"), ("desc", "mesh/desc*.gz"),
@@ -1472,7 +1475,7 @@ def resolve_inputs(downloads: pathlib.Path,
 
     GLOBS RATHER THAN FIXED NAMES, because the real layout is irregular and a tidy
     invented convention would match nothing: releases carry their version in the
-    filename (UNII_Names_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
+    filename (UNII_Records_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
     name would go stale on the next download.
     """
     resolved = {}
@@ -1481,7 +1484,7 @@ def resolve_inputs(downloads: pathlib.Path,
         if len(matches) != 1:
             raise InputResolutionError(
                 f"{step.name}: expected exactly one file matching '{pattern}' under "
-                f"{downloads}, found {len(matches)}"
+                f"{downloads}, found {len(matches)} files"
                 + (f": {', '.join(m.name for m in matches)}" if matches else ""))
         resolved[name] = matches[0]
     return resolved
