@@ -133,10 +133,12 @@ drugref ingest chain --downloads DIR --unii-release R --medrt-release R …
 
 ### 4.2 Shape
 
-Pure and testable without a database: `build_parser()`, `CHAIN_STEPS`, `resolve_inputs()`,
-`missing_inputs()`. `main(argv=None) -> int` is the thin impure shell, so tests drive it by call rather than
-by subprocess. Target under ~300 lines; if the chain outgrows that, it splits into its own module rather than
-being compressed.
+Pure and testable without a database: the `STEPS` table, `build_parser()`, `resolve_inputs()` — which raises
+`InputResolutionError` when a step's glob matches **zero or several** files, both being errors — and
+`selected_steps()`, which returns the `(step, release)` pairs a chain invocation includes **in `STEPS` order**,
+so the dependency order cannot be broken from the command line. `main(argv=None) -> int` is the thin impure
+shell, so tests drive it by call rather than by subprocess. Target under ~300 lines; if the chain outgrows
+that, it splits into its own module rather than being compressed.
 
 ## 5. #47 — the CI subjects, and two things measuring it turned up
 

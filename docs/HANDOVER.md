@@ -374,8 +374,10 @@ set — so the DB layer can never go green by being skipped.
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two
   PURE evaluation rules a consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but
   hands out the rules as code so "count the contributors" means one thing. **`cli.py`** is the `drugref` console
-  script; its pure half (`build_parser`, `CHAIN_STEPS`, `resolve_inputs`, `missing_inputs`) is tested without a
-  database. The MeSH-keyed stack: **`conditions.py`** / **`indications.py`** (single writers),
+  script; its pure half (`STEPS`, `build_parser`, `resolve_inputs` — which raises `InputResolutionError` on zero
+  **or** several matches — and `selected_steps`, which returns the chain's steps in `STEPS` order however the flags
+  were ordered) is tested without a database. The MeSH-keyed stack: **`conditions.py`** / **`indications.py`**
+  (single writers),
   **`ingest/mesh_concepts.py`** (pure/streaming: MeSH **ConceptUI → record** resolution, the descendant closure, the
   tree-number DAG), and **`ingest/mesh_rel_run.py`** — the ONE orchestrator for both halves, reading two authorities
   (MED-RT states the rule, MeSH defines its object) and running `mesh_ci_relations.py` / `mesh_ind_relations.py` as
