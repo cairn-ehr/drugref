@@ -13,8 +13,13 @@ commit message:
   a checksum of a RELEASE (a fixed tuple of files) rather than of a bag of bytes.
 """
 import hashlib
+import pathlib
+import re
 
+import drugref.ingest
 from drugref.ingest.checksum import CHUNK_BYTES, checksum
+
+INGEST = pathlib.Path(drugref.ingest.__file__).resolve().parent
 
 
 def test_a_single_file_hashes_exactly_as_read_bytes_would(tmp_path):
@@ -53,6 +58,28 @@ def test_the_order_of_the_files_is_part_of_the_digest(tmp_path):
     first.write_bytes(b"desc")
     second.write_bytes(b"supp")
     assert checksum(first, second) != checksum(second, first)
+
+
+def test_only_checksum_py_hashes_an_ingest_input():
+    """THE SINGLE-PLACE PIN, the property the other three shared helpers each have and
+    this one did not. #43 collapsed four copies into this module, but pbs_run.py kept
+    hashing its own items.csv -- with a DIFFERENT API (`hashlib.file_digest`), which is
+    how a duplicate survives a refactor that was looking for its own idiom.
+
+    A grep over the ingest package rather than an import, exactly as
+    test_provenance's one-writer contract greps: driving the expectation off the code
+    under test would pass whatever that code said. Scoped to drugref/ingest because
+    db.py legitimately hashes migration TEXT for the ledger -- a different question,
+    with a different meaning, that this helper has no business answering.
+
+    Matched on the IMPORT rather than on the word, because prose is not code: the
+    comment recording what pbs_run.py used to do names `hashlib.file_digest`, and a
+    substring grep would read that explanation as the defect it explains.
+    """
+    imports_hashlib = re.compile(r"^(?:import hashlib|from hashlib import)", re.M)
+    hashers = [p for p in sorted(INGEST.rglob("*.py"))
+               if imports_hashlib.search(p.read_text())]
+    assert [p.name for p in hashers] == ["checksum.py"]
 
 
 def test_a_changed_byte_anywhere_changes_the_digest(tmp_path):

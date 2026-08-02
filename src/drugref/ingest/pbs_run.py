@@ -17,7 +17,6 @@ fair-dealing scale in that script's docstring, but it is not "no PBS data", and
 #25 covers it too. Nothing in the ingest PATH redistributes anything: the tables
 db/009 creates are populated only from a release the operator supplies.
 """
-import hashlib
 import logging
 import pathlib
 import uuid
@@ -27,6 +26,7 @@ import psycopg
 
 from drugref import classes, local, provenance
 from drugref.ingest import pbs
+from drugref.ingest.checksum import checksum
 
 log = logging.getLogger(__name__)
 
@@ -129,11 +129,15 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     """
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
-        # Streamed, not read_bytes() (fix round, finding 5): the parser goes to
-        # some trouble to keep the 8.3 MB file out of memory, and slurping the
-        # whole thing here to hash it gave that back for nothing.
-        with open(path, "rb") as fh:
-            source_checksum = hashlib.file_digest(fh, "sha256").hexdigest()
+        # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
+        # module still hashing its own input -- `hashlib.file_digest(fh, "sha256")`,
+        # which streams just as checksum() does and, since SHA-256 does not care how
+        # its input was fed in, produces a BYTE-IDENTICAL digest: verified against
+        # tests/fixtures/pbs_items_subset.csv, so no source_checksum already on disk
+        # was rewritten by collapsing it. The reason to collapse it anyway is the
+        # reason checksum.py exists: four copies of a rule were three chances to fix
+        # it in three places, and this one had already drifted to a different API.
+        source_checksum = checksum(path)
     try:
         run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
                                      source_checksum=source_checksum, writer=WRITER)
