@@ -172,7 +172,7 @@ def test_every_migration_is_recorded_in_the_ledger(conn):
     three different DO-block idioms. The ledger answers it directly."""
     recorded = {row[0] for row in conn.execute(
         "SELECT filename FROM drugref.schema_migration").fetchall()}
-    on_disk = {p.name for p in db._DB_DIR.glob("*.sql")}
+    on_disk = {p.name for p in db.migration_dir().glob("*.sql")}
     assert recorded == on_disk
 
 
@@ -201,6 +201,70 @@ def test_editing_an_already_applied_migration_is_refused_loudly(conn):
         conn.execute("UPDATE drugref.schema_migration SET checksum = %s "
                      "WHERE filename = %s", (original, target))
         conn.commit()
+
+
+def test_migration_dir_prefers_the_packaged_copy(tmp_path, monkeypatch):
+    """An INSTALLED drugref reads the .sql files the wheel shipped, not a directory
+    three parents up from site-packages that it does not own. Both candidates exist
+    here, so this pins the ORDER rather than merely that something is found."""
+    packaged, source = tmp_path / "packaged", tmp_path / "source"
+    for d in (packaged, source):
+        d.mkdir()
+        (d / "001_x.sql").write_text("SELECT 1;")
+    monkeypatch.setattr(db, "_PACKAGED_MIGRATIONS", packaged)
+    monkeypatch.setattr(db, "_SOURCE_MIGRATIONS", source)
+
+    assert db.migration_dir() == packaged
+
+
+def test_migration_dir_falls_back_to_the_source_checkout(tmp_path, monkeypatch):
+    """The dev layout: src/drugref/migrations/ does not exist in a checkout (the
+    force-include only builds it into a wheel), so `uv run drugref migrate` must keep
+    reading db/ at the repository root."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "001_x.sql").write_text("SELECT 1;")
+    monkeypatch.setattr(db, "_PACKAGED_MIGRATIONS", tmp_path / "absent")
+    monkeypatch.setattr(db, "_SOURCE_MIGRATIONS", source)
+
+    assert db.migration_dir() == source
+
+
+def test_a_directory_holding_no_sql_is_refused_like_a_missing_one(tmp_path, monkeypatch):
+    """AN EMPTY DIRECTORY IS THE SAME CATASTROPHE AS A MISSING ONE -- zero files
+    applied -- and Path.glob reports neither. The wheel-install bug this guards
+    against is exactly that: the directory question answered silently."""
+    present_but_empty = tmp_path / "empty"
+    present_but_empty.mkdir()
+    monkeypatch.setattr(db, "_PACKAGED_MIGRATIONS", present_but_empty)
+    monkeypatch.setattr(db, "_SOURCE_MIGRATIONS", tmp_path / "absent")
+
+    with pytest.raises(db.MissingMigrationsError, match="no migration SQL found"):
+        db.migration_dir()
+
+
+def test_apply_migrations_cannot_report_success_having_applied_nothing(tmp_path, monkeypatch):
+    """THE DEFECT IN ONE TEST. `drugref migrate` from a wheel that shipped no .sql
+    created the ledger, applied nothing, committed, and returned normally -- so the
+    CLI printed "migrations applied" and the very next command died with
+    UndefinedTable on a database the operator had just been told was migrated.
+
+    The stand-in connection REFUSES EVERY STATEMENT, which is what pins the ordering
+    as well as the failure: the directory is resolved BEFORE the ledger DDL runs, so a
+    broken install leaves the database exactly as it found it rather than holding an
+    empty schema_migration that makes the next run look partially complete. A real
+    connection could not show that -- the shared test database already has a ledger.
+    """
+    class _RefusingConn:
+        def execute(self, *args, **kwargs):
+            raise AssertionError("apply_migrations touched the database before it "
+                                 "knew it had anything to apply")
+
+    monkeypatch.setattr(db, "_PACKAGED_MIGRATIONS", tmp_path / "absent-packaged")
+    monkeypatch.setattr(db, "_SOURCE_MIGRATIONS", tmp_path / "absent-source")
+
+    with pytest.raises(db.MissingMigrationsError):
+        db.apply_migrations(_RefusingConn())
 
 
 def test_replaying_migrations_preserves_existing_classes(conn):
@@ -273,7 +337,7 @@ def test_migration_003_renames_populated_columns_and_keeps_edges(conn):
         "VALUES (%s, %s, %s)", (child, parent, run_id))
 
     # Apply ONLY db/003 over that populated, pre-rename table.
-    conn.execute((db._DB_DIR / "003_class_registry_source_neutral.sql").read_text())
+    conn.execute((db.migration_dir() / "003_class_registry_source_neutral.sql").read_text())
 
     # The rows survived the rename with their UUIDs intact (a rebuilt table would
     # have dropped them and broken the class_parent foreign key), the columns are

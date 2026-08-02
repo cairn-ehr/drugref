@@ -13,7 +13,35 @@ from collections.abc import Mapping, Sequence
 
 import psycopg
 
-_DB_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "db"
+# WHERE THE MIGRATIONS LIVE, in the two layouts this package is ever run from, and
+# why the answer cannot be a single constant. In a source checkout the .sql files sit
+# at the repository root in db/; in an INSTALLED WHEEL there is no repository, so
+# pyproject's force-include ships the same directory inside the package as
+# drugref/migrations/. Resolving the packaged copy FIRST matters: an installed
+# drugref may sit three parents below something unrelated, and the checkout path is a
+# guess about a directory this package does not own.
+#
+# Named `migrations` and not `db`, deliberately: a drugref/db/ directory would shadow
+# this very module's name on the import path. Python resolves db.py ahead of a
+# namespace directory today, but relying on that ordering to keep `import drugref.db`
+# working is a trap nobody would think to look for.
+_PACKAGED_MIGRATIONS = pathlib.Path(__file__).resolve().parent / "migrations"
+_SOURCE_MIGRATIONS = pathlib.Path(__file__).resolve().parent.parent.parent / "db"
+
+
+class MissingMigrationsError(RuntimeError):
+    """No migration SQL could be found, so apply_migrations has nothing to apply.
+
+    A DEDICATED TYPE BECAUSE THE ALTERNATIVE WAS SILENCE. `Path.glob` on a directory
+    that does not exist yields nothing and raises nothing, so before this the wheel
+    install ran the ledger DDL, applied zero files, committed, and printed "migrations
+    applied" -- and the next command died with UndefinedTable on a database the
+    operator had just been told was migrated. A no-op reporting success is the failure
+    mode this project forbids outright.
+
+    Subclasses RuntimeError so cli.main's existing handler prints the message instead
+    of a traceback; the message is written to be the whole diagnosis.
+    """
 
 # The ledger is created by the runner rather than by a migration file, because it
 # has to exist BEFORE the first migration runs -- it is what decides whether that
@@ -98,6 +126,29 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
     return psycopg.connect(dsn)
 
 
+def migration_dir() -> pathlib.Path:
+    """The directory holding the migration SQL: packaged copy first, checkout second.
+
+    RESOLVED PER CALL, not once at import, so a test can point it somewhere else and
+    so the answer is never baked into a stale module object.
+
+    "CONTAINS AT LEAST ONE .sql", not "exists", is the test each candidate must pass.
+    An empty-but-present directory is the same catastrophe as a missing one -- zero
+    files applied -- and the whole point of this function is that zero can never be
+    mistaken for done. Raising here rather than returning an empty directory keeps
+    that decision in ONE place instead of at every call site.
+    """
+    for candidate in (_PACKAGED_MIGRATIONS, _SOURCE_MIGRATIONS):
+        if any(candidate.glob("*.sql")):
+            return candidate
+    raise MissingMigrationsError(
+        "no migration SQL found: looked in "
+        f"{_PACKAGED_MIGRATIONS} (the packaged copy) and {_SOURCE_MIGRATIONS} (a "
+        "source checkout), and neither holds a .sql file. An installed drugref whose "
+        "wheel shipped no migrations cannot create the schema -- reinstall from a "
+        "wheel built with pyproject's force-include, or run from a checkout.")
+
+
 def apply_migrations(conn: psycopg.Connection) -> None:
     """Apply every db/*.sql in filename order, once each, recording what ran.
 
@@ -118,12 +169,18 @@ def apply_migrations(conn: psycopg.Connection) -> None:
 
     Everything runs in one transaction, so a failure part-way leaves neither the
     schema nor the ledger half-updated.
+
+    THE DIRECTORY IS RESOLVED BEFORE THE LEDGER IS TOUCHED, which is the ordering that
+    matters: a broken install must leave the database exactly as it found it, not
+    holding an empty schema_migration table that makes the next run look partially
+    complete.
     """
+    sql_dir = migration_dir()
     conn.execute(_LEDGER_DDL)
     applied = dict(conn.execute(
         "SELECT filename, checksum FROM drugref.schema_migration").fetchall())
 
-    for path in sorted(_DB_DIR.glob("*.sql")):
+    for path in sorted(sql_dir.glob("*.sql")):
         body = path.read_text()
         checksum = hashlib.sha256(body.encode("utf-8")).hexdigest()
         seen = applied.get(path.name)
