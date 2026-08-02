@@ -82,10 +82,22 @@ def test_loaded_release_ignores_a_run_that_never_finished(conn):
 def test_ingest_run_incomplete_reports_exactly_the_unfinished(conn):
     """The complementary filter on the SAME column, so the two views cannot disagree
     -- db/018's ci_rule_partner_reach shape, adopted after the interaction debt round
-    found one measure stated twice with only one copy corrected."""
-    _run(conn, "PBS", "pbs_run", release="landed", finished=True)
+    found one measure stated twice with only one copy corrected.
+
+    SCOPED TO THE TWO ROWS THIS TEST MADE, and that is not a weakening -- it is what
+    makes the assertion mean anything at all. This view's whole point is that an
+    unfinished row SURVIVES its work's rollback, so every crash-path test in the suite
+    (tests/test_medrt_run.py's failed-ingest test, for one) leaves a real committed row
+    here that no fixture rolls back. An assertion on the unfiltered view therefore
+    passes or fails on test ORDER rather than on behaviour. Filtering on `source` is
+    not enough either: a second PBS crash test would collide the same way. Both halves
+    of the claim are still pinned -- the finished run is ABSENT and the unfinished one
+    is PRESENT -- because the filter names both ids and the equality is exact.
+    """
+    landed = _run(conn, "PBS", "pbs_run", release="landed", finished=True)
     crashed = _run(conn, "PBS", "pbs_run", release="crashed", finished=False)
 
     assert conn.execute(
-        "SELECT ingest_run_id FROM drugref.ingest_run_incomplete").fetchall() \
+        "SELECT ingest_run_id FROM drugref.ingest_run_incomplete "
+        "WHERE ingest_run_id IN (%s, %s)", (landed, crashed)).fetchall() \
         == [(crashed,)]
