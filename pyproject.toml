@@ -8,6 +8,9 @@ license-files = ["LICENSE"]
 readme = "README.md"
 dependencies = ["psycopg[binary]>=3.2"]
 
+[project.scripts]
+drugref = "drugref.cli:main"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 docs = ["mkdocs-material>=9.5,<10"]
@@ -18,6 +21,23 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/drugref"]
+
+# The migration SQL ships INSIDE the wheel. It is not optional extra data: `drugref
+# migrate` is the first command an operator runs, and without these files it applied
+# nothing and reported success (db.MissingMigrationsError now refuses that, but the
+# installed CLI still has to actually work). db/ lives at the repository root because
+# it is also read by psql and by hand, so it is force-included rather than moved.
+#
+# The destination is drugref/migrations/, NOT drugref/db/, which would shadow the
+# drugref.db module's name on the import path.
+#
+# An EDITABLE install gets this copy too (hatchling applies force-include in both
+# modes) and it is inert there, deliberately: db.migration_dir() looks beside the
+# db.py it is IMPORTED FROM, which in a checkout is src/drugref/ -- a directory the
+# copy never lands in -- so the dev path always reads db/ at the repository root and
+# can never be served a snapshot that went stale between syncs.
+[tool.hatch.build.targets.wheel.force-include]
+"db" = "drugref/migrations"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

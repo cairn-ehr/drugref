@@ -45,7 +45,13 @@ def truncate(conn) -> None:
     ingest_unmatched_ingredient is named for that same reason, and it had been left to
     the CASCADE from `ingest_run` while three tests asserted on it directly -- the exact
     shape the paragraph above forbids. Naming it is also what keeps the list honest
-    about the run's THIRD `reason` bucket (db/019 section 7).
+    about `indication`, the SECOND of the TWO `reason` buckets this run owns (db/019
+    section 7 added it beside `contraindication`).
+
+    Not "the third bucket": that counts the run's buckets off the VOCABULARY's size,
+    which is the conflation classes.py's REASON constants warn against in as many
+    words -- values and writers are counted separately, and db/026's fourth value
+    (`contraindication_class`) belongs to medrt_run, not to this run at all.
     """
     conn.execute(
         "TRUNCATE drugref.moiety_condition_indication, "

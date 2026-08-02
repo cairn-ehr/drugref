@@ -83,7 +83,7 @@ import psycopg
 
 from drugref import classes as class_writer
 from drugref import conditions as condition_writer
-from drugref import indications, interactions, questions
+from drugref import indications, interactions, provenance, questions
 from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_ind_relations
 from drugref.ingest.checksum import checksum
 # The four tallies this run returns. They live in their own module (pure data, no
@@ -111,6 +111,10 @@ SOURCE = "MED-RT"
 # (a condition_uuid is minted from 'MeSH' + a DescriptorUI), which is a different
 # question from who asserted the rule -- hence two constants, not one.
 OBJECT_SOURCE = "MeSH"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). MED-RT has two writers -- this one and medrt_run -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "mesh_rel_run"
 
 log = logging.getLogger(__name__)
 
@@ -159,9 +163,18 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
                           supp_path, upstream_release: str) -> MeshRelSummary:
     """Ingest MED-RT's MeSH-keyed relations. Idempotent.
 
-    TRANSACTION OWNERSHIP: as for medrt_run/mesh_run -- this owns `conn`'s
-    transaction, commits on success, and rolls back before re-raising on failure so
-    the caller never receives a connection stuck in the aborted-transaction state.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
+    the three where the gap is wide: the parse runs FIRST (it is pure and takes no
+    connection), so a crash while parsing still leaves no row at all -- a view cannot
+    report a run nobody opened. The six orchestrators are not uniform in this, and
+    ingest_run_incomplete's own comment says so.
     """
     log.info("MeSH-keyed relation ingest starting (release=%s)", upstream_release)
     try:
@@ -233,11 +246,9 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     ci_assertions = parsed.mesh_contraindications
     ind_assertions = parsed.mesh_indications
 
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release,
-         checksum(medrt_path, desc_path, supp_path))).fetchone()[0]
+    run_id = provenance.open_run(
+        conn, source=SOURCE, upstream_release=upstream_release,
+        source_checksum=checksum(medrt_path, desc_path, supp_path), writer=WRITER)
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the
     #    condition objects (see _condition_closure).
@@ -425,8 +436,7 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     #    would read a half-demolished registry.
     questions.register_from_gaps(conn, run_id)
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() "
-                 "WHERE ingest_run_id = %s", (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return MeshRelSummary(
         registry=RegistryTally(

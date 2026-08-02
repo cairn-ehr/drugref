@@ -24,8 +24,9 @@ from drugref import ids
 
 def _run(conn, source="DRUGREF"):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'test-release', 'deadbeef') RETURNING ingest_run_id",
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'test-release', 'deadbeef', 'curation') RETURNING ingest_run_id",
         (source,)).fetchone()[0]
 
 

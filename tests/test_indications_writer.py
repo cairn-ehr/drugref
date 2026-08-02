@@ -106,8 +106,10 @@ def test_the_clear_is_scoped_by_source(conn, a_moiety, a_condition):
     'MED-RT' -- the test would then assert the opposite of what it claims to prove.
     """
     medrt_run = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'test', 'test') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'test', 'test', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     indications.add_condition_indication(conn, a_moiety, a_condition, "may_treat",
                                          "MED-RT", medrt_run)
 

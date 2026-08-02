@@ -12,11 +12,17 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import claims, ids, questions
+from drugref import claims, ids, provenance, questions
 from drugref.ingest import gate, unii
 from drugref.ingest.checksum import checksum
 
 log = logging.getLogger(__name__)
+
+SOURCE = "UNII"
+# WHICH orchestrator this is, as distinct from the authority it reads (db/025). One
+# source can have two writers -- MED-RT does -- so a release is only unambiguous per
+# (source, writer).
+WRITER = "unii_run"
 
 
 @dataclass(frozen=True)
@@ -48,9 +54,17 @@ def ingest_unii(conn: psycopg.Connection, *, unii_path, crosswalk_path,
                 allowlist_path, upstream_release: str) -> UniiSummary:
     """Ingest one UNII file. Returns a UniiSummary of what was and was not carried.
 
-    TRANSACTION OWNERSHIP: as for the MED-RT and MeSH orchestrators -- this owns
-    `conn`'s transaction, commits on success, and rolls back before re-raising so a
-    failure never leaves the caller with an aborted transaction.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
+    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
+    so leave no trace of a crash during it. Everything but the checksum read is covered.
+    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
     """
     log.info("UNII ingest starting (release=%s)", upstream_release)
     try:
@@ -71,10 +85,8 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
     crosswalk = gate.load_crosswalk(crosswalk_path)
     allowlist = gate.load_allowlist(allowlist_path)
 
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', %s, %s) RETURNING ingest_run_id",
-        (upstream_release, checksum(unii_path))).fetchone()[0]
+    run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+                                 source_checksum=checksum(unii_path), writer=WRITER)
 
     # The admission projection is rebuilt, not appended to (db/011): clear it
     # before the loop so a signal upstream has stopped asserting disappears with
@@ -113,7 +125,7 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
     # after ANY ingest, instead of only after the one that happens to run last.
     questions.register_from_gaps(conn, run_id)
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s", (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return UniiSummary(moieties=count, gated_out=gated_out,
                        rows_without_unii=rows_without_unii)

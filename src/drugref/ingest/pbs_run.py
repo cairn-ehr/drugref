@@ -17,7 +17,6 @@ fair-dealing scale in that script's docstring, but it is not "no PBS data", and
 #25 covers it too. Nothing in the ingest PATH redistributes anything: the tables
 db/009 creates are populated only from a release the operator supplies.
 """
-import hashlib
 import logging
 import pathlib
 import uuid
@@ -25,8 +24,9 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import classes, local
+from drugref import classes, local, provenance
 from drugref.ingest import pbs
+from drugref.ingest.checksum import checksum
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +40,10 @@ log = logging.getLogger(__name__)
 # docstring note on local.clear_source_products below.
 JURISDICTION = "AU"
 SOURCE = "PBS"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). One source can have two writers -- MED-RT does -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "pbs_run"
 
 
 @dataclass(frozen=True)
@@ -106,10 +110,17 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     (a per-item query would re-ask an answered question thousands of times), then
     per item upsert the product and bridge or record each component.
 
-    On failure the transaction is rolled back and the error re-raised, rather than
-    left half-applied: a mid-run abort previously left the caller's connection in
-    an aborted state, so the NEXT feed's first statement failed for reasons that
-    had nothing to do with it.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
+    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
+    so leave no trace of a crash during it. Everything but the checksum read is covered.
+    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
 
     ONLY AU/PBS today (review round, finding 8): `jurisdiction`/`source` used to be
     parameters here, but db/009's CHECK constraints admit no other value, and
@@ -123,16 +134,18 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     """
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
-        # Streamed, not read_bytes() (fix round, finding 5): the parser goes to
-        # some trouble to keep the 8.3 MB file out of memory, and slurping the
-        # whole thing here to hash it gave that back for nothing.
-        with open(path, "rb") as fh:
-            source_checksum = hashlib.file_digest(fh, "sha256").hexdigest()
+        # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
+        # module still hashing its own input -- `hashlib.file_digest(fh, "sha256")`,
+        # which streams just as checksum() does and, since SHA-256 does not care how
+        # its input was fed in, produces a BYTE-IDENTICAL digest: verified against
+        # tests/fixtures/pbs_items_subset.csv, so no source_checksum already on disk
+        # was rewritten by collapsing it. The reason to collapse it anyway is the
+        # reason checksum.py exists: four copies of a rule were three chances to fix
+        # it in three places, and this one had already drifted to a different API.
+        source_checksum = checksum(path)
     try:
-        run_id = conn.execute(
-            "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-            "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-            (SOURCE, upstream_release, source_checksum)).fetchone()[0]
+        run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+                                     source_checksum=source_checksum, writer=WRITER)
 
         local.clear_source_products(conn, SOURCE)
         # Index drugref's LABEL, not its INN claims (#26). Since the gate
@@ -209,9 +222,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
 
         local.add_unmatched_components(
             conn, unmatched, run_id, jurisdiction=JURISDICTION, source=SOURCE)
-        conn.execute(
-            "UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
-            (run_id,))
+        provenance.finish_run(conn, run_id)
         conn.commit()
     except Exception:
         conn.rollback()

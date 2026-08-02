@@ -28,8 +28,10 @@ def test_local_product_round_trips(conn, ingest_run_id):
 def test_ingest_run_accepts_pbs_source(conn):
     """db/005 CHECK-constrains ingest_run.source; 009 must widen it for PBS."""
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('PBS', '2026-07-01', 'x') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('PBS', '2026-07-01', 'x', 'pbs_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     assert run_id > 0
 
 

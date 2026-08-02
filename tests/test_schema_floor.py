@@ -6,8 +6,9 @@ import pytest
 
 def _seed_one(conn):
     run = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII','r1','x') RETURNING ingest_run_id"
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII','r1','x','unii_run') RETURNING ingest_run_id"
     ).fetchone()[0]
     conn.execute(
         "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, first_seen_ingest) "
@@ -129,8 +130,9 @@ def test_first_seen_ingest_is_immutable(conn):
     script should be able to silently recompute."""
     run, _ = _seed_one(conn)
     later = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII','r2','y') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII','r2','y','unii_run') RETURNING ingest_run_id").fetchone()[0]
     with pytest.raises(psycopg.errors.RaiseException):
         conn.execute("UPDATE drugref.substance_moiety SET first_seen_ingest = %s "
                      "WHERE moiety_uuid = '00000000-0000-0000-0000-0000000000aa'", (later,))

@@ -24,8 +24,10 @@ from drugref import ids
 
 def _run(conn, source="MED-RT"):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'test', 'deadbeef') RETURNING ingest_run_id", (source,)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'test', 'deadbeef', 'medrt_run') RETURNING ingest_run_id",
+        (source,)).fetchone()[0]
 
 
 def _question(conn, run_id, gap_kind="unclassified_moiety", gap_key=None):

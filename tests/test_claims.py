@@ -7,8 +7,9 @@ M = uuid.UUID("00000000-0000-0000-0000-0000000000aa")
 
 def _new_run(conn):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII','r1','x') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII','r1','x','unii_run') RETURNING ingest_run_id").fetchone()[0]
 
 
 def test_upsert_moiety_then_add_claims(conn):

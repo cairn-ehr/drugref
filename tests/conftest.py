@@ -49,10 +49,16 @@ def conn(_migrated):
 
 @pytest.fixture
 def ingest_run_id(conn):
-    """A committed-in-transaction ingest_run row for provenance FKs."""
+    """A committed-in-transaction ingest_run row for provenance FKs.
+
+    Says which writer it stands in for (db/025): `writer` is NOT NULL with no
+    DEFAULT, so every insert must name one, and naming a real one keeps the fixture
+    honest about what it is simulating.
+    """
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('PBS', 'test', 'test') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('PBS', 'test', 'test', 'pbs_run') RETURNING ingest_run_id").fetchone()[0]
 
 
 @pytest.fixture

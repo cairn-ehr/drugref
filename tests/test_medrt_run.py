@@ -225,8 +225,10 @@ def test_every_moiety_claiming_an_rxcui_gets_classified(seeded):
     leave a real moiety unclassified -- and, being an unordered read, might leave a
     different one unclassified on the next run."""
     run_id = seeded.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', 'test', 'deadbeef') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'test', 'deadbeef', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     twin = ids.mint_moiety_uuid("TWIN-OF-PARACETAMOL")
     seeded.execute("INSERT INTO drugref.substance_moiety "
                    "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
@@ -390,6 +392,41 @@ def test_a_contraindication_on_an_unregistered_ingredient_is_skipped_and_counted
     summary = medrt_run.ingest_medrt(seeded, medrt_path=synthetic, upstream_release="2026.10.05")
     assert summary.contraindications == 0
     assert summary.unmatched_ci_rxcuis == 1
+
+
+def test_the_ci_subjects_no_moiety_carries_are_persisted(conn):
+    """#47. medrt_run built this set and reported it only as a summary integer.
+
+    That is the shape db/008 exists to prevent: a count answers "how many drugs can we
+    not speak about", only the identities answer "which ones". The fixture's ibuprofen
+    is the subject of a CI rule and is carried by no moiety, so it lands here.
+    """
+    summary = _ingest(conn)
+
+    rows = conn.execute(
+        "SELECT rxcui FROM drugref.ingest_unmatched_ingredient "
+        "WHERE reason = 'contraindication_class' ORDER BY rxcui").fetchall()
+    assert rows
+    assert len(rows) == summary.unmatched_ci_rxcuis
+
+
+def test_each_medrt_bucket_is_cleared_by_its_own_writer(conn):
+    """db/018's invariant, one bucket wider: EXACTLY ONE WRITER PER (source, reason).
+
+    A re-ingest must rebuild both of medrt_run's buckets and neither of the MeSH-keyed
+    run's -- if the new bucket were not cleared, the worklist would grow by its own
+    length on every ingest with nothing failing.
+    """
+    _ingest(conn)
+    first = conn.execute(
+        "SELECT reason, count(*) FROM drugref.ingest_unmatched_ingredient "
+        "GROUP BY reason ORDER BY reason").fetchall()
+    _ingest(conn)
+    second = conn.execute(
+        "SELECT reason, count(*) FROM drugref.ingest_unmatched_ingredient "
+        "GROUP BY reason ORDER BY reason").fetchall()
+
+    assert first == second
 
 
 def test_ingest_run_provenance_is_recorded(seeded):

@@ -34,10 +34,18 @@ def _isolate(conn):
     yield
 
 
+# The writer implied by each source this module's tests actually open a run
+# under (db/025). A test that widened a CHECK to admit a new source would need a
+# new entry here too, which is a KeyError rather than a silent NotNullViolation.
+_WRITER_BY_SOURCE = {"MED-RT": "medrt_run", "MeSH": "mesh_run"}
+
+
 def _run(conn, source="MED-RT"):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'test', 'deadbeef') RETURNING ingest_run_id", (source,)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'test', 'deadbeef', %s) RETURNING ingest_run_id",
+        (source, _WRITER_BY_SOURCE[source])).fetchone()[0]
 
 
 def _class(conn, run_id, code, cty="PE", name=None):
@@ -339,9 +347,10 @@ def test_the_python_reason_constants_are_exactly_what_the_CHECK_admits(conn):
     and the clears are scoped on it, so a value in one and not the other is a bucket
     nobody clears (rows accumulate forever) or a writer that cannot insert at all.
 
-    Pinned rather than trusted, because #47 will add a FOURTH value -- slice 5b.2 took
-    the third ('indication', db/019 section 7) -- and the two places are in different
-    languages, five files apart.
+    Pinned rather than trusted: #47 (db/026) added a FOURTH value
+    ('contraindication_class') -- slice 5b.2 had already taken the third ('indication',
+    db/019 section 7) -- and the two places are in different languages, five files
+    apart.
     """
     definition = conn.execute(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
@@ -398,6 +407,39 @@ def test_an_rxcui_two_sources_both_report_is_one_gap(conn):
 
     assert conn.execute("SELECT rxcui, name FROM "
                         "drugref.gap_unmatched_ingredient").fetchall() == [("5640", "ibuprofen")]
+
+
+def test_the_unmatched_gap_prefers_the_row_that_carries_a_name(conn, ingest_run_id):
+    """db/026. The tie-break must state its own reason, not coincide with it.
+
+    db/018 widened this ORDER BY to `rxcui, ingest_run DESC, reason` anticipating #47,
+    and its comment justified `classification` winning "alphabetically" and "by being
+    the bucket with a name". BOTH justifications were wrong by the time #47 arrived:
+    `contraindication_class` was very nearly named `class_contraindication`, which
+    sorts BEFORE `classification`, and measured on the real release NO row in ANY
+    bucket carries a name at all.
+
+    So the view now prefers a named row explicitly. THE RELEASE CANNOT EXERCISE THIS
+    -- medrt_run passes no names -- so it is pinned on controlled input, the shape
+    #42 established for the descriptor-wins tie-break.
+
+    THE NAME GOES ON `contraindication_class`, NOT `classification`, and that pairing
+    is itself load-bearing (found running this test's own mutation check, Step 6 of
+    #47's brief): `contraindication_class` sorts AFTER `classification`, so a named
+    `classification` row would already win under db/018's bare `... , u.reason`
+    tie-break -- the mutation would pass either way and prove nothing. Naming the
+    row whose `reason` sorts SECOND is what forces the old tie-break to pick the
+    UNNAMED row, so reverting to it is observably wrong.
+    """
+    for reason, name in (("classification", None), ("contraindication_class", "ibuprofen")):
+        conn.execute(
+            "INSERT INTO drugref.ingest_unmatched_ingredient "
+            "(ingest_run, rxcui, name, reason) VALUES (%s, '99999', %s, %s)",
+            (ingest_run_id, name, reason))
+
+    assert conn.execute(
+        "SELECT name FROM drugref.gap_unmatched_ingredient "
+        "WHERE rxcui = '99999'").fetchall() == [("ibuprofen",)]
 
 
 # ---- gap_unreviewed_expansion_root -------------------------------------------

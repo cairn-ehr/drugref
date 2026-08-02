@@ -17,11 +17,18 @@ from drugref import classes, ids
 from drugref.ingest.medrt import ClassConcept
 
 
+# The writer implied by each source this module's tests actually open a run
+# under (db/025). A KeyError on an unlisted source beats a silent NotNullViolation.
+_WRITER_BY_SOURCE = {"MED-RT": "medrt_run", "MeSH": "mesh_run", "UNII": "unii_run"}
+
+
 def _run(conn, source="MED-RT"):
     """Create an ingest_run row and return its id (every row needs provenance)."""
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'test', 'deadbeef') RETURNING ingest_run_id", (source,)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'test', 'deadbeef', %s) RETURNING ingest_run_id",
+        (source, _WRITER_BY_SOURCE[source])).fetchone()[0]
 
 
 def _class(conn, run_id, nui, name="Test Class [MoA]", cty="MoA"):

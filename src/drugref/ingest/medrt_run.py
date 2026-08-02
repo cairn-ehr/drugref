@@ -20,11 +20,15 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
-from drugref import interactions, questions
+from drugref import interactions, provenance, questions
 from drugref.ingest import medrt
 from drugref.ingest.checksum import checksum
 
 SOURCE = "MED-RT"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). MED-RT has two writers -- this one and mesh_rel_run -- so a release is
+# only unambiguous per (source, writer).
+WRITER = "medrt_run"
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +55,9 @@ class MedrtSummary:
     * unmatched_rxcuis      -- MED-RT classified an ingredient we do not carry,
                                usually because the moiety gate excluded it
     * unmatched_ci_rxcuis   -- the same, for a CI_MoA/CI_PE whose subject ingredient
-                               our registry does not carry
+                               our registry does not carry. Persisted as well as
+                               counted, since #47 (db/026): see
+                               classes.CONTRAINDICATION_CLASS.
     * inactive_concepts     -- upstream no longer marks the concept active
     * unidentified_concepts -- the concept carries neither a NUI nor a code
     * ambiguous_codes       -- one published code claimed by several concepts, so
@@ -82,12 +88,18 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
 
     Idempotent: re-running rebuilds to the same state, with the same class UUIDs.
 
-    TRANSACTION OWNERSHIP: this function owns `conn`'s transaction for its whole
-    body and commits at the end. On any failure it rolls back before re-raising, so
-    the caller is handed back a usable connection rather than one stuck in
-    Postgres's aborted-transaction state -- which would otherwise make the NEXT
-    feed's first statement fail for reasons that have nothing to do with it.
-    Callers must therefore commit their own pending work before calling.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
+    the three where the gap is wide: the parse runs FIRST (it is pure and takes no
+    connection), so a crash while parsing still leaves no row at all -- a view cannot
+    report a run nobody opened. The six orchestrators are not uniform in this, and
+    ingest_run_incomplete's own comment says so.
     """
     log.info("MED-RT ingest starting (release=%s)", upstream_release)
     try:
@@ -107,10 +119,8 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     just the transaction/logging boundary and this stays readable top to bottom."""
     parsed = medrt.parse(medrt_path)
 
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum(medrt_path))).fetchone()[0]
+    run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+                                 source_checksum=checksum(medrt_path), writer=WRITER)
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.
@@ -138,6 +148,12 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    MED-RT never classifies -- rows this run could not re-add if it removed them.
     class_writer.clear_source_unmatched_ingredients(
         conn, SOURCE, class_writer.CLASSIFICATION)
+    #    BOTH of this run's buckets, since #47. medrt_run owns two: the ingredients
+    #    the release classifies, and the subjects of its CI_MoA/CI_PE rules. Each is
+    #    cleared by the writer that re-derives it, or the worklist grows by its own
+    #    length on every ingest with nothing failing.
+    class_writer.clear_source_unmatched_ingredients(
+        conn, SOURCE, class_writer.CONTRAINDICATION_CLASS)
 
     # 3. The DAG. The parser guaranteed both endpoints are classes we ingested.
     parent_edges = sum(
@@ -193,6 +209,17 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
                                                  ci.relationship, SOURCE, run_id):
                 contraindications += 1
 
+    # 5a. Persist WHICH CI subjects went unmatched, not merely how many (#47). The set
+    #     is built above and was reported only as a summary integer -- exactly the
+    #     shape db/008 exists to prevent. Every one of these is a drug MED-RT
+    #     contraindicates that drugref cannot speak about. Measured on the 2026.07.06
+    #     release, all 99 also reach the worklist through another writer's row, but
+    #     that is a property of THIS release, not a guarantee: a release naming an
+    #     ingredient it neither classifies nor mentions in a MeSH-keyed rule would drop
+    #     the identity silently.
+    class_writer.add_unmatched_ingredients(conn, sorted(unmatched_ci), run_id,
+                                           class_writer.CONTRAINDICATION_CLASS)
+
     # 6. Re-derive the open-question register (Plan A). LAST, and deliberately so:
     #    every gap view reads a projection steps 2-5 spent this whole function
     #    demolishing and rebuilding, so a rebuild anywhere earlier would see the
@@ -217,8 +244,7 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
             "drugref.class_expansion_policy.",
             len(unresolved), ", ".join(unresolved))
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
-                 (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return MedrtSummary(classes_in_release=len(uuid_by_nui), classes_added=classes_added,
                         parent_edges=parent_edges, memberships=memberships,

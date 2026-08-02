@@ -214,23 +214,37 @@ UNMATCHED_INGREDIENT_TABLES = ("ingest_unmatched_ingredient",)
 
 # Why an RxCUI is on the unmatched worklist -- and, because the clear is scoped on it,
 # WHICH writer owns the row (#39, db/018). The table's CHECK admits exactly these
-# three VALUES, written today by TWO writers (medrt_run owns one bucket, mesh_rel_run
-# owns two), and the invariant a fourth VALUE must preserve is ONE WRITER PER
+# FOUR VALUES, written today by TWO writers: medrt_run owns CLASSIFICATION and,
+# since #47 (db/026), CONTRAINDICATION_CLASS; mesh_rel_run owns CONTRAINDICATION and
+# INDICATION. The invariant a fifth VALUE must preserve is ONE WRITER PER
 # (source, reason): add a value here rather than sharing one, or the clears collide
-# again exactly as medrt_run's and the MeSH-keyed run's did. #47 is the next candidate --
-# medrt_run's own CI subjects, which it counts today and does not persist.
+# again exactly as medrt_run's and the MeSH-keyed run's did.
 #
-# VALUES AND WRITERS ARE COUNTED SEPARATELY ON PURPOSE. They were equal until this
-# slice and the sentence above conflated them; INDICATION is the change that proves
-# they differ, so a reader must not infer "three values" from "three writers" again.
+# #47 SETTLED THE NAME, NOT MERELY THE BUCKET'S EXISTENCE. The issue itself proposed
+# `class_contraindication`; measured against the live database that string sorts
+# BEFORE `classification` and would have inverted the tie-break db/018 wrote to
+# protect (db/026's ORDER BY). `contraindication_class` sorts after `classification`,
+# so that is the spelling below -- deliberately not the issue's own suggested one.
 #
-# INDICATION is what one orchestrator owning TWO buckets looks like, and it does not
-# weaken the invariant: mesh_rel_run writes both, so each bucket still has exactly one
-# writer. Two writers sharing one bucket is what #39 was.
+# VALUES AND WRITERS ARE COUNTED SEPARATELY ON PURPOSE. They were equal until slice
+# 5b.2 and the sentence above once conflated them; INDICATION was the first change to
+# prove they differ, and CONTRAINDICATION_CLASS is the second -- a reader must not
+# infer "N values" from "N writers" from either alone.
+#
+# ONE ORCHESTRATOR OWNING TWO BUCKETS is what INDICATION (mesh_rel_run) and
+# CONTRAINDICATION_CLASS (medrt_run) both look like, and neither weakens the
+# invariant: each writes both of its own buckets, so every bucket still has exactly
+# one writer. Two writers SHARING one bucket is what #39 was.
 CLASSIFICATION = "classification"    # medrt_run: an ingredient the release CLASSIFIES
 CONTRAINDICATION = "contraindication"  # mesh_rel_run: the SUBJECT of a contraindication
 INDICATION = "indication"            # mesh_rel_run: the SUBJECT of an indication
-REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION)
+# medrt_run's OWN CI subjects (#47, db/026) -- the subject of a CI_MoA/CI_PE rule that
+# no moiety carries. Its own bucket, never `contraindication`: that one is
+# mesh_rel_run's, and sharing it is #39 with nothing to notice it. Named to sort AFTER
+# `classification`, which the issue's own suggested `class_contraindication` did not --
+# see db/026 for why that matters.
+CONTRAINDICATION_CLASS = "contraindication_class"
+REASONS = (CLASSIFICATION, CONTRAINDICATION, INDICATION, CONTRAINDICATION_CLASS)
 
 # The COLUMN the clear narrows on, named here rather than spelled at the call site:
 # clear_source_tables interpolates it as an identifier (a column name cannot be a bind
@@ -270,7 +284,8 @@ def add_unmatched_ingredients(conn: psycopg.Connection, rxcuis: Iterable[str],
     before Plan A) is what lets gap_unmatched_ingredient be a query.
 
     `reason` says WHY this writer is reporting the RxCUI -- CLASSIFICATION,
-    CONTRAINDICATION or INDICATION above -- and is what its own clear is scoped on.
+    CONTRAINDICATION, INDICATION or CONTRAINDICATION_CLASS above -- and is what its
+    own clear is scoped on.
     Required, and positional before the optional `names`, so a writer cannot inherit a
     bucket it does not own; the column has no DEFAULT either, so a forgotten reason
     fails in the database as well as here.

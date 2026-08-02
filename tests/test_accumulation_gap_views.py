@@ -24,11 +24,17 @@ import pytest
 from drugref import accumulation, ids
 
 
+# The writer implied by each source this module's tests actually open a run
+# under (db/025). A KeyError on an unlisted source beats a silent NotNullViolation.
+_WRITER_BY_SOURCE = {"DRUGREF": "curation", "MED-RT": "medrt_run"}
+
+
 def _run(conn, source="DRUGREF"):
     return conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, 'gap-release', 'deadbeef') RETURNING ingest_run_id",
-        (source,)).fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, 'gap-release', 'deadbeef', %s) RETURNING ingest_run_id",
+        (source, _WRITER_BY_SOURCE[source])).fetchone()[0]
 
 
 def _class(conn, run_id, code, concept_type="PE"):

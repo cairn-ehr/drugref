@@ -55,8 +55,10 @@ SEED_INNS = ["rifaximin", "abacavir", "lamivudine", "abiraterone",
 def seeded_registry(conn):
     """A moiety per SEED_INN, each carrying its INN identity claim."""
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', 'seed', 'seed') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'seed', 'seed', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     out = {}
     for index, inn in enumerate(SEED_INNS):
         moiety_uuid = ids.mint_moiety_uuid(f"SEEDUNII{index:02d}")
@@ -93,8 +95,10 @@ def test_a_moiety_with_no_inn_claim_still_bridges(conn, seeded_registry):
     label loses nothing and gains every non-INN moiety.
     """
     run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('UNII', 'seed2', 'seed2') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'seed2', 'seed2', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     # Exactly how run.py registers amoxicillin: a moiety and a display_name, but
     # no INN claim, because UNII carries no INN_ID for it.
     amox = ids.mint_moiety_uuid("804826J2HU")
@@ -397,8 +401,10 @@ def test_rebuild_is_scoped_to_pbs(conn, seeded_registry):
         "SELECT count(*) FROM drugref.identity_claim WHERE scheme = 'INN'").fetchone()[0]
 
     other_run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES ('MED-RT', 'other', 'other') RETURNING ingest_run_id").fetchone()[0]
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'other', 'other', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
     foreign_uuid = ids.mint_local_product_uuid("AU", "PBS", "NOT_A_PBS_INGEST_RUN")
     conn.execute(
         "INSERT INTO drugref.local_product (local_product_uuid, jurisdiction, "

@@ -30,13 +30,17 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref import classes as class_writer
-from drugref import questions
+from drugref import provenance, questions
 from drugref.classes import ClassConcept
 from drugref.ingest import mesh
 from drugref.ingest.checksum import checksum
 
 SOURCE = "MeSH"
 RELATIONSHIP = "has_PA"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). One source can have two writers -- MED-RT does -- so a release is only
+# unambiguous per (source, writer).
+WRITER = "mesh_run"
 
 log = logging.getLogger(__name__)
 
@@ -106,9 +110,18 @@ def ingest_mesh(conn: psycopg.Connection, *, pa_path, desc_path, supp_path,
 
     Idempotent: re-running rebuilds to the same state, with the same class UUIDs.
 
-    TRANSACTION OWNERSHIP: as for medrt_run.ingest_medrt -- this owns `conn`'s
-    transaction, commits on success, and rolls back before re-raising on failure so
-    the caller never receives a connection stuck in the aborted-transaction state.
+    TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
+    the three where the gap is wide: the parse runs FIRST (it is pure and takes no
+    connection), so a crash while parsing still leaves no row at all -- a view cannot
+    report a run nobody opened. The six orchestrators are not uniform in this, and
+    ingest_run_incomplete's own comment says so.
     """
     log.info("MeSH ingest starting (release=%s)", upstream_release)
     try:
@@ -127,10 +140,9 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     """The body of one MeSH ingest (see ingest_mesh for the transaction contract)."""
     parsed = mesh.parse(pa_path=pa_path, desc_path=desc_path, supp_path=supp_path)
 
-    run_id = conn.execute(
-        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum) "
-        "VALUES (%s, %s, %s) RETURNING ingest_run_id",
-        (SOURCE, upstream_release, checksum(pa_path, desc_path, supp_path))).fetchone()[0]
+    run_id = provenance.open_run(
+        conn, source=SOURCE, upstream_release=upstream_release,
+        source_checksum=checksum(pa_path, desc_path, supp_path), writer=WRITER)
 
     # 1. Classes. A PA class hands upsert_class the same source-neutral shape a
     #    MED-RT concept does; descriptor_ui is both its identity key and its
@@ -195,8 +207,7 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
     # once slice 5b keys contraindications on MeSH.
     questions.register_from_gaps(conn, run_id)
 
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = now() WHERE ingest_run_id = %s",
-                 (run_id,))
+    provenance.finish_run(conn, run_id)
     conn.commit()
     return MeshSummary(
         classes_in_release=len(uuid_by_ui), classes_added=classes_added,
