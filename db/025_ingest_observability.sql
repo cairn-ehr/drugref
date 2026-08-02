@@ -68,7 +68,15 @@ COMMENT ON VIEW drugref.ingest_run_incomplete IS
     'flight. EMPTY BY CONSTRUCTION BEFORE db/025: the run row used to roll back with '
     'the work it described, so a crashed ingest was indistinguishable from one that '
     'never started. A row here is not itself an error: check it against '
-    'loaded_release, which reports the last run that DID finish.';
+    'loaded_release, which reports the last run that DID finish. '
+    'WHAT AN EMPTY VIEW DOES NOT PROVE: the window starts at open_run, not at the '
+    'command. THREE of the six orchestrators (medrt_run, mesh_run, mesh_rel_run) '
+    'parse their release BEFORE opening the run -- the parsers are pure and take no '
+    'connection -- so a crash during MeSH''s ~750 MB parse still leaves no row here, '
+    'exactly as before db/025. What this view makes observable is a crash during the '
+    'WRITES, which is where the projection can be left half-rebuilt and where the '
+    'question "did this ingest land?" actually bites. Reordering the parse is a real '
+    'design question, not a wording one, and is deliberately not settled here.';
 
 -- One row per (source, writer): the release that writer last landed.
 --

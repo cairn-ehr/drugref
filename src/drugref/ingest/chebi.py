@@ -30,11 +30,16 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path,
     Returns the number of CHEBI claims newly added (idempotent on re-run).
 
     TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
-    commits the run record first, so a crash leaves it standing with finished_at NULL
-    (ingest_run_incomplete reports it); everything after that is the work, which this
-    function owns, commits on success, and rolls back before re-raising. A caller with
-    pending work has it committed at the provenance boundary, so callers must commit
-    their own work before calling.
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
+    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
+    so leave no trace of a crash during it. Everything but the checksum read is covered.
+    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
     """
     log.info("ChEBI enrichment starting (release=%s)", upstream_release)
     try:

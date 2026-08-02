@@ -83,9 +83,11 @@ def _run_pbs(conn, paths, release):
 # The globs describe the layout a real downloads/ tree has, not a tidy one invented
 # here: UNII_Records_*.txt sits at the root (NOT UNII_Names_*.txt -- Names is the
 # intuitively appealing wrong answer, a real file that sits right beside Records, but
-# it carries only Name/TYPE/UNII/Display Name. The moiety gate in ingest/unii.py's
-# _REQUIRED_COLUMNS reads INN_ID, USAN_ID, RXCUI and SUBSTANCE_TYPE, and only Records
-# carries those -- pointing this glob at Names fails the gate outright, every time),
+# it carries only Name/TYPE/UNII/Display Name. ingest/unii.py's _REQUIRED_COLUMNS is a
+# SIX-tuple the parser refuses a file without; the four of them the moiety GATE reads
+# as membership signals are INN_ID, USAN_ID, RXCUI and SUBSTANCE_TYPE -- two different
+# sets, and saying "the four the parser requires" conflates them. Only Records carries
+# any of the four, so pointing this glob at Names fails outright, every time),
 # MED-RT under MEDRT/ (extracted from Core_MEDRT_XML.zip by hand -- teaching this
 # module to open archives would make it feed-aware for one feed's convenience), MeSH
 # under mesh/, PBS under tables_as_csv/.

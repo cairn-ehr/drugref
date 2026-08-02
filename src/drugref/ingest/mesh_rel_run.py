@@ -164,11 +164,17 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
     """Ingest MED-RT's MeSH-keyed relations. Idempotent.
 
     TRANSACTION OWNERSHIP: TWO transactions on one connection. provenance.open_run
-    commits the run record first, so a crash leaves it standing with finished_at NULL
-    (ingest_run_incomplete reports it); everything after that is the work, which this
-    function owns, commits on success, and rolls back before re-raising. A caller with
-    pending work has it committed at the provenance boundary, so callers must commit
-    their own work before calling.
+    commits the run record before the WRITES, so a crash during them leaves it standing
+    with finished_at NULL (ingest_run_incomplete reports it); everything after it is
+    the work, which this function owns, commits on success, and rolls back before
+    re-raising. A caller with pending work has it committed at the provenance boundary,
+    so callers must commit their own work before calling.
+
+    "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
+    the three where the gap is wide: the parse runs FIRST (it is pure and takes no
+    connection), so a crash while parsing still leaves no row at all -- a view cannot
+    report a run nobody opened. The six orchestrators are not uniform in this, and
+    ingest_run_incomplete's own comment says so.
     """
     log.info("MeSH-keyed relation ingest starting (release=%s)", upstream_release)
     try:

@@ -91,10 +91,12 @@ def clear_source_tables(conn: psycopg.Connection,
     caller re-derives. It is a Mapping rather than another positional string so the
     call site names the column it narrows on.
 
-    The narrowing is OPT-IN: five of the six writers own their whole table for a
-    source and must keep clearing it wholesale, and a helper that quietly cleared less
-    than asked would leave a projection growing a little on every ingest with nothing
-    failing.
+    The narrowing is OPT-IN: SIX OF THE SEVEN declared table tuples own their whole
+    table for a source and must keep clearing it wholesale, and a helper that quietly
+    cleared less than asked would leave a projection growing a little on every ingest
+    with nothing failing. (Seven wrappers, not six -- the count is restated in
+    tests/test_source_clear_contract.py's EXPECTED_TABLES, which is what makes it
+    checkable rather than remembered.)
 
     Table AND column names are interpolated, not parameterised, because an identifier
     cannot be a bind parameter. BOTH MUST COME FROM A MODULE CONSTANT, never from

@@ -34,7 +34,7 @@ filtered lookup; #48 remains structurally unreachable.
 New: `src/drugref/provenance.py`.
 
 ```
-open_run(conn, source, upstream_release, source_checksum, writer) -> int
+open_run(conn, *, source, upstream_release, source_checksum, writer) -> int
 finish_run(conn, run_id) -> None
 ```
 
@@ -124,11 +124,14 @@ drugref ingest chain --downloads DIR --unii-release R --medrt-release R …
   dependency order is a property of the data, not a choice a caller should be able to get wrong.
 * **Inputs resolve from `--downloads` by documented globs**, because the real layout is irregular and a tidy
   invented convention would match nothing: **`UNII_Records_*.txt`** at the root — **NOT `UNII_Names_*.txt`,
-  which is a real file sitting right beside it carrying none of the four columns the moiety gate reads**
-  (`INN_ID`, `USAN_ID`, `RXCUI`, `SUBSTANCE_TYPE`; Names holds one row per synonym) —
+  which is a real file sitting right beside it carrying none of the four membership signals the moiety GATE
+  reads** (`INN_ID`, `USAN_ID`, `RXCUI`, `SUBSTANCE_TYPE`; Names holds one row per synonym) —
   `MEDRT/Core_MEDRT_*_XML.xml`, `mesh/{pa,desc,supp}*`, `tables_as_csv/items.csv`. A pattern matching
   **zero or more than one** file is a loud failure naming the pattern and the directory searched — never a
   silent skip.
+  *Those four are the **gate's**, not the parser's:* `unii._REQUIRED_COLUMNS` is a **six**-tuple — the four
+  plus `UNII` and `Display Name` — and it is what the parser refuses a file for lacking. Two different sets,
+  and "the four columns the parser requires" conflates them.
 * **Every selected step's inputs are validated before any step runs**, so a typo fails in a second rather
   than sixty.
 * **MED-RT ships as a zip and is extracted by hand today; the chain requires the extracted XML and says so.**
