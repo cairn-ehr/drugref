@@ -16,11 +16,11 @@ Plan A · 8a (#28) · Plan B (#32) · the identity-spine fix round (#34) · the 
 the post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · the #53 population-label round (#56) ·
 **Plan C, the accumulation model (#57)**.
 
-**IN FLIGHT — the ingest-operability round (#16, #47)**, on `fix/ingest-operability-round`: complete, **779 tests
-green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured end-to-end against the real releases
-through its own new `drugref ingest chain` (**110.37 s**, fresh `drugref_ops`, no workarounds, `downloads/`
-untouched). Details under "The ingest-operability round" below. Errata live in `docs-site/docs/decisions/` — one per
-MeSH-keyed slice, plus Plan C's.
+**IN FLIGHT — the ingest-operability round (#16, #47)**, on `fix/ingest-operability-round`: complete and
+final-review-fixed, **788 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured end-to-end
+against the real releases through its own new `drugref ingest chain` (**110.37 s**, fresh `drugref_ops`, no workarounds,
+`downloads/` untouched). Details under "The ingest-operability round" below. Errata live in `docs-site/docs/decisions/`
+— one per MeSH-keyed slice, plus Plan C's.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each time
 because a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A number in
@@ -144,11 +144,11 @@ ingest; curator intent (`question_state`), tier watermarks (`question_source_che
 (`question_evidence`) are **append-only**, keyed off an immortal `question_uuid` external tooling can cite — so a
 rebuild can never erase a `withdrawn`. **Populated is per axis** (joins `ci_axis`). **Watermark, not closure:** only
 `withdrawn` is terminal. **A closed gap carrying curator work is retired, not deleted** (`is_current`) — the curated
-tables cascade from `open_question` *and* refuse `DELETE`, so deleting one aborts the whole ingest. Every orchestrator
-rebuilds the register as its last step before commit. **ELEVEN** gap kinds since Plan C, **18,834 questions**:
-unclassified_moiety **16,089** · unmatched_ingredient **2,150** · uncurated_additive_effect **381** ·
-unresolved_ci_object **103** · condition_without_indication **97** · unpopulated_contraindication **13** ·
-dead_by_expansion_policy **1** · the other four **0** (three need curation to exist).
+tables cascade from `open_question` *and* refuse `DELETE`, so deleting one aborts the whole ingest. The register is
+rebuilt before commit by **four of the six orchestrators**; `chebi` and `pbs_run` never call it, benignly. **ELEVEN** gap
+kinds since Plan C, **18,834 questions**: unclassified_moiety **16,089** · unmatched_ingredient **2,150** ·
+uncurated_additive_effect **381** · unresolved_ci_object **103** · condition_without_indication **97** ·
+unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation).
 
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection
 with **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser),
@@ -273,37 +273,38 @@ probed rather than reasoned).
 
 Spec: [ingest-operability](superpowers/specs/2026-08-02-drugref-ingest-operability-design.md). A crashed ingest now
 leaves a trace, and an ingest is runnable outside a test. `provenance.py` is the ONLY file under `src/drugref` that
-writes a run record — two contract tests grep the tree for `INSERT INTO drugref.ingest_run` and `SET finished_at`.
-`chebi.py`, the one orchestrator the foundation review missed, gained the try/rollback/logging the other five have and
-the shared `checksum()`. Measured through the new chain on a fresh `drugref_ops` (**110.37 s**):
-`contraindication_class` **99** · `classification`/`contraindication`/`indication` **2,137/826/1,426** ·
-`gap_unmatched_ingredient` **2,150**, `open_question` **18,834**, `ddi_candidate_pair` **21,664**, all unchanged ·
-`loaded_release` **4** rows including both MED-RT writers · `ingest_run_incomplete` **0**.
+writes a run record — two contract tests grep for `INSERT INTO drugref.ingest_run` and `SET finished_at`. `chebi.py`
+gained the try/rollback/logging the other five have. Measured through the new chain on a fresh `drugref_ops`
+(**110.37 s**, figures in ROADMAP): every prior count unchanged, the new `contraindication_class` bucket **99**,
+`loaded_release` **4** rows with both MED-RT writers, `ingest_run_incomplete` **0**.
 
 **Traps a future change can still break.**
-- **`open_run` COMMITS its row; `finish_run` deliberately does NOT.** The asymmetry is the feature — symmetry would
-  let `finished_at` be true about work that later rolls back. An orchestrator takes **two transactions on one
-  connection**; the contract is restated in all six docstrings.
-- **`writer` is NOT NULL with no DEFAULT, and `'unattributed'` is not a writer** — it is the historical marker on
-  rows nothing can attribute retrospectively, because inventing provenance is what this table exists to prevent. A
-  new orchestrator adds its value to `db/025`'s CHECK **and** to `provenance.WRITERS`, as a new `reason` does.
-- **`loaded_release` is per `(source, writer)`, and that is not cosmetic**: folding it onto `source` re-hides the
-  MED-RT staleness split — two writers whose checksums legitimately differ, where a per-source view reports whichever
-  finished last (#39 one layer up, on the table #39's own fix could not reach). **`ingest_run_incomplete` could only
-  ever have been EMPTY before this round.**
+- **`open_run` COMMITS its row; `finish_run` deliberately does NOT.** Symmetry would let `finished_at` be true about
+  work that later rolls back. Two transactions on one connection. The window starts at `open_run`, and three
+  orchestrators parse BEFORE it — a crash during MeSH's 750 MB parse still leaves no row.
+- **`writer` is NOT NULL with no DEFAULT, and `'unattributed'` is not a writer** — it marks rows nothing can attribute
+  retrospectively; inventing provenance is what this table prevents. A new orchestrator adds its value to `db/025`'s
+  CHECK **and** to `provenance.WRITERS`.
+- **`loaded_release` is per `(source, writer)`, not cosmetically**: folding it onto `source` re-hides the MED-RT
+  staleness split, where a per-source view reports whichever writer finished last (#39 one layer up).
+  **`ingest_run_incomplete` could only ever have been EMPTY before this round.**
 - **The chain's globs error on zero AND on several matches**, and every selected step's inputs resolve before any step
-  runs. **The UNII glob names `UNII_Records_*.txt`, NOT `UNII_Names_*.txt`** — Names is a real file beside it carrying
-  none of the four gate columns, and the round shipped the wrong one until the measurement ran. A source joins the
-  chain only if its `--<source>-release` flag is given; the tag is **stated, never parsed from a filename**, and
-  extracting the MED-RT XML from its zip stays a manual step.
+  runs. **The UNII glob names `UNII_Records_*.txt`, NOT `UNII_Names_*.txt`** — Names carries none of the moiety gate's
+  four membership signals, and the round shipped the wrong one until the measurement ran. A source joins only if its
+  `--<source>-release` flag is **present, not merely truthy** (an empty tag errors), and steps resolving to the SAME
+  file — medrt and mesh-relations share the MED-RT XML — must agree on the tag, or identical bytes enter `ingest_run` as
+  two releases. The tag is **stated, never parsed from a filename**; unzipping the MED-RT XML stays manual.
+- **`drugref migrate` cannot report success having applied nothing.** From a wheel it used to: no `.sql` shipped, and
+  `Path.glob` on a missing directory is silent. `db.migration_dir()` prefers the packaged copy (pyproject force-includes
+  `db/` as `drugref/migrations/`), falls back to the checkout, and raises `MissingMigrationsError` when neither holds
+  one — before touching the ledger.
 - **`gap_unmatched_ingredient`'s tie-break now states its own reason.** `db/026`'s fourth `reason` is
   **`contraindication_class`, NOT the `class_contraindication` #47 proposed** — that string sorts BEFORE
-  `classification` and would invert db/018's tie-break. And db/018's *other* justification ("the bucket with a name")
-  was already false: **0 of 4,389 rows carry a name in any bucket** while **1,430 RxCUIs sit in more than one**. The
-  view now prefers a named row explicitly, pinned on controlled input and verified by mutation.
-- **Four defects in this round's own PLAN text were caught by implementers, not by review** — the writer count twice
-  (it said three; there are two), an error-message assertion contradicting the code it tested, and the UNII glob
-  above. **A plan is a claim about the code too; verify it like one.**
+  `classification` and would invert db/018's. db/018's *other* justification was already false (**0 of 4,389 rows carry
+  a name**), so the view now prefers a named row explicitly, verified by mutation.
+- **THREE defects in this round's own PLAN text, found by measuring** — the writer count ONCE (the *second* was in
+  `db/026`, a migration), an error-message assertion contradicting its own test, and the UNII glob. Each was fixed in
+  the code and left standing in the plan until the final review.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 
@@ -331,7 +332,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 779 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
+# 788 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
 # floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
@@ -385,13 +386,14 @@ set — so the DB layer can never go green by being skipped.
   **Two orchestrators here is not a refactor away — it is impossible**: a `condition_parent` edge is derived by BOTH
   closures, so no `reason` discriminator can split it (#39 one layer deeper). **FOUR things now live in exactly one
   place, and a test pins each**: `mesh.iter_records`, `ingest/checksum.py` (`checksum(*paths)`),
-  `db.clear_source_tables`, and — since this round — `provenance.py`.
+  `db.clear_source_tables`, and — since this round — `provenance.py`. Checksum became true only at the final review:
+  `pbs_run` still hashed items.csv itself, via a different API.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`. **`drugref_ops`
-  holds the real releases** at every figure above (rebuilt from scratch 2026-08-02 through the chain, ledger clean) —
-  re-measure there rather than re-running the 110 s chain. `drugref_planc` carries the **pre-round** schema (no
-  `db/025`–`db/026`), kept only as the Plan C baseline. **A verification database is disposable — rebuild rather than
-  patch**: four older ones were dropped once their ledgers held drifted checksums from branch copies, which
-  `apply_migrations` refuses permanently. Expect that whenever a migration is edited before merge.
+  holds the real releases** at every figure above — re-measure there rather than re-running the 110 s chain, though
+  **its ledger now holds a drifted `db/025`** (the final review corrected that migration's view COMMENT), so
+  `apply_migrations` refuses there until rebuilt; reads are unaffected. `drugref_planc` is the **pre-round** Plan C
+  baseline. **A verification database is disposable — rebuild rather than patch**: five now, for drifted ledgers
+  `apply_migrations` refuses permanently. Expect that whenever a migration is edited.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).
@@ -437,7 +439,7 @@ the code before closing. **Three standing rules came out of them and outlive the
 **Floor & identity**
 - [#2](https://github.com/cairn-ehr/drugref/issues/2) **Floor hardening** — close the `TRUNCATE` + owner-role bypass
   via RLS + privilege separation. **Note the test-suite coupling** (re-run the grep before quoting the count):
-  `grep -l TRUNCATE tests/*.py` finds **nine** modules, one the shared helper `tests/mesh_rel_fixtures.py`, each
+  `grep -l TRUNCATE tests/*.py` finds **eleven** modules, one the shared helper `tests/mesh_rel_fixtures.py`, each
   truncating in an autouse fixture because their orchestrators commit internally and escape the `conn` fixture's
   rollback. Those fixtures depend on the very bypass this closes, so hardening needs a replacement isolation strategy.
 - [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** — structural re-key by InChIKey,

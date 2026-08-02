@@ -169,9 +169,9 @@ pinned — **measured: 0 of MeSH's ConceptUIs appear in both desc and supp, so t
 and the guard is against a future partition change** · [#41](https://github.com/cairn-ehr/drugref/issues/41) the CI
 object's namespace taken from the data in BOTH the view and `questions.py`, preserving every existing `question_uuid`
 and **canonicalised in both** · [#43](https://github.com/cairn-ehr/drugref/issues/43) one `checksum(*paths)`, one
-`db.clear_source_tables`, six declared table tuples each restated independently by test. **Re-verified end-to-end**:
-every 5b figure reproduced exactly, and the `object_kind` split is newly recorded as **96 CHEMICAL_CLASS (386 rules)
-+ 7 UNREGISTERED_SUBSTANCE (19 rules)**.
+`db.clear_source_tables`, six declared table tuples each restated independently by test (**seven** since indications
+joined). **Re-verified end-to-end**: every 5b figure reproduced exactly, and the `object_kind` split is newly recorded
+as **96 CHEMICAL_CLASS (386 rules) + 7 UNREGISTERED_SUBSTANCE (19 rules)**.
 
 #### Interaction debt round ✅ DONE
 The three interaction-model follow-ups, cleared before 5b.2 reused these code paths. `db/018`; 568 tests. Each was
@@ -377,17 +377,18 @@ other jurisdictions.
   curated tables — `question_state`, `question_source_check`, `question_evidence` — each with a surrogate PK and
   live-row-only uniqueness, per `db/005`. `db/008` adds the three gap views, the `ingest_unmatched_ingredient` table
   that makes the third of them possible (the ingest previously kept only the COUNT and discarded the RxCUIs), the
-  `source_tier` cost ladder and the `question_worklist` view that orders by cheapest-unchecked tier. Every
-  orchestrator rebuilds the register as its last step before commit, so it reflects the database after any ingest
-  rather than only the one that ran last: coverage gaps are published rather than hidden, and "how much do we not
-  know" is a number watchable per release. **Watermark, not closure:** no-evidence-found leaves a question open;
-  only `withdrawn` is terminal. **Populated is per axis:** the contraindication gap view joins `db/006`'s `ci_axis`,
-  because a class populated on an axis the rule does not expand over still yields no pair — reading it
-  relationship-blind hides real gaps. **A closed gap carrying curator work is retired, not deleted**
-  (`open_question.is_current`): the curated tables cascade from `open_question` *and* refuse `DELETE`, so deleting
-  one aborts the ingest outright. **Seven gap kinds by 5b.2, eleven since Plan C** — measured against the real
-  releases: unclassified_moiety 16,089 · unmatched_ingredient 2,150 · unresolved_ci_object 103 ·
-  condition_without_indication 97 · unpopulated_contraindication 13 · dead_by_expansion_policy 1 · the rest 0.
+  `source_tier` cost ladder and the `question_worklist` view that orders by cheapest-unchecked tier. **Four of the six
+  orchestrators** (`run`, `medrt_run`, `mesh_run`, `mesh_rel_run`) rebuild the register last thing before commit, so it
+  reflects the database after any of them, not only the one that ran last; `chebi` and `pbs_run` never call it, which is
+  benign — no gap kind reads what those two write. Gaps are published, not hidden. **Watermark, not closure:**
+  no-evidence-found leaves a question open; only `withdrawn` is terminal. **Populated is per axis:** the
+  contraindication gap view joins `db/006`'s `ci_axis`, because a class populated on an axis the rule does not expand
+  over still yields no pair — reading it relationship-blind hides real gaps. **A closed gap carrying curator work is
+  retired, not deleted** (`open_question.is_current`): the curated tables cascade from `open_question` *and* refuse
+  `DELETE`, so deleting one aborts the ingest outright. **Seven gap kinds by 5b.2, eleven since Plan C** — measured
+  against the real releases: unclassified_moiety 16,089 · unmatched_ingredient 2,150 · uncurated_additive_effect 381 ·
+  unresolved_ci_object 103 · condition_without_indication 97 · unpopulated_contraindication 13 ·
+  dead_by_expansion_policy 1 · the other four 0 — **18,834** in total, the figure restated below.
 - **Descendant expansion ✅ DONE** (Plan B of the additive-effect design; the work #15 asked for). `db/010`
   makes `ddi_candidate_pair` descend the class DAG — **for a contraindication, fewer rows is the harm
   direction**, and direct-only hid 21.9% of `CI_MoA` and **85.2%** of `CI_PE` pairs because MED-RT files
@@ -457,10 +458,11 @@ other jurisdictions.
   whose checksums legitimately differ — #39 one layer up, on the table #39's own fix could not reach — plus
   `loaded_release` (per `source, writer`) and `ingest_run_incomplete`, **which could only ever have been empty before
   this round**; historical rows carry `'unattributed'`, and nothing is guessed. **A `drugref` console script**:
-  `migrate`, `status`, one `ingest` subcommand per orchestrator, and `ingest chain`, which runs all six in dependency
-  order from one directory, resolves inputs by documented globs (**zero matches and several matches are both
+  `migrate`, `status`, one `ingest` subcommand per orchestrator, and `ingest chain`, which runs **the steps whose
+  `--<source>-release` flag was given** (the round's own measurement ran four) in dependency order from one
+  directory, resolves inputs by documented globs (**zero matches and several matches are both
   errors**, all resolved before any step runs), and is how this round's own measurement was taken. `chebi.py`, the
-  orchestrator the foundation review missed, gained the try/rollback/logging the other five have. **779 tests.**
+  orchestrator the foundation review missed, gained the try/rollback/logging the other five have. **788 tests.**
 
   **Measuring #47 turned up two findings, both about `db/018`'s own justifications** for widening
   `gap_unmatched_ingredient`'s tie-break *explicitly anticipating #47*. Both were false by the time #47 arrived.
@@ -474,16 +476,16 @@ other jurisdictions.
   **Measured end to end through the new chain** (fresh `drugref_ops`, **110.37 s**, no workarounds): the new
   `contraindication_class` bucket **99** · `classification`/`contraindication`/`indication` **2,137/826/1,426** ·
   `gap_unmatched_ingredient` **2,150**, `open_question` **18,834**, `ddi_candidate_pair` **21,664** — all unchanged ·
-  `loaded_release` **4 rows**, both MED-RT writers visible · `ingest_run_incomplete` **0**. **The round's own plan
-  text carried four defects, every one caught by an implementer measuring rather than reading**: the writer count
-  (twice), an error-message assertion that contradicted the code it tested, and a chain glob naming
-  `UNII_Names_*.txt` — a real file beside `UNII_Records_*.txt` carrying none of the four gate columns the parser
-  requires, which made `ingest chain --unii-release` fail outright as first shipped. **A plan is a claim about the
-  code too.**
+  `loaded_release` **4 rows**, both MED-RT writers visible · `ingest_run_incomplete` **0**. **The plan text carried
+  three defects, each caught by an implementer measuring rather than reading** (the writer count, an error-message
+  assertion contradicting its own test, a chain glob naming `UNII_Names_*.txt`) — and the final whole-branch review
+  found the plan STILL asserting all three, plus a wheel-installed `drugref migrate` applying nothing while printing
+  "migrations applied", no `.sql` having shipped and `Path.glob` on a missing directory being silent. **A plan is a
+  claim about the code; correcting it only in the code leaves it wrong.**
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them)
   via **RLS + privilege separation** — the full floor design §7 always envisioned (design §10 tension G).
-  **Note the test-suite coupling** (this count has now been wrong twice — three, then seven — so re-run the
-  grep before quoting it): `grep -l TRUNCATE tests/*.py` finds **nine** files, one of them
+  **Note the test-suite coupling** (wrong three times now — three, seven, then nine, the last of them written
+  directly beneath this instruction — so re-run the grep): `grep -l TRUNCATE tests/*.py` finds **eleven**, one of them
   **`mesh_rel_fixtures.py`** — a shared helper rather than a test module, holding the one truncate both
   MeSH-keyed test modules use — each `TRUNCATE`-ing the drugref tables in an autouse fixture because their
   orchestrators commit internally and so escape the `conn` fixture's rollback. Those fixtures depend on precisely
