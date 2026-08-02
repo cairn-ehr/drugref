@@ -123,9 +123,12 @@ drugref ingest chain --downloads DIR --unii-release R --medrt-release R …
 * **Order is a module constant, not an argument.** UNII → ChEBI → MED-RT → MeSH → MeSH-relations → PBS. The
   dependency order is a property of the data, not a choice a caller should be able to get wrong.
 * **Inputs resolve from `--downloads` by documented globs**, because the real layout is irregular and a tidy
-  invented convention would match nothing: `UNII_Names_*.txt` at the root, `MEDRT/Core_MEDRT_*_XML.xml`,
-  `mesh/{pa,desc,supp}*`, `tables_as_csv/items.csv`. A pattern matching **zero or more than one** file is a
-  loud failure naming the pattern and the directory searched — never a silent skip.
+  invented convention would match nothing: **`UNII_Records_*.txt`** at the root — **NOT `UNII_Names_*.txt`,
+  which is a real file sitting right beside it carrying none of the four columns the moiety gate reads**
+  (`INN_ID`, `USAN_ID`, `RXCUI`, `SUBSTANCE_TYPE`; Names holds one row per synonym) —
+  `MEDRT/Core_MEDRT_*_XML.xml`, `mesh/{pa,desc,supp}*`, `tables_as_csv/items.csv`. A pattern matching
+  **zero or more than one** file is a loud failure naming the pattern and the directory searched — never a
+  silent skip.
 * **Every selected step's inputs are validated before any step runs**, so a typo fails in a second rather
   than sixty.
 * **MED-RT ships as a zip and is extracted by hand today; the chain requires the extracted XML and says so.**
