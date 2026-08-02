@@ -459,9 +459,12 @@ other jurisdictions.
   `loaded_release` (per `source, writer`) and `ingest_run_incomplete`, **which could only ever have been empty before
   this round**; historical rows carry `'unattributed'`, and nothing is guessed. **A `drugref` console script**:
   `migrate`, `status`, one `ingest` subcommand per orchestrator, and `ingest chain`, which runs **the steps whose
-  `--<source>-release` flag was given** (the round's own measurement ran four) in dependency order from one
+  `--<source>-release` flag was given** (the round's own measurement ran four) in a fixed order from one
   directory, resolves inputs by documented globs (**zero matches and several matches are both
-  errors**, all resolved before any step runs), and is how this round's own measurement was taken. `chebi.py`, the
+  errors**, all resolved before any step runs), and is how this round's own measurement was taken. The order is a
+  constant so runs stay comparable, but **only UNII-first is a data dependency** — every other feed joins to the
+  `identity_claim` rows (or the `display_name`) UNII registers, whereas `medrt` before `mesh-relations` is convention:
+  the PR review round found that comment claiming a read that does not happen, and the test that asserted it. `chebi.py`, the
   orchestrator the foundation review missed, gained the try/rollback/logging the other five have. **788 tests.**
 
   **Measuring #47 turned up two findings, both about `db/018`'s own justifications** for widening

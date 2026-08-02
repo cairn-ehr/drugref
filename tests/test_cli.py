@@ -21,14 +21,18 @@ def test_every_orchestrator_has_a_subcommand():
         "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs")
 
 
-def test_the_step_order_is_the_dependency_order():
-    """UNII first because every other feed joins to moieties it registers; MED-RT
-    before mesh-relations because the MeSH-keyed run reads classes medrt_run writes.
-    Order is a property of the data, so it is a constant rather than an argument a
-    caller could get wrong."""
+def test_unii_runs_before_every_feed_that_joins_to_what_it_registers():
+    """The ONE ordering constraint the data actually imposes: UNII first, because every
+    other feed resolves its subjects through identity_claim (or the INN display names)
+    that the UNII step populates.
+
+    Deliberately not asserting medrt < mesh-relations. That pair IS fixed -- the tuple
+    above pins it -- but as a convention, not a dependency: the MeSH-keyed run reads no
+    table medrt_run writes, and the one they share is scoped per (source, reason) so
+    neither order changes the answer. A test that asserted it as a dependency would
+    keep a false claim alive by passing."""
     names = [s.name for s in cli.STEPS]
     assert names.index("unii") == 0
-    assert names.index("medrt") < names.index("mesh-relations")
 
 
 def test_ingest_subcommand_requires_a_release():

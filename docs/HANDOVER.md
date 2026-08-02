@@ -305,6 +305,14 @@ gained the try/rollback/logging the other five have. Measured through the new ch
 - **THREE defects in this round's own PLAN text, found by measuring** — the writer count ONCE (the *second* was in
   `db/026`, a migration), an error-message assertion contradicting its own test, and the UNII glob. Each was fixed in
   the code and left standing in the plan until the final review.
+- **TWO more claims in `cli.py`'s own comments, found by the PR review round.** (a) The module docstring said
+  "everything above `main`" is DB-free; `main` is the LAST function in the file, so the four `_handle_*` entry points
+  and the six `_run_*` wrappers all fell on the wrong side of it. Scoped to the argument layer, which is what was
+  meant — and that layer is DB-free but *not* filesystem-free, since `resolve_inputs` globs. (b) **The step order is
+  NOT a dependency order.** Only UNII-first is a data dependency; `medrt` before `mesh-relations` is convention —
+  the MeSH-keyed run reads `identity_claim` and no table `medrt_run` writes, and their one shared table is scoped per
+  `(source, reason)` by #39/#47. The test asserting the pair as a dependency was removed rather than left to keep a
+  false claim alive by passing; the tuple test still pins the order itself.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 

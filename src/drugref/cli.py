@@ -7,8 +7,18 @@ knowledge of a feed's format -- that all lives in drugref.ingest, which is where
 parser belongs. The step table below is the single place that knows which
 orchestrators exist and in which order they must run.
 
-Everything above `main` is pure in the sense this codebase means it: no database
-access, deterministic, testable with no fixtures.
+THE ARGUMENT LAYER TAKES NO CONNECTION, which is the sense of "pure" that matters
+here: the step table, the ChainError family, `resolve_inputs`, `selected_steps`,
+`check_release_agreement` and `build_parser` settle every way a chain invocation can
+be wrong BEFORE a database exists to be wrong against. Deterministic and DB-free, but
+not filesystem-free -- `resolve_inputs` globs the downloads tree, so its tests want a
+tmp_path and nothing more.
+
+THAT LAYER IS NOT "EVERYTHING ABOVE `main`", and the line is worth stating precisely
+because the file's shape suggests otherwise: the `_run_*` wrappers and the four
+`_handle_*` entry points also sit above `main`, and every one of them takes a
+connection. They are deliberately thin for that reason -- what cannot be tested
+without a database is kept to a dispatch the pure layer has already validated.
 """
 import argparse
 import logging
@@ -75,10 +85,24 @@ def _run_pbs(conn, paths, release):
     return pbs_run.ingest_pbs(conn, paths["items"], release)
 
 
-# ORDER IS THE DEPENDENCY ORDER and is a constant, not an argument: UNII first because
-# every other feed joins to the moieties it registers, MED-RT before mesh-relations
-# because the MeSH-keyed run reads classes medrt_run writes. A caller who could
-# reorder these could produce a chain that looks like it worked and bridged nothing.
+# ORDER IS A CONSTANT, NOT AN ARGUMENT, and ONE POSITION IN IT IS A DATA DEPENDENCY:
+# UNII FIRST, because every other feed joins to the moieties it registers -- medrt on
+# RXNORM_IN, mesh and mesh-relations on UNII/CAS, chebi on INCHIKEY, all of them
+# identity_claim; pbs on substance_moiety.display_name (drugref's own label, NOT the
+# INN claims -- the distinction #26 drew and slice 8a depends on). Run any of them
+# against an empty registry and the chain looks like it worked and bridged nothing.
+#
+# THE REST OF THE ORDER IS CONVENTION, and calling it a dependency would state
+# something the code does not do. medrt-before-mesh-relations in particular is NOT
+# one: the MeSH-keyed run reads identity_claim and nothing else -- never
+# substance_class, class_membership or class_parent, the tables medrt_run writes --
+# and the single table the two share, ingest_unmatched_ingredient, was deliberately
+# made order-independent (one writer per (source, reason) since #39/db/018, extended
+# to a fourth bucket by #47/db/026). Both re-derive the question register last, so
+# whichever runs second leaves it complete. The order stays fixed anyway, because two
+# chains over the same feeds should be comparable run to run; it just is not
+# load-bearing, and a reader who believed it was would go looking for a bridge that
+# was never there.
 #
 # The globs describe the layout a real downloads/ tree has, not a tidy one invented
 # here: UNII_Records_*.txt sits at the root (NOT UNII_Names_*.txt -- Names is the
