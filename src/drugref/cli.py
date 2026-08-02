@@ -102,12 +102,30 @@ STEPS = (
 )
 
 
-class InputResolutionError(Exception):
+class ChainError(Exception):
+    """A chain invocation that cannot be run without recording something untrue.
+
+    One base so `main` catches the family rather than an ever-growing tuple, and so a
+    future pre-flight check is caught by construction rather than by remembering.
+    """
+
+
+class InputResolutionError(ChainError):
     """A chain glob matched no file, or more than one.
 
     BOTH are errors, and the second is the one that bites: two releases left in one
     directory is the ordinary way this goes wrong, and silently taking either would
     record the wrong bytes as this run's provenance.
+    """
+
+
+class ReleaseError(ChainError):
+    """A release tag that cannot be recorded honestly: absent, or self-contradicting.
+
+    `ingest_run` IS HISTORY -- append-only, never corrected -- so a wrong tag is not a
+    mistake an operator can take back. `writer` exists (db/025) precisely so a stale
+    projection is visible; provenance that is confidently wrong defeats it more
+    thoroughly than provenance that is missing.
     """
 
 
@@ -147,9 +165,59 @@ def selected_steps(args: argparse.Namespace) -> tuple[tuple[IngestStep, str], ..
     feeds nobody named would record provenance nobody stated, and this project does
     not guess provenance. Returning them in STEPS order rather than flag order is what
     makes the dependency order unbreakable from the command line.
+
+    PRESENCE, NOT TRUTHINESS, is what selects a step, and the difference is the trap
+    the spec's own list names: `--medrt-release ""` is a flag the operator DID pass,
+    and testing truthiness silently dropped the step it asked for -- a chain that
+    reports success having never touched a feed the command line named. Absent is the
+    opt-out (None); empty or blank is an error. "A convention that silently matches
+    nothing is worse than none" applies to flag values exactly as it does to globs.
     """
-    return tuple((step, getattr(args, _release_flag(step)))
-                 for step in STEPS if getattr(args, _release_flag(step), None))
+    selected = []
+    for step in STEPS:
+        release = getattr(args, _release_flag(step), None)
+        if release is None:
+            continue
+        if not release.strip():
+            raise ReleaseError(
+                f"--{step.name}-release was given an empty tag. It is the string "
+                "recorded as this run's provenance, so it cannot be blank; omit the "
+                "flag to leave the step out of the chain.")
+        selected.append((step, release))
+    return tuple(selected)
+
+
+def check_release_agreement(
+        plan: Sequence[tuple[IngestStep, str, dict[str, pathlib.Path]]]) -> None:
+    """Refuse a chain in which one FILE is claimed to be two different releases.
+
+    THE STEPS OVERLAP, and that is not incidental: `medrt` and `mesh-relations`
+    resolve the SAME Core_MEDRT_*_XML.xml, and `mesh` and `mesh-relations` share
+    desc/supp. Their release tags are stated independently, so
+    `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04` writes two
+    different releases into ingest_run FROM IDENTICAL BYTES. One of them is false, and
+    ingest_run is history: nothing can take it back.
+
+    That is worse than a missing tag. db/025 added `writer` so an operator could see
+    that one half of MED-RT is a release behind the other; this makes the two halves
+    disagree on purpose, so the signal reports staleness that does not exist -- or
+    hides staleness that does. A pre-flight check costs nothing and the alternative
+    is uncorrectable.
+
+    Pure, and run over the resolved plan rather than over the flags, because the
+    question is about PATHS: two globs that happen to name one file must agree even
+    though the flags look independent.
+    """
+    stated: dict[pathlib.Path, tuple[str, str]] = {}   # path -> (release, step name)
+    for step, release, paths in plan:
+        for path in paths.values():
+            first_release, first_step = stated.setdefault(path, (release, step.name))
+            if first_release != release:
+                raise ReleaseError(
+                    f"{path} is read by both {first_step} and {step.name}, which were "
+                    f"given different release tags ('{first_release}' and "
+                    f"'{release}'). The same bytes cannot be two releases, and "
+                    "ingest_run is history -- it cannot be corrected afterwards.")
 
 
 def _handle_chain(conn, args) -> int:
@@ -165,6 +233,7 @@ def _handle_chain(conn, args) -> int:
     # failed by the tool.
     plan = [(step, release, resolve_inputs(args.downloads, step))
             for step, release in steps]
+    check_release_agreement(plan)
     for step, release, paths in plan:
         log.info("chain: %s (release=%s)", step.name, release)
         print(f"{step.name}: {step.runner(conn, paths, release)}")
@@ -181,10 +250,14 @@ def _handle_status(conn, args) -> int:
     """What is loaded, and what died trying. Two views, one command: an operator
     asking "is this current?" needs both halves, and reading only the first would
     report a stale release as healthy."""
-    print("loaded releases:")
-    for row in conn.execute(
-            "SELECT source, writer, upstream_release, finished_at "
-            "FROM drugref.loaded_release").fetchall():
+    # Both blocks say "none" when empty, and the symmetry is the point: a fresh
+    # database printed a bare "loaded releases:" header, which reads as output that
+    # got cut off rather than as an answer. Nothing loaded IS the answer there.
+    loaded = conn.execute(
+        "SELECT source, writer, upstream_release, finished_at "
+        "FROM drugref.loaded_release").fetchall()
+    print("loaded releases:" if loaded else "loaded releases: none")
+    for row in loaded:
         print("  {:<8} {:<14} {:<12} {}".format(*(str(c) for c in row)))
 
     incomplete = conn.execute(
@@ -258,7 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
-    except (RuntimeError, InputResolutionError) as exc:
+    except (RuntimeError, ChainError) as exc:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
         print(f"drugref: {exc}", file=sys.stderr)

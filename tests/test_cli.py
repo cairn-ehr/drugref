@@ -77,6 +77,30 @@ def test_ingest_unii_end_to_end(_migrated, monkeypatch, capsys):
         ).fetchall() == [("UNII", "unii_run", "2026-07")]
 
 
+def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
+    """SYMMETRY BETWEEN THE TWO BLOCKS. Unfinished runs already printed "none" while
+    loaded releases printed a bare header, so `drugref status` on a just-migrated
+    database looked like output that got cut off rather than an answer. Nothing loaded
+    is the answer, and an operator checking "is this current?" must be able to tell
+    the two apart.
+
+    Driven by a stub rather than a real empty database on purpose: loaded_release
+    holds COMMITTED rows that the conn fixture's rollback cannot remove, so a
+    DB-gated version of this test would pass or fail on test order.
+    """
+    class _EmptyConn:
+        def execute(self, *args, **kwargs):
+            return self
+
+        def fetchall(self):
+            return []
+
+    assert cli._handle_status(_EmptyConn(), None) == 0
+    out = capsys.readouterr().out
+    assert "loaded releases: none" in out
+    assert "unfinished runs: none" in out
+
+
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):
     (tmp_path / "MEDRT").mkdir()
     (tmp_path / "MEDRT" / "Core_MEDRT_2026.07.06_XML.xml").write_text("x")
@@ -130,6 +154,48 @@ def test_the_chain_runs_selected_steps_in_dependency_order():
 def test_the_chain_needs_at_least_one_release():
     args = cli.build_parser().parse_args(["ingest", "chain", "--downloads", "d"])
     assert cli.selected_steps(args) == ()
+
+
+def test_an_empty_release_tag_is_an_error_not_a_silent_skip():
+    """PRESENCE, NOT TRUTHINESS, selects a step. `--medrt-release ""` is a flag the
+    operator DID pass; a truthiness test dropped the step it asked for and the chain
+    reported success having never touched that feed -- the exact shape the spec's trap
+    list forbids ("a convention that silently matches nothing is worse than none").
+    Whitespace counts as empty: a tag is what lands in ingest_run."""
+    for tag in ("", "   "):
+        args = cli.build_parser().parse_args(
+            ["ingest", "chain", "--downloads", "d", "--medrt-release", tag])
+        with pytest.raises(cli.ReleaseError, match="empty tag"):
+            cli.selected_steps(args)
+
+
+def test_one_file_cannot_be_recorded_as_two_releases():
+    """medrt and mesh-relations resolve the SAME MED-RT XML but state their tags
+    independently, so this pair writes two releases into ingest_run from identical
+    bytes. ingest_run is history -- one of them is false and nothing can take it
+    back -- and it makes db/025's staleness signal report a difference that does not
+    exist. Checked on the RESOLVED PATHS, because the flags look independent."""
+    medrt = next(s for s in cli.STEPS if s.name == "medrt")
+    mesh_rel = next(s for s in cli.STEPS if s.name == "mesh-relations")
+    xml = pathlib.Path("downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml")
+
+    with pytest.raises(cli.ReleaseError, match="cannot be two releases"):
+        cli.check_release_agreement([
+            (medrt, "2026.07.06", {"medrt": xml}),
+            (mesh_rel, "2026.05.04", {"medrt": xml, "desc": pathlib.Path("d.gz"),
+                                      "supp": pathlib.Path("s.gz")})])
+
+
+def test_steps_sharing_a_file_are_fine_when_they_agree():
+    """The overlap itself is normal and must stay cheap -- the round's own measurement
+    ran medrt and mesh-relations together off one XML."""
+    medrt = next(s for s in cli.STEPS if s.name == "medrt")
+    mesh_rel = next(s for s in cli.STEPS if s.name == "mesh-relations")
+    xml = pathlib.Path("downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml")
+
+    cli.check_release_agreement([
+        (medrt, "2026.07.06", {"medrt": xml}),
+        (mesh_rel, "2026.07.06", {"medrt": xml})])
 
 
 def test_the_chain_resolves_every_steps_inputs_before_running_any(tmp_path, monkeypatch):
