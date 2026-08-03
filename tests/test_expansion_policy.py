@@ -27,7 +27,7 @@ import re
 import pytest
 import psycopg
 
-from drugref import db, ids
+from drugref import db, ids, interactions
 
 # MED-RT NUIs are 'N' + 10 digits. Checked because the seed carries them as
 # literals seen by a human once, and a typo would silently disable one deny.
@@ -181,18 +181,11 @@ def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, con
     revised = "N0000009908"                    # Vasoconstriction, seeded as `allow`
 
     def _revise(decision, rationale):
-        """Express an operator's revision the only way db/027 allows: insert, then
-        point whatever was live at the new row. Task 3 replaces this with
-        interactions.record_expansion_decision -- the point of having a writer."""
-        new_id = conn.execute(
-            "INSERT INTO drugref.class_expansion_policy (source, source_code, "
-            "decision, class_name, rationale, reviewed_by, reviewed_against) VALUES "
-            "('MED-RT', %s, %s, 'Vasoconstriction [PE]', %s, 'test', '2026.07.06') "
-            "RETURNING policy_id", (revised, decision, rationale)).fetchone()[0]
-        conn.execute(
-            "UPDATE drugref.class_expansion_policy SET superseded_by = %s "
-            "WHERE source = 'MED-RT' AND source_code = %s AND superseded_by IS NULL "
-            "AND policy_id <> %s", (new_id, revised, new_id))
+        """Express an operator's revision the only way db/027 allows -- insert, then
+        supersede -- through the writer that owns that ordering."""
+        interactions.record_expansion_decision(
+            conn, "MED-RT", revised, decision, "Vasoconstriction [PE]", rationale,
+            "test", "2026.07.06")
         conn.commit()
 
     _revise("deny", "an operator disagrees with the seed")
