@@ -475,7 +475,8 @@ project has recorded — same order, no regression. **810 tests** (788 at branch
 Filed, deliberately not fixed in this round: [#59](https://github.com/cairn-ehr/drugref/issues/59) — the insert-then-supersede
 rule lives in **three** places (`accumulation._supersede`, `questions.set_state` since `db/007`,
 `interactions.record_expansion_decision`), so the "third owner" trigger has already fired; deferred because this round chose
-not to widen its blast radius, not because nothing triggered it · [#60](https://github.com/cairn-ehr/drugref/issues/60) — `drugref ingest chain` cannot
+not to widen its blast radius, not because nothing triggered it ·
+[#60](https://github.com/cairn-ehr/drugref/issues/60) — `drugref ingest chain` cannot
 run all four sources together, since `mesh` and `mesh-relations` share `desc*.gz`/`supp*.gz` but take different release tags
 and `check_release_agreement` refuses; use the four `ingest <source>` subcommands in `STEPS` order meanwhile, as this round's
 own measurement did.

@@ -1,7 +1,7 @@
 # The expansion policy is append-only, and `withdrawn` is a decision
 
 **Status:** Active
-**Last reviewed:** 2026-08-03
+**Last reviewed:** 2026-08-04
 **Applies to:** `drugref.class_expansion_policy` (`db/010`, `db/027`) and its four readers —
 `ddi_candidate_pair`, `gap_unreviewed_expansion_root`, `gap_dead_by_expansion_policy`,
 `expansion_policy_unresolved`

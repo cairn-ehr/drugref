@@ -33,7 +33,7 @@
 -- docs-site/docs/decisions/correcting-a-curated-assertion.md).
 --
 -- THE `IF EXISTS` HERE IS NOT REPLAY SAFETY, and reads as though it were. The
--- surrogate PK added two statements below is ALSO auto-named
+-- surrogate PK added by the very next statement is ALSO auto-named
 -- class_expansion_policy_pkey, so on a second run this DROP would remove the
 -- SURROGATE key rather than db/010's natural one. What makes it safe is the ledger,
 -- which runs each file exactly once -- and a replay would fail loudly in any case,
@@ -156,7 +156,7 @@ COMMENT ON VIEW drugref.class_expansion_policy_current IS
     'EVERY READER OF class_expansion_policy MUST GO THROUGH THIS VIEW -- the base '
     'table holds history since db/027, and history read as policy is a deny that '
     'stopped being true. A withdrawn decision is deliberately indistinguishable from '
-    'no decision here, which is what returns its class to the review worklist.';
+    'no decision here, which is what returns its class to gap_unreviewed_expansion_root.';
 
 -- 4a. expansion_policy_unresolved (db/010) -- a withdrawn decision binds nothing, so
 --     there is nothing left to re-key and reporting it would be noise.

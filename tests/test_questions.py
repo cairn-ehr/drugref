@@ -397,9 +397,25 @@ def test_withdrawing_the_decision_reopens_the_expansion_question(conn):
     drugref.class_expansion_policy and the SUPERSEDED `deny` still exists, so the
     question stays shut and a curator who withdrew a stale ruling is never asked to
     replace it.
+
+    Registers the gap ONCE BEFORE any decision exists (phase 0) so there is a real
+    original question_uuid on record. Deny-then-withdraw alone never lets that row
+    exist in the first place -- the deny lands before the first register_from_gaps,
+    so the phase-1 `count == 0` holds because the question was never opened, not
+    because it was closed and is being "restored". Phase 0 is what turns the final
+    assertion from a claim about history into one the test actually establishes.
     """
     run_id = _run(conn)
     root = _unreviewed_root(conn, run_id)
+
+    # Phase 0: the ORIGINAL question, minted before any decision has ever touched the
+    # class, so phase 3 below has something concrete to compare against.
+    questions.register_from_gaps(conn, run_id)
+    original_uuid = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind = 'unreviewed_expansion_root' AND gap_key = %s",
+        (f"CLASS:{root}",)).fetchone()[0]
+
     interactions.record_expansion_decision(
         conn, "MED-RT", "N0000900000", "deny", "Sprawling Activity Alteration [PE]",
         "abstract organ-system bucket", "test", "2026.07.06")
@@ -412,11 +428,20 @@ def test_withdrawing_the_decision_reopens_the_expansion_question(conn):
         "test", "2026.08.03")
     questions.register_from_gaps(conn, run_id)
 
-    # Back under the SAME question UUID -- gap_key is a pure function of the class, so
-    # a reopened question is the original one restored, not a second one.
+    # Exactly one row, and its question_uuid is the SAME one phase 0 minted --
+    # immortal in the sense external tooling relies on: a citation made before the
+    # class was ever ruled on still resolves after a deny-then-withdraw round trip.
+    # (The row itself was deleted in phase 1 -- nothing had cited it yet, so
+    # register_from_gaps' untouched-question cleanup removed it outright -- and
+    # phase 3 inserts a fresh row; the two UUIDs match only because
+    # ids.mint_question_uuid is a pure function of (gap_kind, gap_key), not because
+    # any row survived. Verified by mutation: swapping that call for uuid.uuid4() in
+    # questions.register_from_gaps makes this assertion fail while leaving the
+    # phase-1 count assertion above green.)
     assert conn.execute(
-        "SELECT gap_key FROM drugref.open_question "
-        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchall() == [(f"CLASS:{root}",)]
+        "SELECT question_uuid, gap_key FROM drugref.open_question "
+        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchall() == \
+        [(original_uuid, f"CLASS:{root}")]
 
 
 def test_the_same_class_can_raise_several_different_questions(conn):

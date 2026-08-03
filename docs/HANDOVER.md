@@ -1,9 +1,8 @@
 # HANDOVER — drugref
 
 > **Disposable working scaffolding, NOT a source of truth.** The canonical *what/why* lives in the design specs under
-> [`docs/superpowers/specs/`](superpowers/specs/); if this file disagrees with a spec, the spec wins. Regenerate it at
-> the end of every working session (nextsession rule 9), keep it **under 500 lines** (CLAUDE.md), and get there by
-> **compressing merged rounds to their traps** — every round adds some.
+> [`docs/superpowers/specs/`](superpowers/specs/). Regenerate it at the end of every working session (nextsession rule 9), keep it **under
+> 500 lines** (CLAUDE.md), and get there by **compressing merged rounds to their traps** — every round adds some.
 >
 > **What CLAUDE.md's summary does not say:** drugref is **co-equal public-good infrastructure** (any EHR / pharmacy /
 > app consumes it; Cairn is its first client on the same public-API footing), the **global tier** is built before the
@@ -388,9 +387,10 @@ the DB layer can never go green by being skipped.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
-  `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one. **A verification database is
-  disposable — rebuild rather than patch**: for a drifted ledger `apply_migrations` refuses permanently. Expect that whenever
-  a migration is edited.
+  `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:
+  this round's own `db/027` edits landed after it was migrated, so its ledger also refuses `apply_migrations` (reads
+  unaffected). **A verification database is disposable — rebuild rather than patch**: for a drifted ledger `apply_migrations`
+  refuses permanently. Expect that whenever a migration is edited.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

@@ -117,7 +117,7 @@ def record_expansion_decision(conn: psycopg.Connection, source: str, source_code
 def withdraw_expansion_decision(conn: psycopg.Connection, source: str, source_code: str,
                                 rationale: str, reviewed_by: str,
                                 reviewed_against: str) -> int:
-    """Retract the live decision for a class, returning it to the review worklist.
+    """Retract the live decision for a class, returning it to gap_unreviewed_expansion_root.
 
     WITHDRAWN IS NOT `allow`. Absent means UNREVIEWED -- it expands AND raises a
     question on gap_unreviewed_expansion_root -- and an append-only table can never
