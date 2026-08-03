@@ -31,6 +31,14 @@
 -- "At most one LIVE row per class" is not lost -- it moves to the deferred trigger in
 -- section 3, which is the only shape that can express it (see
 -- docs-site/docs/decisions/correcting-a-curated-assertion.md).
+--
+-- THE `IF EXISTS` HERE IS NOT REPLAY SAFETY, and reads as though it were. The
+-- surrogate PK added two statements below is ALSO auto-named
+-- class_expansion_policy_pkey, so on a second run this DROP would remove the
+-- SURROGATE key rather than db/010's natural one. What makes it safe is the ledger,
+-- which runs each file exactly once -- and a replay would fail loudly in any case,
+-- because superseded_by references policy_id. As in db/012 §4, the IF EXISTS only
+-- covers a database where an operator did this by hand.
 ALTER TABLE drugref.class_expansion_policy
     DROP CONSTRAINT IF EXISTS class_expansion_policy_pkey;
 
@@ -159,6 +167,18 @@ WHERE  NOT EXISTS (SELECT 1 FROM drugref.substance_class sc
                    WHERE  sc.source      = p.source
                    AND    sc.source_code = p.source_code);
 
+-- db/010's text said "expansion-policy rows", which now overstates the scope: this
+-- lists only the decisions that BIND. db/010 is applied and immutable, so the
+-- correction is re-issued here rather than edited there.
+COMMENT ON VIEW drugref.expansion_policy_unresolved IS
+    'BINDING expansion decisions naming a class the registry does not hold -- upstream '
+    're-keyed or withdrew it, so the decision silently stops applying. Since db/027 it '
+    'reads class_expansion_policy_current, so superseded and `withdrawn` rows are '
+    'absent by construction: a withdrawn decision binds nothing, so there is nothing '
+    'left to re-key and listing it would be noise a curator could never clear. '
+    'Expected to be EMPTY after a full ingest; on a partial test fixture every '
+    'unmatched row is listed, which is correct rather than alarming.';
+
 -- 4b. gap_unreviewed_expansion_root (db/012) -- and THIS is where withdrawal pays:
 --     the class becomes invisible here again, so the question re-raises.
 CREATE OR REPLACE VIEW drugref.gap_unreviewed_expansion_root AS
@@ -195,6 +215,25 @@ AND    NOT EXISTS (SELECT 1 FROM drugref.class_expansion_policy_current p
                    WHERE  p.source      = sc.source
                    AND    p.source_code = sc.source_code)
 GROUP  BY sc.class_uuid, sc.class_name, sc.concept_type, z.descendant_class_count;
+
+-- db/012's comment says "EITHER decision retires the question", which this migration
+-- makes false: there are THREE decisions now, and `withdrawn` deliberately re-raises
+-- the question rather than retiring it -- the entire reason the value exists. db/012
+-- is applied and immutable, so the whole comment is re-issued here with that one
+-- sentence corrected and nothing else changed but the relation it names.
+COMMENT ON VIEW drugref.gap_unreviewed_expansion_root IS
+    'Contraindicated classes with more than 20 descendant classes that nobody has '
+    'ruled on in class_expansion_policy_current -- so they expand over their whole '
+    'subtree by default, which for an abstract organ-system bucket is fan-out rather '
+    'than recall. SCOPED TO PREDICATES THAT ACTUALLY EXPAND (ci_axis.expands_'
+    'descendants): a class named only by non-expanding rules is not asked about, '
+    'because no decision could change a row -- and ci_rule_count counts the expanding '
+    'rules for the same reason. The threshold is a DISCOVERY HEURISTIC for the '
+    'worklist, never the criterion for denying expansion: that judgement is '
+    'qualitative and belongs in the policy table. A `deny` or `allow` retires the '
+    'question; `withdrawn` (db/027) RE-RAISES it, because it means no current '
+    'judgement rather than a permissive one. ABSENCE OF A ROW IS NOT A GUARANTEE OF '
+    'SENSIBLE EXPANSION: a badly-shaped root with 20 descendants is invisible here.';
 
 -- 4c. ddi_candidate_pair (db/012) -- a withdrawn deny stops denying, and the class
 --     expands again. COALESCE already treats a missing row as 'allow', so a withdrawn
@@ -288,3 +327,29 @@ AND    rr.direct_partner_count = 0
        -- on one class only when they are independently answerable.
 AND    rr.subtree_partner_count > 0
 GROUP  BY rr.object_class_uuid, sc.class_name, sc.concept_type;
+
+-- ---- 5. the table's own comment ------------------------------------------------
+--
+-- `\d+ drugref.class_expansion_policy` is the first thing the next person runs, and
+-- db/010's text still enumerates two decision values, describes flat policy, and says
+-- nothing about history or the view. That migration is applied and immutable, so the
+-- standing text is re-issued here. It is last in the file so it can name everything
+-- above it.
+COMMENT ON TABLE drugref.class_expansion_policy IS
+    'Per-class descendant-expansion policy for contraindications: `deny` means a CI '
+    'rule naming this class expands to its DIRECT members only, `allow` means it '
+    'expands over the full subtree, and `withdrawn` (db/027) means the judgement no '
+    'longer stands. NO ROW MEANS UNREVIEWED, which expands (the safe default) and is '
+    'reported by gap_unreviewed_expansion_root -- so `allow` and absent differ for the '
+    'worklist and not for the pair set, and `withdrawn` is deliberately '
+    'indistinguishable from absent. WITHDRAWN IS NOT ALLOW. '
+    'SINCE db/027 THIS TABLE HOLDS HISTORY: it is append-only, (source, source_code) '
+    'is NOT unique, a revision INSERTs the new judgement and then sets superseded_by '
+    'on the old one, and DELETE raises. So EVERY READER MUST GO THROUGH '
+    'drugref.class_expansion_policy_current -- querying this table directly reads '
+    'superseded judgements as policy, which is a deny that stopped being true. Revise '
+    'it through interactions.record_expansion_decision / withdraw_expansion_decision, '
+    'which own that ordering. CURATOR POLICY, not a projection: no ingest clears it. '
+    'THE DECISION APPLIES TO THE CLASS THE RULE NAMES, never to classes met while '
+    'walking down -- a denied root does not stop a rule stated against one of its '
+    'descendants.';

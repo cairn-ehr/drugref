@@ -192,11 +192,16 @@ business") and is 191 lines, so the writer joins it there rather than starting a
   cannot introduce a name that was never reviewed. **Raises if there is no live row:** withdrawing a decision
   nobody made is a caller error, not a no-op.
 
-**The supersede UPDATE is written locally rather than shared with `accumulation._supersede`.** Sharing was
-considered and rejected for this round: promoting a private helper to public API and refactoring four merged
-Plan C call sites widens the blast radius of a round about a different table. The duplication is **filed as a
-GitHub issue** rather than left implicit (rule 5), to be promoted to a shared primitive if a third owner
-appears.
+**The supersede UPDATE is written locally rather than shared with `accumulation._supersede`.** *(Corrected
+after the branch review: this paragraph said the rule lived in two places and deferred a shared primitive
+"until a third owner appears". Both claims were wrong.)* The rule lives in **three** places —
+`accumulation._supersede`, `questions.set_state` (hand-written since `db/007`, so it predates this round
+entirely) and `interactions.record_expansion_decision` — so the third owner has already appeared, and the
+condition this round deferred on had fired before the round started. The cost of sharing was overstated too:
+`_supersede` is already generic over table and pk column, so reuse needs an import, not the refactor of four
+merged Plan C call sites. Sharing is deferred anyway, for the narrower and honest reason: a round about
+`class_expansion_policy` chose not to widen its blast radius into `accumulation.py` and `questions.py`. The
+duplication is **filed as a GitHub issue** rather than left implicit (rule 5).
 
 **The decision vocabulary is not restated in Python.** The CHECK is its one home; a typo should fail there,
 not in a second list that can disagree with the first — `db/006`'s lesson, and the reason that migration
@@ -233,8 +238,14 @@ new branch dead code from its point of view. That is the same shape as #42's des
 
 ## 7. Traps this round leaves for the next change
 
-- **`'withdrawn'` is not `'allow'`.** It means *no current judgement*; the class returns to the worklist. A
-  future reader that folds the two together silently retires a question nobody answered.
+- **`'withdrawn'` is not `'allow'`.** It means *no current judgement*; the class returns to
+  `gap_unreviewed_expansion_root`. A future reader that folds the two together silently retires a question
+  nobody answered.
+- **`'withdrawn'` means near-opposite things on two tables in this subsystem.** On
+  `class_expansion_policy.decision` it means *start asking again*; on `question_state.state` (`db/007`) it
+  means *stop asking*, and `question_worklist` filters it out — so a class whose question was withdrawn and
+  whose decision is later withdrawn returns to the gap **view** with `is_current = true` and still not to the
+  **worklist**. Defensible, but never say "returns to the worklist" without naming which.
 - **The view is `_current` (binding), not `_live` (unsuperseded).** The writer deliberately asks the other
   question. Merging them breaks withdrawal.
 - **Four readers, one view.** A fifth reader must go through `class_expansion_policy_current`, or it will read

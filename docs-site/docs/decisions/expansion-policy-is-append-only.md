@@ -46,8 +46,10 @@ correction *preserves* the natural key and history rows therefore share it. A `U
 would reject the only sequence that can express a correction — insert the new judgement, then point the
 old row at it — and leave in-place mutation as the only implementable revision, which is precisely what
 the floor exists to prevent. `superseded_by` is one-way, set once, and must point at a **later** row on
-the **same** class. At most one *live* row per class is still enforced, by `db/020`'s deferred
-constraint trigger over the partial `class_expansion_policy_live_key` index (see
+the **same** class. At most one *live* row per class is still enforced, by the deferred constraint
+trigger `db/020` introduced and **`db/023` rewrote** — `db/020`'s `jsonb` comparison of the natural key
+was unindexable and therefore quadratic, and the partial `class_expansion_policy_live_key` index only
+pays off against `db/023`'s equality predicates (see
 [a curated correction needs a deferred check](correcting-a-curated-assertion.md)); no new PL/pgSQL was
 written for this table.
 
@@ -94,9 +96,17 @@ withdrawn row is live — nothing superseded it — and does not bind.
 
 - **Read `class_expansion_policy_current`, never the base table.** Since `db/027` the base table holds
   history, and history read as policy is a `deny` that stopped being true.
-- **`withdrawn` is not `allow`.** It means *no current judgement*, so the class returns to the review
-  worklist and its rules expand meanwhile. A consumer folding the two together silently retires a
-  question nobody answered.
+- **`withdrawn` is not `allow`.** It means *no current judgement*, so the class returns to
+  `gap_unreviewed_expansion_root` and its rules expand meanwhile. A consumer folding the two together
+  silently retires a question nobody answered.
+- **The word `withdrawn` means near-opposite things on two tables in this one subsystem.** On
+  `class_expansion_policy.decision` (`db/027`) it means *start asking again*; on `question_state.state`
+  (`db/007`) it means *stop asking*, and it is the register's only terminal state — `question_worklist`
+  filters it out. The two meet: if a curator withdrew the **question** for a class and later withdraws
+  that class's **decision**, `register_from_gaps` restores `is_current = true` while the state stays
+  `withdrawn`, so the gap view lists the class and the worklist still hides it. That is defensible — a
+  curator did say "stop asking about this" — but it is why the bullet above names the gap view and not
+  the worklist, and it is a trap for anyone reading the two `withdrawn`s as one vocabulary.
 - **Revise through `interactions.record_expansion_decision` / `withdraw_expansion_decision`.** They own
   the insert-then-supersede ordering; `superseded_by` must reference a row that already exists, and the
   single-live check is deferred, so getting the order wrong fails at `COMMIT` rather than at the call

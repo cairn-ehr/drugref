@@ -43,7 +43,8 @@ def clear_source_contraindications(conn: psycopg.Connection, source: str) -> Non
 
 
 def unresolved_expansion_policy(conn: psycopg.Connection, source: str) -> list[str]:
-    """The `source_code`s of `source`'s expansion decisions that resolve to no class.
+    """The `source_code`s of `source`'s BINDING expansion decisions that resolve to no
+    class.
 
     A read rather than a write, kept in this module because it reads
     class_expansion_policy, which is contraindication-expansion policy and so this

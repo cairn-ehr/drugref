@@ -236,12 +236,23 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    step 1 has upserted this release's classes, or every decision would look
     #    unresolved. The identities go out at WARNING, not just the count into the
     #    summary, because the operator's next move is to look at those exact rows.
+    #    THE REMEDY IS TWO CALLS, and neither is an UPDATE. db/027 made this table
+    #    append-only: `UPDATE ... SET source_code = ...` now raises "only superseded_by
+    #    may change", so the re-key this warning used to advise is no longer a thing an
+    #    operator can do. Withdrawing is, which is what the third `decision` value is
+    #    for -- and re-keying is that withdrawal followed by a fresh decision under the
+    #    new code. Neither is exposed by the CLI yet, so the message names the Python
+    #    entry points rather than a table an operator cannot legally edit.
     unresolved = interactions.unresolved_expansion_policy(conn, SOURCE)
     if unresolved:
         log.warning(
             "MED-RT: %d class-expansion decision(s) name a class this release does "
-            "not define, so they no longer bind: %s. Re-key or withdraw them in "
-            "drugref.class_expansion_policy.",
+            "not define, so they no longer bind: %s. Retire each with "
+            "drugref.interactions.withdraw_expansion_decision(); if upstream re-keyed "
+            "the class rather than dropping it, follow that with "
+            "record_expansion_decision() under the new code. Editing "
+            "drugref.class_expansion_policy directly raises: it is append-only "
+            "since db/027.",
             len(unresolved), ", ".join(unresolved))
 
     provenance.finish_run(conn, run_id)

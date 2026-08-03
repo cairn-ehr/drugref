@@ -17,7 +17,7 @@ post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #5
 (#57) · the ingest-operability round (#58, closing #16 and #47).
 
 **In flight: the expansion-policy history round (#35)** on `fix/expansion-policy-history` — `db/027`, implemented, measured
-and pushed; its PR is still to open. **807 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured
+and pushed; its PR is still to open. **810 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured
 against the real releases on a fresh `drugref_policy` (**103.28 s**): `ddi_candidate_pair` **21,664** unchanged, filtered
 lookup **2.876 ms** against the recorded 3.1 ms. Traps below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed
 slice, plus Plan C's and this round's.
@@ -279,8 +279,10 @@ count unchanged, `loaded_release` **4** rows with both MED-RT writers.
 
 Spec: [expansion-policy history](superpowers/specs/2026-08-03-drugref-expansion-policy-history-design.md). The last curated
 table edited in place — and the one that **gates recall** — takes Plan C's overlay floor: surrogate `policy_id`, one-way
-`superseded_by`, both `db/020` trigger functions reused unchanged over a partial `class_expansion_policy_live_key` index, no
-new PL/pgSQL. Measured on a fresh `drugref_policy`: `ddi_candidate_pair` **21,664** · `gap_dead_by_expansion_policy` **1** ·
+`superseded_by`, both generic trigger functions reused with no new PL/pgSQL — `forbid_overlay_rewrite` as `db/020` wrote it,
+`forbid_multiple_live_assertions` as **`db/023`** rewrote it (equality predicates; `db/020`'s `jsonb` body was unindexable),
+over a partial `class_expansion_policy_live_key` index that only pays off against `db/023`'s. Measured on a fresh
+`drugref_policy`: `ddi_candidate_pair` **21,664** · `gap_dead_by_expansion_policy` **1** ·
 `gap_unreviewed_expansion_root` **0** · `open_question` **18,834** · the **14** seeded decisions all live and binding ·
 `expansion_policy_unresolved` **0**.
 
@@ -292,8 +294,8 @@ new PL/pgSQL. Measured on a fresh `drugref_policy`: `ddi_candidate_pair` **21,66
 - **The view is `_current` (binding), NOT `_live` (unsuperseded).** A withdrawn row is live and does not bind; the writer
   deliberately asks the other question, in exactly one place. Merging them breaks withdrawal.
 - **FOUR readers, one view** (`ddi_candidate_pair`, `gap_unreviewed_expansion_root`, `gap_dead_by_expansion_policy`,
-  `expansion_policy_unresolved`). A fifth must go through `class_expansion_policy_current` or it reads history as policy — and
-  the view is also what keeps `ddi_candidate_pair`'s `LEFT JOIN` one-to-one.
+  `expansion_policy_unresolved`), pinned from `pg_depend` by `test_only_the_current_view_reads_the_policy_table_directly`;
+  a fifth naming the base table fails there; reverting one costs **233** ruled-out pairs. Also keeps the `LEFT JOIN` 1:1.
 - **The natural key is deliberately NOT unique**, and nothing says so but a partial index and a deferred trigger. Adding
   `UNIQUE (source, source_code)` back "for safety" forbids every correction. **`db/010`'s now-false tier prose is corrected in
   `decisions/expansion-policy-is-append-only.md`** — not in the migration (applied, immutable).
@@ -326,7 +328,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 807 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
+# 810 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
 # floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
@@ -418,9 +420,11 @@ with no direct member is equally dead and is deliberately not reported** by `gap
 view. **Still unreachable — 5b.2, Plan C and #35 all left it so**: it goes live when a *class-side* predicate stops expanding.
 
 **Filed by the expansion-policy history round, both deliberately NOT fixed in it** —
-[#59](https://github.com/cairn-ehr/drugref/issues/59) the insert-then-supersede rule now lives in two places
-(`accumulation._supersede` and `interactions.record_expansion_decision`); sharing was weighed and deferred rather than left
-implicit, and it wants a shared primitive when a third owner appears · [#60](https://github.com/cairn-ehr/drugref/issues/60)
+[#59](https://github.com/cairn-ehr/drugref/issues/59) the insert-then-supersede rule lives in **three** places
+(`accumulation._supersede`, `questions.set_state` since `db/007`, `interactions.record_expansion_decision`), so the "promote
+it when a third owner appears" trigger has already fired — and `_supersede` is already generic over table and pk, so reuse is
+an import, not a refactor. Deferred anyway, for the honest reason: this round chose not to widen its blast radius into two
+other modules · [#60](https://github.com/cairn-ehr/drugref/issues/60)
 **`drugref ingest chain` cannot run all four sources together on merged `main`** — `mesh` and `mesh-relations` share
 `desc*.gz`/`supp*.gz` but take different release tags, so `check_release_agreement` refuses the documented invocation. The
 guard (`98b346f`) landed AFTER the measurement (`b56d26e`) inside #58, so the command was never re-run against it; the remedy
