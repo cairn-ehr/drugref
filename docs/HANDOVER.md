@@ -15,16 +15,16 @@ review · Plan A · Plan B (#32) · the identity-spine fix round (#34) · the Pl
 post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C
 (#57) · the ingest-operability round (#58, closing #16 and #47).
 
-**In flight: the expansion-policy history round (#35)** on `fix/expansion-policy-history` — `db/027`, implemented, measured
-and pushed; its PR is still to open. **810 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured
-against the real releases on a fresh `drugref_policy` (**103.28 s**): `ddi_candidate_pair` **21,664** unchanged, filtered
-lookup **2.876 ms** against the recorded 3.1 ms. Traps below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed
-slice, plus Plan C's and this round's.
+**In flight: the expansion-policy history round (#35)** on `fix/expansion-policy-history` — `db/027`, implemented, measured and
+pushed; **PR [#62](https://github.com/cairn-ehr/drugref/pull/62) is open and reviewed** (its findings are folded in below, and two
+became #61/#63). **810 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured against the real releases
+on a fresh `drugref_policy` (**103.28 s**): `ddi_candidate_pair` **21,664** unchanged, filtered lookup **2.876 ms** against the
+recorded 3.1 ms. Traps below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and this round's.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each time because
 a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A number in a commit
 message is a claim about the code — verify it**; when filing rather than fixing, use prose no closing keyword can be parsed
-out of (#59 and #60 are written that way).
+out of (#59–#61 and #63 are written that way).
 
 **⇒ Next candidates:**
 
@@ -421,15 +421,15 @@ view. **Still unreachable — 5b.2, Plan C and #35 all left it so**: it goes liv
 
 **Filed by the expansion-policy history round, both deliberately NOT fixed in it** —
 [#59](https://github.com/cairn-ehr/drugref/issues/59) the insert-then-supersede rule lives in **three** places
-(`accumulation._supersede`, `questions.set_state` since `db/007`, `interactions.record_expansion_decision`), so the "promote
-it when a third owner appears" trigger has already fired — and `_supersede` is already generic over table and pk, so reuse is
-an import, not a refactor. Deferred anyway, for the honest reason: this round chose not to widen its blast radius into two
-other modules · [#60](https://github.com/cairn-ehr/drugref/issues/60)
-**`drugref ingest chain` cannot run all four sources together on merged `main`** — `mesh` and `mesh-relations` share
-`desc*.gz`/`supp*.gz` but take different release tags, so `check_release_agreement` refuses the documented invocation. The
-guard (`98b346f`) landed AFTER the measurement (`b56d26e`) inside #58, so the command was never re-run against it; the remedy
-is a design decision, because `mesh_rel_run` genuinely reads two authorities and one tag per step cannot say so. **Use the
-four `ingest <source>` subcommands in `STEPS` order meanwhile — that is what #35's measurement did.**
+(`accumulation._supersede`, `questions.set_state` since `db/007`, `interactions.record_expansion_decision`), so the "promote it
+when a third owner appears" trigger has already fired — and `_supersede` is already generic over table and pk, so reuse is an
+import, not a refactor. Deferred anyway, for the honest reason: this round chose not to widen its blast radius into two other
+modules · [#60](https://github.com/cairn-ehr/drugref/issues/60) **`drugref ingest chain` cannot run all four sources together on
+merged `main`** — `mesh` and `mesh-relations` share `desc*.gz`/`supp*.gz` but take different release tags, so
+`check_release_agreement` refuses the documented invocation. The guard (`98b346f`) landed AFTER the measurement (`b56d26e`)
+inside #58, so the command was never re-run against it; the remedy is a design decision, because `mesh_rel_run` genuinely reads
+two authorities and one tag per step cannot say so. **Use the four `ingest <source>` subcommands in `STEPS` order meanwhile —
+that is what #35's measurement did.**
 
 **Closed by the four debt rounds** (#50, #39, #31, #45 · #40, #17, #42, #41, #43 · #16, #47 · **#35**), each verified against
 the code before closing. **Three standing rules came out of them and outlive the issues:**

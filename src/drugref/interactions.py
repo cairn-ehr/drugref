@@ -94,6 +94,19 @@ def record_expansion_decision(conn: psycopg.Connection, source: str, source_code
     place the vocabulary lives -- restating it here would be a second list to disagree
     with the first (db/006). An unrecognised value therefore raises CheckViolation.
 
+    THAT INCLUDES `withdrawn`, AND THIS FUNCTION DOES NOT GUARD IT. Passing it here
+    succeeds even when the class carries no live decision at all, writing a row that
+    says a judgement was retracted where none was ever made. It binds nothing (every
+    reader goes through class_expansion_policy_current, to which `withdrawn` and absent
+    look alike), so the harm is a misleading audit trail rather than a wrong pair set.
+    But the two things withdraw_expansion_decision exists to guarantee -- the
+    NoLiveDecisionError that catches a caller believing something false, and carrying
+    `class_name` forward so a withdrawal cannot introduce a name nobody reviewed -- are
+    BYPASSED on this path. Withdraw through withdraw_expansion_decision. The check is
+    not repeated here because it would put a member of the decision vocabulary back
+    into Python, which is exactly what the paragraph above refuses to do; a caller
+    reaching for `withdrawn` here is reaching past the function that owns it.
+
     NOTE the caller owns the transaction, as everywhere else in this module: nothing
     here commits. The single-live check is DEFERRED, so a mistake surfaces at the
     caller's COMMIT.

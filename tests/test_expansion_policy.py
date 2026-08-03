@@ -177,6 +177,27 @@ def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, con
     after themselves. The restore is a THIRD row, not a rollback or an UPDATE back to
     `allow`: nothing can be deleted or revised in place any more, so undoing this
     test's revision means recording a further correction, not erasing the one it made.
+
+    THE TWO COMMITTED ROWS OUTLIVE THE conn FIXTURE, which is the whole reason the
+    restore exists rather than being left to rollback. Nothing leaks between runs --
+    conftest's session-scoped _migrated drops the schema and re-applies the chain, so
+    every session starts from the pristine seed -- but WITHIN a session these rows are
+    visible to every test that runs after this one. That is why the restore is in a
+    `finally` and not merely at the end of the happy path: leaving Vasoconstriction
+    committed as `deny` would change what expands for any later test reading that NUI
+    (test_ddi_pairs uses it as its explicitly-allowed class), and the resulting failure
+    would depend on collection order, which is the worst shape a failure can have.
+
+    Two consequences of the commits worth knowing, neither of them a problem:
+    _decisions() reads only live rows, so the fourteen roots still check out; and
+    test_every_seeded_root_carries_a_reviewable_justification sweeps the WHOLE base
+    table including the history this test writes. It asserts shape (a NUI, a non-empty
+    name/rationale/reviewer) and never content, which is why the rows below satisfy it
+    honestly rather than turning it into a tautology.
+
+    Only ever revise the SEEDED row here, never in a test that expects to clean up:
+    the append-only tests below mint their own codes and stay inside the conn
+    fixture's rollback for exactly that reason (see _own_row).
     """
     revised = "N0000009908"                    # Vasoconstriction, seeded as `allow`
 
@@ -447,6 +468,17 @@ def test_only_the_current_view_reads_the_policy_table_directly(conn):
     A reader that genuinely needs the unsuperseded row INCLUDING a withdrawn one --
     the writer's question, not a reader's -- lives in Python (interactions.py), which
     is why this holds at one.
+
+    WHAT IT DOES NOT COVER, because pg_rewrite holds rules and nothing else: SQL
+    embedded in Python, and any PL/pgSQL function body (Postgres does not record a
+    dependency for a table named inside one). interactions.py names the base table in
+    three statements today -- the writer's INSERT, the UPDATE that supersedes, and
+    withdraw's live-row SELECT -- and all three are deliberate, but nothing mechanical
+    distinguishes them from a fourth added by accident. The exposure is real and near:
+    #61's `drugref policy` subcommand is a READER of this table written in Python, so
+    it lands exactly where this test cannot see. If that surface grows past
+    interactions.py, this needs a grep-shaped sibling over src/ rather than a wider
+    catalogue query -- the catalogue simply does not know.
     """
     assert {r[0] for r in conn.execute(_READERS_OF_THE_BASE_TABLE).fetchall()} == {
         "class_expansion_policy_current"}

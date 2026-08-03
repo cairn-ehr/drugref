@@ -479,7 +479,10 @@ not to widen its blast radius, not because nothing triggered it ·
 [#60](https://github.com/cairn-ehr/drugref/issues/60) — `drugref ingest chain` cannot
 run all four sources together, since `mesh` and `mesh-relations` share `desc*.gz`/`supp*.gz` but take different release tags
 and `check_release_agreement` refuses; use the four `ingest <source>` subcommands in `STEPS` order meanwhile, as this round's
-own measurement did.
+own measurement did · [#61](https://github.com/cairn-ehr/drugref/issues/61) — `DELETE` and re-keying are both refused now, so
+an operator acting on `medrt_run`'s stale-decision warning has no supported surface; a `drugref policy` subcommand belongs
+with 5c's curation tooling · [#63](https://github.com/cairn-ehr/drugref/issues/63) — this file and HANDOVER are rewritten
+wholesale each round, so their git history answers nothing (raised by the #62 review).
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them) via **RLS +
   privilege separation** — the full floor design §7 always envisioned (design §10 tension G). **Note the test-suite coupling**
   (wrong three times now — three, seven, then nine, the last of them written directly beneath this instruction — so re-run the
