@@ -104,8 +104,8 @@ def test_allow_is_a_decision_and_not_merely_the_absence_of_a_deny(conn):
 def test_an_unrecognised_decision_value_is_refused(conn):
     """The views branch on these literals. A row spelled 'denied' or 'no' would read as
     neither deny nor allow and silently expand a bucket somebody meant to stop.
-    THREE values are legal since db/027 -- `withdrawn` joined them (#35) -- and this
-    test is about the closed vocabulary, not about how many members it has."""
+    A third value (`withdrawn`) joins the vocabulary later in #35; this test is about
+    the vocabulary being CLOSED, not about how many members it currently has."""
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute(
             "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
