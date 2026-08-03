@@ -163,6 +163,9 @@ WHERE  NOT EXISTS (SELECT 1 FROM drugref.substance_class sc
 --     the class becomes invisible here again, so the question re-raises.
 CREATE OR REPLACE VIEW drugref.gap_unreviewed_expansion_root AS
 WITH sized AS (
+    -- Minus one for the root itself, which ci_class_subtree contributes exactly once
+    -- per root -- the UNION dedupes on (root, class), so this stays right under a
+    -- cycle too.
     SELECT root_uuid, count(*) - 1 AS descendant_class_count
     FROM   drugref.ci_class_subtree
     GROUP  BY root_uuid
@@ -171,9 +174,14 @@ SELECT sc.class_uuid,
        sc.class_name,
        sc.concept_type,
        z.descendant_class_count,
+       -- How many EXPANDING contraindications ride on the decision: the priority
+       -- signal for a reviewer, not an ordering this view imposes.
        count(*)                AS ci_rule_count,
        max(r.upstream_release) AS upstream_release
 FROM   drugref.class_contraindication ci
+       -- The axis join, added by db/012's re-issue and unchanged by this one: a
+       -- predicate that does not expand cannot fan out, so no decision about its
+       -- object class matters.
 JOIN   drugref.ci_axis         a  ON a.relationship  = ci.relationship
 JOIN   drugref.substance_class sc ON sc.class_uuid   = ci.object_class_uuid
 JOIN   sized                   z  ON z.root_uuid    = ci.object_class_uuid
@@ -195,17 +203,20 @@ GROUP  BY sc.class_uuid, sc.class_name, sc.concept_type, z.descendant_class_coun
 CREATE OR REPLACE VIEW drugref.ddi_candidate_pair AS
 SELECT DISTINCT ON (ci.subject_moiety_uuid, ci.object_class_uuid, ci.relationship,
                     ci.source, m.moiety_uuid)
-       ci.subject_moiety_uuid AS subject_moiety,
-       m.moiety_uuid          AS partner_moiety,
+       ci.subject_moiety_uuid AS subject_moiety,   -- the drug the CI is ABOUT
+       m.moiety_uuid          AS partner_moiety,   -- the co-administered drug
        ci.relationship,
-       ci.object_class_uuid   AS via_class,
-       m.class_uuid           AS member_class,
+       ci.object_class_uuid   AS via_class,        -- the class the RULE names
+       m.class_uuid           AS member_class,     -- where the PARTNER is filed
        (m.class_uuid = ci.object_class_uuid) AS is_direct,
        ci.source,
        ci.ingest_run,
-       r.upstream_release,
-       r.finished_at          AS ingested_at
+       r.upstream_release,                         -- WHICH release said so
+       r.finished_at          AS ingested_at       -- and when drugref took it in
 FROM   drugref.class_contraindication ci
+       -- The axis mapping, a join rather than a CASE since db/006: a predicate with
+       -- no ci_axis row cannot be in the table at all (foreign key), so there is no
+       -- way for a stored contraindication to expand to nothing.
 JOIN   drugref.ci_axis a
        ON a.relationship = ci.relationship
 JOIN   drugref.ci_class_subtree s
@@ -215,13 +226,23 @@ JOIN   drugref.class_membership m
       AND m.relationship = a.membership_relationship
 JOIN   drugref.ingest_run r
        ON r.ingest_run_id = ci.ingest_run
+       -- Inner join: object_class_uuid is a foreign key into substance_class, so
+       -- this drops nothing. It exists to reach (source, source_code), the key the
+       -- policy is stated on.
 JOIN   drugref.substance_class oc
        ON oc.class_uuid = ci.object_class_uuid
 LEFT   JOIN drugref.class_expansion_policy_current p
        ON p.source = oc.source AND p.source_code = oc.source_code
 WHERE  m.moiety_uuid <> ci.subject_moiety_uuid
+       -- Direct membership always pairs. Beyond that the predicate must expand AND
+       -- the class the RULE NAMES must not be denied. COALESCE makes "no policy row"
+       -- expand: unreviewed is the safe default, and the review gate reports it.
 AND    (m.class_uuid = ci.object_class_uuid
         OR (a.expands_descendants AND COALESCE(p.decision, 'allow') <> 'deny'))
+       -- DISTINCT ON keeps the FIRST row per group, so a partner filed both directly
+       -- and under a descendant is reported as the direct hit it is -- which is also
+       -- what makes `WHERE is_direct` reproduce the pre-expansion row set exactly.
+       -- m.class_uuid last: a deterministic tiebreak among equally-indirect classes.
 ORDER  BY ci.subject_moiety_uuid, ci.object_class_uuid, ci.relationship, ci.source,
           m.moiety_uuid, (m.class_uuid = ci.object_class_uuid) DESC, m.class_uuid;
 
@@ -233,15 +254,37 @@ SELECT rr.object_class_uuid    AS class_uuid,
        sc.class_name,
        sc.concept_type,
        count(*)                AS ci_rule_count,
+       -- Per RULE while the row is per class, because the subject exclusion is per
+       -- rule -- so max() picks the largest cost among the class's dead rules, which
+       -- is what a priority signal should do. This is an aggregate over a MEASURE,
+       -- not over a key: #41's defect was folding a KEY component with max(), and
+       -- grouping per class is what keeps this view's grain equal to its gap_key's.
        max(rr.subtree_partner_count) AS subtree_partner_count,
        max(r.upstream_release) AS upstream_release
 FROM   drugref.ci_rule_partner_reach rr
 JOIN   drugref.substance_class sc ON sc.class_uuid   = rr.object_class_uuid
 JOIN   drugref.ingest_run      r  ON r.ingest_run_id = rr.ingest_run
+       -- DENIED, not merely reviewed. `allow` and absent both expand
+       -- (ddi_candidate_pair COALESCEs a missing policy row to 'allow'), so their
+       -- rules are not dead -- and an unreviewed sprawling root is
+       -- gap_unreviewed_expansion_root's question.
 JOIN   drugref.class_expansion_policy_current p
        ON p.source = sc.source AND p.source_code = sc.source_code
       AND p.decision = 'deny'
+       -- A predicate that cannot expand cannot be rescued by allowing expansion, so
+       -- no available decision would retire the question. db/012's rule -- the review
+       -- gate must only ask what an answer could change -- in a fourth place. (That
+       -- rule IS dead, and deliberately unreported here: #48.)
 WHERE  rr.expands_descendants
+       -- Nothing the rule could pair with is filed DIRECTLY on the class, which is
+       -- all a denied rule reaches. A direct member that IS the subject does not save
+       -- it -- the shape that made this view silent in review.
 AND    rr.direct_partner_count = 0
+       -- ...but the subtree does hold one, which is what makes the question
+       -- answerable AND what keeps this view disjoint from the one above. Without it
+       -- a class both views can see would mint a SECOND immortal question for one
+       -- dead rule, and one whose answer changes nothing: allowing expansion over a
+       -- subtree with no partner in it reaches nobody. Plan A tolerates two questions
+       -- on one class only when they are independently answerable.
 AND    rr.subtree_partner_count > 0
 GROUP  BY rr.object_class_uuid, sc.class_name, sc.concept_type;
