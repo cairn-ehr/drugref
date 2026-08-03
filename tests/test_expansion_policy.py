@@ -413,3 +413,40 @@ def test_a_withdrawn_decision_is_not_reported_as_unresolved(conn):
                  "WHERE policy_id = %s", (new, live))
     assert "N0000999998" not in {r[0] for r in conn.execute(
         "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}
+
+
+# Every relation that reads the base table, asked of the catalogue rather than of the
+# source. pg_rewrite holds one row per view rule; pg_depend links that rule to each
+# relation the view's body names, so this returns exactly the views that read
+# class_expansion_policy -- including any a future migration adds.
+_READERS_OF_THE_BASE_TABLE = """
+SELECT DISTINCT dependent.relname FROM pg_depend d
+JOIN pg_rewrite rw ON rw.oid = d.objid
+JOIN pg_class dependent ON dependent.oid = rw.ev_class
+JOIN pg_class src ON src.oid = d.refobjid
+JOIN pg_namespace n ON n.oid = src.relnamespace
+WHERE n.nspname='drugref' AND src.relname='class_expansion_policy'
+  AND d.classid='pg_rewrite'::regclass AND dependent.relname <> 'class_expansion_policy'
+"""
+
+
+def test_only_the_current_view_reads_the_policy_table_directly(conn):
+    """ONE relation may name drugref.class_expansion_policy, and it is the _current
+    view. Asserted from the catalogue, so it holds for readers nobody has written yet.
+
+    WHAT THIS PREVENTS: a new -- or reverted -- reader going straight to the base
+    table and READING HISTORY AS POLICY. Since db/027 that table holds superseded
+    judgements beside the ones that replaced them, and the failure is silent in the
+    dangerous direction. Revert `ddi_candidate_pair`'s LEFT JOIN to the base table and
+    a superseded `allow` still satisfies COALESCE(decision,'allow') <> 'deny', so the
+    curator's newer `deny` never binds: measured on the real release, 233 pairs a
+    curator ruled out stay in the candidate set, with nothing failing.
+
+    It is also spec §7's trap for the FIFTH reader, made executable: `ci_class_subtree`
+    or a new gap view that names the base table fails here rather than in production.
+    A reader that genuinely needs the unsuperseded row INCLUDING a withdrawn one --
+    the writer's question, not a reader's -- lives in Python (interactions.py), which
+    is why this holds at one.
+    """
+    assert {r[0] for r in conn.execute(_READERS_OF_THE_BASE_TABLE).fetchall()} == {
+        "class_expansion_policy_current"}

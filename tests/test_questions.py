@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from drugref import ids, questions
+from drugref import ids, interactions, questions
 
 
 @pytest.fixture(autouse=True)
@@ -382,6 +382,41 @@ def test_recording_a_decision_closes_the_expansion_question(conn):
 
     assert conn.execute("SELECT count(*) FROM drugref.open_question "
                         "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()[0] == 0
+
+
+def test_withdrawing_the_decision_reopens_the_expansion_question(conn):
+    """db/027. `withdrawn` means NO CURRENT JUDGEMENT, so the class goes back on the
+    worklist -- the whole reason a third `decision` value exists rather than nothing.
+
+    Supersession alone can retire nothing: a correction must point at a later row
+    carrying the same natural key, so every correction leaves another live row
+    standing, and an append-only table can never return a class to "no row". Without
+    `withdrawn` a class that had ever been ruled on could never be asked about again.
+
+    This also pins gap_unreviewed_expansion_root ON THE VIEW. Revert its NOT EXISTS to
+    drugref.class_expansion_policy and the SUPERSEDED `deny` still exists, so the
+    question stays shut and a curator who withdrew a stale ruling is never asked to
+    replace it.
+    """
+    run_id = _run(conn)
+    root = _unreviewed_root(conn, run_id)
+    interactions.record_expansion_decision(
+        conn, "MED-RT", "N0000900000", "deny", "Sprawling Activity Alteration [PE]",
+        "abstract organ-system bucket", "test", "2026.07.06")
+    questions.register_from_gaps(conn, run_id)
+    assert conn.execute("SELECT count(*) FROM drugref.open_question "
+                        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchone()[0] == 0
+
+    interactions.withdraw_expansion_decision(
+        conn, "MED-RT", "N0000900000", "the release it was judged against is gone",
+        "test", "2026.08.03")
+    questions.register_from_gaps(conn, run_id)
+
+    # Back under the SAME question UUID -- gap_key is a pure function of the class, so
+    # a reopened question is the original one restored, not a second one.
+    assert conn.execute(
+        "SELECT gap_key FROM drugref.open_question "
+        "WHERE gap_kind = 'unreviewed_expansion_root'").fetchall() == [(f"CLASS:{root}",)]
 
 
 def test_the_same_class_can_raise_several_different_questions(conn):
