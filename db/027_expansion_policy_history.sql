@@ -84,3 +84,164 @@ CREATE CONSTRAINT TRIGGER class_expansion_policy_single_live
 CREATE INDEX IF NOT EXISTS class_expansion_policy_live_key
     ON drugref.class_expansion_policy (source, source_code)
     WHERE superseded_by IS NULL;
+
+-- ---- 3. the third decision value ----------------------------------------------
+--
+-- SUPERSESSION ALONE CAN NEVER WITHDRAW ANYTHING. A correction must point at a later
+-- row carrying the SAME natural key, so every correction leaves another live row
+-- standing -- the finding that gave additive_effect its `accumulates`,
+-- interaction_group_member its `satisfies_role`, and (db/023) interaction_group_
+-- assertion its `applies`. This table has the same hole, and here it BITES: absent
+-- means UNREVIEWED, which expands AND raises a question, so a class that has ever
+-- been ruled on could never go back on the worklist.
+--
+-- medrt_run already logs "Re-key or WITHDRAW them in drugref.class_expansion_policy"
+-- when a release stops defining a ruled-on class. Before this round, withdraw meant
+-- DELETE. Since section 2, DELETE raises -- so without this value the schema would
+-- ship a warning advising an impossible action.
+--
+-- A THIRD VALUE RATHER THAN A BOOLEAN, deliberately. `decision` is already the ruling
+-- vocabulary and all four readers branch on it; a boolean beside it would admit two
+-- encodings of one state ((deny, false) and (allow, false)) and let a consumer read
+-- `decision` alone and be confidently wrong -- the footgun slice 5b.2 split a table to
+-- avoid. A reader that has never heard of `withdrawn` reads it as NOT-deny and
+-- expands, which for a contraindication is the safe direction.
+--
+-- `withdrawn` IS NOT `allow`. It means NO CURRENT JUDGEMENT.
+ALTER TABLE drugref.class_expansion_policy
+    DROP CONSTRAINT IF EXISTS class_expansion_policy_decision;
+ALTER TABLE drugref.class_expansion_policy
+    ADD CONSTRAINT class_expansion_policy_decision
+    CHECK (decision IN ('deny', 'allow', 'withdrawn'));
+
+COMMENT ON COLUMN drugref.class_expansion_policy.decision IS
+    '`deny` expands to DIRECT members only; `allow` expands over the full subtree; '
+    '`withdrawn` (db/027) means the judgement no longer stands, which returns the '
+    'class to gap_unreviewed_expansion_root. WITHDRAWN IS NOT ALLOW -- it is the '
+    'absence of a judgement, recorded rather than deleted so its rationale survives.';
+
+-- ---- 4. one view, four readers -------------------------------------------------
+--
+-- There are FOUR readers of this table and every one asks the same question: WHAT
+-- BINDS NOW. Writing `superseded_by IS NULL AND decision <> 'withdrawn'` four times is
+-- the bet this project has lost four times already (#31's reach measure stated twice
+-- where only one copy learned a correction; #40's two MeSH readers; #43's two
+-- checksums; db/018's two near-identical CTEs). So it is stated once.
+--
+-- NAMED `_current`, NOT `_live`, BECAUSE LIVE AND BINDING ARE DIFFERENT QUESTIONS. A
+-- withdrawn row is live (nothing superseded it) and does not bind. The writer in
+-- interactions.py needs the LIVE row including a withdrawn one, to supersede it --
+-- that is a different question asked in exactly one place, not a fifth copy of this.
+--
+-- It also keeps ddi_candidate_pair's LEFT JOIN one-to-one: the single-live trigger
+-- allows one live row per class, and this view drops the withdrawn ones, so a history
+-- row can never multiply a pair.
+CREATE OR REPLACE VIEW drugref.class_expansion_policy_current AS
+SELECT policy_id, source, source_code, decision, class_name, rationale,
+       reviewed_by, reviewed_against, reviewed_at
+FROM   drugref.class_expansion_policy
+WHERE  superseded_by IS NULL
+AND    decision <> 'withdrawn';
+
+COMMENT ON VIEW drugref.class_expansion_policy_current IS
+    'The expansion decisions that currently BIND: not superseded, and not withdrawn. '
+    'EVERY READER OF class_expansion_policy MUST GO THROUGH THIS VIEW -- the base '
+    'table holds history since db/027, and history read as policy is a deny that '
+    'stopped being true. A withdrawn decision is deliberately indistinguishable from '
+    'no decision here, which is what returns its class to the review worklist.';
+
+-- 4a. expansion_policy_unresolved (db/010) -- a withdrawn decision binds nothing, so
+--     there is nothing left to re-key and reporting it would be noise.
+CREATE OR REPLACE VIEW drugref.expansion_policy_unresolved AS
+SELECT p.source, p.source_code, p.decision, p.class_name, p.reviewed_against
+FROM   drugref.class_expansion_policy_current p
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.substance_class sc
+                   WHERE  sc.source      = p.source
+                   AND    sc.source_code = p.source_code);
+
+-- 4b. gap_unreviewed_expansion_root (db/012) -- and THIS is where withdrawal pays:
+--     the class becomes invisible here again, so the question re-raises.
+CREATE OR REPLACE VIEW drugref.gap_unreviewed_expansion_root AS
+WITH sized AS (
+    SELECT root_uuid, count(*) - 1 AS descendant_class_count
+    FROM   drugref.ci_class_subtree
+    GROUP  BY root_uuid
+)
+SELECT sc.class_uuid,
+       sc.class_name,
+       sc.concept_type,
+       z.descendant_class_count,
+       count(*)                AS ci_rule_count,
+       max(r.upstream_release) AS upstream_release
+FROM   drugref.class_contraindication ci
+JOIN   drugref.ci_axis         a  ON a.relationship  = ci.relationship
+JOIN   drugref.substance_class sc ON sc.class_uuid   = ci.object_class_uuid
+JOIN   sized                   z  ON z.root_uuid    = ci.object_class_uuid
+JOIN   drugref.ingest_run      r  ON r.ingest_run_id = ci.ingest_run
+WHERE  z.descendant_class_count > 20
+AND    a.expands_descendants
+       -- Either decision counts as reviewed. `allow` and `deny` differ for the pair
+       -- set and agree here, because this view asks only whether a human has looked
+       -- -- and since db/027, whether they still stand by it.
+AND    NOT EXISTS (SELECT 1 FROM drugref.class_expansion_policy_current p
+                   WHERE  p.source      = sc.source
+                   AND    p.source_code = sc.source_code)
+GROUP  BY sc.class_uuid, sc.class_name, sc.concept_type, z.descendant_class_count;
+
+-- 4c. ddi_candidate_pair (db/012) -- a withdrawn deny stops denying, and the class
+--     expands again. COALESCE already treats a missing row as 'allow', so a withdrawn
+--     row disappearing from the view is exactly the right behaviour with no change to
+--     the predicate.
+CREATE OR REPLACE VIEW drugref.ddi_candidate_pair AS
+SELECT DISTINCT ON (ci.subject_moiety_uuid, ci.object_class_uuid, ci.relationship,
+                    ci.source, m.moiety_uuid)
+       ci.subject_moiety_uuid AS subject_moiety,
+       m.moiety_uuid          AS partner_moiety,
+       ci.relationship,
+       ci.object_class_uuid   AS via_class,
+       m.class_uuid           AS member_class,
+       (m.class_uuid = ci.object_class_uuid) AS is_direct,
+       ci.source,
+       ci.ingest_run,
+       r.upstream_release,
+       r.finished_at          AS ingested_at
+FROM   drugref.class_contraindication ci
+JOIN   drugref.ci_axis a
+       ON a.relationship = ci.relationship
+JOIN   drugref.ci_class_subtree s
+       ON s.root_uuid = ci.object_class_uuid
+JOIN   drugref.class_membership m
+       ON m.class_uuid   = s.class_uuid
+      AND m.relationship = a.membership_relationship
+JOIN   drugref.ingest_run r
+       ON r.ingest_run_id = ci.ingest_run
+JOIN   drugref.substance_class oc
+       ON oc.class_uuid = ci.object_class_uuid
+LEFT   JOIN drugref.class_expansion_policy_current p
+       ON p.source = oc.source AND p.source_code = oc.source_code
+WHERE  m.moiety_uuid <> ci.subject_moiety_uuid
+AND    (m.class_uuid = ci.object_class_uuid
+        OR (a.expands_descendants AND COALESCE(p.decision, 'allow') <> 'deny'))
+ORDER  BY ci.subject_moiety_uuid, ci.object_class_uuid, ci.relationship, ci.source,
+          m.moiety_uuid, (m.class_uuid = ci.object_class_uuid) DESC, m.class_uuid;
+
+-- 4d. gap_dead_by_expansion_policy (db/018) -- the FOURTH reader, which the issue text
+--     does not mention. A withdrawn deny stops killing its rules, so the question
+--     retires, which is correct: the rule now reaches its subtree.
+CREATE OR REPLACE VIEW drugref.gap_dead_by_expansion_policy AS
+SELECT rr.object_class_uuid    AS class_uuid,
+       sc.class_name,
+       sc.concept_type,
+       count(*)                AS ci_rule_count,
+       max(rr.subtree_partner_count) AS subtree_partner_count,
+       max(r.upstream_release) AS upstream_release
+FROM   drugref.ci_rule_partner_reach rr
+JOIN   drugref.substance_class sc ON sc.class_uuid   = rr.object_class_uuid
+JOIN   drugref.ingest_run      r  ON r.ingest_run_id = rr.ingest_run
+JOIN   drugref.class_expansion_policy_current p
+       ON p.source = sc.source AND p.source_code = sc.source_code
+      AND p.decision = 'deny'
+WHERE  rr.expands_descendants
+AND    rr.direct_partner_count = 0
+AND    rr.subtree_partner_count > 0
+GROUP  BY rr.object_class_uuid, sc.class_name, sc.concept_type;

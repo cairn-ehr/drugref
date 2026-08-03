@@ -104,8 +104,8 @@ def test_allow_is_a_decision_and_not_merely_the_absence_of_a_deny(conn):
 def test_an_unrecognised_decision_value_is_refused(conn):
     """The views branch on these literals. A row spelled 'denied' or 'no' would read as
     neither deny nor allow and silently expand a bucket somebody meant to stop.
-    A third value (`withdrawn`) joins the vocabulary later in #35; this test is about
-    the vocabulary being CLOSED, not about how many members it currently has."""
+    `withdrawn` is now a legal third value (#35); this test is about the vocabulary
+    being CLOSED, not about how many members it currently has."""
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute(
             "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
@@ -332,3 +332,91 @@ def test_the_live_key_index_exists(conn):
     assert conn.execute(
         "SELECT count(*) FROM pg_indexes WHERE schemaname = 'drugref' "
         "AND indexname = 'class_expansion_policy_live_key'").fetchone()[0] == 1
+
+
+# ---- withdrawal (db/027, #35) -----------------------------------------------
+#
+# ABSENT IS NOT `allow`. Absent means UNREVIEWED, which expands AND raises a question;
+# `allow` means a curator looked and said expand. An append-only table can never
+# return a class to absent, so `withdrawn` is what says "no current judgement".
+#
+# This is not a nicety: medrt_run already tells an operator to "re-key or WITHDRAW"
+# a decision whose class a release no longer defines, and since Task 1 the DELETE that
+# used to mean is refused.
+
+
+def test_withdrawn_is_a_legal_decision(conn):
+    """The third value. `deny` and `allow` are judgements; `withdrawn` is the absence
+    of one, recorded rather than deleted so its rationale survives."""
+    _own_row(conn, "N0000100010", decision="withdrawn")
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy "
+        "WHERE source_code = 'N0000100010'").fetchone()[0] == "withdrawn"
+
+
+def test_a_withdrawn_decision_does_not_bind(conn):
+    """`class_expansion_policy_current` is what every reader goes through, and it is
+    BINDING rather than merely live: a withdrawn row is unsuperseded and still absent
+    here, which is what returns the class to the worklist."""
+    _own_row(conn, "N0000100011", decision="withdrawn")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = 'N0000100011'").fetchone()[0] == 0
+
+
+def test_a_superseded_decision_does_not_bind(conn):
+    """The other half: history must not be read as policy."""
+    old = _own_row(conn, "N0000100012", decision="deny")
+    new = _own_row(conn, "N0000100012", decision="allow")
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, old))
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = 'N0000100012'").fetchall() == [("allow",)]
+
+
+def test_withdrawing_a_decision_returns_the_class_to_the_review_worklist(conn):
+    """THE POINT OF THE VALUE, and the one behaviour a release cannot exercise -- no
+    withdrawn row exists in any release-derived database -- so it is pinned here on
+    controlled input, the same treatment #42's tie-break and #53's cap exemption got.
+
+    Vasoconstriction is seeded `allow` and is one of the fourteen roots the >20
+    discovery heuristic finds, so withdrawing it must put it back on the worklist.
+    Asserted through expansion_policy_unresolved's sibling condition -- membership of
+    class_expansion_policy_current -- because whether the ROOT itself appears in
+    gap_unreviewed_expansion_root depends on which classes the shared test database
+    happens to hold, and a test whose outcome depends on module ordering is worse
+    than no test.
+    """
+    seeded = "N0000009908"
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = %s", (seeded,)).fetchone() == ("allow",)
+    live = conn.execute(
+        "SELECT policy_id FROM drugref.class_expansion_policy "
+        "WHERE source_code = %s AND superseded_by IS NULL", (seeded,)).fetchone()[0]
+    new = conn.execute(
+        "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+        "class_name, rationale, reviewed_by, reviewed_against) VALUES "
+        "('MED-RT', %s, 'withdrawn', 'Vasoconstriction [PE]', 'stale', 'test', 'r') "
+        "RETURNING policy_id", (seeded,)).fetchone()[0]
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, live))
+    # Indistinguishable from never having been reviewed -- which is the definition.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = %s", (seeded,)).fetchone()[0] == 0
+
+
+def test_a_withdrawn_decision_is_not_reported_as_unresolved(conn):
+    """expansion_policy_unresolved exists to say "this deny matches no class, re-key or
+    withdraw it". Once withdrawn, there is nothing left to re-key -- so the view must
+    stop reporting it, or following its own advice would not clear it."""
+    live = _own_row(conn, "N0000999998", decision="deny")   # names no real class
+    assert "N0000999998" in {r[0] for r in conn.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}
+    new = _own_row(conn, "N0000999998", decision="withdrawn")
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, live))
+    assert "N0000999998" not in {r[0] for r in conn.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}

@@ -73,9 +73,10 @@ def test_apply_migrations_is_idempotent(conn):
         # Plan B, db/010: descendant expansion. The policy table is CURATOR DATA --
         # no ingest clears it -- plus the two views that stop it rotting silently:
         # one for a large root nobody has ruled on, one for a ruling whose class the
-        # release no longer defines.
-        "class_expansion_policy", "gap_unreviewed_expansion_root",
-        "expansion_policy_unresolved",
+        # release no longer defines. db/027 (#35) made the table append-only and
+        # added the view every reader of it must go through.
+        "class_expansion_policy", "class_expansion_policy_current",
+        "gap_unreviewed_expansion_root", "expansion_policy_unresolved",
         # db/011 (#26): why each moiety passed the membership gate. A rebuildable
         # projection -- the moiety is immortal, the evidence is per-release.
         "moiety_admission",
