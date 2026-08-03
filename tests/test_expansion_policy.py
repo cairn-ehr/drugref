@@ -27,7 +27,7 @@ import re
 import pytest
 import psycopg
 
-from drugref import db, ids
+from drugref import db, ids, interactions
 
 # MED-RT NUIs are 'N' + 10 digits. Checked because the seed carries them as
 # literals seen by a human once, and a typo would silently disable one deny.
@@ -67,9 +67,11 @@ ALLOWED = {
 
 
 def _decisions(conn) -> dict[str, str]:
+    """The MED-RT decisions that are LIVE. Since db/027 the table holds history too,
+    and a dict over every row would silently keep whichever one came last."""
     return dict(conn.execute(
         "SELECT source_code, decision FROM drugref.class_expansion_policy "
-        "WHERE source = 'MED-RT'").fetchall())
+        "WHERE source = 'MED-RT' AND superseded_by IS NULL").fetchall())
 
 
 def test_the_seed_holds_the_fourteen_roots_the_measurement_found(conn):
@@ -99,9 +101,11 @@ def test_allow_is_a_decision_and_not_merely_the_absence_of_a_deny(conn):
     assert _decisions(conn)["N0000009908"] == "allow"
 
 
-def test_a_third_decision_value_is_refused(conn):
-    """The view branches on this literal; a row spelled 'denied' or 'no' would read
-    as neither deny nor allow and silently expand a bucket somebody meant to stop."""
+def test_an_unrecognised_decision_value_is_refused(conn):
+    """The views branch on these literals. A row spelled 'denied' or 'no' would read as
+    neither deny nor allow and silently expand a bucket somebody meant to stop.
+    `withdrawn` is now a legal third value (#35); this test is about the vocabulary
+    being CLOSED, not about how many members it currently has."""
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute(
             "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
@@ -157,32 +161,61 @@ def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, con
 
     Note db/010's comment justifies the ON CONFLICT by saying migrations are "replayed
     whole", which the ledger has since made untrue -- the clause is still right, for
-    the reason above rather than the one stated. Asserted as UNCHANGED rather than
-    against a literal row count, so a later curator migration that legitimately adds a
-    decision does not fail a test about deploys; the seed's exact contents are pinned
-    by test_the_seed_holds_the_fourteen_roots_the_measurement_found instead.
+    the reason above rather than the one stated.
 
-    apply_migrations commits, so this restores the seeded decision explicitly rather
-    than relying on the conn fixture's rollback -- the same reason test_db.py's replay
-    tests clean up after themselves.
+    Since db/027 a revision is an INSERT that supersedes, not an in-place UPDATE, so
+    this drops the before/after row-count assertion the old version carried: a
+    legitimate supersession now legitimately ADDS a row, and the assertion it was
+    standing in for -- a re-seed silently reinstating drugref's opinion -- is exactly
+    what `_decisions(conn)[revised] == "deny"` already tests (a re-seed could only win
+    by superseding the operator's live row, which would show up right there). The
+    seed's exact contents are pinned by
+    test_the_seed_holds_the_fourteen_roots_the_measurement_found instead.
+
+    apply_migrations commits, so both the revision and the restore go through
+    _revise(), which commits too -- the same reason test_db.py's replay tests clean up
+    after themselves. The restore is a THIRD row, not a rollback or an UPDATE back to
+    `allow`: nothing can be deleted or revised in place any more, so undoing this
+    test's revision means recording a further correction, not erasing the one it made.
+
+    THE TWO COMMITTED ROWS OUTLIVE THE conn FIXTURE, which is the whole reason the
+    restore exists rather than being left to rollback. Nothing leaks between runs --
+    conftest's session-scoped _migrated drops the schema and re-applies the chain, so
+    every session starts from the pristine seed -- but WITHIN a session these rows are
+    visible to every test that runs after this one. That is why the restore is in a
+    `finally` and not merely at the end of the happy path: leaving Vasoconstriction
+    committed as `deny` would change what expands for any later test reading that NUI
+    (test_ddi_pairs uses it as its explicitly-allowed class), and the resulting failure
+    would depend on collection order, which is the worst shape a failure can have.
+
+    Two consequences of the commits worth knowing, neither of them a problem:
+    _decisions() reads only live rows, so the fourteen roots still check out; and
+    test_every_seeded_root_carries_a_reviewable_justification sweeps the WHOLE base
+    table including the history this test writes. It asserts shape (a NUI, a non-empty
+    name/rationale/reviewer) and never content, which is why the rows below satisfy it
+    honestly rather than turning it into a tautology.
+
+    Only ever revise the SEEDED row here, never in a test that expects to clean up:
+    the append-only tests below mint their own codes and stay inside the conn
+    fixture's rollback for exactly that reason (see _own_row).
     """
     revised = "N0000009908"                    # Vasoconstriction, seeded as `allow`
-    before = conn.execute(
-        "SELECT count(*) FROM drugref.class_expansion_policy").fetchone()[0]
-    conn.execute("UPDATE drugref.class_expansion_policy SET decision = 'deny' "
-                 "WHERE source = 'MED-RT' AND source_code = %s", (revised,))
-    conn.commit()
+
+    def _revise(decision, rationale):
+        """Express an operator's revision the only way db/027 allows -- insert, then
+        supersede -- through the writer that owns that ordering."""
+        interactions.record_expansion_decision(
+            conn, "MED-RT", revised, decision, "Vasoconstriction [PE]", rationale,
+            "test", "2026.07.06")
+        conn.commit()
+
+    _revise("deny", "an operator disagrees with the seed")
     try:
         with psycopg.connect(_migrated) as c:
             db.apply_migrations(c)
         assert _decisions(conn)[revised] == "deny", "a deploy overwrote curator judgement"
-        assert conn.execute(
-            "SELECT count(*) FROM drugref.class_expansion_policy").fetchone()[0] == before
     finally:
-        conn.rollback()
-        conn.execute("UPDATE drugref.class_expansion_policy SET decision = 'allow' "
-                     "WHERE source = 'MED-RT' AND source_code = %s", (revised,))
-        conn.commit()
+        _revise("allow", "restoring the seeded judgement after the test")
 
 
 def test_a_root_the_release_no_longer_defines_is_reported_not_silent(conn):
@@ -219,3 +252,233 @@ def test_a_root_the_release_no_longer_defines_is_reported_not_silent(conn):
         "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}
     assert "N0000999999" in unresolved
     assert "N0000009065" not in unresolved
+
+
+# ---- the append-only floor (db/027, #35) ------------------------------------
+#
+# The table gates recall: one UPDATE of `decision` removes thousands of candidate
+# pairs with no audit row and nothing reporting it. Since db/027 it carries Plan C's
+# overlay floor, so a revision is an INSERT that supersedes -- history survives, and
+# what drugref believed when a pair was withheld stays answerable.
+
+
+def _own_row(conn, code, decision="deny", rationale="seeded by a test"):
+    """Insert a policy row this test owns, and return its policy_id.
+
+    Never revise a SEEDED row here: the conn fixture rolls back, but a row committed
+    by accident could not be deleted afterwards -- that is the point of the floor.
+    """
+    return conn.execute(
+        "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+        "class_name, rationale, reviewed_by, reviewed_against) "
+        "VALUES ('MED-RT', %s, %s, 'Test Bucket [PE]', %s, 'test', '2026.07.06') "
+        "RETURNING policy_id", (code, decision, rationale)).fetchone()[0]
+
+
+def test_a_policy_decision_cannot_be_deleted(conn):
+    """#35's second asymmetry. Every other clinically-consequential curated table
+    refuses DELETE; this one gated recall with no floor at all."""
+    _own_row(conn, "N0000100001")
+    with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+        conn.execute("DELETE FROM drugref.class_expansion_policy "
+                     "WHERE source_code = 'N0000100001'")
+
+
+def test_a_decision_cannot_be_revised_in_place(conn):
+    """#35's first asymmetry, and the whole point of the round: flipping `decision`
+    used to overwrite the rationale that justified the previous judgement."""
+    _own_row(conn, "N0000100002", decision="deny")
+    with pytest.raises(psycopg.errors.RaiseException, match="only superseded_by may change"):
+        conn.execute("UPDATE drugref.class_expansion_policy SET decision = 'allow' "
+                     "WHERE source_code = 'N0000100002'")
+
+
+def test_supersession_is_one_way_and_set_once(conn):
+    """Un-setting would resurrect a corrected-away judgement as live; re-pointing
+    would rewrite history a consumer may already have acted on."""
+    old = _own_row(conn, "N0000100003")
+    new = _own_row(conn, "N0000100003", decision="allow")
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, old))
+    with pytest.raises(psycopg.errors.RaiseException, match="one-way"):
+        conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = NULL "
+                     "WHERE policy_id = %s", (old,))
+
+
+def test_a_correction_must_point_at_a_later_row(conn):
+    """The chain strictly increases, so it can never close into a cycle -- which would
+    make BOTH judgements vanish from every live read at once, silently."""
+    first = _own_row(conn, "N0000100004")
+    second = _own_row(conn, "N0000100004", decision="allow")
+    with pytest.raises(psycopg.errors.RaiseException, match="LATER row"):
+        conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                     "WHERE policy_id = %s", (first, second))
+
+
+def test_a_correction_must_keep_the_same_class(conn):
+    """A correction replaces a judgement about THIS class, not a different one.
+    Pointing across classes is a merge, and there are no merge semantics here."""
+    old = _own_row(conn, "N0000100005")
+    other = _own_row(conn, "N0000100006")
+    with pytest.raises(psycopg.errors.RaiseException, match="same source_code"):
+        conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                     "WHERE policy_id = %s", (other, old))
+
+
+def test_two_live_decisions_for_one_class_are_refused_at_commit(conn):
+    """The natural key stopped being unique in db/027 -- history rows carry it by
+    definition -- so 'at most one LIVE row per class' is a DEFERRED trigger instead.
+
+    SET CONSTRAINTS ALL IMMEDIATE forces the check that would otherwise fire at COMMIT,
+    which the conn fixture never reaches: A TEST THAT NEVER COMMITS PROVES NOTHING.
+    Note that statement switches the mode for the REST of this transaction.
+    """
+    _own_row(conn, "N0000100007")
+    _own_row(conn, "N0000100007", decision="allow")   # nothing superseded
+    with pytest.raises(psycopg.errors.RaiseException, match="live rows for natural key"):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_the_live_key_index_exists(conn):
+    """db/023 measured that this partial index is what keeps the single-live trigger
+    linear rather than quadratic (2,000 rows: 5,773 ms -> 42 ms). NOTHING BUT THE
+    TRIGGER READS IT, so it looks unused to a catalog sweep and is asserted by name."""
+    assert conn.execute(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname = 'class_expansion_policy_live_key'").fetchone()[0] == 1
+
+
+# ---- withdrawal (db/027, #35) -----------------------------------------------
+#
+# ABSENT IS NOT `allow`. Absent means UNREVIEWED, which expands AND raises a question;
+# `allow` means a curator looked and said expand. An append-only table can never
+# return a class to absent, so `withdrawn` is what says "no current judgement".
+#
+# This is not a nicety: medrt_run already tells an operator to "re-key or WITHDRAW"
+# a decision whose class a release no longer defines, and since Task 1 the DELETE that
+# used to mean is refused.
+
+
+def test_withdrawn_is_a_legal_decision(conn):
+    """The third value. `deny` and `allow` are judgements; `withdrawn` is the absence
+    of one, recorded rather than deleted so its rationale survives."""
+    _own_row(conn, "N0000100010", decision="withdrawn")
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy "
+        "WHERE source_code = 'N0000100010'").fetchone()[0] == "withdrawn"
+
+
+def test_a_withdrawn_decision_does_not_bind(conn):
+    """`class_expansion_policy_current` is what every reader goes through, and it is
+    BINDING rather than merely live: a withdrawn row is unsuperseded and still absent
+    here, which is what returns the class to the worklist."""
+    _own_row(conn, "N0000100011", decision="withdrawn")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = 'N0000100011'").fetchone()[0] == 0
+
+
+def test_a_superseded_decision_does_not_bind(conn):
+    """The other half: history must not be read as policy."""
+    old = _own_row(conn, "N0000100012", decision="deny")
+    new = _own_row(conn, "N0000100012", decision="allow")
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, old))
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = 'N0000100012'").fetchall() == [("allow",)]
+
+
+def test_withdrawing_a_decision_returns_the_class_to_the_review_worklist(conn):
+    """THE POINT OF THE VALUE, and the one behaviour a release cannot exercise -- no
+    withdrawn row exists in any release-derived database -- so it is pinned here on
+    controlled input, the same treatment #42's tie-break and #53's cap exemption got.
+
+    Vasoconstriction is seeded `allow` and is one of the fourteen roots the >20
+    discovery heuristic finds, so withdrawing it must put it back on the worklist.
+    Asserted through expansion_policy_unresolved's sibling condition -- membership of
+    class_expansion_policy_current -- because whether the ROOT itself appears in
+    gap_unreviewed_expansion_root depends on which classes the shared test database
+    happens to hold, and a test whose outcome depends on module ordering is worse
+    than no test.
+    """
+    seeded = "N0000009908"
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = %s", (seeded,)).fetchone() == ("allow",)
+    live = conn.execute(
+        "SELECT policy_id FROM drugref.class_expansion_policy "
+        "WHERE source_code = %s AND superseded_by IS NULL", (seeded,)).fetchone()[0]
+    new = conn.execute(
+        "INSERT INTO drugref.class_expansion_policy (source, source_code, decision, "
+        "class_name, rationale, reviewed_by, reviewed_against) VALUES "
+        "('MED-RT', %s, 'withdrawn', 'Vasoconstriction [PE]', 'stale', 'test', 'r') "
+        "RETURNING policy_id", (seeded,)).fetchone()[0]
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, live))
+    # Indistinguishable from never having been reviewed -- which is the definition.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_expansion_policy_current "
+        "WHERE source_code = %s", (seeded,)).fetchone()[0] == 0
+
+
+def test_a_withdrawn_decision_is_not_reported_as_unresolved(conn):
+    """expansion_policy_unresolved exists to say "this deny matches no class, re-key or
+    withdraw it". Once withdrawn, there is nothing left to re-key -- so the view must
+    stop reporting it, or following its own advice would not clear it."""
+    live = _own_row(conn, "N0000999998", decision="deny")   # names no real class
+    assert "N0000999998" in {r[0] for r in conn.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}
+    new = _own_row(conn, "N0000999998", decision="withdrawn")
+    conn.execute("UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+                 "WHERE policy_id = %s", (new, live))
+    assert "N0000999998" not in {r[0] for r in conn.execute(
+        "SELECT source_code FROM drugref.expansion_policy_unresolved").fetchall()}
+
+
+# Every relation that reads the base table, asked of the catalogue rather than of the
+# source. pg_rewrite holds one row per view rule; pg_depend links that rule to each
+# relation the view's body names, so this returns exactly the views that read
+# class_expansion_policy -- including any a future migration adds.
+_READERS_OF_THE_BASE_TABLE = """
+SELECT DISTINCT dependent.relname FROM pg_depend d
+JOIN pg_rewrite rw ON rw.oid = d.objid
+JOIN pg_class dependent ON dependent.oid = rw.ev_class
+JOIN pg_class src ON src.oid = d.refobjid
+JOIN pg_namespace n ON n.oid = src.relnamespace
+WHERE n.nspname='drugref' AND src.relname='class_expansion_policy'
+  AND d.classid='pg_rewrite'::regclass AND dependent.relname <> 'class_expansion_policy'
+"""
+
+
+def test_only_the_current_view_reads_the_policy_table_directly(conn):
+    """ONE relation may name drugref.class_expansion_policy, and it is the _current
+    view. Asserted from the catalogue, so it holds for readers nobody has written yet.
+
+    WHAT THIS PREVENTS: a new -- or reverted -- reader going straight to the base
+    table and READING HISTORY AS POLICY. Since db/027 that table holds superseded
+    judgements beside the ones that replaced them, and the failure is silent in the
+    dangerous direction. Revert `ddi_candidate_pair`'s LEFT JOIN to the base table and
+    a superseded `allow` still satisfies COALESCE(decision,'allow') <> 'deny', so the
+    curator's newer `deny` never binds: measured on the real release, 233 pairs a
+    curator ruled out stay in the candidate set, with nothing failing.
+
+    It is also spec §7's trap for the FIFTH reader, made executable: `ci_class_subtree`
+    or a new gap view that names the base table fails here rather than in production.
+    A reader that genuinely needs the unsuperseded row INCLUDING a withdrawn one --
+    the writer's question, not a reader's -- lives in Python (interactions.py), which
+    is why this holds at one.
+
+    WHAT IT DOES NOT COVER, because pg_rewrite holds rules and nothing else: SQL
+    embedded in Python, and any PL/pgSQL function body (Postgres does not record a
+    dependency for a table named inside one). interactions.py names the base table in
+    three statements today -- the writer's INSERT, the UPDATE that supersedes, and
+    withdraw's live-row SELECT -- and all three are deliberate, but nothing mechanical
+    distinguishes them from a fourth added by accident. The exposure is real and near:
+    #61's `drugref policy` subcommand is a READER of this table written in Python, so
+    it lands exactly where this test cannot see. If that surface grows past
+    interactions.py, this needs a grep-shaped sibling over src/ rather than a wider
+    catalogue query -- the catalogue simply does not know.
+    """
+    assert {r[0] for r in conn.execute(_READERS_OF_THE_BASE_TABLE).fetchall()} == {
+        "class_expansion_policy_current"}

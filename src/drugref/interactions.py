@@ -12,6 +12,13 @@ writes FOUR: `class_contraindication` above, plus `moiety_condition_contraindica
 (drug-condition, e.g. CI_with) and `moiety_contraindication` (drug-drug, CI_ChemClass's
 moiety arm), plus the `ingest_unresolved_ci_object` worklist that records what an
 ingest deliberately withheld. Same rebuildable-projection discipline throughout.
+
+Since db/027 (#35) it also writes `class_expansion_policy`, which is NOT a
+rebuildable projection -- it holds curator judgement and an ingest must never wipe
+it. `record_expansion_decision` and `withdraw_expansion_decision` are the only
+correct way to revise it: the table is append-only, so a revision is INSERT-then-
+supersede, and getting that ordering backwards fails at COMMIT rather than at the
+call that caused it.
 """
 import uuid
 from collections.abc import Iterable
@@ -36,7 +43,8 @@ def clear_source_contraindications(conn: psycopg.Connection, source: str) -> Non
 
 
 def unresolved_expansion_policy(conn: psycopg.Connection, source: str) -> list[str]:
-    """The `source_code`s of `source`'s expansion decisions that resolve to no class.
+    """The `source_code`s of `source`'s BINDING expansion decisions that resolve to no
+    class.
 
     A read rather than a write, kept in this module because it reads
     class_expansion_policy, which is contraindication-expansion policy and so this
@@ -61,6 +69,93 @@ def unresolved_expansion_policy(conn: psycopg.Connection, source: str) -> list[s
     return [row[0] for row in conn.execute(
         "SELECT source_code FROM drugref.expansion_policy_unresolved "
         "WHERE source = %s ORDER BY source_code", (source,)).fetchall()]
+
+
+class NoLiveDecisionError(LookupError):
+    """Raised when a withdrawal names a class carrying no live expansion decision."""
+
+
+def record_expansion_decision(conn: psycopg.Connection, source: str, source_code: str,
+                              decision: str, class_name: str, rationale: str,
+                              reviewed_by: str, reviewed_against: str) -> int:
+    """Record (or revise) whether a contraindicated class expands over its subtree.
+
+    Returns the new `policy_id`. THE ONLY WAY TO REVISE A DECISION: since db/027 the
+    table is append-only, so a revision INSERTs the new judgement and then points
+    whatever was live at it. The previous rationale survives as history, which is the
+    whole of #35 -- "what did we last say about this class, against which release, and
+    why did we change our mind" has to be answerable from the database.
+
+    ORDER MATTERS AND IS EASY TO GET WRONG: `superseded_by` must reference a row that
+    already exists, and getting it backwards fails at COMMIT rather than here. That is
+    why this is a function and not a paragraph of documentation.
+
+    `decision` is passed straight through to the CHECK in db/027, which is the one
+    place the vocabulary lives -- restating it here would be a second list to disagree
+    with the first (db/006). An unrecognised value therefore raises CheckViolation.
+
+    THAT INCLUDES `withdrawn`, AND THIS FUNCTION DOES NOT GUARD IT. Passing it here
+    succeeds even when the class carries no live decision at all, writing a row that
+    says a judgement was retracted where none was ever made. It binds nothing (every
+    reader goes through class_expansion_policy_current, to which `withdrawn` and absent
+    look alike), so the harm is a misleading audit trail rather than a wrong pair set.
+    But the two things withdraw_expansion_decision exists to guarantee -- the
+    NoLiveDecisionError that catches a caller believing something false, and carrying
+    `class_name` forward so a withdrawal cannot introduce a name nobody reviewed -- are
+    BYPASSED on this path. Withdraw through withdraw_expansion_decision. The check is
+    not repeated here because it would put a member of the decision vocabulary back
+    into Python, which is exactly what the paragraph above refuses to do; a caller
+    reaching for `withdrawn` here is reaching past the function that owns it.
+
+    NOTE the caller owns the transaction, as everywhere else in this module: nothing
+    here commits. The single-live check is DEFERRED, so a mistake surfaces at the
+    caller's COMMIT.
+    """
+    new_id = conn.execute(
+        "INSERT INTO drugref.class_expansion_policy "
+        "(source, source_code, decision, class_name, rationale, reviewed_by, "
+        "reviewed_against) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING policy_id",
+        (source, source_code, decision, class_name, rationale, reviewed_by,
+         reviewed_against)).fetchone()[0]
+    # Point whatever was live at the new row -- including a `withdrawn` one, which is
+    # live but does not bind. `policy_id <> new_id` keeps the row we just wrote out of
+    # its own supersession.
+    conn.execute(
+        "UPDATE drugref.class_expansion_policy SET superseded_by = %s "
+        "WHERE source = %s AND source_code = %s AND superseded_by IS NULL "
+        "AND policy_id <> %s", (new_id, source, source_code, new_id))
+    return new_id
+
+
+def withdraw_expansion_decision(conn: psycopg.Connection, source: str, source_code: str,
+                                rationale: str, reviewed_by: str,
+                                reviewed_against: str) -> int:
+    """Retract the live decision for a class, returning it to gap_unreviewed_expansion_root.
+
+    WITHDRAWN IS NOT `allow`. Absent means UNREVIEWED -- it expands AND raises a
+    question on gap_unreviewed_expansion_root -- and an append-only table can never
+    return a class to absent, so `withdrawn` is what says "no current judgement". Use
+    it when a rationale has gone stale (it rested on a release measurement that no
+    longer holds), or when a release stops defining the class at all: that is the case
+    medrt_run's "re-key or withdraw" warning is about.
+
+    `class_name` is carried forward from the row being withdrawn rather than asked of
+    the caller, so a withdrawal cannot introduce a name nobody reviewed.
+
+    Raises NoLiveDecisionError if no decision is live: withdrawing one nobody made
+    means the caller believes something false, and silently doing nothing would leave
+    them believing it.
+    """
+    row = conn.execute(
+        "SELECT class_name FROM drugref.class_expansion_policy "
+        "WHERE source = %s AND source_code = %s AND superseded_by IS NULL",
+        (source, source_code)).fetchone()
+    if row is None:
+        raise NoLiveDecisionError(
+            f"no live expansion decision for {source} {source_code}: "
+            "nothing to withdraw")
+    return record_expansion_decision(conn, source, source_code, "withdrawn", row[0],
+                                     rationale, reviewed_by, reviewed_against)
 
 
 def add_contraindication(conn: psycopg.Connection, subject_moiety_uuid: uuid.UUID,

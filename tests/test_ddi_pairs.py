@@ -298,6 +298,49 @@ def test_an_explicit_allow_expands_exactly_as_an_unreviewed_class_does(conn):
     assert _rows(conn, subject) == [(p, child, False)]
 
 
+def test_only_the_binding_decision_bounds_expansion(conn):
+    """db/027. The pair set follows the judgement that BINDS NOW, over a class whose
+    policy row has been withdrawn and then re-decided -- both halves, on one class,
+    because each pins a different way for this to break.
+
+    Withdrawing the seeded `deny` returns the held-back indirect member to the pair
+    set: `withdrawn` is not `allow`, but it is not `deny` either, so COALESCE's
+    "no policy row expands" is exactly right with no change to the predicate.
+
+    THEN A FRESH `deny` MUST BIND, and that is the half that pins the view. Since
+    db/027 the base table holds history: revert this view's LEFT JOIN from
+    class_expansion_policy_current to class_expansion_policy and the SUPERSEDED
+    `withdrawn` row still satisfies COALESCE(decision,'allow') <> 'deny', so the
+    curator's new `deny` silently does nothing and `far` stays paired. Measured on the
+    real release, that revert leaves 233 pairs a curator ruled out in the candidate
+    set, with no error and nothing reporting it -- the failure mode #35 exists to
+    prevent. Written through the interactions.py writers rather than by hand, because
+    the insert-then-supersede ORDER is the part a caller gets wrong.
+    """
+    run_id = _run(conn)
+    subject = _moiety(conn, run_id, "s")
+    near, far = _moiety(conn, run_id, "near"), _moiety(conn, run_id, "far")
+    root = _class(conn, run_id, HEMATOLOGIC, "PE", "Hematologic Activity Alteration [PE]")
+    child = _class(conn, run_id, "N0000000675", "PE")
+    _parent(conn, run_id, child, root)
+    interactions.add_contraindication(conn, subject, root, "CI_PE", "MED-RT", run_id)
+    classes.add_membership(conn, near, root, "has_PE", run_id)
+    classes.add_membership(conn, far, child, "has_PE", run_id)
+
+    # The seeded deny binds: direct members only.
+    assert set(_rows(conn, subject)) == {(near, root, True)}
+
+    interactions.withdraw_expansion_decision(
+        conn, "MED-RT", HEMATOLOGIC, "the measurement it rested on no longer holds",
+        "test", "2026.07.06")
+    assert set(_rows(conn, subject)) == {(near, root, True), (far, child, False)}
+
+    interactions.record_expansion_decision(
+        conn, "MED-RT", HEMATOLOGIC, "deny", "Hematologic Activity Alteration [PE]",
+        "re-reviewed: still an abstract organ-system bucket", "test", "2026.07.06")
+    assert set(_rows(conn, subject)) == {(near, root, True)}
+
+
 def test_turning_expansion_off_for_a_predicate_reduces_it_to_direct_membership(conn):
     """The ci_axis switch. Slice 5b's MeSH-keyed predicates sit over a differently
     shaped tree, so the decision is per predicate and declared beside the axis

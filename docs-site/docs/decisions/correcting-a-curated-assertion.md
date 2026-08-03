@@ -1,12 +1,12 @@
 # A curated correction needs a deferred check, not a unique index
 
 **Status:** Active
-**Last reviewed:** 2026-08-01
-**Applies to:** every append-only curated assertion table — `question_state` (`db/007`) and Plan C's
+**Last reviewed:** 2026-08-04
+**Applies to:** every append-only curated assertion table — `question_state` (`db/007`), Plan C's
 `additive_effect`, `effect_contribution`, `interaction_group_assertion`, `interaction_group_member`
-(`db/020`, `db/023`)
+(`db/020`, `db/023`), and `class_expansion_policy` (`db/027`)
 **Full derivation:** the [additive-effect & open-question design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-07-25-drugref-additive-effect-and-open-question-design.md)
-(§5.0, §5.4) and `db/005`, `db/007`, `db/020`, `db/023`
+(§5.0, §5.4) and `db/005`, `db/007`, `db/020`, `db/023`, `db/027`
 
 ## Context
 
@@ -87,8 +87,18 @@ checked eagerly and needs `SET CONSTRAINTS ALL DEFERRED` first.
   asserts this group". `db/023` gives it an `applies` boolean. When adding a fifth assertion table, ask
   what *withdrawing* one of its statements looks like **before** deciding it needs no ruling column;
   supersession will not do it.
+- **The fifth table came, and asking first is what shaped it.** `db/027` moves `class_expansion_policy`
+  onto this floor, and the question was put before the schema was written. The answer was sharper here
+  than on Plan C's tables, because *absent* is not a neutral state: no row means **unreviewed**, which
+  expands *and* raises a question, so a class that had ever been ruled on could never return to the
+  worklist. It took a third `decision` value, `'withdrawn'`, rather than a boolean beside the ruling —
+  one column is already the vocabulary, all four readers branch on it, and a boolean would admit two
+  encodings of one state. See
+  [the expansion policy is append-only](expansion-policy-is-append-only.md).
 
 ## Related
 
+- [The expansion policy is append-only, and `withdrawn` is a decision](expansion-policy-is-append-only.md)
+  — the fifth table to take this floor, and what asking the retirement question first bought it.
 - [Append-only claims](append-only-claims.md) — the overlay mechanism this refines.
 - [The hybrid store](hybrid-store.md) — why curated knowledge is append-only in the first place.
