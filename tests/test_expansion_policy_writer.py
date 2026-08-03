@@ -84,6 +84,40 @@ def test_a_class_can_be_ruled_on_again_after_a_withdrawal(conn):
     assert _live(conn) == ("allow", "re-reviewed")
 
 
+def test_withdrawing_a_withdrawn_decision_supersedes_it_rather_than_erroring(conn):
+    """Pins LIVE vs BINDING *inside withdraw_expansion_decision itself* -- the brief
+    calls the two "deliberately different" and says "do not unify them", but every
+    other withdrawal test in this file withdraws a `deny`/`allow` row, which is
+    simultaneously live AND binding, so none of them can tell the two lookups apart.
+
+    A withdrawn row is UNSUPERSEDED (so it is still LIVE) but does not BIND (it is
+    excluded from class_expansion_policy_current). withdraw_expansion_decision's
+    lookup must use the live predicate: if it were "simplified" to query
+    class_expansion_policy_current instead, withdrawing an already-withdrawn class
+    would find no row and wrongly raise NoLiveDecisionError, even though there is a
+    row sitting right there for the second withdrawal to supersede. Verified by
+    mutation: swapping that lookup to the _current view makes this the only failing
+    test in the whole suite (see task-3-report.md).
+    """
+    interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "too abstract",
+        "test", "2026.07.06")
+    first_withdrawal = interactions.withdraw_expansion_decision(
+        conn, "MED-RT", CODE, "stale", "test", "2026.08.06")
+    # Must NOT raise NoLiveDecisionError: the row `first_withdrawal` just wrote is
+    # unsuperseded and therefore live, even though it does not bind.
+    second_withdrawal = interactions.withdraw_expansion_decision(
+        conn, "MED-RT", CODE, "still stale, confirmed on re-review", "test", "2026.09.06")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")     # a test that never commits proves nothing
+    assert _live(conn) is None, "nothing binds after either withdrawal"
+    assert conn.execute(
+        "SELECT decision, superseded_by FROM drugref.class_expansion_policy "
+        "WHERE policy_id = %s", (second_withdrawal,)).fetchone() == ("withdrawn", None)
+    assert conn.execute(
+        "SELECT superseded_by FROM drugref.class_expansion_policy "
+        "WHERE policy_id = %s", (first_withdrawal,)).fetchone() == (second_withdrawal,)
+
+
 def test_an_unrecognised_decision_reaches_the_database_constraint(conn):
     """The vocabulary lives in the CHECK and nowhere else."""
     with pytest.raises(psycopg.errors.CheckViolation):
