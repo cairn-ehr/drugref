@@ -50,3 +50,6 @@ history is never lost — it remains in the git log and in the dated design spec
   — how single-live is enforced on an append-only curated table, and why retirement needs
   an explicit value rather than a supersession (carries the §5.0 erratum to the
   additive-effect spec).
+- [The expansion policy is append-only, and `withdrawn` is a decision](expansion-policy-is-append-only.md)
+  — why the table that gates contraindication recall stopped being edited in place, and what a
+  reader of it must do differently (carries the standing correction to `db/010`'s storage-tier prose).
