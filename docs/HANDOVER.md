@@ -11,10 +11,10 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`** (ROADMAP orders them): slices 1 · 2a · 2a.1 · 2b · 5a · 8a · the foundation review · Plan A · Plan B
-(#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) · the post-5b debt round (#46) · the
-interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C (#57) · the ingest-operability round
-(#58, closing #16 and #47).
+**Merged to `main`** (ROADMAP orders them): slices 1 (#1) · 2a (#9) · 2a.1 (#10) · 2b · 5a · 8a (#28) · the foundation
+review · Plan A · Plan B (#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) · the
+post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C
+(#57) · the ingest-operability round (#58, closing #16 and #47).
 
 **In flight: the expansion-policy history round (#35)** on `fix/expansion-policy-history` — `db/027`, implemented, measured
 and pushed; its PR is still to open. **807 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured
@@ -67,8 +67,10 @@ Residue: #36, #37 (#35 is closed by the round below).
 
 **The interaction debt round (#39, #31, #45, #50 — `db/018`, merged #49) — the four traps it leaves.**
 
-1. **ONE WRITER PER `(source, reason)`** on `ingest_unmatched_ingredient` — add a value, never share one; **NOT NULL, NO
-   DEFAULT**, because it scopes a DELETE, which `db.clear_source_tables`'s `match=` keeps in one place (#43).
+1. **ONE WRITER PER `(source, reason)`** on `ingest_unmatched_ingredient` — add a value, never share one; `medrt_run`
+   and the MeSH-keyed run both open under `MED-RT`, so `reason` tells their rows apart. **NOT NULL, NO DEFAULT**,
+   because it scopes a DELETE, which `db.clear_source_tables`'s `match=` keeps in one place (#43). `db/026` added the
+   fourth value — see the ingest-operability round below.
 2. **One quantity stated twice is a quantity that will disagree** (db/006). Two near-identical CTEs, only one of which learned
    that a rule's own subject is not a partner, left a whole class of dead rules reported by *nothing* (#31). Now **one view,
    `ci_rule_partner_reach`**, the two gap views complementary filters on one column — and `condition_indication_reach` /
@@ -199,7 +201,8 @@ plus two read views and four gap views, **gap kinds 8–11**. New: `class_subtre
 - **THERE ARE NOW TWO WALKS DOWN `class_parent`, AND THAT IS MEASURED, NOT SLOPPY.** Re-expressing `ci_class_subtree` as a
   filter over the unscoped closure gives a **byte-identical** `ddi_candidate_pair` and costs the hot path **5×** (3.6 → 18.8
   ms): scoping to the 104 classes a CI rule *names* is what makes it cheap, while a **discovery** view's roots are the classes
-  absent from the curated tables. Do not merge them without re-measuring.
+  absent from the curated tables. `db/021` re-issues `db/012`'s now-false "THE ONE PLACE" comment. Do not merge them
+  without re-measuring.
 - **Spec §5.0's partial unique index cannot work here** — a correction keeps the SAME natural key, so both rows are live
   between the INSERT and the UPDATE (`db/007` met this on `question_state` first). One **deferred** constraint trigger,
   generalised over the key, now carrying five tables (`db/027` is the fifth); published as
@@ -263,11 +266,14 @@ count unchanged, `loaded_release` **4** rows with both MED-RT writers.
   **`contraindication_class`, NOT the `class_contraindication` #47 proposed** — that string sorts BEFORE `classification` and
   would invert db/018's, whose *other* justification was already false (**0 of 4,389 rows carry a name**). Verified by
   mutation.
-- **THREE defects in this round's own PLAN text, found by measuring** — the writer count, an error-message assertion
-  contradicting its own test, and the UNII glob — each fixed in the code and left standing in the plan until the final review.
-  **Plus TWO claims in `cli.py`'s own comments**: the docstring's DB-free boundary was drawn at `main`, the LAST function in
-  the file, and **the step order is NOT a dependency order** — only UNII-first is, and the test asserting `medrt` before
-  `mesh-relations` as a dependency was removed rather than left true by passing.
+- **THREE defects in this round's own PLAN text, found by measuring** — the writer count ONCE (the *second* occurrence
+  was in `db/026`, a migration), an error-message assertion contradicting its own test, and the UNII glob — each fixed
+  in the code and left standing in the plan until the final review. **Plus TWO claims in `cli.py`'s own comments**: the
+  docstring's DB-free boundary was drawn at `main`, the LAST function in the file, so the four `_handle_*` entry points
+  and six `_run_*` wrappers fell on the wrong side of it — scoped to the argument layer, which is DB-free but **NOT
+  filesystem-free**, since `resolve_inputs` globs; and **the step order is NOT a dependency order** — only UNII-first
+  is, and the test asserting `medrt` before `mesh-relations` as a dependency was removed rather than left true by
+  passing.
 
 ## The expansion-policy history round (#35) — `db/027`
 
@@ -310,8 +316,9 @@ yields only a **name** and is rejected. **UNII:** the gate columns live in `UNII
 
 ROADMAP states the model; what matters here is where each kind of data lives. **Hybrid store**: **rebuildable projections**
 for ingested feeds (drop-and-rebuild, version-pinned, provenance-tagged via `ingest_run`) + an **append-only, signed overlay**
-for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027` `class_expansion_policy` sits
-on its floor too, so **the third, edited-in-place category no longer exists** (that table is still cleared by no ingest).
+for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027` `class_expansion_policy`
+now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is still cleared by no
+ingest).
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
 subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 

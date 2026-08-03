@@ -182,8 +182,9 @@ slice 5b's documented caveats are gone.
 [#31](https://github.com/cairn-ehr/drugref/issues/31) — `gap_dead_by_expansion_policy`, a **sixth gap kind**: a
 contraindication whose object class is *denied* expansion, holds no direct *partner* on the rule's axis, and *does* have one
 below, so the rule reaches nobody. Measuring it found a **second, unreported cause**: `gap_unpopulated_contraindication`
-counted the rule's own subject as a member although `ddi_candidate_pair` excludes it — **12 → 13 classes, 38 → 39 dead
-rules**. **The round's own review then found the same defect in the NEW view** (the reach measure was stated twice, only one
+counted the rule's own subject as a member although `ddi_candidate_pair` excludes it, so `acetohydroxamic acid` →
+`Urease Inhibitors [MoA]` was dead and silent — **12 → 13 classes, 38 → 39 dead rules**. **The round's own review
+then found the same defect in the NEW view** (the reach measure was stated twice, only one
 copy learning the exclusion); now one view, **`ci_rule_partner_reach`**, with the two gap views as complementary filters on
 one column. Re-measured ([#50](https://github.com/cairn-ehr/drugref/issues/50)): still **ONE class**, but **299 drugs held
 back, not 300** (the rule's own subject *clomiphene* is filed under it). Everything else held: 2,140 unmatched, 21,664 pairs.
@@ -330,8 +331,10 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
 
 - **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). Made every other slice's coverage number real; every
   defect was invisible to the committed fixtures. `ingest/unii.py` read a **`PT` column the real UNII release does not have**
-  (it is `Display Name`), so `row.get("PT") or ""` silently emptied all 168,046 labels — `or ""` absorbing a structural
-  mismatch, not a renamed column, is the lesson; required columns are now **declared and checked**. The legacy allow-list
+  (it is `Display Name`), so `row.get("PT") or ""` silently emptied all 168,046 labels — a production run would have
+  completed "successfully" over an **entirely unlabelled registry** with a **dead allow-list** and a **dead USAN↔INN
+  crosswalk**; `or ""` absorbing a structural mismatch, not a renamed column, is the lesson. Required columns are now
+  **declared and checked**. The legacy allow-list
   moved to **UNII keys** (#17) after its flagship entry matched nothing. The membership gate (#26) became **`INN_ID | USAN_ID
   | (RXCUI & drug-like SUBSTANCE_TYPE)`** plus the allow-list — `INN_ID` is a sparse cross-reference, empty for amoxicillin,
   morphine and aspirin. **The asymmetry is the design**: uniform type-filtering would delete heparin, enoxaparin, protamine
@@ -394,8 +397,9 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
 **`db/023`–`db/024` are the review round on it**, five findings each measured rather than reasoned: the generic single-live
 trigger was **unindexable and therefore quadratic** (2,000 rows 5,773 ms → **42 ms**, linear, via equality predicates +
 partial `<table>_live_key` indexes); `gap_uncurated_threshold` cleared on promotions that regraded **nobody**, so it now gates
-on unreviewed MEMBERS; `interaction_group_assertion` gained the `applies` ruling column so a group can be **retired as a
-whole**; `interaction_group_member_moiety`'s deliberate non-uniqueness is now stated, not merely true. Costliest:
+on unreviewed MEMBERS; `interaction_group_assertion` gained the `applies` ruling column `db/020` gave the other two
+tables but not it, so a group can be **retired as a whole**; `interaction_group_member_moiety`'s deliberate
+non-uniqueness is now stated, not merely true. Costliest:
 `gap_ineffective_contribution` named `class_subtree` twice in a **correlated** subquery, re-running the 22,754-row closure
 **per curated row** — **59 s** for 400 promotions, **465 ms** once `db/024` hoists the walk out. A synthetic probe missed it:
 its fixture had no DAG edges. **Measure recursion against a real DAG or do not measure it.**
@@ -429,8 +433,9 @@ which moves `class_expansion_policy` onto this same append-only shape — the fi
   `--<source>-release` flag was given** in a fixed order, resolves inputs by documented globs (**zero matches and several
   matches are both errors**, resolved before any step runs). The order is a constant, but **only UNII-first is a data
   dependency** — every other feed joins to the `identity_claim` rows (or `display_name`) UNII registers; `medrt` before
-  `mesh-relations` is convention only, a comment the PR review round corrected. `chebi.py`, the orchestrator the foundation
-  review missed, gained the try/rollback/logging the other five have. **788 tests.**
+  `mesh-relations` is convention only — the PR review round corrected both the comment claiming a read that does not
+  happen and the test that had asserted the pair as a dependency. `chebi.py`, the orchestrator the foundation review
+  missed, gained the try/rollback/logging the other five have. **788 tests.**
 
 **Measuring #47 turned up two findings, both about `db/018`'s own justifications** for widening `gap_unmatched_ingredient`'s
 tie-break, both false by the time #47 arrived. (1) "`classification` wins alphabetically" — but `class_contraindication`,
