@@ -14,13 +14,12 @@
 **Merged to `main`** (ROADMAP orders them): slice 1 (#1) · 2a (#9) · 2a.1 (#10) · 2b · 5a · the foundation review ·
 Plan A · 8a (#28) · Plan B (#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) ·
 the post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · the #53 population-label round (#56) ·
-**Plan C, the accumulation model (#57)**.
+Plan C, the accumulation model (#57) · **the ingest-operability round (#58, closing #16 and #47)**.
 
-**IN FLIGHT — the ingest-operability round (#16, #47)**, on `fix/ingest-operability-round`: complete and
-final-review-fixed, **788 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured end-to-end
-against the real releases through its own new `drugref ingest chain` (**110.37 s**, fresh `drugref_ops`, no workarounds,
-`downloads/` untouched). Details under "The ingest-operability round" below. Errata live in `docs-site/docs/decisions/`
-— one per MeSH-keyed slice, plus Plan C's.
+**Nothing in flight.** `main` is clean at #58: **788 tests green**, `ruff check src tests` + `mkdocs build --strict`
+clean, re-measured end-to-end against the real releases through the new `drugref ingest chain` (**110.37 s**, fresh
+`drugref_ops`, no workarounds, `downloads/` untouched). Details under "The ingest-operability round" below. Errata
+live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each time
 because a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A number in
