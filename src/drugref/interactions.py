@@ -25,7 +25,7 @@ from collections.abc import Iterable
 
 import psycopg
 
-from drugref import db
+from drugref import db, overlay
 
 
 CONTRAINDICATION_TABLES = ("class_contraindication",)
@@ -118,12 +118,9 @@ def record_expansion_decision(conn: psycopg.Connection, source: str, source_code
         (source, source_code, decision, class_name, rationale, reviewed_by,
          reviewed_against)).fetchone()[0]
     # Point whatever was live at the new row -- including a `withdrawn` one, which is
-    # live but does not bind. `policy_id <> new_id` keeps the row we just wrote out of
-    # its own supersession.
-    conn.execute(
-        "UPDATE drugref.class_expansion_policy SET superseded_by = %s "
-        "WHERE source = %s AND source_code = %s AND superseded_by IS NULL "
-        "AND policy_id <> %s", (new_id, source, source_code, new_id))
+    # live but does not bind.
+    overlay.supersede(conn, "class_expansion_policy", "policy_id", new_id,
+                      ("source", "source_code"), (source, source_code))
     return new_id
 
 

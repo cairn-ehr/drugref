@@ -12,18 +12,15 @@ Two halves, deliberately separated:
     order, because superseded_by must reference a row that already exists.
 
 WHY THE WRITERS LOOK REPETITIVE. Each curation function inserts the new assertion and
-then supersedes whatever the previous live one was. That pair of statements is the
-ONLY sequence the overlay admits: correcting in place is forbidden by the floor
-(db/020), and pointing first is impossible because the target does not exist yet. Both
-rows are briefly live, which is exactly why db/020 makes single-live a DEFERRED
-constraint trigger rather than a partial unique index.
+then calls overlay.supersede to point the previous live one at it. That pair is the
+only sequence the overlay admits, and overlay.py's docstring is where the reason lives
+-- stated once, because three modules used to restate it.
 """
 import uuid
 
 import psycopg
-from psycopg import sql
 
-from drugref import ids
+from drugref import ids, overlay
 
 
 # ---- the evaluation rules (pure) --------------------------------------------
@@ -96,28 +93,6 @@ def group_fires(required_roles: set[str], covered_roles: set[str]) -> bool:
 # ---- the writers ------------------------------------------------------------
 
 
-def _supersede(conn: psycopg.Connection, table: str, pk_column: str, new_id: int,
-               key_columns: tuple[str, ...], key_values: tuple) -> None:
-    """Point whatever was live at `new_id`. Called AFTER the new row exists.
-
-    Kept in one place because the ordering is the part that is easy to get wrong, and
-    getting it wrong fails only at COMMIT -- long after the call that caused it.
-
-    The natural key arrives as COLUMN NAMES rather than a pre-built SQL fragment, and
-    the statement is composed with psycopg.sql. Every call site passes literals, so
-    there was never an injection here -- but proving that took reading all four of
-    them, and composition makes it visible at a glance instead. It also puts the
-    columns in the same shape db/020's triggers take them, which is what they are.
-    """
-    where = sql.SQL(" AND ").join(
-        sql.SQL("{} = %s").format(sql.Identifier(col)) for col in key_columns)
-    conn.execute(
-        sql.SQL("UPDATE drugref.{table} SET superseded_by = %s "
-                "WHERE {where} AND superseded_by IS NULL AND {pk} <> %s").format(
-            table=sql.Identifier(table), where=where, pk=sql.Identifier(pk_column)),
-        (new_id, *key_values, new_id))
-
-
 def curate_effect(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
                   ingest_run_id: int, *, accumulates: bool,
                   threshold_major: int | None = None,
@@ -137,8 +112,8 @@ def curate_effect(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
         "VALUES (%s, %s, %s, %s, %s, %s, 'DRUGREF', %s) RETURNING additive_effect_id",
         (effect_class_uuid, accumulates, threshold_major, threshold_total, severity,
          clinical_note, ingest_run_id)).fetchone()[0]
-    _supersede(conn, "additive_effect", "additive_effect_id", new_id,
-               ("effect_class_uuid",), (effect_class_uuid,))
+    overlay.supersede(conn, "additive_effect", "additive_effect_id", new_id,
+                      ("effect_class_uuid",), (effect_class_uuid,))
     return new_id
 
 
@@ -158,9 +133,9 @@ def grade_contribution(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
         "VALUES (%s, %s, %s, 'DRUGREF', %s) RETURNING effect_contribution_id",
         (effect_class_uuid, contributor_class_uuid, magnitude,
          ingest_run_id)).fetchone()[0]
-    _supersede(conn, "effect_contribution", "effect_contribution_id", new_id,
-               ("effect_class_uuid", "contributor_class_uuid"),
-               (effect_class_uuid, contributor_class_uuid))
+    overlay.supersede(conn, "effect_contribution", "effect_contribution_id", new_id,
+                      ("effect_class_uuid", "contributor_class_uuid"),
+                      (effect_class_uuid, contributor_class_uuid))
     return new_id
 
 
@@ -213,8 +188,8 @@ def assert_group(conn: psycopg.Connection, group_uuid: uuid.UUID, name: str,
         "RETURNING interaction_group_assertion_id",
         (group_uuid, name, severity, clinical_note, applies,
          ingest_run_id)).fetchone()[0]
-    _supersede(conn, "interaction_group_assertion", "interaction_group_assertion_id",
-               new_id, ("group_uuid",), (group_uuid,))
+    overlay.supersede(conn, "interaction_group_assertion", "interaction_group_assertion_id",
+                      new_id, ("group_uuid",), (group_uuid,))
     return new_id
 
 
@@ -234,9 +209,9 @@ def set_group_member(conn: psycopg.Connection, group_uuid: uuid.UUID, role: str,
         "satisfies_role, source, ingest_run) VALUES (%s, %s, %s, %s, 'DRUGREF', %s) "
         "RETURNING interaction_group_member_id",
         (group_uuid, role, class_uuid, satisfies_role, ingest_run_id)).fetchone()[0]
-    _supersede(conn, "interaction_group_member", "interaction_group_member_id", new_id,
-               ("group_uuid", "role", "class_uuid"),
-               (group_uuid, role, class_uuid))
+    overlay.supersede(conn, "interaction_group_member", "interaction_group_member_id", new_id,
+                      ("group_uuid", "role", "class_uuid"),
+                      (group_uuid, role, class_uuid))
     return new_id
 
 

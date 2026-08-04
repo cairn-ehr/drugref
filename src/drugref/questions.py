@@ -22,7 +22,7 @@ import uuid
 
 import psycopg
 
-from drugref import ids
+from drugref import ids, overlay
 
 # Each gap_kind, the view that derives it, and how a row of that view becomes a
 # question. Keeping the three together is what stops a view being added without a
@@ -362,20 +362,17 @@ def set_state(conn: psycopg.Connection, question_uuid: uuid.UUID, state: str,
               rationale: str, ingest_run_id: int, source: str = "DRUGREF") -> int:
     """Move a question to `state`, superseding whatever it said before.
 
-    Insert-then-point, in that order, because superseded_by must reference a row that
-    already exists. Both rows are briefly live, which is exactly why db/007 makes
-    single-live a DEFERRED constraint rather than a unique index -- an immediate
-    check would reject the only sequence that can express a correction.
+    Insert-then-point, in that order, via overlay.supersede -- see overlay.py for why
+    the order is forced and why single-live is a DEFERRED trigger rather than a unique
+    index. db/007 met that problem here first; db/020 generalised the answer.
     """
     new_id = conn.execute(
         "INSERT INTO drugref.question_state "
         "(question_uuid, state, rationale, source, ingest_run) "
         "VALUES (%s, %s, %s, %s, %s) RETURNING question_state_id",
         (question_uuid, state, rationale, source, ingest_run_id)).fetchone()[0]
-    conn.execute(
-        "UPDATE drugref.question_state SET superseded_by = %s "
-        "WHERE question_uuid = %s AND superseded_by IS NULL AND question_state_id <> %s",
-        (new_id, question_uuid, new_id))
+    overlay.supersede(conn, "question_state", "question_state_id", new_id,
+                      ("question_uuid",), (question_uuid,))
     return new_id
 
 
