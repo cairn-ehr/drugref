@@ -22,7 +22,7 @@ post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #5
 pushed; **PR [#62](https://github.com/cairn-ehr/drugref/pull/62) is open and reviewed** (its findings are folded in below, and two
 became #61/#63). **810 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured against the real releases
 on a fresh `drugref_policy` (**103.28 s**): `ddi_candidate_pair` **21,664** unchanged, filtered lookup **2.876 ms** against the
-recorded 3.1 ms. Traps below. Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and this round's.
+recorded 3.1 ms. Traps in [`PROJECT-NOTES.md`](PROJECT-NOTES.md). Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and this round's.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each time because
 a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A number in a commit
@@ -120,12 +120,13 @@ the MED-RT deed against the live NLM source-release doc (the distribution ships 
 [#25](https://github.com/cairn-ehr/drugref/issues/25) PBS redistribution, which blocks bundling but not node-local ingest and
 needs written Dept-of-Health confirmation.
 
-**Verify-before-production, generally:** re-run every parser against a full current release (see "How to run / test" — and
-#60) and re-confirm the aggregate numbers; fixtures from a real release are not the same thing, and 5b found five spec errors
+**Verify-before-production, generally:** re-run every parser against a full current release (see
+[`PROJECT-NOTES.md`](PROJECT-NOTES.md) § How to run / test — and #60) and re-confirm the aggregate numbers; fixtures from a real release are not the same thing, and 5b found five spec errors
 that way, each invisible to a green suite. **Plus one data check, inherited from #17:** `claims.add_claim` canonicalises
 case-bearing claim values (UNII / INCHIKEY / CHEBI), so a database populated *before* that change could hold a spelling no
 lookup matches — and such rows cannot be deleted. Confirm BEFORE the first real load.
 
 ## Current DSN
 
-- Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
+- Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`
+  (restated in [`PROJECT-NOTES.md`](PROJECT-NOTES.md); update both).
