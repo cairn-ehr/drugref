@@ -124,3 +124,69 @@ def test_an_unrecognised_decision_reaches_the_database_constraint(conn):
         interactions.record_expansion_decision(
             conn, "MED-RT", CODE, "maybe", "Test Bucket [PE]", "x",
             "test", "2026.07.06")
+
+
+def test_live_decisions_reports_what_binds(conn):
+    """The read `drugref policy show` prints with no arguments. Goes through
+    class_expansion_policy_current, so a withdrawn row is correctly absent."""
+    interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "too abstract",
+        "test", "2026.07.06")
+    rows = interactions.live_decisions(conn)
+    assert ("MED-RT", CODE, "deny", "Test Bucket [PE]") in rows
+    # The 14 seeded roots are binding too, so this is a superset check by design.
+    assert len(rows) >= 15
+
+
+def test_live_decisions_omits_a_withdrawn_class(conn):
+    """WITHDRAWN IS NOT A DECISION THAT BINDS. It means "no current judgement", so the
+    class returns to gap_unreviewed_expansion_root -- and an operator asking what binds
+    must not be shown it."""
+    interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "too abstract",
+        "test", "2026.07.06")
+    interactions.withdraw_expansion_decision(
+        conn, "MED-RT", CODE, "the measurement no longer holds", "test", "2026.07.06")
+    assert [r for r in interactions.live_decisions(conn) if r[1] == CODE] == []
+
+
+def test_decision_history_keeps_every_ruling_in_order(conn):
+    """The whole of #35 in one read: what did we last say, against which release, and
+    why did we change our mind. The superseded row must still carry its ORIGINAL
+    rationale -- that is what an in-place UPDATE destroyed."""
+    first = interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "too abstract",
+        "alice", "2026.07.06")
+    second = interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "allow", "Test Bucket [PE]", "subtree is narrow",
+        "bob", "2026.07.06")
+
+    history = interactions.decision_history(conn, "MED-RT", CODE)
+    assert [(h[0], h[1], h[2], h[3]) for h in history] == [
+        (first, "deny", "too abstract", "alice"),
+        (second, "allow", "subtree is narrow", "bob")]
+    assert history[0][5] == second      # the first row points at the second
+    assert history[1][5] is None        # the second is live
+
+
+def test_decision_history_is_empty_for_a_class_nobody_ruled_on(conn):
+    """Not an error: "nobody has looked" is a legitimate answer to `policy show`, and
+    is exactly what absent means -- unreviewed, which expands AND raises a question."""
+    assert interactions.decision_history(conn, "MED-RT", "N0000000404") == []
+
+
+def test_the_withdrawn_vocabulary_lives_in_exactly_one_python_name(conn):
+    """`withdrawn` is a member of db/027's CHECK, which is the vocabulary's one home.
+    interactions.WITHDRAWN exists so the CLI can refuse it (a curation surface should
+    not offer a verb that bypasses withdraw_expansion_decision's two guarantees)
+    WITHOUT adding a second literal. This pins that it is the same string the writer
+    itself uses -- a drift would leave the CLI refusing a value the database accepts."""
+    assert interactions.WITHDRAWN == "withdrawn"
+    interactions.record_expansion_decision(
+        conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "r", "test", "2026.07.06")
+    interactions.withdraw_expansion_decision(
+        conn, "MED-RT", CODE, "stale", "test", "2026.07.06")
+    assert conn.execute(
+        "SELECT decision FROM drugref.class_expansion_policy "
+        "WHERE source_code = %s AND superseded_by IS NULL", (CODE,)
+    ).fetchone()[0] == interactions.WITHDRAWN

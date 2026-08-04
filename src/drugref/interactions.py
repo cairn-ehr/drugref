@@ -75,6 +75,14 @@ class NoLiveDecisionError(LookupError):
     """Raised when a withdrawal names a class carrying no live expansion decision."""
 
 
+# The one Python copy of a value whose home is db/027's CHECK. It exists because
+# withdraw_expansion_decision has to name the value it writes, and because an operator
+# surface has to be able to refuse it (see cli._handle_policy_record). Two literals
+# would be two things to disagree with each other; one constant read by both is not a
+# second vocabulary.
+WITHDRAWN = "withdrawn"
+
+
 def record_expansion_decision(conn: psycopg.Connection, source: str, source_code: str,
                               decision: str, class_name: str, rationale: str,
                               reviewed_by: str, reviewed_against: str) -> int:
@@ -151,8 +159,47 @@ def withdraw_expansion_decision(conn: psycopg.Connection, source: str, source_co
         raise NoLiveDecisionError(
             f"no live expansion decision for {source} {source_code}: "
             "nothing to withdraw")
-    return record_expansion_decision(conn, source, source_code, "withdrawn", row[0],
+    return record_expansion_decision(conn, source, source_code, WITHDRAWN, row[0],
                                      rationale, reviewed_by, reviewed_against)
+
+
+def live_decisions(conn: psycopg.Connection) -> list[tuple[str, str, str, str]]:
+    """Every expansion decision that currently BINDS, as (source, code, decision, name).
+
+    Through class_expansion_policy_current, like every other reader -- the view is
+    where "live" and "binding" are told apart, and a `withdrawn` row is live without
+    binding. A reader that asked the base table for `superseded_by IS NULL` would
+    report withdrawals as decisions, which is exactly the merge db/027 forbids.
+    """
+    return conn.execute(
+        "SELECT source, source_code, decision, class_name "
+        "FROM drugref.class_expansion_policy_current "
+        "ORDER BY source, source_code").fetchall()
+
+
+def decision_history(conn: psycopg.Connection, source: str,
+                     source_code: str) -> list[tuple]:
+    """Every ruling ever recorded for one class, oldest first.
+
+    (policy_id, decision, rationale, reviewed_by, reviewed_against, superseded_by).
+
+    THE ONE READER THAT MUST NAME THE BASE TABLE, and deliberately so: history is
+    precisely what class_expansion_policy_current filters out, so asking the view
+    would return at most one row and answer none of the question #35 exists to answer
+    -- what did we last say, against which release, and why did we change our mind.
+
+    Ordered by policy_id, which is a surrogate sequence: rows are strictly
+    append-only, so insertion order IS chronology. reviewed_at would tie for two
+    rulings recorded in one transaction.
+
+    An empty list is a legitimate answer -- absent means UNREVIEWED, which expands and
+    raises a question -- not an error.
+    """
+    return conn.execute(
+        "SELECT policy_id, decision, rationale, reviewed_by, reviewed_against, "
+        "superseded_by FROM drugref.class_expansion_policy "
+        "WHERE source = %s AND source_code = %s ORDER BY policy_id",
+        (source, source_code)).fetchall()
 
 
 def add_contraindication(conn: psycopg.Connection, subject_moiety_uuid: uuid.UUID,
