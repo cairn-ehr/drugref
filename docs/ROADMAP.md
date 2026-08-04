@@ -3,6 +3,10 @@
 > **Disposable working scaffolding, not a source of truth.** The canonical *what/why* is the design spec(s)
 > under [`docs/superpowers/specs/`](superpowers/specs/) (and future ADRs). This file only orders the build.
 > If it disagrees with the canonical docs, the canonical docs win.
+>
+> **Under no line bound since #63**, and appended to per slice rather than recompressed: a bound that forces
+> a compression pass trades a readable history for a line count. Session state is
+> [`HANDOVER.md`](HANDOVER.md); the stable notes are [`PROJECT-NOTES.md`](PROJECT-NOTES.md).
 
 **Scope:** the **global tier** of drugref.org (jurisdiction-independent substance identity → chemistry → classes →
 interactions), built bottom-up, followed by the consumer API and the local (country-specific) tier. drugref is an **advisory
