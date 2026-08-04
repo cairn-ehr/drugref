@@ -16,18 +16,25 @@
 **Merged to `main`** (ROADMAP orders them): slices 1 (#1) · 2a (#9) · 2a.1 (#10) · 2b · 5a · 8a (#28) · the foundation
 review · Plan A · Plan B (#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) · the
 post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C
-(#57) · the ingest-operability round (#58, closing #16 and #47).
+(#57) · the ingest-operability round (#58, closing #16 and #47) · **the expansion-policy history round (#35, PR
+[#62](https://github.com/cairn-ehr/drugref/pull/62))**.
 
-**In flight: the expansion-policy history round (#35)** on `fix/expansion-policy-history` — `db/027`, implemented, measured and
-pushed; **PR [#62](https://github.com/cairn-ehr/drugref/pull/62) is open and reviewed** (its findings are folded in below, and two
-became #61/#63). **810 tests green**, `ruff check src tests` + `mkdocs build --strict` clean, re-measured against the real releases
-on a fresh `drugref_policy` (**103.28 s**): `ddi_candidate_pair` **21,664** unchanged, filtered lookup **2.876 ms** against the
-recorded 3.1 ms. Traps in [`PROJECT-NOTES.md`](PROJECT-NOTES.md). Errata live in `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and this round's.
+**In flight: the policy-surface debt round (#59, #60, #61, #63)** on `fix/policy-surface-debt-round` — the four
+follow-ups #62's review filed against itself. Complete on the branch, not yet pushed or opened as a PR. **831 tests
+green** (810 at branch start), `ruff check src tests` + `mkdocs build --strict` clean, re-measured through the EXACT
+`ingest chain` invocation #60 says is refused — it ran, on a fresh `drugref_policy_cli` (**113.99 s**): every
+published figure reproduced exactly (`ddi_candidate_pair` **21,664**, `open_question` **18,834**,
+`class_expansion_policy` **14 / 14**, `loaded_release` **4**, `ingest_run_incomplete` **0** — full table in ROADMAP),
+since this round changed no SQL and no ingest logic. `drugref policy withdraw` exercised against that database moved
+`gap_unreviewed_expansion_root` 0 → 1. Traps in [`PROJECT-NOTES.md`](PROJECT-NOTES.md). Errata live in
+`docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and the expansion-policy round's.
 
-**⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has happened three times** (#31, #35, #40), each time because
-a commit or PR body saying *filed, not fixed* still named the number. The tracker is true today. **A number in a commit
-message is a claim about the code — verify it**; when filing rather than fixing, use prose no closing keyword can be parsed
-out of (#59–#61 and #63 are written that way).
+**⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has now happened FOUR times** (#31, #35, #40, #61),
+the last one the first where the author was deliberately writing prose to avoid it: `92baaea`'s body reads "Filed
+rather than fixed: #61 …", and GitHub's linker still closed #61, because it matches `fixed:` immediately before a
+number on **token adjacency**, not on what the sentence means. Reopened after checking `build_parser` directly —
+nothing #61 asked for existed. **The standing rule, restated once more:** keep the number away from
+`close`/`fix`/`resolve` **in any inflection**, not just as a bare keyword — a colon in between does not save you.
 
 **⇒ Next candidates:**
 
@@ -57,17 +64,14 @@ revises the living record.
 with no direct member is equally dead and is deliberately not reported** by `gap_dead_by_expansion_policy`; it wants its own
 view. **Still unreachable — 5b.2, Plan C and #35 all left it so**: it goes live when a *class-side* predicate stops expanding.
 
-**Filed by the expansion-policy history round, both deliberately NOT fixed in it** —
-[#59](https://github.com/cairn-ehr/drugref/issues/59) the insert-then-supersede rule lives in **three** places
-(`accumulation._supersede`, `questions.set_state` since `db/007`, `interactions.record_expansion_decision`), so the "promote it
-when a third owner appears" trigger has already fired — and `_supersede` is already generic over table and pk, so reuse is an
-import, not a refactor. Deferred anyway, for the honest reason: this round chose not to widen its blast radius into two other
-modules · [#60](https://github.com/cairn-ehr/drugref/issues/60) **`drugref ingest chain` cannot run all four sources together on
-merged `main`** — `mesh` and `mesh-relations` share `desc*.gz`/`supp*.gz` but take different release tags, so
-`check_release_agreement` refuses the documented invocation. The guard (`98b346f`) landed AFTER the measurement (`b56d26e`)
-inside #58, so the command was never re-run against it; the remedy is a design decision, because `mesh_rel_run` genuinely reads
-two authorities and one tag per step cannot say so. **Use the four `ingest <source>` subcommands in `STEPS` order meanwhile —
-that is what #35's measurement did.**
+**Filed by the expansion-policy history round, all four addressed by the policy-surface debt round now sitting on
+`fix/policy-surface-debt-round`** (not yet merged) — [#59](https://github.com/cairn-ehr/drugref/issues/59) the
+insert-then-supersede rule in three places, now `overlay.supersede` ·
+[#60](https://github.com/cairn-ehr/drugref/issues/60) `ingest chain` refusing its own documented four-source
+invocation, now `IngestStep.secondary` · [#61](https://github.com/cairn-ehr/drugref/issues/61) no operator surface
+for a stale expansion decision, now `drugref policy record|withdraw|show` ·
+[#63](https://github.com/cairn-ehr/drugref/issues/63) HANDOVER/PROJECT-NOTES rewritten wholesale each round, now
+split (Task 5). Detail and traps: `PROJECT-NOTES.md` §"The policy-surface debt round".
 
 **Closed by the four debt rounds** (#50, #39, #31, #45 · #40, #17, #42, #41, #43 · #16, #47 · **#35**), each verified against
 the code before closing. **Three standing rules came out of them and outlive the issues:**

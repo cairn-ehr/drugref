@@ -273,6 +273,64 @@ over a partial `class_expansion_policy_live_key` index that only pays off agains
   an oversight — the seed rows are written by a migration and have no run, and `source` here means *who defines the class* and
   is half the natural key.
 
+## The policy-surface debt round (#59, #60, #61, #63) — `overlay.py`, `cli_policy.py`
+
+Spec: [policy-surface debt round](superpowers/specs/2026-08-05-drugref-policy-surface-debt-round-design.md). Four follow-ups
+the expansion-policy history round filed against itself, cleared together; **no SQL and no ingest logic changed**, which is
+why every published figure below had no licence to move. **#59** promotes the insert-then-supersede rule — three hand-written
+copies once `db/027` gave `interactions.py` its own — into one primitive, `overlay.supersede(conn, table, pk_column, new_id,
+key_columns, key_values)`, reused unchanged by `accumulation._supersede`, `questions.set_state` and
+`record_expansion_decision`; `test_only_overlay_points_a_row_at_its_successor` greps `src/` for `"SET superseded_by"` and
+asserts the only file is `overlay.py`. **#60** lets `IngestStep` declare an input `secondary` — read but not dated — so
+`check_release_agreement` stops comparing `mesh`'s and `mesh-relations`' tags on the `desc*.gz`/`supp*.gz` files they share,
+and the documented `drugref ingest chain --unii-release … --medrt-release … --mesh-release … --mesh-relations-release …`
+stops refusing itself. **#61** gives an operator `drugref policy record|withdraw|show`, in a new `cli_policy.py` split out of
+`cli.py` to hold CLAUDE.md's ~500-line rule.
+
+**Measured on a fresh `drugref_policy_cli`, through the exact chain invocation #60 says is refused** — it ran, in
+**113.99 s**: `ddi_candidate_pair` **21,664** · `open_question` **18,834** · `gap_dead_by_expansion_policy` **1** ·
+`gap_unreviewed_expansion_root` **0** · `expansion_policy_unresolved` **0** · `class_expansion_policy` **14 / 14** ·
+`loaded_release` **4** · `ingest_run_incomplete` **0** — all unchanged. `drugref policy withdraw` on the seeded
+`N0000009020` moved `gap_unreviewed_expansion_root` 0 → 1; `policy show` on that code printed both rows, oldest first,
+the live one marked `*`. **831 tests** (810 at branch start).
+
+**Traps a future change can still break.**
+- **The `secondary` exemption filters the CLAIM, never the read.** `mesh-relations` still *reads* `desc*.gz`/`supp*.gz` in
+  full — MED-RT's `to_code` resolves against them exactly as before — it just does not *date* them, so
+  `check_release_agreement` stops comparing `mesh`'s and `mesh-relations`' tags on that one shared pair of files.
+  A future change that mistook the exemption for permission to skip *resolving* a secondary input, rather than merely not
+  dating it, would break the orchestrator on the first ConceptUI it could not look up.
+- **`medrt_run.py` names `drugref.class_expansion_policy` in PROSE, not SQL** — the operator warning that tells them the
+  table is append-only and names the two functions that can revise it (`withdraw_expansion_decision`,
+  `record_expansion_decision`). `POLICY_TABLE_NAMINGS` in `tests/test_overlay_contract.py` counts it deliberately
+  (`medrt_run.py: 1`, `interactions.py: 3`) — a grep that special-cased the sentence on the theory that a warning is not a
+  "read" would silently stop catching a real fourth SQL reference landing beside it. The pin matches by **regex with a
+  negative lookahead** (`r"drugref\.class_expansion_policy(?!\w)"`), not `str.count`, because `class_expansion_policy_current`
+  — the one approved VIEW read — **contains the base-table name as a prefix**: a substring count would read that view read as
+  a base-table read, which is exactly the substitution the pin exists to catch (a Task 3 plan defect, caught before it
+  shipped, not after).
+- **`record_expansion_decision` still accepts `withdrawn`; only the CLI refuses it.** Rejecting the value in the library
+  would put a member of db/027's decision vocabulary back into a second place (Python, beside the CHECK constraint); its
+  docstring says so instead. A caller reaching for `interactions.record_expansion_decision` directly from Python — which
+  `_handle_policy_record` deliberately does not do, refusing `--decision withdrawn` before any write — still bypasses both
+  of `withdraw_expansion_decision`'s guarantees: `NoLiveDecisionError` on a class with no live row, and carrying
+  `class_name` forward into the audit trail. The door is left open on purpose, not by oversight.
+- **The `policy` handlers COMMIT; the library functions do not.** `_handle_policy_record`/`_handle_policy_withdraw` call
+  `conn.commit()` after `interactions.record_expansion_decision`/`withdraw_expansion_decision` return — consistent with
+  every other CLI handler, but unlike the DB-gated tests of the library layer, which rely on the `conn` fixture's rollback.
+  **Committed policy rows cannot be deleted** — the overlay floor refuses it, same as Plan C's other four tables — so
+  `tests/test_cli_policy.py`'s `committed` fixture restores in a `finally` by **recording a further correction** (a fresh
+  `deny` on the seeded root `N0000009020`, `Dermatologic Activity Alteration [PE]`), never a `DELETE` or a `ROLLBACK`.
+
+**This round reopened [#61](https://github.com/cairn-ehr/drugref/issues/61)**, closed in error by `92baaea`: its own commit
+body reads "Filed rather than fixed: #61 …", and GitHub's linker accepts `fixed:` immediately before a number as a closing
+keyword — the sentence *declaring the issue unfixed* is what closed it. Reopened after checking `build_parser` directly:
+nothing #61 asks for existed at that commit. **The fourth occurrence of the sweep-closed-but-unfixed pattern** (#31, #35,
+#40, #61) — and the first where the author was deliberately writing prose to dodge it, which is what makes it worth
+restating rather than assumed solved: keep the number away from `close`/`fix`/`resolve` **in any inflection** (closes,
+closed, fixing, fixes, resolved, …), because the linker matches on **token adjacency**, not meaning. A colon in between does
+not save you.
+
 ## What the upstream documentation got wrong (verified against the real releases)
 
 Each would be a silent, plausible bug invisible to a hand-written fixture — which is why every fixture is extracted from a
