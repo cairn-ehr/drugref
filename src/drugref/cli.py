@@ -46,13 +46,34 @@ class IngestStep:
 
     `inputs` pairs an ARGUMENT NAME with a GLOB relative to --downloads, and both
     consumers read the same tuple: the per-source subcommand turns each name into a
-    required `--name PATH` flag, and the chain (task 5) resolves the same names by
-    glob. One declaration, so a step cannot grow an input the chain does not know
-    about.
+    required `--name PATH` flag, and the chain resolves the same names by glob. One
+    declaration, so a step cannot grow an input the chain does not know about.
+
+    `secondary` names the inputs this step READS BUT DOES NOT DATE (#60). A step
+    records one release tag, describing its PRIMARY authority; mesh-relations reads
+    two -- MED-RT states the rule, MeSH defines its object -- and writes one
+    ingest_run row under source='MED-RT'. So its desc/supp inputs are dated by the
+    mesh step and merely consumed here, and check_release_agreement must not read
+    that as one file claimed to be two releases.
+
+    It names INPUTS, not paths, because the declaration belongs beside the glob it
+    qualifies and has to survive a glob's filename changing between releases.
     """
     name: str
     inputs: tuple[tuple[str, str], ...]
     runner: Callable[[object, dict[str, pathlib.Path], str], object]
+    secondary: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        # A typo here would exempt nothing and leave the chain refusing the very
+        # invocation the exemption exists to allow -- a silent failure, in the field,
+        # of a check whose whole job is to be loud. Raised at import, where STEPS is
+        # built, so it cannot reach an operator.
+        undeclared = set(self.secondary) - {name for name, _ in self.inputs}
+        if undeclared:
+            raise ValueError(
+                f"{self.name}: secondary names an input this step does not declare: "
+                f"{', '.join(sorted(undeclared))}")
 
 
 def _run_unii(conn, paths, release):
@@ -123,7 +144,8 @@ STEPS = (
                         ("supp", "mesh/supp*.gz")), _run_mesh),
     IngestStep("mesh-relations", (("medrt", "MEDRT/Core_MEDRT_*_XML.xml"),
                                   ("desc", "mesh/desc*.gz"),
-                                  ("supp", "mesh/supp*.gz")), _run_mesh_relations),
+                                  ("supp", "mesh/supp*.gz")), _run_mesh_relations,
+               secondary=("desc", "supp")),
     IngestStep("pbs", (("items", "tables_as_csv/items.csv"),), _run_pbs),
 )
 
@@ -218,11 +240,16 @@ def check_release_agreement(
     """Refuse a chain in which one FILE is claimed to be two different releases.
 
     THE STEPS OVERLAP, and that is not incidental: `medrt` and `mesh-relations`
-    resolve the SAME Core_MEDRT_*_XML.xml, and `mesh` and `mesh-relations` share
-    desc/supp. Their release tags are stated independently, so
-    `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04` writes two
-    different releases into ingest_run FROM IDENTICAL BYTES. One of them is false, and
-    ingest_run is history: nothing can take it back.
+    resolve the SAME Core_MEDRT_*_XML.xml. Their release tags are stated
+    independently, so `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04`
+    writes two different releases into ingest_run FROM IDENTICAL BYTES. One of them is
+    false, and ingest_run is history: nothing can take it back.
+
+    `mesh` and `mesh-relations` also share desc/supp, and that overlap is NOT a
+    conflict (#60): mesh-relations declares them `secondary`, so it reads them without
+    dating them. Comparing those claims refused the documented four-source invocation
+    for a disagreement that was never one -- two true statements about two different
+    authorities.
 
     That is worse than a missing tag. db/025 added `writer` so an operator could see
     that one half of MED-RT is a release behind the other; this makes the two halves
@@ -236,7 +263,14 @@ def check_release_agreement(
     """
     stated: dict[pathlib.Path, tuple[str, str]] = {}   # path -> (release, step name)
     for step, release, paths in plan:
-        for path in paths.values():
+        for name, path in paths.items():
+            if name in step.secondary:
+                # READ, NOT DATED. This step states no release for this file, so it
+                # makes no claim that could contradict another step's. Skipping the
+                # record entirely (rather than recording and tolerating a mismatch)
+                # is what keeps a file dated by NO step from silently agreeing with
+                # itself.
+                continue
             first_release, first_step = stated.setdefault(path, (release, step.name))
             if first_release != release:
                 raise ReleaseError(
