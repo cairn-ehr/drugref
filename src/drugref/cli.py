@@ -1,11 +1,19 @@
 # src/drugref/cli.py
-"""The drugref command line: the first supported way to run an ingest (#16).
+"""The drugref command line: the first supported way to run an ingest (#16), and to
+record a curator's expansion decision (#61).
 
 WHAT THIS MODULE IS AND IS NOT. It is a thin, feed-agnostic shell: argument parsing,
 one connection, one call into an orchestrator. It holds NO ingest logic and no
 knowledge of a feed's format -- that all lives in drugref.ingest, which is where a
 parser belongs. The step table below is the single place that knows which
 orchestrators exist and in which order they must run.
+
+IT HOLDS NO SQL. Every database access goes through a module function -- the
+orchestrators for ingest, interactions.py for policy. That is load-bearing for the
+policy commands specifically: test_only_the_current_view_reads_the_policy_table_directly
+reads pg_rewrite, which sees views and matviews and CANNOT see a query embedded in
+Python, so a handler with its own SELECT would be a reader of an append-only curated
+table that no test in this repository could notice.
 
 THE ARGUMENT LAYER TAKES NO CONNECTION, which is the sense of "pure" that matters
 here: the step table, the ChainError family, `resolve_inputs`, `selected_steps`,
@@ -28,7 +36,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import drugref
-from drugref import db
+from drugref import db, interactions
 from drugref.ingest import chebi, medrt_run, mesh_rel_run, mesh_run, pbs_run, run
 
 # The two closed seed files ship INSIDE the package (they are drugref's own curated
@@ -337,6 +345,72 @@ def _handle_ingest(conn, args) -> int:
     return 0
 
 
+def _handle_policy_record(conn, args) -> int:
+    """Record or revise an expansion decision. COMMITS -- the CLI is the caller, and
+    in these modules the caller owns the transaction."""
+    if args.decision == interactions.WITHDRAWN:
+        # The library accepts this and deliberately does not guard it (a guard would
+        # put a member of db/027's vocabulary back into Python). An operator surface
+        # is a different matter: this path skips the NoLiveDecisionError that catches
+        # a caller believing something false, and skips carrying class_name forward
+        # from the row being retracted.
+        print(f"drugref: --decision {interactions.WITHDRAWN} is not recorded here. "
+              "Use `drugref policy withdraw`, which refuses to withdraw a decision "
+              "nobody made and carries the reviewed class name forward.",
+              file=sys.stderr)
+        return 2
+    policy_id = interactions.record_expansion_decision(
+        conn, args.source, args.code, args.decision, args.class_name,
+        args.rationale, args.reviewed_by, args.reviewed_against)
+    conn.commit()
+    print(f"recorded policy_id={policy_id}: "
+          f"{args.source} {args.code} -> {args.decision}")
+    return 0
+
+
+def _handle_policy_withdraw(conn, args) -> int:
+    """Retract the live decision, returning the class to gap_unreviewed_expansion_root.
+
+    NoLiveDecisionError propagates to main, which reports it without a traceback.
+    """
+    policy_id = interactions.withdraw_expansion_decision(
+        conn, args.source, args.code, args.rationale, args.reviewed_by,
+        args.reviewed_against)
+    conn.commit()
+    print(f"withdrawn policy_id={policy_id}: {args.source} {args.code} "
+          "(the class is unreviewed again, so it expands AND raises a question)")
+    return 0
+
+
+def _handle_policy_show(conn, args) -> int:
+    """What binds, or one class's whole history. Reads only -- nothing to commit."""
+    if args.code is None:
+        rows = interactions.live_decisions(conn)
+        print("binding decisions:" if rows else "binding decisions: none")
+        for source, code, decision, class_name in rows:
+            print(f"  {source:<8} {code:<12} {decision:<10} {class_name}")
+        # The other half of the answer, for the same reason `status` prints two
+        # blocks: a decision that binds nothing looks exactly like one that works.
+        # Hardcoded to MED-RT: it is the only source with policy rows today, and
+        # unresolved_expansion_policy is scoped by source by design. A known
+        # simplification, not an oversight -- revisit if a second source arrives.
+        unresolved = interactions.unresolved_expansion_policy(conn, "MED-RT")
+        print(f"\nbinding but matching no class: {len(unresolved)}"
+              + (f" ({', '.join(unresolved)})" if unresolved else ""))
+        return 0
+
+    history = interactions.decision_history(conn, args.source, args.code)
+    if not history:
+        print(f"{args.source} {args.code}: no decision — unreviewed, so it expands "
+              "and raises a question on gap_unreviewed_expansion_root")
+        return 0
+    print(f"{args.source} {args.code}, oldest first:")
+    for policy_id, decision, rationale, by, against, superseded_by in history:
+        mark = "  " if superseded_by else "* "      # * marks the live row
+        print(f"{mark}#{policy_id} {decision:<10} [{by} vs {against}] {rationale}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole command surface, built from STEPS so a new orchestrator needs one
     tuple entry rather than an edit in three places."""
@@ -375,6 +449,63 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"include {step.name}, recording this release tag")
     chain.set_defaults(handler=_handle_chain)
 
+    policy = commands.add_parser(
+        "policy", help="record, withdraw or inspect class-expansion decisions")
+    policy_actions = policy.add_subparsers(dest="action", required=True)
+
+    record = policy_actions.add_parser(
+        "record", help="record or revise whether a class expands over its subtree")
+    record.add_argument("--source", required=True,
+                        help="who DEFINES the class (half the natural key), e.g. MED-RT")
+    record.add_argument("--code", required=True, help="the class's source_code")
+    # No `choices`: the vocabulary lives in db/027's CHECK, and a second list is a
+    # second thing to disagree with the first (db/006). An unrecognised value reaches
+    # the database and raises CheckViolation.
+    record.add_argument("--decision", required=True,
+                        help="the ruling, as db/027's CHECK defines it")
+    record.add_argument("--class-name", required=True,
+                        help="the class's name, as reviewed")
+    record.add_argument("--rationale", required=True,
+                        help="why -- this is what survives as history")
+    record.add_argument("--reviewed-by", required=True)
+    record.add_argument("--reviewed-against", required=True,
+                        help="the release the ruling was measured against")
+    record.set_defaults(handler=_handle_policy_record)
+
+    withdraw = policy_actions.add_parser(
+        "withdraw", help="retract a ruling, returning the class to unreviewed")
+    withdraw.add_argument("--source", required=True)
+    withdraw.add_argument("--code", required=True)
+    withdraw.add_argument("--rationale", required=True)
+    withdraw.add_argument("--reviewed-by", required=True)
+    withdraw.add_argument("--reviewed-against", required=True)
+    withdraw.set_defaults(handler=_handle_policy_withdraw)
+
+    show = policy_actions.add_parser(
+        "show", help="what binds, or one class's whole history")
+    show.add_argument("--source", help="with --code, the class to show history for")
+    show.add_argument("--code", help="with --source, the class to show history for")
+    show.set_defaults(handler=_handle_policy_show)
+
+    # `--source`/`--code` must arrive together for `show`: half a natural key
+    # identifies nothing, since `source` here means WHO DEFINES the class, not who
+    # ruled on it, so it cannot be defaulted. argparse has no declarative way to
+    # require two optional flags together (they are not mutually exclusive, and
+    # neither can be `required` alone without breaking the no-args "list everything"
+    # form), so this wraps `parse_args` with the one check it cannot express. Wrapping
+    # the returned parser -- rather than checking in `main` -- keeps the invariant
+    # reachable from `parse_args` directly, which is how build_parser's own tests
+    # exercise the surface without a database.
+    _parse_args = parser.parse_args
+
+    def parse_args(argv=None, namespace=None):
+        args = _parse_args(argv, namespace)
+        if (getattr(args, "action", None) == "show"
+                and (args.source is None) != (args.code is None)):
+            parser.error("policy show: --source and --code must be given together")
+        return args
+
+    parser.parse_args = parse_args
     return parser
 
 
@@ -391,7 +522,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
-    except (RuntimeError, ChainError) as exc:
+    except (RuntimeError, ChainError, interactions.NoLiveDecisionError) as exc:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
         print(f"drugref: {exc}", file=sys.stderr)
