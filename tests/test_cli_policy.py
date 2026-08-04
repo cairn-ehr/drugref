@@ -96,6 +96,46 @@ def test_policy_record_refuses_withdrawn_and_names_the_other_subcommand(committe
     assert _live(committed)[0] == "deny"        # a refused command changed nothing
 
 
+def test_policy_record_refuses_a_blank_rationale_and_names_the_flag(committed, capsys):
+    """IMPORTANT 3: a blank string satisfies argparse's `required=True` (presence,
+    not content) AND db/010's NOT NULL (no non-blank CHECK), so without this guard
+    the CLI could write a row test_every_seeded_root_carries_a_reviewable_justification
+    asserts cannot exist -- and the append-only floor would make it uncorrectable.
+    Whitespace-only, not merely empty, to prove the guard strips before checking."""
+    with psycopg.connect(committed) as c:
+        before = interactions.decision_history(c, "MED-RT", CODE)
+    assert cli.main([
+        "policy", "record", "--source", "MED-RT", "--code", CODE,
+        "--decision", "allow", "--class-name", NAME, "--rationale", "   ",
+        "--reviewed-by", "operator", "--reviewed-against", "2026.07.06"]) == 2
+    err = capsys.readouterr().err
+    assert "--rationale" in err
+    assert "Traceback" not in err
+    with psycopg.connect(committed) as c:
+        after = interactions.decision_history(c, "MED-RT", CODE)
+    assert after == before                            # nothing written
+
+
+def test_policy_record_an_unrecognised_decision_exits_two_without_a_traceback(
+        committed, capsys):
+    """IMPORTANT 4: an unrecognised --decision reaches db/027's CHECK as
+    psycopg.errors.CheckViolation, which main did not used to catch -- printing a
+    raw traceback and exiting 1, unlike every other operator error on this surface.
+    Not asserting the message's exact wording: it comes from postgres, and pinning
+    it here would be a second copy of the CHECK's text to go stale."""
+    with psycopg.connect(committed) as c:
+        before = interactions.decision_history(c, "MED-RT", CODE)
+    assert cli.main([
+        "policy", "record", "--source", "MED-RT", "--code", CODE,
+        "--decision", "Deny", "--class-name", NAME, "--rationale", "r",
+        "--reviewed-by", "operator", "--reviewed-against", "2026.07.06"]) == 2
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    with psycopg.connect(committed) as c:
+        after = interactions.decision_history(c, "MED-RT", CODE)
+    assert after == before                            # nothing written
+
+
 def test_policy_withdraw_returns_the_class_to_unreviewed(committed):
     """WITHDRAWN IS NOT `allow`. It means no current judgement, so the class goes back
     to gap_unreviewed_expansion_root -- which is what medrt_run's warning is asking an
@@ -119,6 +159,24 @@ def test_policy_withdraw_without_a_live_decision_exits_two(committed, capsys):
     err = capsys.readouterr().err
     assert "no live expansion decision" in err
     assert "Traceback" not in err
+
+
+def test_policy_withdraw_refuses_a_blank_rationale_and_names_the_flag(committed, capsys):
+    """IMPORTANT 3, the withdraw arm: the same blank-after-strip guard applies here,
+    since withdraw's carry-forward would otherwise propagate a blank straight into
+    the audit trail exactly as record's would."""
+    with psycopg.connect(committed) as c:
+        before = interactions.decision_history(c, "MED-RT", CODE)
+    assert cli.main([
+        "policy", "withdraw", "--source", "MED-RT", "--code", CODE,
+        "--rationale", "", "--reviewed-by", "operator",
+        "--reviewed-against", "2026.07.06"]) == 2
+    err = capsys.readouterr().err
+    assert "--rationale" in err
+    assert "Traceback" not in err
+    with psycopg.connect(committed) as c:
+        after = interactions.decision_history(c, "MED-RT", CODE)
+    assert after == before                            # nothing written
 
 
 def test_policy_show_lists_what_binds(committed, capsys):
@@ -154,3 +212,15 @@ def test_policy_show_needs_both_halves_of_the_key_or_neither():
     means "who defines the class" rather than "who ruled on it"."""
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["policy", "show", "--code", CODE])
+
+
+def test_policy_show_needs_both_halves_of_the_key_or_neither_source_arm():
+    """The OTHER half of the XOR. _Parser.parse_args checks
+    `(args.source is None) != (args.code is None)`, which is symmetric in source and
+    code -- but a test that only ever drives the --code-alone arm would stay green if
+    that condition were inverted to `==`, since --code alone would then be the one
+    case still refused while --source alone silently fell through to the global
+    `policy show` listing instead of erroring. Both arms have to be pinned for the
+    XOR to mean what the docstring says."""
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["policy", "show", "--source", "MED-RT"])

@@ -18,7 +18,10 @@ rebuildable projection -- it holds curator judgement and an ingest must never wi
 it. `record_expansion_decision` and `withdraw_expansion_decision` are the only
 correct way to revise it: the table is append-only, so a revision is INSERT-then-
 supersede, and getting that ordering backwards fails at COMMIT rather than at the
-call that caused it.
+call that caused it. The UPDATE half now executes in overlay.py (#59) --
+overlay.supersede is what record_expansion_decision calls, and overlay.py's
+docstring is where the reason for the ordering lives, stated once rather than
+restated here.
 """
 import uuid
 from collections.abc import Iterable

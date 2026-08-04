@@ -8,12 +8,20 @@ knowledge of a feed's format -- that all lives in drugref.ingest, which is where
 parser belongs. The step table below is the single place that knows which
 orchestrators exist and in which order they must run.
 
-IT HOLDS NO SQL. Every database access goes through a module function -- the
-orchestrators for ingest, interactions.py for policy. That is load-bearing for the
-policy commands specifically: test_only_the_current_view_reads_the_policy_table_directly
+THE POLICY COMMANDS HOLD NO SQL -- that is a claim about `cli_policy.py`, not about
+this whole file; `_handle_status` below is the stated exception. Every policy read and
+write goes through interactions.py, never a query embedded in Python. That is
+load-bearing specifically because test_only_the_current_view_reads_the_policy_table_directly
 reads pg_rewrite, which sees views and matviews and CANNOT see a query embedded in
 Python, so a handler with its own SELECT would be a reader of an append-only curated
 table that no test in this repository could notice.
+
+`_handle_status` IS THE EXCEPTION, and deliberately so: it embeds two SELECTs, against
+`drugref.loaded_release` and `drugref.ingest_run_incomplete`. Neither is curated,
+append-only data a silent Python reader could corrupt unnoticed -- they are
+operational views nothing governs that way -- so the pg_rewrite discipline above does
+not apply to them, and tests/test_cli.py drives them directly through a stub
+connection instead of a grep.
 
 THE ARGUMENT LAYER TAKES NO CONNECTION, which is the sense of "pure" that matters
 here: the step table, the ChainError family, `resolve_inputs`, `selected_steps`,
@@ -34,6 +42,8 @@ import pathlib
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+import psycopg
 
 import drugref
 from drugref import cli_policy, db, interactions
@@ -358,12 +368,16 @@ class _Parser(argparse.ArgumentParser):
     on it, so it cannot be defaulted.
     """
 
-    def parse_args(self, argv=None, namespace=None):
-        args = super().parse_args(argv, namespace)
-        if (getattr(args, "action", None) == "show"
-                and (args.source is None) != (args.code is None)):
+    def parse_args(self, args=None, namespace=None):
+        # `args` here shadows argparse.ArgumentParser.parse_args's own parameter name
+        # on purpose -- a subclass override changing a positional parameter's name is
+        # a Liskov violation, even with no live keyword caller today. `parsed` is the
+        # local for the result so the two never collide.
+        parsed = super().parse_args(args, namespace)
+        if (getattr(parsed, "action", None) == "show"
+                and (parsed.source is None) != (parsed.code is None)):
             self.error("policy show: --source and --code must be given together")
-        return args
+        return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -426,4 +440,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
         print(f"drugref: {exc}", file=sys.stderr)
+        return 2
+    except psycopg.errors.CheckViolation as exc:
+        # The two CHECKs a `policy` argument can trip: db/027's `decision` and
+        # db/006's `source`. `with db.connect(...)` has already rolled the
+        # transaction back by the time we get here, so nothing was written.
+        #
+        # Rendered from exc.diag.message_primary -- NOT from a Python list of valid
+        # decisions/sources. The vocabulary lives in the CHECK constraint and NOWHERE
+        # else (db/006's lesson, restated by cli_policy.py's `--decision` comment);
+        # restating it here to build a friendlier message would be exactly the
+        # second-vocabulary defect that lesson exists to prevent. str(exc) also
+        # carries a DETAIL line quoting the failing row, which is not the one clean
+        # line every other operator error on this surface gives.
+        print(f"drugref: {exc.diag.message_primary}", file=sys.stderr)
         return 2

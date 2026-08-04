@@ -1,7 +1,8 @@
 # HANDOVER — drugref
 
 > **The volatile half: where we are right now.** Regenerated at the end of every working session
-> (nextsession rule 9) and kept **under ~120 lines**, so a rewrite costs nothing.
+> (nextsession rule 9) and kept **under ~130 lines** (was ~120 through #62; raised rather than left
+> asserting a bound this round's own detail was already breaking), so a rewrite costs nothing.
 >
 > **The stable half is [`PROJECT-NOTES.md`](PROJECT-NOTES.md)** — traps, state by layer, how to run and test,
 > the schema and code map, upstream errata, repo facts. It is edited in place and under no bound. **Put
@@ -19,37 +20,33 @@ post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #5
 (#57) · the ingest-operability round (#58, closing #16 and #47) · **the expansion-policy history round (#35, PR
 [#62](https://github.com/cairn-ehr/drugref/pull/62))**.
 
-**In flight: the policy-surface debt round (#59, #60, #61, #63)** on `fix/policy-surface-debt-round` — the four
-follow-ups #62's review filed against itself. Complete on the branch, not yet pushed or opened as a PR. **831 tests
-green** (810 at branch start), `ruff check src tests` + `mkdocs build --strict` clean, re-measured through the EXACT
-`ingest chain` invocation #60 says is refused — it ran, on a fresh `drugref_policy_cli` (**113.99 s**): every
-published figure reproduced exactly (`ddi_candidate_pair` **21,664**, `open_question` **18,834**,
-`class_expansion_policy` **14 / 14**, `loaded_release` **4**, `ingest_run_incomplete` **0** — full table in ROADMAP),
-since this round changed no SQL and no ingest logic. `drugref policy withdraw` exercised against that database moved
-`gap_unreviewed_expansion_root` 0 → 1. Traps in [`PROJECT-NOTES.md`](PROJECT-NOTES.md). Errata live in
+**In flight: the policy-surface debt round (#59, #60, #61, #63)** on `fix/policy-surface-debt-round`, now including
+the final whole-branch review's 13 findings (docs, `cli.py`, `cli_policy.py`, `medrt_run.py`, `interactions.py`).
+Complete on the branch, not yet pushed or opened as a PR. **835 tests green** (831 before this review's own 4), `ruff check src tests` +
+`mkdocs build --strict` clean. Re-measured through the EXACT `ingest chain` invocation #60 used to refuse — ran on a
+fresh `drugref_policy_cli` in **113.99 s**, every published figure reproduced exactly (full table: ROADMAP.md), since
+this round changed no SQL and no ingest logic. Traps: [`PROJECT-NOTES.md`](PROJECT-NOTES.md). Errata:
 `docs-site/docs/decisions/` — one per MeSH-keyed slice, plus Plan C's and the expansion-policy round's.
 
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has now happened FOUR times** (#31, #35, #40, #61),
-the last one the first where the author was deliberately writing prose to avoid it: `92baaea`'s body reads "Filed
-rather than fixed: #61 …", and GitHub's linker still closed #61, because it matches `fixed:` immediately before a
-number on **token adjacency**, not on what the sentence means. Reopened after checking `build_parser` directly —
-nothing #61 asked for existed. **The standing rule, restated once more:** keep the number away from
-`close`/`fix`/`resolve` **in any inflection**, not just as a bare keyword — a colon in between does not save you.
+the last the first where the author deliberately wrote prose to dodge it: `92baaea`'s body reads "Filed rather than
+fixed: #61 …", and GitHub's linker still closed #61 — it matches `fixed:` immediately before a number on **token
+adjacency**, not meaning. Reopened after checking `build_parser` directly: nothing #61 asked for existed. **Standing
+rule:** keep the number away from `close`/`fix`/`resolve` **in any inflection** — a colon in between does not save you.
 
 **⇒ Next candidates:**
 
-- **Slice 5c — the curated, signed overlay.** A projection may not invent a line of therapy, a strength of evidence or an
-  ordering among the drugs that treat one condition; 5c is where a human adds those. **Plan C built the overlay MACHINERY**
-  and #35 has now exercised it on a fifth table. Owns #51, #52, #55.
+- **Slice 5c — the curated, signed overlay.** A projection may not invent a line of therapy, evidence strength or drug
+  ordering; 5c is where a human adds those. **Plan C built the overlay MACHINERY**, #35 has now exercised it on a fifth
+  table. Owns #51, #52, #55.
 - **Slice 3 — composition tree (salts/esters/hydrates via GSRS).** Triply motivated: the salt-strip heuristic is down to
   **0.03%** of bridge rows, #33 needs form→moiety relationships, and #30 waits on the same thing. **The UNII release carries
-  no parent-moiety column** (checked: 25 columns, none a relationship), so this needs the GSRS full export — **a new source,
-  so the rule-6 licence check runs BEFORE anything is downloaded.**
+  no parent-moiety column** (checked: 25 columns, none a relationship) — needs the GSRS full export, **a new source, so the
+  rule-6 licence check runs BEFORE anything is downloaded.**
 - **Step 8 — curation itself**, driven by the worklist Plan C published (**381** effects awaiting a ruling), bound by §12-H:
   audit every file and predicate of a source before curating a gap it may already cover.
 - **#36** — the discovery heuristic counts descendant classes rather than reachable members. Same table #35 just moved,
-  deliberately left alone by it: the metric moves which roots get asked about, so it needs a curator ruling and its own
-  re-measure.
+  deliberately left alone: the metric moves which roots get asked about, needs a curator ruling and its own re-measure.
 
 ## Open follow-ups (all filed as GitHub issues)
 
@@ -64,14 +61,10 @@ revises the living record.
 with no direct member is equally dead and is deliberately not reported** by `gap_dead_by_expansion_policy`; it wants its own
 view. **Still unreachable — 5b.2, Plan C and #35 all left it so**: it goes live when a *class-side* predicate stops expanding.
 
-**Filed by the expansion-policy history round, all four addressed by the policy-surface debt round now sitting on
-`fix/policy-surface-debt-round`** (not yet merged) — [#59](https://github.com/cairn-ehr/drugref/issues/59) the
-insert-then-supersede rule in three places, now `overlay.supersede` ·
-[#60](https://github.com/cairn-ehr/drugref/issues/60) `ingest chain` refusing its own documented four-source
-invocation, now `IngestStep.secondary` · [#61](https://github.com/cairn-ehr/drugref/issues/61) no operator surface
-for a stale expansion decision, now `drugref policy record|withdraw|show` ·
-[#63](https://github.com/cairn-ehr/drugref/issues/63) HANDOVER/PROJECT-NOTES rewritten wholesale each round, now
-split (Task 5). Detail and traps: `PROJECT-NOTES.md` §"The policy-surface debt round".
+**Filed by the expansion-policy history round** — [#59](https://github.com/cairn-ehr/drugref/issues/59),
+[#60](https://github.com/cairn-ehr/drugref/issues/60), [#61](https://github.com/cairn-ehr/drugref/issues/61),
+[#63](https://github.com/cairn-ehr/drugref/issues/63): all four closed by the in-flight round described above (fix-by-fix
+account: ROADMAP.md; detail and traps: `PROJECT-NOTES.md` §"The policy-surface debt round").
 
 **Closed by the four debt rounds** (#50, #39, #31, #45 · #40, #17, #42, #41, #43 · #16, #47 · **#35**), each verified against
 the code before closing. **Three standing rules came out of them and outlive the issues:**
@@ -85,11 +78,10 @@ the code before closing. **Three standing rules came out of them and outlive the
   release-derived database holds a superseded or withdrawn row — are the same shape.
 
 **Floor & identity**
-- [#2](https://github.com/cairn-ehr/drugref/issues/2) **Floor hardening** — close the `TRUNCATE` + owner-role bypass via RLS +
-  privilege separation. **Note the test-suite coupling** (re-run the grep before quoting the count): `grep -l TRUNCATE
-  tests/*.py` finds **eleven** modules, one the shared helper `tests/mesh_rel_fixtures.py`, each truncating in an autouse
-  fixture because their orchestrators commit internally and escape the `conn` fixture's rollback — so hardening needs a
-  replacement isolation strategy.
+- [#2](https://github.com/cairn-ehr/drugref/issues/2) **Floor hardening** — close the `TRUNCATE` + owner-role bypass via
+  RLS + privilege separation; blocked on a replacement test-isolation strategy (**eleven** `TRUNCATE`-ing test modules
+  depend on the very bypass this closes — re-run the grep before quoting the count). Detail: ROADMAP.md's own "Floor
+  hardening" bullet.
 - [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** — structural re-key by InChIKey, deferred.
   **#17 is CLOSED**; its third part is carried under "Verify-before-production" below.
 

@@ -20,9 +20,44 @@ import sys
 from drugref import interactions
 
 
+class _BlankArgumentError(ValueError):
+    """A required flag was passed, but its value strips to empty."""
+
+
+def _reject_blank(args, *dests: str) -> None:
+    """Refuse a flag the operator passed with a blank (or whitespace-only) value.
+
+    argparse's `required=True` checks PRESENCE, not content -- the same gap
+    cli.selected_steps guards against for `--<source>-release`, under the heading
+    "PRESENCE, NOT TRUTHINESS": a flag the operator DID pass with an empty value is a
+    silently wrong answer, not a missing one. The stakes here are higher than a
+    skipped ingest step -- db/010 has NOT NULL with no non-blank CHECK on
+    class_name/rationale/reviewed_by/reviewed_against, so a blank slips straight
+    through into a row the append-only floor then makes UNCORRECTABLE (no DELETE).
+    `withdraw`'s carry-forward would then propagate a blank class_name into every
+    later row for that class, through the very mechanism meant to prevent an
+    unreviewed name.
+
+    Checked here, before any write, rather than left to db/010's NOT NULL: NOT NULL
+    does not reject '  '. This is a check on EMPTINESS, not on content, so unlike a
+    `choices=` on `--decision` it adds no second vocabulary for db/006's lesson to
+    disagree with.
+    """
+    for dest in dests:
+        if not getattr(args, dest).strip():
+            flag = "--" + dest.replace("_", "-")
+            raise _BlankArgumentError(f"{flag} was given a blank value")
+
+
 def _handle_policy_record(conn, args) -> int:
     """Record or revise an expansion decision. COMMITS -- the CLI is the caller, and
     in these modules the caller owns the transaction."""
+    try:
+        _reject_blank(args, "source", "code", "decision", "class_name", "rationale",
+                     "reviewed_by", "reviewed_against")
+    except _BlankArgumentError as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
     if args.decision == interactions.WITHDRAWN:
         # The library accepts this and deliberately does not guard it (a guard would
         # put a member of db/027's vocabulary back into Python). An operator surface
@@ -48,12 +83,26 @@ def _handle_policy_withdraw(conn, args) -> int:
 
     NoLiveDecisionError propagates to main, which reports it without a traceback.
     """
+    try:
+        _reject_blank(args, "source", "code", "rationale", "reviewed_by",
+                     "reviewed_against")
+    except _BlankArgumentError as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
     policy_id = interactions.withdraw_expansion_decision(
         conn, args.source, args.code, args.rationale, args.reviewed_by,
         args.reviewed_against)
     conn.commit()
+    # "It expands" always holds -- absent means unreviewed, which expands by
+    # default. "Raises a question" does NOT: gap_unreviewed_expansion_root also
+    # requires a substance_class row for this code, which is exactly what is
+    # missing when medrt_run's warning is what sent the operator here (a release
+    # that stopped defining the class). Overstating it would read as confirmation
+    # a worklist entry exists when it may not.
     print(f"withdrawn policy_id={policy_id}: {args.source} {args.code} "
-          "(the class is unreviewed again, so it expands AND raises a question)")
+          "(the class is unreviewed again, so it expands by default; if this "
+          "release still defines the class, that also raises a question on "
+          "gap_unreviewed_expansion_root)")
     return 0
 
 
@@ -80,6 +129,11 @@ def _handle_policy_show(conn, args) -> int:
               "and raises a question on gap_unreviewed_expansion_root")
         return 0
     print(f"{args.source} {args.code}, oldest first:")
+    # * marks the LIVE row -- NOT the binding one. A withdrawn row is live without
+    # binding (class_expansion_policy_current is where "live" and "binding" part
+    # ways), so "* #19 withdrawn" reads as "this is what applies" unless the legend
+    # says otherwise up front.
+    print("  (* = live; a live 'withdrawn' row is live but binds nothing)")
     for policy_id, decision, rationale, by, against, superseded_by in history:
         mark = "  " if superseded_by else "* "      # * marks the live row
         print(f"{mark}#{policy_id} {decision:<10} [{by} vs {against}] {rationale}")

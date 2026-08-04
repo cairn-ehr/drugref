@@ -279,8 +279,9 @@ Spec: [policy-surface debt round](superpowers/specs/2026-08-05-drugref-policy-su
 the expansion-policy history round filed against itself, cleared together; **no SQL and no ingest logic changed**, which is
 why every published figure below had no licence to move. **#59** promotes the insert-then-supersede rule — three hand-written
 copies once `db/027` gave `interactions.py` its own — into one primitive, `overlay.supersede(conn, table, pk_column, new_id,
-key_columns, key_values)`, reused unchanged by `accumulation._supersede`, `questions.set_state` and
-`record_expansion_decision`; `test_only_overlay_points_a_row_at_its_successor` greps `src/` for `"SET superseded_by"` and
+key_columns, key_values)`. Task 1 **deleted** `accumulation._supersede`; its four call sites (`curate_effect`,
+`grade_contribution`, `assert_group`, `set_group_member`) now call `overlay.supersede` directly, alongside
+`questions.set_state` and `record_expansion_decision`; `test_only_overlay_points_a_row_at_its_successor` greps `src/` for `"SET superseded_by"` and
 asserts the only file is `overlay.py`. **#60** lets `IngestStep` declare an input `secondary` — read but not dated — so
 `check_release_agreement` stops comparing `mesh`'s and `mesh-relations`' tags on the `desc*.gz`/`supp*.gz` files they share,
 and the documented `drugref ingest chain --unii-release … --medrt-release … --mesh-release … --mesh-relations-release …`
@@ -356,23 +357,32 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 810 tests. The DB-gated majority SKIP without this DSN, exercising none of the schema,
-# floor, views or orchestrators -- so always run WITH it before claiming green:
+# 835 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
 
-# Re-measure against the real releases, ~103 s. ONE manual step: unzip Core_MEDRT_XML.zip
-# into downloads/MEDRT/. `ingest chain` CANNOT DO ALL FOUR TODAY (#60) -- mesh and
-# mesh-relations share desc/supp and take different tags, so the pre-flight refuses. Run
-# the four subcommands in STEPS order: same files, same tags, same work. Each names its
-# files (only `chain` takes --downloads); M=downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml,
-# D='--desc downloads/mesh/desc2026.gz --supp downloads/mesh/supp2026.gz'.
+# Re-measure against the real releases, ~114 s. ONE manual step: unzip Core_MEDRT_XML.zip
+# into downloads/MEDRT/. The documented four-source `ingest chain` invocation below now
+# RUNS (#60 is fixed): mesh-relations declares desc/supp `secondary` -- it still reads
+# both files in full to resolve MED-RT's MeSH-keyed to_code, it just does not DATE them,
+# so check_release_agreement stops comparing mesh's and mesh-relations' tags on a pair of
+# files read, not claimed, by both. The guard still refuses two steps dating the SAME
+# MED-RT bytes differently -- that disagreement was, and remains, real.
 uv run drugref --dsn "$DSN" migrate
+uv run drugref --dsn "$DSN" ingest chain --downloads downloads \
+    --unii-release 26Feb2026 --medrt-release 2026.07.06 \
+    --mesh-release 2026 --mesh-relations-release 2026.07.06
+uv run drugref --dsn "$DSN" status      # loaded releases per (source, writer) + unfinished runs
+
+# The four per-source subcommands still exist and are still the right tool for a PARTIAL
+# re-ingest (one feed, without re-running the others); only `chain` takes --downloads, so
+# each of these names its own files. M=downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml,
+# D='--desc downloads/mesh/desc2026.gz --supp downloads/mesh/supp2026.gz'.
 uv run drugref --dsn "$DSN" ingest unii  --release 26Feb2026  --unii downloads/UNII_Records_26Feb2026.txt
 uv run drugref --dsn "$DSN" ingest medrt --release 2026.07.06 --medrt "$M"
 uv run drugref --dsn "$DSN" ingest mesh  --release 2026       --pa downloads/mesh/pa2026.xml $D
 uv run drugref --dsn "$DSN" ingest mesh-relations --release 2026.07.06 --medrt "$M" $D
-uv run drugref --dsn "$DSN" status      # loaded releases per (source, writer) + unfinished runs
 ```
 
 CI runs the suite against a PostgreSQL 18 service container, and `conftest` **fails rather than skips** when `CI` is set — so
@@ -399,8 +409,8 @@ the DB layer can never go green by being skipped.
   a new `db/NNN_*.sql`. One still on an unmerged branch may be edited — the ledger binds a *database*, not the repo — as
   `db/013`–`db/016` and `db/019` were; verify with a full run after any such edit.
 - **Code:** `src/drugref/{ids,claims,classes,conditions,db,interactions,local,questions}.py` +
-  `src/drugref/{indications,accumulation,provenance,cli}.py` + `src/drugref/ingest/*.py`; seed data under `src/drugref/data/`;
-  fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
+  `src/drugref/{indications,accumulation,provenance,cli,cli_policy,overlay}.py` + `src/drugref/ingest/*.py`; seed data under
+  `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
   "count the contributors" means one thing. **`interactions.py`** now carries TWO write disciplines under one docstring:
   rebuildable contraindication projections, and (since `db/027`) the append-only curator history — do not let a future writer
@@ -411,8 +421,13 @@ the DB layer can never go green by being skipped.
   DAG), and **`ingest/mesh_rel_run.py`** — the ONE orchestrator for both halves, reading two authorities (MED-RT states the
   rule, MeSH defines its object; #60's tension) and running `mesh_ci_relations.py` / `mesh_ind_relations.py` as passes. **Two
   orchestrators here is not a refactor away — it is impossible**: a `condition_parent` edge is derived by BOTH closures, so no
-  `reason` discriminator can split it (#39 one layer deeper). **FOUR things live in exactly one place, and a test pins each**:
-  `mesh.iter_records`, `ingest/checksum.py`, `db.clear_source_tables`, `provenance.py`.
+  `reason` discriminator can split it (#39 one layer deeper). **FIVE things live in exactly one place, and a test pins each**:
+  `mesh.iter_records`, `ingest/checksum.py`, `db.clear_source_tables`, `provenance.py`, and — since the policy-surface debt
+  round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`overlay.py`** is the append-only
+  tier's one correction primitive (#59): `supersede(conn, table, pk_column, new_id, key_columns, key_values)`, the
+  INSERT-then-point ordering every curated writer needs, now called directly by `accumulation.py`, `questions.py` and
+  `interactions.py` rather than each restating it. **`cli_policy.py`** is the `drugref policy record|withdraw|show` operator
+  surface (#61), split out of `cli.py` to hold CLAUDE.md's ~500-line rule; like `cli.py` it writes no SQL of its own.
 - Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
