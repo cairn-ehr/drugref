@@ -31,11 +31,10 @@ this round changed no SQL and no ingest logic. Traps: [`PROJECT-NOTES.md`](PROJE
 **⇒ Issue-tracker hygiene — the sweep-closed-but-unfixed pattern has now happened FOUR times** (#31, #35, #40, #61),
 the last the first where the author deliberately wrote prose to dodge it: `92baaea`'s body reads "Filed rather than
 fixed: #61 …", and GitHub's linker still closed #61 — it matches `fixed:` immediately before a number on **token
-adjacency**, not meaning. Reopened after checking `build_parser` directly: nothing #61 asked for existed. **And the rule
-had to be sharpened AGAIN, by PR #64's own body**: it first read "Also closes the CLI half of #61" — four words between
-keyword and number — and GitHub linked it anyway. **Standing rule:** near `close`/`fix`/`resolve`, in any inflection,
-write the number WITHOUT a `#` ("issue 65"). Neither a colon nor intervening words save you; the linker binds a keyword
-to the next `#N` in the phrase.
+adjacency**, not meaning. Reopened after checking `build_parser`: nothing #61 asked for existed. **Sharpened AGAIN by PR
+#64's own body**, written to dodge exactly that — "Also closes the CLI half of #61" linked it anyway, four intervening
+words notwithstanding. **Standing rule:** near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#`
+("issue 65"). The linker binds a keyword to the next `#N` in the phrase; nothing in between saves you.
 
 **⇒ Next candidates:**
 
@@ -53,12 +52,11 @@ to the next `#N` in the phrase.
 
 ## Open follow-ups (all filed as GitHub issues)
 
-**Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **`class_expansion_policy`
-has no index a HISTORY query can use**: `db/027`'s only index is partial on the live rows, because it exists to serve
-`db/023`'s single-live trigger, and history is the complementary population. Split out of #61 rather than closed with it.
-**No longer hypothetical** — `decision_history` is that query, and `EXPLAIN` shows the Seq Scan — but **deliberately not
-fixed**: 14 rows and an interactive command. Revisit when curation starts, and weigh the write cost of a second index on
-a bulk-load path (`db/020`'s quadratic trigger is what ignoring that side looks like).
+**Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **no index serves a HISTORY
+query** on `class_expansion_policy`: `db/027`'s only one is partial on the live rows (it serves `db/023`'s single-live
+trigger), and history is the complementary population. Split out of #61, not closed with it. `decision_history` makes it
+real (`EXPLAIN` shows a Seq Scan) but **deliberately unfixed** at 14 rows on an interactive command; revisit at curation,
+weighing a second index's write cost on a bulk-load path.
 
 **Filed by slice 5b.2 and its review (all three for 5c)** — [#51](https://github.com/cairn-ehr/drugref/issues/51) **the 168
 pairs both indicated and contraindicated**, counted not resolved · [#52](https://github.com/cairn-ehr/drugref/issues/52) **the
