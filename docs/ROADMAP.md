@@ -3,6 +3,10 @@
 > **Disposable working scaffolding, not a source of truth.** The canonical *what/why* is the design spec(s)
 > under [`docs/superpowers/specs/`](superpowers/specs/) (and future ADRs). This file only orders the build.
 > If it disagrees with the canonical docs, the canonical docs win.
+>
+> **Under no line bound since #63**, and appended to per slice rather than recompressed: a bound that forces
+> a compression pass trades a readable history for a line count. Session state is
+> [`HANDOVER.md`](HANDOVER.md); the stable notes are [`PROJECT-NOTES.md`](PROJECT-NOTES.md).
 
 **Scope:** the **global tier** of drugref.org (jurisdiction-independent substance identity → chemistry → classes →
 interactions), built bottom-up, followed by the consumer API and the local (country-specific) tier. drugref is an **advisory
@@ -483,6 +487,52 @@ own measurement did · [#61](https://github.com/cairn-ehr/drugref/issues/61) —
 an operator acting on `medrt_run`'s stale-decision warning has no supported surface; a `drugref policy` subcommand belongs
 with 5c's curation tooling · [#63](https://github.com/cairn-ehr/drugref/issues/63) — this file and HANDOVER are rewritten
 wholesale each round, so their git history answers nothing (raised by the #62 review).
+- **The policy-surface debt round ✅ DONE** (#59, #60, #61, #63; spec: [policy-surface debt
+  round](superpowers/specs/2026-08-05-drugref-policy-surface-debt-round-design.md)). The four follow-ups the
+  expansion-policy history round filed against itself, cleared together: **no new SQL, no new ingest logic.**
+  **#59** — the insert-then-supersede rule (`accumulation._supersede`, `questions.set_state`,
+  `interactions.record_expansion_decision`) becomes one primitive, `overlay.supersede`, all three owners on it with
+  the SQL semantically unchanged (verified natural-key-by-natural-key against `db/007`, `db/020`, `db/027`). **#60**
+  — `IngestStep` gains `secondary`, the inputs a step *reads but does not date*; `check_release_agreement` skips
+  them, so `mesh-relations` can read `desc*.gz`/`supp*.gz` without claiming a release for them, and the documented
+  four-source `ingest chain` invocation stops refusing itself. **#61** — `drugref policy record|withdraw|show`, in a
+  new `cli_policy.py` (extracted from `cli.py` to hold CLAUDE.md's ~500-line rule; `cli.py` 429, `cli_policy.py`
+  137), gives an operator the surface `medrt_run`'s "re-key or withdraw" warning has named since db/027 but had
+  nothing to point at; the CLI refuses `--decision withdrawn` (only `policy withdraw` may retract a decision — it
+  alone carries `NoLiveDecisionError` and the retracted class's name forward), while the library function underneath
+  still accepts the value on purpose. **#63** — the HANDOVER/PROJECT-NOTES split (Task 5) is this round's own
+  documentation discipline, not new work here.
+
+  **Measured on a fresh `drugref_policy_cli`, through the EXACT invocation #60 says is refused** — it ran (before
+  this round it failed pre-flight with *"desc2026.gz is read by both mesh and mesh-relations, which were given
+  different release tags"*): wall-clock **113.99 s** (94.78 s user + 2.57 s system, 85% CPU). Every published figure
+  reproduced exactly, as it had to — this round changed no SQL and no ingest logic: `ddi_candidate_pair` **21,664** ·
+  `open_question` **18,834** · `gap_dead_by_expansion_policy` **1** · `gap_unreviewed_expansion_root` **0** ·
+  `expansion_policy_unresolved` **0** · `class_expansion_policy` **14** rows, **14** binding · `loaded_release` **4**
+  · `ingest_run_incomplete` **0**. `drugref policy` exercised against that same database: `withdraw` on
+  `N0000009020` moved `gap_unreviewed_expansion_root` from 0 to 1, and `policy show` reported the two-row history
+  (the seeded `deny`, then the new `withdrawn`) with the live row marked. **844 tests** at the end of the branch
+  (810 at branch start; 831 at this measurement, +4 whole-branch review, +9 PR-#64 review round),
+  `ruff check src tests` and `mkdocs build --strict` clean.
+
+  **The PR-#64 review round took back one thing this round had introduced.** `except psycopg.errors.CheckViolation`
+  had been added to `cli.main`'s `try` — which wraps *every* handler, ingest included — so an ingest defect printed
+  one context-free line and exited 2, this CLI's operator-error code. It moved to `cli_policy._write`, where the
+  failing value demonstrably came off the command line, and got better there: the message now quotes
+  `pg_get_constraintdef`, so an operator learns what the CHECK accepts by reading the CHECK rather than from a
+  second copy in Python. Also fixed: `policy show` asserted flatly that an unruled class raises a question, 25 lines
+  below the comment explaining why that does not always follow (and a test had pinned the false sentence); `show`
+  accepted a blank half of the natural key and answered about a class that cannot exist; `medrt_run`'s remedy
+  trailed off in `...` where all five flags are `required=True`; and the HANDOVER line bound was stated in three
+  files, two of which disagreed while the file exceeded both. Line-length enforcement is
+  [issue 66](https://github.com/cairn-ehr/drugref/issues/66) — `ruff` runs its default rule set, which omits `E501`.
+
+  **This round also reopened [#61](https://github.com/cairn-ehr/drugref/issues/61)**, closed in error by
+  `92baaea`'s own commit body — "Filed rather than fixed: #61 …" still puts the number directly after `fixed:`, and
+  GitHub's linker matches on token adjacency, not on the sentence's meaning. Reopened after checking `build_parser`
+  directly: nothing #61 asked for existed yet. **The fourth occurrence of the sweep-closed-but-unfixed pattern**
+  (#31, #35, #40, #61), and the first where the author was deliberately writing prose to avoid it — restated as the
+  standing rule in `docs/HANDOVER.md`: keep the number away from `close`/`fix`/`resolve` in any inflection.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them) via **RLS +
   privilege separation** — the full floor design §7 always envisioned (design §10 tension G). **Note the test-suite coupling**
   (wrong three times now — three, seven, then nine, the last of them written directly beneath this instruction — so re-run the

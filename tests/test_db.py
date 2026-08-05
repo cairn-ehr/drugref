@@ -350,3 +350,34 @@ def test_migration_003_renames_populated_columns_and_keeps_edges(conn):
     assert conn.execute(
         "SELECT count(*) FROM drugref.class_parent "
         "WHERE child_class_uuid = %s AND parent_class_uuid = %s", (child, parent)).fetchone()[0] == 1
+
+
+def test_constraint_definition_quotes_the_check_rather_than_restating_it(conn):
+    """The one way an error message can tell an operator what a CHECK accepts without
+    becoming a second copy of it (db/006's lesson). What it returns IS the constraint,
+    so it cannot go stale the way a hand-written "one of deny, allow, withdrawn" would.
+
+    Asserted on the VALUES rather than on the whole rendered string: postgres decides
+    whether to print `= ANY (ARRAY[...])` or an IN list, and pinning that spelling here
+    would be a test of postgres's formatter.
+    """
+    definition = db.constraint_definition(
+        conn, "class_expansion_policy", "class_expansion_policy_decision")
+    assert definition is not None
+    assert all(v in definition for v in ("deny", "allow", "withdrawn"))
+
+
+def test_constraint_definition_is_none_for_a_constraint_that_does_not_exist(conn):
+    """None rather than a raise, and the caller depends on it: cli_policy._write is
+    already reporting a failure when it calls this, and a message that could not be
+    improved is not a reason to lose the message it was improving."""
+    assert db.constraint_definition(
+        conn, "class_expansion_policy", "no_such_constraint") is None
+
+
+def test_constraint_definition_does_not_match_another_tables_constraint(conn):
+    """conname is unique per TABLE, not per schema, so the lookup is scoped to both.
+    An unqualified `WHERE conname = %s` would happily return some other table's rule
+    and quote it at an operator as the one they just tripped."""
+    assert db.constraint_definition(
+        conn, "ingest_run", "class_expansion_policy_decision") is None

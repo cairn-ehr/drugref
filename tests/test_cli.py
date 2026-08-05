@@ -239,3 +239,127 @@ def test_the_chain_resolves_every_steps_inputs_before_running_any(tmp_path, monk
     # would already have run by the time "late" failed to resolve, and this would
     # read calls == ["early"] instead.
     assert calls == []
+
+
+def _plan(*entries):
+    """The resolved shape check_release_agreement takes: (step, release, paths).
+
+    Built by hand rather than through resolve_inputs so these stay pure -- the
+    question is about tags and paths, not about what is on disk.
+    """
+    by_name = {s.name: s for s in cli.STEPS}
+    return [(by_name[name], release, paths) for name, release, paths in entries]
+
+
+MEDRT_XML = pathlib.Path("downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml")
+DESC = pathlib.Path("downloads/mesh/desc2026.gz")
+SUPP = pathlib.Path("downloads/mesh/supp2026.gz")
+PA = pathlib.Path("downloads/mesh/pa2026.xml")
+UNII = pathlib.Path("downloads/UNII_Records_26Feb2026.txt")
+
+
+def test_the_documented_four_source_invocation_passes_pre_flight():
+    """#60: the command HANDOVER, the ingest-operability spec and #35's own plan all
+    document could not run on merged main.
+
+    mesh-relations reads desc/supp but records MED-RT's tag, because mesh_rel_run
+    writes ONE ingest_run row under source='MED-RT'. Reading that as "one file claimed
+    to be two releases" was the defect: the file is dated once, by mesh, and merely
+    READ by mesh-relations.
+    """
+    cli.check_release_agreement(_plan(
+        ("unii", "26Feb2026", {"unii": UNII}),
+        ("medrt", "2026.07.06", {"medrt": MEDRT_XML}),
+        ("mesh", "2026", {"pa": PA, "desc": DESC, "supp": SUPP}),
+        ("mesh-relations", "2026.07.06",
+         {"medrt": MEDRT_XML, "desc": DESC, "supp": SUPP})))
+
+
+def test_two_steps_still_cannot_date_the_same_primary_file_differently():
+    """The case check_release_agreement's docstring calls uncorrectable, and the one
+    the secondary exemption must NOT weaken.
+
+    The MED-RT xml is PRIMARY for both medrt and mesh-relations -- both record a tag
+    describing it -- so two tags for identical bytes is still a pre-flight error.
+    db/025 added `writer` precisely so an operator could see one half of MED-RT running
+    a release behind the other; letting the halves disagree on purpose makes that
+    signal report staleness that does not exist.
+    """
+    with pytest.raises(cli.ReleaseError) as exc:
+        cli.check_release_agreement(_plan(
+            ("medrt", "2026.07.06", {"medrt": MEDRT_XML}),
+            ("mesh-relations", "2026.05.04",
+             {"medrt": MEDRT_XML, "desc": DESC, "supp": SUPP})))
+    assert "2026.07.06" in str(exc.value) and "2026.05.04" in str(exc.value)
+
+
+def test_a_secondary_input_may_disagree_with_the_step_that_dates_it():
+    """ASSERTED AS A PASS, deliberately, not left as the absence of a failure.
+
+    This is the behaviour change #60 buys, and a guard that quietly stops guarding is
+    worse than one that never existed -- so the exemption gets a test that fails if it
+    is ever narrowed back, rather than only tests that fail if it is widened.
+
+    mesh dates desc/supp as '2026'; mesh-relations reads the same bytes while recording
+    MED-RT's '2026.07.06'. Both statements are true about different authorities.
+    """
+    cli.check_release_agreement(_plan(
+        ("mesh", "2026", {"pa": PA, "desc": DESC, "supp": SUPP}),
+        ("mesh-relations", "2026.07.06",
+         {"medrt": MEDRT_XML, "desc": DESC, "supp": SUPP})))
+
+
+def test_secondary_must_name_an_input_the_step_declares():
+    """A typo would silently exempt nothing and leave the chain refusing -- the third
+    place this project's rule bites: a convention that silently matches nothing is
+    worse than none (resolve_inputs' globs and selected_steps' empty tag are the other
+    two). Raised at construction, where STEPS is built, so it fires at import.
+    """
+    with pytest.raises(ValueError) as exc:
+        cli.IngestStep("broken", (("desc", "mesh/desc*.gz"),), lambda *a: None,
+                       secondary=("dsc",))
+    assert "dsc" in str(exc.value)
+
+
+def test_mesh_relations_is_the_only_step_with_a_secondary_input():
+    """Restated independently, the shape test_every_orchestrator_has_a_subcommand uses:
+    driving this off cli.STEPS would pass whatever cli.STEPS said. A step that gains an
+    exemption without anyone deciding to grant it fails here."""
+    assert {s.name: s.secondary for s in cli.STEPS if s.secondary} == {
+        "mesh-relations": ("desc", "supp")}
+
+
+def test_main_does_not_swallow_a_check_violation_from_an_ingest(monkeypatch, capsys):
+    """A CHECK a `policy` argument trips is an operator's typo, and cli_policy._write
+    renders it as one line. THE SAME EXCEPTION FROM AN INGEST IS A DEFECT IN DRUGREF --
+    a parser feeding a value db/006 or db/014 forbids -- and must keep its traceback,
+    which names the writer that produced the bad value.
+
+    This is a regression test in the strict sense: the catch briefly lived on main's
+    `try`, which wraps every handler, so an ingest bug printed one context-free line and
+    exited 2. Exit 2 is this CLI's OPERATOR-ERROR code, so that did not merely lose the
+    traceback -- it reported a drugref bug as the operator's mistake.
+
+    Driven through a stub connection and a stub handler: the assertion is about which
+    exceptions main lets past, and needs neither a database nor a real ingest.
+    """
+    import psycopg
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _explode(conn, args):
+        raise psycopg.errors.CheckViolation("substance_class_concept_type")
+
+    monkeypatch.setattr(cli.db, "connect", lambda dsn: _Conn())
+    # Patched on the MODULE, before main builds the parser: build_parser resolves
+    # `_handle_ingest` as a global when it runs `set_defaults`, which is inside main.
+    monkeypatch.setattr(cli, "_handle_ingest", _explode)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        cli.main(["--dsn", "x", "ingest", "unii", "--release", "r",
+                  "--unii", str(FIX)])

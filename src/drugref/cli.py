@@ -1,11 +1,27 @@
 # src/drugref/cli.py
-"""The drugref command line: the first supported way to run an ingest (#16).
+"""The drugref command line: the first supported way to run an ingest (#16), and to
+record a curator's expansion decision (#61).
 
 WHAT THIS MODULE IS AND IS NOT. It is a thin, feed-agnostic shell: argument parsing,
 one connection, one call into an orchestrator. It holds NO ingest logic and no
 knowledge of a feed's format -- that all lives in drugref.ingest, which is where a
 parser belongs. The step table below is the single place that knows which
 orchestrators exist and in which order they must run.
+
+THE POLICY COMMANDS HOLD NO SQL -- that is a claim about `cli_policy.py`, not about
+this whole file; `_handle_status` below is the stated exception. Every policy read and
+write goes through interactions.py, never a query embedded in Python. That is
+load-bearing specifically because test_only_the_current_view_reads_the_policy_table_directly
+reads pg_rewrite, which sees views and matviews and CANNOT see a query embedded in
+Python, so a handler with its own SELECT would be a reader of an append-only curated
+table that no test in this repository could notice.
+
+`_handle_status` IS THE EXCEPTION, and deliberately so: it embeds two SELECTs, against
+`drugref.loaded_release` and `drugref.ingest_run_incomplete`. Neither is curated,
+append-only data a silent Python reader could corrupt unnoticed -- they are
+operational views nothing governs that way -- so the pg_rewrite discipline above does
+not apply to them, and tests/test_cli.py drives them directly through a stub
+connection instead of a grep.
 
 THE ARGUMENT LAYER TAKES NO CONNECTION, which is the sense of "pure" that matters
 here: the step table, the ChainError family, `resolve_inputs`, `selected_steps`,
@@ -28,7 +44,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import drugref
-from drugref import db
+from drugref import cli_policy, db, interactions
 from drugref.ingest import chebi, medrt_run, mesh_rel_run, mesh_run, pbs_run, run
 
 # The two closed seed files ship INSIDE the package (they are drugref's own curated
@@ -46,13 +62,34 @@ class IngestStep:
 
     `inputs` pairs an ARGUMENT NAME with a GLOB relative to --downloads, and both
     consumers read the same tuple: the per-source subcommand turns each name into a
-    required `--name PATH` flag, and the chain (task 5) resolves the same names by
-    glob. One declaration, so a step cannot grow an input the chain does not know
-    about.
+    required `--name PATH` flag, and the chain resolves the same names by glob. One
+    declaration, so a step cannot grow an input the chain does not know about.
+
+    `secondary` names the inputs this step READS BUT DOES NOT DATE (#60). A step
+    records one release tag, describing its PRIMARY authority; mesh-relations reads
+    two -- MED-RT states the rule, MeSH defines its object -- and writes one
+    ingest_run row under source='MED-RT'. So its desc/supp inputs are dated by the
+    mesh step and merely consumed here, and check_release_agreement must not read
+    that as one file claimed to be two releases.
+
+    It names INPUTS, not paths, because the declaration belongs beside the glob it
+    qualifies and has to survive a glob's filename changing between releases.
     """
     name: str
     inputs: tuple[tuple[str, str], ...]
     runner: Callable[[object, dict[str, pathlib.Path], str], object]
+    secondary: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        # A typo here would exempt nothing and leave the chain refusing the very
+        # invocation the exemption exists to allow -- a silent failure, in the field,
+        # of a check whose whole job is to be loud. Raised at import, where STEPS is
+        # built, so it cannot reach an operator.
+        undeclared = set(self.secondary) - {name for name, _ in self.inputs}
+        if undeclared:
+            raise ValueError(
+                f"{self.name}: secondary names an input this step does not declare: "
+                f"{', '.join(sorted(undeclared))}")
 
 
 def _run_unii(conn, paths, release):
@@ -123,7 +160,8 @@ STEPS = (
                         ("supp", "mesh/supp*.gz")), _run_mesh),
     IngestStep("mesh-relations", (("medrt", "MEDRT/Core_MEDRT_*_XML.xml"),
                                   ("desc", "mesh/desc*.gz"),
-                                  ("supp", "mesh/supp*.gz")), _run_mesh_relations),
+                                  ("supp", "mesh/supp*.gz")), _run_mesh_relations,
+               secondary=("desc", "supp")),
     IngestStep("pbs", (("items", "tables_as_csv/items.csv"),), _run_pbs),
 )
 
@@ -218,11 +256,16 @@ def check_release_agreement(
     """Refuse a chain in which one FILE is claimed to be two different releases.
 
     THE STEPS OVERLAP, and that is not incidental: `medrt` and `mesh-relations`
-    resolve the SAME Core_MEDRT_*_XML.xml, and `mesh` and `mesh-relations` share
-    desc/supp. Their release tags are stated independently, so
-    `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04` writes two
-    different releases into ingest_run FROM IDENTICAL BYTES. One of them is false, and
-    ingest_run is history: nothing can take it back.
+    resolve the SAME Core_MEDRT_*_XML.xml. Their release tags are stated
+    independently, so `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04`
+    writes two different releases into ingest_run FROM IDENTICAL BYTES. One of them is
+    false, and ingest_run is history: nothing can take it back.
+
+    `mesh` and `mesh-relations` also share desc/supp, and that overlap is NOT a
+    conflict (#60): mesh-relations declares them `secondary`, so it reads them without
+    dating them. Comparing those claims refused the documented four-source invocation
+    for a disagreement that was never one -- two true statements about two different
+    authorities.
 
     That is worse than a missing tag. db/025 added `writer` so an operator could see
     that one half of MED-RT is a release behind the other; this makes the two halves
@@ -236,7 +279,14 @@ def check_release_agreement(
     """
     stated: dict[pathlib.Path, tuple[str, str]] = {}   # path -> (release, step name)
     for step, release, paths in plan:
-        for path in paths.values():
+        for name, path in paths.items():
+            if name in step.secondary:
+                # READ, NOT DATED. This step states no release for this file, so it
+                # makes no claim that could contradict another step's. Skipping the
+                # record entirely (rather than recording and tolerating a mismatch)
+                # is what keeps a file dated by NO step from silently agreeing with
+                # itself.
+                continue
             first_release, first_step = stated.setdefault(path, (release, step.name))
             if first_release != release:
                 raise ReleaseError(
@@ -303,10 +353,35 @@ def _handle_ingest(conn, args) -> int:
     return 0
 
 
+class _Parser(argparse.ArgumentParser):
+    """The whole surface, plus the one cross-argument rule argparse cannot state.
+
+    argparse has mutually EXCLUSIVE groups and no mutually INCLUSIVE ones, so
+    "`policy show` takes both halves of the natural key or neither" has to be checked
+    after parsing. It lives here rather than in `main` because the DB-free tests drive
+    the surface through `build_parser().parse_args(...)`, and an invariant only `main`
+    enforced would be a rule the parser's own tests could not see.
+
+    Half a key identifies nothing: `source` means WHO DEFINES the class, not who ruled
+    on it, so it cannot be defaulted.
+    """
+
+    def parse_args(self, args=None, namespace=None):
+        # `args` here shadows argparse.ArgumentParser.parse_args's own parameter name
+        # on purpose -- a subclass override changing a positional parameter's name is
+        # a Liskov violation, even with no live keyword caller today. `parsed` is the
+        # local for the result so the two never collide.
+        parsed = super().parse_args(args, namespace)
+        if (getattr(parsed, "action", None) == "show"
+                and (parsed.source is None) != (parsed.code is None)):
+            self.error("policy show: --source and --code must be given together")
+        return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole command surface, built from STEPS so a new orchestrator needs one
     tuple entry rather than an edit in three places."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="drugref", description="drugref.org reference-data service")
     parser.add_argument("--dsn", help="PostgreSQL DSN (default: $DRUGREF_DSN)")
     parser.add_argument("--log-level", default="info",
@@ -341,6 +416,8 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"include {step.name}, recording this release tag")
     chain.set_defaults(handler=_handle_chain)
 
+    cli_policy.register(commands)
+
     return parser
 
 
@@ -357,8 +434,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
-    except (RuntimeError, ChainError) as exc:
+    except (RuntimeError, ChainError, interactions.NoLiveDecisionError) as exc:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
+        #
+        # NO `except psycopg.errors.CheckViolation` HERE, deliberately, and it is worth
+        # saying why since one round put it here and had to take it back. This `try`
+        # wraps EVERY handler, ingest included, and the same exception means opposite
+        # things on the two surfaces: from `policy` it is an operator's typo in a value
+        # they typed, and one line is the right answer; from an ingest it is a defect in
+        # drugref -- a parser feeding a value db/006 or db/014 forbids -- where the
+        # traceback naming the writer is the most useful thing this process can print,
+        # and exit 2 would additionally misreport a drugref bug as operator error. Only
+        # the caller can tell the two apart, so the catch lives at the caller:
+        # cli_policy._write.
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
