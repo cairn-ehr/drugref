@@ -21,7 +21,8 @@ WHAT IS KEPT, and why each one is load-bearing (slice-3 spec 7.3):
   3. a solvate/anhydrous pair                  -- the second axis
   4. an active-vs-counterion discrimination    -- so a mutation defaulting NULL is caught
   5. BOTH mirror encodings of one edge         -- the direction test on real bytes
-  6. a composite with components but NO active moiety -- so the gap view has a row
+  6. PHYTATE SODIUM (88496G1ERL)                -- a composite with a component but
+                                                  NO active moiety, so the gap view has a row
   7. the magnesium family                      -- the case slice 3 does NOT resolve
 
 The magnesium family is kept precisely BECAUSE it fails. Issue 33 predicted that
@@ -51,6 +52,9 @@ WANTED = {
     "T6V3LHY838": "MAGNESIUM CATION -- the active moiety GSRS names, NOT a drugref moiety",
     "02F3473H9O": "MAGNESIUM CHLORIDE -- shares that cation; the merge to refuse",
     "1VZZ62R081": "LEVOMEFOLATE MAGNESIUM -- shares it too; the merge that is absurd",
+    # (6) a composite with a component but NO active moiety -- the genuine gap case
+    "88496G1ERL": "PHYTATE SODIUM -- one composite edge, zero ACTIVE MOIETY edges",
+    "7IGF0S7R8I": "its component, so the gap-view edge resolves against the registry",
 }
 
 

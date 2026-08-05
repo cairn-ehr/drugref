@@ -29,7 +29,8 @@ def _records():
 def test_the_fixture_carries_every_role_the_slice_depends_on():
     uniis = {r.unii for r in _records()}
     for unii in ("H3472PJ7YA", "13S1S8SF37", "1D06KZ672I", "WCK1KIQ23Q",
-                 "SK47B8698T", "ML30MJ2U7I", "DE08037SAB", "T6V3LHY838"):
+                 "SK47B8698T", "ML30MJ2U7I", "DE08037SAB", "T6V3LHY838",
+                 "88496G1ERL"):
         assert unii in uniis, f"{unii} missing -- regenerate with make_gsrs_subset.py"
 
 
@@ -81,6 +82,16 @@ def test_the_active_component_is_distinguished_from_the_counterions():
     assert "13S1S8SF37" in record.active_moieties
     assert "TE7660XO1C" not in record.active_moieties
     assert "XF417D3PSL" not in record.active_moieties
+
+
+def test_phytate_sodium_is_a_composite_with_no_active_moiety_ruling():
+    """The genuine case-6 gap: a real composite edge exists, but GSRS makes no
+    ACTIVE MOIETY ruling for it. Non-vacuous -- this asserts the edge is
+    present, not merely that the active set is empty, so the test cannot pass
+    by accident on a record with no edges at all."""
+    record = next(r for r in _records() if r.unii == "88496G1ERL")
+    assert gsrs.CompositionEdge("88496G1ERL", "7IGF0S7R8I", gsrs.SALT_SOLVATE) in record.edges
+    assert record.active_moieties == frozenset()
 
 
 def test_nothing_points_at_drugrefs_magnesium_moiety():
