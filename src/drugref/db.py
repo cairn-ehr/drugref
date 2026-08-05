@@ -91,10 +91,10 @@ def clear_source_tables(conn: psycopg.Connection,
     caller re-derives. It is a Mapping rather than another positional string so the
     call site names the column it narrows on.
 
-    The narrowing is OPT-IN: SIX OF THE SEVEN declared table tuples own their whole
+    The narrowing is OPT-IN: SEVEN OF THE EIGHT declared table tuples own their whole
     table for a source and must keep clearing it wholesale, and a helper that quietly
     cleared less than asked would leave a projection growing a little on every ingest
-    with nothing failing. (Seven wrappers, not six -- the count is restated in
+    with nothing failing. (Eight wrappers, not seven -- the count is restated in
     tests/test_source_clear_contract.py's EXPECTED_TABLES, which is what makes it
     checkable rather than remembered.)
 
