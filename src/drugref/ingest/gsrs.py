@@ -84,10 +84,17 @@ class CompositionEdge:
 
 @dataclasses.dataclass(frozen=True)
 class GsrsRecord:
-    """One substance, reduced to the three things slice 3 needs."""
+    """One substance, reduced to the two things slice 3 needs.
+
+    NO display_name, deliberately. An earlier draft parsed one and nothing ever read
+    it: substance_composition has no name column, because the composite side is a
+    bare UNII from the source and this slice mints no identity for it. Carrying a
+    field with no consumer meant a per-record scan of `names` across all 173,080
+    records to populate something only a test asserted on. The slice that needs a
+    name adds it with the consumer that wants it.
+    """
 
     unii: str
-    display_name: str | None
     edges: tuple[CompositionEdge, ...]
     # NON-SELF active-moiety targets. Empty means the release says nothing about
     # which component is active -- which the writer records as NULL (unruled), NOT
@@ -116,13 +123,6 @@ def normalise_relationship(
     return CompositionEdge(
         substance_unii=composite, component_unii=component, relation=relation
     )
-
-
-def _display_name(record: dict) -> str | None:
-    for name in record.get("names") or []:
-        if name.get("displayName"):
-            return name.get("name")
-    return None
 
 
 def iter_records(path: StrPath) -> Iterator[GsrsRecord]:
@@ -167,7 +167,6 @@ def iter_records(path: StrPath) -> Iterator[GsrsRecord]:
 
             yield GsrsRecord(
                 unii=unii,
-                display_name=_display_name(record),
                 edges=tuple(dict.fromkeys(edges)),
                 active_moieties=frozenset(actives),
             )

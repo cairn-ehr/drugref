@@ -454,6 +454,34 @@ persisted as a worklist the way gap kind 12 is.
   different question from the one the projection answers; see the erratum above before treating a mismatch as a
   regression.
 
+### The PR #72 review round (2026-08-06) — what a full test suite was not testing
+
+Five findings, all fixed on the branch; 894 → **897 tests**. The two worth carrying forward:
+
+- **A 100%-green suite did not test the slice's central semantic.** `is_active_component` exists to keep *"the release
+  ruled on nothing"* (NULL) distinct from *"this component is inactive"* (false) — the distinction the whole read path
+  and gap kind 12 are built on. Deleting the `if record.active_moieties else None` guard in `gsrs_run.py`, which
+  collapses every unruled edge to `false`, **passed all 895 tests**. So did replacing `unruled_composites` with a
+  literal `0`. Both are now killed by two orchestrator tests. **The lesson is about WHERE the assertions were:** the
+  writer had `test_null_is_stored_as_null_not_false` (passes an explicit `None`, so an orchestrator-level mutation is
+  invisible to it) and the parser had its own NULL tests — the two ends were covered and the *decision between them*
+  was not. A summary field returned by an orchestrator and printed by the CLI is a claim; assert it.
+- **A fixture record cut for a purpose was not serving it.** `make_gsrs_subset.py` kept PHYTATE SODIUM as the genuine
+  gap case and `7IGF0S7R8I` alongside it "so the gap-view edge resolves against the registry" — but `test_gsrs_run`'s
+  `registry` fixture never registered `7IGF0S7R8I`, so the orchestrator dropped the edge as unresolved and the case
+  reached the gap view **never**. The view was populated in that test only incidentally, by ~98 chlortetracycline salts
+  nothing asserted on. **A fixture comment stating a role is not evidence the role is exercised**; the gap view had
+  rows, which is exactly what made it look covered.
+
+Also fixed: `test_gsrs_run`'s `registry` committed moieties and claims that outlived the file (nothing broke only
+because `test_ingest_run.py` sorts later and TRUNCATEs those tables) — and note that a committed seed on the
+append-only floor **cannot** be unpicked with DELETE at all, since `db/001`/`db/005` triggers RAISE on it; TRUNCATE is
+the only tool. `GsrsRecord.display_name` was parsed for every one of 173,080 records with no consumer, and removed.
+`records_in_release`/`edges_in_release` were renamed `records_with_unii`/`edge_statements_read` — the first skipped the
+5,078 records with no `approvalID`, the second double-counted mirrored edges, and both names claimed the release total.
+Deferred as [#73](https://github.com/cairn-ehr/drugref/issues/73): both views over `substance_composition` read every
+source at once, unfixable in `db/028` because it is applied and immutable.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is

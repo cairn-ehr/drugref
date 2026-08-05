@@ -113,6 +113,9 @@ def test_iter_records_reads_the_two_tab_prefixed_json_lines(tmp_path):
         [
             {
                 "approvalID": "SALT000001",
+                # `names` is present because the real records carry it, and the
+                # parser must step over it without reading it -- slice 3 stores no
+                # name for a composite, so nothing here consumes one.
                 "names": [{"name": "Test salt", "displayName": True}],
                 "relationships": [
                     {
@@ -131,7 +134,6 @@ def test_iter_records_reads_the_two_tab_prefixed_json_lines(tmp_path):
     assert len(records) == 1
     rec = records[0]
     assert rec.unii == "SALT000001"
-    assert rec.display_name == "Test salt"
     assert rec.edges == (
         gsrs.CompositionEdge("SALT000001", "PARENT0001", gsrs.SALT_SOLVATE),
     )

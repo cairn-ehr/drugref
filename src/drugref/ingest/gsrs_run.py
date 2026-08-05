@@ -38,6 +38,20 @@ log = logging.getLogger(__name__)
 class GsrsSummary:
     """What one GSRS run did -- returned so a caller (or test) can assert on it.
 
+    EVERY FIELD IS NAMED FOR WHAT IT ACTUALLY COUNTS, which the first two were not:
+    they were `records_in_release` and `edges_in_release`, and both counted something
+    narrower than "in the release". A summary line printed by the CLI is the number a
+    reader quotes later, so a name that overstates its scope is a wrong number with a
+    plausible source.
+
+    * records_with_unii -- records carrying an approvalID, NOT records in the file.
+      iter_records skips the 5,078 of 173,080 that carry none, so on the real dump
+      this reads ~168,002 and never the release total.
+    * edge_statements_read -- composition RELATIONSHIP STATEMENTS seen, not distinct
+      edges. GSRS stores most edges from both ends and both encodings are counted
+      here, so this roughly doubles the edge count; the deduplicated total is
+      rows_written + components_not_in_registry.
+
     The two worklist numbers are reported, never swallowed:
 
     * components_not_in_registry -- edges naming a component no gated-in moiety
@@ -45,9 +59,11 @@ class GsrsSummary:
       bridge (#26), and this counts the shortfall rather than hiding it.
     * unruled_composites -- composites written with no active-component ruling,
       which become gap kind 12. NOT a failure: it is the release declining to say.
+      Pinned against the gap view itself in test_gsrs_run.py, because this Python
+      count and the view's `bool_and` are two implementations of one rule.
     """
-    records_in_release: int
-    edges_in_release: int
+    records_with_unii: int
+    edge_statements_read: int
     rows_written: int
     composites_written: int
     components_not_in_registry: int
@@ -60,14 +76,14 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
     # 1. PARSE FIRST, before any run row exists. The pass is ~8 s over 2.05 GB and
     #    touches no database; a crash here must leave no trace to explain.
     edges: dict[tuple[str, str, str], bool | None] = {}
-    records_in_release = 0
-    edges_in_release = 0
+    records_with_unii = 0
+    edge_statements_read = 0
     for record in gsrs.iter_records(dump_path):
-        records_in_release += 1
+        records_with_unii += 1
         if not record.edges:
             continue
         for edge in record.edges:
-            edges_in_release += 1
+            edge_statements_read += 1
             # NULL unless the COMPOSITE's own record rules on it; otherwise whether
             # THIS component is the active one. Keyed by the composite's own
             # record, so the mirror encoding on the component's record cannot
@@ -119,8 +135,8 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
     provenance.finish_run(conn, run_id)
     conn.commit()
 
-    summary = GsrsSummary(records_in_release=records_in_release,
-                          edges_in_release=edges_in_release,
+    summary = GsrsSummary(records_with_unii=records_with_unii,
+                          edge_statements_read=edge_statements_read,
                           rows_written=rows_written,
                           composites_written=len(composites),
                           components_not_in_registry=unresolved,

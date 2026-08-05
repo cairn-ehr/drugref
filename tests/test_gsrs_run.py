@@ -15,27 +15,39 @@ def _clean(conn):
     """ingest_gsrs COMMITS, so it escapes the conn fixture's rollback. Same pattern
     as tests/test_ingest_run.py's autouse truncate.
 
-    SCOPED BY RUN, NOT BY GAP_KIND -- and this is not a stylistic choice, it is the
-    difference between a clean teardown and a ForeignKeyViolation. register_from_gaps
-    refreshes last_derived_ingest for EVERY currently-open gap on every call, not only
-    the ones this ingest caused: the `registry` fixture below registers bare moieties
-    with no has_PE membership, so every GSRS run also re-derives gap_unclassified_moiety
-    and stamps those rows' last_derived_ingest with the GSRS run's id. Deleting only
-    gap_kind = 'unruled_composition_activity' left those other-kind rows still pointing
-    at the run this fixture was about to delete -- open_question.first_derived_ingest
-    and .last_derived_ingest are both NOT NULL FKs into ingest_run, so the DELETE below
-    raised. Scoping by which ingest_run a row references, across every gap_kind, is
-    correct rather than a workaround: every such row is an artifact of a GSRS run this
-    test made and nothing else in an isolated run of this file would derive it.
+    IT CLEANS THE SEED TOO, not just what the ingest wrote. `registry` below also
+    commits -- it has to, because the orchestrator opens its own transaction and
+    cannot see uncommitted rows -- so its moieties, claims and seed run outlived
+    this file just as surely as the GSRS rows did. Nothing broke only because
+    tests/test_ingest_run.py happens to sort later and truncates those three tables
+    before each of its own tests; that is an accident of alphabetical ordering, not
+    isolation. The leaked moieties carry no has_PE membership, so until that file
+    ran they showed up in gap_unclassified_moiety for every test in between.
+
+    TRUNCATE AND NOT DELETE, and that is forced by the architecture rather than
+    chosen for speed: substance_moiety and identity_claim sit on slice 1's
+    append-only floor (db/001, db/005), whose row-level triggers RAISE on DELETE --
+    "drugref.identity_claim is append-only: DELETE forbidden". A committed seed
+    therefore cannot be unpicked row by row at all, which is precisely why
+    tests/test_ingest_run.py reaches for TRUNCATE too. TRUNCATE fires no row-level
+    DELETE trigger, so it is the only tool that clears these tables, and CASCADE is
+    required because ingest_run is the provenance parent of every projection.
+
+    NEVER NARROW THIS TO gap_kind = 'unruled_composition_activity', which an earlier
+    teardown here did and which the CASCADE now makes structurally impossible to get
+    wrong again. register_from_gaps refreshes last_derived_ingest for EVERY currently
+    open gap on every call, not only the ones this ingest caused: `registry` below
+    registers bare moieties with no has_PE membership, so every GSRS run also
+    re-derives gap_unclassified_moiety and stamps those rows with the GSRS run's id.
+    Clearing only this slice's gap_kind left those other-kind rows pointing at a run
+    the teardown was about to remove, and open_question.first_derived_ingest and
+    .last_derived_ingest are both NOT NULL FKs into ingest_run -- so it raised. The
+    lesson generalises past this file: a teardown scoped by the thing the test was
+    ABOUT will miss whatever the code under test also touched on the way past.
     """
     yield
-    conn.execute("TRUNCATE drugref.substance_composition")
-    conn.execute(
-        "DELETE FROM drugref.open_question WHERE first_derived_ingest IN "
-        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = 'GSRS') "
-        "OR last_derived_ingest IN "
-        "(SELECT ingest_run_id FROM drugref.ingest_run WHERE source = 'GSRS')")
-    conn.execute("DELETE FROM drugref.ingest_run WHERE source = 'GSRS'")
+    conn.execute("TRUNCATE drugref.identity_claim, drugref.substance_moiety, "
+                 "drugref.ingest_run RESTART IDENTITY CASCADE")
     conn.commit()
 
 
@@ -45,6 +57,14 @@ def registry(conn):
 
     ZINC CATION and Chlortetracycline are moieties; the counterions deliberately
     are NOT, so the run has something to COUNT as unresolved rather than drop.
+
+    FYTIC ACID IS HERE TO MAKE FIXTURE ROLE 6 REACHABLE. make_gsrs_subset.py cut
+    PHYTATE SODIUM into the fixture as the genuine gap case -- a real composition
+    edge with no ACTIVE MOIETY ruling anywhere -- and kept 7IGF0S7R8I alongside it
+    "so the gap-view edge resolves against the registry". That was only true of the
+    parser: with 7IGF0S7R8I unregistered the orchestrator dropped the edge as
+    unresolved and wrote no row, so the case the fixture was cut for never reached
+    the gap view here at all. Registering it is what makes the claim true.
     """
     seed_run = conn.execute(
         "INSERT INTO drugref.ingest_run "
@@ -53,7 +73,8 @@ def registry(conn):
     ).fetchone()[0]
     for unii, name in (("13S1S8SF37", "ZINC CATION"),
                        ("WCK1KIQ23Q", "Chlortetracycline"),
-                       ("ML30MJ2U7I", "Magnesium sulfate anhydrous")):
+                       ("ML30MJ2U7I", "Magnesium sulfate anhydrous"),
+                       ("7IGF0S7R8I", "FYTIC ACID")):
         moiety_uuid = ids.mint_moiety_uuid(unii)
         conn.execute(
             "INSERT INTO drugref.substance_moiety "
@@ -87,6 +108,50 @@ def test_zinc_glycinate_citrate_attaches_only_its_REGISTERED_component(conn, reg
 def test_unresolved_components_are_counted_not_dropped(conn, registry):
     summary = gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
     assert summary.components_not_in_registry > 0
+
+
+def test_the_unruled_count_matches_the_gap_view_row_for_row(conn, registry):
+    """THE OTHER WORKLIST NUMBER. `unruled_composites` had no assertion at all until
+    this test: replacing it with a literal 0 left all 895 tests green, even though
+    the module docstring, the dataclass docstring and the commit message all present
+    it as half of what this orchestrator exists to report.
+
+    It is asserted AGAINST THE GAP VIEW rather than against a literal, because the
+    two are independent implementations of one rule -- Python's `values == {None}`
+    and SQL's `bool_and(is_active_component IS NULL)` -- and two implementations of
+    one rule that nothing compares is exactly the drift db/006 was written to
+    prevent. A literal would pin the count without pinning the agreement.
+    """
+    summary = gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
+    from_view = conn.execute(
+        "SELECT count(*) FROM drugref.gap_unruled_composition_activity").fetchone()[0]
+    assert summary.unruled_composites == from_view
+    # NON-VACUOUS: with no unruled composite in the fixture both sides would be 0
+    # and the assertion above would hold against an implementation that always
+    # returns 0 -- which is the mutation this test exists to kill.
+    assert summary.unruled_composites > 0
+
+
+def test_phytate_sodium_is_the_designed_unruled_composite(conn, registry):
+    """Fixture role 6, exercised end to end on real release bytes.
+
+    GSRS gives 88496G1ERL one composition edge and makes NO ACTIVE MOIETY ruling
+    for it, so the row must land NULL -- unruled, never false -- and the composite
+    must reach gap kind 12 as a citable question. This is the whole read-path trade
+    in one record: slice 3 propagates nothing to this substance, and that is only
+    defensible because the shortfall is queued rather than hidden.
+    """
+    gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
+    assert conn.execute(
+        "SELECT is_active_component FROM drugref.substance_composition "
+        "WHERE substance_unii = '88496G1ERL'").fetchone()[0] is None
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unruled_composition_activity "
+        "WHERE substance_unii = '88496G1ERL'").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unruled_composition_activity' "
+        "AND gap_key = 'SUBSTANCE:88496G1ERL'").fetchone()[0] == 1
 
 
 def test_the_active_component_is_marked_true(conn, registry):

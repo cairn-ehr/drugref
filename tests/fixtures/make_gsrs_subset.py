@@ -54,7 +54,11 @@ WANTED = {
     "1VZZ62R081": "LEVOMEFOLATE MAGNESIUM -- shares it too; the merge that is absurd",
     # (6) a composite with a component but NO active moiety -- the genuine gap case
     "88496G1ERL": "PHYTATE SODIUM -- one composite edge, zero ACTIVE MOIETY edges",
-    "7IGF0S7R8I": "its component, so the gap-view edge resolves against the registry",
+    # Registered as a moiety by test_gsrs_run.py's `registry` fixture ON PURPOSE: an
+    # unregistered component makes the orchestrator drop the edge as unresolved, and
+    # role 6 above never reaches the gap view at all. The pair is only load-bearing
+    # together, which test_phytate_sodium_is_the_designed_unruled_composite asserts.
+    "7IGF0S7R8I": "FYTIC ACID -- its component, so the gap-view edge resolves",
 }
 
 

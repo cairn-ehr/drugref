@@ -25,13 +25,13 @@ post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #5
 round (PR [#64](https://github.com/cairn-ehr/drugref/pull/64)).
 
 **In flight: slice 3 — the composition tree**, on `feat/slice-3-composition-tree`. **BUILT, AND MEASURED END TO END
-AGAINST THE REAL RELEASES.** All 8 plan tasks are done; the branch is green at **894 tests**. Spec: [slice-3 composition
+AGAINST THE REAL RELEASES.** All 8 plan tasks are done; the branch is green at **897 tests**. Spec: [slice-3 composition
 tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md). Traps and full state:
 [`PROJECT-NOTES.md`](PROJECT-NOTES.md) § "Slice 3".
 
-**⇒ The next action is to open the PR to `main`.** Nothing is left to build. The PR body must state the rule-6
-clearance, the four refuted roadmap claims, the measured figures, and that this slice resolves neither issue 33 nor
-issue 30. Reference issue 67, issue 68, issue 69, issue 70 and issue 71, with **no** closing keyword and **no** `#`.
+**⇒ PR [#72](https://github.com/cairn-ehr/drugref/pull/72) is OPEN and its review round is CLOSED** — five findings
+fixed on the branch (account: PROJECT-NOTES § "Slice 3"), the worst being that **collapsing "unruled" to `false` passed
+all 895 tests**. New issue: #73. **⇒ Next: merge #72**, then slice 5c.
 
 **What landed:** `db/028` (projection, relation vocabulary, `moiety_active_in_composite`, gap kind 12) · `ingest/gsrs.py`
 (pure streaming parser, 2.05 GB) · `composition.py` (single writer) · `ingest/gsrs_run.py` · a `gsrs` chain step and
@@ -84,7 +84,8 @@ specs, not conversion factors; MW covers 5.4%), routed to 5c · [#68](https://gi
 `moiety_uuid`, monotone gate; why issue 33 stays open) · [#69](https://github.com/cairn-ehr/drugref/issues/69) the
 27-edge scope question above · [#70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites
 reachable and queued by nothing** · [#71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834
-unregistered-component edges dropped, counted only transiently**.
+unregistered-component edges dropped, counted only transiently** · [#73](https://github.com/cairn-ehr/drugref/issues/73)
+**both views read every source at once**; `db/028` is applied and immutable, so the next migration there carries it.
 
 **Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **no index serves a HISTORY
 query** on `class_expansion_policy`; deliberately unfixed at 14 rows, revisit at curation ·
