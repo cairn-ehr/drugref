@@ -97,6 +97,34 @@ def test_the_active_component_is_marked_true(conn, registry):
     assert active is True
 
 
+def test_a_ruling_seen_first_survives_a_later_none_from_the_mirror_encoding(
+        conn, registry):
+    """DO NOT 'simplify' this back onto H3472PJ7YA -- the row choice is load-bearing.
+
+    H3472PJ7YA's own record (which carries the ruling) happens to sit AFTER
+    13S1S8SF37's mirror record in the fixture, so for that row the merge writes
+    None first and True second -- which passes whether or not the
+    `if key not in edges or edges[key] is None` guard in gsrs_run.py is even
+    there, since a naive unconditional overwrite also ends on the last-write
+    value, True. It cannot distinguish "the guard works" from "there is no
+    guard".
+
+    1D06KZ672I / WCK1KIQ23Q is the other order: 1D06KZ672I's own record (record
+    #2 in the fixture) rules WCK1KIQ23Q active (True) BEFORE WCK1KIQ23Q's mirror
+    record (record #4) contributes the unruled encoding (None) for the same
+    edge. An unconditional overwrite would let that later None clobber the
+    earlier True, silently turning a ruled composition into an unruled one.
+    Only the guard -- "a ruling beats a None, whichever end it arrives from" --
+    keeps it True. WCK1KIQ23Q is registered as a moiety by the `registry`
+    fixture (as Chlortetracycline), so the composition row exists to assert on.
+    """
+    gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
+    active = conn.execute(
+        "SELECT is_active_component FROM drugref.substance_composition "
+        "WHERE substance_unii = '1D06KZ672I'").fetchone()[0]
+    assert active is True
+
+
 def test_the_run_is_recorded_and_finished(conn, registry):
     gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
     row = conn.execute(
