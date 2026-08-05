@@ -112,7 +112,8 @@ Shape: **composition edges over ONE registry**, no second identity — `substanc
 component_moiety uuid, relation, is_active_component)`, a rebuildable `GSRS`-keyed projection (`db/028`). Code:
 `ingest/gsrs.py` (pure streaming parser), `composition.py` (single writer), `ingest/gsrs_run.py` (orchestrator), and a
 `gsrs` chain step. Read path propagates the **active component only**, so Maleic Acid's 124 salts stay unlinked.
-Deliberately NOT wired into `ddi_candidate_pair` (a measured 3.6 ms hot path).
+Deliberately NOT wired into `ddi_candidate_pair` (a low-single-digit-millisecond hot
+path, most recently measured at 2.876 ms in the policy-surface round, `db/027`).
 
 **Measured end to end** — UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026 → GSRS 2026-02-26, on 2026-08-05, 137 s:
 

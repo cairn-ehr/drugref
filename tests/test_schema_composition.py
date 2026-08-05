@@ -118,15 +118,24 @@ def test_the_read_view_shows_only_TRUE(conn, gsrs_run, two_moieties):
 def test_the_gap_view_reports_only_wholly_unruled_composites(conn, gsrs_run, two_moieties):
     """A composite with ANY ruling has been reviewed and leaves the queue --
     the same posture as gap_ungraded_contribution, where an explicit `minor`
-    is a review."""
+    is a review.
+
+    RULED00001 deliberately mixes a ruling (TRUE) with a NULL on its second
+    component: without that third row, a 1-row ruled composite and a 2-row
+    all-NULL composite give bool_and(x IS NULL) and bool_or(x IS NULL) the SAME
+    answer, so this test could not tell the two implementations apart -- the same
+    "fixture cannot distinguish the case it names" defect this round already
+    caught twice. With the mix present, bool_and says RULED00001 has left the
+    queue (correct) while bool_or would still report it (wrong)."""
     active, other = two_moieties
     conn.execute(
         "INSERT INTO drugref.substance_composition "
         "(substance_unii, component_moiety, relation, is_active_component, ingest_run) "
         "VALUES ('RULED00001', %s, 'SALT_SOLVATE', true, %s), "
+        "       ('RULED00001', %s, 'SALT_SOLVATE', NULL, %s), "
         "       ('UNRULED001', %s, 'SALT_SOLVATE', NULL, %s), "
         "       ('UNRULED001', %s, 'SALT_SOLVATE', NULL, %s)",
-        (active, gsrs_run, active, gsrs_run, other, gsrs_run))
+        (active, gsrs_run, other, gsrs_run, active, gsrs_run, other, gsrs_run))
     rows = conn.execute(
         "SELECT substance_unii, component_count "
         "FROM drugref.gap_unruled_composition_activity").fetchall()

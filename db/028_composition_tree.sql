@@ -82,9 +82,14 @@ CREATE TABLE IF NOT EXISTS drugref.substance_composition (
 );
 
 -- The read view's join column. The PK already serves lookups BY COMPOSITE.
+-- `WHERE is_active_component IS TRUE`, matching moiety_active_in_composite's
+-- predicate EXACTLY: Postgres does not imply one boolean predicate from another,
+-- so `WHERE is_active_component` (no `IS TRUE`) makes the planner unable to prove
+-- the index covers the view and it falls back to a Seq Scan / PK scan (cost
+-- 397.33) instead of an Index Scan (cost 8.30) -- verified by EXPLAIN.
 CREATE INDEX IF NOT EXISTS substance_composition_by_component
     ON drugref.substance_composition (component_moiety)
-    WHERE is_active_component;
+    WHERE is_active_component IS TRUE;
 
 COMMENT ON TABLE drugref.substance_composition IS
     'Which registered moieties a specific substance is composed of (slice 3, GSRS). '
@@ -123,7 +128,8 @@ WHERE is_active_component IS TRUE;
 COMMENT ON VIEW drugref.moiety_active_in_composite IS
     'For a moiety, the specific substances it is the ACTIVE component of -- the only '
     'composition inference slice 3 licenses. Deliberately NOT wired into '
-    'ddi_candidate_pair, a measured 3.6 ms hot path; that is its own round.';
+    'ddi_candidate_pair, a low-single-digit-millisecond hot path (most recently '
+    '2.876 ms, policy-surface round / db/027); that is its own round.';
 
 -- ============================================================================
 -- 5. Gap kind 12 -- the shortfall is published, not hidden

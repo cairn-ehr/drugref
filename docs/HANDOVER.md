@@ -31,7 +31,7 @@ tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md). 
 
 **⇒ The next action is to open the PR to `main`.** Nothing is left to build. The PR body must state the rule-6
 clearance, the four refuted roadmap claims, the measured figures, and that this slice resolves neither issue 33 nor
-issue 30. Reference issue 67 and issue 68 with **no** closing keyword and **no** `#`.
+issue 30. Reference issue 67, issue 68, issue 69, issue 70 and issue 71, with **no** closing keyword and **no** `#`.
 
 **What landed:** `db/028` (projection, relation vocabulary, `moiety_active_in_composite`, gap kind 12) · `ingest/gsrs.py`
 (pure streaming parser, 2.05 GB) · `composition.py` (single writer) · `ingest/gsrs_run.py` · a `gsrs` chain step and
@@ -44,14 +44,11 @@ rows** (7,962 salt + 709 solvate) over **7,377 composites** and **4,433 componen
 `ddi_candidate_pair` **21,664**, `substance_moiety` **19,438**, `open_question` 18,834 → **21,079**.
 
 **⇒ THE PREDICTED ACTIVITY SPLIT WAS REFUTED; the row set was not.** Design predicted 5,029 / 1,001 / 2,641 and 2,226
-gap-12 composites. The edge set matched to the row, so neither the parser nor the direction convention is in question —
-only the split moved, and the cause was reproduced exactly against the dump: the prediction scripts resolved activity
-through a **global** `unii → active moieties` map, while `gsrs_run.py` accepts a ruling only from the composite's **own
-record**. They differ on precisely the **27** in-registry edges GSRS stores solely on the component's record (18 TRUE +
-9 FALSE become NULL, leaving 19 more composites unruled). The shipped reading is conservative — it only adds NULLs,
-never downgrades a ruling — and was **left unchanged deliberately during a verification round. ⇒ Worth filing:** whether
-a composite's own `ACTIVE MOIETY` should rule on an edge that arrived from the other end. The **EXPECTED 2,226 / 21,060**
-hedging in PROJECT-NOTES is settled and removed.
+gap-12 composites; the edge set matched, only the split moved. Cause, reproduced against the dump: predictions used a
+**global** `unii → active moieties` map, while `gsrs_run.py` rules only from the composite's **own record** — they
+differ on the **27** in-registry edges GSRS stores solely on the component's record (18 TRUE + 9 FALSE become NULL, 19
+more composites unruled). Conservative (adds NULLs, never downgrades); left as-is deliberately during a verification
+round: filed as issue 69. The **EXPECTED 2,226 / 21,060** hedging in PROJECT-NOTES is settled and removed.
 
 **The rule-6 gate cleared BEFORE anything was downloaded**: GSRS data is **CC0 1.0**, software **Apache-2.0** — both
 AGPL-3.0-compatible, and CC0 imposes no attribution or share-alike at all. `NOTICE` now carries the entry. The
@@ -80,12 +77,14 @@ nothing but shapes it and needs its own re-measure.
 
 ## Open follow-ups (all filed as GitHub issues)
 
-**Filed by the slice-3 design** — [#67](https://github.com/cairn-ehr/drugref/issues/67) **salt↔base strength equivalence
-has no source**: `BASIS OF STRENGTH` is 409 *assay* specs, not conversion factors, and MW covers 5.4% of records.
-Routed to 5c. · [#68](https://github.com/cairn-ehr/drugref/issues/68) **3,631 drugref moieties carry a GSRS `ACTIVE
-MOIETY` edge to something else** — ~19% of the registry sits at the wrong level of the composition tree. Unrepairable
-(`moiety_uuid` is immortal, the gate strictly monotone) and slice 3 is built so it need not be; the gate question under
-#26's lineage, and why issue 33 stays open — GSRS holds `MAGNESIUM CATION` as the moiety and drugref does not.
+**Filed by the slice-3 design, its measurement, and the whole-branch review** —
+[#67](https://github.com/cairn-ehr/drugref/issues/67) **salt↔base strength equivalence has no source** (409 *assay*
+specs, not conversion factors; MW covers 5.4%), routed to 5c · [#68](https://github.com/cairn-ehr/drugref/issues/68)
+**3,631 moieties carry a GSRS `ACTIVE MOIETY` edge to something else** (~19% of the registry; unrepairable — immortal
+`moiety_uuid`, monotone gate; why issue 33 stays open) · [#69](https://github.com/cairn-ehr/drugref/issues/69) the
+27-edge scope question above · [#70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites
+reachable and queued by nothing** · [#71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834
+unregistered-component edges dropped, counted only transiently**.
 
 **Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **no index serves a HISTORY
 query** on `class_expansion_policy`; deliberately unfixed at 14 rows, revisit at curation ·

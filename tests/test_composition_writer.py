@@ -65,6 +65,24 @@ def test_moiety_uuid_by_unii_maps_live_claims(conn, gsrs_run, component):
     assert mapping["COMPONENT1"] == component
 
 
+def test_moiety_uuid_by_unii_excludes_superseded_claims(conn, gsrs_run, component):
+    """The docstring's own promise: 'a corrected claim's OLD value must not
+    resolve'. Mutation-proven -- deleting the `superseded_by IS NULL` filter left
+    all 894 tests green, because nothing else in the suite supersedes a UNII
+    claim."""
+    corrected_id = conn.execute(
+        "INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
+        "VALUES (%s, 'UNII', 'COMPONENT1X', %s) RETURNING identity_claim_id",
+        (component, gsrs_run)).fetchone()[0]
+    conn.execute(
+        "UPDATE drugref.identity_claim SET superseded_by = %s "
+        "WHERE moiety_uuid = %s AND scheme = 'UNII' AND value = 'COMPONENT1'",
+        (corrected_id, component))
+    mapping = composition.moiety_uuid_by_unii(conn)
+    assert "COMPONENT1" not in mapping
+    assert mapping["COMPONENT1X"] == component
+
+
 def test_clear_source_composition_removes_only_this_sources_rows(conn, gsrs_run, component):
     other = conn.execute(
         "INSERT INTO drugref.ingest_run "

@@ -12,8 +12,9 @@ ORDER MATTERS, as for MED-RT and MeSH:
 
 WORKLIST NUMBERS, NOT SILENT DROPS -- the slice-1/2a posture. An edge whose
 component is not a gated-in moiety is COUNTED (`components_not_in_registry`), never
-quietly discarded: on the real release only 4,433 of GSRS's 10,090 parent bases are
-drugref moieties, and a number that vanishes is a number nobody fixes.
+quietly discarded: on the real release only 4,433 of GSRS's 11,209 distinct
+components (across both relations) are drugref moieties, and a number that
+vanishes is a number nobody fixes.
 """
 import dataclasses
 import logging
@@ -67,10 +68,13 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
             continue
         for edge in record.edges:
             edges_in_release += 1
-            # NULL when the release rules on nothing; otherwise whether THIS
-            # component is the active one. Keyed by the composite's own record, so
-            # the mirror encoding on the component's record cannot overwrite a
-            # ruling with a NULL.
+            # NULL unless the COMPOSITE's own record rules on it; otherwise whether
+            # THIS component is the active one. Keyed by the composite's own
+            # record, so the mirror encoding on the component's record cannot
+            # overwrite a ruling with a NULL -- but also cannot SUPPLY one: for 27
+            # in-registry edges GSRS states ACTIVE MOIETY only on the component's
+            # record, and this code records NULL for them even though the release
+            # does rule, just not from the end this code consults (issue 69).
             if edge.substance_unii == record.unii:
                 activity = (edge.component_unii in record.active_moieties
                             if record.active_moieties else None)

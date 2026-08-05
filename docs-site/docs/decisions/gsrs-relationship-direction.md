@@ -102,7 +102,8 @@ behaviour is therefore the **conservative** one — it under-claims activity and
 over-reports the gap — which is the safe direction for a projection whose NULL means
 "nobody ruled". Whether the composite's own `ACTIVE MOIETY` declaration ought to rule
 on an edge that arrived from the other end is a real question, deliberately left open
-rather than changed during a verification run; it is worth an issue of its own.
+rather than changed during a verification run; filed as
+[issue 69](https://github.com/cairn-ehr/drugref/issues/69).
 
 **Published figures are the measured ones.** The predicted split is recorded here
 only so a reader who finds it in the design spec knows it was superseded, and by

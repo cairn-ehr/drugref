@@ -412,7 +412,16 @@ The two disagree on exactly the **27** in-registry edges GSRS stores *only* on t
 FALSE become NULL, leaving 19 more composites wholly unruled. The shipped reading is the conservative one (it only ever
 *adds* NULLs, never downgrades a ruling), so it under-claims activity and over-reports the gap. **Left as-is
 deliberately during a verification round; whether the composite's own `ACTIVE MOIETY` should rule on an edge that
-arrived from the other end deserves its own issue.**
+arrived from the other end is filed as [issue 69](https://github.com/cairn-ehr/drugref/issues/69).**
+
+**Filed by this round, deliberately not fixed here** (each errs toward under-claiming or over-counting, the safe
+direction, and each is its own round): [issue 69](https://github.com/cairn-ehr/drugref/issues/69) above ·
+[issue 70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites are reachable by nothing and
+queued by nothing** — `moiety_active_in_composite` propagates only `TRUE`, `gap_unruled_composition_activity` queues
+only a composite where *every* component is `NULL`, and a composite whose components are all `FALSE` satisfies
+neither predicate · [issue 71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834 normalised edges are
+dropped for an unregistered component** and counted only as the transient `components_not_in_registry` integer, never
+persisted as a worklist the way gap kind 12 is.
 
 **Traps, all measured before the first line of code.**
 - **THE DIRECTION CONVENTION IS INVISIBLE WHEN WRONG** (full statement in the upstream-errata section above). Inverted, it
