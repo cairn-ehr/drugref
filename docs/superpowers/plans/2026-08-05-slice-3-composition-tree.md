@@ -1207,7 +1207,7 @@ The import line becomes:
 from drugref import classes, composition, conditions, db, indications, interactions, local
 ```
 
-Also update the module docstring's "Seven writers" / "SEVEN of the seven" counts to **eight**, and the same count in `db.clear_source_tables`'s docstring ("SIX OF THE SEVEN declared table tuples" → "SIX OF THE EIGHT"; "Seven wrappers, not six" → "Eight wrappers, not seven"). A count restated in prose is exactly the kind of thing this repo has been bitten by; grep for it:
+Also update the module docstring's "Seven writers" / "SEVEN of the seven" counts to **eight**, and the same count in `db.clear_source_tables`'s docstring ("SIX OF THE SEVEN declared table tuples" → "**SEVEN** OF THE EIGHT", because substance_composition owns its whole table and does NOT use `match=`; "Seven wrappers, not six" → "Eight wrappers, not seven"). A count restated in prose is exactly the kind of thing this repo has been bitten by; grep for it:
 
 Run: `grep -rn "seven\|Seven\|SEVEN" src/drugref/db.py tests/test_source_clear_contract.py`
 
@@ -1276,7 +1276,7 @@ def test_an_unruled_composite_becomes_a_question(conn, gsrs_run, component):
         conn, substance_unii="UNRULED001", component_moiety=component,
         relation="SALT_SOLVATE", is_active_component=None, ingest_run_id=gsrs_run)
 
-    questions.rebuild_open_questions(conn)
+    questions.register_from_gaps(conn, gsrs_run)
 
     row = conn.execute(
         "SELECT gap_key, question_text FROM drugref.open_question "
@@ -1291,7 +1291,7 @@ def test_a_ruled_composite_raises_no_question(conn, gsrs_run, component):
         conn, substance_unii="RULED00001", component_moiety=component,
         relation="SALT_SOLVATE", is_active_component=True, ingest_run_id=gsrs_run)
 
-    questions.rebuild_open_questions(conn)
+    questions.register_from_gaps(conn, gsrs_run)
 
     assert conn.execute(
         "SELECT count(*) FROM drugref.open_question "
@@ -1299,15 +1299,16 @@ def test_a_ruled_composite_raises_no_question(conn, gsrs_run, component):
 
 
 def test_the_question_uuid_is_stable_across_rebuilds(conn, gsrs_run, component):
-    """question_uuid is immortal and externally citable."""
+    """question_uuid is immortal and externally citable. register_from_gaps takes
+    the run that re-derived the register, so a second call passes the same id."""
     composition.add_composition(
         conn, substance_unii="UNRULED001", component_moiety=component,
         relation="SALT_SOLVATE", is_active_component=None, ingest_run_id=gsrs_run)
-    questions.rebuild_open_questions(conn)
+    questions.register_from_gaps(conn, gsrs_run)
     first = conn.execute(
         "SELECT question_uuid FROM drugref.open_question "
         "WHERE gap_kind = 'unruled_composition_activity'").fetchone()[0]
-    questions.rebuild_open_questions(conn)
+    questions.register_from_gaps(conn, gsrs_run)
     second = conn.execute(
         "SELECT question_uuid FROM drugref.open_question "
         "WHERE gap_kind = 'unruled_composition_activity'").fetchone()[0]
@@ -1381,7 +1382,7 @@ worklist rather than staying invisible."
 - Test: `tests/test_gsrs_run.py`
 
 **Interfaces:**
-- Consumes: `gsrs.iter_records` (Task 1), `composition.*` (Task 4), `provenance.open_run/finish_run`, `checksum.checksum`, `questions.rebuild_open_questions`.
+- Consumes: `gsrs.iter_records` (Task 1), `composition.*` (Task 4), `provenance.open_run/finish_run`, `checksum.checksum`, `questions.register_from_gaps(conn, ingest_run_id)`.
 - Produces: `gsrs_run.SOURCE`, `gsrs_run.WRITER`, `gsrs_run.GsrsSummary`, `gsrs_run.ingest_gsrs(conn, *, dump_path, upstream_release) -> GsrsSummary`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1650,7 +1651,7 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
 
     unruled = sum(1 for values in activity_by_composite.values() if values == {None})
 
-    questions.rebuild_open_questions(conn)
+    questions.register_from_gaps(conn, run_id)
     provenance.finish_run(conn, run_id)
     conn.commit()
 
