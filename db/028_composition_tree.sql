@@ -146,3 +146,38 @@ COMMENT ON VIEW drugref.gap_unruled_composition_activity IS
     'Composites carrying components but NO activity ruling, so no contraindication '
     'on a component can reach them. 2,226 rows on 2026-02-26. Unlike '
     'gap_dead_by_expansion_policy this one is populated from day one.';
+
+-- ============================================================================
+-- 6. Widen open_question.gap_kind -- twelve in all
+-- ============================================================================
+-- Widened deliberately, in a migration, exactly as db/007 asks: an unconstrained
+-- gap_kind would let a typo mint a whole parallel question namespace that nothing
+-- ever reconciles. The guard reads the CURRENT definition rather than assuming
+-- db/022's, so re-running is safe and a future kind extends this list rather than
+-- replacing it.
+--
+-- Edited into db/028 rather than added as db/029: this branch is unmerged, so
+-- db/028 is not yet an APPLIED migration anywhere outside it, and editing it in
+-- place is the documented exception to "migrations are immutable once applied"
+-- while the branch stands. Add db/029 for the next gap kind after merge.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'open_question_gap_kind'
+                   AND    conrelid = 'drugref.open_question'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%unruled_composition_activity%') THEN
+        ALTER TABLE drugref.open_question
+            DROP CONSTRAINT IF EXISTS open_question_gap_kind;
+        ALTER TABLE drugref.open_question
+            ADD CONSTRAINT open_question_gap_kind CHECK (gap_kind IN (
+                'unpopulated_contraindication', 'unclassified_moiety',
+                'unmatched_ingredient', 'unreviewed_expansion_root',
+                'unresolved_ci_object', 'dead_by_expansion_policy',
+                'condition_without_indication',
+                -- Plan C
+                'uncurated_additive_effect', 'uncurated_threshold',
+                'ineffective_contribution', 'ungraded_contribution',
+                -- Slice 3
+                'unruled_composition_activity'));
+    END IF;
+END $$;

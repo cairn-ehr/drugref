@@ -127,10 +127,12 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **four of the six orchestrators**. **ELEVEN** gap kinds since Plan C, **18,834 questions**:
-unclassified_moiety **16,089** · unmatched_ingredient **2,150** · uncurated_additive_effect **381** · unresolved_ci_object
-**103** · condition_without_indication **97** · unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the
-other four **0** (three need curation).
+before commit by **four of the six orchestrators**. **TWELVE** gap kinds since Slice 3 (eleven since Plan C), **21,060
+questions**: unclassified_moiety **16,089** · unmatched_ingredient **2,150** · unruled_composition_activity **2,226** ·
+uncurated_additive_effect **381** · unresolved_ci_object **103** · condition_without_indication **97** ·
+unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation).
+`unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components but no activity
+ruling at all, populated from day one like the coverage kinds, not curation-dependent like Plan C's four.
 
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection with
 **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser), `local.py`
