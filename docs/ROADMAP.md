@@ -82,9 +82,43 @@ MeSH licence verified AGPL-compatible (attribution + no-endorsement + version-cu
 mostly (3,384) into MeSH structural classes and so unblocked by the bridge, but **248 target MED-RT itself** and never needed
 it.
 
-### Slice 3 — Composition tree: specific substances (salts/esters/hydrates)
-Add the salt level below the moiety, keyed on **UNII** with `parent_moiety_uuid` from **GSRS active-moiety relationships**;
-salt↔base strength-equivalence data. Additive to the slice-1 schema.
+### Slice 3 — Composition tree: specific substances (salts/esters/hydrates) — DESIGNED, measured
+Spec: [slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md).
+**Rule-6 gate cleared first: GSRS data is CC0 1.0, software Apache-2.0** — both AGPL-3.0-compatible, and CC0 imposes no
+attribution or share-alike at all. `NOTICE` gains a bundled-source entry. The one caveat is the dedication's *"unless
+otherwise noted"* clause, which re-confirms before production alongside #6/#25.
+
+**The sentence this line used to hold was wrong in three ways, and the release said so.** It read: "Add the salt level
+below the moiety, keyed on UNII with `parent_moiety_uuid` from **GSRS active-moiety relationships**; salt↔base
+strength-equivalence data."
+
+1. **`ACTIVE MOIETY` is the ION level, not the composition edge.** 33,647 edges, **71% self-references**; every magnesium
+   form (including drugref's own moiety) points at `MAGNESIUM CATION`. As an equivalence join it merges **levomefolate
+   magnesium** with magnesium sulfate — 35 substances share that cation, 27 of them drugref moieties — which is the
+   discredited-sulfonamide shape already withheld once. The real edge is **`SALT/SOLVATE↔PARENT` (15,199)** +
+   **`SOLVATE↔ANHYDROUS` (1,635)**; `ACTIVE MOIETY` survives only as a **discriminator inside** a composition.
+2. **`parent_moiety_uuid` cannot hold it**: **1,089 salts (7.7%) have >1 parent base**, 800 within the registry.
+   `ZINC GLYCINATE CITRATE` = zinc + glycine + citric acid. The relation is many-to-many by nature.
+3. **Salt↔base strength equivalence is not in this source.** `BASIS OF STRENGTH` is **409 edges** of *assay* spec
+   (`99–101 WEIGHT PERCENT`), not conversion factors; molecular weight covers 5.4% of records, and deriving a dose
+   factor from it would have a projection compute a clinical quantity. **Deferred to 5c.**
+
+**The direction convention is inverted from the naive reading** — for type `A->B` on record X pointing at Y, X plays B —
+the same erratum shape as MED-RT's `Parent Of`. Naively, one salt had 124 parents; correctly, the busiest *parents* are
+Maleic Acid (124 salts), Tartaric Acid (123), citric acid (117). Confirmed twice (mirror agreement 15,039; every solvate
+has exactly 1 anhydrous).
+
+Shape: **composition edges over ONE registry**, no second identity — `substance_composition (substance_unii TEXT,
+component_moiety uuid, relation, is_active_component)`, a rebuildable `GSRS`-keyed projection. **8,671 rows** (7,962 salt
++ 709 solvate) over **7,377 composites**, **4,433 component moieties**; **4,092 moieties (21.1%) gain ≥1 child**.
+`is_active_component` has **no DEFAULT and NULL means UNRULED** (true 5,029 / false 1,001 / **null 2,641**), feeding
+**gap kind 12** over 2,226 composites. Read path propagates the **active component only**, so Maleic Acid's 124 salts
+stay unlinked. Deliberately NOT wired into `ddi_candidate_pair` (a measured 3.6 ms hot path).
+
+**It does not close #33 or #30, and the annotations below saying it does are withdrawn.** Issue 33's own proposed fix is
+refuted: **nothing in GSRS points at `DE08037SAB`** (0 inbound references across 173,080 records). A composition hop
+recovers **94 of 706** unmatched MeSH UNII keys and **68 of 1,977** CAS keys; the magnesium flagship is not among them.
+#30's yield is unmeasured here — the verification DB carries no PBS release — and is an implementation-step measurement.
 
 ### Slice 4 — Clinical drugs (moiety/salt + strength + form)
 The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tree leaf before product/local.
@@ -346,7 +380,8 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
   surfaced only on measurement: the gate moved **no** downstream number until the PBS bridge stopped indexing `INN` claims
   (the new moieties have none) and indexed `display_name` instead. Measured: moieties **12,591 → 19,438**, PBS bridge **85.5%
   → 92.4%**, MED-RT classified moieties **2,066 → 3,875**, `ddi_candidate_pair` **6,402 → 21,664**. 412 tests. Residue: #33
-  (closed by slice 3). Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md).
+  (**"closed by slice 3" WITHDRAWN** — the slice-3 design measured GSRS and refuted the issue's own proposed fix; see the
+  slice-3 section above). Spec: [moiety gate redesign](superpowers/specs/2026-07-27-drugref-moiety-gate-redesign.md).
 - **Foundation review ✅ DONE** (post-slice-5a, whole-codebase). `db/005` made the correction overlay one-way and re-assertable
   (partial unique index on LIVE claims; supersession set once, same-moiety, strictly forward — closes #4) and constrained
   `ingest_run.source`; `db/006` replaced the comment-enforced CHECK↔CASE coupling with a `ci_axis` table the vocabulary is an

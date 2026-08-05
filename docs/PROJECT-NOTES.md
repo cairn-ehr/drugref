@@ -381,6 +381,41 @@ restating rather than assumed solved: keep the number away from `close`/`fix`/`r
 closed, fixing, fixes, resolved, …), because the linker matches on **token adjacency**, not meaning. A colon in between does
 not save you.
 
+## Slice 3 — the composition tree (DESIGNED 2026-08-05, not yet built)
+
+Spec: [slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md). The first new
+external source since 2b, so **rule 6 was a gate, not a formality**: GSRS data is **CC0 1.0**, software **Apache-2.0**,
+cleared BEFORE anything was downloaded (caveat above). Shape: **composition edges over ONE registry** — no second
+identity, no dual residence. `substance_composition (substance_unii TEXT, component_moiety uuid, relation,
+is_active_component)`, a rebuildable `GSRS`-keyed projection; **8,671 rows** over **7,377 composites**; **4,092 moieties
+(21.1%) gain ≥1 child**; gap kind 12 over **2,226** composites.
+
+**Traps, all measured before the first line of code.**
+- **THE DIRECTION CONVENTION IS INVISIBLE WHEN WRONG** (full statement in the upstream-errata section above). Inverted, it
+  yields a *fully populated, entirely wrong* table that no aggregate count would flag. It lives in ONE function, pinned by
+  the mirror check AND the solvate functional check. **Do not delete either test.**
+- **`ACTIVE MOIETY` IS A DISCRIMINATOR, NEVER AN EDGE, and never a substance-equivalence join.** The temptation is
+  specific: it *appears* to close #33. It also asserts that **levomefolate magnesium** is interchangeable with magnesium
+  sulfate — 35 substances share `MAGNESIUM CATION`, **27 of them drugref moieties**. Same shape as the withheld
+  sulfonamide expansion. **Its 23,944 self-edges (71%) are not compositions either**; filtering them is load-bearing, or
+  every moiety becomes its own component.
+- **`is_active_component` NULL means UNRULED, not inactive** — no DEFAULT. `allow` ≠ absent (`class_expansion_policy`) and
+  `withdrawn` ≠ `allow` are the same lesson; this is the fourth table to need it. Only **6,696 of 14,090** salts declare an
+  active moiety at all. Where they do, it IS one of their own components **95.1%** of the time (6,368/6,696), selecting a
+  strict subset in 589 multi-component cases — that is what separates drug from counterion. The 328 whose declared active
+  moiety is *not* among its components are counted, not repaired.
+- **`substance_unii` is deliberately NOT a foreign key.** Adding one deletes **4,425** composites — two-thirds of the
+  table — and re-opens the second-registry question the design exists to avoid.
+- **3,195 GSRS salts are ALREADY drugref moieties, and that is not a bug to fix.** `moiety_uuid` is immortal and the gate
+  is strictly monotone, so they cannot be demoted; a row may be a moiety *and* have components. (42 are both salt and
+  parent.) Relatedly, **3,631 drugref moieties carry an `ACTIVE MOIETY` edge to something else** — GSRS would not call
+  them active moieties. That is a **moiety-gate** question (#26's lineage), not a composition one.
+- **`parent_moiety_uuid` was refuted, not simplified away**: 1,089 salts (7.7%) have >1 parent, 800 in-registry.
+- **The slice does NOT close #33 or #30** — ROADMAP's annotations are withdrawn. Nothing in GSRS points at `DE08037SAB`
+  (**0 inbound references** across 173,080 records); a composition hop recovers **94 of 706** MeSH UNII keys and **68 of
+  1,977** CAS keys, and the magnesium flagship is not among them. **Re-measure before quoting either issue** — the fourth
+  round to find an issue text stale.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -396,6 +431,10 @@ true until production happens, which is many rounds away, and it was being recom
   deed against the live NLM source-release doc (the distribution ships no licence file) ·
   [#25](https://github.com/cairn-ehr/drugref/issues/25) PBS redistribution — blocks bundling but not node-local ingest,
   and needs written Dept-of-Health confirmation.
+- **A third, added by the slice-3 design:** GSRS's dedication reads *"**Unless otherwise noted**, the data provided by
+  GSRS is public domain … CC0 1.0 Universal"*. CC0 is unconditionally AGPL-3.0-compatible and the clearance stands, but
+  the clause is a **per-record exception**, so it re-confirms against the live licensing page before the first production
+  load, exactly as #6 does for MED-RT. No noted exception was found on any record read.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 
@@ -407,6 +446,14 @@ record may carry several — key extraction is set-valued. **And the one 5b turn
 **ConceptUI** (`M0004868`), *not* a DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off length);
 resolving it against `desc2026` + `supp2026` reaches **99.88%** of MeSH-keyed objects, while the NDF-RT accessory crosswalk
 yields only a **name** and is rejected. **UNII:** the gate columns live in `UNII_Records_*.txt`, never in `UNII_Names_*.txt`.
+**GSRS (slice-3 design, 2026-08-05):** **the relationship direction is inverted from the naive reading** — for a
+relationship of type `A->B` stored on record X and pointing at Y, **X plays role B and Y plays role A** (the stored edge
+is the INBOUND one). Read naively, one "salt" had **124 parents**; read correctly, the busiest *parents* are Maleic Acid
+(124 salts), Tartaric Acid (123), citric acid (117). Confirmed twice — the two mirror encodings agree on **15,039** edges,
+and every solvate has exactly **one** anhydrous parent. **And the public API is not a substitute for the dump**: it
+returns substance records with `relationships` **stripped entirely**, verified by control (`1D06KZ672I`, whose edge was
+read straight out of the dump bytes, comes back from the API with zero relationships) — a first pass that trusted the API
+concluded "GSRS holds no active-moiety data", which was an artifact of the transport.
 
 ## Architecture in one breath
 
@@ -516,6 +563,11 @@ the DB layer can never go green by being skipped.
     `items.csv`; regenerate with `make_pbs_subset.py downloads/tables_as_csv/items.csv > …`.
   - **UNII** — `UNII_Records_*.txt` at the `downloads/` root is the file every parser reads; `UNII_Names_*.txt` beside it
     carries none of the gate's membership signals.
+  - **GSRS** (slice 3) — `downloads/GSRS/dump-public-2026-02-26.gsrs`, **321,487,817 bytes gzip → ~2.05 GB**, JSON-lines
+    with **two tab characters prefixing each line** before the `{`. Not linked from any static page: the URL
+    (`https://gsrs.ncats.nih.gov/assets/downloads/dump-public-*.gsrs`) is held in the SPA's lazily-loaded JS chunk, so it
+    changes without a redirect. 173,080 records / 168,002 UNIIs, and **all 19,438 drugref moieties are present (100%)** —
+    the only bridge in this project that loses nothing, because GSRS is where drugref's UNII keys come from.
 
 ## Repo facts
 
