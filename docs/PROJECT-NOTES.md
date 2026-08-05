@@ -127,10 +127,15 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **four of the six orchestrators**. **TWELVE** gap kinds since Slice 3 (eleven since Plan C), **21,060
-questions**: unclassified_moiety **16,089** · unmatched_ingredient **2,150** · unruled_composition_activity **2,226** ·
+before commit by **four of the six orchestrators**. **TWELVE** gap kinds since Slice 3 (eleven since Plan C):
+unclassified_moiety **16,089** · unruled_composition_activity **EXPECTED 2,226** · unmatched_ingredient **2,150** ·
 uncurated_additive_effect **381** · unresolved_ci_object **103** · condition_without_indication **97** ·
-unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation).
+unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation). Eleven
+of the twelve are **pipeline-measured, 18,834 questions**; `unruled_composition_activity`'s **2,226** is marked EXPECTED
+because it came from a query against the raw GSRS extract, not against the assembled `open_question` registry — Task 6's
+orchestrator, the thing that would actually populate it, has not landed yet. **EXPECTED total 21,060** (18,834 + 2,226)
+is therefore arithmetic, not a measurement: re-measure once the Slice-3 chain runs end to end (Task 8) before citing
+either EXPECTED figure as fact.
 `unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components but no activity
 ruling at all, populated from day one like the coverage kinds, not curation-dependent like Plan C's four.
 
