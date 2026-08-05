@@ -55,7 +55,7 @@ def test_relation_is_a_foreign_key_not_a_check(conn, gsrs_run, two_moieties):
 
 
 def test_is_active_component_has_no_default_and_accepts_null(conn, gsrs_run, two_moieties):
-    """NULL means UNRULED, not inactive (spec 5.2). 2,641 rows land here."""
+    """NULL means UNRULED, not inactive (spec 5.2). 2,668 rows land here."""
     conn.execute(
         "INSERT INTO drugref.substance_composition "
         "(substance_unii, component_moiety, relation, is_active_component, ingest_run) "

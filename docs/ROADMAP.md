@@ -82,7 +82,7 @@ MeSH licence verified AGPL-compatible (attribution + no-endorsement + version-cu
 mostly (3,384) into MeSH structural classes and so unblocked by the bridge, but **248 target MED-RT itself** and never needed
 it.
 
-### Slice 3 — Composition tree: specific substances (salts/esters/hydrates) — DESIGNED, measured
+### Slice 3 — Composition tree: specific substances (salts/esters/hydrates) ✅ DONE
 Spec: [slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md).
 **Rule-6 gate cleared first: GSRS data is CC0 1.0, software Apache-2.0** — both AGPL-3.0-compatible, and CC0 imposes no
 attribution or share-alike at all. `NOTICE` gains a bundled-source entry. The one caveat is the dedication's *"unless
@@ -109,16 +109,36 @@ Maleic Acid (124 salts), Tartaric Acid (123), citric acid (117). Confirmed twice
 has exactly 1 anhydrous).
 
 Shape: **composition edges over ONE registry**, no second identity — `substance_composition (substance_unii TEXT,
-component_moiety uuid, relation, is_active_component)`, a rebuildable `GSRS`-keyed projection. **8,671 rows** (7,962 salt
-+ 709 solvate) over **7,377 composites**, **4,433 component moieties**; **4,092 moieties (21.1%) gain ≥1 child**.
-`is_active_component` has **no DEFAULT and NULL means UNRULED** (true 5,029 / false 1,001 / **null 2,641**), feeding
-**gap kind 12** over 2,226 composites. Read path propagates the **active component only**, so Maleic Acid's 124 salts
-stay unlinked. Deliberately NOT wired into `ddi_candidate_pair` (a measured 3.6 ms hot path).
+component_moiety uuid, relation, is_active_component)`, a rebuildable `GSRS`-keyed projection (`db/028`). Code:
+`ingest/gsrs.py` (pure streaming parser), `composition.py` (single writer), `ingest/gsrs_run.py` (orchestrator), and a
+`gsrs` chain step. Read path propagates the **active component only**, so Maleic Acid's 124 salts stay unlinked.
+Deliberately NOT wired into `ddi_candidate_pair` (a measured 3.6 ms hot path).
 
-**It does not close #33 or #30, and the annotations below saying it does are withdrawn.** Issue 33's own proposed fix is
-refuted: **nothing in GSRS points at `DE08037SAB`** (0 inbound references across 173,080 records). A composition hop
-recovers **94 of 706** unmatched MeSH UNII keys and **68 of 1,977** CAS keys; the magnesium flagship is not among them.
-#30's yield is unmeasured here — the verification DB carries no PBS release — and is an implementation-step measurement.
+**Measured end to end** — UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026 → GSRS 2026-02-26, on 2026-08-05, 137 s:
+
+| quantity | measured |
+|---|---:|
+| `substance_composition` rows | **8,671** (7,962 salt + 709 solvate) |
+| composites | **7,377** (4,425 are not moieties) |
+| component moieties | **4,433** — 22.8% of the registry gain ≥1 child (4,092 via a salt edge) |
+| `is_active_component` TRUE / FALSE / NULL | **5,011 / 992 / 2,668** |
+| gap kind 12 (`gap_unruled_composition_activity`) | **2,245** composites |
+| `ddi_candidate_pair` (must not move) | **21,664** ✅ unmoved |
+| `substance_moiety` (must not move) | **19,438** ✅ unmoved |
+| `open_question` | **21,079** = 18,834 pre-slice + 2,245 new |
+| test suite | **894 passed** |
+
+`is_active_component` has **no DEFAULT and NULL means UNRULED**. The design predicted 5,029 / 1,001 / 2,641 and 2,226
+gap-12 composites; the **row set matched exactly** and only the split moved, because the prediction scripts resolved
+activity through a global `unii → active moieties` map while the orchestrator only accepts a ruling from the composite's
+own record. The 27 edges GSRS stores solely on the component's record are the whole difference. **The measured figures
+are the published ones** — see the [decision record](https://docs.drugref.org/decisions/gsrs-relationship-direction/).
+
+**It does not resolve issue 33 or issue 30, and the annotations below saying it does are withdrawn.** Issue 33's own
+proposed fix is refuted: **nothing in GSRS points at `DE08037SAB`** (0 inbound references across 173,080 records). A
+composition hop recovers **94 of 706** unmatched MeSH UNII keys and **68 of 1,977** CAS keys; the magnesium flagship is
+not among them. Issue 30's yield is unmeasured here — the verification DB carries no PBS release — and is an
+implementation-step measurement.
 
 ### Slice 4 — Clinical drugs (moiety/salt + strength + form)
 The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tree leaf before product/local.

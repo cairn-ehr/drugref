@@ -2,7 +2,14 @@ drugref.org — global tier. Copyright (C) 2026 the drugref/Cairn contributors.
 Licensed under AGPL-3.0-or-later.
 
 Seed data attributions:
-- UNII / Global Substance Registration System — U.S. FDA/NCATS (public domain).
+- UNII / Global Substance Registration System (GSRS) — U.S. FDA/NCATS. The UNII
+  release files are public domain. The GSRS public data dump, from which slice 3
+  ingests salt/solvate composition and active-moiety relationships, is released
+  under a Creative Commons CC0 1.0 Universal public-domain dedication
+  (https://creativecommons.org/publicdomain/zero/1.0/); the GSRS software, which
+  drugref neither uses nor redistributes, is Apache-2.0. The dedication is stated
+  "unless otherwise noted"; no noted exception was found on any ingested record,
+  and it is re-confirmed before the first production load.
 - ChEBI — EMBL-EBI, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 - International Nonproprietary Names (INN) — World Health Organization (public domain).
 - RxNorm — U.S. National Library of Medicine (public domain, prescribable subset).

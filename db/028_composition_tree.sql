@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS drugref.substance_composition (
     -- NULL means UNRULED -- the release says nothing about which component is
     -- active -- and NOT inactive. NO DEFAULT, for the reason `allow` is not the
     -- same as absent in class_expansion_policy and `withdrawn` is not `allow`:
-    -- 2,641 rows land here, and defaulting them to false silently retires a
+    -- 2,668 rows land here, and defaulting them to false silently retires a
     -- question nobody answered, while defaulting to true propagates through
     -- counterions.
     is_active_component boolean,
@@ -92,11 +92,12 @@ COMMENT ON TABLE drugref.substance_composition IS
     'side is a UNII from the source and is NOT a drugref identity: 4,425 of 7,377 '
     'composites are not moieties. Measured on 2026-02-26: 8,671 rows (7,962 '
     'SALT_SOLVATE + 709 SOLVATE_ANHYDROUS) over 7,377 composites and 4,433 component '
-    'moieties; 4,092 moieties (21.1% of the registry) gain at least one child.';
+    'moieties; 4,433 moieties (22.8% of the registry) gain at least one child, of '
+    'which 4,092 (21.1%) do so through a SALT_SOLVATE edge.';
 
 COMMENT ON COLUMN drugref.substance_composition.is_active_component IS
     'Whether the release marks this component as what makes the composite '
-    'pharmacologically active. TRUE 5,029 / FALSE 1,001 / NULL 2,641 on 2026-02-26. '
+    'pharmacologically active. TRUE 5,011 / FALSE 992 / NULL 2,668 on 2026-02-26. '
     'NULL means UNRULED, never inactive -- only 6,696 of 14,090 salts declare an '
     'active moiety at all. Derived from GSRS''s ACTIVE MOIETY relationship, which is '
     'used ONLY here: as an EDGE it is the ion level and would assert that '
@@ -144,7 +145,7 @@ HAVING bool_and(is_active_component IS NULL);
 
 COMMENT ON VIEW drugref.gap_unruled_composition_activity IS
     'Composites carrying components but NO activity ruling, so no contraindication '
-    'on a component can reach them. 2,226 rows on 2026-02-26. Unlike '
+    'on a component can reach them. 2,245 rows on 2026-02-26. Unlike '
     'gap_dead_by_expansion_policy this one is populated from day one.';
 
 -- ============================================================================

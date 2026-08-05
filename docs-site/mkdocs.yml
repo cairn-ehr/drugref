@@ -73,6 +73,7 @@ nav:
       - An indication does not expand down the disease tree: decisions/indications-do-not-expand.md
       - A curated correction needs a deferred check: decisions/correcting-a-curated-assertion.md
       - The expansion policy is append-only: decisions/expansion-policy-is-append-only.md
+      - GSRS relationship direction runs target → record: decisions/gsrs-relationship-direction.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md
