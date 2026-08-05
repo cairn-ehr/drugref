@@ -59,6 +59,11 @@ _SOURCE_CANONICAL = {
     # per-source rebuild would silently delete nothing. 'DRUGREF' survives by luck;
     # the entry records that the luck was checked rather than assumed.
     "DRUGREF": "DRUGREF",
+    # Slice 3. 'GSRS' survives the upper-case fall-through unchanged, exactly as
+    # 'DRUGREF' does -- and is listed for the same reason: the entry records that
+    # the luck was CHECKED rather than assumed. db/028 widens ingest_run's source
+    # CHECK to match; the two are a pair.
+    "GSRS": "GSRS",
 }
 
 # The key prefix each canonical authority contributes to a class UUID.
