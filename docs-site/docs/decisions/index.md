@@ -53,3 +53,7 @@ history is never lost — it remains in the git log and in the dated design spec
 - [The expansion policy is append-only, and `withdrawn` is a decision](expansion-policy-is-append-only.md)
   — why the table that gates contraindication recall stopped being edited in place, and what a
   reader of it must do differently (carries the standing correction to `db/010`'s storage-tier prose).
+- [GSRS relationship direction runs target → record](gsrs-relationship-direction.md)
+  — the undocumented upstream convention that makes a naive read of the composition graph
+  fully populated and entirely reversed, and why `ACTIVE MOIETY` is a discriminator rather
+  than an edge (carries the activity-split erratum to the slice-3 spec).

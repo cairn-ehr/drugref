@@ -41,7 +41,7 @@ required columns are now **declared and checked**, because `or ""` absorbed a st
 `INN_ID | USAN_ID | (RXCUI & drug-like SUBSTANCE_TYPE) | UNII allow-list`, and **the asymmetry is the design** — uniform
 type-filtering was measured and rejected because it deletes heparin, enoxaparin, protamine and 346 gene/cell therapies.
 **Strictly monotone, pinned by a test**, because `moiety_uuid` is immortal. **5,227 moieties rest on `RXCUI` alone**, the
-natural head of a #19 worklist. Do **not** "fix" #33 by allow-listing the hydrate UNIIs. **Every fixture is extracted from a
+natural head of a #19 worklist. Do **not** "fix" issue 33 by allow-listing the hydrate UNIIs. **Every fixture is extracted from a
 real release** — the last hand-written one invented an `INN_ID`, a CAS and a UNII.
 
 **Plan B — DAG-descendant expansion (#32 + the #38 review round, `db/010` + `db/012`).** Design: §3.2 / §7.1 / §11 of the
@@ -127,10 +127,16 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **four of the six orchestrators**. **ELEVEN** gap kinds since Plan C, **18,834 questions**:
-unclassified_moiety **16,089** · unmatched_ingredient **2,150** · uncurated_additive_effect **381** · unresolved_ci_object
-**103** · condition_without_indication **97** · unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the
-other four **0** (three need curation).
+before commit by **five of the seven orchestrators**. **TWELVE** gap kinds since Slice 3 (eleven since Plan C):
+unclassified_moiety **16,089** · unruled_composition_activity **2,245** · unmatched_ingredient **2,150** ·
+uncurated_additive_effect **381** · unresolved_ci_object **103** · condition_without_indication **97** ·
+unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation). All
+twelve are now **pipeline-measured: 21,079 questions** (2026-08-05, the Slice-3 chain end to end). The previous
+**EXPECTED 2,226 / 21,060** hedging is settled and removed — the assembled registry gives **2,245**, 19 more than the
+raw-extract query predicted, and the pre-Slice-3 base is unmoved at exactly **18,834**. The 19 are the composites whose
+only activity ruling sits on a mirror record the orchestrator does not read a ruling from (Slice 3 erratum below).
+`unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components but no activity
+ruling at all, populated from day one like the coverage kinds, not curation-dependent like Plan C's four.
 
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection with
 **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser), `local.py`
@@ -381,6 +387,101 @@ restating rather than assumed solved: keep the number away from `close`/`fix`/`r
 closed, fixing, fixes, resolved, …), because the linker matches on **token adjacency**, not meaning. A colon in between does
 not save you.
 
+## Slice 3 — the composition tree (BUILT 2026-08-05, `db/028`, measured end to end)
+
+Spec: [slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md). Published
+record: [GSRS relationship direction](../docs-site/docs/decisions/gsrs-relationship-direction.md). The first new
+external source since 2b, so **rule 6 was a gate, not a formality**: GSRS data is **CC0 1.0**, software **Apache-2.0**,
+cleared BEFORE anything was downloaded (caveat above); `NOTICE` carries the entry. Shape: **composition edges over ONE
+registry** — no second identity, no dual residence. `substance_composition (substance_unii TEXT, component_moiety uuid,
+relation, is_active_component)`, a rebuildable `GSRS`-keyed projection. Code: `ingest/gsrs.py` (pure streaming parser),
+`composition.py` (single writer), `ingest/gsrs_run.py` (orchestrator), `gsrs` chain step.
+
+**MEASURED on the assembled chain** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026 → GSRS 2026-02-26, 2026-08-05,
+137 s): **8,671 rows** (7,962 salt + 709 solvate) over **7,377 composites** and **4,433 component moieties**; **4,433
+moieties (22.8%) gain ≥1 child** — 4,092 (21.1%) of them through a salt edge, which is what the earlier "4,092" figure
+counted. `is_active_component` **TRUE 5,011 / FALSE 992 / NULL 2,668**; **gap kind 12 over 2,245** composites.
+**Nothing pre-existing moved**: `ddi_candidate_pair` **21,664**, `substance_moiety` **19,438**, and `open_question`
+grew by exactly the new gap rows, 18,834 → **21,079**.
+
+**The predicted activity split was refuted, and the row set was not.** Design measurement predicted TRUE 5,029 / FALSE
+1,001 / NULL 2,641 and 2,226 gap-12 composites. The edge set matched to the row; only the split moved. Cause,
+reproduced exactly against the dump: the prediction scripts used a **global** `unii → active moieties` lookup, while
+`gsrs_run.py` only lets a ruling come from the composite's **own record** (that is what the mirror-merge is keyed on).
+The two disagree on exactly the **27** in-registry edges GSRS stores *only* on the component's record — 18 TRUE and 9
+FALSE become NULL, leaving 19 more composites wholly unruled. The shipped reading is the conservative one (it only ever
+*adds* NULLs, never downgrades a ruling), so it under-claims activity and over-reports the gap. **Left as-is
+deliberately during a verification round; whether the composite's own `ACTIVE MOIETY` should rule on an edge that
+arrived from the other end is filed as [issue 69](https://github.com/cairn-ehr/drugref/issues/69).**
+
+**Filed by this round, deliberately not fixed here** (each errs toward under-claiming or over-counting, the safe
+direction, and each is its own round): [issue 69](https://github.com/cairn-ehr/drugref/issues/69) above ·
+[issue 70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites are reachable by nothing and
+queued by nothing** — `moiety_active_in_composite` propagates only `TRUE`, `gap_unruled_composition_activity` queues
+only a composite where *every* component is `NULL`, and a composite whose components are all `FALSE` satisfies
+neither predicate · [issue 71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834 normalised edges are
+dropped for an unregistered component** and counted only as the transient `components_not_in_registry` integer, never
+persisted as a worklist the way gap kind 12 is.
+
+**Traps, all measured before the first line of code.**
+- **THE DIRECTION CONVENTION IS INVISIBLE WHEN WRONG** (full statement in the upstream-errata section above). Inverted, it
+  yields a *fully populated, entirely wrong* table that no aggregate count would flag. It lives in ONE function, pinned by
+  the mirror check AND the solvate functional check. **Do not delete either test.**
+- **`ACTIVE MOIETY` IS A DISCRIMINATOR, NEVER AN EDGE, and never a substance-equivalence join.** The temptation is
+  specific: it *appears* to close issue 33. It also asserts that **levomefolate magnesium** is interchangeable with magnesium
+  sulfate — 35 substances share `MAGNESIUM CATION`, **27 of them drugref moieties**. Same shape as the withheld
+  sulfonamide expansion. **Its 23,944 self-edges (71%) are not compositions either**; filtering them is load-bearing, or
+  every moiety becomes its own component.
+- **`is_active_component` NULL means UNRULED, not inactive** — no DEFAULT. `allow` ≠ absent (`class_expansion_policy`) and
+  `withdrawn` ≠ `allow` are the same lesson; this is the fourth table to need it. Only **6,696 of 14,090** salts declare an
+  active moiety at all. Where they do, it IS one of their own components **95.1%** of the time (6,368/6,696), selecting a
+  strict subset in 589 multi-component cases — that is what separates drug from counterion. The 328 whose declared active
+  moiety is *not* among its components are counted, not repaired.
+- **`substance_unii` is deliberately NOT a foreign key.** Adding one deletes **4,425** composites — two-thirds of the
+  table — and re-opens the second-registry question the design exists to avoid.
+- **3,195 GSRS salts are ALREADY drugref moieties, and that is not a bug to fix.** `moiety_uuid` is immortal and the gate
+  is strictly monotone, so they cannot be demoted; a row may be a moiety *and* have components. (42 are both salt and
+  parent.) Relatedly, **3,631 drugref moieties carry an `ACTIVE MOIETY` edge to something else** — GSRS would not call
+  them active moieties. That is a **moiety-gate** question (#26's lineage), not a composition one.
+- **`parent_moiety_uuid` was refuted, not simplified away**: 1,089 salts (7.7%) have >1 parent, 800 in-registry.
+- **The slice does NOT close issue 33 or issue 30** — ROADMAP's annotations are withdrawn. Nothing in GSRS points at
+  `DE08037SAB` (**0 inbound references** across 173,080 records); a composition hop recovers **94 of 706** MeSH UNII keys
+  and **68 of 1,977** CAS keys, and the magnesium flagship is not among them. Issue 30 stayed unmeasured through the
+  build: the verification database carries no PBS release. **Re-measure before quoting either issue** — the fourth round
+  to find an issue text stale.
+- **The activity split is scope-sensitive, and the published figures are the pipeline's.** Any re-measurement done with a
+  standalone script that maps `unii → active moieties` globally will read 5,029/1,001/2,641 and 2,226. That is a
+  different question from the one the projection answers; see the erratum above before treating a mismatch as a
+  regression.
+
+### The PR #72 review round (2026-08-06) — what a full test suite was not testing
+
+Five findings, all fixed on the branch; 894 → **897 tests**. The two worth carrying forward:
+
+- **A 100%-green suite did not test the slice's central semantic.** `is_active_component` exists to keep *"the release
+  ruled on nothing"* (NULL) distinct from *"this component is inactive"* (false) — the distinction the whole read path
+  and gap kind 12 are built on. Deleting the `if record.active_moieties else None` guard in `gsrs_run.py`, which
+  collapses every unruled edge to `false`, **passed all 895 tests**. So did replacing `unruled_composites` with a
+  literal `0`. Both are now killed by two orchestrator tests. **The lesson is about WHERE the assertions were:** the
+  writer had `test_null_is_stored_as_null_not_false` (passes an explicit `None`, so an orchestrator-level mutation is
+  invisible to it) and the parser had its own NULL tests — the two ends were covered and the *decision between them*
+  was not. A summary field returned by an orchestrator and printed by the CLI is a claim; assert it.
+- **A fixture record cut for a purpose was not serving it.** `make_gsrs_subset.py` kept PHYTATE SODIUM as the genuine
+  gap case and `7IGF0S7R8I` alongside it "so the gap-view edge resolves against the registry" — but `test_gsrs_run`'s
+  `registry` fixture never registered `7IGF0S7R8I`, so the orchestrator dropped the edge as unresolved and the case
+  reached the gap view **never**. The view was populated in that test only incidentally, by ~98 chlortetracycline salts
+  nothing asserted on. **A fixture comment stating a role is not evidence the role is exercised**; the gap view had
+  rows, which is exactly what made it look covered.
+
+Also fixed: `test_gsrs_run`'s `registry` committed moieties and claims that outlived the file (nothing broke only
+because `test_ingest_run.py` sorts later and TRUNCATEs those tables) — and note that a committed seed on the
+append-only floor **cannot** be unpicked with DELETE at all, since `db/001`/`db/005` triggers RAISE on it; TRUNCATE is
+the only tool. `GsrsRecord.display_name` was parsed for every one of 173,080 records with no consumer, and removed.
+`records_in_release`/`edges_in_release` were renamed `records_with_unii`/`edge_statements_read` — the first skipped the
+5,078 records with no `approvalID`, the second double-counted mirrored edges, and both names claimed the release total.
+Deferred as [#73](https://github.com/cairn-ehr/drugref/issues/73): both views over `substance_composition` read every
+source at once, unfixable in `db/028` because it is applied and immutable.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -396,6 +497,10 @@ true until production happens, which is many rounds away, and it was being recom
   deed against the live NLM source-release doc (the distribution ships no licence file) ·
   [#25](https://github.com/cairn-ehr/drugref/issues/25) PBS redistribution — blocks bundling but not node-local ingest,
   and needs written Dept-of-Health confirmation.
+- **A third, added by the slice-3 design:** GSRS's dedication reads *"**Unless otherwise noted**, the data provided by
+  GSRS is public domain … CC0 1.0 Universal"*. CC0 is unconditionally AGPL-3.0-compatible and the clearance stands, but
+  the clause is a **per-record exception**, so it re-confirms against the live licensing page before the first production
+  load, exactly as #6 does for MED-RT. No noted exception was found on any record read.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 
@@ -407,6 +512,14 @@ record may carry several — key extraction is set-valued. **And the one 5b turn
 **ConceptUI** (`M0004868`), *not* a DescriptorUI, in two shapes (legacy 8-char, modern 10-char — nothing keys off length);
 resolving it against `desc2026` + `supp2026` reaches **99.88%** of MeSH-keyed objects, while the NDF-RT accessory crosswalk
 yields only a **name** and is rejected. **UNII:** the gate columns live in `UNII_Records_*.txt`, never in `UNII_Names_*.txt`.
+**GSRS (slice-3 design, 2026-08-05):** **the relationship direction is inverted from the naive reading** — for a
+relationship of type `A->B` stored on record X and pointing at Y, **X plays role B and Y plays role A** (the stored edge
+is the INBOUND one). Read naively, one "salt" had **124 parents**; read correctly, the busiest *parents* are Maleic Acid
+(124 salts), Tartaric Acid (123), citric acid (117). Confirmed twice — the two mirror encodings agree on **15,039** edges,
+and every solvate has exactly **one** anhydrous parent. **And the public API is not a substitute for the dump**: it
+returns substance records with `relationships` **stripped entirely**, verified by control (`1D06KZ672I`, whose edge was
+read straight out of the dump bytes, comes back from the API with zero relationships) — a first pass that trusted the API
+concluded "GSRS holds no active-moiety data", which was an artifact of the transport.
 
 ## Architecture in one breath
 
@@ -422,25 +535,29 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 844 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# 894 tests. The DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
 
-# Re-measure against the real releases, ~114 s. ONE manual step: unzip Core_MEDRT_XML.zip
-# into downloads/MEDRT/. The documented four-source `ingest chain` invocation below now
-# RUNS (#60 is fixed): mesh-relations declares desc/supp `secondary` -- it still reads
-# both files in full to resolve MED-RT's MeSH-keyed to_code, it just does not DATE them,
-# so check_release_agreement stops comparing mesh's and mesh-relations' tags on a pair of
-# files read, not claimed, by both. The guard still refuses two steps dating the SAME
-# MED-RT bytes differently -- that disagreement was, and remains, real.
+# Re-measure against the real releases, ~137 s WITH gsrs (~114 s without: the 2.05 GB
+# dump adds ~23 s). TWO manual steps: unzip Core_MEDRT_XML.zip into downloads/MEDRT/, and
+# put the GSRS dump at downloads/GSRS/dump-public-*.gsrs (307 MB gzipped, gitignored --
+# `ruff check .` walks it and hangs, which is why the lint line above names src tests).
+# The documented `ingest chain` invocation below RUNS (#60 is fixed): mesh-relations
+# declares desc/supp `secondary` -- it still reads both files in full to resolve MED-RT's
+# MeSH-keyed to_code, it just does not DATE them, so check_release_agreement stops
+# comparing mesh's and mesh-relations' tags on a pair of files read, not claimed, by both.
+# The guard still refuses two steps dating the SAME MED-RT bytes differently -- that
+# disagreement was, and remains, real.
 uv run drugref --dsn "$DSN" migrate
 uv run drugref --dsn "$DSN" ingest chain --downloads downloads \
     --unii-release 26Feb2026 --medrt-release 2026.07.06 \
-    --mesh-release 2026 --mesh-relations-release 2026.07.06
+    --mesh-release 2026 --mesh-relations-release 2026.07.06 \
+    --gsrs-release 2026-02-26
 uv run drugref --dsn "$DSN" status      # loaded releases per (source, writer) + unfinished runs
 
-# The four per-source subcommands still exist and are still the right tool for a PARTIAL
+# The per-source subcommands still exist and are still the right tool for a PARTIAL
 # re-ingest (one feed, without re-running the others); only `chain` takes --downloads, so
 # each of these names its own files. M=downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml,
 # D='--desc downloads/mesh/desc2026.gz --supp downloads/mesh/supp2026.gz'.
@@ -448,6 +565,7 @@ uv run drugref --dsn "$DSN" ingest unii  --release 26Feb2026  --unii downloads/U
 uv run drugref --dsn "$DSN" ingest medrt --release 2026.07.06 --medrt "$M"
 uv run drugref --dsn "$DSN" ingest mesh  --release 2026       --pa downloads/mesh/pa2026.xml $D
 uv run drugref --dsn "$DSN" ingest mesh-relations --release 2026.07.06 --medrt "$M" $D
+uv run drugref --dsn "$DSN" ingest gsrs  --release 2026-02-26 --dump downloads/GSRS/dump-public-2026-02-26.gsrs
 ```
 
 CI runs the suite against a PostgreSQL 18 service container, and `conftest` **fails rather than skips** when `CI` is set — so
@@ -516,6 +634,11 @@ the DB layer can never go green by being skipped.
     `items.csv`; regenerate with `make_pbs_subset.py downloads/tables_as_csv/items.csv > …`.
   - **UNII** — `UNII_Records_*.txt` at the `downloads/` root is the file every parser reads; `UNII_Names_*.txt` beside it
     carries none of the gate's membership signals.
+  - **GSRS** (slice 3) — `downloads/GSRS/dump-public-2026-02-26.gsrs`, **321,487,817 bytes gzip → ~2.05 GB**, JSON-lines
+    with **two tab characters prefixing each line** before the `{`. Not linked from any static page: the URL
+    (`https://gsrs.ncats.nih.gov/assets/downloads/dump-public-*.gsrs`) is held in the SPA's lazily-loaded JS chunk, so it
+    changes without a redirect. 173,080 records / 168,002 UNIIs, and **all 19,438 drugref moieties are present (100%)** —
+    the only bridge in this project that loses nothing, because GSRS is where drugref's UNII keys come from.
 
 ## Repo facts
 

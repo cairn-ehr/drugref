@@ -45,7 +45,8 @@ from dataclasses import dataclass
 
 import drugref
 from drugref import cli_policy, db, interactions
-from drugref.ingest import chebi, medrt_run, mesh_rel_run, mesh_run, pbs_run, run
+from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
+                            pbs_run, run)
 
 # The two closed seed files ship INSIDE the package (they are drugref's own curated
 # data, not a download), so they are defaults rather than required arguments.
@@ -122,6 +123,11 @@ def _run_pbs(conn, paths, release):
     return pbs_run.ingest_pbs(conn, paths["items"], release)
 
 
+def _run_gsrs(conn, paths, release):
+    return gsrs_run.ingest_gsrs(conn, dump_path=paths["dump"],
+                                upstream_release=release)
+
+
 # ORDER IS A CONSTANT, NOT AN ARGUMENT, and ONE POSITION IN IT IS A DATA DEPENDENCY:
 # UNII FIRST, because every other feed joins to the moieties it registers -- medrt on
 # RXNORM_IN, mesh and mesh-relations on UNII/CAS, chebi on INCHIKEY, all of them
@@ -163,6 +169,7 @@ STEPS = (
                                   ("supp", "mesh/supp*.gz")), _run_mesh_relations,
                secondary=("desc", "supp")),
     IngestStep("pbs", (("items", "tables_as_csv/items.csv"),), _run_pbs),
+    IngestStep("gsrs", (("dump", "GSRS/dump-public-*.gsrs"),), _run_gsrs),
 )
 
 

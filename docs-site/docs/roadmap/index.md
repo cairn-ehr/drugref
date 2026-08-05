@@ -26,11 +26,14 @@ This is a reader-friendly summary; the working roadmap lives in the
   `may_diagnose`) and what it *causes* (`induces`), over that same registry. Generalised
   **up** the DAG at read time and never down, and never stored derived — see
   [An indication does not expand down the disease tree](../decisions/indications-do-not-expand.md).
+- **Composition tree** — which registered moieties a specific substance (a salt, a
+  hydrate) is composed of, and which of them the release marks pharmacologically
+  active, from the FDA/NCATS GSRS public data dump — see
+  [GSRS relationship direction](../decisions/gsrs-relationship-direction.md).
 
 ## Next
 
-- **Composition tree** — specific substances (salts / esters / hydrates), then clinical
-  drugs (moiety + strength + form).
+- **Clinical drugs** — moiety + strength + form, built on the composition tree.
 - **The curated overlay (the moat)** — an append-only, signed layer adding severity,
   mechanism, management, and evidence grading on top of the candidate interaction rows.
 - **Public HTTP API** — the co-equal-consumer interface; any EHR / pharmacy / app on the

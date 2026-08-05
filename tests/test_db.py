@@ -164,6 +164,16 @@ def test_apply_migrations_is_idempotent(conn):
         # is -- information_schema.tables lists views too, so this inventory
         # catches any object created by accident.
         "loaded_release", "ingest_run_incomplete",
+        # Slice 3, db/028: the composition tree -- which registered moieties a
+        # GSRS substance is composed of. composition_relation is the vocabulary
+        # table (db/006's precedent: a FOREIGN KEY, not a second CHECK);
+        # substance_composition is the projection; moiety_active_in_composite is
+        # the read path (only the ACTIVE component propagates); and
+        # gap_unruled_composition_activity is gap kind twelve, populated from day
+        # one because unlike the curation-dependent gaps above it needs no
+        # curator decision to have rows.
+        "composition_relation", "substance_composition",
+        "moiety_active_in_composite", "gap_unruled_composition_activity",
     }
 
 

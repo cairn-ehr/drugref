@@ -9,11 +9,15 @@ blocker](../decisions/licensing-is-a-blocker.md).
 
 | Source | What it provides | Licence |
 | --- | --- | --- |
-| **FDA GSRS / UNII** | The global substance-registration backbone; the identity anchor | Public domain |
+| **UNII** (FDA/NCATS) | The global substance-registration backbone; the identity anchor | Public domain |
+| **GSRS public data dump** (FDA/NCATS) | Salt/solvate composition and active-moiety relationships (the composition tree) | CC0 1.0 Universal, *unless otherwise noted* — no exception found on any ingested record |
 | **ChEBI** | Chemical entities of biological interest; chemistry + cross-references | CC BY 4.0 |
 | **MED-RT** | Mechanisms of action, physiologic effects, therapeutic classes, contraindications, and MeSH-keyed indications (`may_treat` / `may_prevent` / `may_diagnose`) and drug-induced states (`induces`) | Public domain (US NLM / VA) |
 | **MeSH** | Pharmacologic actions and descriptors | Public domain / NLM terms |
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
+
+The GSRS *software*, which drugref neither uses nor redistributes, is separately licensed
+Apache-2.0; only the public data dump is bundled.
 
 Upstream attributions are recorded in the repository's
 [`NOTICE`](https://github.com/cairn-ehr/drugref/blob/main/NOTICE) file.

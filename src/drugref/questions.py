@@ -257,6 +257,22 @@ _GAP_SOURCES = {
             "EXPLICITLY is a real answer and retires this question -- it records that "
             "a curator looked.'"),
     },
+    # Slice 3, gap kind 12. The read path propagates ONLY the active component, so
+    # an unruled composite is reached by nothing -- and for a contraindication,
+    # fewer rows is the harm direction. That trade is defensible only because the
+    # shortfall is on a worklist rather than hidden, which is this entry.
+    #
+    # Keyed on the COMPOSITE, which is also the view's grain (#41): grouping more
+    # coarsely would fold two gaps onto one immortal question_uuid.
+    "unruled_composition_activity": {
+        "view": "gap_unruled_composition_activity",
+        "key_sql": "'SUBSTANCE:' || substance_unii",
+        "text_sql": (
+            "'Which component of UNII ' || substance_unii || ' makes it "
+            "pharmacologically active? It has ' || component_count || ' registered "
+            "component(s) and the release marks none of them active, so no "
+            "contraindication or interaction on a component reaches it.'"),
+    },
 }
 
 
