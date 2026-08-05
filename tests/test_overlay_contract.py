@@ -81,6 +81,47 @@ def test_only_interactions_reads_the_policy_table_from_python():
     assert named == POLICY_TABLE_NAMINGS
 
 
+# ---- where the decision vocabulary is spelled -------------------------------
+
+# `withdrawn` is a member of db/027's CHECK, which is that vocabulary's one home. It
+# has to appear in Python at all only because withdraw_expansion_decision must name the
+# value it writes and the CLI must be able to refuse it -- so interactions.WITHDRAWN
+# exists to keep that at ONE name rather than a literal at each site.
+#
+# PINNED BY GREP, because the constant cannot pin itself: asserting
+# `interactions.WITHDRAWN == "withdrawn"` (test_expansion_policy_writer) says what the
+# name means, and says nothing at all about a second `if decision == "withdrawn"`
+# appearing somewhere else -- which is the drift the constant exists to prevent and the
+# only failure this file can see.
+#
+# QUOTE-DELIMITED, so the many prose mentions in docstrings and comments (which use
+# backticks) do not count. Prose goes stale harmlessly; a literal goes stale silently.
+WITHDRAWN_SPELLINGS = {
+    # The one home: the constant's own definition.
+    "interactions.py": 1,
+    # PROSE, NOT A COMPARISON -- `policy show`'s legend, explaining that a live
+    # `withdrawn` row binds nothing. Counted anyway, and deliberately: it spells the
+    # value, so renaming the value in db/027 leaves this sentence wrong too. Exactly
+    # the reason medrt_run.py's prose is counted in POLICY_TABLE_NAMINGS above.
+    "cli_policy.py": 1,
+}
+
+_WITHDRAWN = re.compile(r"""["']withdrawn["']""")
+
+
+def test_the_withdrawn_value_is_spelled_in_exactly_two_places():
+    """One constant, one legend -- and no third site comparing against a literal.
+
+    A handler that wrote `if args.decision == "withdrawn"` instead of comparing to
+    interactions.WITHDRAWN would be a second copy of a vocabulary db/027 owns, and
+    every test in the suite would stay green while the two drifted.
+    """
+    spelled = {p.name: len(_WITHDRAWN.findall(p.read_text()))
+               for p in _sources()
+               if _WITHDRAWN.search(p.read_text())}
+    assert spelled == WITHDRAWN_SPELLINGS
+
+
 def test_the_pin_does_not_count_a_read_of_the_current_view():
     """The view read IS the approved path -- live_decisions goes through
     class_expansion_policy_current precisely so a `withdrawn` row, which is live

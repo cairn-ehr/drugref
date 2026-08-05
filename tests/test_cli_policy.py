@@ -29,7 +29,7 @@ satisfied.
 import psycopg
 import pytest
 
-from drugref import cli, interactions
+from drugref import cli, db, interactions
 
 CODE = "N0000009020"
 NAME = "Dermatologic Activity Alteration [PE]"
@@ -136,6 +136,47 @@ def test_policy_record_an_unrecognised_decision_exits_two_without_a_traceback(
     assert after == before                            # nothing written
 
 
+def test_an_unrecognised_decision_is_told_what_the_constraint_accepts(
+        committed, capsys):
+    """"violates check constraint class_expansion_policy_decision" names the rule and
+    not one thing to do about it -- an operator would have to open a migration to learn
+    that `Deny` should have been `deny`.
+
+    THE VALUES ARE QUOTED FROM THE CATALOGUE, NOT RESTATED IN PYTHON. Hand-writing
+    "one of deny, allow, withdrawn" into this message would be the second-vocabulary
+    defect db/006 exists to warn about; pg_get_constraintdef keeps db/027's CHECK the
+    single home AND makes the message actionable, because what it prints IS the CHECK.
+    So this asserts the values are present without being a copy of them: it reads them
+    from the constraint the same way the message does.
+    """
+    with psycopg.connect(committed) as c:
+        expected = db.constraint_definition(
+            c, "class_expansion_policy", "class_expansion_policy_decision")
+    assert cli.main([
+        "policy", "record", "--source", "MED-RT", "--code", CODE,
+        "--decision", "Deny", "--class-name", NAME, "--rationale", "r",
+        "--reviewed-by", "operator", "--reviewed-against", "2026.07.06"]) == 2
+    assert expected in capsys.readouterr().err
+
+
+def test_the_connection_survives_a_rejected_write(committed, capsys):
+    """_write ROLLS BACK before reading the catalogue, and this is what would fail if
+    it did not: a CHECK violation aborts the transaction, so the pg_get_constraintdef
+    lookup that makes the message actionable would itself raise InFailedSqlTransaction
+    -- turning a tidy rejection into the traceback the whole guard exists to prevent.
+
+    Asserted through the second line of output rather than by inspecting the
+    connection: that line only exists if the catalogue read succeeded after the abort.
+    """
+    assert cli.main([
+        "policy", "record", "--source", "MED-RT", "--code", CODE,
+        "--decision", "nonsense", "--class-name", NAME, "--rationale", "r",
+        "--reviewed-by", "operator", "--reviewed-against", "2026.07.06"]) == 2
+    err = capsys.readouterr().err
+    assert "that constraint is" in err
+    assert "InFailedSqlTransaction" not in err and "Traceback" not in err
+
+
 def test_policy_withdraw_returns_the_class_to_unreviewed(committed):
     """WITHDRAWN IS NOT `allow`. It means no current judgement, so the class goes back
     to gap_unreviewed_expansion_root -- which is what medrt_run's warning is asking an
@@ -200,11 +241,34 @@ def test_policy_show_prints_one_classes_history(committed, capsys):
 
 
 def test_policy_show_says_so_when_nobody_has_ruled(committed, capsys):
-    """Absent means UNREVIEWED, which expands and raises a question -- a real answer,
-    not an empty result an operator should read as an error."""
+    """Absent means UNREVIEWED, which expands -- a real answer, not an empty result an
+    operator should read as an error.
+
+    THE QUESTION IS HEDGED, and this is the half worth pinning. `withdraw`'s message
+    reasons that "raises a question" does not always follow, because
+    gap_unreviewed_expansion_root ALSO requires a substance_class row for the code --
+    and then `show` stated it flatly. N0000000404 is exactly that case: no class of
+    that code exists, so nothing is raised, and the unhedged sentence was false for the
+    very input this test drives. "expands" is unconditional and stays unconditional.
+    """
     assert cli.main(["policy", "show", "--source", "MED-RT",
                      "--code", "N0000000404"]) == 0
-    assert "no decision" in capsys.readouterr().out.lower()
+    out = capsys.readouterr().out.lower()
+    assert "no decision" in out
+    assert "expands by default" in out
+    # The claim about the worklist must arrive as a conditional, not an assertion.
+    assert "if a loaded release defines the class" in out
+
+
+def test_policy_show_refuses_a_blank_half_of_the_key(committed, capsys):
+    """A blank pair passes _Parser's both-or-neither check -- '' is present -- and then
+    matched nothing, so `show` printed its no-decision answer about a class that does
+    not exist, at exit 0. Nothing is corrupted on a read path; being told something
+    false is the part worth refusing, and it is the same guard the writers use."""
+    assert cli.main(["policy", "show", "--source", "MED-RT", "--code", "  "]) == 2
+    err = capsys.readouterr().err
+    assert "--code" in err
+    assert "Traceback" not in err
 
 
 def test_policy_show_needs_both_halves_of_the_key_or_neither():

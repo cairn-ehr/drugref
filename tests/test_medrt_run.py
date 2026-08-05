@@ -7,10 +7,11 @@ merely agrees with our assumptions.
 """
 import logging
 import pathlib
+import re
 
 import pytest
 
-from drugref import ids
+from drugref import cli, ids
 from drugref.ingest import medrt_run, run
 
 MEDRT_FIX = pathlib.Path(__file__).parent / "fixtures" / "medrt_subset.xml"
@@ -553,3 +554,28 @@ def test_an_unresolved_expansion_decision_is_logged_not_only_counted(seeded, cap
     assert unresolved, "fixture is meant to be partial, so some decisions must dangle"
     assert any("expansion" in m and any(c in m for c in unresolved) for m in warnings), \
         warnings
+
+
+def test_the_unresolved_warning_names_every_flag_its_remedy_needs(seeded, caplog):
+    """The warning tells an operator to run `drugref policy withdraw`, and every one of
+    that command's five arguments is `required=True`. It once trailed off in an
+    ellipsis, so an operator following it literally met an argparse usage error instead
+    of the remedy -- the warning would have been better naming no command at all.
+
+    Driven off the PARSER rather than a list spelled here, so a flag added to
+    `policy withdraw` later fails this test instead of quietly going unmentioned.
+    """
+    with caplog.at_level(logging.WARNING, logger="drugref.ingest.medrt_run"):
+        _ingest(seeded)
+    warning = next(r.getMessage() for r in caplog.records
+                   if r.levelno >= logging.WARNING and "expansion" in r.getMessage())
+
+    command = re.search(r"`(drugref policy withdraw [^`]+)`", warning)
+    assert command, f"no withdraw command to follow in: {warning}"
+    # Fill the <placeholders> in and run it through the real parser. Asserting THIS
+    # rather than a list of flags spelled here means a flag added to `policy withdraw`
+    # later fails this test instead of quietly going unmentioned -- and it tests what
+    # the operator actually does with the line, which is paste it and fill it in.
+    filled = [re.sub(r"^<.*>$", "placeholder", token)
+              for token in command.group(1).split()[1:]]
+    cli.build_parser().parse_args(filled)      # SystemExit if a required flag is absent

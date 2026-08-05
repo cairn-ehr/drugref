@@ -128,6 +128,42 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
     return psycopg.connect(dsn)
 
 
+def constraint_definition(conn: psycopg.Connection, table: str | None,
+                          name: str | None) -> str | None:
+    """The SQL text of one named constraint on a drugref table, or None if absent.
+
+    HOW AN ERROR MESSAGE TELLS AN OPERATOR WHAT A CHECK ACCEPTS WITHOUT BECOMING THE
+    SECOND COPY OF IT. db/006's lesson, restated by cli_policy's `--decision` comment,
+    is that a vocabulary written down twice is two things that can disagree -- so no
+    caller may hand-write "one of deny, allow, withdrawn" into a message. Reading
+    pg_get_constraintdef is the way out: what it prints IS the constraint, so there is
+    still exactly one home for the vocabulary and it cannot go stale.
+
+    Both arguments come from psycopg's error diagnostics (`exc.diag.table_name`,
+    `exc.diag.constraint_name`), which is why the table is a parameter rather than the
+    caller's knowledge -- AND why both are typed `str | None`: postgres populates them
+    for a table CHECK, but the diag fields are optional in general, and a caller in the
+    middle of reporting one failure must not be handed a second. THE TRANSACTION MUST
+    ALREADY BE ROLLED BACK: the violation that supplies those names also aborts the
+    transaction, and a query issued before the rollback fails with
+    InFailedSqlTransaction.
+
+    Scoped to the `drugref` schema and to a named table, because `conname` is unique
+    only per table -- an unqualified lookup could return some other table's constraint
+    of the same name. None rather than a raise, at every exit: a message that could not
+    be improved is not a reason to lose the message it was improving.
+    """
+    if table is None or name is None:
+        return None
+    row = conn.execute(
+        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+        "JOIN pg_class t ON t.oid = c.conrelid "
+        "JOIN pg_namespace n ON n.oid = t.relnamespace "
+        "WHERE n.nspname = 'drugref' AND t.relname = %s AND c.conname = %s",
+        (table, name)).fetchone()
+    return row[0] if row else None
+
+
 def migration_dir() -> pathlib.Path:
     """The directory holding the migration SQL: packaged copy first, checkout second.
 

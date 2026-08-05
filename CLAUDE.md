@@ -1,7 +1,7 @@
 # CLAUDE.md — stable project context for coding agents
 
 Auto-loaded at session start. Keep this file short and **stable**: invariant rules and commands only.
-Session state lives in `docs/HANDOVER.md` (**volatile**, ~120 lines, regenerated each session); the stable
+Session state lives in `docs/HANDOVER.md` (**volatile**, line-bounded, regenerated each session); the stable
 working notes — traps, state by layer, how to run/test, schema and code map — live in `docs/PROJECT-NOTES.md`
 (**edited in place, no line bound**); slice sequencing in `docs/ROADMAP.md` (**no line bound**); the canonical
 what/why in the design specs under `docs/superpowers/specs/` (if anything here disagrees with a spec, the
@@ -20,10 +20,14 @@ Read `docs/HANDOVER.md` first and follow it (the `nextsession` skill does this).
 verify HANDOVER.md, PROJECT-NOTES.md and ROADMAP.md reflect the current state; update them if stale. When
 done, update all three, then commit, push, and open a PR to `main` linking any relevant issue.
 
-**Only HANDOVER.md is bounded** (~120 lines). PROJECT-NOTES.md and ROADMAP.md are edited in place and grow:
-#63 measured that the old < 500-line bound forced a compression pass every round, which turned every edit
-into an ~80% rewrite and made `git log -p` useless on the two files whose job is carrying state between
-sessions.
+**Only HANDOVER.md is bounded.** THE NUMBER IS STATED IN ITS OWN HEADER AND NOWHERE ELSE — including here.
+It was written down in three files at once (here twice, the `nextsession` skill, and HANDOVER's header),
+two of them disagreed, and the file exceeded both; a bound is a vocabulary like any other, and this repo
+has lost four rounds to one rule kept in two places. Read the number off the file it governs.
+
+PROJECT-NOTES.md and ROADMAP.md are edited in place and grow: #63 measured that the old < 500-line bound
+forced a compression pass every round, which turned every edit into an ~80% rewrite and made `git log -p`
+useless on the two files whose job is carrying state between sessions.
 
 Public documentation is published from `docs-site/` (MkDocs Material) to
 `docs.drugref.org`; its **Design decisions** section holds *living* records (only

@@ -14,7 +14,9 @@ read docs/HANDOVER.md and follow the instructions. Ask me if you have any questi
 8. Before you start working, make sure that HANDOVER.md, PROJECT-NOTES.md and ROADMAP.md represent the
    current state of progress and are up to date. If not, update them before you start working.
 9. When you are done with your work, update all three to reflect the current state. HANDOVER.md is the
-   volatile one — keep it under ~120 lines, focused on what still needs to be done. PROJECT-NOTES.md and
-   ROADMAP.md are edited IN PLACE and are under no line bound; do not compress them to hit a number. If you
-   are not sure how to do this, ask me. Do NOT update CLAUDE.md as part of routine session wrap-up.
+   volatile one — keep it within the line bound ITS OWN HEADER STATES (do not copy that number here or into
+   CLAUDE.md: it was written in three places at once, two disagreed, and the file exceeded both), focused on
+   what still needs to be done. PROJECT-NOTES.md and ROADMAP.md are edited IN PLACE and are under no line
+   bound; do not compress them to hit a number. If you are not sure how to do this, ask me. Do NOT update
+   CLAUDE.md as part of routine session wrap-up.
 10. when the task is completed, commit all, push, and open a PR to the main branch. Make sure to link the PR to the relevant issue on github if applicable and include a clear description of the changes made and any relevant context for reviewers. If you are not sure how to do this, ask me.

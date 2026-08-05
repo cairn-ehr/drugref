@@ -43,8 +43,6 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-import psycopg
-
 import drugref
 from drugref import cli_policy, db, interactions
 from drugref.ingest import chebi, medrt_run, mesh_rel_run, mesh_run, pbs_run, run
@@ -439,19 +437,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (RuntimeError, ChainError, interactions.NoLiveDecisionError) as exc:
         # db.connect's "no DSN" message is written for exactly this moment; a
         # traceback would bury it.
-        print(f"drugref: {exc}", file=sys.stderr)
-        return 2
-    except psycopg.errors.CheckViolation as exc:
-        # The two CHECKs a `policy` argument can trip: db/027's `decision` and
-        # db/006's `source`. `with db.connect(...)` has already rolled the
-        # transaction back by the time we get here, so nothing was written.
         #
-        # Rendered from exc.diag.message_primary -- NOT from a Python list of valid
-        # decisions/sources. The vocabulary lives in the CHECK constraint and NOWHERE
-        # else (db/006's lesson, restated by cli_policy.py's `--decision` comment);
-        # restating it here to build a friendlier message would be exactly the
-        # second-vocabulary defect that lesson exists to prevent. str(exc) also
-        # carries a DETAIL line quoting the failing row, which is not the one clean
-        # line every other operator error on this surface gives.
-        print(f"drugref: {exc.diag.message_primary}", file=sys.stderr)
+        # NO `except psycopg.errors.CheckViolation` HERE, deliberately, and it is worth
+        # saying why since one round put it here and had to take it back. This `try`
+        # wraps EVERY handler, ingest included, and the same exception means opposite
+        # things on the two surfaces: from `policy` it is an operator's typo in a value
+        # they typed, and one line is the right answer; from an ingest it is a defect in
+        # drugref -- a parser feeding a value db/006 or db/014 forbids -- where the
+        # traceback naming the writer is the most useful thing this process can print,
+        # and exit 2 would additionally misreport a drugref bug as operator error. Only
+        # the caller can tell the two apart, so the catch lives at the caller:
+        # cli_policy._write.
+        print(f"drugref: {exc}", file=sys.stderr)
         return 2

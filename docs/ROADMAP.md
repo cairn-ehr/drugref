@@ -511,8 +511,21 @@ wholesale each round, so their git history answers nothing (raised by the #62 re
   `expansion_policy_unresolved` **0** · `class_expansion_policy` **14** rows, **14** binding · `loaded_release` **4**
   · `ingest_run_incomplete` **0**. `drugref policy` exercised against that same database: `withdraw` on
   `N0000009020` moved `gap_unreviewed_expansion_root` from 0 to 1, and `policy show` reported the two-row history
-  (the seeded `deny`, then the new `withdrawn`) with the live row marked. **831 tests** (810 at branch start),
+  (the seeded `deny`, then the new `withdrawn`) with the live row marked. **844 tests** at the end of the branch
+  (810 at branch start; 831 at this measurement, +4 whole-branch review, +9 PR-#64 review round),
   `ruff check src tests` and `mkdocs build --strict` clean.
+
+  **The PR-#64 review round took back one thing this round had introduced.** `except psycopg.errors.CheckViolation`
+  had been added to `cli.main`'s `try` — which wraps *every* handler, ingest included — so an ingest defect printed
+  one context-free line and exited 2, this CLI's operator-error code. It moved to `cli_policy._write`, where the
+  failing value demonstrably came off the command line, and got better there: the message now quotes
+  `pg_get_constraintdef`, so an operator learns what the CHECK accepts by reading the CHECK rather than from a
+  second copy in Python. Also fixed: `policy show` asserted flatly that an unruled class raises a question, 25 lines
+  below the comment explaining why that does not always follow (and a test had pinned the false sentence); `show`
+  accepted a blank half of the natural key and answered about a class that cannot exist; `medrt_run`'s remedy
+  trailed off in `...` where all five flags are `required=True`; and the HANDOVER line bound was stated in three
+  files, two of which disagreed while the file exceeded both. Line-length enforcement is
+  [issue 66](https://github.com/cairn-ehr/drugref/issues/66) — `ruff` runs its default rule set, which omits `E501`.
 
   **This round also reopened [#61](https://github.com/cairn-ehr/drugref/issues/61)**, closed in error by
   `92baaea`'s own commit body — "Filed rather than fixed: #61 …" still puts the number directly after `fixed:`, and

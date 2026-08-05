@@ -188,8 +188,9 @@ def assert_group(conn: psycopg.Connection, group_uuid: uuid.UUID, name: str,
         "RETURNING interaction_group_assertion_id",
         (group_uuid, name, severity, clinical_note, applies,
          ingest_run_id)).fetchone()[0]
-    overlay.supersede(conn, "interaction_group_assertion", "interaction_group_assertion_id",
-                      new_id, ("group_uuid",), (group_uuid,))
+    overlay.supersede(conn, "interaction_group_assertion",
+                      "interaction_group_assertion_id", new_id,
+                      ("group_uuid",), (group_uuid,))
     return new_id
 
 
@@ -209,7 +210,8 @@ def set_group_member(conn: psycopg.Connection, group_uuid: uuid.UUID, role: str,
         "satisfies_role, source, ingest_run) VALUES (%s, %s, %s, %s, 'DRUGREF', %s) "
         "RETURNING interaction_group_member_id",
         (group_uuid, role, class_uuid, satisfies_role, ingest_run_id)).fetchone()[0]
-    overlay.supersede(conn, "interaction_group_member", "interaction_group_member_id", new_id,
+    overlay.supersede(conn, "interaction_group_member",
+                      "interaction_group_member_id", new_id,
                       ("group_uuid", "role", "class_uuid"),
                       (group_uuid, role, class_uuid))
     return new_id

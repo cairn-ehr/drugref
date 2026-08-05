@@ -175,12 +175,18 @@ def test_decision_history_is_empty_for_a_class_nobody_ruled_on(conn):
     assert interactions.decision_history(conn, "MED-RT", "N0000000404") == []
 
 
-def test_the_withdrawn_vocabulary_lives_in_exactly_one_python_name(conn):
+def test_the_withdrawn_constant_is_the_value_the_writer_actually_stores(conn):
     """`withdrawn` is a member of db/027's CHECK, which is the vocabulary's one home.
     interactions.WITHDRAWN exists so the CLI can refuse it (a curation surface should
     not offer a verb that bypasses withdraw_expansion_decision's two guarantees)
     WITHOUT adding a second literal. This pins that it is the same string the writer
-    itself uses -- a drift would leave the CLI refusing a value the database accepts."""
+    itself uses -- a drift would leave the CLI refusing a value the database accepts.
+
+    NAMED FOR WHAT IT CHECKS. It previously claimed to pin that the vocabulary lives in
+    "exactly one Python name", which it cannot see: a stray `== "withdrawn"` added
+    anywhere in src/ would leave this green. That pin is a grep, and lives in
+    tests/test_overlay_contract.py where the other grep contracts are.
+    """
     assert interactions.WITHDRAWN == "withdrawn"
     interactions.record_expansion_decision(
         conn, "MED-RT", CODE, "deny", "Test Bucket [PE]", "r", "test", "2026.07.06")

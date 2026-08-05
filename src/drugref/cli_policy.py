@@ -8,16 +8,22 @@ withdraw"; since db/027 both verbs are unavailable as raw SQL -- DELETE raises, 
 does UPDATE ... SET source_code -- so following that warning meant writing Python
 against the library.
 
-LIKE cli.py, THIS MODULE WRITES NO SQL. Every read and write goes through
-interactions.py. That is load-bearing rather than stylistic: the test proving only one
-VIEW reads class_expansion_policy directly works from pg_rewrite, which sees views and
-matviews and CANNOT see a query embedded in Python -- so a handler with its own SELECT
-would be a reader of an append-only curated table that no test in this repository
-could notice. tests/test_overlay_contract.py pins the Python half by grep.
+LIKE cli.py, THIS MODULE WRITES NO SQL. Every read and write of drugref's own data goes
+through interactions.py. That is load-bearing rather than stylistic: the test proving
+only one VIEW reads class_expansion_policy directly works from pg_rewrite, which sees
+views and matviews and CANNOT see a query embedded in Python -- so a handler with its
+own SELECT would be a reader of an append-only curated table that no test in this
+repository could notice. tests/test_overlay_contract.py pins the Python half by grep.
+
+`db.constraint_definition` is not an exception to that rule: it reads the postgres
+CATALOGUE, not a drugref table, and exists precisely so an error message can quote a
+CHECK rather than restate it.
 """
 import sys
 
-from drugref import interactions
+import psycopg
+
+from drugref import db, interactions
 
 
 class _BlankArgumentError(ValueError):
@@ -49,6 +55,49 @@ def _reject_blank(args, *dests: str) -> None:
             raise _BlankArgumentError(f"{flag} was given a blank value")
 
 
+def _write(conn, writer, *values) -> int | None:
+    """Call one interactions.py writer with operator-supplied values and COMMIT it.
+
+    Returns the new policy_id, or None having already reported a CHECK violation --
+    the caller turns that into exit 2, so a rejected command reads exactly like every
+    other error on this surface: one clean line, nothing written.
+
+    WHY THE CATCH IS HERE AND NOT IN cli.main. main's `try` wraps every handler, ingest
+    included, and psycopg.errors.CheckViolation means opposite things on the two
+    surfaces. Here the failing value came straight off the command line, so it is an
+    operator's typo. From an ingest it is a defect in drugref -- a parser feeding a
+    value db/006 or db/014 forbids -- where the traceback naming the writer is the most
+    useful thing the process can print, and exit 2 would report a drugref bug as
+    operator error. Only the caller can tell them apart.
+
+    ROLLED BACK EXPLICITLY rather than left to `with db.connect(...)`. Once this
+    function swallows the exception the context manager exits cleanly and COMMITs; a
+    COMMIT on an aborted transaction is a rollback in postgres, so nothing would be
+    written either way -- but relying on that is relying on a coincidence, and the
+    rollback is also what makes the connection usable for the catalogue read below.
+    """
+    try:
+        new_id = writer(conn, *values)
+    except psycopg.errors.CheckViolation as exc:
+        conn.rollback()
+        # Rendered from exc.diag, NOT from a Python list of valid decisions/sources.
+        # The vocabulary lives in the CHECK constraint and NOWHERE else (db/006's
+        # lesson, restated by the `--decision` comment below); hand-writing "one of
+        # deny, allow, withdrawn" here to build a friendlier message would be exactly
+        # the second-vocabulary defect that lesson exists to prevent. Quoting the
+        # constraint is how the message becomes actionable without becoming a copy:
+        # what it prints IS the constraint. str(exc) is not used -- it carries a DETAIL
+        # line quoting the whole failing row, which is not one clean line.
+        print(f"drugref: {exc.diag.message_primary}", file=sys.stderr)
+        definition = db.constraint_definition(
+            conn, exc.diag.table_name, exc.diag.constraint_name)
+        if definition:
+            print(f"drugref: that constraint is {definition}", file=sys.stderr)
+        return None
+    conn.commit()
+    return new_id
+
+
 def _handle_policy_record(conn, args) -> int:
     """Record or revise an expansion decision. COMMITS -- the CLI is the caller, and
     in these modules the caller owns the transaction."""
@@ -69,10 +118,12 @@ def _handle_policy_record(conn, args) -> int:
               "nobody made and carries the reviewed class name forward.",
               file=sys.stderr)
         return 2
-    policy_id = interactions.record_expansion_decision(
-        conn, args.source, args.code, args.decision, args.class_name,
+    policy_id = _write(
+        conn, interactions.record_expansion_decision,
+        args.source, args.code, args.decision, args.class_name,
         args.rationale, args.reviewed_by, args.reviewed_against)
-    conn.commit()
+    if policy_id is None:
+        return 2
     print(f"recorded policy_id={policy_id}: "
           f"{args.source} {args.code} -> {args.decision}")
     return 0
@@ -89,10 +140,12 @@ def _handle_policy_withdraw(conn, args) -> int:
     except _BlankArgumentError as exc:
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
-    policy_id = interactions.withdraw_expansion_decision(
-        conn, args.source, args.code, args.rationale, args.reviewed_by,
+    policy_id = _write(
+        conn, interactions.withdraw_expansion_decision,
+        args.source, args.code, args.rationale, args.reviewed_by,
         args.reviewed_against)
-    conn.commit()
+    if policy_id is None:
+        return 2
     # "It expands" always holds -- absent means unreviewed, which expands by
     # default. "Raises a question" does NOT: gap_unreviewed_expansion_root also
     # requires a substance_class row for this code, which is exactly what is
@@ -123,10 +176,29 @@ def _handle_policy_show(conn, args) -> int:
               + (f" ({', '.join(unresolved)})" if unresolved else ""))
         return 0
 
+    # GUARDED EVEN THOUGH THIS PATH ONLY READS. A blank pair is still PRESENT as far as
+    # _Parser's both-or-neither check is concerned, so `--source '' --code ''` reached
+    # decision_history, matched nothing -- as it must, nothing is keyed on the empty
+    # string -- and printed the no-decision answer below about a class that cannot
+    # exist, at exit 0. Nothing is corrupted on a read; being told something false is
+    # the part worth refusing, and it is the same guard the two writers use.
+    try:
+        _reject_blank(args, "source", "code")
+    except _BlankArgumentError as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
+
     history = interactions.decision_history(conn, args.source, args.code)
     if not history:
-        print(f"{args.source} {args.code}: no decision — unreviewed, so it expands "
-              "and raises a question on gap_unreviewed_expansion_root")
+        # HEDGED EXACTLY AS `withdraw` IS, and for the same reason: "it expands" always
+        # holds, because absent means unreviewed and unreviewed expands by default, but
+        # "raises a question" does NOT -- gap_unreviewed_expansion_root also requires a
+        # substance_class row for this code. A code no release defines (or an operator's
+        # typo, which is the likelier way to reach this line) raises nothing, and saying
+        # otherwise reads as confirmation that a worklist entry exists when it does not.
+        print(f"{args.source} {args.code}: no decision -- unreviewed, so it expands by "
+              "default; if a loaded release defines the class, that also raises a "
+              "question on gap_unreviewed_expansion_root")
         return 0
     print(f"{args.source} {args.code}, oldest first:")
     # * marks the LIVE row -- NOT the binding one. A withdrawn row is live without

@@ -327,3 +327,39 @@ def test_mesh_relations_is_the_only_step_with_a_secondary_input():
     exemption without anyone deciding to grant it fails here."""
     assert {s.name: s.secondary for s in cli.STEPS if s.secondary} == {
         "mesh-relations": ("desc", "supp")}
+
+
+def test_main_does_not_swallow_a_check_violation_from_an_ingest(monkeypatch, capsys):
+    """A CHECK a `policy` argument trips is an operator's typo, and cli_policy._write
+    renders it as one line. THE SAME EXCEPTION FROM AN INGEST IS A DEFECT IN DRUGREF --
+    a parser feeding a value db/006 or db/014 forbids -- and must keep its traceback,
+    which names the writer that produced the bad value.
+
+    This is a regression test in the strict sense: the catch briefly lived on main's
+    `try`, which wraps every handler, so an ingest bug printed one context-free line and
+    exited 2. Exit 2 is this CLI's OPERATOR-ERROR code, so that did not merely lose the
+    traceback -- it reported a drugref bug as the operator's mistake.
+
+    Driven through a stub connection and a stub handler: the assertion is about which
+    exceptions main lets past, and needs neither a database nor a real ingest.
+    """
+    import psycopg
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _explode(conn, args):
+        raise psycopg.errors.CheckViolation("substance_class_concept_type")
+
+    monkeypatch.setattr(cli.db, "connect", lambda dsn: _Conn())
+    # Patched on the MODULE, before main builds the parser: build_parser resolves
+    # `_handle_ingest` as a global when it runs `set_defaults`, which is inside main.
+    monkeypatch.setattr(cli, "_handle_ingest", _explode)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        cli.main(["--dsn", "x", "ingest", "unii", "--release", "r",
+                  "--unii", str(FIX)])

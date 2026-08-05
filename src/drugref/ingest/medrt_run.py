@@ -242,18 +242,24 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
     #    operator can do. Withdrawing is, which is what the third `decision` value is
     #    for -- and re-keying is that withdrawal followed by a fresh decision under the
     #    new code. #61 gave the operator `drugref policy`, so the message names that
-    #    surface rather than the Python library underneath it.
+    #    surface rather than the Python library underneath it -- and names EVERY
+    #    required flag rather than trailing off in an ellipsis. All five are
+    #    `required=True`, so an abbreviated command does not run: an operator following
+    #    this warning literally would meet an argparse error instead of the remedy.
+    #    The source is interpolated from SOURCE rather than spelled "MED-RT" here, so
+    #    the command cannot drift from the decisions the line above actually read.
     unresolved = interactions.unresolved_expansion_policy(conn, SOURCE)
     if unresolved:
         log.warning(
             "MED-RT: %d class-expansion decision(s) name a class this release does "
             "not define, so they no longer bind: %s. Retire each with "
-            "`drugref policy withdraw --source MED-RT --code <code> ...`; if "
-            "upstream re-keyed the class rather than dropping it, follow that with "
-            "`drugref policy record ... --code <new-code>`. Editing "
-            "drugref.class_expansion_policy directly raises: it is append-only "
-            "since db/027.",
-            len(unresolved), ", ".join(unresolved))
+            "`drugref policy withdraw --source %s --code <code> --rationale <why> "
+            "--reviewed-by <who> --reviewed-against <release>`; if upstream re-keyed "
+            "the class rather than dropping it, follow that with `drugref policy "
+            "record` under the new code (the same flags, plus --decision and "
+            "--class-name). Editing drugref.class_expansion_policy directly raises: "
+            "it is append-only since db/027.",
+            len(unresolved), ", ".join(unresolved), SOURCE)
 
     provenance.finish_run(conn, run_id)
     conn.commit()

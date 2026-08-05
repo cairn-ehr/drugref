@@ -12,6 +12,27 @@
 > **Its git history starts 2026-08-05.** That is the honest cost of the split: it buys a readable history
 > going forward, not retroactively.
 
+## Standing rules that outlive the issues that produced them
+
+Each came out of a debt round, each is pinned by a test, and each states a bet this project has already lost at
+least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
+worth keeping does not belong in the file whose history is deliberately disposable.
+
+- **THE VIEW'S GRAIN MUST BE THE `gap_key`'S GRAIN** (#41) — a gap view that groups more coarsely than its key
+  folds two gaps onto one immortal `question_uuid`. Pinned per kind, Plan C's two compound-key views included.
+- **One reader, one clear, one checksum — and one supersession** (#40, #43, #59): `mesh.iter_records`,
+  `db.clear_source_tables`, `ingest/checksum.py` and `overlay.supersede` each live in one place, and every
+  writer's table tuple is **restated independently** in `tests/test_source_clear_contract.py` so a dropped table
+  fails. The grep contracts in `tests/test_overlay_contract.py` are the same shape for the other three.
+- **A vocabulary written down twice is two things that can disagree** (db/006, #59, #64). The decision values
+  live in `db/027`'s CHECK and nowhere else — `--decision` has no argparse `choices`, and the error message
+  quotes `pg_get_constraintdef` rather than restating them. `interactions.WITHDRAWN` is the ONE Python name for
+  the one value Python must spell, pinned by grep. **This applies to prose numbers too:** HANDOVER's line bound
+  was stated in three files, two disagreed, and the file exceeded both.
+- **A branch the release cannot exercise is pinned on controlled input and verified by mutation** (#42): desc2026
+  and supp2026 share **0** ConceptUIs. **#53's `is_cap_exempt`, #47's named-row tie-break and ALL of #35's new
+  behaviour** — no release-derived database holds a superseded or withdrawn row — are the same shape.
+
 ## Merged rounds, compressed — the traps only
 
 **The identity-spine fix round (#34: #27, #17, #26).** Spec: [moiety gate
@@ -293,7 +314,8 @@ stops refusing itself. **#61** gives an operator `drugref policy record|withdraw
 `gap_unreviewed_expansion_root` **0** · `expansion_policy_unresolved` **0** · `class_expansion_policy` **14 / 14** ·
 `loaded_release` **4** · `ingest_run_incomplete` **0** — all unchanged. `drugref policy withdraw` on the seeded
 `N0000009020` moved `gap_unreviewed_expansion_root` 0 → 1; `policy show` on that code printed both rows, oldest first,
-the live one marked `*`. **831 tests** (810 at branch start).
+the live one marked `*`. **844 tests** at the end of the branch — 810 at branch start, 831 at the measurement above,
++4 from the whole-branch review, +9 from the PR-#64 review round whose traps are the last five bullets below.
 
 **Traps a future change can still break.**
 - **The `secondary` exemption filters the CLAIM, never the read.** `mesh-relations` still *reads* `desc*.gz`/`supp*.gz` in
@@ -316,8 +338,35 @@ the live one marked `*`. **831 tests** (810 at branch start).
   `_handle_policy_record` deliberately does not do, refusing `--decision withdrawn` before any write — still bypasses both
   of `withdraw_expansion_decision`'s guarantees: `NoLiveDecisionError` on a class with no live row, and carrying
   `class_name` forward into the audit trail. The door is left open on purpose, not by oversight.
-- **The `policy` handlers COMMIT; the library functions do not.** `_handle_policy_record`/`_handle_policy_withdraw` call
-  `conn.commit()` after `interactions.record_expansion_decision`/`withdraw_expansion_decision` return — consistent with
+- **`except CheckViolation` MUST NOT go on `cli.main`'s `try`, and this round put it there and had to take it back.**
+  That `try` wraps EVERY handler, ingest included, and the same exception means opposite things on the two surfaces: from
+  `policy` the failing value came off the command line, so one clean line is right; from an ingest it is a **defect in
+  drugref** — a parser feeding a value `db/006` or `db/014` forbids — where the traceback naming the writer is the most
+  useful thing the process prints, and exit 2 additionally reports a drugref bug as *operator error*. Only the caller can
+  tell them apart, so the catch lives in `cli_policy._write`, which is also the only place that knows the value was typed.
+  `test_main_does_not_swallow_a_check_violation_from_an_ingest` pins it by stubbing a handler that raises.
+- **`cli_policy._write` ROLLS BACK before it reads the catalogue, and the order is load-bearing.** The violation aborts
+  the transaction, so the `pg_get_constraintdef` lookup that makes the message actionable would itself raise
+  `InFailedSqlTransaction` — turning a tidy rejection into the traceback the guard exists to prevent.
+  `test_the_connection_survives_a_rejected_write` fails without the rollback. **The message quotes the CHECK rather than
+  restating it** (`db.constraint_definition`): an operator learns the accepted values *by reading the constraint*, so the
+  message is actionable AND `db/027` stays the vocabulary's one home. Never hand-write the values into a message.
+- **"It expands" is unconditional; "it raises a question" is NOT** — and `policy show` stated the second flatly for a
+  whole round, 25 lines below the comment in `_handle_policy_withdraw` explaining why it does not follow.
+  `gap_unreviewed_expansion_root` **also requires a `substance_class` row** for the code, so a class no loaded release
+  defines (or an operator's typo, the likelier way to reach that line) raises nothing. Both messages are now hedged
+  identically. A test had pinned the false sentence, which is how it survived review.
+- **`argparse`'s `required=True` checks PRESENCE, not content, on the READ path too.** `--source '' --code ''` satisfies
+  `_Parser`'s both-or-neither rule — `''` is present — then matched nothing and printed the no-decision answer about a
+  class that cannot exist, at exit 0. `_reject_blank` now guards `show` as well as the writers. Nothing is corrupted on a
+  read; being told something false is the part worth refusing.
+- **An operator warning that names a command must name every REQUIRED flag.** `medrt_run`'s remedy trailed off in `...`,
+  and all five of `policy withdraw`'s flags are `required=True` — so an operator following the warning literally met an
+  argparse usage error instead of the remedy. `test_the_unresolved_warning_names_every_flag_its_remedy_needs` extracts the
+  backtick-quoted command **from the warning**, fills the `<placeholders>`, and parses it, so a flag added later fails the
+  test rather than quietly going unmentioned.
+- **The `policy` handlers COMMIT; the library functions do not.** `_handle_policy_record`/`_handle_policy_withdraw` reach
+  `conn.commit()` through `_write` after `interactions.record_expansion_decision`/`withdraw_expansion_decision` return — consistent with
   every other CLI handler, but unlike the DB-gated tests of the library layer, which rely on the `conn` fixture's rollback.
   **Committed policy rows cannot be deleted** — the overlay floor refuses it, same as Plan C's other four tables — so
   `tests/test_cli_policy.py`'s `committed` fixture restores in a `finally` by **recording a further correction** (a fresh
@@ -331,6 +380,22 @@ nothing #61 asks for existed at that commit. **The fourth occurrence of the swee
 restating rather than assumed solved: keep the number away from `close`/`fix`/`resolve` **in any inflection** (closes,
 closed, fixing, fixes, resolved, …), because the linker matches on **token adjacency**, not meaning. A colon in between does
 not save you.
+
+## Verify before the first production load
+
+**Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
+true until production happens, which is many rounds away, and it was being recompressed every session.
+
+- **Re-run every parser against a full current release** (§ How to run / test — and #60) and re-confirm the aggregate
+  numbers. Fixtures extracted from a real release are not the same thing: **5b found five spec errors that way**, each
+  invisible to a green suite.
+- **One data check, inherited from #17:** `claims.add_claim` canonicalises case-bearing claim values (UNII / INCHIKEY /
+  CHEBI), so a database populated *before* that change could hold a spelling no lookup matches — **and such rows cannot
+  be deleted.** Confirm BEFORE the first real load.
+- **The two licence deeds (rule 6 blockers):** [#6](https://github.com/cairn-ehr/drugref/issues/6) re-confirm the MED-RT
+  deed against the live NLM source-release doc (the distribution ships no licence file) ·
+  [#25](https://github.com/cairn-ehr/drugref/issues/25) PBS redistribution — blocks bundling but not node-local ingest,
+  and needs written Dept-of-Health confirmation.
 
 ## What the upstream documentation got wrong (verified against the real releases)
 
@@ -357,7 +422,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 835 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# 844 tests. The DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
@@ -428,7 +493,9 @@ the DB layer can never go green by being skipped.
   INSERT-then-point ordering every curated writer needs, now called directly by `accumulation.py`, `questions.py` and
   `interactions.py` rather than each restating it. **`cli_policy.py`** is the `drugref policy record|withdraw|show` operator
   surface (#61), split out of `cli.py` to hold CLAUDE.md's ~500-line rule; like `cli.py` it writes no SQL of its own.
-- Current dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`. **`drugref_policy` holds
+- Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
+  and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
+  same two-homes defect the standing rules above warn about. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
   `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:
