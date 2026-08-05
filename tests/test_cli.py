@@ -18,7 +18,7 @@ def test_every_orchestrator_has_a_subcommand():
     uses. Driving this off cli.STEPS would pass whatever cli.STEPS said; the point is
     that an orchestrator added without a subcommand fails here."""
     assert tuple(s.name for s in cli.STEPS) == (
-        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs")
+        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs", "gsrs")
 
 
 def test_unii_runs_before_every_feed_that_joins_to_what_it_registers():
@@ -135,6 +135,35 @@ def test_resolve_inputs_refuses_an_ambiguous_glob(tmp_path):
     with pytest.raises(cli.InputResolutionError) as exc:
         cli.resolve_inputs(tmp_path, step)
     assert "2 files" in str(exc.value)
+
+
+def test_gsrs_is_a_declared_step():
+    step = next(s for s in cli.STEPS if s.name == "gsrs")
+    assert step.inputs == (("dump", "GSRS/dump-public-*.gsrs"),)
+    # No secondary inputs: this step reads and DATES exactly one file.
+    assert step.secondary == ()
+
+
+def test_the_gsrs_glob_matches_the_real_release_name(tmp_path):
+    """The glob is pinned because #60's lesson was that a wrong one ships silently.
+    The release file is dump-public-YYYY-MM-DD.gsrs."""
+    downloads = tmp_path / "downloads"
+    (downloads / "GSRS").mkdir(parents=True)
+    (downloads / "GSRS" / "dump-public-2026-02-26.gsrs").write_text("")
+    step = next(s for s in cli.STEPS if s.name == "gsrs")
+    resolved = cli.resolve_inputs(downloads, step)
+    assert resolved["dump"].name == "dump-public-2026-02-26.gsrs"
+
+
+def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):
+    """Silently taking either would record the wrong bytes as this run's provenance."""
+    downloads = tmp_path / "downloads"
+    (downloads / "GSRS").mkdir(parents=True)
+    (downloads / "GSRS" / "dump-public-2026-02-26.gsrs").write_text("")
+    (downloads / "GSRS" / "dump-public-2026-05-01.gsrs").write_text("")
+    step = next(s for s in cli.STEPS if s.name == "gsrs")
+    with pytest.raises(cli.InputResolutionError):
+        cli.resolve_inputs(downloads, step)
 
 
 def test_a_source_joins_the_chain_only_if_its_release_is_given():
