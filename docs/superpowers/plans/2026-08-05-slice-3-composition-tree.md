@@ -466,6 +466,13 @@ WANTED = {
     # (1) + (5) a single-parent salt whose edge is stored from BOTH ends
     "1D06KZ672I": "CHLORTETRACYCLINE BISULFATE -- single parent, mirror-encoded",
     "WCK1KIQ23Q": "Chlortetracycline -- its parent and ACTIVE MOIETY",
+    # (6) a composite with components but NO active-moiety ruling -- the gap-kind-12
+    #     case. WITHOUT THIS the gap view has no real positive example and every
+    #     downstream test of it passes vacuously over an empty set (found by the
+    #     Task 2 review; the first version of this dict required the case in the
+    #     docstring above and then omitted it here).
+    "88496G1ERL": "PHYTATE SODIUM -- one composite edge, ZERO active-moiety edges",
+    "7IGF0S7R8I": "its component, so the fixture holds both ends of that edge",
     # (3) + (7) the magnesium family: the solvate axis, and the refuted case
     "SK47B8698T": "Magnesium sulfate heptahydrate -- solvate",
     "ML30MJ2U7I": "Magnesium sulfate anhydrous -- its anhydrous form",
@@ -514,7 +521,7 @@ python tests/fixtures/make_gsrs_subset.py \
     downloads/GSRS/dump-public-2026-02-26.gsrs tests/fixtures/gsrs_subset.gsrs
 ```
 
-Expected on stderr: `wrote 12 records to tests/fixtures/gsrs_subset.gsrs`. If it raises
+Expected on stderr: `wrote 14 records to tests/fixtures/gsrs_subset.gsrs`. If it raises
 `FIXTURE INCOMPLETE`, do **not** hand-edit the fixture — investigate why the record is
 absent, because the same absence will hit production.
 
@@ -554,7 +561,8 @@ def _records():
 def test_the_fixture_carries_every_role_the_slice_depends_on():
     uniis = {r.unii for r in _records()}
     for unii in ("H3472PJ7YA", "13S1S8SF37", "1D06KZ672I", "WCK1KIQ23Q",
-                 "SK47B8698T", "ML30MJ2U7I", "DE08037SAB", "T6V3LHY838"):
+                 "SK47B8698T", "ML30MJ2U7I", "DE08037SAB", "T6V3LHY838",
+                 "88496G1ERL"):
         assert unii in uniis, f"{unii} missing -- regenerate with make_gsrs_subset.py"
 
 
@@ -597,6 +605,15 @@ def test_zinc_glycinate_citrate_keeps_all_three_components():
     components = {e.component_unii for e in record.edges
                   if e.relation == gsrs.SALT_SOLVATE}
     assert components == {"13S1S8SF37", "TE7660XO1C", "XF417D3PSL"}
+
+
+def test_a_composite_with_no_active_moiety_ruling_is_present():
+    """Gap kind 12's positive example, on real bytes. Asserts the record IS a
+    composite as well as unruled -- a test that only checked the empty active set
+    would pass for every non-composite in the fixture."""
+    record = next(r for r in _records() if r.unii == "88496G1ERL")
+    assert record.edges, "PHYTATE SODIUM must carry a composition edge"
+    assert record.active_moieties == frozenset()
 
 
 def test_the_active_component_is_distinguished_from_the_counterions():
