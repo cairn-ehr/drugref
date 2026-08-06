@@ -21,7 +21,12 @@ registry; one check view detects orphans.
   Do not add either.
 - **TDD, always:** write the failing test, run it, watch it fail for the right reason, then implement.
 - **All tests must pass before every commit.** `DRUGREF_TEST_DSN=host=localhost port=5532 dbname=drugref_test user=postgres uv run pytest`
-- **Lint before every commit:** `ruff check .` and `ruff format .`
+- **Lint before every commit: `ruff check .` only, and it must report "All checks passed!"**
+  **Do NOT run `ruff format .` or `ruff format --check .` across the repo.** Measured 2026-08-06: **100 of 106
+  files would be reformatted**, because `pyproject.toml` has no `[tool.ruff]` section and the codebase has never
+  been formatted by it — that is issue
+  [#66](https://github.com/cairn-ehr/drugref/issues/66), not something this slice fixes. A repo-wide format would
+  bury this branch's diff under 100 unrelated files. Formatting a file you are already editing is fine.
 - **Keep files under ~500 lines.** `curation.py` is new and must stay well inside that.
 - **Inline documentation is mandatory** and must be understandable by a junior contributor. This codebase documents
   *why*, not *what*; match the density of `db/027_expansion_policy_history.sql` and `src/drugref/overlay.py`.
@@ -392,7 +397,7 @@ loosen the assertion to bare `psycopg.Error`.
 - [ ] **Step 5: Run the whole suite and lint**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
@@ -640,7 +645,7 @@ Expected: PASS, 15 tests.
 - [ ] **Step 5: Lint and full suite**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 ```
 
@@ -954,7 +959,7 @@ Expected: PASS, 7 tests.
 - [ ] **Step 5: Lint, full suite, commit**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 git add src/drugref/curation.py tests/test_curation_writer.py
 git commit -m "feat(5c): the two curated-overlay writers, one correction sequence each"
@@ -1251,7 +1256,7 @@ Expected: PASS, 7 tests.
 - [ ] **Step 5: Lint, full suite, commit**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 git add db/029_curated_overlay.sql tests/test_curated_read_path.py
 git commit -m "feat(5c): the two curated read views, inner-joined so absence cannot read as approval"
@@ -1637,7 +1642,7 @@ Expected: PASS, 10 tests (the parametrised one counts twice).
 - [ ] **Step 6: Lint, full suite, commit**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 git add db/029_curated_overlay.sql src/drugref/questions.py tests/test_curated_gap_views.py
 git commit -m "feat(5c): the curation worklist, and the retention guard curation would have broken"
@@ -1749,7 +1754,7 @@ wording preference** — leaving it would have PROJECT-NOTES asserting a securit
 - [ ] **Step 8: Commit, push, open the PR**
 
 ```bash
-ruff check . && ruff format --check .
+ruff check .
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 git add -A
 git commit -m "docs: the 5c.1 measurement, the decision record, and the signed-overlay correction"
