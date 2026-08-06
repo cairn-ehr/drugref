@@ -273,6 +273,34 @@ _GAP_SOURCES = {
             "component(s) and the release marks none of them active, so no "
             "contraindication or interaction on a component reaches it.'"),
     },
+    # Slice 5c.1. The two kinds whose answer is a CURATED ROW rather than a lookup --
+    # like unreviewed_expansion_root, drugref answers these itself.
+    #
+    # THE gap_key FORMATS BELOW ARE FROZEN. question_uuid is uuid5(gap_kind, gap_key),
+    # immortal and externally citable, so changing either re-mints every question and
+    # breaks every reference an external tool holds.
+    "uncurated_condition_contradiction": {
+        "view": "gap_uncurated_condition_contradiction",
+        # Compound, on Plan C's CLASS:a/CLASS:b precedent: the question is about the
+        # PAIR, and folding it onto either half would hand two independent questions
+        # one immortal UUID.
+        "key_sql": "'MOIETY:' || subject_moiety || '/CONDITION:' || object_condition",
+        "text_sql": (
+            "'Is ' || display_name || ' indicated or contraindicated in ' || "
+            "condition_name || '? The release asserts BOTH, with no qualifier "
+            "distinguishing them -- often because one MeSH descriptor covers "
+            "clinical states in which the answers differ.'"),
+    },
+    "uncurated_interaction_rule": {
+        "view": "gap_uncurated_interaction_rule",
+        "key_sql": ("'MOIETY:' || subject_moiety || '/CLASS:' || object_class || "
+                    "'/CI_AXIS:' || relationship"),
+        "text_sql": (
+            "'How severe is co-administering ' || display_name || ' with a drug of ' "
+            "|| class_name || ', by what mechanism, and what should a prescriber do? "
+            "The release asserts the contraindication and grades nothing. ' || "
+            "pair_count || ' drug pair(s) inherit the answer.'"),
+    },
 }
 
 
@@ -306,7 +334,11 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     instead: invisible on the worklist, still citable by the external tool that
     already holds the UUID, and restored to current under that same UUID if the gap
     reopens. Only untouched questions are deleted, and those have nothing to cascade
-    to.
+    to. The guard now covers FIVE tables, not three: db/029 (slice 5c.1) added
+    curated_interaction and curated_condition to question_state's, question_source_check's
+    and question_evidence's original three, because curating a pair is exactly what
+    CLOSES its gap -- the very row that answers a question is what would otherwise
+    make the next ingest try to delete it.
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -350,6 +382,14 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             "AND NOT EXISTS (SELECT 1 FROM drugref.question_source_check x "
             "                WHERE x.question_uuid = q.question_uuid) "
             "AND NOT EXISTS (SELECT 1 FROM drugref.question_evidence x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/029. Curating a pair is exactly what CLOSES its gap, so without these
+            # two the very first curated row would make the next ingest delete its
+            # question, cascade into an append-only table, RAISE, and abort the whole
+            # transaction. The guard -- not the cascade -- is what keeps curator work.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_interaction x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_condition x "
             "                WHERE x.question_uuid = q.question_uuid)",
             (gap_kind, live_keys))
         conn.execute(

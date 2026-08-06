@@ -366,3 +366,166 @@ COMMENT ON VIEW drugref.curated_condition_ruling IS
     'over a pair asserted as both may_treat and CI_with returns both, and a consumer '
     'can see exactly which claims the ruling reconciles. A `spurious` ruling appears '
     'here never; the candidate it disagrees with stays in its projection.';
+
+-- ============================================================================
+-- 4. The worklist -- two gap views
+-- ============================================================================
+-- THESE TEST FOR A LIVE ROW, NOT FOR A LIVE ASSERTING ROW, and the difference from
+-- section 3 is deliberate. Every ruling means a curator LOOKED -- including `spurious`
+-- and `applies = false` -- so every ruling retires the question. A retired ruling that
+-- stayed on the worklist would be asked about every release forever, which is the
+-- nagging failure db/027's `withdrawn` and additive_effect's `accumulates` both exist
+-- to stop.
+
+CREATE OR REPLACE VIEW drugref.gap_uncurated_condition_contradiction AS
+SELECT ci.subject_moiety_uuid    AS subject_moiety,
+       ci.object_condition_uuid  AS object_condition,
+       sm.display_name,
+       cond.name                 AS condition_name,
+       count(DISTINCT ind.relationship) AS indication_predicate_count
+FROM   drugref.moiety_condition_contraindication ci
+       -- The CONTRADICTION is the queue, not uncurated contraindications at large:
+       -- 13,463 of those exist and a queue nobody can finish is precisely the stale
+       -- generated document these views were built to replace. These 168 are the rows
+       -- where the projection tier provably cannot carry the clinical distinction.
+JOIN   drugref.moiety_condition_indication ind
+       ON  ind.subject_moiety_uuid   = ci.subject_moiety_uuid
+       AND ind.object_condition_uuid = ci.object_condition_uuid
+JOIN   drugref.substance_moiety sm   ON sm.moiety_uuid    = ci.subject_moiety_uuid
+JOIN   drugref.condition cond        ON cond.condition_uuid = ci.object_condition_uuid
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.curated_condition c
+                    WHERE c.subject_moiety_uuid   = ci.subject_moiety_uuid
+                      AND c.object_condition_uuid = ci.object_condition_uuid
+                      AND c.superseded_by IS NULL)
+GROUP  BY ci.subject_moiety_uuid, ci.object_condition_uuid, sm.display_name, cond.name;
+
+COMMENT ON VIEW drugref.gap_uncurated_condition_contradiction IS
+    'The (drug, condition) pairs an upstream release asserts as BOTH an indication and '
+    'a contraindication, with no live drugref ruling -- 168 in MED-RT 2026.07.06. The '
+    'highest-value curation queue drugref has: every row is a real clinical '
+    'distinction MeSH''s descriptor grain cannot carry, not noise. Its grain matches '
+    'curated_condition''s natural key exactly, so one question maps to one curatable '
+    'row.';
+
+CREATE OR REPLACE VIEW drugref.gap_uncurated_interaction_rule AS
+SELECT cc.subject_moiety_uuid AS subject_moiety,
+       cc.object_class_uuid   AS object_class,
+       cc.relationship,
+       sm.display_name,
+       sc.class_name,
+       count(*)               AS pair_count
+FROM   drugref.class_contraindication cc
+JOIN   drugref.substance_moiety sm ON sm.moiety_uuid = cc.subject_moiety_uuid
+JOIN   drugref.substance_class sc  ON sc.class_uuid  = cc.object_class_uuid
+       -- RANKED BY THE PAIRS ACTUALLY AT STAKE, not by descendant_class_count. Issue
+       -- #36 measured what the other metric costs: gap_unreviewed_expansion_root spent
+       -- a curator's explicit `allow` on a root whose expansion was a provable no-op,
+       -- because tree bushiness is not the same quantity as fan-out.
+       --
+       -- INNER, so a rule that pairs with NOBODY drops out of this queue entirely.
+       -- Grading it would change nothing, and gap_unpopulated_contraindication already
+       -- owns the different question of why its class has no members.
+JOIN   drugref.ddi_candidate_pair p
+       ON  p.subject_moiety = cc.subject_moiety_uuid
+       AND p.via_class      = cc.object_class_uuid
+       AND p.relationship   = cc.relationship
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.curated_interaction c
+                    WHERE c.subject_moiety_uuid = cc.subject_moiety_uuid
+                      AND c.object_class_uuid   = cc.object_class_uuid
+                      AND c.relationship        = cc.relationship
+                      AND c.superseded_by IS NULL)
+GROUP  BY cc.subject_moiety_uuid, cc.object_class_uuid, cc.relationship,
+          sm.display_name, sc.class_name;
+
+COMMENT ON VIEW drugref.gap_uncurated_interaction_rule IS
+    'Class-level CI_MoA/CI_PE rules carrying no live drugref grade, ranked by '
+    'pair_count -- the drug pairs the rule actually reaches, which is the fan-out at '
+    'stake in the answer. A rule reaching no pair is omitted: grading it is a '
+    'provable no-op, and #36 measured what asking such questions costs a curator.';
+
+-- ============================================================================
+-- 5. curated_target_unresolved -- an OPERATOR check, not a question
+-- ============================================================================
+-- A curated row names its candidate by NATURAL KEY and carries no foreign key into it,
+-- because candidates are rebuildable projections and an FK would either block the
+-- per-source rebuild or cascade curator judgement away with it. The cost of that
+-- choice is that a rebuild CAN leave a judgement pointing at a candidate that no longer
+-- exists, and nothing would say so. This view says so.
+--
+-- NOT a gap kind, for expansion_policy_unresolved's reason: a vanished candidate is an
+-- upstream-change signal for whoever ran the ingest, not a clinical question for a
+-- curator. Expected to be EMPTY.
+CREATE OR REPLACE VIEW drugref.curated_target_unresolved AS
+SELECT 'curated_interaction'::text AS target_table,
+       c.subject_moiety_uuid       AS subject_moiety,
+       c.object_class_uuid         AS object_uuid,
+       c.relationship,
+       c.reviewed_by,
+       c.reviewed_against
+FROM   drugref.curated_interaction c
+WHERE  c.superseded_by IS NULL
+AND    NOT EXISTS (SELECT 1 FROM drugref.class_contraindication cc
+                    WHERE cc.subject_moiety_uuid = c.subject_moiety_uuid
+                      AND cc.object_class_uuid   = c.object_class_uuid
+                      AND cc.relationship        = c.relationship)
+UNION ALL
+SELECT 'curated_condition',
+       c.subject_moiety_uuid,
+       c.object_condition_uuid,
+       NULL,
+       c.reviewed_by,
+       c.reviewed_against
+FROM   drugref.curated_condition c
+WHERE  c.superseded_by IS NULL
+AND    NOT EXISTS (SELECT 1 FROM drugref.moiety_condition_contraindication x
+                    WHERE x.subject_moiety_uuid   = c.subject_moiety_uuid
+                      AND x.object_condition_uuid = c.object_condition_uuid)
+AND    NOT EXISTS (SELECT 1 FROM drugref.moiety_condition_indication x
+                    WHERE x.subject_moiety_uuid   = c.subject_moiety_uuid
+                      AND x.object_condition_uuid = c.object_condition_uuid);
+
+COMMENT ON VIEW drugref.curated_target_unresolved IS
+    'Live curated rows whose candidate is no longer projected -- a judgement pointing '
+    'at nothing after a rebuild. EXPECTED EMPTY. The price of referencing candidates '
+    'by natural key instead of by foreign key, which is what stops a per-source '
+    'rebuild cascading curator judgement away. An OPERATOR signal, deliberately not a '
+    'gap kind: it reports an upstream change, not a clinical question.';
+
+-- ============================================================================
+-- 6. Widen open_question.gap_kind -- fourteen in all
+-- ============================================================================
+-- Widened deliberately, in a migration, exactly as db/007 asks: an unconstrained
+-- gap_kind would let a typo mint a whole parallel question namespace that nothing
+-- ever reconciles. The guard reads the CURRENT definition rather than assuming
+-- db/028's, so re-running is safe and a future kind extends this list rather than
+-- replacing it.
+--
+-- Edited into db/029 rather than added as db/030, on db/028's exact precedent: this
+-- branch is unmerged, so db/029 is not yet an APPLIED migration anywhere outside it,
+-- and editing it in place is the documented exception to "migrations are immutable
+-- once applied" while the branch stands. This is section 4's own gap_kinds, so the
+-- widening belongs in the same file that introduces them rather than a trailing one
+-- with no other content. Add a new migration for the next gap kind after merge.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'open_question_gap_kind'
+                   AND    conrelid = 'drugref.open_question'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%uncurated_interaction_rule%') THEN
+        ALTER TABLE drugref.open_question
+            DROP CONSTRAINT IF EXISTS open_question_gap_kind;
+        ALTER TABLE drugref.open_question
+            ADD CONSTRAINT open_question_gap_kind CHECK (gap_kind IN (
+                'unpopulated_contraindication', 'unclassified_moiety',
+                'unmatched_ingredient', 'unreviewed_expansion_root',
+                'unresolved_ci_object', 'dead_by_expansion_policy',
+                'condition_without_indication',
+                -- Plan C
+                'uncurated_additive_effect', 'uncurated_threshold',
+                'ineffective_contribution', 'ungraded_contribution',
+                -- Slice 3
+                'unruled_composition_activity',
+                -- Slice 5c.1: the two kinds a curated row answers, not a lookup
+                'uncurated_condition_contradiction', 'uncurated_interaction_rule'));
+    END IF;
+END $$;

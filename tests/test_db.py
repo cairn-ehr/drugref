@@ -191,6 +191,13 @@ def test_apply_migrations_is_idempotent(conn):
         # explicitly here for the same reason every other view in this inventory
         # is: information_schema.tables lists views too.
         "curated_ddi_pair", "curated_condition_ruling",
+        # Slice 5c.1, db/029 sections 4-5: the curation WORKLIST. Two gap views --
+        # gap kinds thirteen and fourteen, the first two whose answer is a curated
+        # row rather than a lookup -- plus one operator check (NOT a gap kind: a
+        # vanished candidate is an upstream-change signal, not a clinical question).
+        # Named explicitly for the same information_schema.tables reason as above.
+        "gap_uncurated_condition_contradiction", "gap_uncurated_interaction_rule",
+        "curated_target_unresolved",
     }
 
 
