@@ -8,36 +8,11 @@ forgetfulness here -- a LEFT JOIN returning every candidate with a NULL severity
 it -- renders an UNREVIEWED candidate as though a curator had passed it. A consumer must
 ASK for graded advice and receive only graded advice.
 """
-import pytest
+from drugref import curation
 
-from drugref import curation, interactions
-from tests.test_curated_overlay import _a_class, _a_condition
-
-
-@pytest.fixture
-def a_graded_rule(conn, a_moiety, ingest_run_id):
-    """One CI_MoA rule with a member on its axis, and drugref's grade on the rule."""
-    from drugref import ids
-    klass = _a_class(conn, ingest_run_id)
-    partner = ids.mint_moiety_uuid("TESTUNII02")
-    conn.execute(
-        "INSERT INTO drugref.substance_moiety "
-        "(moiety_uuid, display_name, first_seen_ingest) "
-        "VALUES (%s, 'partnerdrug', %s) ON CONFLICT DO NOTHING",
-        (partner, ingest_run_id))
-    # NOTE class_membership has NO `source` column -- unlike class_contraindication
-    # below, and unlike every moiety_condition_* table. db/003 made the class registry
-    # source-neutral; adding one here fails with UndefinedColumn.
-    conn.execute(
-        "INSERT INTO drugref.class_membership "
-        "(moiety_uuid, class_uuid, relationship, ingest_run) "
-        "VALUES (%s, %s, 'has_MoA', %s) ON CONFLICT DO NOTHING",
-        (partner, klass, ingest_run_id))
-    conn.execute(
-        "INSERT INTO drugref.class_contraindication "
-        "(subject_moiety_uuid, object_class_uuid, relationship, source, ingest_run) "
-        "VALUES (%s, %s, 'CI_MoA', 'MED-RT', %s)", (a_moiety, klass, ingest_run_id))
-    return {"subject": a_moiety, "partner": partner, "class": klass}
+# a_graded_rule and a_contradicted_pair are conftest.py fixtures (moved there once
+# tests/test_curated_gap_views.py needed them too) -- pytest resolves them by name
+# with no import required here.
 
 
 def test_a_graded_rule_reaches_every_pair_it_expands_to(conn, a_graded_rule):
@@ -99,20 +74,6 @@ def test_the_candidate_view_is_untouched_by_curation(conn, a_graded_rule):
         reviewed_by="test", reviewed_against="2026.07.06")
     assert conn.execute(
         "SELECT count(*) FROM drugref.ddi_candidate_pair").fetchone() == before
-
-
-@pytest.fixture
-def a_contradicted_pair(conn, a_moiety, ingest_run_id):
-    """Issue 51's shape: one pair asserted as BOTH may_treat and CI_with."""
-    condition = _a_condition(conn, ingest_run_id)
-    interactions.add_condition_contraindication(
-        conn, a_moiety, condition, "CI_with", "MED-RT", ingest_run_id)
-    conn.execute(
-        "INSERT INTO drugref.moiety_condition_indication "
-        "(subject_moiety_uuid, object_condition_uuid, relationship, source, ingest_run) "
-        "VALUES (%s, %s, 'may_treat', 'MED-RT', %s)",
-        (a_moiety, condition, ingest_run_id))
-    return {"moiety": a_moiety, "condition": condition}
 
 
 def test_one_ruling_returns_a_row_per_candidate_it_reconciles(conn, a_contradicted_pair):
