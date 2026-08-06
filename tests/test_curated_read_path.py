@@ -17,8 +17,10 @@ from drugref import curation
 
 def test_a_graded_rule_reaches_every_pair_it_expands_to(conn, a_graded_rule):
     """THE PAYOFF OF RULE-LEVEL CURATION. One curated row must grade the pair the rule
-    expands to -- if it does not, curating 739 rules buys nothing over curating 21,664
-    pairs."""
+    expands to -- if it does not, curating 635 rules buys nothing over curating 21,664
+    pairs. (635 measured, not the "~739" earlier drafts quoted: that was the raw
+    pre-gate MED-RT terminology count, never class_contraindication's own row count --
+    see PROJECT-NOTES.md "Slice 5c.1".)"""
     curation.record_interaction_judgement(
         conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
         severity="major", evidence_grade="established",

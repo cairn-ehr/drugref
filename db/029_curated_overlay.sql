@@ -161,6 +161,18 @@ CREATE INDEX IF NOT EXISTS curated_interaction_live_key
        (subject_moiety_uuid, object_class_uuid, relationship)
     WHERE superseded_by IS NULL;
 
+-- THE OTHER UNREAD INDEX. Postgres indexes the REFERENCED side of a foreign key
+-- automatically and the REFERENCING side never, so `question_uuid` is bare by default
+-- -- and it has two per-ingest readers. questions.register_from_gaps probes this table
+-- with NOT EXISTS once per gap kind, fourteen times a run; and the ON DELETE CASCADE
+-- must find this table's rows before the append-only trigger can refuse the delete.
+-- db/007 added question_source_check_by_question for exactly this, and db/023 measured
+-- what an unindexed per-row predicate costs once such a table stops being empty
+-- (5,773 ms against 42 ms at 2,000 rows). Read only by the planner, so a test asserts
+-- it by name -- as with the live-key indexes above.
+CREATE INDEX IF NOT EXISTS curated_interaction_by_question
+    ON drugref.curated_interaction (question_uuid);
+
 COMMENT ON TABLE drugref.curated_interaction IS
     'CURATED, APPEND-ONLY: drugref''s own judgement -- severity, mechanism, management '
     'and evidence grade -- on a class-level CI_MoA/CI_PE rule, inheriting to every '
@@ -267,6 +279,10 @@ CREATE CONSTRAINT TRIGGER curated_condition_single_live
 CREATE INDEX IF NOT EXISTS curated_condition_live_key
     ON drugref.curated_condition (subject_moiety_uuid, object_condition_uuid)
     WHERE superseded_by IS NULL;
+
+-- Same two readers, same reasoning as curated_interaction_by_question above.
+CREATE INDEX IF NOT EXISTS curated_condition_by_question
+    ON drugref.curated_condition (question_uuid);
 
 COMMENT ON TABLE drugref.curated_condition IS
     'CURATED, APPEND-ONLY: drugref''s ruling on a (drug, condition) pair, including '
@@ -428,7 +444,17 @@ SELECT cc.subject_moiety_uuid AS subject_moiety,
        cc.relationship,
        sm.display_name,
        sc.class_name,
-       count(*)               AS pair_count
+       -- DISTINCT PARTNERS, NOT JOIN ROWS, and the two coincide only while MED-RT is
+       -- the sole permitted source. class_contraindication's primary key includes
+       -- `source` (db/006 widened it there deliberately, so a second authority's row is
+       -- not swallowed by the first); the join below deliberately OMITS source, because
+       -- drugref's judgement is about the clinical fact and not about who asserted it.
+       -- Both are right, and together they mean a rule asserted by two authorities
+       -- joins every candidate row once per source: count(*) would report 2n, silently
+       -- inflating this rule's rank against a single-source neighbour, and breaking the
+       -- measured `sum(pair_count) = 21,664` partition. The subject is fixed per group,
+       -- so distinct partners ARE distinct drug pairs.
+       count(DISTINCT p.partner_moiety) AS pair_count
 FROM   drugref.class_contraindication cc
 JOIN   drugref.substance_moiety sm ON sm.moiety_uuid = cc.subject_moiety_uuid
 JOIN   drugref.substance_class sc  ON sc.class_uuid  = cc.object_class_uuid
@@ -511,9 +537,16 @@ COMMENT ON VIEW drugref.curated_target_unresolved IS
 -- ============================================================================
 -- Widened deliberately, in a migration, exactly as db/007 asks: an unconstrained
 -- gap_kind would let a typo mint a whole parallel question namespace that nothing
--- ever reconciles. The guard reads the CURRENT definition rather than assuming
--- db/028's, so re-running is safe and a future kind extends this list rather than
--- replacing it.
+-- ever reconciles.
+--
+-- WHAT THE GUARD DOES AND DOES NOT DO. It reads the CURRENT constraint definition
+-- rather than assuming db/028's, so re-running THIS FILE is a no-op once it has landed.
+-- It does NOT merge: the ADD CONSTRAINT below states all fourteen kinds literally, so
+-- replaying this file over a database whose list a LATER migration had widened would
+-- narrow it back. apply_migrations makes that unreachable -- it runs each file once and
+-- refuses one whose content changed after it was applied -- so the exposure is a
+-- hand-run `psql -f`. The instruction to the next author is therefore: add your kind by
+-- ADDING A MIGRATION that restates the full list, never by replaying this one.
 --
 -- Edited into db/029 rather than added as db/030, on db/028's exact precedent: this
 -- branch is unmerged, so db/029 is not yet an APPLIED migration anywhere outside it,

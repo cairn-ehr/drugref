@@ -132,6 +132,72 @@ def test_a_closing_gap_does_not_abort_the_ingest_when_curated(
         (question_uuid,)).fetchone() == (False,)
 
 
+def test_a_closing_interaction_gap_does_not_abort_the_ingest_when_curated(
+        conn, a_graded_rule, ingest_run_id):
+    """THE SAME FAILURE MODE, ON THE OTHER TABLE -- and the mutation the whole-branch
+    review missed a third time. register_from_gaps' retention guard names FIVE tables;
+    the sibling test above only exercises the curated_condition clause, so DELETING THE
+    curated_interaction CLAUSE passed all 940 tests. Measured, both directions: with the
+    clause the sequence below is silent, without it the second register_from_gaps raises
+    RaiseException out of forbid_overlay_rewrite and the whole ingest transaction aborts.
+
+    The sequence is the ordinary one, not a contrived one: grading a rule is exactly
+    what retires it from gap_uncurated_interaction_rule, so the very first curated
+    interaction row makes the next ingest try to delete the question it cites.
+    """
+    questions.register_from_gaps(conn, ingest_run_id)
+    question_uuid = ids.mint_question_uuid(
+        "uncurated_interaction_rule",
+        f"MOIETY:{a_graded_rule['subject']}/CLASS:{a_graded_rule['class']}"
+        f"/CI_AXIS:CI_MoA")
+    curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", question_uuid=question_uuid,
+        reviewed_by="test", reviewed_against="2026.07.06")
+    questions.register_from_gaps(conn, ingest_run_id)      # must not raise
+    assert conn.execute(
+        "SELECT is_current FROM drugref.open_question WHERE question_uuid = %s",
+        (question_uuid,)).fetchone() == (False,)
+
+
+def test_pair_count_counts_pairs_not_candidate_rows(conn, a_graded_rule, ingest_run_id):
+    """pair_count RANKS THE WORKLIST, so it has to be a count of drug pairs and not a
+    count of join rows -- and today those two happen to coincide, which is exactly what
+    makes the difference invisible.
+
+    class_contraindication's primary key includes `source` (db/006 widened it there on
+    purpose, so a second authority's independent row is not swallowed). The gap view
+    joins it to ddi_candidate_pair on (subject, class, relationship) WITHOUT source,
+    because drugref's judgement is source-independent. Both are right. Together they
+    mean that once a second authority asserts the same rule, every candidate row is
+    counted once per asserting source -- pair_count doubles, and the measured invariant
+    `sum(pair_count) = 21,664` stops holding -- while the row set of the view, which is
+    grouped without source, does not change at all.
+
+    THE SECOND SOURCE NEEDS THE CHECK OUT OF THE WAY. class_contraindication_source
+    admits only 'MED-RT' today, which is the sole reason count(*) is still correct in
+    production. Dropping it inside the test transaction (the conn fixture rolls back, so
+    nothing survives this test) is what lets the view be measured under the shape db/006
+    deliberately made reachable, instead of waiting for a future migration to discover
+    it.
+    """
+    conn.execute("ALTER TABLE drugref.class_contraindication "
+                 "DROP CONSTRAINT class_contraindication_source")
+    # The same rule, asserted by a second authority. The ingest_run is reused because
+    # the view reads only its release label, which plays no part in the count.
+    conn.execute(
+        "INSERT INTO drugref.class_contraindication "
+        "(subject_moiety_uuid, object_class_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, 'CI_MoA', 'TEST-SECOND-AUTHORITY', %s)",
+        (a_graded_rule["subject"], a_graded_rule["class"], ingest_run_id))
+    # ONE rule on the worklist (the group omits source), reaching ONE drug pair -- the
+    # single partner filed under the class. count(*) would report 4: two asserting rows
+    # times two candidate rows.
+    assert conn.execute(
+        "SELECT pair_count FROM drugref.gap_uncurated_interaction_rule"
+    ).fetchall() == [(1,)]
+
+
 def test_a_curated_row_whose_candidate_vanished_is_reported(conn, a_graded_rule):
     """The orphan detector. A curated row references its candidate by NATURAL KEY, not
     by foreign key, precisely so a per-source rebuild cannot cascade curator judgement

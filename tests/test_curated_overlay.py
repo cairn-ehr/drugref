@@ -391,6 +391,32 @@ def test_the_condition_live_key_index_exists_by_name(conn):
     assert "(subject_moiety_uuid, object_condition_uuid)" in indexdef
 
 
+def test_both_tables_index_the_question_they_cite(conn):
+    """`question_uuid` is a FOREIGN KEY with ON DELETE CASCADE, and Postgres indexes
+    neither side of that automatically -- the referencing column is exactly the one it
+    leaves bare.
+
+    TWO READERS DEPEND ON IT, both per-ingest rather than per-query. register_from_gaps
+    probes both tables with NOT EXISTS once per gap kind, fourteen times a run; and the
+    cascade itself must find this table's rows before the append-only trigger can refuse
+    the delete. question_source_check_by_question (db/007) exists for the same reason on
+    the sibling table, and db/023 measured what leaving such a predicate unindexed costs
+    once the table stops being empty -- 5,773 ms against 42 ms at the 2,000-row mark.
+
+    Asserted by NAME because nothing in the source references these: they are read only
+    by the planner, so they look unused to a catalog sweep and a tidying pass would drop
+    them without any other test noticing.
+    """
+    named = dict(conn.execute(
+        "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname IN ('curated_interaction_by_question', "
+        "                  'curated_condition_by_question')").fetchall())
+    assert set(named) == {"curated_interaction_by_question",
+                          "curated_condition_by_question"}
+    for indexdef in named.values():
+        assert "(question_uuid)" in indexdef
+
+
 def test_two_curated_condition_rows_collide_despite_different_upstream_predicates(
     conn, a_contradicted_pair
 ):
