@@ -524,10 +524,21 @@ concluded "GSRS holds no active-moiety data", which was an artifact of the trans
 ## Architecture in one breath
 
 ROADMAP states the model; what matters here is where each kind of data lives. **Hybrid store**: **rebuildable projections**
-for ingested feeds (drop-and-rebuild, version-pinned, provenance-tagged via `ingest_run`) + an **append-only, signed overlay**
-for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027` `class_expansion_policy`
-now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is still cleared by no
-ingest).
+for ingested feeds (drop-and-rebuild, version-pinned, provenance-tagged via `ingest_run`) + an **append-only, SIGNABLE
+overlay** for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027`
+`class_expansion_policy` now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is
+still cleared by no ingest).
+
+**"Signed" was an overstatement, corrected 2026-08-06 by the 5c.1 design round.** No signing infrastructure exists
+anywhere in the repo — no key management, no signing identity, no verification path — so the tier is **signable**, not
+signed. The constraint that follows is sharp and is why 5c.1 ships empty: the floor refuses UPDATE, so **a row committed
+before signing exists can never be signed retrospectively**, and signing must therefore land before the first curated
+row (5c.4, ahead of 5c.2's ONC content).
+
+**Rule-6 determination, made in the same round: DDInter is CC BY-NC-SA and is OUT of the bundled ladder permanently** —
+non-commercial, so not AGPL-3.0-compatible. ROADMAP's old "DDInter *if its licence confirms*" predated the check. It may
+attach only as a node-local, separately-licensed plug-in. The surviving ladder is ONC high-priority floor → SPL/DailyMed
+(ONSIDES-*method*) → drugref's own curation.
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
 subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 
