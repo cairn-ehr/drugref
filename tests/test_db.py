@@ -179,6 +179,12 @@ def test_apply_migrations_is_idempotent(conn):
         # class-level CI_MoA/CI_PE rule, keyed on the RULE rather than the pair.
         # Ships empty; the floor is db/020's, reused rather than copied.
         "curated_interaction",
+        # Slice 5c.1, db/029: the curated overlay's second table -- drugref's
+        # ruling on a (drug, condition) PAIR, keyed WITHOUT `relationship` so the
+        # 168 pairs MED-RT asserts as both an indication and a contraindication
+        # get one row and one judgement rather than two that can disagree. Ships
+        # empty; the floor is db/020's, reused rather than copied.
+        "curated_condition",
     }
 
 

@@ -185,11 +185,149 @@ def test_two_live_rows_on_one_natural_key_abort_at_commit(
 def test_the_live_key_index_exists_by_name(conn):
     """Nothing but the trigger reads this index, so nothing but a test protects it --
     and db/023 measured the cost of its absence: the single-live trigger becomes a
-    sequential scan per row, so a 2,000-row load went from 42 ms to 5,773 ms."""
+    sequential scan per row, so a 2,000-row load went from 42 ms to 5,773 ms.
+
+    PARTIAL and NON-UNIQUE, not merely present: a regression that turned this into a
+    UNIQUE index would still satisfy an existence-by-name check while forbidding the
+    one thing this design cannot live without -- a correction, which is briefly TWO
+    live rows on the same natural key between the INSERT and the UPDATE that
+    supersedes. indexdef is read rather than pg_index.indisunique/indpred because it
+    is the one place both properties -- unique-or-not, and the WHERE clause verbatim
+    -- are visible in a single string.
+    """
+    indexdef = conn.execute(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname = 'curated_interaction_live_key'"
+    ).fetchone()
+    assert indexdef is not None
+    (indexdef,) = indexdef
+    assert "WHERE (superseded_by IS NULL)" in indexdef
+    assert "UNIQUE" not in indexdef
+
+
+def _a_condition(conn, ingest_run_id, code="D006333", name="Heart Failure"):
+    """One MeSH condition -- the issue-51 flagship, by name, so the test reads as the
+    case it is about."""
+    from drugref import ids
+
+    condition_uuid = ids.mint_condition_uuid("MeSH", code)
+    conn.execute(
+        "INSERT INTO drugref.condition "
+        "(condition_uuid, source, source_code, name, record_kind, first_seen_ingest) "
+        "VALUES (%s, 'MeSH', %s, %s, 'DESCRIPTOR', %s) ON CONFLICT DO NOTHING",
+        (condition_uuid, code, name, ingest_run_id),
+    )
+    return condition_uuid
+
+
+def _rule_condition(conn, moiety, condition, **over):
+    """INSERT one curated_condition row, returning its id. Defaults to the issue-51
+    ruling: both upstream assertions are correct, in different clinical states."""
+    cols = dict(
+        ruling="context_dependent",
+        severity="major",
+        mechanism="negative inotropy in acute decompensation",
+        management="first-line in stable chronic HFrEF; withhold in acute "
+        "decompensated failure",
+        evidence_grade="established",
+        source="DRUGREF",
+        reviewed_by="test",
+        reviewed_against="2026.07.06",
+    )
+    cols.update(over)
+    names = ", ".join(cols)
+    holes = ", ".join(["%s"] * len(cols))
+    return conn.execute(
+        f"INSERT INTO drugref.curated_condition "
+        f"(subject_moiety_uuid, object_condition_uuid, {names}) "
+        f"VALUES (%s, %s, {holes}) RETURNING curated_condition_id",
+        (moiety, condition, *cols.values()),
+    ).fetchone()[0]
+
+
+def test_one_row_rules_on_the_pair_not_on_a_relationship(conn, a_moiety, ingest_run_id):
+    """ISSUE 51 IN ONE TEST, and the reason this table's key omits `relationship`
+    while its sibling's includes it. The same (drug, condition) genuinely carries both
+    may_treat and CI_with -- 168 such pairs in the release -- so a relationship in the
+    key would write ONE judgement TWICE and let the two copies disagree. Inserting a
+    second row for the same pair must therefore collide, not coexist."""
+    condition = _a_condition(conn, ingest_run_id)
+    _rule_condition(conn, a_moiety, condition)
+    _rule_condition(conn, a_moiety, condition, ruling="contraindicated")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_context_dependent_is_an_accepted_ruling(conn, a_moiety, ingest_run_id):
+    """The only TRUE statement about metoprolol and D006333 at MeSH's grain: both
+    upstream assertions are right, in different clinical states. If the vocabulary
+    cannot express it, the slice does not solve the problem it exists for."""
+    condition = _a_condition(conn, ingest_run_id)
+    assert _rule_condition(conn, a_moiety, condition) is not None
+
+
+def test_spurious_states_no_severity_and_no_grade(conn, a_moiety, ingest_run_id):
+    """`spurious` means "reviewed; the upstream assertion is wrong" -- there is nothing
+    to grade, and filler values would put a meaningless severity in a clinical table."""
+    condition = _a_condition(conn, ingest_run_id)
     assert (
-        conn.execute(
-            "SELECT 1 FROM pg_indexes WHERE schemaname = 'drugref' "
-            "AND indexname = 'curated_interaction_live_key'"
-        ).fetchone()
+        _rule_condition(
+            conn, a_moiety, condition, ruling="spurious", severity=None, evidence_grade=None
+        )
         is not None
     )
+    conn.rollback()
+    # conn.rollback() undoes the WHOLE open transaction, including the a_moiety /
+    # ingest_run_id fixtures' inserts on this same conn, since neither commits. The
+    # first _a_condition call above is gone too, so re-seed rather than reuse ids the
+    # rollback already erased -- the same trap test_the_row_cannot_be_updated_or_deleted
+    # hits for curated_interaction.
+    run, moiety = _a_run_and_moiety(conn)
+    condition = _a_condition(conn, run)
+    with pytest.raises(
+        psycopg.errors.CheckViolation, match="curated_condition_ruling_is_complete"
+    ):
+        _rule_condition(conn, moiety, condition, ruling="spurious")
+
+
+def test_an_asserting_ruling_must_be_graded(conn, a_moiety, ingest_run_id):
+    condition = _a_condition(conn, ingest_run_id)
+    with pytest.raises(
+        psycopg.errors.CheckViolation, match="curated_condition_ruling_is_complete"
+    ):
+        _rule_condition(conn, a_moiety, condition, evidence_grade=None)
+
+
+def test_ruling_has_no_default(conn, a_moiety, ingest_run_id):
+    """Same mutation as `applies`, one table over: a DEFAULT turns an unstated ruling
+    into a stated one, and absence of a row -- NOBODY HAS LOOKED -- is a third state
+    neither value can express."""
+    condition = _a_condition(conn, ingest_run_id)
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute(
+            "INSERT INTO drugref.curated_condition "
+            "(subject_moiety_uuid, object_condition_uuid, source, reviewed_by, "
+            " reviewed_against) VALUES (%s, %s, 'DRUGREF', 'test', '2026.07.06')",
+            (a_moiety, condition),
+        )
+
+
+def test_the_ruling_vocabulary_lives_in_the_database(conn, a_moiety, ingest_run_id):
+    condition = _a_condition(conn, ingest_run_id)
+    with pytest.raises(psycopg.errors.CheckViolation, match="curated_condition_ruling"):
+        _rule_condition(conn, a_moiety, condition, ruling="probably_fine")
+
+
+def test_the_condition_live_key_index_exists_by_name(conn):
+    """Same PARTIAL-and-NON-UNIQUE property as curated_interaction_live_key, and for
+    the identical reason: a correction is briefly two live rows on one (moiety,
+    condition) pair, and a UNIQUE index would forbid the only sequence that can
+    express one."""
+    indexdef = conn.execute(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname = 'curated_condition_live_key'"
+    ).fetchone()
+    assert indexdef is not None
+    (indexdef,) = indexdef
+    assert "WHERE (superseded_by IS NULL)" in indexdef
+    assert "UNIQUE" not in indexdef

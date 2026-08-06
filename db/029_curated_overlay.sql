@@ -172,3 +172,96 @@ COMMENT ON COLUMN drugref.curated_interaction.evidence_grade IS
 COMMENT ON COLUMN drugref.curated_interaction.superseded_by IS
     'One-way, set once, always a LATER row on the SAME natural key. A superseded row '
     'is history and is never deleted.';
+
+-- ============================================================================
+-- 2. curated_condition -- drugref's judgement on a (drug, condition) PAIR
+-- ============================================================================
+-- THE KEY OMITS `relationship`, AND THE ASYMMETRY WITH curated_interaction IS THE
+-- POINT OF THIS SLICE. On the interaction side the object class fixes the axis (an MoA
+-- class takes CI_MoA), so mirroring the candidate key costs nothing. Here it is not
+-- fixed: the SAME (drug, condition) genuinely carries both an indication and a
+-- contraindication. That is 168 distinct pairs in MED-RT 2026.07.06 -- 154 moieties
+-- over 40 conditions -- and the flagship is nine beta-blockers asserted both may_treat
+-- and CI_with against MeSH D006333 "Heart Failure", where BOTH ARE TRUE: first-line in
+-- stable chronic HFrEF, contraindicated in acute decompensation, and MeSH has one
+-- descriptor for both states.
+--
+-- Key on `relationship` and that single judgement must be written TWICE, once per
+-- predicate, with nothing preventing the two copies from disagreeing. Key on the pair
+-- and there is one row, one ruling, one thing to correct. The projection tier cannot
+-- express this case; a key that re-split it would reproduce the defect one layer up.
+--
+-- THE COST, STATED: a curator cannot grade the indication and the contraindication of
+-- one pair separately. That is the intended trade -- the ruling is ABOUT THE PAIR, and
+-- `severity` grades its contraindication aspect. If a real case ever needs
+-- per-relationship grades it is an additive migration on a table that ships empty.
+CREATE TABLE IF NOT EXISTS drugref.curated_condition (
+    curated_condition_id  bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    subject_moiety_uuid   uuid        NOT NULL REFERENCES drugref.substance_moiety(moiety_uuid),
+    object_condition_uuid uuid        NOT NULL REFERENCES drugref.condition(condition_uuid),
+    -- THE RULING, in four values:
+    --   contraindicated   the contraindication stands; any indication is outweighed
+    --   indicated         the indication stands; the CI is not clinically operative
+    --   context_dependent BOTH are correct, in different clinical states
+    --   spurious          reviewed; the upstream assertion is wrong
+    -- All four RETIRE the pair from the worklist, because all four mean a curator
+    -- looked. `context_dependent` is an honest answer rather than a hedge: it is the
+    -- only true statement about metoprolol and D006333 at this grain, and mechanism /
+    -- management carry the states in prose while the enum is what a consumer branches
+    -- on. NO DEFAULT, for the reason curated_interaction.applies has none.
+    ruling                text        NOT NULL,
+    severity              text,
+    mechanism             text,
+    management            text,
+    evidence_grade        text,
+    question_uuid         uuid        REFERENCES drugref.open_question(question_uuid)
+                                      ON DELETE CASCADE,
+    source                text        NOT NULL,
+    reviewed_by           text        NOT NULL,
+    reviewed_against      text        NOT NULL,
+    reviewed_at           timestamptz NOT NULL DEFAULT now(),
+    superseded_by         bigint      REFERENCES drugref.curated_condition(curated_condition_id),
+    CONSTRAINT curated_condition_ruling CHECK (
+        ruling IN ('contraindicated', 'indicated', 'context_dependent', 'spurious')),
+    CONSTRAINT curated_condition_severity
+        CHECK (severity IN ('contraindicated', 'major', 'moderate', 'minor')),
+    CONSTRAINT curated_condition_evidence_grade
+        CHECK (evidence_grade IN ('established', 'probable', 'suspected', 'theoretical')),
+    CONSTRAINT curated_condition_source CHECK (source IN ('DRUGREF')),
+    -- Same shape as curated_interaction's, with `ruling <> 'spurious'` where that
+    -- table has `applies`.
+    CONSTRAINT curated_condition_ruling_is_complete CHECK (
+        (ruling <> 'spurious' AND severity IS NOT NULL AND evidence_grade IS NOT NULL)
+        OR
+        (ruling = 'spurious' AND severity IS NULL AND evidence_grade IS NULL))
+);
+
+DROP TRIGGER IF EXISTS curated_condition_append_only ON drugref.curated_condition;
+CREATE TRIGGER curated_condition_append_only
+    BEFORE UPDATE OR DELETE ON drugref.curated_condition
+    FOR EACH ROW EXECUTE FUNCTION drugref.forbid_overlay_rewrite(
+        'curated_condition_id', 'subject_moiety_uuid', 'object_condition_uuid');
+
+DROP TRIGGER IF EXISTS curated_condition_single_live ON drugref.curated_condition;
+CREATE CONSTRAINT TRIGGER curated_condition_single_live
+    AFTER INSERT OR UPDATE ON drugref.curated_condition
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION drugref.forbid_multiple_live_assertions(
+        'subject_moiety_uuid', 'object_condition_uuid');
+
+CREATE INDEX IF NOT EXISTS curated_condition_live_key
+    ON drugref.curated_condition (subject_moiety_uuid, object_condition_uuid)
+    WHERE superseded_by IS NULL;
+
+COMMENT ON TABLE drugref.curated_condition IS
+    'CURATED, APPEND-ONLY: drugref''s ruling on a (drug, condition) pair, including '
+    'the 168 pairs MED-RT asserts as BOTH an indication and a contraindication with no '
+    'qualifier distinguishing them. Keyed on the PAIR, deliberately without '
+    '`relationship`: one pair, one judgement, so the beta-blocker/heart-failure ruling '
+    'cannot be written twice and disagree with itself. A `spurious` ruling records a '
+    'disagreement WITHOUT acting on it -- the candidate stays in its projection and no '
+    'view renders either as advice.';
+COMMENT ON COLUMN drugref.curated_condition.ruling IS
+    'contraindicated | indicated | context_dependent | spurious. All four retire the '
+    'pair from the worklist, because all four mean a curator looked. ABSENCE of a row '
+    'is the third state -- nobody has looked -- and no value can express it.';
