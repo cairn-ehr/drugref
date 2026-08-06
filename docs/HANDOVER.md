@@ -18,37 +18,48 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`** (ROADMAP orders them): slices 1 (#1) · 2a (#9) · 2a.1 (#10) · 2b · 5a · 8a (#28) · the foundation
-review · Plan A · Plan B (#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) · the
-post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C
-(#57) · the ingest-operability round (#58) · the expansion-policy history round (#35, PR #62) · the policy-surface debt
-round (PR [#64](https://github.com/cairn-ehr/drugref/pull/64)) · **slice 3 — the composition tree**
-(PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, **897 tests** green).
+**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 3 — the composition
+tree** (PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, 897 tests).
 
-**Slice 3, for the record** (full state and traps: [`PROJECT-NOTES.md`](PROJECT-NOTES.md) § "Slice 3"; the four refuted
-ROADMAP claims: ROADMAP § Slice 3; spec:
-[slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md)): built and measured
-end to end against the real releases — 8,671 composition rows over 7,377 composites, nothing pre-existing moved. The
-review round closed with five findings fixed, the worst being that **collapsing "unruled" to `false` passed all 895
-tests**. The predicted activity split was refuted (the 27 component-side edges, issue 69); the row set was not. It
-settles neither issue 33 nor issue 30. Rule-6 gate cleared before download: GSRS data **CC0 1.0**, software Apache-2.0;
-`NOTICE` carries the entry; the dedication's *"unless otherwise noted"* clause joins #6/#25 on the
-verify-before-production list.
+**On branch `feat/slice-5c1-curated-overlay`, built and measured, PR not yet opened** (the branch owner
+reviews before opening it — do not open one from here): **slice 5c.1 — the curated overlay's assertion
+shape**, `db/029`. Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
+on the class RULE, `curated_condition` keyed on the (drug, condition) PAIR deliberately without
+`relationship`, because 168 pairs are asserted as both an indication and a contraindication and keying on
+the predicate would write that judgement twice. Two inner-joined read views, two gap views, one operator
+check. **Shipped empty**, as planned. Measured end to end on a fresh `drugref_5c1` (real releases, 127.5 s):
+every pre-existing count held exactly; `gap_uncurated_condition_contradiction` **168** (exact match to
+issue #51); `gap_uncurated_interaction_rule` **595** (not the design spec's own approximate "~739" — see
+PROJECT-NOTES § "Slice 5c.1" for why, it is not a defect); `open_question` **21,842** = 21,079 + exactly
+the two new kinds. **936 tests.** One view, `gap_uncurated_interaction_rule`, costs ≈2.7 s — confirmed by
+three separate controls to be inherited whole from `ddi_candidate_pair`'s own unfiltered-scan cost, not
+db/024's duplicated-walk shape — filed as [#75](https://github.com/cairn-ehr/drugref/issues/75) rather than
+fixed, since the fix belongs inside a prior slice's hot-path view. Decision record: [curating a
+drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). Full account,
+every measured number, and the traps: PROJECT-NOTES.md § "Slice 5c.1".
 
-**⇒ NEXT: slice 5c — the curated, signed overlay**, since a projection may not invent a line of therapy, evidence
-strength or drug ordering. **No spec exists yet — it starts with a brainstorm/design round**, like every slice.
-**Plan C built the MACHINERY** (surrogate key + deferred single-live + one-way supersession, generalised over four
-tables); #35 exercised it on a fifth. 5c owns #51/#52/#55 and now **#67**. Layering is licence-led (ROADMAP § 5c):
-ONC high-priority floor → SPL/DailyMed-mined → DDInter *only if its licence confirms* → own hand-curation. Then
-**step 8 — curation itself**, driven by Plan C's worklist (**381** effects awaiting a ruling), bound by §12-H: audit
-every file and predicate of a source before curating a gap it may already cover. **#36** blocks nothing but shapes it
-and needs its own re-measure.
+**This round also corrected two "signed overlay" instances the 5c.1 design round's own wrap-up
+(`ef16b60`) missed** — `ROADMAP.md`'s Slice 5 intro paragraph, and the public docs site's
+`decisions/hybrid-store.md` (title and body) — plus its listing in `decisions/index.md`. All now read
+"signable, not signed", consistent with the rest of the docs.
+
+**⇒ NEXT SLICE: per ROADMAP's own sequencing, `5c.4` (signing) must land BEFORE `5c.2`'s first curated
+row** — a row committed before signing exists can never be signed retrospectively, since the floor refuses
+`UPDATE`. `5c.2` (the ONC high-priority DDI floor, Phansalkar 2012 / Ayvaz 2015) and `5c.3` (SPL/DailyMed
+mining) are the other two successors to 5c.1, in no forced order relative to each other, but neither writes
+a curated row before 5c.4 exists. **No spec exists yet for any of the three** — each starts with its own
+brainstorm/design round, like every slice before it. `5c.1`'s worklist itself is the payload for whichever
+lands first: **168** contradicted pairs and **595** ungraded interaction rules, both queryable today.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61; full account:
 PROJECT-NOTES.md). **Standing rule:** near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#`
 ("issue 65"). The linker binds a keyword to the next `#N` in the phrase; intervening words do not save you.
 
 ## Open follow-ups (all filed as GitHub issues)
+
+**Filed by this round** — [#75](https://github.com/cairn-ehr/drugref/issues/75) **`gap_uncurated_interaction_rule`
+costs ~2.7s**, an unfiltered read of `ddi_candidate_pair` inherited whole from that view, not a new defect;
+not urgent at today's cardinality and no consumer yet.
 
 **Filed by the slice-3 design, its measurement, and the whole-branch review** —
 [#67](https://github.com/cairn-ehr/drugref/issues/67) **salt↔base strength equivalence has no source** (409 *assay*
@@ -65,10 +76,11 @@ query** on `class_expansion_policy`; deliberately unfixed at 14 rows, revisit at
 [#66](https://github.com/cairn-ehr/drugref/issues/66) **no enforced line length**: no `[tool.ruff]`, so **`E501` is not
 in the default rule set** and 52 lines exceed the ~88 every file is written to.
 
-**Filed by slice 5b.2 and its review (all three for 5c)** — [#51](https://github.com/cairn-ehr/drugref/issues/51) **the 168
-pairs both indicated and contraindicated**, counted not resolved · [#52](https://github.com/cairn-ehr/drugref/issues/52)
-**the 422 broadened assertions**: the row carries no `concept_ui` · [#55](https://github.com/cairn-ehr/drugref/issues/55)
-**`indications_for_condition` generalises through a boolean, not a structure**.
+**Owned by 5c** (5c.1's own design round routed all three here, unanswered) —
+[#51](https://github.com/cairn-ehr/drugref/issues/51) **the 168 contradicted pairs**: 5c.1 gives them a queue
+(`gap_uncurated_condition_contradiction`) and a home for the ruling (`curated_condition`); answering them is 5c.2+ ·
+[#52](https://github.com/cairn-ehr/drugref/issues/52) **the 422 broadened assertions**: the row carries no `concept_ui` ·
+[#55](https://github.com/cairn-ehr/drugref/issues/55) **`indications_for_condition` generalises through a boolean, not a structure**.
 
 **Filed by the interaction debt round** — [#48](https://github.com/cairn-ehr/drugref/issues/48) **a non-expanding predicate
 with no direct member is equally dead and is deliberately not reported**. Still unreachable until a *class-side*
@@ -83,7 +95,7 @@ before quoting) · [#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-ch
 it, its own proposed fix is refuted, blocked behind **#68** · [#30](https://github.com/cairn-ehr/drugref/issues/30)
 (`strip_salt`) **unmeasured** for slice 3 · [#5](https://github.com/cairn-ehr/drugref/issues/5) INN sourced from UNII's
 `Display Name` · [#7](https://github.com/cairn-ehr/drugref/issues/7)/[#29](https://github.com/cairn-ehr/drugref/issues/29)
-**row-at-a-time ingest**, MED-RT ~31k round trips and PBS ~28k; the MeSH-keyed leg is the slowest of ~137 s.
+**row-at-a-time ingest**, MED-RT ~31k round trips and PBS ~28k; the MeSH-keyed leg is the slowest of ~127-137 s.
 
 **Interaction model** — [#19](https://github.com/cairn-ehr/drugref/issues/19) **CI rules whose object class is
 unpopulated**, filed as 41 of 739 but `gap_unpopulated_contraindication` returns **13**, so **re-measure before acting on
@@ -91,7 +103,8 @@ the issue text** · [#20](https://github.com/cairn-ehr/drugref/issues/20) **n-ar
 `interaction_group` is the shape · [#8](https://github.com/cairn-ehr/drugref/issues/8) **class-level `has_*` assertions
 unused** · [#36](https://github.com/cairn-ehr/drugref/issues/36) **discovery counts descendant classes, not reachable
 members** · [#37](https://github.com/cairn-ehr/drugref/issues/37) **the DAG is expanded unprunably on every query** —
-restricting the *root set* is safe, restricting the *walk* deletes the coagulation case. Not urgent at **3.1 ms**.
+restricting the *root set* is safe, restricting the *walk* deletes the coagulation case; **#75 above is this same
+cost, now measured on an unfiltered read rather than the 3.1 ms filtered one**.
 
 **Before the first production load** — every parser re-run against a current release, the `add_claim` canonicalisation
 check from #17, and **three** rule-6 deeds (#6, #25, GSRS's *"unless otherwise noted"*): see PROJECT-NOTES § "Verify".
@@ -99,4 +112,5 @@ check from #17, and **three** rule-6 deeds (#6, #25, GSRS's *"unless otherwise n
 ## Current DSN
 
 - **The one home for this value.** Dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
-  Set it as `DRUGREF_TEST_DSN` for the DB-gated tests. The verification databases are listed in `PROJECT-NOTES.md` § Repo facts.
+  Set it as `DRUGREF_TEST_DSN` for the DB-gated tests. The verification databases are listed in `PROJECT-NOTES.md` § Repo facts;
+  `drugref_5c1` is this round's, holding the real releases with `db/029` at every figure above.
