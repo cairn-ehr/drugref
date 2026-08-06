@@ -150,3 +150,26 @@ def test_a_curated_row_whose_candidate_vanished_is_reported(conn, a_graded_rule)
     assert conn.execute(
         "SELECT target_table, subject_moiety FROM drugref.curated_target_unresolved"
     ).fetchall() == [("curated_interaction", a_graded_rule["subject"])]
+
+
+def test_a_curated_condition_row_whose_candidates_vanished_is_reported(
+        conn, a_contradicted_pair):
+    """THE CONDITION ARM OF THE SAME ORPHAN DETECTOR, exercised by nothing before this
+    test -- the sibling test above covers only curated_interaction, and the view's
+    UNION ALL second half had no test forcing it to run at all.
+
+    curated_condition's NOT EXISTS clause checks BOTH candidate tables
+    (moiety_condition_contraindication and moiety_condition_indication), because
+    either one alone is enough to keep the ruling resolved -- so both must be gone
+    before the row counts as orphaned."""
+    curation.record_condition_ruling(
+        conn, a_contradicted_pair["moiety"], a_contradicted_pair["condition"],
+        "context_dependent", severity="major", evidence_grade="established",
+        reviewed_by="test", reviewed_against="2026.07.06")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_target_unresolved").fetchone() == (0,)
+    conn.execute("DELETE FROM drugref.moiety_condition_contraindication")
+    conn.execute("DELETE FROM drugref.moiety_condition_indication")
+    assert conn.execute(
+        "SELECT target_table, subject_moiety FROM drugref.curated_target_unresolved"
+    ).fetchall() == [("curated_condition", a_contradicted_pair["moiety"])]

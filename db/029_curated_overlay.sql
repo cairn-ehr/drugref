@@ -14,8 +14,11 @@
 -- 1. curated_interaction -- drugref's judgement on a class-level DDI RULE
 -- ============================================================================
 -- KEYED ON THE RULE, NOT THE PAIR, and that is the lever the whole slice rests on.
--- class_contraindication holds ~739 CI_MoA/CI_PE rules; ddi_candidate_pair expands
--- them to 21,664 concrete pairs AT READ TIME. So a pair has no stable row identity to
+-- class_contraindication holds 635 CI_MoA/CI_PE rules (measured 2026-08-06 against
+-- drugref_5c1; not the ~739 this section used to quote, which was the raw pre-gate
+-- MED-RT terminology count and never this table's own row count -- see
+-- PROJECT-NOTES.md "Slice 5c.1"); ddi_candidate_pair expands them to 21,664 concrete
+-- pairs AT READ TIME. So a pair has no stable row identity to
 -- reference, and 21,664 is not a population anyone hand-curates. One graded rule
 -- inherits to every pair it expands to -- Plan C's "keyed on class so a grade
 -- inherits to every member ... a few rows, not a hundred", one table over.
@@ -88,10 +91,19 @@ CREATE TABLE IF NOT EXISTS drugref.curated_interaction (
     reviewed_against       text        NOT NULL,
     reviewed_at            timestamptz NOT NULL DEFAULT now(),
     superseded_by          bigint      REFERENCES drugref.curated_interaction(curated_interaction_id),
-    -- Mirrors class_contraindication's own CHECK. Widen the two together, or a rule
-    -- this table can grade becomes one no candidate exists for.
+    -- db/006's finding 1, not a CHECK: db/004 originally admitted CI predicates with a
+    -- CHECK here AND a matching CASE inside ddi_candidate_pair, two lists kept in step
+    -- by a comment -- and widening only the CHECK inserted rows that expanded to ZERO
+    -- pairs with no error, because an unmapped CASE arm yields NULL and joins nothing.
+    -- db/006 replaced class_contraindication's own CHECK with an FK into ci_axis for
+    -- exactly that reason: one vocabulary, one home, so adding a predicate is ONE
+    -- INSERT there and the read path cannot silently go quiet. This table grades
+    -- class_contraindication's rows, so it must be refused the same new value that
+    -- table itself would be -- a CHECK here would drift the moment ci_axis grew a
+    -- third axis, admitting a relationship this table could grade but the projection
+    -- could not produce a candidate for.
     CONSTRAINT curated_interaction_relationship
-        CHECK (relationship IN ('CI_MoA', 'CI_PE')),
+        FOREIGN KEY (relationship) REFERENCES drugref.ci_axis(relationship),
     -- PLAN C'S EXACT VOCABULARY, reused rather than re-minted. Two ladders for one
     -- concept is a second list to disagree with the first (db/006), and a consumer
     -- would have to reconcile them at render time.
@@ -154,7 +166,10 @@ COMMENT ON TABLE drugref.curated_interaction IS
     'and evidence grade -- on a class-level CI_MoA/CI_PE rule, inheriting to every '
     'pair the rule expands to. Keyed on the RULE, not the pair: ddi_candidate_pair is '
     'a view, so a pair has no stable identity, and 21,664 pairs is not a curatable '
-    'population while ~739 rules is. `source` is NOT in the key -- one clinical fact, '
+    'population while 635 rules is (of which 595 reach the worklist -- see '
+    'gap_uncurated_interaction_rule; the other 40 pair with nobody and are already '
+    'covered by gap_unpopulated_contraindication and gap_dead_by_expansion_policy). '
+    '`source` is NOT in the key -- one clinical fact, '
     'one live drugref judgement, however many upstream authorities asserted it. '
     'CURATED IS NOT VERIFIED: a grade with no question_uuid rests on nothing recorded, '
     'and that is deliberately visible rather than implied.';

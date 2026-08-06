@@ -60,8 +60,14 @@ def _a_run_and_moiety(conn, code="TESTUNII02", name="testdrug2"):
     return run, moiety_uuid
 
 
-def _assert_interaction(conn, moiety, klass, **over):
-    """INSERT one curated_interaction row, returning its id. Defaults assert."""
+def _assert_interaction(conn, moiety, klass, *, relationship="CI_MoA", **over):
+    """INSERT one curated_interaction row, returning its id. Defaults assert.
+
+    `relationship` is a keyword-only parameter, bound (not literal), so a test can
+    pass an unrecognised value to exercise the FOREIGN KEY into drugref.ci_axis
+    (db/006's vocabulary, reused rather than re-minted -- see the CONSTRAINT's own
+    comment in db/029).
+    """
     cols = dict(
         applies=True,
         severity="major",
@@ -78,8 +84,8 @@ def _assert_interaction(conn, moiety, klass, **over):
     return conn.execute(
         f"INSERT INTO drugref.curated_interaction "
         f"(subject_moiety_uuid, object_class_uuid, relationship, {names}) "
-        f"VALUES (%s, %s, 'CI_MoA', {holes}) RETURNING curated_interaction_id",
-        (moiety, klass, *cols.values()),
+        f"VALUES (%s, %s, %s, {holes}) RETURNING curated_interaction_id",
+        (moiety, klass, relationship, *cols.values()),
     ).fetchone()[0]
 
 
@@ -142,6 +148,23 @@ def test_the_vocabulary_lives_in_the_database(conn, a_moiety, ingest_run_id):
         _assert_interaction(conn, a_moiety, klass, severity="catastrophic")
 
 
+def test_an_unknown_relationship_is_refused_by_the_foreign_key(
+    conn, a_moiety, ingest_run_id
+):
+    """`relationship` is a FOREIGN KEY into drugref.ci_axis, NOT a hardcoded CHECK
+    (db/006's finding 1, re-learned once already on class_contraindication itself: a
+    CHECK duplicates the vocabulary a CASE or a join elsewhere also names, and widening
+    only one of the two silently produces rows that expand to nothing). Proving the FK
+    is live -- not merely present in the DDL -- means asserting the EXCEPTION CLASS: a
+    stale CHECK would also reject 'CI_XYZ', so ForeignKeyViolation (not CheckViolation)
+    is the only observable difference between the two implementations."""
+    klass = _a_class(conn, ingest_run_id)
+    with pytest.raises(
+        psycopg.errors.ForeignKeyViolation, match="curated_interaction_relationship"
+    ):
+        _assert_interaction(conn, a_moiety, klass, relationship="CI_XYZ")
+
+
 def test_the_row_cannot_be_updated_or_deleted(conn, a_moiety, ingest_run_id):
     """The append-only floor. What drugref believed, and when, stays answerable --
     which matters most for exactly the rows that fired an alert."""
@@ -182,6 +205,27 @@ def test_two_live_rows_on_one_natural_key_abort_at_commit(
         conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
 
+def test_two_live_rows_differing_only_by_relationship_may_coexist(
+    conn, a_moiety, ingest_run_id
+):
+    """THE MUTATION 936 GREEN TESTS DID NOT CATCH: dropping 'relationship' from
+    curated_interaction_single_live's trigger arguments (db/029). CI_MoA and CI_PE
+    against the SAME class are two DIFFERENT rules -- MED-RT can and does assert
+    both against one subject/class pair -- so `relationship` is part of the natural
+    key the deferred single-live check compares, and two live rows that agree on
+    (subject, class) but differ only on relationship must be allowed to stand
+    together. If a future edit dropped 'relationship' from the trigger's argument
+    list, the second INSERT below would collide with the first and SET CONSTRAINTS
+    ALL IMMEDIATE would raise here, where it must not."""
+    klass = _a_class(conn, ingest_run_id)
+    _assert_interaction(conn, a_moiety, klass, relationship="CI_MoA")
+    _assert_interaction(conn, a_moiety, klass, relationship="CI_PE")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")   # must NOT raise -- two real rules
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_interaction WHERE superseded_by IS NULL"
+    ).fetchone() == (2,)
+
+
 def test_the_live_key_index_exists_by_name(conn):
     """Nothing but the trigger reads this index, so nothing but a test protects it --
     and db/023 measured the cost of its absence: the single-live trigger becomes a
@@ -194,6 +238,12 @@ def test_the_live_key_index_exists_by_name(conn):
     supersedes. indexdef is read rather than pg_index.indisunique/indpred because it
     is the one place both properties -- unique-or-not, and the WHERE clause verbatim
     -- are visible in a single string.
+
+    THE COLUMN LIST IS ALSO PINNED, because it was the other half of the mutation that
+    survived 936 green tests unnoticed: dropping 'relationship' from this index's
+    column list (matching a drop from the trigger's argument list) still satisfies
+    every assertion above -- the WHERE clause and non-uniqueness are unchanged -- while
+    silently indexing the wrong key.
     """
     indexdef = conn.execute(
         "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
@@ -203,6 +253,7 @@ def test_the_live_key_index_exists_by_name(conn):
     (indexdef,) = indexdef
     assert "WHERE (superseded_by IS NULL)" in indexdef
     assert "UNIQUE" not in indexdef
+    assert "(subject_moiety_uuid, object_class_uuid, relationship)" in indexdef
 
 
 def _a_condition(conn, ingest_run_id, code="D006333", name="Heart Failure"):
@@ -322,7 +373,13 @@ def test_the_condition_live_key_index_exists_by_name(conn):
     """Same PARTIAL-and-NON-UNIQUE property as curated_interaction_live_key, and for
     the identical reason: a correction is briefly two live rows on one (moiety,
     condition) pair, and a UNIQUE index would forbid the only sequence that can
-    express one."""
+    express one.
+
+    THE COLUMN LIST IS ALSO PINNED, for the sibling table's own reason: this key
+    deliberately OMITS `relationship` (there is no such column here at all -- the
+    ruling is about the PAIR), and that omission is exactly the kind of edit an
+    "index the obvious columns" pass could silently widen or narrow without any other
+    assertion here noticing."""
     indexdef = conn.execute(
         "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
         "AND indexname = 'curated_condition_live_key'"
@@ -331,3 +388,23 @@ def test_the_condition_live_key_index_exists_by_name(conn):
     (indexdef,) = indexdef
     assert "WHERE (superseded_by IS NULL)" in indexdef
     assert "UNIQUE" not in indexdef
+    assert "(subject_moiety_uuid, object_condition_uuid)" in indexdef
+
+
+def test_two_curated_condition_rows_collide_despite_different_upstream_predicates(
+    conn, a_contradicted_pair
+):
+    """THE ASYMMETRY WITH curated_interaction, PINNED FROM THE OTHER SIDE. This pair's
+    own upstream candidates genuinely carry TWO different predicates (may_treat and
+    CI_with, via the a_contradicted_pair fixture -- issue 51's flagship shape), which
+    is exactly the situation curated_interaction's relationship column exists to keep
+    apart. curated_condition's key deliberately has no such column: the ruling is
+    about the PAIR, not about either predicate, so a second row for the same pair must
+    collide -- never coexist as though it were a second, independent judgement -- even
+    though the pair it rules on genuinely carries two different upstream facts."""
+    condition = a_contradicted_pair["condition"]
+    moiety = a_contradicted_pair["moiety"]
+    _rule_condition(conn, moiety, condition)
+    _rule_condition(conn, moiety, condition, ruling="indicated")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")

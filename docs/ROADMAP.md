@@ -380,7 +380,12 @@ slice's hot-path view. Full account: PROJECT-NOTES.md § "Slice 5c.1".
 
 ##### 5c.2 — the ONC high-priority DDI floor
 First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
-the first curated rows, so 5c.4's signing must land first.
+the first curated rows, so 5c.4's signing must land first. **Also owns a deferral 5c.1 named but did not resolve:**
+a `spurious` ruling (`curated_condition.ruling`) records drugref's disagreement with an upstream assertion
+*without acting on it* — the candidate stays in its projection and no view renders either as advice — and
+deciding whether, or how, to surface "drugref believes this upstream row is wrong" to a consumer needs content
+to say it about, which this is the first slice to have. See the spec (§ read path) and [curating a drug–condition
+pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) for the full argument.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own.

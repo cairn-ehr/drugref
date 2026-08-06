@@ -520,6 +520,14 @@ measured, confirmed again here from a different angle. **Re-measure "~739" again
 directly before quoting it as a row count** — the fifth time this project has found an issue or design-doc figure
 stale on re-measurement (5b, the interaction debt round, #50, #53's round, and now this one).
 
+**The list of where "~739" was quoted above was itself incomplete: `db/029_curated_overlay.sql` had it twice,
+once in the section-1 header comment and once inside `COMMENT ON TABLE drugref.curated_interaction` — the
+second one would have shipped into the catalog as a permanent, wrong figure the moment this migration applied
+outside its branch.** Found by the final whole-branch review of slice 5c.1 and corrected in the same migration
+(sanctioned while `db/029` is unapplied everywhere but this branch, per its own section 6 precedent) to 635
+rules, of which 595 reach the worklist, with the distinction stated explicitly rather than repeating a single
+approximate figure.
+
 **`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
 carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
 (filtered) **0.09 ms** · `gap_uncurated_condition_contradiction` **15.3 ms** · `curated_target_unresolved`

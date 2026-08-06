@@ -70,7 +70,10 @@ def record_interaction_judgement(
 
     THE JUDGEMENT IS KEYED ON THE RULE, not on the drug pairs it expands to, so one
     call grades every pair the rule reaches. That is the point of curating at this
-    grain: ~739 rules against 21,664 pairs.
+    grain: 635 rules against 21,664 pairs (not the ~739 earlier drafts of this module
+    quoted -- that was the raw pre-gate MED-RT terminology count, never
+    class_contraindication's own measured row count; of the 635, 595 reach the
+    worklist and 40 pair with nobody, see PROJECT-NOTES.md "Slice 5c.1").
     """
     new_id = conn.execute(
         "INSERT INTO drugref.curated_interaction "
