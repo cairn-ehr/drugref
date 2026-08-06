@@ -37,7 +37,7 @@ history is never lost — it remains in the git log and in the dated design spec
 - [Append-only claims](append-only-claims.md) — corrections supersede; history is never
   overwritten.
 - [The hybrid store](hybrid-store.md) — rebuildable projections beside an append-only
-  signed overlay.
+  signable overlay.
 - [Licensing is a blocker](licensing-is-a-blocker.md) — AGPL-compatible sources only,
   checked before adding.
 - [A structural chemical tree is not a clinical class](withheld-chemical-class-contraindications.md)
@@ -57,3 +57,7 @@ history is never lost — it remains in the git log and in the dated design spec
   — the undocumented upstream convention that makes a naive read of the composition graph
   fully populated and entirely reversed, and why `ACTIVE MOIETY` is a discriminator rather
   than an edge (carries the activity-split erratum to the slice-3 spec).
+- [Curating a drug–condition pair](curating-a-drug-condition-pair.md) — why the drug–drug
+  overlay keys on the RULE while the drug–condition overlay keys on the PAIR without
+  `relationship`, why a curated row references its candidate by natural key and never by
+  foreign key, and why the overlay is signable rather than signed.

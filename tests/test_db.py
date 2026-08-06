@@ -174,6 +174,30 @@ def test_apply_migrations_is_idempotent(conn):
         # curator decision to have rows.
         "composition_relation", "substance_composition",
         "moiety_active_in_composite", "gap_unruled_composition_activity",
+        # Slice 5c.1, db/029: the curated overlay's first table -- drugref's own
+        # judgement (severity, mechanism, management, evidence grade) on a
+        # class-level CI_MoA/CI_PE rule, keyed on the RULE rather than the pair.
+        # Ships empty; the floor is db/020's, reused rather than copied.
+        "curated_interaction",
+        # Slice 5c.1, db/029: the curated overlay's second table -- drugref's
+        # ruling on a (drug, condition) PAIR, keyed WITHOUT `relationship` so the
+        # 168 pairs MED-RT asserts as both an indication and a contraindication
+        # get one row and one judgement rather than two that can disagree. Ships
+        # empty; the floor is db/020's, reused rather than copied.
+        "curated_condition",
+        # Slice 5c.1, db/029 section 3: the two read-path views over the tables
+        # above. INNER JOIN throughout -- an ungraded candidate reaches neither
+        # view at all, never with a NULL curated column beside it -- and named
+        # explicitly here for the same reason every other view in this inventory
+        # is: information_schema.tables lists views too.
+        "curated_ddi_pair", "curated_condition_ruling",
+        # Slice 5c.1, db/029 sections 4-5: the curation WORKLIST. Two gap views --
+        # gap kinds thirteen and fourteen, the first two whose answer is a curated
+        # row rather than a lookup -- plus one operator check (NOT a gap kind: a
+        # vanished candidate is an upstream-change signal, not a clinical question).
+        # Named explicitly for the same information_schema.tables reason as above.
+        "gap_uncurated_condition_contradiction", "gap_uncurated_interaction_rule",
+        "curated_target_unresolved",
     }
 
 

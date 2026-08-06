@@ -482,6 +482,141 @@ the only tool. `GsrsRecord.display_name` was parsed for every one of 173,080 rec
 Deferred as [#73](https://github.com/cairn-ehr/drugref/issues/73): both views over `substance_composition` read every
 source at once, unfixable in `db/028` because it is applied and immutable.
 
+## Slice 5c.1 — the curated overlay's assertion shape (`db/029`, measured 2026-08-06)
+
+Spec: [slice-5c.1 curated
+overlay](superpowers/specs/2026-08-06-drugref-slice-5c1-curated-overlay-design.md). Published record:
+[curating a drug–condition pair](../docs-site/docs/decisions/curating-a-drug-condition-pair.md). Plan C's overlay
+mechanism (surrogate key, deferred single-live check, one-way supersession, no new PL/pgSQL) gets its sixth and
+seventh tables: `curated_interaction`, keyed on the class-level `CI_MoA`/`CI_PE` **rule**
+(`subject_moiety_uuid, object_class_uuid, relationship`), and `curated_condition`, keyed on the (drug, condition)
+**pair** (`subject_moiety_uuid, object_condition_uuid`) — **deliberately without `relationship`**, because the
+same pair can carry both an indication and a contraindication (168 cases, issue #51) and keying on the predicate
+would write that one judgement twice with nothing to stop the copies disagreeing. Two inner-joined read views
+(`curated_ddi_pair`, `curated_condition_ruling`), two gap views (`gap_uncurated_interaction_rule`,
+`gap_uncurated_condition_contradiction`), one operator check (`curated_target_unresolved`). **Ships EMPTY** — no
+seed, no curation content; curation is step 8.
+
+**MEASURED on a fresh `drugref_5c1`**, built from the real releases (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH
+2026 → MeSH-relations 2026.07.06 → GSRS 2026-02-26), chain wall-clock **127.5 s**. Every count this slice must not
+move, held exactly: `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** ·
+`moiety_condition_contraindication` **9,471** · `moiety_condition_indication` **14,674** ·
+`condition_contraindication_expanded` **192,161**. New: `gap_uncurated_condition_contradiction` **168** (exact
+match to issue #51's own figure) · `gap_uncurated_interaction_rule` **595** · `curated_target_unresolved` **0** ·
+`curated_ddi_pair` **0** · `curated_condition_ruling` **0**. `open_question` **21,842** = the pre-slice **21,079**
+plus exactly 168 + 595 = 763, and no other `gap_kind` moved (each of the other ten reproduces its Slice-3 figure
+exactly). Test suite: **936 passed**.
+
+**`gap_uncurated_interaction_rule`'s 595 is not the design spec's own "~739", and that is the spec's prose being
+approximate, not a defect in the view.** 739 is the raw MED-RT terminology-level `CI_MoA`/`CI_PE` count *before*
+the moiety gate — quoted in `curation.py`, the design spec and ROADMAP, but never pinned by a test or measured as
+`class_contraindication`'s actual row count. The real, gated figure (`MedrtSummary.contraindications`) is **635**.
+Of those, 40 rules pair with **nobody** in `ddi_candidate_pair` and are excluded by the view's own `INNER JOIN`
+(its `COMMENT ON` says so: grading a rule with no reachable pair is a provable no-op) — 635 − 40 = 595 exactly.
+All 40 are already explained by the two pre-existing "this class has no reachable members" gap views from the
+interaction debt round: 39 via `gap_unpopulated_contraindication`'s 13 classes, 1 via
+`gap_dead_by_expansion_policy`'s single class — the same "13 classes / 39 dead rules" finding that round already
+measured, confirmed again here from a different angle. **Re-measure "~739" against `class_contraindication`
+directly before quoting it as a row count** — the fifth time this project has found an issue or design-doc figure
+stale on re-measurement (5b, the interaction debt round, #50, #53's round, and now this one).
+
+**The list of where "~739" was quoted above was itself incomplete: `db/029_curated_overlay.sql` had it twice,
+once in the section-1 header comment and once inside `COMMENT ON TABLE drugref.curated_interaction` — the
+second one would have shipped into the catalog as a permanent, wrong figure the moment this migration applied
+outside its branch.** Found by the final whole-branch review of slice 5c.1 and corrected in the same migration
+(sanctioned while `db/029` is unapplied everywhere but this branch, per its own section 6 precedent) to 635
+rules, of which 595 reach the worklist, with the distinction stated explicitly rather than repeating a single
+approximate figure.
+
+**The PR-review round (PR [#77](https://github.com/cairn-ehr/drugref/pull/77)) found a THIRD untested
+load-bearing clause and one latent count defect. Suite 940 → 943.**
+
+1. **`register_from_gaps`' retention guard names five tables; only the `curated_condition` clause had a test.**
+   Deleting the `curated_interaction` clause passed all 940 tests. The sequence it breaks is the ordinary one,
+   not a contrived one: grading a rule is exactly what retires it from `gap_uncurated_interaction_rule`, so the
+   first curated interaction row citing its question makes the next ingest `DELETE` that question, cascade into
+   an append-only table, and abort the whole transaction with `RaiseException` out of `forbid_overlay_rewrite`.
+   Measured both directions before and after. **This is the sixth round in which the slice's own load-bearing
+   property was the one thing no test killed** — and the second within slice 5c.1 alone, after the whole-branch
+   review's two. The lesson has stopped being "remember to test the guard" and become **"for every clause in a
+   multi-table guard, name the test that kills its removal, one per clause."**
+2. **`gap_uncurated_interaction_rule.pair_count` was `count(*)` over a join that omits `source`, while
+   `class_contraindication`'s primary key includes it** (`db/006` widened it there deliberately, so a second
+   authority's row is not swallowed). The join omits source correctly — drugref's judgement is about the clinical
+   fact, not about who asserted it — so the two are individually right and jointly wrong: a rule asserted by two
+   authorities counts every candidate row once per source. Correct today **only** because
+   `class_contraindication_source` admits `MED-RT` alone, which is exactly what made it invisible. Measured under
+   a second source: **4 where the answer is 1**. Now `count(DISTINCT p.partner_moiety)` — a no-op against current
+   data, and what keeps the measured `sum(pair_count) = 21,664` partition true when a second authority lands. The
+   test drops the source `CHECK` inside the test transaction (the `conn` fixture rolls back) to reach the shape,
+   rather than waiting for a future migration to discover it.
+3. **`question_uuid` was an unindexed foreign key on both curated tables.** Postgres indexes the *referenced*
+   side of an FK automatically and the *referencing* side never, and this column has two per-ingest readers: the
+   retention guard's `NOT EXISTS` runs once per gap kind (fourteen a run), and the `ON DELETE CASCADE` must find
+   the rows before the append-only trigger can refuse the delete. `question_source_check_by_question` (`db/007`)
+   exists for exactly this. Added `curated_interaction_by_question` and `curated_condition_by_question`, each
+   asserted by name — nothing but the planner reads them, so they look unused to a catalog sweep.
+
+**`db/029` was therefore edited in place a SECOND time, and any database that already applied the earlier
+version must be rebuilt.** `db.apply_migrations` refuses a file whose checksum changed after it was applied
+(`RuntimeError: migration ... changed after it was applied`) — so `drugref_5c1` and any dev database carrying
+the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The test suite is unaffected: its
+`_migrated` fixture drops the schema and re-applies every session, which is also why all three defects above
+were reachable by test at all.
+
+**`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
+carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
+(filtered) **0.09 ms** · `gap_uncurated_condition_contradiction` **15.3 ms** · `curated_target_unresolved`
+**0.10 ms** · `gap_uncurated_interaction_rule` **≈2.7 s** — three orders of magnitude above every other view here,
+and the one db/024's own precedent says to check rather than reason about.
+
+**Checked against db/024's shape, and it is NOT that shape.** `gap_uncurated_interaction_rule` names
+`ddi_candidate_pair` exactly **once** (not correlated, not repeated inside a `NOT EXISTS`); the `NOT EXISTS`
+against `curated_interaction` is a cheap indexed anti-join over an empty table. Three controls, not reasoning:
+(1) `EXPLAIN ANALYZE SELECT count(*) FROM drugref.ddi_candidate_pair` — none of this slice's SQL involved — costs
+**2.68 s**, statistically identical, so the cost is 100% inherited from the pre-existing view. (2) Raising
+`work_mem` from the default to 600 MB removes the ~384 MB disk spill inside `ddi_candidate_pair`'s own `Sort` but
+only drops the time to 2.47 s — genuine CPU cost (a ~3.78M-row intermediate before the DAG-scoped merge with
+`subtree`), not a tunable spill artifact. (3) The recursive CTE appears once in the plan. **Why it's new:** every
+previously published `ddi_candidate_pair` figure (2.876 ms, 3.1 ms — PROJECT-NOTES, #37) is for the *filtered*
+lookup; every other view that reads the class DAG operates at the class grain via `ci_class_subtree`, never
+through a full unfiltered scan of `ddi_candidate_pair`. This gap view is the first consumer to do that, and the
+access pattern was simply never measured before. **Not fixed here**: the fix belongs inside
+`ddi_candidate_pair`'s own definition (a prior slice's hot path whose row count must not move), and this project
+has already measured and rejected building a second, differently-scoped implementation of the class DAG walk
+(the "TWO WALKS DOWN `class_parent`" finding, Plan C section above) — doing that locally to dodge this view's cost
+would repeat exactly that mistake. Filed as
+[#75](https://github.com/cairn-ehr/drugref/issues/75).
+
+**Traps a future change can still break.**
+- **The gap views test for a LIVE row of any ruling; the read views test for a live ASSERTING row — and the two
+  predicates are not interchangeable.** `curated_ddi_pair`/`curated_condition_ruling` require `applies` /
+  `ruling <> 'spurious'`, because a NULL severity beside a real candidate reads as "reviewed and harmless."
+  `gap_uncurated_interaction_rule`/`gap_uncurated_condition_contradiction` test only for the absence of *any* live
+  row, because a `spurious` ruling or `applies = false` still means a curator looked and must leave the worklist.
+  Unifying the two predicates breaks whichever end it is collapsed toward — the same `_current`-vs-`_live` lesson
+  `db/027` learned on `class_expansion_policy`, now on a second subsystem.
+- **The retention guard in `questions.register_from_gaps` now covers FIVE tables**, not three: `question_state`,
+  `question_source_check`, `question_evidence` (Plan A), plus `curated_interaction` and `curated_condition`
+  (this slice). Both new tables reference `open_question` with `ON DELETE CASCADE`, and `register_from_gaps`
+  deletes a question whose gap has closed — but only when nothing cites it. Dropping either curated table from
+  the guard's `NOT EXISTS` list means the first curated row on a gap that later closes hits the append-only
+  trigger on `DELETE FROM open_question` and **aborts the whole ingest**, not just that one row.
+- **Curated rows reference their candidate by natural key, never by foreign key**, because both candidate
+  families are rebuildable projections and an FK would either block a per-source rebuild or cascade curator
+  judgement away with it. `curated_target_unresolved` is the *only* thing that reports an orphaned reference —
+  modelled on `expansion_policy_unresolved`, deliberately not a gap kind (an upstream-change signal for an
+  operator, not a clinical question for a curator). It has no other reader; nothing else needs to know.
+- **`curated_condition`'s key deliberately omits `relationship` while `curated_interaction`'s includes it.** Not
+  an oversight, not a missed normalisation — the object class fixes the axis on the interaction side (an MoA
+  class only ever takes `CI_MoA`) so mirroring the candidate key there costs nothing, while the condition side has
+  no such fixed axis: the same pair can be indicated and contraindicated at once. "Make the keys match" is the
+  wrong instinct here; see the decision record for the full argument.
+- **`ROADMAP.md`/`PROJECT-NOTES.md`'s "signed overlay" wording is corrected to "signable"** (§ Architecture in
+  one breath, below) — this round also caught and fixed one instance ef16b60 missed
+  (`ROADMAP.md`'s Slice 5 intro) and one in the public docs site (`decisions/hybrid-store.md`'s title and body).
+  **DDInter is CC BY-NC-SA and stays off the bundled ladder permanently** (ef16b60; unchanged by this round).
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -524,10 +659,21 @@ concluded "GSRS holds no active-moiety data", which was an artifact of the trans
 ## Architecture in one breath
 
 ROADMAP states the model; what matters here is where each kind of data lives. **Hybrid store**: **rebuildable projections**
-for ingested feeds (drop-and-rebuild, version-pinned, provenance-tagged via `ingest_run`) + an **append-only, signed overlay**
-for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027` `class_expansion_policy`
-now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is still cleared by no
-ingest).
+for ingested feeds (drop-and-rebuild, version-pinned, provenance-tagged via `ingest_run`) + an **append-only, SIGNABLE
+overlay** for curated knowledge — **Plan C is the first content written to that tier**, and since `db/027`
+`class_expansion_policy` now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is
+still cleared by no ingest).
+
+**"Signed" was an overstatement, corrected 2026-08-06 by the 5c.1 design round.** No signing infrastructure exists
+anywhere in the repo — no key management, no signing identity, no verification path — so the tier is **signable**, not
+signed. The constraint that follows is sharp and is why 5c.1 ships empty: the floor refuses UPDATE, so **a row committed
+before signing exists can never be signed retrospectively**, and signing must therefore land before the first curated
+row (5c.4, ahead of 5c.2's ONC content).
+
+**Rule-6 determination, made in the same round: DDInter is CC BY-NC-SA and is OUT of the bundled ladder permanently** —
+non-commercial, so not AGPL-3.0-compatible. ROADMAP's old "DDInter *if its licence confirms*" predated the check. It may
+attach only as a node-local, separately-licensed plug-in. The surviving ladder is ONC high-priority floor → SPL/DailyMed
+(ONSIDES-*method*) → drugref's own curation.
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
 subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 
@@ -613,7 +759,9 @@ the DB layer can never go green by being skipped.
   surface (#61), split out of `cli.py` to hold CLAUDE.md's ~500-line rule; like `cli.py` it writes no SQL of its own.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
-  same two-homes defect the standing rules above warn about. **`drugref_policy` holds
+  same two-homes defect the standing rules above warn about. **`drugref_5c1` holds the real releases WITH `db/029`** at
+  every figure in § "Slice 5c.1" above — the most recent measurement database and the one to read rather than re-running
+  the ~127 s chain. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
   `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:

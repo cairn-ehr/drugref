@@ -22,7 +22,8 @@ reference-data service** — it never sits on Cairn's signed inter-node wire cor
   but append-only/identity integrity is enforced **in PostgreSQL** (constraints/triggers/RLS), not app code. Postgres (≥ 18)
   is the integration substrate.
 - **Hybrid store** — ingested feeds are **rebuildable projections** (drop-and-rebuild, version-pinned, `ingest_run`
-  provenance); curated knowledge is an **append-only, signed overlay** (the moat).
+  provenance); curated knowledge is an **append-only, signable overlay** (the moat) — *signable*, because the floor is
+  built and **nothing signs anything yet**; see § Slice 5c.
 - **Own immortal UUIDs, never key on a name** (principle 2); external IDs attach as **append-only claims**; cross-source
   identity is reconciled by **linking, never re-keying**.
 
@@ -146,13 +147,16 @@ The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tre
 
 ### Slice 5 — The interaction & contraindication layer
 Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b, 5b.2) seeded from public-domain
-regulatory-derived content, then the **append-only signed curated overlay** (5c). The projections give a defensible safety
-layer *fast*, from sources drugref already holds; the overlay is the durable value-add built on top. Sequenced by
-licence-cleanliness, not by coverage.
+regulatory-derived content, then the **append-only, signable curated overlay** (5c) — *signable*, not signed; see the
+[curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) decision record.
+The projections give a defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable
+value-add built on top. Sequenced by licence-cleanliness, not by coverage.
 
 #### Slice 5a — MED-RT mechanism/effect contraindications ✅ DONE
 The smallest first cut: MED-RT **`CI_MoA`/`CI_PE`** ("contraindicated mechanism/physiological-effect of a **co-administered
-ingredient**") = ~739 **class-level drug–drug** rules, mined from the **MED-RT file slice 2a already parses** — **no new
+ingredient**") = ~739 **class-level drug–drug** rules *in the MED-RT terminology* — **635** survive the moiety gate and
+reach `class_contraindication`; see the 5c.1 section below before quoting either — mined from the **MED-RT file slice 2a
+already parses** — **no new
 source, no new join, no new UUID minting** (both endpoints — RxNorm subject, MoA/PE class object — are already ingested). New
 table `class_contraindication` (`db/004`), a rebuildable projection like `class_membership`; concrete drug pairs **expand at
 read time** over the existing class DAG (`ddi_candidate_pair` view — since Plan B that expansion descends the DAG, see below).
@@ -333,13 +337,72 @@ asserts no line of therapy, no evidence strength and no ordering, and inventing 
 projection's.
 
 #### Slice 5c — The curated overlay (the moat)
-Append-only, **signed** overlay adding **severity + mechanism + management + evidence grading** — the dimensions the
+Append-only, **signable** overlay adding **severity + mechanism + management + evidence grading** — the dimensions the
 projections lack — **referencing** the 5a/5b candidate rows. **Plan C has already built the overlay MECHANISM** (surrogate key
-+ deferred single-live + one-way supersession, generalised over four tables), so 5c inherits a working correction shape rather
-than inventing one, and owns #51, #52, #55. Layered by licence-safety: **ONC high-priority floor** (RAND/government-licensed)
-→ **SPL/DailyMed-mined** (ONSIDES-*method*, MIT precedent) → DDInter *if its licence confirms* → drugref's own hand-curation.
++ deferred single-live + one-way supersession, generalised over five tables since `db/027`), so 5c inherits a working
+correction shape rather than inventing one, and owns #51, #52, #55 and now **#67**.
 The **"moat" is quality-control — who may assert — not access or leverage**: data ships paywall-free under copyleft.
 Institutionally owned, never a volunteer wiki.
+
+**"Signed" was an overstatement and is corrected here: the tier is SIGNABLE, not signed.** No signing infrastructure
+exists anywhere in the repo — no key management, no signing identity, no verification path. A signature column is an
+additive migration, but **a row committed before signing exists can never be signed retrospectively**, since the floor
+refuses UPDATE. That is the argument for 5c.1 shipping EMPTY, and the sequencing constraint it produces: **signing lands
+before the first curated row.**
+
+**The five subsystems ROADMAP used to bundle here, now sequenced** — the design round of 2026-08-06 split them, because
+one spec covering all five is one nobody can review and one branch nobody can measure:
+
+##### 5c.1 — the assertion shape ✅ DONE
+Spec: [slice-5c.1 curated
+overlay](superpowers/specs/2026-08-06-drugref-slice-5c1-curated-overlay-design.md); plan:
+[2026-08-06](plans/2026-08-06-slice-5c1-curated-overlay.md); published record: [curating a drug–condition
+pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). `db/029`, no new PL/pgSQL: `curated_interaction`
+keyed on the class **RULE** (635 curatable statements after the moiety gate — not the ~739 raw MED-RT terminology-level
+count this section used to quote, which was never `class_contraindication`'s own measured row count — inheriting to
+21,664 pairs, since `ddi_candidate_pair` is a view and a pair has no stable identity) and `curated_condition` keyed on the
+**pair** — deliberately *without* `relationship`, because the same (drug, condition) carries both an indication and a
+contraindication in **168** cases and keying on the predicate would write one judgement twice and let the copies
+disagree. Two inner-joined read views, two gap views, one operator check (`curated_target_unresolved`). **Shipped
+empty**, as planned; curation is 5c.2's job, not this slice's.
+
+**Measured on a fresh `drugref_5c1`, built from the real releases** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026 →
+MeSH-relations 2026.07.06 → GSRS 2026-02-26, 2026-08-06, chain wall-clock **127.5 s**): every count that must not move
+held exactly — `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** ·
+`condition_contraindication_expanded` **192,161**. New: `gap_uncurated_condition_contradiction` **168** (an exact
+match to issue #51's own figure) · `gap_uncurated_interaction_rule` **595** (635 rules minus 40 that reach no pair,
+already covered by the two pre-existing "class has no members" gap views) · `curated_target_unresolved` /
+`curated_ddi_pair` / `curated_condition_ruling` all **0**, correct with nothing curated. `open_question` grew from
+21,079 to **21,842** — exactly 168 + 595, nothing else moved. **936 tests.** `EXPLAIN ANALYZE` on all five
+new/touched views: four run in single-digit milliseconds or under; `gap_uncurated_interaction_rule` costs **≈2.7 s**,
+confirmed (three controls, not reasoned) to be inherited whole from `ddi_candidate_pair`'s own unfiltered-scan cost —
+not db/024's duplicated-walk shape — and filed as
+[#75](https://github.com/cairn-ehr/drugref/issues/75) rather than fixed here, since the fix belongs inside a prior
+slice's hot-path view. Full account: PROJECT-NOTES.md § "Slice 5c.1".
+
+##### 5c.2 — the ONC high-priority DDI floor
+First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
+the first curated rows, so 5c.4's signing must land first. **Also owns a deferral 5c.1 named but did not resolve:**
+a `spurious` ruling (`curated_condition.ruling`) records drugref's disagreement with an upstream assertion
+*without acting on it* — the candidate stays in its projection and no view renders either as advice — and
+deciding whether, or how, to surface "drugref believes this upstream row is wrong" to a consumer needs content
+to say it about, which this is the first slice to have. See the spec (§ read path) and [curating a drug–condition
+pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) for the full argument.
+
+##### 5c.3 — SPL/DailyMed mining
+`ONSIDES`-*method*, MIT precedent — a full ingest slice of its own.
+
+##### 5c.4 — signing
+Per the constraint above: no row can be signed retrospectively, so this must land before 5c.2's first curated row.
+
+**Separately: #52** (a projection defect — the row carries no `concept_ui`), **#55** (a read-path split on the
+projection tier), **#67** (salt↔base strength equivalence: a factor per `(salt, base)` pair, a different data shape
+entirely, and blocked on there being an authoritative source at all).
+
+**DDInter is removed from the source ladder, not deferred.** It is **CC BY-NC-SA** — non-commercial, therefore not
+AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *if its licence confirms*") predated the
+check; the check has been done and the answer is no. It may only ever attach as a node-local, separately-licensed
+plug-in, like every other encumbered source.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
