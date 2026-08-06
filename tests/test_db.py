@@ -174,6 +174,11 @@ def test_apply_migrations_is_idempotent(conn):
         # curator decision to have rows.
         "composition_relation", "substance_composition",
         "moiety_active_in_composite", "gap_unruled_composition_activity",
+        # Slice 5c.1, db/029: the curated overlay's first table -- drugref's own
+        # judgement (severity, mechanism, management, evidence grade) on a
+        # class-level CI_MoA/CI_PE rule, keyed on the RULE rather than the pair.
+        # Ships empty; the floor is db/020's, reused rather than copied.
+        "curated_interaction",
     }
 
 

@@ -1,0 +1,174 @@
+-- db/029_curated_overlay.sql -- slice 5c.1: the curated overlay's assertion shape.
+--
+-- WHAT THIS TIER IS. Ingested feeds are REBUILDABLE PROJECTIONS, dropped and rebuilt
+-- per release. Curated knowledge is an APPEND-ONLY OVERLAY: nothing is edited in
+-- place and nothing is deleted, because "what did we last say about this, against
+-- which release, and why did we change our mind" has to be answerable from the
+-- database. db/020 built that floor; db/027 put a fifth table on it; this file adds
+-- the sixth and seventh with NO NEW PL/pgSQL.
+--
+-- SHIPS EMPTY. No seed, no curation content. The shape is this slice; curation is
+-- step 8.
+
+-- ============================================================================
+-- 1. curated_interaction -- drugref's judgement on a class-level DDI RULE
+-- ============================================================================
+-- KEYED ON THE RULE, NOT THE PAIR, and that is the lever the whole slice rests on.
+-- class_contraindication holds ~739 CI_MoA/CI_PE rules; ddi_candidate_pair expands
+-- them to 21,664 concrete pairs AT READ TIME. So a pair has no stable row identity to
+-- reference, and 21,664 is not a population anyone hand-curates. One graded rule
+-- inherits to every pair it expands to -- Plan C's "keyed on class so a grade
+-- inherits to every member ... a few rows, not a hundred", one table over.
+--
+-- `source` IS DELIBERATELY NOT IN THE KEY, and that breaks with db/014, which puts it
+-- in the key of every projection table for db/006 finding 2's reason. That argument is
+-- about UPSTREAM assertions: without source in the key, a second authority's
+-- independent row is swallowed by ON CONFLICT DO NOTHING and then deleted by the next
+-- rebuild. This tier holds DRUGREF'S JUDGEMENT about a clinical fact, not a record of
+-- who said it. Keying on the upstream source would let two authorities asserting the
+-- same interaction produce two competing drugref rulings that the single-live trigger
+-- cannot reconcile and a consumer would have to choose between. One fact, one live
+-- judgement. `source` stays as a COLUMN because it records who AUTHORED the judgement,
+-- which is the licence-led layering slices 5c.2/5c.3 need.
+--
+-- NO FOREIGN KEY INTO class_contraindication. It is a rebuildable projection: an FK
+-- would either block the per-source rebuild or cascade curator judgement away with it.
+-- The candidate is named by NATURAL KEY -- stable, because moiety_uuid is immortal and
+-- class_uuid is minted from (source, source_code) -- and curated_target_unresolved
+-- (section 5) reports any curated row whose candidate is no longer projected. Both
+-- foreign keys below point at IDENTITY (substance_moiety, substance_class), which a
+-- rebuild does not touch.
+--
+-- WHY THE NATURAL KEY IS NOT THE PRIMARY KEY: correction-by-overlay means INSERTing
+-- the new row and THEN pointing the old one at it, so both rows briefly carry the same
+-- natural key. A primary key on it rejects the only sequence that can express a
+-- correction, and in-place mutation becomes the only possible implementation --
+-- exactly the defect db/001 shipped on identity_claim and db/005 had to repair.
+CREATE TABLE IF NOT EXISTS drugref.curated_interaction (
+    curated_interaction_id bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    subject_moiety_uuid    uuid        NOT NULL REFERENCES drugref.substance_moiety(moiety_uuid),
+    object_class_uuid      uuid        NOT NULL REFERENCES drugref.substance_class(class_uuid),
+    relationship           text        NOT NULL,
+    -- THE RULING. `false` means "a curator looked and this rule is not a real
+    -- interaction" -- a real answer, and the only thing that lets a reviewed rule
+    -- leave gap_uncurated_interaction_rule instead of being asked about every release
+    -- forever. It exists because SUPERSESSION ALONE CAN NEVER WITHDRAW ANYTHING: a
+    -- correction must point at a later row with the SAME natural key, so every
+    -- correction leaves another live row standing. additive_effect.accumulates,
+    -- interaction_group_member.satisfies_role, interaction_group_assertion.applies and
+    -- class_expansion_policy.decision = 'withdrawn' are the same column, four rounds
+    -- running. NO DEFAULT: a ruling must be stated, never guessed.
+    applies                boolean     NOT NULL,
+    severity               text,
+    mechanism              text,
+    management             text,
+    evidence_grade         text,
+    -- NULLABLE. Where a curated row answers a gap question, its citations are already
+    -- reachable through question_evidence -- which has supersession, a reference
+    -- scheme, and its own warning that reference_value is untrusted input. Nullable
+    -- because a curator may assert something no gap view asked about, and because
+    -- CURATED IS NOT VERIFIED: a NULL here is what makes "this grade rests on nothing
+    -- recorded" visible instead of implied.
+    --
+    -- ON DELETE CASCADE matches the question registry's other three curated tables,
+    -- and the cascade is a SAFETY NET rather than a deletion path: it lands on the
+    -- append-only trigger below, which RAISEs and aborts the whole ingest.
+    -- questions.register_from_gaps must therefore RETAIN a question this table cites
+    -- rather than delete it (see task 5) -- the guard, not the cascade, is what keeps
+    -- curator work.
+    question_uuid          uuid        REFERENCES drugref.open_question(question_uuid)
+                                       ON DELETE CASCADE,
+    source                 text        NOT NULL,
+    -- db/027's provenance triple, NOT Plan C's ingest_run foreign key. A human
+    -- curator's assertion has no ingest run at all, and a NOT NULL FK would force
+    -- every curated row to invent one. `reviewed_against` names the release the
+    -- judgement was formed against, which is what makes "is this ruling stale?"
+    -- answerable.
+    reviewed_by            text        NOT NULL,
+    reviewed_against       text        NOT NULL,
+    reviewed_at            timestamptz NOT NULL DEFAULT now(),
+    superseded_by          bigint      REFERENCES drugref.curated_interaction(curated_interaction_id),
+    -- Mirrors class_contraindication's own CHECK. Widen the two together, or a rule
+    -- this table can grade becomes one no candidate exists for.
+    CONSTRAINT curated_interaction_relationship
+        CHECK (relationship IN ('CI_MoA', 'CI_PE')),
+    -- PLAN C'S EXACT VOCABULARY, reused rather than re-minted. Two ladders for one
+    -- concept is a second list to disagree with the first (db/006), and a consumer
+    -- would have to reconcile them at render time.
+    CONSTRAINT curated_interaction_severity
+        CHECK (severity IN ('contraindicated', 'major', 'moderate', 'minor')),
+    -- The DOCUMENTATION ladder the interaction literature uses -- "how well attested
+    -- is this?" -- and deliberately not GRADE, which grades confidence in a
+    -- recommendation derived from trials and asks a question no DDI row answers.
+    -- `theoretical` is the honest label for a mechanism with no reports behind it, and
+    -- having it here is what stops a curator rounding such a row up to `suspected` for
+    -- want of anywhere to put it. THERE IS NO `unknown`: a curator who cannot say how
+    -- well attested a claim is is describing a question, not an assertion, and the
+    -- question registry is where that belongs.
+    CONSTRAINT curated_interaction_evidence_grade
+        CHECK (evidence_grade IN ('established', 'probable', 'suspected', 'theoretical')),
+    CONSTRAINT curated_interaction_source CHECK (source IN ('DRUGREF')),
+    -- ONE CHECK, not several nullable columns nobody cross-checks. An asserting row
+    -- states both judgements; a non-asserting row states neither. So "real, but with
+    -- no severity to render" and "not real, but graded major" are both
+    -- UNREPRESENTABLE rather than merely discouraged.
+    CONSTRAINT curated_interaction_ruling_is_complete CHECK (
+        (applies AND severity IS NOT NULL AND evidence_grade IS NOT NULL)
+        OR
+        (NOT applies AND severity IS NULL AND evidence_grade IS NULL))
+);
+
+-- ---- the floor, REUSED rather than copied -----------------------------------
+-- Both functions are db/020's, generic over the natural key (db/023 rewrote the second
+-- as equality predicates so an index can serve it). One rule in seven places is one
+-- rule that will drift, and this project has spent four rounds proving it.
+DROP TRIGGER IF EXISTS curated_interaction_append_only ON drugref.curated_interaction;
+CREATE TRIGGER curated_interaction_append_only
+    BEFORE UPDATE OR DELETE ON drugref.curated_interaction
+    FOR EACH ROW EXECUTE FUNCTION drugref.forbid_overlay_rewrite(
+        'curated_interaction_id', 'subject_moiety_uuid', 'object_class_uuid',
+        'relationship');
+
+-- DEFERRED, because a correction is momentarily TWO live rows -- between the INSERT
+-- and the UPDATE that supersedes -- and an immediate check would reject the only
+-- sequence that can express one.
+DROP TRIGGER IF EXISTS curated_interaction_single_live ON drugref.curated_interaction;
+CREATE CONSTRAINT TRIGGER curated_interaction_single_live
+    AFTER INSERT OR UPDATE ON drugref.curated_interaction
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION drugref.forbid_multiple_live_assertions(
+        'subject_moiety_uuid', 'object_class_uuid', 'relationship');
+
+-- PARTIAL and NOT UNIQUE, matching the trigger's predicate exactly -- uniqueness over
+-- live rows is precisely what this design cannot use, since a correction needs two.
+-- db/023 measured that without this index the trigger is a sequential scan per row and
+-- therefore quadratic: 2,000 rows cost 5,773 ms, and 42 ms with it. NOTHING BUT THE
+-- TRIGGER READS IT, so a test asserts it by name.
+CREATE INDEX IF NOT EXISTS curated_interaction_live_key
+    ON drugref.curated_interaction
+       (subject_moiety_uuid, object_class_uuid, relationship)
+    WHERE superseded_by IS NULL;
+
+COMMENT ON TABLE drugref.curated_interaction IS
+    'CURATED, APPEND-ONLY: drugref''s own judgement -- severity, mechanism, management '
+    'and evidence grade -- on a class-level CI_MoA/CI_PE rule, inheriting to every '
+    'pair the rule expands to. Keyed on the RULE, not the pair: ddi_candidate_pair is '
+    'a view, so a pair has no stable identity, and 21,664 pairs is not a curatable '
+    'population while ~739 rules is. `source` is NOT in the key -- one clinical fact, '
+    'one live drugref judgement, however many upstream authorities asserted it. '
+    'CURATED IS NOT VERIFIED: a grade with no question_uuid rests on nothing recorded, '
+    'and that is deliberately visible rather than implied.';
+COMMENT ON COLUMN drugref.curated_interaction.applies IS
+    'The curator''s RULING. False is a real answer -- "reviewed, and this rule is not '
+    'a real interaction" -- and is what lets a reviewed rule leave the worklist '
+    'instead of being asked about every release forever. Supersession alone can never '
+    'withdraw anything, which is why this column exists. No DEFAULT: absence of a row '
+    'means NOBODY HAS LOOKED, and that is a third state neither value can express.';
+COMMENT ON COLUMN drugref.curated_interaction.evidence_grade IS
+    'How well ATTESTED the claim is, strongest first: established, probable, '
+    'suspected, theoretical. Not GRADE -- that grades confidence in a trial-derived '
+    'recommendation, which is not what a DDI row asserts. No `unknown` level: a '
+    'curator who cannot grade the evidence is describing a question, not an assertion.';
+COMMENT ON COLUMN drugref.curated_interaction.superseded_by IS
+    'One-way, set once, always a LATER row on the SAME natural key. A superseded row '
+    'is history and is never deleted.';
