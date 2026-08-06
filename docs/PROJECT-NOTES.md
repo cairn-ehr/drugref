@@ -528,6 +528,42 @@ outside its branch.** Found by the final whole-branch review of slice 5c.1 and c
 rules, of which 595 reach the worklist, with the distinction stated explicitly rather than repeating a single
 approximate figure.
 
+**The PR-review round (PR [#77](https://github.com/cairn-ehr/drugref/pull/77)) found a THIRD untested
+load-bearing clause and one latent count defect. Suite 940 → 943.**
+
+1. **`register_from_gaps`' retention guard names five tables; only the `curated_condition` clause had a test.**
+   Deleting the `curated_interaction` clause passed all 940 tests. The sequence it breaks is the ordinary one,
+   not a contrived one: grading a rule is exactly what retires it from `gap_uncurated_interaction_rule`, so the
+   first curated interaction row citing its question makes the next ingest `DELETE` that question, cascade into
+   an append-only table, and abort the whole transaction with `RaiseException` out of `forbid_overlay_rewrite`.
+   Measured both directions before and after. **This is the sixth round in which the slice's own load-bearing
+   property was the one thing no test killed** — and the second within slice 5c.1 alone, after the whole-branch
+   review's two. The lesson has stopped being "remember to test the guard" and become **"for every clause in a
+   multi-table guard, name the test that kills its removal, one per clause."**
+2. **`gap_uncurated_interaction_rule.pair_count` was `count(*)` over a join that omits `source`, while
+   `class_contraindication`'s primary key includes it** (`db/006` widened it there deliberately, so a second
+   authority's row is not swallowed). The join omits source correctly — drugref's judgement is about the clinical
+   fact, not about who asserted it — so the two are individually right and jointly wrong: a rule asserted by two
+   authorities counts every candidate row once per source. Correct today **only** because
+   `class_contraindication_source` admits `MED-RT` alone, which is exactly what made it invisible. Measured under
+   a second source: **4 where the answer is 1**. Now `count(DISTINCT p.partner_moiety)` — a no-op against current
+   data, and what keeps the measured `sum(pair_count) = 21,664` partition true when a second authority lands. The
+   test drops the source `CHECK` inside the test transaction (the `conn` fixture rolls back) to reach the shape,
+   rather than waiting for a future migration to discover it.
+3. **`question_uuid` was an unindexed foreign key on both curated tables.** Postgres indexes the *referenced*
+   side of an FK automatically and the *referencing* side never, and this column has two per-ingest readers: the
+   retention guard's `NOT EXISTS` runs once per gap kind (fourteen a run), and the `ON DELETE CASCADE` must find
+   the rows before the append-only trigger can refuse the delete. `question_source_check_by_question` (`db/007`)
+   exists for exactly this. Added `curated_interaction_by_question` and `curated_condition_by_question`, each
+   asserted by name — nothing but the planner reads them, so they look unused to a catalog sweep.
+
+**`db/029` was therefore edited in place a SECOND time, and any database that already applied the earlier
+version must be rebuilt.** `db.apply_migrations` refuses a file whose checksum changed after it was applied
+(`RuntimeError: migration ... changed after it was applied`) — so `drugref_5c1` and any dev database carrying
+the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The test suite is unaffected: its
+`_migrated` fixture drops the schema and re-applies every session, which is also why all three defects above
+were reachable by test at all.
+
 **`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
 carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
 (filtered) **0.09 ms** · `gap_uncurated_condition_contradiction` **15.3 ms** · `curated_target_unresolved`

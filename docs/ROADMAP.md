@@ -154,7 +154,9 @@ value-add built on top. Sequenced by licence-cleanliness, not by coverage.
 
 #### Slice 5a — MED-RT mechanism/effect contraindications ✅ DONE
 The smallest first cut: MED-RT **`CI_MoA`/`CI_PE`** ("contraindicated mechanism/physiological-effect of a **co-administered
-ingredient**") = ~739 **class-level drug–drug** rules, mined from the **MED-RT file slice 2a already parses** — **no new
+ingredient**") = ~739 **class-level drug–drug** rules *in the MED-RT terminology* — **635** survive the moiety gate and
+reach `class_contraindication`; see the 5c.1 section below before quoting either — mined from the **MED-RT file slice 2a
+already parses** — **no new
 source, no new join, no new UUID minting** (both endpoints — RxNorm subject, MoA/PE class object — are already ingested). New
 table `class_contraindication` (`db/004`), a rebuildable projection like `class_membership`; concrete drug pairs **expand at
 read time** over the existing class DAG (`ddi_candidate_pair` view — since Plan B that expansion descends the DAG, see below).

@@ -22,8 +22,8 @@
 tree** (PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, 897 tests).
 
 **⇒ PR OPEN, awaiting review and merge**, on `feat/slice-5c1-curated-overlay`: **slice 5c.1 — the curated
-overlay's assertion shape**, `db/029`. Built, measured, and through a whole-branch review whose two blocking
-findings are fixed (below). Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
+overlay's assertion shape**, `db/029`. Built, measured, and through **two** review rounds whose five findings
+are fixed (below). Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
 on the class RULE, `curated_condition` keyed on the (drug, condition) PAIR deliberately without
 `relationship`, because 168 pairs are asserted as both an indication and a contraindication and keying on
 the predicate would write that judgement twice. Two inner-joined read views, two gap views, one operator
@@ -31,25 +31,25 @@ check. **Shipped empty**, as planned. Measured end to end on a fresh `drugref_5c
 every pre-existing count held exactly; `gap_uncurated_condition_contradiction` **168** (exact match to
 issue #51); `gap_uncurated_interaction_rule` **595** (not the design spec's own approximate "~739" — see
 PROJECT-NOTES § "Slice 5c.1" for why, it is not a defect); `open_question` **21,842** = 21,079 + exactly
-the two new kinds. **936 tests.** One view, `gap_uncurated_interaction_rule`, costs ≈2.7 s — confirmed by
-three separate controls to be inherited whole from `ddi_candidate_pair`'s own unfiltered-scan cost, not
-db/024's duplicated-walk shape — filed as [#75](https://github.com/cairn-ehr/drugref/issues/75) rather than
-fixed, since the fix belongs inside a prior slice's hot-path view. Decision record: [curating a
-drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). Full account,
-every measured number, and the traps: PROJECT-NOTES.md § "Slice 5c.1".
+the two new kinds. **943 tests.** One view, `gap_uncurated_interaction_rule`, costs ≈2.7 s, inherited whole
+from `ddi_candidate_pair` — filed as [#75](https://github.com/cairn-ehr/drugref/issues/75), below. Decision
+record: [curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/).
+Full account, every measured number, and the traps: PROJECT-NOTES.md § "Slice 5c.1".
 
-**Two more "signed overlay" instances the design round missed were corrected here** (account:
-PROJECT-NOTES § "Slice 5c.1"); everything now reads "signable, not signed".
+**Two more "signed overlay" instances the design round missed were corrected**; all now read "signable, not signed".
 
-**⇒ THE WHOLE-BRANCH REVIEW FOUND TWO THINGS A GREEN SUITE DID NOT, both now fixed (`1b92e99`).** First,
-`curated_interaction.relationship` shipped as a hardcoded `CHECK` whose comment claimed it mirrored
-`class_contraindication`'s — **but `db/006` DROPPED that CHECK for an FK into `ci_axis`**, precisely so
-adding an axis is one INSERT; a third axis would have queued rules `curation.py` could not write. Now an
-FK. Second, the stale **`~739`** was baked into `COMMENT ON TABLE` — catalog-visible and permanent on
-apply — where the measured figure is **635 rules, 595 reaching the worklist**. And **two mutations passed
-all 936 tests**: dropping `relationship` from `curated_interaction`'s single-live trigger args, and from its
-live-key index column list. **The slice's own load-bearing property was the one thing no test killed** — the
-slice-3 lesson verbatim, a fifth time. Now killed by four tests, each reproduced against a rebuilt schema.
+**⇒ TWO REVIEW ROUNDS FOUND FIVE THINGS A GREEN SUITE DID NOT; all fixed.** *Whole-branch* (`1b92e99`):
+`curated_interaction.relationship` shipped as a hardcoded `CHECK` where **`db/006` had DROPPED that CHECK for an
+FK into `ci_axis`** — a third axis would have queued rules `curation.py` could not write; and the stale **`~739`**
+was baked into `COMMENT ON TABLE`, catalog-visible and permanent on apply, against a measured **635 rules, 595
+reaching the worklist**. *PR review*: `register_from_gaps`' retention guard names five tables and **only the
+`curated_condition` clause had a test** — deleting the `curated_interaction` one passed all 940, while the ordinary
+sequence (grade a rule, re-ingest) aborts the whole transaction; `gap_uncurated_interaction_rule.pair_count` was
+`count(*)` over a join omitting `source`, right **only while one authority exists** (measured 4 where the answer
+is 1) — now `count(DISTINCT partner)`; and `question_uuid` was an unindexed FK on both tables. **Five mutations
+across the two rounds survived a full green suite** — the slice-3 lesson a fifth and sixth time, each now killed
+by a test reproduced against a rebuilt schema. **`db/029` changed again, so any database that already applied it
+(including `drugref_5c1`) must be rebuilt.** Full account: PROJECT-NOTES § "Slice 5c.1".
 
 **⇒ NEXT SLICE: per ROADMAP's own sequencing, `5c.4` (signing) must land BEFORE `5c.2`'s first curated
 row** — a row committed before signing exists can never be signed retrospectively, since the floor refuses
