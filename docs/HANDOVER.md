@@ -21,9 +21,9 @@
 **Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 3 — the composition
 tree** (PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, 897 tests).
 
-**On branch `feat/slice-5c1-curated-overlay`, built and measured, PR not yet opened** (the branch owner
-reviews before opening it — do not open one from here): **slice 5c.1 — the curated overlay's assertion
-shape**, `db/029`. Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
+**⇒ PR OPEN, awaiting review and merge**, on `feat/slice-5c1-curated-overlay`: **slice 5c.1 — the curated
+overlay's assertion shape**, `db/029`. Built, measured, and through a whole-branch review whose two blocking
+findings are fixed (below). Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
 on the class RULE, `curated_condition` keyed on the (drug, condition) PAIR deliberately without
 `relationship`, because 168 pairs are asserted as both an indication and a contraindication and keying on
 the predicate would write that judgement twice. Two inner-joined read views, two gap views, one operator
@@ -38,10 +38,18 @@ fixed, since the fix belongs inside a prior slice's hot-path view. Decision reco
 drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). Full account,
 every measured number, and the traps: PROJECT-NOTES.md § "Slice 5c.1".
 
-**This round also corrected two "signed overlay" instances the 5c.1 design round's own wrap-up
-(`ef16b60`) missed** — `ROADMAP.md`'s Slice 5 intro paragraph, and the public docs site's
-`decisions/hybrid-store.md` (title and body) — plus its listing in `decisions/index.md`. All now read
-"signable, not signed", consistent with the rest of the docs.
+**Two more "signed overlay" instances the design round missed were corrected here** (account:
+PROJECT-NOTES § "Slice 5c.1"); everything now reads "signable, not signed".
+
+**⇒ THE WHOLE-BRANCH REVIEW FOUND TWO THINGS A GREEN SUITE DID NOT, both now fixed (`1b92e99`).** First,
+`curated_interaction.relationship` shipped as a hardcoded `CHECK` whose comment claimed it mirrored
+`class_contraindication`'s — **but `db/006` DROPPED that CHECK for an FK into `ci_axis`**, precisely so
+adding an axis is one INSERT; a third axis would have queued rules `curation.py` could not write. Now an
+FK. Second, the stale **`~739`** was baked into `COMMENT ON TABLE` — catalog-visible and permanent on
+apply — where the measured figure is **635 rules, 595 reaching the worklist**. And **two mutations passed
+all 936 tests**: dropping `relationship` from `curated_interaction`'s single-live trigger args, and from its
+live-key index column list. **The slice's own load-bearing property was the one thing no test killed** — the
+slice-3 lesson verbatim, a fifth time. Now killed by four tests, each reproduced against a rebuilt schema.
 
 **⇒ NEXT SLICE: per ROADMAP's own sequencing, `5c.4` (signing) must land BEFORE `5c.2`'s first curated
 row** — a row committed before signing exists can never be signed retrospectively, since the floor refuses
@@ -59,7 +67,12 @@ PROJECT-NOTES.md). **Standing rule:** near `close`/`fix`/`resolve` in any inflec
 
 **Filed by this round** — [#75](https://github.com/cairn-ehr/drugref/issues/75) **`gap_uncurated_interaction_rule`
 costs ~2.7s**, an unfiltered read of `ddi_candidate_pair` inherited whole from that view, not a new defect;
-not urgent at today's cardinality and no consumer yet.
+not urgent at today's cardinality and no consumer yet · [#76](https://github.com/cairn-ehr/drugref/issues/76)
+**`curated_target_unresolved` ships with no consumer** — the orphan detector nothing reads, the same shape
+`db/010` shipped and this project had to repair; the natural consumer is the ingest summary or `drugref
+status` · [#74](https://github.com/cairn-ehr/drugref/issues/74) **the accumulation suite's live-key index
+test asserts existence only**, not partial-and-non-unique, so a regression to `UNIQUE` — which would forbid
+every correction — would pass it. 5c.1 closed that gap for its own two indexes; Plan C's five are open.
 
 **Filed by the slice-3 design, its measurement, and the whole-branch review** —
 [#67](https://github.com/cairn-ehr/drugref/issues/67) **salt↔base strength equivalence has no source** (409 *assay*
