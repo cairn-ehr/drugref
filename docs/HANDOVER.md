@@ -22,58 +22,31 @@
 review · Plan A · Plan B (#32) · the identity-spine fix round (#34) · the Plan B review round (#38) · 5b (#44) · the
 post-5b debt round (#46) · the interaction debt round (#49) · 5b.2 (#54) · #53's population-label round (#56) · Plan C
 (#57) · the ingest-operability round (#58) · the expansion-policy history round (#35, PR #62) · the policy-surface debt
-round (PR [#64](https://github.com/cairn-ehr/drugref/pull/64)).
+round (PR [#64](https://github.com/cairn-ehr/drugref/pull/64)) · **slice 3 — the composition tree**
+(PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, **897 tests** green).
 
-**In flight: slice 3 — the composition tree**, on `feat/slice-3-composition-tree`. **BUILT, AND MEASURED END TO END
-AGAINST THE REAL RELEASES.** All 8 plan tasks are done; the branch is green at **897 tests**. Spec: [slice-3 composition
-tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md). Traps and full state:
-[`PROJECT-NOTES.md`](PROJECT-NOTES.md) § "Slice 3".
+**Slice 3, for the record** (full state and traps: [`PROJECT-NOTES.md`](PROJECT-NOTES.md) § "Slice 3"; the four refuted
+ROADMAP claims: ROADMAP § Slice 3; spec:
+[slice-3 composition tree](superpowers/specs/2026-08-05-drugref-slice-3-composition-tree-design.md)): built and measured
+end to end against the real releases — 8,671 composition rows over 7,377 composites, nothing pre-existing moved. The
+review round closed with five findings fixed, the worst being that **collapsing "unruled" to `false` passed all 895
+tests**. The predicted activity split was refuted (the 27 component-side edges, issue 69); the row set was not. It
+settles neither issue 33 nor issue 30. Rule-6 gate cleared before download: GSRS data **CC0 1.0**, software Apache-2.0;
+`NOTICE` carries the entry; the dedication's *"unless otherwise noted"* clause joins #6/#25 on the
+verify-before-production list.
 
-**⇒ PR [#72](https://github.com/cairn-ehr/drugref/pull/72) is OPEN and its review round is CLOSED** — five findings
-fixed on the branch (account: PROJECT-NOTES § "Slice 3"), the worst being that **collapsing "unruled" to `false` passed
-all 895 tests**. New issue: #73. **⇒ Next: merge #72**, then slice 5c.
-
-**What landed:** `db/028` (projection, relation vocabulary, `moiety_active_in_composite`, gap kind 12) · `ingest/gsrs.py`
-(pure streaming parser, 2.05 GB) · `composition.py` (single writer) · `ingest/gsrs_run.py` · a `gsrs` chain step and
-subcommand · `NOTICE`'s GSRS entry · the record
-[GSRS relationship direction](../docs-site/docs/decisions/gsrs-relationship-direction.md).
-
-**Measured on the assembled chain** (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026 → GSRS 2026-02-26, 137 s): **8,671
-rows** (7,962 salt + 709 solvate) over **7,377 composites** and **4,433 component moieties**; `is_active_component`
-**TRUE 5,011 / FALSE 992 / NULL 2,668**; **gap kind 12 = 2,245** composites. **Nothing pre-existing moved:**
-`ddi_candidate_pair` **21,664**, `substance_moiety` **19,438**, `open_question` 18,834 → **21,079**.
-
-**⇒ THE PREDICTED ACTIVITY SPLIT WAS REFUTED; the row set was not.** Design predicted 5,029 / 1,001 / 2,641 and 2,226
-gap-12 composites; the edge set matched, only the split moved. Cause, reproduced against the dump: predictions used a
-**global** `unii → active moieties` map, while `gsrs_run.py` rules only from the composite's **own record** — they
-differ on the **27** in-registry edges GSRS stores solely on the component's record (18 TRUE + 9 FALSE become NULL, 19
-more composites unruled). Conservative (adds NULLs, never downgrades); left as-is deliberately during a verification
-round: filed as issue 69. The **EXPECTED 2,226 / 21,060** hedging in PROJECT-NOTES is settled and removed.
-
-**The rule-6 gate cleared BEFORE anything was downloaded**: GSRS data is **CC0 1.0**, software **Apache-2.0** — both
-AGPL-3.0-compatible, and CC0 imposes no attribution or share-alike at all. `NOTICE` now carries the entry. The
-dedication's *"unless otherwise noted"* clause joins #6/#25 on the verify-before-production list; no noted exception was
-found on any ingested record.
-
-**Four things ROADMAP asserted about this slice were refuted by the release** (detail: ROADMAP § Slice 3): `ACTIVE
-MOIETY` is the **ion** level, not the composition edge (71% self-edges) · **`parent_moiety_uuid` cannot hold the data**
-(1,089 salts have >1 parent) · the **direction convention is inverted**, the MED-RT `Parent Of` erratum again ·
-**salt↔base strength equivalence is not in this source** (409 assay specs), now issue 67.
-
-**This slice resolves neither issue 33 nor issue 30 — those ROADMAP annotations are WITHDRAWN.** Nothing in GSRS points
-at `DE08037SAB` (0 inbound references across 173,080 records); a composition hop recovers **94 of 706** MeSH UNII keys
-and **68 of 1,977** CAS keys, and the magnesium flagship is not among them. Issue 30 stayed unmeasured: the verification
-database carries no PBS release.
+**⇒ NEXT: slice 5c — the curated, signed overlay**, since a projection may not invent a line of therapy, evidence
+strength or drug ordering. **No spec exists yet — it starts with a brainstorm/design round**, like every slice.
+**Plan C built the MACHINERY** (surrogate key + deferred single-live + one-way supersession, generalised over four
+tables); #35 exercised it on a fifth. 5c owns #51/#52/#55 and now **#67**. Layering is licence-led (ROADMAP § 5c):
+ONC high-priority floor → SPL/DailyMed-mined → DDInter *only if its licence confirms* → own hand-curation. Then
+**step 8 — curation itself**, driven by Plan C's worklist (**381** effects awaiting a ruling), bound by §12-H: audit
+every file and predicate of a source before curating a gap it may already cover. **#36** blocks nothing but shapes it
+and needs its own re-measure.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61; full account:
 PROJECT-NOTES.md). **Standing rule:** near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#`
 ("issue 65"). The linker binds a keyword to the next `#N` in the phrase; intervening words do not save you.
-
-**⇒ After slice 3:** **slice 5c — the curated, signed overlay**, since a projection may not invent a line of therapy,
-evidence strength or drug ordering. **Plan C built the MACHINERY**; #35 exercised it on a fifth table. Owns #51/#52/#55
-and now **#67**. Then **step 8 — curation itself**, driven by Plan C's worklist (**381** effects awaiting a ruling),
-bound by §12-H: audit every file and predicate of a source before curating a gap it may already cover. **#36** blocks
-nothing but shapes it and needs its own re-measure.
 
 ## Open follow-ups (all filed as GitHub issues)
 
