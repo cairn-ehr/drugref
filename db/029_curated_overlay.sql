@@ -265,3 +265,104 @@ COMMENT ON COLUMN drugref.curated_condition.ruling IS
     'contraindicated | indicated | context_dependent | spurious. All four retire the '
     'pair from the worklist, because all four mean a curator looked. ABSENCE of a row '
     'is the third state -- nobody has looked -- and no value can express it.';
+
+-- ============================================================================
+-- 3. The read path -- INNER JOINS, and candidates left exactly as they were
+-- ============================================================================
+-- db/019 split `induces` into its own table rather than adding a WHERE clause,
+-- arguing that a consumer who forgets a filter on a shared table reads a therapeutic
+-- claim off the wrong row. The same forgetfulness here -- a LEFT JOIN returning every
+-- candidate with a NULL severity beside it -- renders an UNREVIEWED candidate as though
+-- a curator had passed it. So these views return ONLY live, asserting curated rows: a
+-- consumer must ASK for graded advice, and receives only graded advice.
+--
+-- THE CANDIDATE VIEWS DO NOT CHANGE, AND THEIR ROW COUNTS MUST NOT MOVE.
+-- ddi_candidate_pair stays at 21,664. A `spurious` ruling does NOT delete its
+-- candidate: db/027's precedent of letting curation gate a projection (a `deny` policy
+-- withholds 233 pairs) governs drugref's own reading of the DAG, which is a different
+-- act from contradicting an upstream assertion. Keeping them apart is what keeps "what
+-- did the release say" answerable next to "what does drugref say", and keeps the
+-- projection reproducible from its source alone.
+--
+-- Each view is named for WHAT IT MEANS, per db/027's trap: a `spurious` or
+-- non-applying row is LIVE (unsuperseded) without BINDING, and the two predicates are
+-- not interchangeable.
+
+CREATE OR REPLACE VIEW drugref.curated_ddi_pair AS
+SELECT p.subject_moiety,
+       p.partner_moiety,
+       p.relationship,
+       p.via_class,
+       p.member_class,
+       p.is_direct,
+       c.severity,
+       c.mechanism,
+       c.management,
+       c.evidence_grade,
+       c.question_uuid,
+       c.source           AS curated_source,
+       c.reviewed_by,
+       c.reviewed_against,
+       c.reviewed_at,
+       p.upstream_release,          -- which release raised the candidate
+       p.source           AS candidate_source
+FROM   drugref.ddi_candidate_pair p
+       -- INNER: an ungraded rule reaches this view NEVER, not with NULL columns.
+JOIN   drugref.curated_interaction c
+       ON  c.subject_moiety_uuid = p.subject_moiety
+       AND c.object_class_uuid   = p.via_class
+       AND c.relationship        = p.relationship
+WHERE  c.superseded_by IS NULL
+AND    c.applies;
+
+COMMENT ON VIEW drugref.curated_ddi_pair IS
+    'Drug pairs carrying a live drugref grade, expanded from the class-level rule the '
+    'grade was written against -- so ONE curated row reaches every pair its rule '
+    'expands to. INNER JOIN by design: an ungraded candidate does not appear here at '
+    'all, because a NULL severity beside a real pair reads as "reviewed and harmless". '
+    'ddi_candidate_pair remains the place to ask what the release said.';
+
+CREATE OR REPLACE VIEW drugref.curated_condition_ruling AS
+SELECT c.subject_moiety_uuid  AS subject_moiety,
+       c.object_condition_uuid AS object_condition,
+       c.ruling,
+       c.severity,
+       c.mechanism,
+       c.management,
+       c.evidence_grade,
+       c.question_uuid,
+       c.source               AS curated_source,
+       c.reviewed_by,
+       c.reviewed_against,
+       c.reviewed_at,
+       cand.candidate_kind,
+       cand.relationship,
+       cand.source            AS candidate_source
+FROM   drugref.curated_condition c
+       -- ONE ROW PER (ruling, candidate assertion), NOT one per ruling. The
+       -- beta-blocker case returns two rows carrying the same `context_dependent`
+       -- ruling, one naming may_treat and one naming CI_with -- which is exactly what
+       -- a consumer needs in order to render "both, in different states". Aggregating
+       -- the candidates into an array would hide which relationships the ruling
+       -- reconciles, and #41's finding was that folding a key component under an
+       -- aggregate breaks a view's grain.
+JOIN   (SELECT subject_moiety_uuid, object_condition_uuid, relationship, source,
+               'contraindication'::text AS candidate_kind
+          FROM drugref.moiety_condition_contraindication
+        UNION ALL
+        SELECT subject_moiety_uuid, object_condition_uuid, relationship, source,
+               'indication'
+          FROM drugref.moiety_condition_indication) cand
+       ON  cand.subject_moiety_uuid   = c.subject_moiety_uuid
+       AND cand.object_condition_uuid = c.object_condition_uuid
+WHERE  c.superseded_by IS NULL
+       -- `spurious` is live and binds nothing: it records a disagreement without
+       -- acting on it. Nothing renders it as advice.
+AND    c.ruling <> 'spurious';
+
+COMMENT ON VIEW drugref.curated_condition_ruling IS
+    'Live drugref rulings on (drug, condition) pairs, joined to the upstream '
+    'assertions they rule on -- ONE ROW PER CANDIDATE, so a `context_dependent` ruling '
+    'over a pair asserted as both may_treat and CI_with returns both, and a consumer '
+    'can see exactly which claims the ruling reconciles. A `spurious` ruling appears '
+    'here never; the candidate it disagrees with stays in its projection.';

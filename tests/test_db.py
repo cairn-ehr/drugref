@@ -185,6 +185,12 @@ def test_apply_migrations_is_idempotent(conn):
         # get one row and one judgement rather than two that can disagree. Ships
         # empty; the floor is db/020's, reused rather than copied.
         "curated_condition",
+        # Slice 5c.1, db/029 section 3: the two read-path views over the tables
+        # above. INNER JOIN throughout -- an ungraded candidate reaches neither
+        # view at all, never with a NULL curated column beside it -- and named
+        # explicitly here for the same reason every other view in this inventory
+        # is: information_schema.tables lists views too.
+        "curated_ddi_pair", "curated_condition_ruling",
     }
 
 

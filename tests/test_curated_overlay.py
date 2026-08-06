@@ -36,9 +36,9 @@ def _a_run_and_moiety(conn, code="TESTUNII02", name="testdrug2"):
     """A FRESH ingest_run + moiety, inserted directly rather than via the
     session-standard `ingest_run_id`/`a_moiety` fixtures.
 
-    Needed only by test_the_row_cannot_be_updated_or_deleted, which must call
-    conn.rollback() mid-test to clear the aborted-transaction state a failed UPDATE
-    leaves behind. That rollback undoes the WHOLE open transaction -- including
+    Needed by tests that must call conn.rollback() mid-test to clear the
+    aborted-transaction state a failed UPDATE (or a deliberately-raised CHECK
+    violation) leaves behind. That rollback undoes the WHOLE open transaction -- including
     whatever the `ingest_run_id`/`a_moiety` fixtures inserted on this same `conn`,
     since neither fixture commits. tests/test_schema_floor.py's
     test_claim_value_immutable_but_supersede_allowed hits the identical trap; its fix,
