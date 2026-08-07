@@ -564,6 +564,25 @@ the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The tes
 `_migrated` fixture drops the schema and re-applies every session, which is also why all three defects above
 were reachable by test at all.
 
+**POST-MERGE RE-MEASUREMENT (2026-08-08, `drugref_5c1m`) — because every figure above was measured on a schema
+that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The
+next session found `drugref_5c1`'s ledger recording `f2420c…` against the merged file's `4a5efb…` — the drift
+the paragraph above predicted, sitting in the database § Repo facts pointed readers at. Rebuilt from scratch on
+the merged file (chain wall-clock **144 s**; the ~127.5 s above was the same chain on a warmer machine — treat
+both as "~2.5 min", not as a regression). **Every figure above reproduces EXACTLY**: `ddi_candidate_pair`
+**21,664** · `substance_moiety` **19,438** · `moiety_condition_contraindication` **9,471** ·
+`moiety_condition_indication` **14,674** · `condition_contraindication_expanded` **192,161** ·
+`gap_uncurated_condition_contradiction` **168** · `gap_uncurated_interaction_rule` **595** ·
+`curated_target_unresolved` / `curated_ddi_pair` / `curated_condition_ruling` all **0** · `open_question`
+**21,842**. Every ingest summary matched too (635 contraindications, 168 also-contraindicated pairs, 422
+broadened, 8,163 components not in registry). All four review fixes verified present in the live catalog:
+`curated_interaction_relationship` is an **FK into `ci_axis`** (no hardcoded CHECK), `COMMENT ON TABLE` carries
+**635/595 and no `739`**, and `curated_interaction_by_question` / `curated_condition_by_question` both exist.
+**The `pair_count` fix is confirmed LATENT, not cosmetic-only:** `max`/`sum`/`count` are **244 / 21,664 / 595**
+on *both* the drifted and the merged database — identical, exactly as the finding predicted, because
+`class_contraindication_source` admits `MED-RT` alone today. The divergence is real but arrives with the second
+authority; **do not read the equality as evidence the fix was unnecessary.**
+
 **`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
 carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
 (filtered) **0.09 ms** · `gap_uncurated_condition_contradiction` **15.3 ms** · `curated_target_unresolved`
@@ -759,9 +778,13 @@ the DB layer can never go green by being skipped.
   surface (#61), split out of `cli.py` to hold CLAUDE.md's ~500-line rule; like `cli.py` it writes no SQL of its own.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
-  same two-homes defect the standing rules above warn about. **`drugref_5c1` holds the real releases WITH `db/029`** at
-  every figure in § "Slice 5c.1" above — the most recent measurement database and the one to read rather than re-running
-  the ~127 s chain. **`drugref_policy` holds
+  same two-homes defect the standing rules above warn about. **`drugref_5c1m` holds the real releases WITH the MERGED
+  `db/029`** at every figure in § "Slice 5c.1" above — the current measurement database and the one to read rather than
+  re-running the ~144 s chain. **Read `drugref_5c1m`, NOT `drugref_5c1`:** the latter was migrated from a `db/029` that
+  the two review rounds then edited twice more, so its ledger records `f2420c…` where the merged file hashes to
+  `4a5efb…` — `apply_migrations` refuses there permanently, and it is a *pre-merge* schema (hardcoded `relationship`
+  CHECK, the stale `~739` in `COMMENT ON TABLE`, `pair_count` as `count(*)`, no `question_uuid` index). It was left in
+  place rather than dropped; drop it when convenient. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
   `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:

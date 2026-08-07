@@ -18,46 +18,44 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 3 — the composition
-tree** (PR [#72](https://github.com/cairn-ehr/drugref/pull/72), merged 2026-08-05, 897 tests).
+**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 5c.1 — the curated
+overlay's assertion shape** (PR [#77](https://github.com/cairn-ehr/drugref/pull/77), merged **2026-08-06**,
+`db/029`). **943 tests, re-run green on `main` at `7bd1ad3` on 2026-08-08; working tree clean.** Two curated
+tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed on the class RULE,
+`curated_condition` keyed on the (drug, condition) PAIR deliberately without `relationship`, because 168 pairs
+are asserted as both an indication and a contraindication and keying on the predicate would write that
+judgement twice. Two inner-joined read views, two gap views, one operator check. **Shipped empty**, as planned.
+Measured on a fresh `drugref_5c1` (real releases, 127.5 s): every pre-existing count held exactly;
+`gap_uncurated_condition_contradiction` **168** (exact match to issue #51); `gap_uncurated_interaction_rule`
+**595** (not the design spec's own approximate "~739" — PROJECT-NOTES § "Slice 5c.1" says why; not a defect);
+`open_question` **21,842** = 21,079 + exactly the two new kinds. One view, `gap_uncurated_interaction_rule`,
+costs ≈2.7 s, inherited whole from `ddi_candidate_pair` — filed as
+[#75](https://github.com/cairn-ehr/drugref/issues/75), below. Decision record: [curating a drug–condition
+pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). **`db/029` is now MERGED and
+therefore frozen** — a correction to it needs a new `db/NNN`. Full account, every measured number, and the
+traps: PROJECT-NOTES.md § "Slice 5c.1".
 
-**⇒ PR OPEN, awaiting review and merge**, on `feat/slice-5c1-curated-overlay`: **slice 5c.1 — the curated
-overlay's assertion shape**, `db/029`. Built, measured, and through **two** review rounds whose five findings
-are fixed (below). Two curated tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed
-on the class RULE, `curated_condition` keyed on the (drug, condition) PAIR deliberately without
-`relationship`, because 168 pairs are asserted as both an indication and a contraindication and keying on
-the predicate would write that judgement twice. Two inner-joined read views, two gap views, one operator
-check. **Shipped empty**, as planned. Measured end to end on a fresh `drugref_5c1` (real releases, 127.5 s):
-every pre-existing count held exactly; `gap_uncurated_condition_contradiction` **168** (exact match to
-issue #51); `gap_uncurated_interaction_rule` **595** (not the design spec's own approximate "~739" — see
-PROJECT-NOTES § "Slice 5c.1" for why, it is not a defect); `open_question` **21,842** = 21,079 + exactly
-the two new kinds. **943 tests.** One view, `gap_uncurated_interaction_rule`, costs ≈2.7 s, inherited whole
-from `ddi_candidate_pair` — filed as [#75](https://github.com/cairn-ehr/drugref/issues/75), below. Decision
-record: [curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/).
-Full account, every measured number, and the traps: PROJECT-NOTES.md § "Slice 5c.1".
+**⇒ RE-MEASURED POST-MERGE (2026-08-08) on a fresh `drugref_5c1m`, because every figure above was taken on a
+schema the two review rounds then edited twice — the merged `db/029` had never been run end to end.** Chain
+144 s; **every count above reproduces EXACTLY**, every ingest summary matched, and all four review fixes are
+confirmed in the live catalog (`relationship` an FK into `ci_axis`, `COMMENT ON TABLE` at 635/595 with no
+`739`, both `question_uuid` indexes present). `pair_count` reads **identically** on the drifted and merged
+databases — the fix is **latent, not unnecessary**: it diverges only once a second authority exists.
 
-**Two more "signed overlay" instances the design round missed were corrected**; all now read "signable, not signed".
+**Two review rounds on 5c.1 found FIVE things a green suite did not** — the slice-3 lesson a fifth and sixth
+time; all fixed before merge, each killed by a test reproduced against a rebuilt schema. The standing rule they
+produced: **for every clause in a multi-table guard, name the test that kills its removal, one per clause.**
+Full account: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ TWO REVIEW ROUNDS FOUND FIVE THINGS A GREEN SUITE DID NOT; all fixed.** *Whole-branch* (`1b92e99`):
-`curated_interaction.relationship` shipped as a hardcoded `CHECK` where **`db/006` had DROPPED that CHECK for an
-FK into `ci_axis`** — a third axis would have queued rules `curation.py` could not write; and the stale **`~739`**
-was baked into `COMMENT ON TABLE`, catalog-visible and permanent on apply, against a measured **635 rules, 595
-reaching the worklist**. *PR review*: `register_from_gaps`' retention guard names five tables and **only the
-`curated_condition` clause had a test** — deleting the `curated_interaction` one passed all 940, while the ordinary
-sequence (grade a rule, re-ingest) aborts the whole transaction; `gap_uncurated_interaction_rule.pair_count` was
-`count(*)` over a join omitting `source`, right **only while one authority exists** (measured 4 where the answer
-is 1) — now `count(DISTINCT partner)`; and `question_uuid` was an unindexed FK on both tables. **Five mutations
-across the two rounds survived a full green suite** — the slice-3 lesson a fifth and sixth time, each now killed
-by a test reproduced against a rebuilt schema. **`db/029` changed again, so any database that already applied it
-(including `drugref_5c1`) must be rebuilt.** Full account: PROJECT-NOTES § "Slice 5c.1".
-
-**⇒ NEXT SLICE: per ROADMAP's own sequencing, `5c.4` (signing) must land BEFORE `5c.2`'s first curated
-row** — a row committed before signing exists can never be signed retrospectively, since the floor refuses
-`UPDATE`. `5c.2` (the ONC high-priority DDI floor, Phansalkar 2012 / Ayvaz 2015) and `5c.3` (SPL/DailyMed
-mining) are the other two successors to 5c.1, in no forced order relative to each other, but neither writes
-a curated row before 5c.4 exists. **No spec exists yet for any of the three** — each starts with its own
-brainstorm/design round, like every slice before it. `5c.1`'s worklist itself is the payload for whichever
-lands first: **168** contradicted pairs and **595** ungraded interaction rules, both queryable today.
+**⇒ NEXT SLICE: `5c.4` — signing. Per ROADMAP's own sequencing it must land BEFORE `5c.2`'s first curated
+row**: a row committed before signing exists can never be signed retrospectively, since the floor refuses
+`UPDATE`. Nothing in the repo signs anything today — no key management, no signing identity, no verification
+path — so this is a subsystem from scratch, not a column. `5c.2` (the ONC high-priority DDI floor, Phansalkar
+2012 / Ayvaz 2015) and `5c.3` (SPL/DailyMed mining) are the other two successors to 5c.1, in no forced order
+relative to each other, but **neither writes a curated row before 5c.4 exists**. **No spec exists yet for any
+of the three** — each starts with its own brainstorm/design round, like every slice before it. `5c.1`'s
+worklist is the payload waiting for them: **168** contradicted pairs and **595** ungraded interaction rules,
+both queryable today.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61; full account:
 PROJECT-NOTES.md). **Standing rule:** near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#`
@@ -126,4 +124,5 @@ check from #17, and **three** rule-6 deeds (#6, #25, GSRS's *"unless otherwise n
 
 - **The one home for this value.** Dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
   Set it as `DRUGREF_TEST_DSN` for the DB-gated tests. The verification databases are listed in `PROJECT-NOTES.md` § Repo facts;
-  `drugref_5c1` is this round's, holding the real releases with `db/029` at every figure above.
+  **`drugref_5c1m`** is the current one, holding the real releases with the **merged** `db/029` at every figure above.
+  **Not `drugref_5c1`** — it holds a pre-merge `db/029`, so `apply_migrations` refuses there; drop it when convenient.

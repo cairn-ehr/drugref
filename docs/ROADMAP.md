@@ -353,7 +353,7 @@ before the first curated row.**
 **The five subsystems ROADMAP used to bundle here, now sequenced** — the design round of 2026-08-06 split them, because
 one spec covering all five is one nobody can review and one branch nobody can measure:
 
-##### 5c.1 — the assertion shape ✅ DONE
+##### 5c.1 — the assertion shape ✅ DONE — merged as PR [#77](https://github.com/cairn-ehr/drugref/pull/77) (2026-08-06)
 Spec: [slice-5c.1 curated
 overlay](superpowers/specs/2026-08-06-drugref-slice-5c1-curated-overlay-design.md); plan:
 [2026-08-06](plans/2026-08-06-slice-5c1-curated-overlay.md); published record: [curating a drug–condition
@@ -379,6 +379,11 @@ confirmed (three controls, not reasoned) to be inherited whole from `ddi_candida
 not db/024's duplicated-walk shape — and filed as
 [#75](https://github.com/cairn-ehr/drugref/issues/75) rather than fixed here, since the fix belongs inside a prior
 slice's hot-path view. Full account: PROJECT-NOTES.md § "Slice 5c.1".
+
+**Re-measured post-merge on 2026-08-08** (`drugref_5c1m`, chain 144 s), because the figures above were taken before
+two review rounds edited `db/029` twice more and the merged file had never been run end to end: **every count
+reproduces exactly**, every ingest summary matched, and all four review fixes are confirmed in the live catalog.
+Suite **943**. `db/029` is merged and therefore frozen — corrections need a new `db/NNN`.
 
 ##### 5c.2 — the ONC high-priority DDI floor
 First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
