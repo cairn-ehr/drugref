@@ -7,8 +7,11 @@ or research pipeline can consume it on equal footing — free software, free dat
 reproducible from source.
 
 !!! info "Status — under active development"
-    The global moiety spine, classification (MED-RT + MeSH) and the first
-    interaction data are built; the public API is still to come. Follow progress
+    The global moiety spine, classification (MED-RT + MeSH), candidate-tier
+    interaction / contraindication / indication projections, the GSRS composition
+    tree and the append-only floor of the curated overlay are built. The overlay
+    ships **empty** until signing lands — no row may be curated before it can be
+    signed — and the public API is still to come. Follow progress
     [on GitHub](https://github.com/cairn-ehr/drugref).
 
 ## Why it exists
@@ -33,6 +36,11 @@ sources, and published under licences that keep it open for everyone, forever.
 - **Interaction groundwork** — class-level contraindication data from MED-RT, expanded
   to candidate drug–drug pairs; the advisory foundation for interaction checking,
   clearly tiered by evidence.
+- **Drug–condition knowledge** — contraindications expanded *down* the disease tree
+  (a rule on *Epilepsy* reaches a patient coded *Temporal Lobe Epilepsy*) and
+  indications generalised *up* it, both over a MeSH-keyed condition registry.
+- **Composition tree** — which registered moieties a specific substance (a salt, a
+  hydrate) is composed of, from the FDA/NCATS GSRS public data dump.
 
 ## Two tiers
 
