@@ -54,6 +54,27 @@ worth keeping does not belong in the file whose history is deliberately disposab
   `[tool.pytest.ini_options]` for a whole draft and nothing failed — 88 is also ruff's default, so lint looked
   configured. The only symptom was pytest's `PytestConfigWarning: Unknown config option: line-length`. **Verify
   effective settings from the tool (`ruff check --show-settings`), never from reading the file.**
+- **A TEST WHOSE EXPECTED RESULT IS OVER-DETERMINED CANNOT FAIL** (the review of PR #80). A negative assertion
+  (`== []`, "no rows", "no error") is only evidence if **exactly one** thing could have produced it. The superseded
+  -orphan test held whether or not the view filtered on `superseded_by`, because it never removed the candidate,
+  so two independent clauses each sufficed. **Before trusting a test that asserts absence, name every reason the
+  result could be empty; if there is more than one, the test is pinning none of them.** Mutation is how you check.
+- **A SHELL PIPELINE SWALLOWS THE EXIT CODE OF EVERYTHING BUT ITS LAST STAGE** (the review of PR #80). CI's
+  anti-skip guard ran `pytest … | tee out.txt && ! grep …` under `bash -e`, which does **not** set `pipefail`, so
+  five test failures exited 0 and only the grep decided the step. **In any CI step, redirect rather than pipe, or
+  set `-o pipefail` explicitly** — and remember `uv sync` re-resolves a drifted lockfile silently, so a pinned
+  tool version is only pinned under `uv sync --locked`.
+- **A GREP-SHAPED GUARD MUST MATCH THE PARSE, NOT THE SOURCE TEXT** (the review of PR #80). The "no SQL in
+  `cli.py`" test matched a literal `FROM drugref.<table>` against raw source, so a two-line string, an `INSERT`,
+  an `UPDATE`, a `JOIN` or a double space all walked past it — and **the same round's 88-column lint rule is what
+  forces long SQL to wrap**, so one gate was quietly weakening another. `ast.parse` folds implicit concatenation,
+  which closes every one of those at once. **When you add a formatting rule, re-check every guard that reads
+  source text.**
+- **DERIVE THE COVERED SET FROM THE CATALOG, NEVER FROM A LIST YOU MAINTAIN** (the review of PR #80). Seven
+  single-live tables were covered by three hand-written literal lists, and the number "seven" appeared in prose
+  four times while nothing asserted it — so an eighth table was invisible to the entire suite. Reading
+  `pg_trigger.tgargs` makes the fixture assert what the trigger actually asks for, and makes new tables covered
+  the day their migration lands. Same for any "all N of these" claim: if a catalog knows N, ask it.
 
 ## Merged rounds, compressed — the traps only
 
@@ -763,10 +784,19 @@ a `lint` job added to CI, and `tests/**` carved out of E501 via `per-file-ignore
 **[#79](https://github.com/cairn-ehr/drugref/issues/79)** and a comment in `pyproject.toml` saying to delete the
 block when 79 closes.
 
-**`extend-exclude = ["downloads", "docs-site/site"]` retires a trap rather than working around it**: `ruff check .`
-used to hang on the 2.05 GB GSRS dump, which is why every instruction in this repo said `ruff check src tests`.
-The bare command now runs in **0.18 s**. (It had also been *accidentally* safe — ruff honours `.gitignore`, and
-`downloads/` is gitignored — but that is not a thing to rely on.)
+**`extend-exclude = ["downloads", "docs-site/site"]` is BELT-AND-BRACES, and this entry originally had the
+causation backwards.** It claimed the exclusion is what stops `ruff check .` hanging on the GSRS dump — which is
+why every instruction in this repo used to say `ruff check src tests`. **The review of PR #80 measured it and the
+claim does not reproduce**: with `extend-exclude` emptied, `ruff check .` still completes in **0.18 s** over a
+614 MB `downloads/`. Two things make it safe, neither of them this setting — ruff honours `.gitignore` and
+`downloads/` is ignored (`.gitignore:7`, since 2026-07-24), and ruff only ever opens `.py`/`.pyi`, so a data blob
+costs nothing even when gitignore is bypassed. The setting earns its place only for the day one of those paths
+stops being ignored; `docs-site/site` is the one that would bite (bypassing gitignore surfaces 662 E501s from it).
+**Note the shape of the error**: a true statement ("the bare command is now safe") was given a false cause, and
+the false cause is what a later contributor would act on.
+
+Also corrected there: the dump is **one** artefact, not two — 321,487,817 bytes gzip → ~2.05 GB, exactly as
+§ "Repo facts" states it. An earlier draft read that as "a 2.05 GB dump and a 321 MB gzip".
 
 **TWO TRAPS THIS ROUND WALKED INTO, both worth the next reader's attention:**
 
@@ -783,11 +813,28 @@ The bare command now runs in **0.18 s**. (It had also been *accidentally* safe �
    `ast.parse` over every touched file. **Three files were reverted and redone by hand**, and the script was
    narrowed to comment blocks only.
 
-**The reflow is provably content-preserving**: every NON-DOCSTRING string constant was compared between `HEAD`
-and the working tree via `ast.parse` across all 16 touched files — Python folds implicit concatenation at parse
-time, so splitting `"AAA BBB"` into `"AAA " "BBB"` is invisible while a lost or doubled space is not. **All 16
-identical** (`cli.py` 119 strings, `questions.py` 117, `cli_policy.py` 92, …). Do this check after any
-line-wrapping pass over SQL string literals; there were nine of them here.
+**The reflow is provably content-preserving — FOR STRING CONSTANTS, which is not the same as for comments.**
+Every NON-DOCSTRING string constant was compared between `HEAD` and the working tree via `ast.parse` across all
+16 touched files — Python folds implicit concatenation at parse time, so splitting `"AAA BBB"` into `"AAA "
+"BBB"` is invisible while a lost or doubled space is not. **All 16 identical** (`cli.py` 119 strings,
+`questions.py` 117, `cli_policy.py` 92, …). Do this check after any line-wrapping pass over SQL string literals;
+there were nine of them here.
+
+**The review of PR #80 then found what that check by construction could not see**, and it is worth stating
+because the phrase "provably content-preserving" invites over-reading:
+
+- **One comment lost a word.** `medrt.py`'s `inactive_concepts` counter went from `# right CTY, but upstream no
+  longer marks it active` to the same line without `but` — the line was 89 characters, so the script dropped a
+  word rather than the alignment padding, and the two sibling counters beside it still read "but". Restored by
+  trimming the padding. A word-bag diff over comments (via `tokenize`, so trailing comments count) is the check
+  that catches this; the string-constant check cannot.
+- **29 of `mesh_rel_run.py`'s 77 indented continuation lines were flattened**, inconsistently and within single
+  blocks — step 7 ended up with three flat paragraphs and one still indented, which reads as though the indented
+  one were a deliberate sub-point. No words moved, so every automated check passed. Restored, then re-verified
+  word-identical to `main`.
+
+**Standing rule: a reflow needs TWO checks, not one** — `ast.parse` over string constants for content, and a
+comment word-bag plus an indentation count for structure. Neither sees what the other does.
 
 ### Issue 76 — `curated_target_unresolved` had no consumer
 
@@ -799,24 +846,85 @@ docstring as "precisely the failure mode it was written to catch". Now a standin
 `curation.unresolved_targets(conn) -> list[UnresolvedTarget]` is the read, and `drugref status` grew a **third
 block** that calls it. Two design points a later reader will otherwise re-litigate:
 
-- **The read lives in `curation.py`, not in `cli.py`.** `cli.py`'s docstring forbids embedding SQL against
-  curated append-only tables, because `test_only_the_current_view_reads_the_policy_table_directly` finds readers
-  through `pg_rewrite`, which cannot see a query embedded in Python. `_handle_status`'s stated exception covers
-  `loaded_release` and `ingest_run_incomplete` — **operational** views — and does not stretch to the curated
-  overlay. Pinned by a parametrized grep test per curated table.
+- **The read lives in `curation.py`, not in `cli.py` — for OWNERSHIP, not for `pg_rewrite`.** The original
+  wording here (and in `cli.py`'s own docstring) said the `pg_rewrite` argument "applies in full" to the third
+  block. It does not, and the review of PR #80 was right to press it: `curation.unresolved_targets` is *also* a
+  SELECT embedded in Python, and moving it out of `cli.py` does not make it visible to `pg_rewrite` — nothing can.
+  What the placement actually buys is that the read sits beside the curated write path it belongs to, exactly as
+  `unresolved_expansion_policy` sits in `interactions.py`, and that a grep test can then hold the line. Keep the
+  rule; state the real reason for it.
 - **`drugref status`, not an ingest summary**, which is what issue 76 itself proposed. `curated_target_unresolved`
   has **no `source` column** — it compares curated rows against three projections at once — so unlike its
   expansion-policy sibling it cannot be scoped per-run, and `db/029` is merged and frozen, so adding one would
   need a new migration. That makes it a whole-database question.
 
-`UnresolvedTarget` is built **positionally** from the SELECT, so one test asserts **all six fields** against
-real SQL; the stub-driven CLI tests supply a tuple already in the assumed order and cannot see a column-order
-mistake. Verified by mutation: swapping `reviewed_by`/`reviewed_against` in the SELECT fails that test and only
-that test. Confirmed end to end on `drugref_5c1m` — `drugref status` prints `unresolved curated targets: none`
-alongside the five loaded releases.
+`UnresolvedTarget` **was** built positionally from the SELECT, pinned by one test asserting all six fields
+against real SQL. **The review of PR #80 replaced testing-for with cannot-happen**: a single
+`_UNRESOLVED_COLUMNS` tuple now generates the SELECT *and* binds the record by keyword, so the two hand-maintained
+lists that sat a few lines apart are one, and `zip(..., strict=True)` turns a gained or lost column into a
+`ValueError` instead of a mis-populated record. Worth keeping the arithmetic that motivated it: four text columns
+and two uuid ones admit **48 type-compatible orderings**, exactly one correct, and every wrong one is well-typed.
 
-`cli.py` is now **479 lines**, close enough to CLAUDE.md's ~500 that the next handler added there should split
-rather than append.
+Note what was NOT the risk, because the PR description got this wrong and a later reader will too: the SELECT
+names its columns explicitly, and `CREATE OR REPLACE VIEW` cannot reorder or rename existing columns anyway, so
+**a view change could never have silently reordered the result**. The exposure was entirely inside `curation.py`.
+
+Confirmed end to end on `drugref_5c1m` — `drugref status` prints `unresolved curated targets: none` alongside the
+five loaded releases. A database predating db/029 now raises a `RuntimeError` naming `drugref migrate` rather than
+a raw psycopg `UndefinedTable` traceback arriving after two blocks of real answers.
+
+`cli.py` is now **508 lines — OVER CLAUDE.md's ~500 cap**, having been 479 when this round first flagged it as
+"close enough that the next handler should split". The review's fixes (the `UndefinedTable` re-raise, the docstring
+correcting the `pg_rewrite` claim) pushed it past. **Splitting it is the next change to that file, before any new
+handler** — the natural seam is the four `_handle_*` entry points, which already take a connection and are
+deliberately thin, versus the DB-free argument layer above them. Filed as debt here rather than done in a review
+round, because moving 500 lines while fixing gates would have made both unreviewable.
+
+### What the review of PR #80 found — three gates this round ADDED that did not fire
+
+The round's own thesis, one level up. All three confirmed by mutation against the real database, and all three
+now verified dead the same way.
+
+1. **`test_a_superseded_judgement_is_not_an_orphan` could not fail.** It recorded a judgement, corrected it, and
+   asserted the result was empty — but never deleted the candidate, so *both* rows resolved through the view's
+   `NOT EXISTS` and the empty result was over-determined. Removing `WHERE c.superseded_by IS NULL` from **both**
+   arms of db/029's view left the whole suite green. Its own failure message admitted it ("the candidate is still
+   projected, so neither row is an orphan"). Now it orphans the candidate and asserts exactly one row, carrying
+   the **correction's** `reviewed_against` rather than the predecessor's.
+2. **CI's `Confirm nothing was skipped` step could not fail on a failing pytest.** `pytest … | tee out.txt && !
+   grep -q skipped out.txt` runs under GitHub's default `bash -e`, which has **no `pipefail`**, so the pipeline's
+   status is `tee`'s — always 0 — and only the grep decided the step. A run with 5 failures and 0 skips passed.
+   This is the second pytest run against a service container the first run has already written to, so it is
+   precisely where a state-dependent failure would first appear. Redirect, don't pipe. (The grep was also
+   case-sensitive against `-rs`'s `SKIPPED` lines; it is anchored on `[0-9]+ skipped` now.)
+3. **The "no SQL in `cli.py`" guard was being weakened by this round's own lint rule.** It matched
+   `f"FROM drugref.{table}"` against raw source, so it was blind to a SELECT split across two lines — and
+   **E501 at 88 columns is what forces long SQL to wrap**; this branch splits SQL literals in eleven places. Also
+   blind to `INSERT`, `UPDATE`, `JOIN` and a double space. A Python-embedded *writer* to an append-only curated
+   table is strictly worse than a reader, and neither the guard nor `pg_rewrite` could see one. Rewritten over
+   `ast.parse`d string constants (which fold implicit concatenation, killing all seven evasions at once) and
+   extended to **`cli_policy.py`**, which the module docstring's rule is actually about and which nothing scanned.
+
+**Two more surviving mutants**, both now dead: the view's `cc.relationship = c.relationship` predicate could be
+replaced by `true` (both orphan tests deleted the candidate table *wholesale*, so only the all-or-nothing case was
+exercised — a MED-RT **re-key** is the realistic orphan and now has its own test), and the UNION's second arm had
+no field-level pin, so swapping `reviewed_by`/`reviewed_against` there survived while arm 1's assertion stayed
+green. **Standing rule: a UNION's arms are two independent column lists. Pin each one.**
+
+Two gates that never fired anywhere are also closed. The seven live-key tables were **three hand-maintained
+literal lists across three files**, with "seven" appearing in prose four times and asserted nowhere — an eighth
+table shipping a `*_single_live` trigger with a UNIQUE index, or none, was invisible. They are now **derived from
+`pg_trigger.tgargs`**, which is the trigger's own natural key, so the fixture asserts the real invariant ("the
+index matches what the trigger asks") rather than a literal someone typed; verified by building a synthetic
+eighth table in a transaction and watching it be discovered and rejected. And `conftest`'s CI hard-fail branch —
+the one thing standing between this suite and a vacuous green — **had never been observed firing**, because the
+DSN is set both locally and in CI. It is now a pure `dsn_verdict(dsn, in_ci)` predicate with
+`tests/test_dsn_verdict.py` driving all three verdicts DB-free, and it keys on the **presence** of `CI` rather
+than its truthiness (some runners export `CI=""`, which the old `os.environ.get("CI")` read as falsy).
+
+Suite **956 → 969**. Orphan exit-code channel deferred to
+[#82](https://github.com/cairn-ehr/drugref/issues/82) — `drugref status` still `return 0`s on an orphan, so the
+rebuild script that caused it cannot gate on it; that is a CLI-contract decision, not a cleanup.
 
 ## Verify before the first production load
 

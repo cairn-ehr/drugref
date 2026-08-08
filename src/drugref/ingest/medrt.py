@@ -193,11 +193,10 @@ class MeshObjectAssertion:
     is a MeSH concept -- shared by both the MeSH-keyed contraindications
     (MESH_CI_RELATIONSHIPS) and the MeSH-keyed indications
     (MESH_INDICATION_RELATIONSHIPS, slice 5b.2). The MEANING lives entirely in
-    `relationship`: a CI_with row is a
-    contraindication, a may_treat row is an indication, and an induces row is neither
-    (MED-RT does not say whether the drug causing the state is the therapeutic point
-    or an adverse effect) -- this record only carries the endpoints, not a judgement
-    about what kind of claim they form.
+    `relationship`: a CI_with row is a contraindication, a may_treat row is an
+    indication, and an induces row is neither (MED-RT does not say whether the drug
+    causing the state is the therapeutic point or an adverse effect) -- this record
+    only carries the endpoints, not a judgement about what kind of claim they form.
 
     `rxcui` is the drug the statement is ABOUT and `mesh_code` is the MeSH concept on
     the other end of `relationship` -- the direction is load-bearing for every one of
@@ -245,7 +244,7 @@ class ParsedMedrt:
     # these needs a class->condition relation and a second expansion question, so they
     # are counted and filed against #8 rather than guessed at.
     class_subject_indications: int = 0
-    inactive_concepts: int = 0        # right CTY, upstream no longer marks it active
+    inactive_concepts: int = 0     # right CTY, but upstream no longer marks it active
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
     ambiguous_codes: int = 0          # one published code claimed by several concepts
     # The DISTINCT names this parse saw and ignored, sorted. Not errors -- HC/EXT

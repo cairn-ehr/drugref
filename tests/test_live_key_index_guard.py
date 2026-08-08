@@ -3,10 +3,11 @@
 
 WHY THIS FILE EXISTS. Seven tables carry a single-live natural-key index, and until
 issue 74 the tests protecting them asserted the property in three different strengths:
-two checked all three properties, four checked existence and the WHERE clause, and one
--- `class_expansion_policy_live_key` -- counted the index by name and nothing else. A
-regression that made any of them UNIQUE would have forbidden every correction the
-append-only overlay exists to make, and five of the seven tests would still have passed.
+two checked existence, partiality and non-uniqueness, four checked existence and the
+WHERE clause, and one -- `class_expansion_policy_live_key` -- counted the index by name
+and nothing else. NONE of them checked the column list. A regression that made any of
+them UNIQUE would have forbidden every correction the append-only overlay exists to
+make, and five of the seven tests would still have passed.
 
 Consolidating those seven call sites onto one fixture fixes the inconsistency but
 creates a new single point of failure: if the shared assertion silently stops checking
@@ -17,12 +18,21 @@ six times -- a load-bearing clause no test kills the removal of.
 So the guard gets a guard. Each test below MUTATES the real index inside the test
 transaction (Postgres DDL is transactional, and the `conn` fixture rolls back, so the
 schema is restored for the next test) and asserts the fixture REJECTS it. One test per
-property, per the standing rule the slice 5c.1 PR review produced: for every clause in
-a multi-table guard, name the test that kills its removal, one per clause.
+property -- four properties, four mutation tests, plus a control -- per the standing
+rule the slice 5c.1 PR review produced: for every clause in a multi-table guard, name
+the test that kills its removal, one per clause.
 
-`curated_condition` is the subject throughout because it is the simplest live-key index
-in the schema -- two columns, no vocabulary FK -- so a mutation here isolates the
-property under test rather than tripping some other constraint first.
+`curated_condition` is the subject throughout, and the reason is the COLUMN-LIST test
+specifically. The seven live-key indexes are not uniform -- `additive_effect` and
+`interaction_group_assertion` carry ONE column, `class_expansion_policy`,
+`effect_contribution` and `curated_condition` carry two, `curated_interaction` and
+`interaction_group_member` three -- and a one-column index cannot be narrowed at all
+without ceasing to be an index, so it cannot host the mutation that matters most.
+Two columns is the smallest shape on which "drop a column" is still a well-formed
+index, which makes `curated_condition` the minimal honest subject rather than merely
+the simplest one. (An earlier version of this note claimed a mutation here avoids
+"tripping some other constraint first" -- there is no such hazard: these tests run DDL
+only and insert no rows, so no table constraint is reachable.)
 """
 
 import pytest
@@ -30,6 +40,53 @@ import pytest
 INDEX = "curated_condition_live_key"
 TABLE = "curated_condition"
 COLUMNS = "subject_moiety_uuid, object_condition_uuid"
+
+
+def _single_live_tables(conn):
+    """Every table carrying the single-live trigger, with the natural key it enforces.
+
+    Returns [(table, "col, col"), ...] read from `pg_trigger.tgargs` -- the arguments
+    db/NNN passed to `forbid_multiple_live_assertions`, which ARE the natural key. The
+    args are a NUL-terminated C string array, hence the split.
+    """
+    rows = conn.execute(
+        "SELECT c.relname, encode(t.tgargs, 'escape') "
+        "FROM pg_trigger t "
+        "JOIN pg_class c ON c.oid = t.tgrelid "
+        "JOIN pg_proc p ON p.oid = t.tgfoid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'drugref' AND NOT t.tgisinternal "
+        "AND p.proname = 'forbid_multiple_live_assertions' "
+        "ORDER BY c.relname").fetchall()
+    return [(table, ", ".join(filter(None, args.split("\\000"))))
+            for table, args in rows]
+
+
+def test_every_single_live_trigger_has_a_matching_index(conn, assert_live_key_index):
+    """THE EIGHTH TABLE. Derived from the catalog, so a new one cannot arrive unguarded.
+
+    Coverage of the seven was three hand-maintained literal lists across three test
+    files, and the number "seven" appeared in prose in four places with nothing
+    asserting it. A future db/NNN adding a `*_single_live` trigger with a UNIQUE index,
+    or with no index at all, was invisible to the entire suite -- which is this round's
+    own thesis, one level up: the guard fires for the tables someone remembered to list.
+
+    Nothing here is typed twice. The trigger's OWN arguments supply the expected column
+    list, so this asserts the real invariant -- "the index matches what the trigger
+    asks" -- rather than "the index matches a literal I wrote down". A table that gains
+    a trigger, or whose natural key changes, is covered the day the migration lands.
+
+    The sibling call sites in test_schema_accumulation.py, test_expansion_policy.py and
+    test_curated_overlay.py are NOT redundant with this: they name their table, so a
+    trigger AND index deleted together still fails there, while this test would simply
+    stop iterating over the pair. Both directions are needed.
+    """
+    tables = _single_live_tables(conn)
+    assert len(tables) >= 7, (
+        f"expected at least the seven known single-live tables, found {len(tables)}: "
+        f"{[t for t, _ in tables]} -- a trigger disappearing is itself the regression")
+    for table, columns in tables:
+        assert_live_key_index(f"{table}_live_key", table, columns)
 
 
 def _remake(conn, definition):

@@ -333,10 +333,10 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     #    assertions, and a pass re-reading them would re-ask an answered question --
     #    then hand each pass the indexes it actually reads.
     #
-    # THE INDICATION PASS GETS ONE INDEX, NOT THREE, and the interface is saying
-    # something true: an indication's object is always a patient state, never a drug,
-    # so the UNII and CAS indexes have no reader there. Handing them over invites
-    # one.
+    #    THE INDICATION PASS GETS ONE INDEX, NOT THREE, and the interface is saying
+    #    something true: an indication's object is always a patient state, never a
+    #    drug, so the UNII and CAS indexes have no reader there. Handing them over
+    #    invites one.
     rxcui_index = class_writer.moieties_by_rxcui(conn)
     indexes = (rxcui_index,
                class_writer.moieties_by_scheme(conn, "UNII"),
@@ -376,14 +376,14 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
         conn, SOURCE, class_writer.CONTRAINDICATION)
     class_writer.add_unmatched_ingredients(conn, sorted(ci.unmatched_rxcuis), run_id,
                                            class_writer.CONTRAINDICATION)
-    # THE INDICATION BUCKET IS THE SAME PAIR, NEVER A BARE WRITE -- #39 restated. The
-    # table is keyed (ingest_run, reason, rxcui), so a writer that inserts without
-    # first collecting its own garbage adds a fresh copy of every row under each new
-    # run id, forever. Nor may it widen the clear to cover the bucket above: the two
-    # lists are different populations (a subject unmatched for one half may be
-    # matched, or absent, for the other), so a shared clear would make the answer
-    # depend on which pass ran last. One writer per (source, reason); this run owns
-    # two.
+    #    THE INDICATION BUCKET IS THE SAME PAIR, NEVER A BARE WRITE -- #39 restated.
+    #    The table is keyed (ingest_run, reason, rxcui), so a writer that inserts
+    #    without first collecting its own garbage adds a fresh copy of every row under
+    #    each new run id, forever. Nor may it widen the clear to cover the bucket
+    #    above: the two lists are different populations (a subject unmatched for one
+    #    half may be matched, or absent, for the other), so a shared clear would make
+    #    the answer depend on which pass ran last. One writer per (source, reason);
+    #    this run owns two.
     class_writer.clear_source_unmatched_ingredients(
         conn, SOURCE, class_writer.INDICATION)
     class_writer.add_unmatched_ingredients(conn, sorted(ind.unmatched_rxcuis), run_id,
@@ -400,33 +400,34 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
 
     # 7. Measure what the two halves say about the SAME (drug, condition) pair.
     #
-    # ONE QUERY, AFTER BOTH PASSES, AND IT COULD NOT LIVE ANYWHERE ELSE: neither pass
-    # can see the other's rows, and the overlap is not a loss either pass could count
-    # on its way past. The no-silent-drops posture (spec 7) is about assertions that
-    # do not become rows; this is its mirror -- two assertions that DO become rows
-    # and contradict each other -- and leaving it uncounted would be the same failure
-    # in the other direction.
+    #    ONE QUERY, AFTER BOTH PASSES, AND IT COULD NOT LIVE ANYWHERE ELSE: neither
+    #    pass can see the other's rows, and the overlap is not a loss either pass
+    #    could count on its way past. The no-silent-drops posture (spec 7) is about
+    #    assertions that do not become rows; this is its mirror -- two assertions that
+    #    DO become rows and contradict each other -- and leaving it uncounted would be
+    #    the same failure in the other direction.
     #
-    # 168 pairs on the 2026.07.06 release, and they are the hardest rows in it rather
-    # than noise: carvedilol is may_treat AND CI_with for Heart Failure, alteplase
-    # for Stroke, budesonide for Asthma. MED-RT asserts both with no qualifier,
-    # because the distinction (stable chronic HFrEF vs acute decompensation;
-    # ischaemic vs haemorrhagic stroke) is one the MeSH descriptor grain cannot
-    # carry. See #51 for the curated question of how a consumer should be TOLD, which
-    # is 5c's.
+    #    168 pairs on the 2026.07.06 release, and they are the hardest rows in it
+    #    rather than noise: carvedilol is may_treat AND CI_with for Heart Failure,
+    #    alteplase for Stroke, budesonide for Asthma. MED-RT asserts both with no
+    #    qualifier, because the distinction (stable chronic HFrEF vs acute
+    #    decompensation; ischaemic vs haemorrhagic stroke) is one the MeSH descriptor
+    #    grain cannot carry. See #51 for the curated question of how a consumer should
+    #    be TOLD, which is 5c's.
     #
     #    DISTINCT PAIRS, NOT ROWS, and the grain is the clinical unit: a pair is what a
     #    consumer asking about one drug and one patient's diagnosis gets both answers
     #    for. 7 pairs carry two therapeutic predicates, so the indication-row count is
     #    175 -- reporting that instead would answer a question nobody asks.
     #
-    # DELIBERATELY NOT SCOPED ON `source`, unlike every clear above it. Those rebuild
-    # THIS source's projection and must not touch another's; this one answers "what
-    # will a consumer see", and a consumer sees both tables whole. Today the question
-    # does not arise -- db/014 and db/019 CHECK both `source` columns to 'MED-RT'
-    # alone -- but when a second authority lands, a cross-source collision is exactly
-    # as visible to a reader as a within-source one, and scoping this query would
-    # hide it. If a per-source breakdown is ever wanted, add one; do not narrow this.
+    #    DELIBERATELY NOT SCOPED ON `source`, unlike every clear above it. Those
+    #    rebuild THIS source's projection and must not touch another's; this one
+    #    answers "what will a consumer see", and a consumer sees both tables whole.
+    #    Today the question does not arise -- db/014 and db/019 CHECK both `source`
+    #    columns to 'MED-RT' alone -- but when a second authority lands, a cross-source
+    #    collision is exactly as visible to a reader as a within-source one, and
+    #    scoping this query would hide it. If a per-source breakdown is ever wanted,
+    #    add one; do not narrow this.
     also_contraindicated_pairs = conn.execute(
         "SELECT count(*) FROM (SELECT DISTINCT i.subject_moiety_uuid, "
         "                             i.object_condition_uuid "

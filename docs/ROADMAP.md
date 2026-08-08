@@ -489,12 +489,19 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
   by name alone; all seven now go through one `assert_live_key_index` fixture, which itself gets a guard file
   mutating the real index inside the test transaction. **66**: there was no lint gate to weaken — no `[tool.ruff]`,
   `ruff` not a project dependency (a pyenv shim answered `uv run ruff`), and **no lint job in CI at all**. Now
-  `line-length = 88` with `E`/`F`/`W`, `src/`'s 52 lines reflowed (provably content-preserving: every non-docstring
-  string constant compared by `ast.parse` across all 16 files), ruff pinned, a CI `lint` job added, `ruff check .`
-  made safe (0.18 s) and `tests/`' 324 long lines carved out as [#79](https://github.com/cairn-ehr/drugref/issues/79).
-  The issue's "~88 every file is written to" holds for `src/` only. **76**: `curated_target_unresolved` shipped with
-  no consumer — the second time (db/010's was the first) — now read by `curation.unresolved_targets` and printed as
-  `drugref status`'s third block. Suite **943 → 956**. Full account: PROJECT-NOTES § "The gates-that-do-not-fire round".
+  `line-length = 88` with `E`/`F`/`W`, `src/`'s 52 lines reflowed, ruff pinned, a CI `lint` job added, `ruff check .`
+  confirmed safe at 0.18 s (because ruff honours `.gitignore` — **not** because of `extend-exclude`, which is
+  belt-and-braces; the "used to hang on `downloads/`" claim does not reproduce) and `tests/`' **334** long lines
+  carved out as [#79](https://github.com/cairn-ehr/drugref/issues/79). The issue's "~88 every file is written to"
+  holds for `src/` only. **76**: `curated_target_unresolved` shipped with no consumer — the second time (db/010's was
+  the first) — now read by `curation.unresolved_targets` and printed as `drugref status`'s third block.
+  **Its own review then found three gates THIS round added that also did not fire** — an orphan test whose empty
+  result was over-determined, a CI step whose `tee` pipeline swallowed pytest's exit code, and a source-text grep
+  that the round's own 88-column rule taught SQL to evade. All mutation-verified dead; the seven live-key tables are
+  now derived from `pg_trigger.tgargs` rather than three hand-kept lists, and `conftest`'s CI hard-fail branch has a
+  test for the first time. Suite **943 → 969**; orphan exit-code channel deferred to
+  [#82](https://github.com/cairn-ehr/drugref/issues/82). **`cli.py` is now 508 lines, over the ~500 cap — split it
+  before adding another handler.** Full account: PROJECT-NOTES § "The gates-that-do-not-fire round".
 - **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). Made every other slice's coverage number real; every
   defect was invisible to the committed fixtures. `ingest/unii.py` read a **`PT` column the real UNII release does not have**
   (it is `Display Name`), so `row.get("PT") or ""` silently emptied all 168,046 labels — a production run would have

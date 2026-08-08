@@ -23,6 +23,17 @@ operational views nothing governs that way -- so the pg_rewrite discipline above
 not apply to them, and tests/test_cli.py drives them directly through a stub
 connection instead of a grep.
 
+THE EXCEPTION STOPS THERE, and a grep now says so. `_handle_status`' third block reads
+the CURATED overlay, so it goes through `curation.unresolved_targets` rather than a
+third embedded SELECT, and test_curation_orphans.py's
+test_the_cli_embeds_no_sql_against_a_curated_table parses this file (and cli_policy.py)
+and fails on any string constant naming a curated table. Note what that test is and is
+not: it is a grep, not a pg_rewrite reader, because there is no way to make a
+Python-embedded query visible to pg_rewrite -- moving the SQL to curation.py does not
+achieve that either. What the placement achieves is OWNERSHIP: the read sits beside the
+curated write path it belongs to, exactly as `unresolved_expansion_policy` sits in
+interactions.py.
+
 THE ARGUMENT LAYER TAKES NO CONNECTION, which is the sense of "pure" that matters
 here: the step table, the ChainError family, `resolve_inputs`, `selected_steps`,
 `check_release_agreement` and `build_parser` settle every way a chain invocation can
@@ -42,6 +53,8 @@ import pathlib
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+import psycopg
 
 import drugref
 from drugref import cli_policy, curation, db, interactions
@@ -336,9 +349,9 @@ def _handle_status(conn, args) -> int:
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
-    while this one reads the CURATED overlay, and the module docstring's pg_rewrite
-    argument applies in full to a reader of an append-only curated table."""
-    # Both blocks say "none" when empty, and the symmetry is the point: a fresh
+    while this one reads the CURATED overlay, which belongs to curation.py. See the
+    module docstring for what that placement does and does not buy."""
+    # All three blocks say "none" when empty, and the symmetry is the point: a fresh
     # database printed a bare "loaded releases:" header, which reads as output that
     # got cut off rather than as an answer. Nothing loaded IS the answer there.
     loaded = conn.execute(
@@ -358,14 +371,30 @@ def _handle_status(conn, args) -> int:
     # Issue 76. Expected empty, and reported in a LOUDER voice than the two blocks
     # above when it is not: a loaded release is news, an orphan is a curator's
     # judgement now pointing at nothing, which only a rebuild can have caused.
-    orphans = curation.unresolved_targets(conn)
+    #
+    # A DATABASE PREDATING db/029 HAS NO VIEW TO READ, and psycopg's raw UndefinedTable
+    # traceback is the wrong way to say so -- it arrives AFTER two blocks of real
+    # answers, so the run reads as a partial success, and it names neither the cause nor
+    # the fix. `main` renders RuntimeError without a traceback, so re-raise as one. The
+    # catch is around this call alone, deliberately: widening it would swallow the
+    # UndefinedTable that a genuinely mis-shaped view should still raise.
+    try:
+        orphans = curation.unresolved_targets(conn)
+    except psycopg.errors.UndefinedTable as exc:
+        raise RuntimeError(
+            "drugref.curated_target_unresolved is missing: this database predates "
+            "db/029, so orphaned curator judgement cannot be reported. Run "
+            "`drugref migrate` and re-run status.") from exc
     if orphans:
         print(f"\nunresolved curated targets: {len(orphans)}"
               "  ** a rebuild left curator judgement pointing at nothing **")
         for o in orphans:
+            # `is not None`, not a falsy test: an empty relationship is not the same
+            # thing as a condition ruling's absent one, and only the latter should
+            # render without the bracket.
             print("  {:<20} {} -> {}{} reviewed by {} against {}".format(
                 o.target_table, o.subject_moiety, o.object_uuid,
-                f" [{o.relationship}]" if o.relationship else "",
+                f" [{o.relationship}]" if o.relationship is not None else "",
                 o.reviewed_by, o.reviewed_against))
     else:
         print("\nunresolved curated targets: none")

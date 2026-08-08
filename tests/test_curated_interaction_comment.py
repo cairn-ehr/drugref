@@ -1,12 +1,17 @@
 # tests/test_curated_interaction_comment.py
 """`curated_interaction`'s CATALOG COMMENT carries a measured figure, so it is data.
 
-WHY THIS FILE EXISTS. db/029 shipped the stale `~739` twice -- once in a `--` comment
+WHY THIS FILE EXISTS. db/029 drafted the stale `~739` twice -- once in a `--` comment
 Postgres strips, and once inside `COMMENT ON TABLE drugref.curated_interaction`, which
 lands in the catalog permanently for any consumer running `\\d+`. 739 is the RAW MED-RT
 terminology-level CI_MoA/CI_PE count BEFORE the moiety gate; the gated figure is 635, of
 which 595 reach the worklist (the other 40 pair with nobody in ddi_candidate_pair and are
 already covered by gap_unpopulated_contraindication and gap_dead_by_expansion_policy).
+
+EXPECT TO FIND `739` IF YOU GREP THE MIGRATION, and do not read it as the correction
+having been lost. Only the catalog text mattered, so only that was rewritten; the `--`
+comment at db/029:18 deliberately still names the figure, as the record of what it used
+to say ("not the ~739 this section used to quote").
 
 Slice 5c.1's final whole-branch review caught the figure and corrected the migration while
 it was still unapplied outside its branch -- and NOTHING PINNED THE CORRECTION. It was the
@@ -14,7 +19,9 @@ one fix of that round's five with no test, so the post-merge round of 2026-08-08
 read the live catalog by hand, and the state files claimed a test coverage that did not
 exist. Its own file rather than an addition to test_curated_overlay.py, on the precedent of
 tests/test_live_key_index_guard.py: a check plus the guard that proves it fires is one
-subject, and the overlay suite is at CLAUDE.md's ~500-line mark.
+subject. (That precedent is the whole reason -- an earlier draft also pleaded the overlay
+suite's length, which does not hold: test_curated_overlay.py is 430 lines, comfortably
+under CLAUDE.md's ~500. One true reason beats two of which one invites a `wc -l`.)
 
 ASSERTED AGAINST THE CATALOG, NEVER THE MIGRATION TEXT. db/029 is merged and therefore
 frozen, so a correction arrives as a new db/NNN whose COMMENT replaces this one; the file
@@ -46,6 +53,18 @@ def _table_comment(conn):
     return conn.execute(
         "SELECT obj_description('drugref.curated_interaction'::regclass, 'pg_class')"
     ).fetchone()[0]
+
+
+def test_a_missing_comment_is_itself_a_defect():
+    """The `not comment` arm, which the DB-gated tests cannot reach on a healthy schema.
+
+    A migration that DROPPED the comment rather than restating it would leave the
+    catalog silent, and silence is the one answer this check must not read as current.
+    DB-free on purpose: it is a pure predicate, and covering its last branch should not
+    need a database.
+    """
+    assert _stale_population_figures(None) == ["no COMMENT ON TABLE at all"]
+    assert _stale_population_figures("") == ["no COMMENT ON TABLE at all"]
 
 
 def test_the_catalog_states_the_gated_curatable_population(conn):

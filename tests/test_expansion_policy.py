@@ -349,7 +349,7 @@ def test_the_live_key_index_exists(assert_live_key_index):
     every correction), dropped its WHERE clause, or narrowed its column list from
     (source, source_code) to (source) all passed it. It was also the one index the
     parametrized accumulation test never covered, because db/027 added it four
-    migrations after Plan C's four. All three properties are now asserted through the
+    migrations after Plan C's four. All four properties are now asserted through the
     shared fixture; see `assert_live_key_index` for why each is load-bearing.
     """
     assert_live_key_index(

@@ -245,10 +245,11 @@ def test_the_live_key_index_exists_by_name(assert_live_key_index):
     every assertion above -- the WHERE clause and non-uniqueness are unchanged -- while
     silently indexing the wrong key.
 
-    ISSUE 74 moved these three assertions into the shared `assert_live_key_index`
-    fixture, because five OTHER tables carry the same index and were asserting the
-    property in three different strengths -- the weakest of them counting the name and
-    nothing else. The reasoning above is why the fixture checks what it checks.
+    ISSUE 74 moved these four assertions into the shared `assert_live_key_index`
+    fixture, because SIX other tables carry the same index (seven in all, this one
+    included) and were asserting the property in three different strengths -- the
+    weakest of them counting the name and nothing else. The reasoning above is why the
+    fixture checks what it checks.
     """
     assert_live_key_index(
         "curated_interaction_live_key", "curated_interaction",

@@ -113,10 +113,9 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     conditions on the **record** that owns it (mesh_concepts.resolve_concepts explains
     why -- many concepts resolve to one record, and keying on the concept would split
     one condition into rows no rebuild could merge). When the named concept is the
-    record's
-    preferred one, nothing is lost. When it is SUBORDINATE, the concept may be NARROWER
-    than the record, and the assertion is stored against something BROADER than the
-    release said.
+    record's preferred one, nothing is lost. When it is SUBORDINATE, the concept may be
+    NARROWER than the record, and the assertion is stored against something BROADER
+    than the release said.
 
     MEASURED on the 2026.07.06 release: 422 of 18,314 assertions (2.30%) -- may_treat
     340, may_prevent 80, induces 2 -- arrive through 90 non-preferred ConceptUIs and
@@ -142,9 +141,8 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so refusing all 422
     would lose far more than it saves, and drugref has nothing on the row that tells a
     consumer which is which. Making the row itself detectable -- by storing the
-    ConceptUI MED-RT
-    named -- is #52, slice 5c's work. Until then this number is the only evidence, so it
-    must be reported rather than derivable.
+    ConceptUI MED-RT named -- is #52, slice 5c's work. Until then this number is the
+    only evidence, so it must be reported rather than derivable.
 
     D-TREE OBJECTS ARE INGESTED, AND THAT IS A RECORDED DECISION (spec 11 tension C).
     17 of the 2026.07.06 release's 18,144 therapeutic assertions (0.09%) -- 14 may_treat
@@ -152,14 +150,13 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     therapeutic assertions, not of may_treat: 17/15,319 would be 0.11%, and the 17 are
     not all may_treat anyway. Objects: LDL Cholesterol (2), Antioxidants (2),
     Prostate-Specific Antigen (2), Analgesics, Antiemetics, Antiparkinson Agents,
-    Deodorants,
-    Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2), ... Some are
-    defensible treatment targets ("a statin may_treat LDL cholesterol") and some are
-    upstream quirks ("may_treat Analgesics"), and MED-RT does not distinguish them. They
-    are not refused -- `condition.tree_numbers` lets a consumer scope on the leading
-    letter, and 5b already registered 18 such CI_with objects -- but COUNTED, because
-    withholding them behind a new worklist kind would cost more than it buys while
-    leaving an operator to DISCOVER the split rather than be told it.
+    Deodorants, Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2),
+    ... Some are defensible treatment targets ("a statin may_treat LDL cholesterol") and
+    some are upstream quirks ("may_treat Analgesics"), and MED-RT does not distinguish
+    them. They are not refused -- `condition.tree_numbers` lets a consumer scope on the
+    leading letter, and 5b already registered 18 such CI_with objects -- but COUNTED,
+    because withholding them behind a new worklist kind would cost more than it buys
+    while leaving an operator to DISCOVER the split rather than be told it.
 
     `source` and `run_id` are the run's provenance, taken as arguments and forwarded
     together to every writer call below, in the order indications.add_* takes them. The

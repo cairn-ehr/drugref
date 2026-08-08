@@ -12,21 +12,45 @@ import psycopg
 from drugref import db
 
 
+def dsn_verdict(dsn, in_ci):
+    """PURE: what to do about the DSN. Returns ("use"|"fail"|"skip", detail).
+
+    Split out of the fixture below so the CI branch can be TESTED. It could not be
+    before: it never runs locally (the DSN is set) and never runs in CI (the DSN is set
+    there too, by ci.yml), so the one gate standing between this suite and a vacuous
+    green had never been observed firing -- the same shape as the three gates issue 74,
+    66 and 76 were filed about. tests/test_dsn_verdict.py drives all three verdicts
+    without a database or an environment.
+    """
+    if dsn:
+        return "use", dsn
+    if in_ci:
+        return "fail", (
+            "DRUGREF_TEST_DSN is not set. Most of this suite is DB-gated, so a "
+            "CI run without a database would pass while testing none of it.")
+    return "skip", "DRUGREF_TEST_DSN not set — skipping DB-gated test"
+
+
 @pytest.fixture(scope="session")
 def _dsn():
-    dsn = os.environ.get("DRUGREF_TEST_DSN")
-    if not dsn:
-        # Skipping locally is a convenience; skipping in CI is a trap. Over half
-        # the suite is DB-gated -- every schema, trigger, floor, writer and
-        # orchestrator test -- and pytest exits 0 on a run that skipped all of
-        # them, so an unset DSN would report green on a completely unexercised
-        # database layer. In CI that is a failure, not a skip.
-        if os.environ.get("CI"):
-            pytest.fail(
-                "DRUGREF_TEST_DSN is not set. Most of this suite is DB-gated, so a "
-                "CI run without a database would pass while testing none of it.")
-        pytest.skip("DRUGREF_TEST_DSN not set — skipping DB-gated test")
-    return dsn
+    # Skipping locally is a convenience; skipping in CI is a trap. Over half
+    # the suite is DB-gated -- every schema, trigger, floor, writer and
+    # orchestrator test -- and pytest exits 0 on a run that skipped all of
+    # them, so an unset DSN would report green on a completely unexercised
+    # database layer. In CI that is a failure, not a skip.
+    #
+    # PRESENCE of CI, not its truthiness: some runners export CI="", which
+    # `os.environ.get("CI")` reads as falsy and would quietly downgrade the failure
+    # back to a skip -- reintroducing the vacuous green this branch exists to prevent.
+    # The asymmetry decides it: a local developer who happens to export CI="" gets a
+    # loud, self-explaining failure, whereas the other way round CI reports success on
+    # an untested database layer.
+    verdict, detail = dsn_verdict(os.environ.get("DRUGREF_TEST_DSN"), "CI" in os.environ)
+    if verdict == "fail":
+        pytest.fail(detail)
+    if verdict == "skip":
+        pytest.skip(detail)
+    return detail
 
 
 @pytest.fixture(scope="session")
@@ -49,13 +73,19 @@ def conn(_migrated):
 
 @pytest.fixture
 def assert_live_key_index(conn):
-    """Assert that a single-live natural-key index has ALL THREE properties the
+    """Assert that a single-live natural-key index has ALL FOUR properties the
     append-only overlay depends on. Shared here rather than imported across test
     files, following the precedent set when the curated-overlay fixtures were moved
     into conftest: a cross-file test import couples two suites for no benefit.
 
+    FOUR, not three. Earlier drafts of this docstring counted the first three and then
+    asserted the column list as well, and the prose said "three" in four separate files
+    while the code checked four things -- in the one fixture whose whole job is stopping
+    a load-bearing clause from being silently dropped. The column list IS a property, it
+    is the one that survived 936 green tests, and it is numbered below with the rest.
+
     Seven tables now carry one of these indexes and every one of them needs the same
-    three things to be true, so the property lives in exactly one place:
+    four things to be true, so the property lives in exactly one place:
 
     1. **It exists, by name.** Nothing but the single-live trigger ever reads it, so
        it looks unused to a catalog sweep and only a test stops it being dropped.
@@ -70,13 +100,13 @@ def assert_live_key_index(conn):
        enforced at statement time and reject every correction the overlay exists to
        make. The schema would still be green on every other test in this suite.
 
-    The COLUMN LIST is pinned too, because dropping a column from an index (matching
-    a drop from the trigger's argument list) leaves properties 1-3 all true while
-    silently indexing the wrong key -- that exact mutation survived 936 green tests
-    during slice 5c.1 and was caught by review, not by the suite.
+    4. **It indexes exactly the right COLUMNS.** Dropping a column from an index
+       (matching a drop from the trigger's argument list) leaves properties 1-3 all
+       true while silently indexing the wrong key -- that exact mutation survived 936
+       green tests during slice 5c.1 and was caught by review, not by the suite.
 
     `indexdef` is read rather than `pg_index.indisunique`/`indpred` because it is the
-    one place all three properties are visible in a single string.
+    one place all four properties are visible in a single string.
     """
     def _assert(index_name, table, columns):
         row = conn.execute(

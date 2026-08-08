@@ -58,40 +58,59 @@ testpaths = ["tests"]
 # across src/, there were 52 lines over 88, 0 over 100, 0 over 120. tests/ is a
 # different story and is exempted below.
 #
-# THE [tool.ruff] HEADER IS LOad-BEARING and was missing in the first draft of this
+# THE [tool.ruff] HEADER IS LOAD-BEARING and was missing in the first draft of this
 # section, which put `line-length` inside [tool.pytest.ini_options] instead. Nothing
 # failed: 88 is also ruff's own default, so the lint run looked correct, and the only
 # symptom was pytest warning "Unknown config option: line-length". A settings block
 # under the wrong header is not an error in either tool -- each simply ignores what it
 # does not recognise -- so the value that appears to be configured here has to be
-# checked against `ruff check --show-settings`, not assumed from the file.
+# checked against `ruff check --show-settings`, not assumed from the file. The positive
+# control is better still, because it does not depend on reading the setting right: a
+# deliberately over-88 line in src/ must FAIL, and one in tests/ must not.
 [tool.ruff]
 line-length = 88
 
-# `ruff check .` used to walk downloads/ and hang -- it holds a 2.05 GB GSRS dump and a
-# 321 MB gzip -- so every instruction in this repo had to say `ruff check src tests`
-# instead, and a bare `ruff check .` was a trap laid for the next contributor. Excluding
-# the directory here fixes that at the source: the plain command is now safe, and the
-# instructions no longer have to carry a workaround.
+# BELT-AND-BRACES, NOT THE REASON `ruff check .` IS FAST -- and the difference matters,
+# because an earlier version of this comment claimed the exclusion was what stopped a
+# hang on downloads/ (a 321 MB gzip that expands to ~2.05 GB, one artefact and not two).
+# Measured with the ruff pinned above: with extend-exclude emptied, `ruff check .` still
+# completes in 0.18 s over a 614 MB downloads/. What actually keeps it out is that ruff
+# honours .gitignore by default and both trees are ignored -- and that ruff only ever
+# opens .py/.pyi files, so a data blob costs nothing regardless. This setting is here
+# for the day one of those paths stops being gitignored; do not read it as a fix for a
+# hang it does not cause. `docs-site/site` is MkDocs build output, and it is the one
+# that earns its keep: bypassing gitignore surfaces 662 E501s from it alone.
 extend-exclude = ["downloads", "docs-site/site"]
 
 [tool.ruff.lint]
-# E and F are ruff's default selection; E501 is the one this adds, and W catches
-# trailing-whitespace drift that is otherwise invisible in review.
+# Ruff's DEFAULT selection is ["E4", "E7", "E9", "F"] -- a subset of E, which is why
+# E501 was absent. Selecting all of E is therefore not a no-op beyond E501, and W is
+# not only trailing whitespace (W291/W293): it also brings W605, invalid escape
+# sequence, which is what catches the day a docstring full of regex-looking text writes
+# `\d+` instead of `\\d+`.
 select = ["E", "F", "W"]
 
 [tool.ruff.lint.per-file-ignores]
-# tests/ is NOT written to 88 and never has been: 324 lines exceed it, against 52 in
+# tests/ is NOT written to 88 and never has been: 334 lines exceed it, against 0 now in
 # src/. That is not drift, it is a different (unstated) convention -- the measured
 # ceiling across tests/ is 119 characters, and the long lines are overwhelmingly the
 # explanatory docstrings this project requires, plus inline SQL that reads worse when
 # wrapped.
 #
-# Reflowing 324 lines in one pass would bury this change's actual content in mechanical
+# THAT COUNT IS A MEASUREMENT WITH A DATE, not a constant: it was 324 when the carve-out
+# was written and 334 by the end of the same branch, because new test files land under
+# the exemption. Re-measure it rather than trusting it --
+#   uv run ruff check tests --config 'lint.select=["E501"]' \
+#                           --config 'lint.per-file-ignores={}' --statistics
+# -- and treat a drifted figure here as expected, not as a finding.
+#
+# Reflowing 334 lines in one pass would bury this change's actual content in mechanical
 # noise and make `git log -p` useless on the suite, which is the same trade #63 already
 # rejected for PROJECT-NOTES and ROADMAP. So tests/ is exempted from E501 EXPLICITLY
 # and temporarily, with the decision recorded rather than left implicit, and the
 # follow-up filed as issue 79.
 #
-# This exemption is a debt, not a policy. Delete this block when 79 is closed.
+# The exemption is E501 ONLY -- F, W and the rest of E still apply to tests/, verified
+# with a probe file that duly failed on F401 and E402 while its 115-character line
+# passed. This exemption is a debt, not a policy. Delete this block when 79 is closed.
 "tests/**" = ["E501"]

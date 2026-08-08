@@ -20,11 +20,19 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      # --locked, not a bare sync. `uv sync` LOCKS THEN SYNCS: if pyproject.toml and
+      # uv.lock disagree it quietly re-resolves and carries on, so the ruff pin
+      # pyproject argues for ("the version lives in the lockfile") was unenforced in
+      # the one place that claim is about. --locked fails the build on a stale lock
+      # instead.
       - name: Sync dependencies
-        run: uv sync
+        run: uv sync --locked
 
-      # A bare `.` is deliberate, and is now safe: pyproject's extend-exclude drops
-      # downloads/, which holds a 2.05 GB GSRS dump that used to make this command hang.
+      # A bare `.` is deliberate. What makes it safe is that ruff honours .gitignore by
+      # default, and both bulky trees (downloads/, docs-site/site/) are ignored --
+      # measured at 0.18 s over a 614 MB downloads/. pyproject's extend-exclude is
+      # belt-and-braces for the day one of them stops being ignored; it is NOT what
+      # makes this fast, and the comment there says so.
       - name: Lint
         run: uv run ruff check .
 
@@ -60,8 +68,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      # --locked, not a bare sync. `uv sync` LOCKS THEN SYNCS: if pyproject.toml and
+      # uv.lock disagree it quietly re-resolves and carries on, so the ruff pin
+      # pyproject argues for ("the version lives in the lockfile") was unenforced in
+      # the one place that claim is about. --locked fails the build on a stale lock
+      # instead.
       - name: Sync dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run the full suite
         run: uv run pytest -q
@@ -70,4 +83,21 @@ jobs:
         # A belt-and-braces guard on the guard: if the DB-gated tests ever start
         # skipping again (a renamed env var, a changed fixture), the suite would go
         # back to passing vacuously. Fail loudly on any skip instead.
-        run: uv run pytest -q --strict-markers -p no:randomly -rs 2>&1 | tee out.txt && ! grep -q "skipped" out.txt
+        #
+        # THIS STEP COULD NOT FAIL ON A FAILING PYTEST, which is the failure mode it
+        # exists to prevent, one level up. It was written as `pytest ... | tee out.txt
+        # && ! grep -q skipped out.txt`; GitHub runs steps under `bash -e` with NO
+        # pipefail, so the pipeline's status is tee's -- always 0 -- and only the grep
+        # decided the step. A run with 5 failures and 0 skips passed. That mattered
+        # because this is a SECOND pytest run against the same service container, which
+        # the first run has already written to, so it is exactly where a state-dependent
+        # failure shows up first. Redirect instead of piping, so pytest's own exit
+        # status is the step's.
+        #
+        # The grep is anchored on the count line too: `-rs` prints its short summary as
+        # "SKIPPED", which a case-sensitive `grep -q skipped` never matched, so only
+        # pytest's own "N skipped" tally was ever doing the work. Say so explicitly.
+        run: |
+          uv run pytest -q --strict-markers -p no:randomly -rs > out.txt 2>&1 || { cat out.txt; exit 1; }
+          cat out.txt
+          ! grep -qE '[0-9]+ skipped' out.txt
