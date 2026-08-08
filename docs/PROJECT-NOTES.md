@@ -37,6 +37,19 @@ worth keeping does not belong in the file whose history is deliberately disposab
   `curated_target_unresolved` (db/029, repaired by the round below). A view is half a feature; the other half is
   the caller. **When a migration adds a detector, name its consumer in the same round or file the issue before
   the branch merges.**
+- **A MEASURED FIGURE INSIDE A `COMMENT ON` IS SHIPPED DATA, AND NEEDS A TEST LIKE ANY OTHER** (the review of PR
+  [#78](https://github.com/cairn-ehr/drugref/pull/78)). `db/029` carried the stale `~739` inside
+  `COMMENT ON TABLE curated_interaction`; the whole-branch review corrected it and **nothing pinned the
+  correction**, so the post-merge round had to read the live catalog by hand and the state files claimed a test
+  coverage that did not exist. A `--` comment is stripped, but a `COMMENT ON` lands in the catalog where
+  consumers read it, and it is exactly where a later rewrite restates the design spec's approximate prose. Pinned
+  now by `tests/test_curated_interaction_comment.py`, asserted against the CATALOG rather than the migration
+  text — the file a grep could check is not the one that shipped once a migration merges — with a guard beside it
+  driving the same pure predicate with the comment that actually shipped.
+- **A READING THAT IS IDENTICAL ON THE BROKEN VERSION IS NOT EVIDENCE** (the review of PR #78). The post-merge
+  round "confirmed" the `pair_count` fix from `max`/`sum`/`count`, which are identical on the drifted and merged
+  databases *by the finding's own argument*. Before recording a fix as verified, name the observation that
+  **differs** between the two versions — here `pg_get_viewdef`, run on both — or record it as unverified.
 - **A CONFIG BLOCK UNDER THE WRONG HEADER IS SILENT IN BOTH TOOLS** (issue 66). `line-length = 88` sat inside
   `[tool.pytest.ini_options]` for a whole draft and nothing failed — 88 is also ruff's default, so lint looked
   configured. The only symptom was pytest's `PytestConfigWarning: Unknown config option: line-length`. **Verify
@@ -537,6 +550,34 @@ outside its branch.** Found by the final whole-branch review of slice 5c.1 and c
 rules, of which 595 reach the worklist, with the distinction stated explicitly rather than repeating a single
 approximate figure.
 
+**THE FINAL WHOLE-BRANCH REVIEW (`1b92e99`) found six; three belong here rather than only in a commit message,
+because two later paragraphs count from them. Suite 936 → 940.**
+
+1. **BLOCKING — `curated_interaction.relationship` shipped as `CHECK (relationship IN ('CI_MoA', 'CI_PE'))`,
+   under a comment claiming it mirrored `class_contraindication`'s own CHECK. That claim was false**: `db/006`
+   finding 1 had *replaced* that CHECK with an FK into `ci_axis` precisely so the CI vocabulary would have one
+   home, after `db/004` shipped it as a CHECK **plus** a matching `CASE` inside `ddi_candidate_pair` and
+   widening only the CHECK inserted rows that expanded to zero pairs with no error (an unmapped `CASE` arm
+   yields NULL and joins nothing). A hardcoded CHECK on the grading table is that same second list again, and it
+   drifts in **both** directions the moment `ci_axis` grows a third axis: `class_contraindication` accepts the
+   new predicate by FK, `ddi_candidate_pair` projects candidates for it and `gap_uncurated_interaction_rule`
+   **queues them** — while `curated_interaction` refuses the very row a curator is being asked to write, so
+   `curation.py` cannot answer its own worklist. Now the same FK, `curated_interaction_relationship`, and pinned
+   by `test_an_unknown_relationship_is_refused_by_the_foreign_key`. `ci_axis` holds exactly **two** rows today
+   (`CI_MoA`→`has_MoA`, `CI_PE`→`has_PE`, both `expands_descendants`), which is why the CHECK and the FK were
+   indistinguishable by every test and every count in this section.
+2. **Two mutations survived all 936 green tests, and both were the SAME property: `relationship` is part of
+   `curated_interaction`'s natural key.** Dropping it from `curated_interaction_single_live`'s trigger arguments,
+   and dropping it from `curated_interaction_live_key`'s index column list, each left the suite green — the
+   first is now killed by a behavioural coexistence test
+   (`test_two_live_rows_differing_only_by_relationship_may_coexist`), the second by an explicit column-list
+   assertion, now inside the shared `assert_live_key_index` fixture that issue 74 built. Each was verified by
+   hand-mutating `db/029`, confirming the new test fails, and reverting. **These are the "two" the paragraph
+   below counts from.**
+
+Also from that round, and recorded above rather than here: the stale `~739`, in `db/029` twice (once inside a
+`COMMENT ON TABLE`) and in `curation.py`.
+
 **The PR-review round (PR [#77](https://github.com/cairn-ehr/drugref/pull/77)) found a THIRD untested
 load-bearing clause and one latent count defect. Suite 940 → 943.**
 
@@ -574,23 +615,49 @@ the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The tes
 were reachable by test at all.
 
 **POST-MERGE RE-MEASUREMENT (2026-08-08, `drugref_5c1m`) — because every figure above was measured on a schema
-that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The
-next session found `drugref_5c1`'s ledger recording `f2420c…` against the merged file's `4a5efb…` — the drift
-the paragraph above predicted, sitting in the database § Repo facts pointed readers at. Rebuilt from scratch on
-the merged file (chain wall-clock **144 s**; the ~127.5 s above was the same chain on a warmer machine — treat
-both as "~2.5 min", not as a regression). **Every figure above reproduces EXACTLY**: `ddi_candidate_pair`
-**21,664** · `substance_moiety` **19,438** · `moiety_condition_contraindication` **9,471** ·
-`moiety_condition_indication` **14,674** · `condition_contraindication_expanded` **192,161** ·
-`gap_uncurated_condition_contradiction` **168** · `gap_uncurated_interaction_rule` **595** ·
-`curated_target_unresolved` / `curated_ddi_pair` / `curated_condition_ruling` all **0** · `open_question`
-**21,842**. Every ingest summary matched too (635 contraindications, 168 also-contraindicated pairs, 422
-broadened, 8,163 components not in registry). All four review fixes verified present in the live catalog:
-`curated_interaction_relationship` is an **FK into `ci_axis`** (no hardcoded CHECK), `COMMENT ON TABLE` carries
-**635/595 and no `739`**, and `curated_interaction_by_question` / `curated_condition_by_question` both exist.
-**The `pair_count` fix is confirmed LATENT, not cosmetic-only:** `max`/`sum`/`count` are **244 / 21,664 / 595**
-on *both* the drifted and the merged database — identical, exactly as the finding predicted, because
-`class_contraindication_source` admits `MED-RT` alone today. The divergence is real but arrives with the second
-authority; **do not read the equality as evidence the fix was unnecessary.**
+that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The next
+session found `drugref_5c1`'s ledger recording the pre-merge checksum where the merged file hashes to something
+else — the drift the paragraph above predicted, sitting in the database § Repo facts pointed readers at. **Both
+checksums are quoted in full, once, in § Repo facts** (at the twelve hex characters `db.apply_migrations` itself
+prints, so the documented value can be compared to its error text as a string rather than eyeballed). Rebuilt
+from scratch on the merged file: chain wall-clock **144 s**, against the **127.5 s** above.
+
+**That +13% is NOT explained here.** Same five releases, same order, same machine — and no control was taken: no
+repeat run on `drugref_5c1m` for the run-to-run spread, no per-leg breakdown, nothing separating cache warmth
+from real cost in a file that added an FK lookup and two indexes to the write path. An earlier draft of this
+paragraph attributed it to "a warmer machine" and told the reader to treat both as "~2.5 min, not a regression";
+that was reasoning presented as measurement, which the review of PR
+[#78](https://github.com/cairn-ehr/drugref/pull/78) flagged and this round removed. Filed as
+[#81](https://github.com/cairn-ehr/drugref/issues/81) with the three measurements that would settle it. This
+section demands "three controls, not reasoning" of a view twenty lines below; it owes its own timings the same
+standard.
+
+**WHAT REPRODUCED, AND WHAT WAS NOT RE-RUN — the distinction matters, because "every figure above" was too
+wide.** Reproduced **EXACTLY**: every count in the measurement paragraph above (listed there once, deliberately
+not restated here) and all four ingest summaries (635 contraindications, 168 also-contraindicated pairs, 422
+broadened, 8,163 components not in registry). **NOT re-measured on `drugref_5c1m`:** the five `EXPLAIN ANALYZE`
+timings below, `gap_uncurated_interaction_rule`'s ≈2.7 s among them — and the suite figure, which is a property
+of the repo rather than of any database (936 at the measurement above, **943** by the end of 5c.1's two review
+rounds, higher since — the current number lives in § "How to run / test" below, and nowhere else). An operator told
+this database holds *every* figure would query it for the 2.7 s or the 936 and conclude the schema had drifted
+again.
+
+**All four review fixes verified in the live catalog — three by inspection, `pair_count` by the only check that
+can tell the two definitions apart.** `curated_interaction_relationship` is an **FK into `ci_axis`** (no
+hardcoded CHECK) · `COMMENT ON TABLE` carries **635/595 and no `739`**, and is now pinned by
+`tests/test_curated_interaction_comment.py` — the reason this round had to read it by hand is that nothing tested
+it, and the next round will not have to · `curated_interaction_by_question` /
+`curated_condition_by_question` both exist.
+
+**`pair_count` needed `pg_get_viewdef`, because the row counts CANNOT distinguish the fixed view from the broken
+one.** `max`/`sum`/`count` are **244 / 21,664 / 595** on *both* databases — identical, exactly as the finding
+predicted, since `class_contraindication_source` admits `MED-RT` alone today. Which means an identical reading is
+also precisely what an ABSENT fix produces, so on its own it is evidence of nothing: an earlier draft offered it
+as the confirmation, and the review of PR #78 caught that. The discriminating check, run on both databases:
+`pg_get_viewdef('drugref.gap_uncurated_interaction_rule'::regclass, true)` yields `count(DISTINCT
+p.partner_moiety) AS pair_count` on `drugref_5c1m` and `count(*) AS pair_count` on `drugref_5c1`. **That is the
+control, and the reason `drugref_5c1` is kept rather than dropped.** The fix is **LATENT, not cosmetic** — the
+divergence arrives with the second authority. **Do not read the equality as evidence the fix was unnecessary.**
 
 **`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
 carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
@@ -815,7 +882,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 956 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# 958 tests. The DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 
@@ -906,18 +973,26 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **`drugref_5c1m` holds the real releases WITH the MERGED
-  `db/029`** at every figure in § "Slice 5c.1" above — the current measurement database and the one to read rather than
-  re-running the ~144 s chain. **Read `drugref_5c1m`, NOT `drugref_5c1`:** the latter was migrated from a `db/029` that
-  the two review rounds then edited twice more, so its ledger records `f2420c…` where the merged file hashes to
-  `4a5efb…` — `apply_migrations` refuses there permanently, and it is a *pre-merge* schema (hardcoded `relationship`
-  CHECK, the stale `~739` in `COMMENT ON TABLE`, `pair_count` as `count(*)`, no `question_uuid` index). It was left in
-  place rather than dropped; drop it when convenient. **`drugref_policy` holds
+  `db/029`** at every COUNT and INGEST SUMMARY in § "Slice 5c.1" above — the current measurement database and the one
+  to read rather than re-running the chain. It does **not** hold that section's `EXPLAIN ANALYZE` timings, which were
+  never re-run on it (§ "Slice 5c.1" says which). **Read `drugref_5c1m`, NOT `drugref_5c1`:** the latter was migrated
+  from a `db/029` that the two review rounds then edited twice more, so its ledger records
+  `f2420c5c1196b7fa439ed4a876c6ea4a00c821d90852ebd709416a2acb19bc89` where the merged file hashes to
+  `4a5efb350cd9af2a2172e9c186af713784555813ea7039a7b36bad800f011004` — **the one home for both values, quoted whole
+  because `db.apply_migrations` prints the first twelve characters** (`recorded f2420c5c1196..., now
+  4a5efb350cd9...`), so its error text can be compared against this line as a string. `apply_migrations` refuses
+  there permanently, and it is a *pre-merge* schema (hardcoded `relationship` CHECK, the stale `~739` in
+  `COMMENT ON TABLE`, `pair_count` as `count(*)`, no `question_uuid` index). **KEEP IT — it is the control**, and the
+  only artefact that can still show the merged `pair_count` differs from the shipped one (§ "Slice 5c.1"); the name
+  is therefore claimed, so a rebuild follows the plan's `createdb` recipe under a NEW name. Same treatment as the
+  three below, for the same reason. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
   `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:
   this round's own `db/027` edits landed after it was migrated, so its ledger also refuses `apply_migrations` (reads
-  unaffected). **A verification database is disposable — rebuild rather than patch**: for a drifted ledger `apply_migrations`
-  refuses permanently. Expect that whenever a migration is edited.
+  unaffected). **A verification database is never patched — rebuild it, under a new name**: for a drifted ledger
+  `apply_migrations` refuses permanently, and the drifted copy is often the only control for what the edit changed
+  (`drugref_5c1` is exactly that). Expect a drift whenever a migration is edited; expect to keep both sides.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).
