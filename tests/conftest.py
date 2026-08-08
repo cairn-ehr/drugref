@@ -48,6 +48,57 @@ def conn(_migrated):
 
 
 @pytest.fixture
+def assert_live_key_index(conn):
+    """Assert that a single-live natural-key index has ALL THREE properties the
+    append-only overlay depends on. Shared here rather than imported across test
+    files, following the precedent set when the curated-overlay fixtures were moved
+    into conftest: a cross-file test import couples two suites for no benefit.
+
+    Seven tables now carry one of these indexes and every one of them needs the same
+    three things to be true, so the property lives in exactly one place:
+
+    1. **It exists, by name.** Nothing but the single-live trigger ever reads it, so
+       it looks unused to a catalog sweep and only a test stops it being dropped.
+       db/023 measured the cost of its absence: the deferred check at COMMIT becomes
+       a sequential scan per row, and a 2,000-row load went 42 ms -> 5,773 ms.
+    2. **It is PARTIAL over live rows.** A full index answers a different question
+       than the trigger asks.
+    3. **It is NON-UNIQUE.** This is the one an existence check cannot see, and the
+       reason issue 74 was filed. A correction is briefly TWO live rows on the same
+       natural key -- INSERT the new row, then UPDATE the old one to point at it --
+       and a partial index cannot be declared DEFERRABLE, so a UNIQUE one would be
+       enforced at statement time and reject every correction the overlay exists to
+       make. The schema would still be green on every other test in this suite.
+
+    The COLUMN LIST is pinned too, because dropping a column from an index (matching
+    a drop from the trigger's argument list) leaves properties 1-3 all true while
+    silently indexing the wrong key -- that exact mutation survived 936 green tests
+    during slice 5c.1 and was caught by review, not by the suite.
+
+    `indexdef` is read rather than `pg_index.indisunique`/`indpred` because it is the
+    one place all three properties are visible in a single string.
+    """
+    def _assert(index_name, table, columns):
+        row = conn.execute(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
+            "AND tablename = %s AND indexname = %s", (table, index_name)).fetchone()
+        assert row is not None, f"{index_name} is missing from drugref.{table}"
+        (indexdef,) = row
+        assert "WHERE (superseded_by IS NULL)" in indexdef, (
+            f"{index_name} must be PARTIAL over live rows; a full index answers a "
+            f"different question than the trigger asks. Got: {indexdef}")
+        assert "UNIQUE" not in indexdef, (
+            f"{index_name} must be NON-UNIQUE: a correction is briefly two live rows "
+            f"on the same natural key, and a partial index cannot be DEFERRABLE, so "
+            f"UNIQUE here forbids every correction. Got: {indexdef}")
+        assert f"({columns})" in indexdef, (
+            f"{index_name} must index exactly ({columns}) -- the trigger's natural "
+            f"key. A shorter list is still partial and still non-unique while "
+            f"indexing the wrong key. Got: {indexdef}")
+    return _assert
+
+
+@pytest.fixture
 def ingest_run_id(conn):
     """A committed-in-transaction ingest_run row for provenance FKs.
 

@@ -26,6 +26,7 @@ a view and a CHECK in a table disagreed silently). An unrecognised value raises
 CheckViolation from the database, and that is the intended behaviour rather than a gap.
 """
 import uuid
+from dataclasses import dataclass
 
 import psycopg
 
@@ -142,3 +143,62 @@ def record_condition_ruling(
         ("subject_moiety_uuid", "object_condition_uuid"),
         (subject_moiety_uuid, object_condition_uuid))
     return new_id
+
+
+@dataclass(frozen=True)
+class UnresolvedTarget:
+    """One live curated row whose candidate is no longer projected.
+
+    A named record rather than a bare tuple because the caller printing it must not
+    have to remember column order, and because `relationship` is None for a condition
+    ruling -- which is meaning, not missing data: `curated_condition` is keyed on the
+    (drug, condition) PAIR and deliberately carries no predicate.
+    """
+    target_table: str
+    subject_moiety: uuid.UUID
+    object_uuid: uuid.UUID
+    relationship: str | None
+    reviewed_by: str
+    reviewed_against: str
+
+
+def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
+    """Live curated rows pointing at a candidate that no longer exists. EXPECTED EMPTY.
+
+    WHY A FUNCTION HAS TO ASK, AND NOT MERELY A VIEW EXIST -- issue 76, and the second
+    time this project has had to learn it. `interactions.unresolved_expansion_policy`
+    records the first: db/010 shipped `expansion_policy_unresolved` with no consumer at
+    all, "which is precisely the failure mode it was written to catch". db/029 then
+    shipped `curated_target_unresolved` the same way. A detector nobody calls reports
+    nothing to nobody.
+
+    HOW AN ORPHAN HAPPENS. A curated row names its candidate by NATURAL KEY and carries
+    no foreign key into it, because candidates are rebuildable projections and an FK
+    would either block the per-source rebuild or cascade curator judgement away with it
+    (db/029 section 5). The cost of that deliberate choice is that a rebuild CAN leave a
+    judgement pointing at a candidate upstream has re-keyed or withdrawn, and nothing
+    fails when it does.
+
+    NOT AN ERROR, for `unresolved_expansion_policy`'s reason: upstream re-keying a
+    concept is upstream's prerogative, and refusing to start over a stale curator note
+    would be worse than the stale note. It is an operator signal, deliberately not a
+    gap kind -- a vanished candidate is news about an upstream change, not a clinical
+    question a curator can answer.
+
+    NOT SCOPED BY SOURCE, unlike its expansion-policy sibling, because
+    `curated_target_unresolved` has no source column to scope by: it compares curated
+    rows against three projections at once (`class_contraindication`, and both
+    `moiety_condition_*` tables), and `db/029` is merged and therefore frozen, so adding
+    one would mean a new migration. That makes this a whole-database question rather
+    than a per-run one, which is why `drugref status` is its consumer rather than an
+    ingest summary.
+
+    LIVE ROWS ONLY -- the view's own `superseded_by IS NULL`. A corrected judgement's
+    predecessor still names the old candidate, and reporting it would make every
+    correction look like breakage.
+    """
+    return [UnresolvedTarget(*row) for row in conn.execute(
+        "SELECT target_table, subject_moiety, object_uuid, relationship, "
+        "reviewed_by, reviewed_against "
+        "FROM drugref.curated_target_unresolved "
+        "ORDER BY target_table, subject_moiety").fetchall()]

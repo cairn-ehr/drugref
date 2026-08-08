@@ -60,13 +60,13 @@ one writer per (source, reason), and two writers sharing one bucket is what #39 
 
 AND THREE NUMBERS THAT ARE NOT LOSSES, reported for the mirror-image reason. A count of
 assertions that never became rows is worthless if the rows that DID land are quietly
-wrong or quietly contradictory, so the summary also carries: `chemical_object_assertions`
-(the object is a MeSH chemical, not a patient state), `broadened_object_assertions` (MED-RT
-named a subordinate concept, so every row that follows sits on a BROADER condition than
-the release said -- 422 of 18,314, #52), and `also_contraindicated_pairs` (one drug is
-both indicated and contraindicated for one condition -- 168 pairs, #51). Nothing is
-refused on account of any of them, and none has a worklist yet, because each is a curated
-question rather than a coverage gap.
+wrong or quietly contradictory, so the summary also carries:
+`chemical_object_assertions` (the object is a MeSH chemical, not a patient state),
+`broadened_object_assertions` (MED-RT named a subordinate concept, so every row that
+follows sits on a BROADER condition than the release said -- 422 of 18,314, #52), and
+`also_contraindicated_pairs` (one drug is both indicated and contraindicated for one
+condition -- 168 pairs, #51). Nothing is refused on account of any of them, and none
+has a worklist yet, because each is a curated question rather than a coverage gap.
 
 THE FIRST TWO ARE RELEASE-GRAIN AND THE THIRD IS ROW-GRAIN, and the difference is not a
 detail: the two indication counters are taken ABOVE the moiety gate (mesh_ind_relations
@@ -119,8 +119,9 @@ WRITER = "mesh_rel_run"
 log = logging.getLogger(__name__)
 
 
-def _condition_closure(desc_path, records: dict[str, mesh_concepts.MeshRecord],
-                       condition_codes: set[str]) -> dict[str, mesh_concepts.MeshRecord]:
+def _condition_closure(
+        desc_path, records: dict[str, mesh_concepts.MeshRecord],
+        condition_codes: set[str]) -> dict[str, mesh_concepts.MeshRecord]:
     """The conditions this run registers: those NAMED, plus everything BELOW them.
 
     The closure is what a rule expands INTO. The descendants are not themselves CI
@@ -279,9 +280,9 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     # have a second tree parent that only the indication half registers. The edge then
     # appears and the condition becomes reachable from a CI root it could not be reached
     # from before -- 10 of 641 roots, condition_subtree 11,512 -> 11,605 (+93), and
-    # condition_contraindication_expanded 191,728 -> 192,161, +0.226% assertion-weighted.
-    # Acute Pain really is filed under nervous system disease in MeSH; the old registry
-    # was simply too narrow to see the edge.
+    # condition_contraindication_expanded 191,728 -> 192,161, +0.226%
+    # assertion-weighted. Acute Pain really is filed under nervous system disease in
+    # MeSH; the old registry was simply too narrow to see the edge.
     #
     # POST-GATE FIGURES. The spec's 11 of 677 / 12,311 -> 12,415 / +0.39% counted the
     # CI_with objects the RELEASE references; condition_subtree (db/015) walks only the
@@ -332,9 +333,10 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
     #    assertions, and a pass re-reading them would re-ask an answered question --
     #    then hand each pass the indexes it actually reads.
     #
-    #    THE INDICATION PASS GETS ONE INDEX, NOT THREE, and the interface is saying
-    #    something true: an indication's object is always a patient state, never a drug,
-    #    so the UNII and CAS indexes have no reader there. Handing them over invites one.
+    # THE INDICATION PASS GETS ONE INDEX, NOT THREE, and the interface is saying
+    # something true: an indication's object is always a patient state, never a drug,
+    # so the UNII and CAS indexes have no reader there. Handing them over invites
+    # one.
     rxcui_index = class_writer.moieties_by_rxcui(conn)
     indexes = (rxcui_index,
                class_writer.moieties_by_scheme(conn, "UNII"),
@@ -374,13 +376,14 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
         conn, SOURCE, class_writer.CONTRAINDICATION)
     class_writer.add_unmatched_ingredients(conn, sorted(ci.unmatched_rxcuis), run_id,
                                            class_writer.CONTRAINDICATION)
-    #    THE INDICATION BUCKET IS THE SAME PAIR, NEVER A BARE WRITE -- #39 restated.
-    #    The table is keyed (ingest_run, reason, rxcui), so a writer that inserts without
-    #    first collecting its own garbage adds a fresh copy of every row under each new
-    #    run id, forever. Nor may it widen the clear to cover the bucket above: the two
-    #    lists are different populations (a subject unmatched for one half may be matched,
-    #    or absent, for the other), so a shared clear would make the answer depend on
-    #    which pass ran last. One writer per (source, reason); this run owns two.
+    # THE INDICATION BUCKET IS THE SAME PAIR, NEVER A BARE WRITE -- #39 restated. The
+    # table is keyed (ingest_run, reason, rxcui), so a writer that inserts without
+    # first collecting its own garbage adds a fresh copy of every row under each new
+    # run id, forever. Nor may it widen the clear to cover the bucket above: the two
+    # lists are different populations (a subject unmatched for one half may be
+    # matched, or absent, for the other), so a shared clear would make the answer
+    # depend on which pass ran last. One writer per (source, reason); this run owns
+    # two.
     class_writer.clear_source_unmatched_ingredients(
         conn, SOURCE, class_writer.INDICATION)
     class_writer.add_unmatched_ingredients(conn, sorted(ind.unmatched_rxcuis), run_id,
@@ -397,32 +400,33 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
 
     # 7. Measure what the two halves say about the SAME (drug, condition) pair.
     #
-    #    ONE QUERY, AFTER BOTH PASSES, AND IT COULD NOT LIVE ANYWHERE ELSE: neither pass
-    #    can see the other's rows, and the overlap is not a loss either pass could count
-    #    on its way past. The no-silent-drops posture (spec 7) is about assertions that
-    #    do not become rows; this is its mirror -- two assertions that DO become rows and
-    #    contradict each other -- and leaving it uncounted would be the same failure in
-    #    the other direction.
+    # ONE QUERY, AFTER BOTH PASSES, AND IT COULD NOT LIVE ANYWHERE ELSE: neither pass
+    # can see the other's rows, and the overlap is not a loss either pass could count
+    # on its way past. The no-silent-drops posture (spec 7) is about assertions that
+    # do not become rows; this is its mirror -- two assertions that DO become rows
+    # and contradict each other -- and leaving it uncounted would be the same failure
+    # in the other direction.
     #
-    #    168 pairs on the 2026.07.06 release, and they are the hardest rows in it rather
-    #    than noise: carvedilol is may_treat AND CI_with for Heart Failure, alteplase for
-    #    Stroke, budesonide for Asthma. MED-RT asserts both with no qualifier, because
-    #    the distinction (stable chronic HFrEF vs acute decompensation; ischaemic vs
-    #    haemorrhagic stroke) is one the MeSH descriptor grain cannot carry. See #51 for
-    #    the curated question of how a consumer should be TOLD, which is 5c's.
+    # 168 pairs on the 2026.07.06 release, and they are the hardest rows in it rather
+    # than noise: carvedilol is may_treat AND CI_with for Heart Failure, alteplase
+    # for Stroke, budesonide for Asthma. MED-RT asserts both with no qualifier,
+    # because the distinction (stable chronic HFrEF vs acute decompensation;
+    # ischaemic vs haemorrhagic stroke) is one the MeSH descriptor grain cannot
+    # carry. See #51 for the curated question of how a consumer should be TOLD, which
+    # is 5c's.
     #
     #    DISTINCT PAIRS, NOT ROWS, and the grain is the clinical unit: a pair is what a
     #    consumer asking about one drug and one patient's diagnosis gets both answers
     #    for. 7 pairs carry two therapeutic predicates, so the indication-row count is
     #    175 -- reporting that instead would answer a question nobody asks.
     #
-    #    DELIBERATELY NOT SCOPED ON `source`, unlike every clear above it. Those rebuild
-    #    THIS source's projection and must not touch another's; this one answers "what
-    #    will a consumer see", and a consumer sees both tables whole. Today the question
-    #    does not arise -- db/014 and db/019 CHECK both `source` columns to 'MED-RT'
-    #    alone -- but when a second authority lands, a cross-source collision is exactly
-    #    as visible to a reader as a within-source one, and scoping this query would hide
-    #    it. If a per-source breakdown is ever wanted, add one; do not narrow this.
+    # DELIBERATELY NOT SCOPED ON `source`, unlike every clear above it. Those rebuild
+    # THIS source's projection and must not touch another's; this one answers "what
+    # will a consumer see", and a consumer sees both tables whole. Today the question
+    # does not arise -- db/014 and db/019 CHECK both `source` columns to 'MED-RT'
+    # alone -- but when a second authority lands, a cross-source collision is exactly
+    # as visible to a reader as a within-source one, and scoping this query would
+    # hide it. If a per-source breakdown is ever wanted, add one; do not narrow this.
     also_contraindicated_pairs = conn.execute(
         "SELECT count(*) FROM (SELECT DISTINCT i.subject_moiety_uuid, "
         "                             i.object_condition_uuid "
@@ -448,8 +452,8 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
             # carry no SCRClass and are excluded by the falsy test rather than by a
             # record_kind test: the question is "which published values did this run
             # store", and a None is not one.
-            scr_class_counts=tuple(sorted(
-                Counter(r.scr_class for r in closure.values() if r.scr_class).items()))),
+            scr_class_counts=tuple(sorted(Counter(
+                r.scr_class for r in closure.values() if r.scr_class).items()))),
         contraindications=CiTally(
             condition_rows=ci.condition_rows,
             pair_rows=ci.pair_rows,

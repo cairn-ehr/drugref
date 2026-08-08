@@ -113,7 +113,8 @@ def add_parent_edge(conn: psycopg.Connection, child_uuid: uuid.UUID,
     ON CONFLICT DO NOTHING keeps a file that repeats an edge harmless.
     """
     cur = conn.execute(
-        "INSERT INTO drugref.class_parent (child_class_uuid, parent_class_uuid, ingest_run) "
+        "INSERT INTO drugref.class_parent "
+        "(child_class_uuid, parent_class_uuid, ingest_run) "
         "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
         (child_uuid, parent_uuid, ingest_run_id))
     return cur.rowcount == 1
@@ -131,7 +132,8 @@ def add_membership(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     return cur.rowcount == 1
 
 
-def moieties_by_scheme(conn: psycopg.Connection, scheme: str) -> dict[str, list[uuid.UUID]]:
+def moieties_by_scheme(
+        conn: psycopg.Connection, scheme: str) -> dict[str, list[uuid.UUID]]:
     """Build a {claim value -> moieties} index for one identity-claim scheme.
 
     This is the generic membership-join primitive. A classification feed keyed on

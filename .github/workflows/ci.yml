@@ -6,6 +6,28 @@ on:
   pull_request:
 
 jobs:
+  # Issue 66. Before this job, ruff ran nowhere in CI and was not even a project
+  # dependency, so `uv run ruff` resolved to whatever happened to be on the developer's
+  # PATH -- and the ~88-column convention src/ is visibly written to was enforced by
+  # nothing at all. A lint rule set that no automated check runs is a style note, not a
+  # gate; this is what makes it a gate. The configuration (line-length, the rule
+  # selection, and the temporary tests/ carve-out) lives in pyproject.toml.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync
+
+      # A bare `.` is deliberate, and is now safe: pyproject's extend-exclude drops
+      # downloads/, which holds a 2.05 GB GSRS dump that used to make this command hang.
+      - name: Lint
+        run: uv run ruff check .
+
   pytest:
     runs-on: ubuntu-latest
 

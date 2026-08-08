@@ -64,8 +64,8 @@ _GAP_SOURCES = {
         # (rxcui) and does not project `reason`, precisely so its grain matches the
         # question's -- one RxCUI, one question, however many reasons named it. Naming
         # the reason here would mean either widening the view (splitting one question
-        # into three, which db/008's DISTINCT ON exists to prevent) or picking one reason
-        # arbitrarily. The disjunction is what is actually true of every row.
+        # into three, which db/008's DISTINCT ON exists to prevent) or picking one
+        # reason arbitrarily. The disjunction is what is actually true of every row.
         "text_sql": (
             "'Does RxCUI ' || rxcui || COALESCE(' (' || name || ')', '') || "
             "' have an active moiety drugref should carry? An upstream release names "
@@ -240,7 +240,8 @@ _GAP_SOURCES = {
         # The gap is about the PAIR: the same contributor class may be a fine promotion
         # for one effect and a no-op for another, and folding them onto one question
         # would hand two unrelated gaps a single immortal UUID.
-        "key_sql": ("'CLASS:' || effect_class_uuid || '/CLASS:' || contributor_class_uuid"),
+        "key_sql": ("'CLASS:' || effect_class_uuid || "
+                    "'/CLASS:' || contributor_class_uuid"),
         "text_sql": (
             "'Promoting ' || contributor_class_name || ' to ' || magnitude || ' for ' "
             "|| effect_class_name || ' changes nothing: the two classes share no drug. "
@@ -249,7 +250,8 @@ _GAP_SOURCES = {
     },
     "ungraded_contribution": {
         "view": "gap_ungraded_contribution",
-        "key_sql": ("'CLASS:' || effect_class_uuid || '/CLASS:' || contributor_class_uuid"),
+        "key_sql": ("'CLASS:' || effect_class_uuid || "
+                    "'/CLASS:' || contributor_class_uuid"),
         "text_sql": (
             "'Is ' || contributor_class_name || ' a MAJOR or a minor contributor to ' "
             "|| effect_class_name || '? Its ' || member_count || ' member(s) count as "
@@ -330,15 +332,15 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     ever been withdrawn or cited -- it would have failed on the first ingest after a
     curator touched a gap that later closed.
 
-    So a question carrying any curated row is RETAINED with `is_current` false
-    instead: invisible on the worklist, still citable by the external tool that
-    already holds the UUID, and restored to current under that same UUID if the gap
-    reopens. Only untouched questions are deleted, and those have nothing to cascade
-    to. The guard now covers FIVE tables, not three: db/029 (slice 5c.1) added
-    curated_interaction and curated_condition to question_state's, question_source_check's
-    and question_evidence's original three, because curating a pair is exactly what
-    CLOSES its gap -- the very row that answers a question is what would otherwise
-    make the next ingest try to delete it.
+    So a question carrying any curated row is RETAINED with `is_current` false instead:
+    invisible on the worklist, still citable by the external tool that already holds the
+    UUID, and restored to current under that same UUID if the gap reopens. Only
+    untouched questions are deleted, and those have nothing to cascade to. The guard now
+    covers FIVE tables, not three: db/029 (slice 5c.1) added curated_interaction and
+    curated_condition to question_state's, question_source_check's and
+    question_evidence's original three, because curating a pair is exactly what CLOSES
+    its gap -- the very row that answers a question is what would otherwise make the
+    next ingest try to delete it.
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -360,7 +362,8 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             # the rest of the ingest.
             with conn.cursor() as cur:
                 cur.executemany(
-                    "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+                    "INSERT INTO drugref.open_question "
+                    "(question_uuid, gap_kind, gap_key, "
                     "question_text, first_derived_ingest, last_derived_ingest) "
                     "VALUES (%s, %s, %s, %s, %s, %s) "
                     "ON CONFLICT (question_uuid) DO UPDATE "
@@ -410,7 +413,8 @@ def current_state(conn: psycopg.Connection, question_uuid: uuid.UUID) -> str:
     """
     row = conn.execute(
         "SELECT state FROM drugref.question_state "
-        "WHERE question_uuid = %s AND superseded_by IS NULL", (question_uuid,)).fetchone()
+        "WHERE question_uuid = %s AND superseded_by IS NULL",
+        (question_uuid,)).fetchone()
     return row[0] if row else "open"
 
 
@@ -432,8 +436,9 @@ def set_state(conn: psycopg.Connection, question_uuid: uuid.UUID, state: str,
     return new_id
 
 
-def record_source_check(conn: psycopg.Connection, question_uuid: uuid.UUID, source: str,
-                        source_version: str, outcome: str, note: str | None = None) -> bool:
+def record_source_check(
+        conn: psycopg.Connection, question_uuid: uuid.UUID, source: str,
+        source_version: str, outcome: str, note: str | None = None) -> bool:
     """Record that `source` was consulted at `source_version`, with `outcome`.
 
     Never an overwrite: a re-check against a NEWER version is a new row, which is

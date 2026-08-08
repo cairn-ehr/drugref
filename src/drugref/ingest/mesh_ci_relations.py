@@ -150,11 +150,11 @@ def write_contraindications(conn, assertions, records, uuid_by_code, indexes,
     for a in assertions:
         record = records.get(a.mesh_code)
         if record is None:
-            # The CODE is counted by the caller (unresolved_object_codes); THIS ASSERTION
-            # is not, and the grain difference is stated rather than glossed -- one
-            # withdrawn code can carry many rules. Two codes are unresolved on the
-            # 2026.07.06 release, so unlike the indication half this loss is live, and a
-            # reader must not read that 2 as "2 assertions".
+            # The CODE is counted by the caller (unresolved_object_codes); THIS
+            # ASSERTION is not, and the grain difference is stated rather than glossed
+            # -- one withdrawn code can carry many rules. Two codes are unresolved on
+            # the 2026.07.06 release, so unlike the indication half this loss is live,
+            # and a reader must not read that 2 as "2 assertions".
             continue
 
         object_moiety = None

@@ -59,7 +59,8 @@ def add_condition_indication(conn: psycopg.Connection, subject_moiety_uuid: uuid
     """
     cur = conn.execute(
         "INSERT INTO drugref.moiety_condition_indication "
-        "(subject_moiety_uuid, object_condition_uuid, relationship, source, ingest_run) "
+        "(subject_moiety_uuid, object_condition_uuid, relationship, source, "
+        "ingest_run) "
         "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
         (subject_moiety_uuid, object_condition_uuid, relationship, source,
          ingest_run_id))
@@ -80,7 +81,8 @@ def add_induced_condition(conn: psycopg.Connection, subject_moiety_uuid: uuid.UU
     """
     cur = conn.execute(
         "INSERT INTO drugref.moiety_induced_condition "
-        "(subject_moiety_uuid, object_condition_uuid, relationship, source, ingest_run) "
+        "(subject_moiety_uuid, object_condition_uuid, relationship, source, "
+        "ingest_run) "
         "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
         (subject_moiety_uuid, object_condition_uuid, INDUCES, source, ingest_run_id))
     return cur.rowcount == 1

@@ -147,10 +147,10 @@ class IndicationTally:
     been measured, so do not infer one from these.
 
     Two of these are counted by the PARSER and the ORCHESTRATOR rather than by the pass,
-    for the reason CiTally gives: an assertion the parser refused never reaches the pass,
-    and an M-code that resolves to no record never reaches it either. They are reported
-    here anyway, because a reader asking "what did the indication half lose?" must find
-    every answer in one place.
+    for the reason CiTally gives: an assertion the parser refused never reaches the
+    pass, and an M-code that resolves to no record never reaches it either. They are
+    reported here anyway, because a reader asking "what did the indication half lose?"
+    must find every answer in one place.
 
     WHAT IS DELIBERATELY NOT HERE: the indication/contraindication OVERLAP. It sits on
     MeshRelSummary itself, because it is a fact about the two halves together and this

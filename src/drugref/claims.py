@@ -19,7 +19,8 @@ def upsert_moiety(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     is a convenience cache derived from claims, so ON CONFLICT refreshes it.
     """
     conn.execute(
-        "INSERT INTO drugref.substance_moiety (moiety_uuid, display_name, first_seen_ingest) "
+        "INSERT INTO drugref.substance_moiety "
+        "(moiety_uuid, display_name, first_seen_ingest) "
         "VALUES (%s, %s, %s) "
         "ON CONFLICT (moiety_uuid) DO UPDATE SET display_name = EXCLUDED.display_name",
         (moiety_uuid, display_name, ingest_run_id))
