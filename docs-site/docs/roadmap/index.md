@@ -30,13 +30,36 @@ This is a reader-friendly summary; the working roadmap lives in the
   hydrate) is composed of, and which of them the release marks pharmacologically
   active, from the FDA/NCATS GSRS public data dump — see
   [GSRS relationship direction](../decisions/gsrs-relationship-direction.md).
+- **The curated overlay's floor (the moat's foundation)** — an append-only correction
+  mechanism (supersession, never overwrite) shared by every curated table, and the
+  overlay's first assertion shape: `curated_interaction`, keyed on the class-level
+  rule, and `curated_condition`, keyed on the (drug, condition) pair — see
+  [Curating a drug–condition pair](../decisions/curating-a-drug-condition-pair.md).
+  It also holds the accumulation model (many drugs, one effect that adds up) and
+  role-based interaction groups. All of it ships **empty by design** — signing must
+  exist before the first curated row — with its worklists published as queryable gap
+  views: against the current releases, 168 drug–condition pairs asserted as both an
+  indication and a contraindication, and 595 interaction rules awaiting severity
+  grading.
+- **Local-tier proof (Australia)** — a minimal PBS product layer bridged to the
+  global moiety spine by name, the only licence-clean join, proving the local-tier
+  pattern of jurisdiction scoping and structural encumbrance quarantine.
+- **Operator tooling** — a `drugref` command-line interface (`migrate`, `status`,
+  `ingest chain`, `policy record|withdraw|show`), crash-visible ingest provenance,
+  and a CI gate running the full test suite and lint on every change.
 
 ## Next
 
+- **Signing** — key management, a signing identity, and a verification path for the
+  curated overlay. Sequenced first among the curation slices: the append-only floor
+  refuses `UPDATE`, so a row committed before signing exists can never be signed
+  retrospectively.
+- **First curated content** — the ONC high-priority drug–drug interaction list
+  (Phansalkar 2012 / Ayvaz 2015) as the first curated rows — severity, mechanism,
+  management, evidence grading — then label mining from SPL/DailyMed.
 - **Clinical drugs** — moiety + strength + form, built on the composition tree.
-- **The curated overlay (the moat)** — an append-only, signed layer adding severity,
-  mechanism, management, and evidence grading on top of the candidate interaction rows.
 - **Public HTTP API** — the co-equal-consumer interface; any EHR / pharmacy / app on the
   same footing.
-- **Local tier** — country-specific packaging and pricing (Australia first: PBS + TGA
-  ARTG), with nationally-licensed terminologies attached per node.
+- **Local tier, continued** — pricing, restriction texts, TGA ARTG, and the same
+  pattern in other jurisdictions. drugref ships ingest code and schema only — each
+  node supplies its own nationally-licensed data.
