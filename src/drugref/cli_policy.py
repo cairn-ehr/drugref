@@ -230,8 +230,9 @@ def register(commands) -> None:
 
     record = policy_actions.add_parser(
         "record", help="record or revise whether a class expands over its subtree")
-    record.add_argument("--source", required=True,
-                        help="who DEFINES the class (half the natural key), e.g. MED-RT")
+    record.add_argument(
+        "--source", required=True,
+        help="who DEFINES the class (half the natural key), e.g. MED-RT")
     record.add_argument("--code", required=True, help="the class's source_code")
     # No `choices`: the vocabulary lives in db/027's CHECK, and a second list is a
     # second thing to disagree with the first (db/006). An unrecognised value reaches

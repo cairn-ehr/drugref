@@ -191,16 +191,17 @@ class ContraindicationAssertion:
 class MeshObjectAssertion:
     """One MED-RT assertion whose SUBJECT is an RxNorm ingredient and whose OBJECT
     is a MeSH concept -- shared by both the MeSH-keyed contraindications
-    (MESH_CI_RELATIONSHIPS) and the MeSH-keyed indications (MESH_INDICATION_RELATIONSHIPS,
-    slice 5b.2). The MEANING lives entirely in `relationship`: a CI_with row is a
-    contraindication, a may_treat row is an indication, and an induces row is neither
-    (MED-RT does not say whether the drug causing the state is the therapeutic point
-    or an adverse effect) -- this record only carries the endpoints, not a judgement
-    about what kind of claim they form.
+    (MESH_CI_RELATIONSHIPS) and the MeSH-keyed indications
+    (MESH_INDICATION_RELATIONSHIPS, slice 5b.2). The MEANING lives entirely in
+    `relationship`: a CI_with row is a contraindication, a may_treat row is an
+    indication, and an induces row is neither (MED-RT does not say whether the drug
+    causing the state is the therapeutic point or an adverse effect) -- this record
+    only carries the endpoints, not a judgement about what kind of claim they form.
 
     `rxcui` is the drug the statement is ABOUT and `mesh_code` is the MeSH concept on
     the other end of `relationship` -- the direction is load-bearing for every one of
-    these predicates, and reversing it inverts the meaning regardless of which one it is.
+    these predicates, and reversing it inverts the meaning regardless of which one it
+    is.
 
     `mesh_code` is a MeSH ConceptUI ("M0004868") -- NOT a DescriptorUI. It is left
     unresolved here on purpose: this module is pure and reads only the MED-RT file,
@@ -243,7 +244,7 @@ class ParsedMedrt:
     # these needs a class->condition relation and a second expansion question, so they
     # are counted and filed against #8 rather than guessed at.
     class_subject_indications: int = 0
-    inactive_concepts: int = 0        # right CTY, but upstream no longer marks it active
+    inactive_concepts: int = 0     # right CTY, but upstream no longer marks it active
     unidentified_concepts: int = 0    # right CTY, but carries neither a NUI nor a code
     ambiguous_codes: int = 0          # one published code claimed by several concepts
     # The DISTINCT names this parse saw and ignored, sorted. Not errors -- HC/EXT
@@ -292,7 +293,8 @@ def _parse_concepts(root) -> tuple[list[ClassConcept], int, int, set[str]]:
         props = _properties(concept)
         concept_type = props.get("CTY", "")
         if concept_type not in INGESTED_CONCEPT_TYPES:
-            skipped_types.add(concept_type)          # HC bins, EXT, anything new upstream
+            # HC bins, EXT, anything new upstream
+            skipped_types.add(concept_type)
             continue
         # Only a status upstream still asserts is active. An absent <status> is
         # treated as active: every concept in the current release carries one, so

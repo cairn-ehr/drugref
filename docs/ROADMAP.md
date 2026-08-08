@@ -353,6 +353,14 @@ before the first curated row.**
 **The five subsystems ROADMAP used to bundle here, now sequenced** — the design round of 2026-08-06 split them, because
 one spec covering all five is one nobody can review and one branch nobody can measure:
 
+> **⇒ EXECUTION ORDER IS NOT THE NUMBERING. 5c.1 ✅ → `5c.4` (signing) → then 5c.2 / 5c.3 in either order.**
+> They are numbered by subject and listed below in that numbering, which is **not** the order to build them in.
+> The constraint above is hard and irreversible: **a row committed before signing exists can never be signed
+> retrospectively**, because the append-only floor refuses `UPDATE`. 5c.2 and 5c.3 both write curated rows;
+> `5c.4` writes none. A session that reads this file for sequencing (CLAUDE.md sends it here, and here alone)
+> and starts 5c.2 next spends the slice producing rows that can never be signed. **No spec exists for any of the
+> three** — each opens with its own brainstorm/design round.
+
 ##### 5c.1 — the assertion shape ✅ DONE — merged as PR [#77](https://github.com/cairn-ehr/drugref/pull/77) (2026-08-06)
 Spec: [slice-5c.1 curated
 overlay](superpowers/specs/2026-08-06-drugref-slice-5c1-curated-overlay-design.md); plan:
@@ -373,17 +381,27 @@ held exactly — `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438*
 match to issue #51's own figure) · `gap_uncurated_interaction_rule` **595** (635 rules minus 40 that reach no pair,
 already covered by the two pre-existing "class has no members" gap views) · `curated_target_unresolved` /
 `curated_ddi_pair` / `curated_condition_ruling` all **0**, correct with nothing curated. `open_question` grew from
-21,079 to **21,842** — exactly 168 + 595, nothing else moved. **936 tests.** `EXPLAIN ANALYZE` on all five
-new/touched views: four run in single-digit milliseconds or under; `gap_uncurated_interaction_rule` costs **≈2.7 s**,
+21,079 to **21,842** — exactly 168 + 595, nothing else moved. **936 tests at this measurement** (the two review
+rounds below then added seven). `EXPLAIN ANALYZE` on all five new/touched views: four run in single-digit
+milliseconds or under; `gap_uncurated_interaction_rule` costs **≈2.7 s**,
 confirmed (three controls, not reasoned) to be inherited whole from `ddi_candidate_pair`'s own unfiltered-scan cost —
 not db/024's duplicated-walk shape — and filed as
 [#75](https://github.com/cairn-ehr/drugref/issues/75) rather than fixed here, since the fix belongs inside a prior
 slice's hot-path view. Full account: PROJECT-NOTES.md § "Slice 5c.1".
 
-**Re-measured post-merge on 2026-08-08** (`drugref_5c1m`, chain 144 s), because the figures above were taken before
-two review rounds edited `db/029` twice more and the merged file had never been run end to end: **every count
-reproduces exactly**, every ingest summary matched, and all four review fixes are confirmed in the live catalog.
-Suite **943**. `db/029` is merged and therefore frozen — corrections need a new `db/NNN`.
+**Two review rounds then edited `db/029` twice more** — the final whole-branch review (a hardcoded `relationship`
+CHECK where `db/006` had already replaced that CHECK with an FK into `ci_axis`; the stale `~739`, including inside a
+`COMMENT ON TABLE`; and two mutations of the natural key that all 936 tests survived) and the PR review (an untested
+clause of the five-table retention guard; `pair_count` as `count(*)` over a join that omits `source`; two unindexed
+`question_uuid` foreign keys). Suite **936 → 940 → 943**. Each is described in PROJECT-NOTES § "Slice 5c.1"; none
+changes a count above.
+
+**Re-measured post-merge on 2026-08-08** (`drugref_5c1m`, chain 144 s against 127.5 s — uncontrolled, filed as
+[#81](https://github.com/cairn-ehr/drugref/issues/81)), because the figures above were taken before those edits and
+the merged file had never been run end to end: **every count and every ingest summary reproduces exactly**, and all
+four fixes above are confirmed in the live catalog — `pair_count` by `pg_get_viewdef`, the only check that can
+distinguish it, since the row counts are identical either way. The `EXPLAIN ANALYZE` timings were not re-run there.
+`db/029` is merged and therefore frozen — corrections need a new `db/NNN`.
 
 ##### 5c.2 — the ONC high-priority DDI floor
 First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
@@ -456,6 +474,34 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
 
 ## Cross-cutting hardening (not a single slice)
 
+- **The review of PR [#78](https://github.com/cairn-ehr/drugref/pull/78) ✅ DONE** (2026-08-08, no migration) —
+  twelve findings, every one in the state files themselves. **Two substantive**: the `~739`-in-`COMMENT ON TABLE`
+  fix was the one 5c.1 fix no test killed (now `tests/test_curated_interaction_comment.py` plus its guard), and
+  `pair_count` had been recorded "verified" on a reading that is **identical on the broken view** —
+  `pg_get_viewdef`, run on both databases, is what actually settles it. The rest were prose defects with
+  consequences a later session pays: the whole-branch review's findings existed only in a commit message, §5c's
+  execution order was nowhere in ROADMAP, and the chain's uncontrolled 127.5 s → 144 s delta had been written off
+  as a warm cache — now [#81](https://github.com/cairn-ehr/drugref/issues/81). Suite **956 → 958**, two new
+  standing rules. Full account: PROJECT-NOTES § "Standing rules" and § "Slice 5c.1".
+- **The gates-that-do-not-fire round ✅ DONE** (issues 74, 66, 76 — 2026-08-08, no migration). Three checks that
+  existed and never fired. **74**: five of the seven single-live index tests passed a `UNIQUE` mutation that would
+  forbid every correction the overlay exists to make — measured, not reasoned — and the weakest counted the index
+  by name alone; all seven now go through one `assert_live_key_index` fixture, which itself gets a guard file
+  mutating the real index inside the test transaction. **66**: there was no lint gate to weaken — no `[tool.ruff]`,
+  `ruff` not a project dependency (a pyenv shim answered `uv run ruff`), and **no lint job in CI at all**. Now
+  `line-length = 88` with `E`/`F`/`W`, `src/`'s 52 lines reflowed, ruff pinned, a CI `lint` job added, `ruff check .`
+  confirmed safe at 0.18 s (because ruff honours `.gitignore` — **not** because of `extend-exclude`, which is
+  belt-and-braces; the "used to hang on `downloads/`" claim does not reproduce) and `tests/`' **334** long lines
+  carved out as [#79](https://github.com/cairn-ehr/drugref/issues/79). The issue's "~88 every file is written to"
+  holds for `src/` only. **76**: `curated_target_unresolved` shipped with no consumer — the second time (db/010's was
+  the first) — now read by `curation.unresolved_targets` and printed as `drugref status`'s third block.
+  **Its own review then found three gates THIS round added that also did not fire** — an orphan test whose empty
+  result was over-determined, a CI step whose `tee` pipeline swallowed pytest's exit code, and a source-text grep
+  that the round's own 88-column rule taught SQL to evade. All mutation-verified dead; the seven live-key tables are
+  now derived from `pg_trigger.tgargs` rather than three hand-kept lists, and `conftest`'s CI hard-fail branch has a
+  test for the first time. Suite **943 → 969**; orphan exit-code channel deferred to
+  [#82](https://github.com/cairn-ehr/drugref/issues/82). **`cli.py` is now 508 lines, over the ~500 cap — split it
+  before adding another handler.** Full account: PROJECT-NOTES § "The gates-that-do-not-fire round".
 - **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). Made every other slice's coverage number real; every
   defect was invisible to the committed fixtures. `ingest/unii.py` read a **`PT` column the real UNII release does not have**
   (it is `Display Name`), so `row.get("PT") or ""` silently emptied all 168,046 labels — a production run would have

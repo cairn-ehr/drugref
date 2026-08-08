@@ -229,7 +229,8 @@ def apply_migrations(conn: psycopg.Connection) -> None:
                 f"migration {path.name} changed after it was applied "
                 f"(recorded {seen[:12]}..., now {checksum[:12]}...). Migrations are "
                 "immutable once applied: add a new db/*.sql file instead of editing "
-                "this one, or the change will never reach an already-migrated database.")
+                "this one, or the change will never reach an already-migrated "
+                "database.")
         conn.execute(body)
         conn.execute(
             "INSERT INTO drugref.schema_migration (filename, checksum) VALUES (%s, %s)",

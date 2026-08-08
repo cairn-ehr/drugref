@@ -263,7 +263,8 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path,
 
     provenance.finish_run(conn, run_id)
     conn.commit()
-    return MedrtSummary(classes_in_release=len(uuid_by_nui), classes_added=classes_added,
+    return MedrtSummary(classes_in_release=len(uuid_by_nui),
+                        classes_added=classes_added,
                         parent_edges=parent_edges, memberships=memberships,
                         contraindications=contraindications,
                         unmatched_rxcuis=len(unmatched),

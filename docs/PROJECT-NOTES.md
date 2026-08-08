@@ -32,6 +32,49 @@ worth keeping does not belong in the file whose history is deliberately disposab
 - **A branch the release cannot exercise is pinned on controlled input and verified by mutation** (#42): desc2026
   and supp2026 share **0** ConceptUIs. **#53's `is_cap_exempt`, #47's named-row tie-break and ALL of #35's new
   behaviour** — no release-derived database holds a superseded or withdrawn row — are the same shape.
+- **A DETECTOR NOBODY CALLS IS NOT A DETECTOR** (db/010 → #59's note → issue 76). Shipping a gap/operator view
+  with no consumer has now happened **twice**: `expansion_policy_unresolved` (db/010, repaired) and
+  `curated_target_unresolved` (db/029, repaired by the round below). A view is half a feature; the other half is
+  the caller. **When a migration adds a detector, name its consumer in the same round or file the issue before
+  the branch merges.**
+- **A MEASURED FIGURE INSIDE A `COMMENT ON` IS SHIPPED DATA, AND NEEDS A TEST LIKE ANY OTHER** (the review of PR
+  [#78](https://github.com/cairn-ehr/drugref/pull/78)). `db/029` carried the stale `~739` inside
+  `COMMENT ON TABLE curated_interaction`; the whole-branch review corrected it and **nothing pinned the
+  correction**, so the post-merge round had to read the live catalog by hand and the state files claimed a test
+  coverage that did not exist. A `--` comment is stripped, but a `COMMENT ON` lands in the catalog where
+  consumers read it, and it is exactly where a later rewrite restates the design spec's approximate prose. Pinned
+  now by `tests/test_curated_interaction_comment.py`, asserted against the CATALOG rather than the migration
+  text — the file a grep could check is not the one that shipped once a migration merges — with a guard beside it
+  driving the same pure predicate with the comment that actually shipped.
+- **A READING THAT IS IDENTICAL ON THE BROKEN VERSION IS NOT EVIDENCE** (the review of PR #78). The post-merge
+  round "confirmed" the `pair_count` fix from `max`/`sum`/`count`, which are identical on the drifted and merged
+  databases *by the finding's own argument*. Before recording a fix as verified, name the observation that
+  **differs** between the two versions — here `pg_get_viewdef`, run on both — or record it as unverified.
+- **A CONFIG BLOCK UNDER THE WRONG HEADER IS SILENT IN BOTH TOOLS** (issue 66). `line-length = 88` sat inside
+  `[tool.pytest.ini_options]` for a whole draft and nothing failed — 88 is also ruff's default, so lint looked
+  configured. The only symptom was pytest's `PytestConfigWarning: Unknown config option: line-length`. **Verify
+  effective settings from the tool (`ruff check --show-settings`), never from reading the file.**
+- **A TEST WHOSE EXPECTED RESULT IS OVER-DETERMINED CANNOT FAIL** (the review of PR #80). A negative assertion
+  (`== []`, "no rows", "no error") is only evidence if **exactly one** thing could have produced it. The superseded
+  -orphan test held whether or not the view filtered on `superseded_by`, because it never removed the candidate,
+  so two independent clauses each sufficed. **Before trusting a test that asserts absence, name every reason the
+  result could be empty; if there is more than one, the test is pinning none of them.** Mutation is how you check.
+- **A SHELL PIPELINE SWALLOWS THE EXIT CODE OF EVERYTHING BUT ITS LAST STAGE** (the review of PR #80). CI's
+  anti-skip guard ran `pytest … | tee out.txt && ! grep …` under `bash -e`, which does **not** set `pipefail`, so
+  five test failures exited 0 and only the grep decided the step. **In any CI step, redirect rather than pipe, or
+  set `-o pipefail` explicitly** — and remember `uv sync` re-resolves a drifted lockfile silently, so a pinned
+  tool version is only pinned under `uv sync --locked`.
+- **A GREP-SHAPED GUARD MUST MATCH THE PARSE, NOT THE SOURCE TEXT** (the review of PR #80). The "no SQL in
+  `cli.py`" test matched a literal `FROM drugref.<table>` against raw source, so a two-line string, an `INSERT`,
+  an `UPDATE`, a `JOIN` or a double space all walked past it — and **the same round's 88-column lint rule is what
+  forces long SQL to wrap**, so one gate was quietly weakening another. `ast.parse` folds implicit concatenation,
+  which closes every one of those at once. **When you add a formatting rule, re-check every guard that reads
+  source text.**
+- **DERIVE THE COVERED SET FROM THE CATALOG, NEVER FROM A LIST YOU MAINTAIN** (the review of PR #80). Seven
+  single-live tables were covered by three hand-written literal lists, and the number "seven" appeared in prose
+  four times while nothing asserted it — so an eighth table was invisible to the entire suite. Reading
+  `pg_trigger.tgargs` makes the fixture assert what the trigger actually asks for, and makes new tables covered
+  the day their migration lands. Same for any "all N of these" claim: if a catalog knows N, ask it.
 
 ## Merged rounds, compressed — the traps only
 
@@ -528,6 +571,34 @@ outside its branch.** Found by the final whole-branch review of slice 5c.1 and c
 rules, of which 595 reach the worklist, with the distinction stated explicitly rather than repeating a single
 approximate figure.
 
+**THE FINAL WHOLE-BRANCH REVIEW (`1b92e99`) found six; three belong here rather than only in a commit message,
+because two later paragraphs count from them. Suite 936 → 940.**
+
+1. **BLOCKING — `curated_interaction.relationship` shipped as `CHECK (relationship IN ('CI_MoA', 'CI_PE'))`,
+   under a comment claiming it mirrored `class_contraindication`'s own CHECK. That claim was false**: `db/006`
+   finding 1 had *replaced* that CHECK with an FK into `ci_axis` precisely so the CI vocabulary would have one
+   home, after `db/004` shipped it as a CHECK **plus** a matching `CASE` inside `ddi_candidate_pair` and
+   widening only the CHECK inserted rows that expanded to zero pairs with no error (an unmapped `CASE` arm
+   yields NULL and joins nothing). A hardcoded CHECK on the grading table is that same second list again, and it
+   drifts in **both** directions the moment `ci_axis` grows a third axis: `class_contraindication` accepts the
+   new predicate by FK, `ddi_candidate_pair` projects candidates for it and `gap_uncurated_interaction_rule`
+   **queues them** — while `curated_interaction` refuses the very row a curator is being asked to write, so
+   `curation.py` cannot answer its own worklist. Now the same FK, `curated_interaction_relationship`, and pinned
+   by `test_an_unknown_relationship_is_refused_by_the_foreign_key`. `ci_axis` holds exactly **two** rows today
+   (`CI_MoA`→`has_MoA`, `CI_PE`→`has_PE`, both `expands_descendants`), which is why the CHECK and the FK were
+   indistinguishable by every test and every count in this section.
+2. **Two mutations survived all 936 green tests, and both were the SAME property: `relationship` is part of
+   `curated_interaction`'s natural key.** Dropping it from `curated_interaction_single_live`'s trigger arguments,
+   and dropping it from `curated_interaction_live_key`'s index column list, each left the suite green — the
+   first is now killed by a behavioural coexistence test
+   (`test_two_live_rows_differing_only_by_relationship_may_coexist`), the second by an explicit column-list
+   assertion, now inside the shared `assert_live_key_index` fixture that issue 74 built. Each was verified by
+   hand-mutating `db/029`, confirming the new test fails, and reverting. **These are the "two" the paragraph
+   below counts from.**
+
+Also from that round, and recorded above rather than here: the stale `~739`, in `db/029` twice (once inside a
+`COMMENT ON TABLE`) and in `curation.py`.
+
 **The PR-review round (PR [#77](https://github.com/cairn-ehr/drugref/pull/77)) found a THIRD untested
 load-bearing clause and one latent count defect. Suite 940 → 943.**
 
@@ -565,23 +636,49 @@ the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The tes
 were reachable by test at all.
 
 **POST-MERGE RE-MEASUREMENT (2026-08-08, `drugref_5c1m`) — because every figure above was measured on a schema
-that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The
-next session found `drugref_5c1`'s ledger recording `f2420c…` against the merged file's `4a5efb…` — the drift
-the paragraph above predicted, sitting in the database § Repo facts pointed readers at. Rebuilt from scratch on
-the merged file (chain wall-clock **144 s**; the ~127.5 s above was the same chain on a warmer machine — treat
-both as "~2.5 min", not as a regression). **Every figure above reproduces EXACTLY**: `ddi_candidate_pair`
-**21,664** · `substance_moiety` **19,438** · `moiety_condition_contraindication` **9,471** ·
-`moiety_condition_indication` **14,674** · `condition_contraindication_expanded` **192,161** ·
-`gap_uncurated_condition_contradiction` **168** · `gap_uncurated_interaction_rule` **595** ·
-`curated_target_unresolved` / `curated_ddi_pair` / `curated_condition_ruling` all **0** · `open_question`
-**21,842**. Every ingest summary matched too (635 contraindications, 168 also-contraindicated pairs, 422
-broadened, 8,163 components not in registry). All four review fixes verified present in the live catalog:
-`curated_interaction_relationship` is an **FK into `ci_axis`** (no hardcoded CHECK), `COMMENT ON TABLE` carries
-**635/595 and no `739`**, and `curated_interaction_by_question` / `curated_condition_by_question` both exist.
-**The `pair_count` fix is confirmed LATENT, not cosmetic-only:** `max`/`sum`/`count` are **244 / 21,664 / 595**
-on *both* the drifted and the merged database — identical, exactly as the finding predicted, because
-`class_contraindication_source` admits `MED-RT` alone today. The divergence is real but arrives with the second
-authority; **do not read the equality as evidence the fix was unnecessary.**
+that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The next
+session found `drugref_5c1`'s ledger recording the pre-merge checksum where the merged file hashes to something
+else — the drift the paragraph above predicted, sitting in the database § Repo facts pointed readers at. **Both
+checksums are quoted in full, once, in § Repo facts** (at the twelve hex characters `db.apply_migrations` itself
+prints, so the documented value can be compared to its error text as a string rather than eyeballed). Rebuilt
+from scratch on the merged file: chain wall-clock **144 s**, against the **127.5 s** above.
+
+**That +13% is NOT explained here.** Same five releases, same order, same machine — and no control was taken: no
+repeat run on `drugref_5c1m` for the run-to-run spread, no per-leg breakdown, nothing separating cache warmth
+from real cost in a file that added an FK lookup and two indexes to the write path. An earlier draft of this
+paragraph attributed it to "a warmer machine" and told the reader to treat both as "~2.5 min, not a regression";
+that was reasoning presented as measurement, which the review of PR
+[#78](https://github.com/cairn-ehr/drugref/pull/78) flagged and this round removed. Filed as
+[#81](https://github.com/cairn-ehr/drugref/issues/81) with the three measurements that would settle it. This
+section demands "three controls, not reasoning" of a view twenty lines below; it owes its own timings the same
+standard.
+
+**WHAT REPRODUCED, AND WHAT WAS NOT RE-RUN — the distinction matters, because "every figure above" was too
+wide.** Reproduced **EXACTLY**: every count in the measurement paragraph above (listed there once, deliberately
+not restated here) and all four ingest summaries (635 contraindications, 168 also-contraindicated pairs, 422
+broadened, 8,163 components not in registry). **NOT re-measured on `drugref_5c1m`:** the five `EXPLAIN ANALYZE`
+timings below, `gap_uncurated_interaction_rule`'s ≈2.7 s among them — and the suite figure, which is a property
+of the repo rather than of any database (936 at the measurement above, **943** by the end of 5c.1's two review
+rounds, higher since — the current number lives in § "How to run / test" below, and nowhere else). An operator told
+this database holds *every* figure would query it for the 2.7 s or the 936 and conclude the schema had drifted
+again.
+
+**All four review fixes verified in the live catalog — three by inspection, `pair_count` by the only check that
+can tell the two definitions apart.** `curated_interaction_relationship` is an **FK into `ci_axis`** (no
+hardcoded CHECK) · `COMMENT ON TABLE` carries **635/595 and no `739`**, and is now pinned by
+`tests/test_curated_interaction_comment.py` — the reason this round had to read it by hand is that nothing tested
+it, and the next round will not have to · `curated_interaction_by_question` /
+`curated_condition_by_question` both exist.
+
+**`pair_count` needed `pg_get_viewdef`, because the row counts CANNOT distinguish the fixed view from the broken
+one.** `max`/`sum`/`count` are **244 / 21,664 / 595** on *both* databases — identical, exactly as the finding
+predicted, since `class_contraindication_source` admits `MED-RT` alone today. Which means an identical reading is
+also precisely what an ABSENT fix produces, so on its own it is evidence of nothing: an earlier draft offered it
+as the confirmation, and the review of PR #78 caught that. The discriminating check, run on both databases:
+`pg_get_viewdef('drugref.gap_uncurated_interaction_rule'::regclass, true)` yields `count(DISTINCT
+p.partner_moiety) AS pair_count` on `drugref_5c1m` and `count(*) AS pair_count` on `drugref_5c1`. **That is the
+control, and the reason `drugref_5c1` is kept rather than dropped.** The fix is **LATENT, not cosmetic** — the
+divergence arrives with the second authority. **Do not read the equality as evidence the fix was unnecessary.**
 
 **`EXPLAIN ANALYZE` on all five new/touched views** — `curated_ddi_pair` (filtered on a subject that actually
 carries a rule, per the brief's own warning against inventing a literal) **2.5 ms** · `curated_condition_ruling`
@@ -635,6 +732,199 @@ would repeat exactly that mistake. Filed as
   one breath, below) — this round also caught and fixed one instance ef16b60 missed
   (`ROADMAP.md`'s Slice 5 intro) and one in the public docs site (`decisions/hybrid-store.md`'s title and body).
   **DDInter is CC BY-NC-SA and stays off the bundled ladder permanently** (ef16b60; unchanged by this round).
+
+## The gates-that-do-not-fire round (issues 74, 66, 76) — 2026-08-08, no migration
+
+Three issues with one shape: **a check that exists and never fires.** A lint rule never selected, a test that
+could not fail, and a detector nothing called. No schema change, no migration — `db/029` is merged and frozen.
+Suite **943 → 956**.
+
+### Issue 74 — the live-key index tests could not fail
+
+Seven tables carry a single-live natural-key partial index, and the tests protecting them asserted the property
+in **three different strengths**: 5c.1's two checked existence + partial + non-unique + column list, the
+accumulation suite's four parametrized ones checked existence + the `WHERE` substring, and
+`class_expansion_policy_live_key` — the one the parametrized test never covered, because `db/027` added it four
+migrations after Plan C's four — **counted the index by name and nothing else**.
+
+**Measured, not reasoned**: with the index rebuilt as `CREATE UNIQUE INDEX … WHERE superseded_by IS NULL`, the
+old accumulation-style assertion (`indexdef LIKE '%superseded_by IS NULL%'`) returns **true**, and the old
+expansion-policy-style assertion (`count(*) = 1`) returns **true**. Five of the seven tests passed the mutation
+that **forbids every correction the overlay exists to make** — a correction is briefly two live rows on one
+natural key, and a partial index cannot be `DEFERRABLE`, so `UNIQUE` is enforced at statement time.
+
+Fixed by moving all three properties plus the column list into **one** `assert_live_key_index` fixture in
+`conftest.py` (shared via conftest, not cross-file import — the precedent commit `6621382` set), used by all
+seven call sites. **Consolidating created a new single point of failure**, so the guard got a guard:
+`tests/test_live_key_index_guard.py` mutates the real index inside the test transaction (Postgres DDL is
+transactional; the `conn` fixture rolls back) and asserts the fixture rejects each of missing / non-partial /
+UNIQUE / narrowed-columns, plus a control that it accepts the real index. **One test per property**, per the
+standing rule 5c.1's PR review produced.
+
+### Issue 66 — the lint gate ran nowhere
+
+The issue said "ruff runs with default rules, so E501 is never checked". True, and **two things it did not say
+were worse**: `ruff` was **not a project dependency at all** (`uv run ruff` fell through to a pyenv shim at
+0.11.0, so the linter's version was whatever the developer happened to have), and **CI never ran ruff** — the
+only workflow job was pytest. There was no lint gate to weaken.
+
+**The measurement corrected the issue's premise.** "50+ lines exceed the ~88-column convention every file is
+written to" is right for `src/` and wrong overall:
+
+| bound | `src/` | `tests/` |
+|---|---|---|
+| 88 | **52** | **324** |
+| 100 | 0 | 41 |
+| 110 | 0 | 9 |
+| 120 | 0 | 0 |
+
+`src/` genuinely is written to 88; `tests/` is written to ~120 and never was 88. So: `[tool.ruff]` with
+`line-length = 88` and `select = ["E", "F", "W"]`, `src/`'s 52 lines reflowed, ruff pinned into the dev group,
+a `lint` job added to CI, and `tests/**` carved out of E501 via `per-file-ignores` with the debt filed as
+**[#79](https://github.com/cairn-ehr/drugref/issues/79)** and a comment in `pyproject.toml` saying to delete the
+block when 79 closes.
+
+**`extend-exclude = ["downloads", "docs-site/site"]` is BELT-AND-BRACES, and this entry originally had the
+causation backwards.** It claimed the exclusion is what stops `ruff check .` hanging on the GSRS dump — which is
+why every instruction in this repo used to say `ruff check src tests`. **The review of PR #80 measured it and the
+claim does not reproduce**: with `extend-exclude` emptied, `ruff check .` still completes in **0.18 s** over a
+614 MB `downloads/`. Two things make it safe, neither of them this setting — ruff honours `.gitignore` and
+`downloads/` is ignored (`.gitignore:7`, since 2026-07-24), and ruff only ever opens `.py`/`.pyi`, so a data blob
+costs nothing even when gitignore is bypassed. The setting earns its place only for the day one of those paths
+stops being ignored; `docs-site/site` is the one that would bite (bypassing gitignore surfaces 662 E501s from it).
+**Note the shape of the error**: a true statement ("the bare command is now safe") was given a false cause, and
+the false cause is what a later contributor would act on.
+
+Also corrected there: the dump is **one** artefact, not two — 321,487,817 bytes gzip → ~2.05 GB, exactly as
+§ "Repo facts" states it. An earlier draft read that as "a 2.05 GB dump and a 321 MB gzip".
+
+**TWO TRAPS THIS ROUND WALKED INTO, both worth the next reader's attention:**
+
+1. **The `[tool.ruff]` header was missing from the first draft**, so `line-length` and `extend-exclude` sat
+   inside `[tool.pytest.ini_options]`. **Nothing failed** — 88 is ruff's own default, so the lint run looked
+   correct — and the only symptom was `PytestConfigWarning: Unknown config option: line-length` buried in test
+   output. Now a standing rule above. Verified afterwards with `ruff check --show-settings`
+   (`linter.line_length = 88`, `file_resolver.extend_exclude = ["downloads", "docs-site/site"]`) and a positive
+   control: a deliberately 93-character file in `src/` **does** fail, and a 119-character line in `tests/` does
+   not.
+2. **An automated reflow destroyed a dataclass body.** The first script fell back to a bare-indent prefix when a
+   line was not a comment, which makes a run of same-indent CODE look like a prose paragraph; it rewrapped
+   `medrt.py`'s `MedrtSummary` fields into an unparseable blob. Caught by an IDE syntax diagnostic, then by
+   `ast.parse` over every touched file. **Three files were reverted and redone by hand**, and the script was
+   narrowed to comment blocks only.
+
+**The reflow is provably content-preserving — FOR STRING CONSTANTS, which is not the same as for comments.**
+Every NON-DOCSTRING string constant was compared between `HEAD` and the working tree via `ast.parse` across all
+16 touched files — Python folds implicit concatenation at parse time, so splitting `"AAA BBB"` into `"AAA "
+"BBB"` is invisible while a lost or doubled space is not. **All 16 identical** (`cli.py` 119 strings,
+`questions.py` 117, `cli_policy.py` 92, …). Do this check after any line-wrapping pass over SQL string literals;
+there were nine of them here.
+
+**The review of PR #80 then found what that check by construction could not see**, and it is worth stating
+because the phrase "provably content-preserving" invites over-reading:
+
+- **One comment lost a word.** `medrt.py`'s `inactive_concepts` counter went from `# right CTY, but upstream no
+  longer marks it active` to the same line without `but` — the line was 89 characters, so the script dropped a
+  word rather than the alignment padding, and the two sibling counters beside it still read "but". Restored by
+  trimming the padding. A word-bag diff over comments (via `tokenize`, so trailing comments count) is the check
+  that catches this; the string-constant check cannot.
+- **29 of `mesh_rel_run.py`'s 77 indented continuation lines were flattened**, inconsistently and within single
+  blocks — step 7 ended up with three flat paragraphs and one still indented, which reads as though the indented
+  one were a deliberate sub-point. No words moved, so every automated check passed. Restored, then re-verified
+  word-identical to `main`.
+
+**Standing rule: a reflow needs TWO checks, not one** — `ast.parse` over string constants for content, and a
+comment word-bag plus an indentation count for structure. Neither sees what the other does.
+
+### Issue 76 — `curated_target_unresolved` had no consumer
+
+`db/029` section 5 shipped the orphan detector — live curated rows whose candidate is no longer projected after
+a per-source rebuild — and **nothing read it**. The second instance of the same mistake; the first
+(`expansion_policy_unresolved`, db/010) is recorded in `interactions.unresolved_expansion_policy`'s own
+docstring as "precisely the failure mode it was written to catch". Now a standing rule above.
+
+`curation.unresolved_targets(conn) -> list[UnresolvedTarget]` is the read, and `drugref status` grew a **third
+block** that calls it. Two design points a later reader will otherwise re-litigate:
+
+- **The read lives in `curation.py`, not in `cli.py` — for OWNERSHIP, not for `pg_rewrite`.** The original
+  wording here (and in `cli.py`'s own docstring) said the `pg_rewrite` argument "applies in full" to the third
+  block. It does not, and the review of PR #80 was right to press it: `curation.unresolved_targets` is *also* a
+  SELECT embedded in Python, and moving it out of `cli.py` does not make it visible to `pg_rewrite` — nothing can.
+  What the placement actually buys is that the read sits beside the curated write path it belongs to, exactly as
+  `unresolved_expansion_policy` sits in `interactions.py`, and that a grep test can then hold the line. Keep the
+  rule; state the real reason for it.
+- **`drugref status`, not an ingest summary**, which is what issue 76 itself proposed. `curated_target_unresolved`
+  has **no `source` column** — it compares curated rows against three projections at once — so unlike its
+  expansion-policy sibling it cannot be scoped per-run, and `db/029` is merged and frozen, so adding one would
+  need a new migration. That makes it a whole-database question.
+
+`UnresolvedTarget` **was** built positionally from the SELECT, pinned by one test asserting all six fields
+against real SQL. **The review of PR #80 replaced testing-for with cannot-happen**: a single
+`_UNRESOLVED_COLUMNS` tuple now generates the SELECT *and* binds the record by keyword, so the two hand-maintained
+lists that sat a few lines apart are one, and `zip(..., strict=True)` turns a gained or lost column into a
+`ValueError` instead of a mis-populated record. Worth keeping the arithmetic that motivated it: four text columns
+and two uuid ones admit **48 type-compatible orderings**, exactly one correct, and every wrong one is well-typed.
+
+Note what was NOT the risk, because the PR description got this wrong and a later reader will too: the SELECT
+names its columns explicitly, and `CREATE OR REPLACE VIEW` cannot reorder or rename existing columns anyway, so
+**a view change could never have silently reordered the result**. The exposure was entirely inside `curation.py`.
+
+Confirmed end to end on `drugref_5c1m` — `drugref status` prints `unresolved curated targets: none` alongside the
+five loaded releases. A database predating db/029 now raises a `RuntimeError` naming `drugref migrate` rather than
+a raw psycopg `UndefinedTable` traceback arriving after two blocks of real answers.
+
+`cli.py` is now **508 lines — OVER CLAUDE.md's ~500 cap**, having been 479 when this round first flagged it as
+"close enough that the next handler should split". The review's fixes (the `UndefinedTable` re-raise, the docstring
+correcting the `pg_rewrite` claim) pushed it past. **Splitting it is the next change to that file, before any new
+handler** — the natural seam is the four `_handle_*` entry points, which already take a connection and are
+deliberately thin, versus the DB-free argument layer above them. Filed as debt here rather than done in a review
+round, because moving 500 lines while fixing gates would have made both unreviewable.
+
+### What the review of PR #80 found — three gates this round ADDED that did not fire
+
+The round's own thesis, one level up. All three confirmed by mutation against the real database, and all three
+now verified dead the same way.
+
+1. **`test_a_superseded_judgement_is_not_an_orphan` could not fail.** It recorded a judgement, corrected it, and
+   asserted the result was empty — but never deleted the candidate, so *both* rows resolved through the view's
+   `NOT EXISTS` and the empty result was over-determined. Removing `WHERE c.superseded_by IS NULL` from **both**
+   arms of db/029's view left the whole suite green. Its own failure message admitted it ("the candidate is still
+   projected, so neither row is an orphan"). Now it orphans the candidate and asserts exactly one row, carrying
+   the **correction's** `reviewed_against` rather than the predecessor's.
+2. **CI's `Confirm nothing was skipped` step could not fail on a failing pytest.** `pytest … | tee out.txt && !
+   grep -q skipped out.txt` runs under GitHub's default `bash -e`, which has **no `pipefail`**, so the pipeline's
+   status is `tee`'s — always 0 — and only the grep decided the step. A run with 5 failures and 0 skips passed.
+   This is the second pytest run against a service container the first run has already written to, so it is
+   precisely where a state-dependent failure would first appear. Redirect, don't pipe. (The grep was also
+   case-sensitive against `-rs`'s `SKIPPED` lines; it is anchored on `[0-9]+ skipped` now.)
+3. **The "no SQL in `cli.py`" guard was being weakened by this round's own lint rule.** It matched
+   `f"FROM drugref.{table}"` against raw source, so it was blind to a SELECT split across two lines — and
+   **E501 at 88 columns is what forces long SQL to wrap**; this branch splits SQL literals in eleven places. Also
+   blind to `INSERT`, `UPDATE`, `JOIN` and a double space. A Python-embedded *writer* to an append-only curated
+   table is strictly worse than a reader, and neither the guard nor `pg_rewrite` could see one. Rewritten over
+   `ast.parse`d string constants (which fold implicit concatenation, killing all seven evasions at once) and
+   extended to **`cli_policy.py`**, which the module docstring's rule is actually about and which nothing scanned.
+
+**Two more surviving mutants**, both now dead: the view's `cc.relationship = c.relationship` predicate could be
+replaced by `true` (both orphan tests deleted the candidate table *wholesale*, so only the all-or-nothing case was
+exercised — a MED-RT **re-key** is the realistic orphan and now has its own test), and the UNION's second arm had
+no field-level pin, so swapping `reviewed_by`/`reviewed_against` there survived while arm 1's assertion stayed
+green. **Standing rule: a UNION's arms are two independent column lists. Pin each one.**
+
+Two gates that never fired anywhere are also closed. The seven live-key tables were **three hand-maintained
+literal lists across three files**, with "seven" appearing in prose four times and asserted nowhere — an eighth
+table shipping a `*_single_live` trigger with a UNIQUE index, or none, was invisible. They are now **derived from
+`pg_trigger.tgargs`**, which is the trigger's own natural key, so the fixture asserts the real invariant ("the
+index matches what the trigger asks") rather than a literal someone typed; verified by building a synthetic
+eighth table in a transaction and watching it be discovered and rejected. And `conftest`'s CI hard-fail branch —
+the one thing standing between this suite and a vacuous green — **had never been observed firing**, because the
+DSN is set both locally and in CI. It is now a pure `dsn_verdict(dsn, in_ci)` predicate with
+`tests/test_dsn_verdict.py` driving all three verdicts DB-free, and it keys on the **presence** of `CI` rather
+than its truthiness (some runners export `CI=""`, which the old `os.environ.get("CI")` read as falsy).
+
+Suite **956 → 969**. Orphan exit-code channel deferred to
+[#82](https://github.com/cairn-ehr/drugref/issues/82) — `drugref status` still `return 0`s on an orphan, so the
+rebuild script that caused it cannot gate on it; that is a CLI-contract decision, not a cleanup.
 
 ## Verify before the first production load
 
@@ -700,10 +990,16 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 894 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# 958 tests. The DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
-ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
+
+# `ruff check .` is now the RIGHT command (issue 66). It used to walk downloads/ and
+# hang, which is why this line said `ruff check src tests` for six rounds; pyproject's
+# extend-exclude drops downloads/ and docs-site/site, so the bare form runs in 0.18 s.
+# ruff is pinned in the dev group, so this resolves the lockfile's version rather than
+# whatever is on PATH, and CI runs the same command in its own `lint` job.
+uv run ruff check .
 
 # Re-measure against the real releases, ~137 s WITH gsrs (~114 s without: the 2.05 GB
 # dump adds ~23 s). TWO manual steps: unzip Core_MEDRT_XML.zip into downloads/MEDRT/, and
@@ -734,7 +1030,9 @@ uv run drugref --dsn "$DSN" ingest gsrs  --release 2026-02-26 --dump downloads/G
 ```
 
 CI runs the suite against a PostgreSQL 18 service container, and `conftest` **fails rather than skips** when `CI` is set — so
-the DB layer can never go green by being skipped.
+the DB layer can never go green by being skipped. **`.github/workflows/ci.yml` has TWO jobs since issue 66**:
+`lint` (`uv run ruff check .`) and `pytest`. Before that round there was only `pytest`, so no lint of any kind
+ran in CI and `ruff` was not even a project dependency.
 
 - **Schema:**  `001` identity spine · `002` classification · `003` registry generalised · `004` contraindication projection ·
   `005` supersession/floor hardening · `006` `ci_axis` + view contract · `007` question registry · `008` gap views · `009`
@@ -771,7 +1069,11 @@ the DB layer can never go green by being skipped.
   orchestrators here is not a refactor away — it is impossible**: a `condition_parent` edge is derived by BOTH closures, so no
   `reason` discriminator can split it (#39 one layer deeper). **FIVE things live in exactly one place, and a test pins each**:
   `mesh.iter_records`, `ingest/checksum.py`, `db.clear_source_tables`, `provenance.py`, and — since the policy-surface debt
-  round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`overlay.py`** is the append-only
+  round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`curation.py`** is
+  slice 5c.1's curated-overlay writer, and since issue 76 also holds `unresolved_targets` — the READ that gives
+  `curated_target_unresolved` a consumer, called by `drugref status`'s third block. It lives there rather than in
+  `cli.py` because a Python-embedded reader of an append-only curated table is invisible to the `pg_rewrite`
+  sweep that finds every other reader; a grep test per curated table pins that. **`overlay.py`** is the append-only
   tier's one correction primitive (#59): `supersede(conn, table, pk_column, new_id, key_columns, key_values)`, the
   INSERT-then-point ordering every curated writer needs, now called directly by `accumulation.py`, `questions.py` and
   `interactions.py` rather than each restating it. **`cli_policy.py`** is the `drugref policy record|withdraw|show` operator
@@ -779,18 +1081,26 @@ the DB layer can never go green by being skipped.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **`drugref_5c1m` holds the real releases WITH the MERGED
-  `db/029`** at every figure in § "Slice 5c.1" above — the current measurement database and the one to read rather than
-  re-running the ~144 s chain. **Read `drugref_5c1m`, NOT `drugref_5c1`:** the latter was migrated from a `db/029` that
-  the two review rounds then edited twice more, so its ledger records `f2420c…` where the merged file hashes to
-  `4a5efb…` — `apply_migrations` refuses there permanently, and it is a *pre-merge* schema (hardcoded `relationship`
-  CHECK, the stale `~739` in `COMMENT ON TABLE`, `pair_count` as `count(*)`, no `question_uuid` index). It was left in
-  place rather than dropped; drop it when convenient. **`drugref_policy` holds
+  `db/029`** at every COUNT and INGEST SUMMARY in § "Slice 5c.1" above — the current measurement database and the one
+  to read rather than re-running the chain. It does **not** hold that section's `EXPLAIN ANALYZE` timings, which were
+  never re-run on it (§ "Slice 5c.1" says which). **Read `drugref_5c1m`, NOT `drugref_5c1`:** the latter was migrated
+  from a `db/029` that the two review rounds then edited twice more, so its ledger records
+  `f2420c5c1196b7fa439ed4a876c6ea4a00c821d90852ebd709416a2acb19bc89` where the merged file hashes to
+  `4a5efb350cd9af2a2172e9c186af713784555813ea7039a7b36bad800f011004` — **the one home for both values, quoted whole
+  because `db.apply_migrations` prints the first twelve characters** (`recorded f2420c5c1196..., now
+  4a5efb350cd9...`), so its error text can be compared against this line as a string. `apply_migrations` refuses
+  there permanently, and it is a *pre-merge* schema (hardcoded `relationship` CHECK, the stale `~739` in
+  `COMMENT ON TABLE`, `pair_count` as `count(*)`, no `question_uuid` index). **KEEP IT — it is the control**, and the
+  only artefact that can still show the merged `pair_count` differs from the shipped one (§ "Slice 5c.1"); the name
+  is therefore claimed, so a rebuild follows the plan's `createdb` recipe under a NEW name. Same treatment as the
+  three below, for the same reason. **`drugref_policy` holds
   the real releases WITH `db/027`** at every figure above — the #35 measurement database and the one to read rather than
   re-running the ~103 s ingest. `drugref_ops` is the pre-round baseline (its ledger holds a drifted `db/025`, so
   `apply_migrations` refuses there; reads are unaffected), `drugref_planc` the pre-Plan-C one — and now `drugref_policy` too:
   this round's own `db/027` edits landed after it was migrated, so its ledger also refuses `apply_migrations` (reads
-  unaffected). **A verification database is disposable — rebuild rather than patch**: for a drifted ledger `apply_migrations`
-  refuses permanently. Expect that whenever a migration is edited.
+  unaffected). **A verification database is never patched — rebuild it, under a new name**: for a drifted ledger
+  `apply_migrations` refuses permanently, and the drifted copy is often the only control for what the edit changed
+  (`drugref_5c1` is exactly that). Expect a drift whenever a migration is edited; expect to keep both sides.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

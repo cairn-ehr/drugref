@@ -339,13 +339,22 @@ def test_two_live_decisions_for_one_class_are_refused_at_commit(conn):
         conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
 
-def test_the_live_key_index_exists(conn):
+def test_the_live_key_index_exists(assert_live_key_index):
     """db/023 measured that this partial index is what keeps the single-live trigger
     linear rather than quadratic (2,000 rows: 5,773 ms -> 42 ms). NOTHING BUT THE
-    TRIGGER READS IT, so it looks unused to a catalog sweep and is asserted by name."""
-    assert conn.execute(
-        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'drugref' "
-        "AND indexname = 'class_expansion_policy_live_key'").fetchone()[0] == 1
+    TRIGGER READS IT, so it looks unused to a catalog sweep and is asserted by name.
+
+    ISSUE 74: this was the WEAKEST of the seven live-key tests -- it counted the index
+    by name and checked nothing else, so a regression that made it UNIQUE (forbidding
+    every correction), dropped its WHERE clause, or narrowed its column list from
+    (source, source_code) to (source) all passed it. It was also the one index the
+    parametrized accumulation test never covered, because db/027 added it four
+    migrations after Plan C's four. All four properties are now asserted through the
+    shared fixture; see `assert_live_key_index` for why each is load-bearing.
+    """
+    assert_live_key_index(
+        "class_expansion_policy_live_key", "class_expansion_policy",
+        "source, source_code")
 
 
 # ---- withdrawal (db/027, #35) -----------------------------------------------

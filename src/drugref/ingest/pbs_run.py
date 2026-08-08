@@ -144,7 +144,8 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         # it in three places, and this one had already drifted to a different API.
         source_checksum = checksum(path)
     try:
-        run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
+        run_id = provenance.open_run(conn, source=SOURCE,
+                                     upstream_release=upstream_release,
                                      source_checksum=source_checksum, writer=WRITER)
 
         local.clear_source_products(conn, SOURCE)
@@ -155,7 +156,8 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         # INN claim value for every INN holder (classes.moieties_by_display_name).
         inn_index = classes.moieties_by_display_name(conn)
         salt_suffixes = pbs.load_salt_suffixes()
-        log.info("PBS ingest %s: %d moiety names indexed", upstream_release, len(inn_index))
+        log.info("PBS ingest %s: %d moiety names indexed",
+                 upstream_release, len(inn_index))
 
         items_read = exact_rows = salt_rows = 0
         rows_without_identity = 0

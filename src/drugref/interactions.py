@@ -138,7 +138,8 @@ def record_expansion_decision(conn: psycopg.Connection, source: str, source_code
 def withdraw_expansion_decision(conn: psycopg.Connection, source: str, source_code: str,
                                 rationale: str, reviewed_by: str,
                                 reviewed_against: str) -> int:
-    """Retract the live decision for a class, returning it to gap_unreviewed_expansion_root.
+    """Retract the live decision for a class, returning it to
+    gap_unreviewed_expansion_root.
 
     WITHDRAWN IS NOT `allow`. Absent means UNREVIEWED -- it expands AND raises a
     question on gap_unreviewed_expansion_root -- and an append-only table can never
@@ -262,7 +263,8 @@ def add_condition_contraindication(conn: psycopg.Connection,
     """
     cur = conn.execute(
         "INSERT INTO drugref.moiety_condition_contraindication "
-        "(subject_moiety_uuid, object_condition_uuid, relationship, source, ingest_run) "
+        "(subject_moiety_uuid, object_condition_uuid, relationship, source, "
+        "ingest_run) "
         "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
         (subject_moiety_uuid, object_condition_uuid, relationship, source,
          ingest_run_id))
@@ -303,12 +305,12 @@ def record_unresolved_ci_objects(
     field -- MeSH's chemical tree always has one, but a future object_source might
     not, so the type says so rather than assuming.
 
-    `object_kind` is CHEMICAL_CLASS or UNREGISTERED_SUBSTANCE (db/014), and passing
-    it is MANDATORY because the two get different curator questions: a class is
-    withheld pending a ruling on structural-tree expansion, while an unregistered
-    substance is a coverage gap answered by registering the moiety. Reading "no
-    moiety resolved" as "therefore a class" is the defect db/014's object_kind closes, so this
-    function will not infer the kind on a caller's behalf.
+    `object_kind` is CHEMICAL_CLASS or UNREGISTERED_SUBSTANCE (db/014), and passing it
+    is MANDATORY because the two get different curator questions: a class is withheld
+    pending a ruling on structural-tree expansion, while an unregistered substance is a
+    coverage gap answered by registering the moiety. Reading "no moiety resolved" as
+    "therefore a class" is the defect db/014's object_kind closes, so this function will
+    not infer the kind on a caller's behalf.
 
     Not an error and not a drop: these are real upstream assertions drugref could
     not or would not ingest (see db/014 on the sulfonamide case). Persisting the

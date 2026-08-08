@@ -26,6 +26,7 @@ a view and a CHECK in a table disagreed silently). An unrecognised value raises
 CheckViolation from the database, and that is the intended behaviour rather than a gap.
 """
 import uuid
+from dataclasses import dataclass
 
 import psycopg
 
@@ -142,3 +143,93 @@ def record_condition_ruling(
         ("subject_moiety_uuid", "object_condition_uuid"),
         (subject_moiety_uuid, object_condition_uuid))
     return new_id
+
+
+@dataclass(frozen=True)
+class UnresolvedTarget:
+    """One live curated row whose candidate is no longer projected.
+
+    A named record rather than a bare tuple because the caller printing it must not
+    have to remember column order, and because `relationship` is None for a condition
+    ruling -- which is meaning, not missing data: `curated_condition` is keyed on the
+    (drug, condition) PAIR and deliberately carries no predicate.
+
+    `target_table` DISCRIMINATES the other two fields, and Python cannot say so here:
+    on a `curated_interaction` row `object_uuid` is a substance_class UUID and
+    `relationship` is present; on a `curated_condition` row it is a condition UUID and
+    `relationship` is None. Two disjoint namespaces in one uuid field. Deliberately NOT
+    enforced in a __post_init__, for this module's opening rule -- such a check would
+    restate the view's arm labels in Python, and a third UNION arm in a later migration
+    would then make `drugref status` refuse a legitimate row.
+    """
+    target_table: str
+    subject_moiety: uuid.UUID
+    object_uuid: uuid.UUID
+    relationship: str | None
+    reviewed_by: str
+    reviewed_against: str
+
+
+# THE ONE COLUMN LIST, and it is one on purpose. It was two -- this tuple's contents
+# spelled out in the SELECT below, and UnresolvedTarget's field list above -- kept in
+# step by nothing but sitting a few lines apart. POSITIONALLY, `subject_moiety` and
+# `object_uuid` are both uuid and `reviewed_by`/`reviewed_against` are both text, so
+# four text columns and two uuid ones admit 48 type-compatible orderings, of which one
+# is right; transposing either pair builds a WELL-TYPED WRONG record that no annotation
+# and no arity check can see. Binding by NAME removes the failure mode rather than
+# testing for it, and `strict=True` catches a column the view gained or lost.
+_UNRESOLVED_COLUMNS = ("target_table", "subject_moiety", "object_uuid",
+                       "relationship", "reviewed_by", "reviewed_against")
+
+
+def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
+    """Live curated rows pointing at a candidate that no longer exists. EXPECTED EMPTY.
+
+    WHY A FUNCTION HAS TO ASK, AND NOT MERELY A VIEW EXIST -- issue 76, and the second
+    time this project has had to learn it. See `unresolved_expansion_policy` in
+    interactions.py for the first: db/010 shipped `expansion_policy_unresolved` with no
+    consumer at all. db/029 then shipped `curated_target_unresolved` the same way. A
+    detector nobody calls reports nothing to nobody. (That docstring is CITED, not
+    quoted: the same sentence copied into three files is three things to disagree with
+    each other the first time one of them is reworded.)
+
+    HOW AN ORPHAN HAPPENS. A curated row names its candidate by NATURAL KEY and carries
+    no foreign key into it, because candidates are rebuildable projections and an FK
+    would either block the per-source rebuild or cascade curator judgement away with it
+    (db/029 section 5). The cost of that deliberate choice is that a rebuild CAN leave a
+    judgement pointing at a candidate upstream has re-keyed or withdrawn, and nothing
+    fails when it does.
+
+    NOT AN ERROR, for `unresolved_expansion_policy`'s reason: upstream re-keying a
+    concept is upstream's prerogative, and treating a stale curator note as a fault
+    would be worse than the stale note. It is an operator signal, deliberately not a
+    gap kind -- a vanished candidate is news about an upstream change, not a clinical
+    question a curator can answer. (The sibling says "aborting an ingest", which is
+    ITS stake and not this one's: that function runs inside `medrt_run`, whereas this
+    one's only caller is `drugref status`, which starts nothing and can abort nothing.)
+
+    NOT SCOPED BY SOURCE, unlike its expansion-policy sibling, because
+    `curated_target_unresolved` has no source column to scope by: it compares curated
+    rows against three projections at once (`class_contraindication`, and both
+    `moiety_condition_*` tables), and `db/029` is merged and therefore frozen, so adding
+    one would mean a new migration. That makes this a whole-database question rather
+    than a per-run one, which is why `drugref status` is its consumer rather than an
+    ingest summary.
+
+    LIVE ROWS ONLY -- the view's own `superseded_by IS NULL`. A corrected judgement's
+    predecessor still names the old candidate, and reporting it would make every
+    correction look like breakage.
+
+    ORDERED TOTALLY, on all four key columns rather than the first two. The expected
+    shape of a rebuild orphan is SEVERAL rows sharing a subject -- a re-key drops every
+    `class_contraindication` row for that moiety at once -- and those tie on
+    (target_table, subject_moiety), which left Postgres free to return them in any
+    order. `drugref status` would print a different ordering run to run, and any test
+    asserting more than one row would flake.
+    """
+    return [UnresolvedTarget(**dict(zip(_UNRESOLVED_COLUMNS, row, strict=True)))
+            for row in conn.execute(
+                f"SELECT {', '.join(_UNRESOLVED_COLUMNS)} "
+                "FROM drugref.curated_target_unresolved "
+                "ORDER BY target_table, subject_moiety, object_uuid, "
+                "relationship").fetchall()]
