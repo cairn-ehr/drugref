@@ -32,6 +32,15 @@ worth keeping does not belong in the file whose history is deliberately disposab
 - **A branch the release cannot exercise is pinned on controlled input and verified by mutation** (#42): desc2026
   and supp2026 share **0** ConceptUIs. **#53's `is_cap_exempt`, #47's named-row tie-break and ALL of #35's new
   behaviour** — no release-derived database holds a superseded or withdrawn row — are the same shape.
+- **A DETECTOR NOBODY CALLS IS NOT A DETECTOR** (db/010 → #59's note → issue 76). Shipping a gap/operator view
+  with no consumer has now happened **twice**: `expansion_policy_unresolved` (db/010, repaired) and
+  `curated_target_unresolved` (db/029, repaired by the round below). A view is half a feature; the other half is
+  the caller. **When a migration adds a detector, name its consumer in the same round or file the issue before
+  the branch merges.**
+- **A CONFIG BLOCK UNDER THE WRONG HEADER IS SILENT IN BOTH TOOLS** (issue 66). `line-length = 88` sat inside
+  `[tool.pytest.ini_options]` for a whole draft and nothing failed — 88 is also ruff's default, so lint looked
+  configured. The only symptom was pytest's `PytestConfigWarning: Unknown config option: line-length`. **Verify
+  effective settings from the tool (`ruff check --show-settings`), never from reading the file.**
 
 ## Merged rounds, compressed — the traps only
 
@@ -636,6 +645,112 @@ would repeat exactly that mistake. Filed as
   (`ROADMAP.md`'s Slice 5 intro) and one in the public docs site (`decisions/hybrid-store.md`'s title and body).
   **DDInter is CC BY-NC-SA and stays off the bundled ladder permanently** (ef16b60; unchanged by this round).
 
+## The gates-that-do-not-fire round (issues 74, 66, 76) — 2026-08-08, no migration
+
+Three issues with one shape: **a check that exists and never fires.** A lint rule never selected, a test that
+could not fail, and a detector nothing called. No schema change, no migration — `db/029` is merged and frozen.
+Suite **943 → 956**.
+
+### Issue 74 — the live-key index tests could not fail
+
+Seven tables carry a single-live natural-key partial index, and the tests protecting them asserted the property
+in **three different strengths**: 5c.1's two checked existence + partial + non-unique + column list, the
+accumulation suite's four parametrized ones checked existence + the `WHERE` substring, and
+`class_expansion_policy_live_key` — the one the parametrized test never covered, because `db/027` added it four
+migrations after Plan C's four — **counted the index by name and nothing else**.
+
+**Measured, not reasoned**: with the index rebuilt as `CREATE UNIQUE INDEX … WHERE superseded_by IS NULL`, the
+old accumulation-style assertion (`indexdef LIKE '%superseded_by IS NULL%'`) returns **true**, and the old
+expansion-policy-style assertion (`count(*) = 1`) returns **true**. Five of the seven tests passed the mutation
+that **forbids every correction the overlay exists to make** — a correction is briefly two live rows on one
+natural key, and a partial index cannot be `DEFERRABLE`, so `UNIQUE` is enforced at statement time.
+
+Fixed by moving all three properties plus the column list into **one** `assert_live_key_index` fixture in
+`conftest.py` (shared via conftest, not cross-file import — the precedent commit `6621382` set), used by all
+seven call sites. **Consolidating created a new single point of failure**, so the guard got a guard:
+`tests/test_live_key_index_guard.py` mutates the real index inside the test transaction (Postgres DDL is
+transactional; the `conn` fixture rolls back) and asserts the fixture rejects each of missing / non-partial /
+UNIQUE / narrowed-columns, plus a control that it accepts the real index. **One test per property**, per the
+standing rule 5c.1's PR review produced.
+
+### Issue 66 — the lint gate ran nowhere
+
+The issue said "ruff runs with default rules, so E501 is never checked". True, and **two things it did not say
+were worse**: `ruff` was **not a project dependency at all** (`uv run ruff` fell through to a pyenv shim at
+0.11.0, so the linter's version was whatever the developer happened to have), and **CI never ran ruff** — the
+only workflow job was pytest. There was no lint gate to weaken.
+
+**The measurement corrected the issue's premise.** "50+ lines exceed the ~88-column convention every file is
+written to" is right for `src/` and wrong overall:
+
+| bound | `src/` | `tests/` |
+|---|---|---|
+| 88 | **52** | **324** |
+| 100 | 0 | 41 |
+| 110 | 0 | 9 |
+| 120 | 0 | 0 |
+
+`src/` genuinely is written to 88; `tests/` is written to ~120 and never was 88. So: `[tool.ruff]` with
+`line-length = 88` and `select = ["E", "F", "W"]`, `src/`'s 52 lines reflowed, ruff pinned into the dev group,
+a `lint` job added to CI, and `tests/**` carved out of E501 via `per-file-ignores` with the debt filed as
+**[#79](https://github.com/cairn-ehr/drugref/issues/79)** and a comment in `pyproject.toml` saying to delete the
+block when 79 closes.
+
+**`extend-exclude = ["downloads", "docs-site/site"]` retires a trap rather than working around it**: `ruff check .`
+used to hang on the 2.05 GB GSRS dump, which is why every instruction in this repo said `ruff check src tests`.
+The bare command now runs in **0.18 s**. (It had also been *accidentally* safe — ruff honours `.gitignore`, and
+`downloads/` is gitignored — but that is not a thing to rely on.)
+
+**TWO TRAPS THIS ROUND WALKED INTO, both worth the next reader's attention:**
+
+1. **The `[tool.ruff]` header was missing from the first draft**, so `line-length` and `extend-exclude` sat
+   inside `[tool.pytest.ini_options]`. **Nothing failed** — 88 is ruff's own default, so the lint run looked
+   correct — and the only symptom was `PytestConfigWarning: Unknown config option: line-length` buried in test
+   output. Now a standing rule above. Verified afterwards with `ruff check --show-settings`
+   (`linter.line_length = 88`, `file_resolver.extend_exclude = ["downloads", "docs-site/site"]`) and a positive
+   control: a deliberately 93-character file in `src/` **does** fail, and a 119-character line in `tests/` does
+   not.
+2. **An automated reflow destroyed a dataclass body.** The first script fell back to a bare-indent prefix when a
+   line was not a comment, which makes a run of same-indent CODE look like a prose paragraph; it rewrapped
+   `medrt.py`'s `MedrtSummary` fields into an unparseable blob. Caught by an IDE syntax diagnostic, then by
+   `ast.parse` over every touched file. **Three files were reverted and redone by hand**, and the script was
+   narrowed to comment blocks only.
+
+**The reflow is provably content-preserving**: every NON-DOCSTRING string constant was compared between `HEAD`
+and the working tree via `ast.parse` across all 16 touched files — Python folds implicit concatenation at parse
+time, so splitting `"AAA BBB"` into `"AAA " "BBB"` is invisible while a lost or doubled space is not. **All 16
+identical** (`cli.py` 119 strings, `questions.py` 117, `cli_policy.py` 92, …). Do this check after any
+line-wrapping pass over SQL string literals; there were nine of them here.
+
+### Issue 76 — `curated_target_unresolved` had no consumer
+
+`db/029` section 5 shipped the orphan detector — live curated rows whose candidate is no longer projected after
+a per-source rebuild — and **nothing read it**. The second instance of the same mistake; the first
+(`expansion_policy_unresolved`, db/010) is recorded in `interactions.unresolved_expansion_policy`'s own
+docstring as "precisely the failure mode it was written to catch". Now a standing rule above.
+
+`curation.unresolved_targets(conn) -> list[UnresolvedTarget]` is the read, and `drugref status` grew a **third
+block** that calls it. Two design points a later reader will otherwise re-litigate:
+
+- **The read lives in `curation.py`, not in `cli.py`.** `cli.py`'s docstring forbids embedding SQL against
+  curated append-only tables, because `test_only_the_current_view_reads_the_policy_table_directly` finds readers
+  through `pg_rewrite`, which cannot see a query embedded in Python. `_handle_status`'s stated exception covers
+  `loaded_release` and `ingest_run_incomplete` — **operational** views — and does not stretch to the curated
+  overlay. Pinned by a parametrized grep test per curated table.
+- **`drugref status`, not an ingest summary**, which is what issue 76 itself proposed. `curated_target_unresolved`
+  has **no `source` column** — it compares curated rows against three projections at once — so unlike its
+  expansion-policy sibling it cannot be scoped per-run, and `db/029` is merged and frozen, so adding one would
+  need a new migration. That makes it a whole-database question.
+
+`UnresolvedTarget` is built **positionally** from the SELECT, so one test asserts **all six fields** against
+real SQL; the stub-driven CLI tests supply a tuple already in the assumed order and cannot see a column-order
+mistake. Verified by mutation: swapping `reviewed_by`/`reviewed_against` in the SELECT fails that test and only
+that test. Confirmed end to end on `drugref_5c1m` — `drugref status` prints `unresolved curated targets: none`
+alongside the five loaded releases.
+
+`cli.py` is now **479 lines**, close enough to CLAUDE.md's ~500 that the next handler added there should split
+rather than append.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -700,10 +815,16 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 894 tests. The DB-gated majority SKIP without this DSN, exercising none of the
+# 956 tests. The DB-gated majority SKIP without this DSN, exercising none of the
 # schema, floor, views or orchestrators -- so always run WITH it before claiming green:
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
-ruff check src tests      # NOT `ruff check .` -- that walks downloads/ and hangs
+
+# `ruff check .` is now the RIGHT command (issue 66). It used to walk downloads/ and
+# hang, which is why this line said `ruff check src tests` for six rounds; pyproject's
+# extend-exclude drops downloads/ and docs-site/site, so the bare form runs in 0.18 s.
+# ruff is pinned in the dev group, so this resolves the lockfile's version rather than
+# whatever is on PATH, and CI runs the same command in its own `lint` job.
+uv run ruff check .
 
 # Re-measure against the real releases, ~137 s WITH gsrs (~114 s without: the 2.05 GB
 # dump adds ~23 s). TWO manual steps: unzip Core_MEDRT_XML.zip into downloads/MEDRT/, and
@@ -734,7 +855,9 @@ uv run drugref --dsn "$DSN" ingest gsrs  --release 2026-02-26 --dump downloads/G
 ```
 
 CI runs the suite against a PostgreSQL 18 service container, and `conftest` **fails rather than skips** when `CI` is set — so
-the DB layer can never go green by being skipped.
+the DB layer can never go green by being skipped. **`.github/workflows/ci.yml` has TWO jobs since issue 66**:
+`lint` (`uv run ruff check .`) and `pytest`. Before that round there was only `pytest`, so no lint of any kind
+ran in CI and `ruff` was not even a project dependency.
 
 - **Schema:**  `001` identity spine · `002` classification · `003` registry generalised · `004` contraindication projection ·
   `005` supersession/floor hardening · `006` `ci_axis` + view contract · `007` question registry · `008` gap views · `009`
@@ -771,7 +894,11 @@ the DB layer can never go green by being skipped.
   orchestrators here is not a refactor away — it is impossible**: a `condition_parent` edge is derived by BOTH closures, so no
   `reason` discriminator can split it (#39 one layer deeper). **FIVE things live in exactly one place, and a test pins each**:
   `mesh.iter_records`, `ingest/checksum.py`, `db.clear_source_tables`, `provenance.py`, and — since the policy-surface debt
-  round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`overlay.py`** is the append-only
+  round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`curation.py`** is
+  slice 5c.1's curated-overlay writer, and since issue 76 also holds `unresolved_targets` — the READ that gives
+  `curated_target_unresolved` a consumer, called by `drugref status`'s third block. It lives there rather than in
+  `cli.py` because a Python-embedded reader of an append-only curated table is invisible to the `pg_rewrite`
+  sweep that finds every other reader; a grep test per curated table pins that. **`overlay.py`** is the append-only
   tier's one correction primitive (#59): `supersede(conn, table, pk_column, new_id, key_columns, key_values)`, the
   INSERT-then-point ordering every curated writer needs, now called directly by `accumulation.py`, `questions.py` and
   `interactions.py` rather than each restating it. **`cli_policy.py`** is the `drugref policy record|withdraw|show` operator

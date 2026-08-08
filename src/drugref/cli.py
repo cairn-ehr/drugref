@@ -8,13 +8,13 @@ knowledge of a feed's format -- that all lives in drugref.ingest, which is where
 parser belongs. The step table below is the single place that knows which
 orchestrators exist and in which order they must run.
 
-THE POLICY COMMANDS HOLD NO SQL -- that is a claim about `cli_policy.py`, not about
-this whole file; `_handle_status` below is the stated exception. Every policy read and
-write goes through interactions.py, never a query embedded in Python. That is
-load-bearing specifically because test_only_the_current_view_reads_the_policy_table_directly
-reads pg_rewrite, which sees views and matviews and CANNOT see a query embedded in
-Python, so a handler with its own SELECT would be a reader of an append-only curated
-table that no test in this repository could notice.
+THE POLICY COMMANDS HOLD NO SQL -- that is a claim about `cli_policy.py`, not about this
+whole file; `_handle_status` below is the stated exception. Every policy read and write
+goes through interactions.py, never a query embedded in Python. That is load-bearing
+specifically because test_only_the_current_view_reads_the_policy_table_directly reads
+pg_rewrite, which sees views and matviews and CANNOT see a query embedded in Python, so
+a handler with its own SELECT would be a reader of an append-only curated table that no
+test in this repository could notice.
 
 `_handle_status` IS THE EXCEPTION, and deliberately so: it embeds two SELECTs, against
 `drugref.loaded_release` and `drugref.ingest_run_incomplete`. Neither is curated,
@@ -44,7 +44,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import drugref
-from drugref import cli_policy, db, interactions
+from drugref import cli_policy, curation, db, interactions
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
                             pbs_run, run)
 
@@ -330,9 +330,14 @@ def _handle_migrate(conn, args) -> int:
 
 
 def _handle_status(conn, args) -> int:
-    """What is loaded, and what died trying. Two views, one command: an operator
-    asking "is this current?" needs both halves, and reading only the first would
-    report a stale release as healthy."""
+    """What is loaded, what died trying, and what a rebuild orphaned. THREE blocks,
+    one command: an operator asking "is this current?" needs all of them, and reading
+    only the first would report a stale release as healthy.
+
+    The third block is issue 76. It goes through `curation.unresolved_targets` rather
+    than a SELECT embedded here, unlike the two above it: those read operational views,
+    while this one reads the CURATED overlay, and the module docstring's pg_rewrite
+    argument applies in full to a reader of an append-only curated table."""
     # Both blocks say "none" when empty, and the symmetry is the point: a fresh
     # database printed a bare "loaded releases:" header, which reads as output that
     # got cut off rather than as an answer. Nothing loaded IS the answer there.
@@ -349,6 +354,21 @@ def _handle_status(conn, args) -> int:
     print("\nunfinished runs:" if incomplete else "\nunfinished runs: none")
     for row in incomplete:
         print("  #{} {:<8} {:<14} {:<12} started {}".format(*(str(c) for c in row)))
+
+    # Issue 76. Expected empty, and reported in a LOUDER voice than the two blocks
+    # above when it is not: a loaded release is news, an orphan is a curator's
+    # judgement now pointing at nothing, which only a rebuild can have caused.
+    orphans = curation.unresolved_targets(conn)
+    if orphans:
+        print(f"\nunresolved curated targets: {len(orphans)}"
+              "  ** a rebuild left curator judgement pointing at nothing **")
+        for o in orphans:
+            print("  {:<20} {} -> {}{} reviewed by {} against {}".format(
+                o.target_table, o.subject_moiety, o.object_uuid,
+                f" [{o.relationship}]" if o.relationship else "",
+                o.reviewed_by, o.reviewed_against))
+    else:
+        print("\nunresolved curated targets: none")
     return 0
 
 

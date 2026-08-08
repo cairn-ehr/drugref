@@ -20,32 +20,28 @@
 
 **Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 5c.1 — the curated
 overlay's assertion shape** (PR [#77](https://github.com/cairn-ehr/drugref/pull/77), merged **2026-08-06**,
-`db/029`). **943 tests, re-run green on `main` at `7bd1ad3` on 2026-08-08; working tree clean.** Two curated
-tables on Plan C's floor with no new PL/pgSQL — `curated_interaction` keyed on the class RULE,
-`curated_condition` keyed on the (drug, condition) PAIR deliberately without `relationship`, because 168 pairs
-are asserted as both an indication and a contraindication and keying on the predicate would write that
-judgement twice. Two inner-joined read views, two gap views, one operator check. **Shipped empty**, as planned.
-Measured on a fresh `drugref_5c1` (real releases, 127.5 s): every pre-existing count held exactly;
-`gap_uncurated_condition_contradiction` **168** (exact match to issue #51); `gap_uncurated_interaction_rule`
-**595** (not the design spec's own approximate "~739" — PROJECT-NOTES § "Slice 5c.1" says why; not a defect);
-`open_question` **21,842** = 21,079 + exactly the two new kinds. One view, `gap_uncurated_interaction_rule`,
-costs ≈2.7 s, inherited whole from `ddi_candidate_pair` — filed as
-[#75](https://github.com/cairn-ehr/drugref/issues/75), below. Decision record: [curating a drug–condition
-pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/). **`db/029` is now MERGED and
-therefore frozen** — a correction to it needs a new `db/NNN`. Full account, every measured number, and the
-traps: PROJECT-NOTES.md § "Slice 5c.1".
+`db/029`, shipped EMPTY as planned). **`db/029` is MERGED and therefore FROZEN** — a correction needs a new
+`db/NNN`. Every figure, every trap: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ RE-MEASURED POST-MERGE (2026-08-08) on a fresh `drugref_5c1m`, because every figure above was taken on a
-schema the two review rounds then edited twice — the merged `db/029` had never been run end to end.** Chain
-144 s; **every count above reproduces EXACTLY**, every ingest summary matched, and all four review fixes are
-confirmed in the live catalog (`relationship` an FK into `ci_axis`, `COMMENT ON TABLE` at 635/595 with no
-`739`, both `question_uuid` indexes present). `pair_count` reads **identically** on the drifted and merged
-databases — the fix is **latent, not unnecessary**: it diverges only once a second authority exists.
+**⇒ RE-MEASURED POST-MERGE (2026-08-08) on a fresh `drugref_5c1m`**, because every published 5c.1 figure was
+taken on a schema the two review rounds then edited twice, and the merged `db/029` had never been run end to
+end. Chain 144 s; **every count reproduces EXACTLY** (`ddi_candidate_pair` 21,664 · `gap_uncurated_condition_
+contradiction` **168** · `gap_uncurated_interaction_rule` **595** · `open_question` **21,842**), every ingest
+summary matched, and all four review fixes are confirmed in the live catalog. `pair_count` reads **identically**
+on the drifted and merged databases — the fix is **latent, not unnecessary**: it diverges only once a second
+authority exists. PR [#78](https://github.com/cairn-ehr/drugref/pull/78).
 
-**Two review rounds on 5c.1 found FIVE things a green suite did not** — the slice-3 lesson a fifth and sixth
-time; all fixed before merge, each killed by a test reproduced against a rebuilt schema. The standing rule they
-produced: **for every clause in a multi-table guard, name the test that kills its removal, one per clause.**
-Full account: PROJECT-NOTES § "Slice 5c.1".
+**⇒ THE GATES-THAT-DO-NOT-FIRE ROUND (issues 74, 66, 76) — no migration, suite 943 → 956.** Three checks that
+existed and never fired. **74**: five of the seven single-live index tests **passed a `UNIQUE` mutation** —
+measured, not reasoned — which would forbid every correction the overlay exists to make; the weakest counted
+the index by name alone. All seven now share one `assert_live_key_index` fixture, and that fixture has its own
+guard file mutating the real index inside the test transaction. **66**: there was **no lint gate at all** — no
+`[tool.ruff]`, `ruff` not a project dependency (a pyenv shim answered `uv run ruff`), **no lint job in CI**. Now
+`line-length = 88` + `E`/`F`/`W`, `src/`'s 52 lines reflowed, ruff pinned, a CI `lint` job, and **`ruff check .`
+is now the right command** (0.18 s; it used to hang on `downloads/`). `tests/`' 324 long lines are carved out as
+[#79](https://github.com/cairn-ehr/drugref/issues/79). **76**: `curated_target_unresolved` had no consumer —
+the second time — now `curation.unresolved_targets`, printed as `drugref status`'s third block. Full account
+and both traps this round walked into: PROJECT-NOTES § "The gates-that-do-not-fire round".
 
 **⇒ NEXT SLICE: `5c.4` — signing. Per ROADMAP's own sequencing it must land BEFORE `5c.2`'s first curated
 row**: a row committed before signing exists can never be signed retrospectively, since the floor refuses
@@ -63,14 +59,15 @@ PROJECT-NOTES.md). **Standing rule:** near `close`/`fix`/`resolve` in any inflec
 
 ## Open follow-ups (all filed as GitHub issues)
 
-**Filed by this round** — [#75](https://github.com/cairn-ehr/drugref/issues/75) **`gap_uncurated_interaction_rule`
-costs ~2.7s**, an unfiltered read of `ddi_candidate_pair` inherited whole from that view, not a new defect;
-not urgent at today's cardinality and no consumer yet · [#76](https://github.com/cairn-ehr/drugref/issues/76)
-**`curated_target_unresolved` ships with no consumer** — the orphan detector nothing reads, the same shape
-`db/010` shipped and this project had to repair; the natural consumer is the ingest summary or `drugref
-status` · [#74](https://github.com/cairn-ehr/drugref/issues/74) **the accumulation suite's live-key index
-test asserts existence only**, not partial-and-non-unique, so a regression to `UNIQUE` — which would forbid
-every correction — would pass it. 5c.1 closed that gap for its own two indexes; Plan C's five are open.
+**Filed by this round** — [#79](https://github.com/cairn-ehr/drugref/issues/79) **`tests/` is exempt from
+E501**: 324 lines exceed the 88 that issue 66 now enforces on `src/`, so `per-file-ignores` carries a carve-out
+that is **debt, not policy** — delete the block in `pyproject.toml` when 79 closes.
+
+**Still open from slice 5c.1** — [#75](https://github.com/cairn-ehr/drugref/issues/75)
+**`gap_uncurated_interaction_rule` costs ~2.7s**, an unfiltered read of `ddi_candidate_pair` inherited whole
+from that view, not a new defect; not urgent at today's cardinality and no consumer yet. (**76 and 74 are
+closed by the round above**; 74's fix also covered the fifth Plan C index, `class_expansion_policy_live_key`,
+which the parametrized test had never named.)
 
 **Filed by the slice-3 design, its measurement, and the whole-branch review** —
 [#67](https://github.com/cairn-ehr/drugref/issues/67) **salt↔base strength equivalence has no source** (409 *assay*
@@ -83,9 +80,8 @@ unregistered-component edges dropped, counted only transiently** · [#73](https:
 **both views read every source at once**; `db/028` is applied and immutable, so the next migration there carries it.
 
 **Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **no index serves a HISTORY
-query** on `class_expansion_policy`; deliberately unfixed at 14 rows, revisit at curation ·
-[#66](https://github.com/cairn-ehr/drugref/issues/66) **no enforced line length**: no `[tool.ruff]`, so **`E501` is not
-in the default rule set** and 52 lines exceed the ~88 every file is written to.
+query** on `class_expansion_policy`; deliberately unfixed at 14 rows, revisit at curation. (**66 is closed by the
+round above**, which found the gap wider than the issue said: ruff was not a dependency and CI never linted.)
 
 **Owned by 5c** (5c.1's own design round routed all three here, unanswered) —
 [#51](https://github.com/cairn-ehr/drugref/issues/51) **the 168 contradicted pairs**: 5c.1 gives them a queue

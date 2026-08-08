@@ -58,7 +58,8 @@ class IndicationRelations:
     indication_rows: int = 0
     induced_rows: int = 0
     # Subjects no moiety carries. A SET, so a subject stating many indications is one
-    # worklist entry -- the grain gap_unmatched_ingredient and the question register use.
+    # worklist entry -- the grain gap_unmatched_ingredient and the question register
+    # use.
     unmatched_rxcuis: set[str] = field(default_factory=set)
     # Assertions whose OBJECT is a MeSH chemical rather than a patient state. Counted
     # per ASSERTION, not per record, because the operator's question is "how much of
@@ -79,12 +80,12 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
                       source: str, run_id: int) -> IndicationRelations:
     """Write both indication relations, tallying every assertion that is not a row.
 
-    ONE PASS, and every exit from it is counted somewhere: an assertion either becomes a
-    row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or belongs to an
-    object code the caller already counted as unresolved. Nothing falls off the end
-    (spec 7) -- and `chemical_object_assertions` and `broadened_object_assertions` differ
-    in kind from every other number here: they report not a LOSS but what the release
-    SAYS about assertions this pass does not refuse.
+    ONE PASS, and every exit from it is counted somewhere: an assertion either becomes
+    a row, or lands in `unmatched_rxcuis` (no moiety carries the subject), or belongs
+    to an object code the caller already counted as unresolved. Nothing falls off the
+    end (spec 7) -- and `chemical_object_assertions` and `broadened_object_assertions`
+    differ in kind from every other number here: they report not a LOSS but what the
+    release SAYS about assertions this pass does not refuse.
 
     THE OBJECT QUESTIONS ARE ASKED BEFORE THE SUBJECT TEST, exactly as in
     write_contraindications, and for the same reason: whether an object is a chemical
@@ -98,19 +99,21 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     assertion whose subject no moiety carries increments them and then leaves through
     `unmatched_rxcuis` having produced nothing; an assertion whose subject TWO moieties
     carry increments them once and produces two rows. Both directions are deliberate --
-    the question these numbers answer is "how much of the release is like this", which is
-    a fact about MED-RT and MeSH rather than about drugref's registry coverage. So do NOT
-    restate either as "n rows are stored like this": the post-gate row figure has never
-    been measured against a real release, and #52 is what would make the row itself
-    detectable. Pinned by
+    the question these numbers answer is "how much of the release is like this", which
+    is a fact about MED-RT and MeSH rather than about drugref's registry coverage. So
+    do NOT restate either as "n rows are stored like this": the post-gate row figure
+    has never been measured against a real release, and #52 is what would make the row
+    itself detectable. Pinned by
     test_mesh_rel_run_ind.test_the_widening_counters_are_release_grain_not_row_grain,
-    which exists because this docstring is the only thing that makes the numbers legible.
+    which exists because this docstring is the only thing that makes the numbers
+    legible.
 
     BROADENED OBJECTS: THE ONE PLACE is_preferred_concept IS READ IN PRODUCTION, and its
     own docstring promised this reader. MED-RT names a MeSH **ConceptUI**; drugref keys
     conditions on the **record** that owns it (mesh_concepts.resolve_concepts explains
-    why -- many concepts resolve to one record, and keying on the concept would split one
-    condition into rows no rebuild could merge). When the named concept is the record's
+    why -- many concepts resolve to one record, and keying on the concept would split
+    one condition into rows no rebuild could merge). When the named concept is the
+    record's
     preferred one, nothing is lost. When it is SUBORDINATE, the concept may be NARROWER
     than the record, and the assertion is stored against something BROADER than the
     release said.
@@ -136,9 +139,10 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     weaker, it is wrong.
 
     NEVER WITHHELD, for the reason the D-tree objects are not: most of the 102 triples
-    are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so refusing all 422 would
-    lose far more than it saves, and drugref has nothing on the row that tells a consumer
-    which is which. Making the row itself detectable -- by storing the ConceptUI MED-RT
+    are benign synonymy ('Breast Cancer' -> Breast Neoplasms), so refusing all 422
+    would lose far more than it saves, and drugref has nothing on the row that tells a
+    consumer which is which. Making the row itself detectable -- by storing the
+    ConceptUI MED-RT
     named -- is #52, slice 5c's work. Until then this number is the only evidence, so it
     must be reported rather than derivable.
 
@@ -146,8 +150,9 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     17 of the 2026.07.06 release's 18,144 therapeutic assertions (0.09%) -- 14 may_treat
     and 3 may_prevent, over 13 records -- name a MeSH CHEMICAL. The percentage is of ALL
     therapeutic assertions, not of may_treat: 17/15,319 would be 0.11%, and the 17 are
-    not all may_treat anyway. Objects: LDL Cholesterol (2), Antioxidants (2), Prostate-Specific
-    Antigen (2), Analgesics, Antiemetics, Antiparkinson Agents, Deodorants,
+    not all may_treat anyway. Objects: LDL Cholesterol (2), Antioxidants (2),
+    Prostate-Specific Antigen (2), Analgesics, Antiemetics, Antiparkinson Agents,
+    Deodorants,
     Neuroprotective Agents, Radioactive Tracers, von Willebrand Factor (2), ... Some are
     defensible treatment targets ("a statin may_treat LDL cholesterol") and some are
     upstream quirks ("may_treat Analgesics"), and MED-RT does not distinguish them. They
@@ -165,12 +170,13 @@ def write_indications(conn, assertions, records, uuid_by_code, rxcui_index,
     for a in assertions:
         record = records.get(a.mesh_code)
         if record is None:
-            # The CODE is counted by the caller (unresolved_object_codes); THIS ASSERTION
-            # is not, and the grain difference is stated rather than glossed -- one dead
-            # code can carry many assertions. Nothing reports that assertion count today,
-            # which is honest only because the figure is 0 on the 2026.07.06 release
-            # (1,528 of 1,528 indication object codes resolve). Should a future release
-            # withdraw a code, the loss is visible as a code, not as its rules.
+            # The CODE is counted by the caller (unresolved_object_codes); THIS
+            # ASSERTION is not, and the grain difference is stated rather than glossed
+            # -- one dead code can carry many assertions. Nothing reports that assertion
+            # count today, which is honest only because the figure is 0 on the
+            # 2026.07.06 release (1,528 of 1,528 indication object codes resolve).
+            # Should a future release withdraw a code, the loss is visible as a code,
+            # not as its rules.
             continue
         object_uuid = uuid_by_code.get(record.record_ui)
         if object_uuid is None:

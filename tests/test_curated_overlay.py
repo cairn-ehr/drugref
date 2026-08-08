@@ -226,7 +226,7 @@ def test_two_live_rows_differing_only_by_relationship_may_coexist(
     ).fetchone() == (2,)
 
 
-def test_the_live_key_index_exists_by_name(conn):
+def test_the_live_key_index_exists_by_name(assert_live_key_index):
     """Nothing but the trigger reads this index, so nothing but a test protects it --
     and db/023 measured the cost of its absence: the single-live trigger becomes a
     sequential scan per row, so a 2,000-row load went from 42 ms to 5,773 ms.
@@ -244,16 +244,15 @@ def test_the_live_key_index_exists_by_name(conn):
     column list (matching a drop from the trigger's argument list) still satisfies
     every assertion above -- the WHERE clause and non-uniqueness are unchanged -- while
     silently indexing the wrong key.
+
+    ISSUE 74 moved these three assertions into the shared `assert_live_key_index`
+    fixture, because five OTHER tables carry the same index and were asserting the
+    property in three different strengths -- the weakest of them counting the name and
+    nothing else. The reasoning above is why the fixture checks what it checks.
     """
-    indexdef = conn.execute(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
-        "AND indexname = 'curated_interaction_live_key'"
-    ).fetchone()
-    assert indexdef is not None
-    (indexdef,) = indexdef
-    assert "WHERE (superseded_by IS NULL)" in indexdef
-    assert "UNIQUE" not in indexdef
-    assert "(subject_moiety_uuid, object_class_uuid, relationship)" in indexdef
+    assert_live_key_index(
+        "curated_interaction_live_key", "curated_interaction",
+        "subject_moiety_uuid, object_class_uuid, relationship")
 
 
 def _a_condition(conn, ingest_run_id, code="D006333", name="Heart Failure"):
@@ -369,7 +368,7 @@ def test_the_ruling_vocabulary_lives_in_the_database(conn, a_moiety, ingest_run_
         _rule_condition(conn, a_moiety, condition, ruling="probably_fine")
 
 
-def test_the_condition_live_key_index_exists_by_name(conn):
+def test_the_condition_live_key_index_exists_by_name(assert_live_key_index):
     """Same PARTIAL-and-NON-UNIQUE property as curated_interaction_live_key, and for
     the identical reason: a correction is briefly two live rows on one (moiety,
     condition) pair, and a UNIQUE index would forbid the only sequence that can
@@ -380,15 +379,9 @@ def test_the_condition_live_key_index_exists_by_name(conn):
     ruling is about the PAIR), and that omission is exactly the kind of edit an
     "index the obvious columns" pass could silently widen or narrow without any other
     assertion here noticing."""
-    indexdef = conn.execute(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
-        "AND indexname = 'curated_condition_live_key'"
-    ).fetchone()
-    assert indexdef is not None
-    (indexdef,) = indexdef
-    assert "WHERE (superseded_by IS NULL)" in indexdef
-    assert "UNIQUE" not in indexdef
-    assert "(subject_moiety_uuid, object_condition_uuid)" in indexdef
+    assert_live_key_index(
+        "curated_condition_live_key", "curated_condition",
+        "subject_moiety_uuid, object_condition_uuid")
 
 
 def test_both_tables_index_the_question_they_cite(conn):

@@ -484,23 +484,27 @@ def test_a_group_can_be_retired_as_a_whole(conn):
 # ---- the single-live check must stay INDEXABLE (db/023) ----------------------
 
 
-@pytest.mark.parametrize("index_name,table", [
-    ("additive_effect_live_key", "additive_effect"),
-    ("effect_contribution_live_key", "effect_contribution"),
-    ("interaction_group_assertion_live_key", "interaction_group_assertion"),
-    ("interaction_group_member_live_key", "interaction_group_member"),
+@pytest.mark.parametrize("index_name,table,columns", [
+    ("additive_effect_live_key", "additive_effect",
+     "effect_class_uuid"),
+    ("effect_contribution_live_key", "effect_contribution",
+     "effect_class_uuid, contributor_class_uuid"),
+    ("interaction_group_assertion_live_key", "interaction_group_assertion",
+     "group_uuid"),
+    ("interaction_group_member_live_key", "interaction_group_member",
+     "group_uuid, role, class_uuid"),
 ])
-def test_every_assertion_table_has_a_live_natural_key_index(conn, index_name, table):
+def test_every_assertion_table_has_a_live_natural_key_index(
+        assert_live_key_index, index_name, table, columns):
     """db/020's first single-live trigger asked `to_jsonb(t) @> $1`, which no index can
     serve -- so the deferred check at COMMIT was a SEQUENTIAL SCAN PER ROW, measured at
     5.8 s to load 2,000 promotions and rising quadratically. db/023 rewrote it to
     equality predicates; these partial indexes are what make that rewrite pay, and this
     test is what stops one being dropped as "unused" (nothing but the trigger reads it).
+
+    ISSUE 74: this test used to assert existence and the WHERE clause only, so a
+    regression to a UNIQUE index -- which would forbid every correction the overlay
+    exists to make -- passed it, as did dropping a column from the key. Both are now
+    checked; see the `assert_live_key_index` fixture for why each matters.
     """
-    definition = conn.execute(
-        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'drugref' "
-        "AND tablename = %s AND indexname = %s", (table, index_name)).fetchone()
-    assert definition is not None, f"{index_name} is missing from drugref.{table}"
-    assert "superseded_by IS NULL" in definition[0], (
-        "the index must be PARTIAL over live rows -- a full index would not answer "
-        "the trigger's question, and a UNIQUE one is what this whole design cannot use")
+    assert_live_key_index(index_name, table, columns)

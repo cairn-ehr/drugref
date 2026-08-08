@@ -456,6 +456,18 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
 
 ## Cross-cutting hardening (not a single slice)
 
+- **The gates-that-do-not-fire round ✅ DONE** (issues 74, 66, 76 — 2026-08-08, no migration). Three checks that
+  existed and never fired. **74**: five of the seven single-live index tests passed a `UNIQUE` mutation that would
+  forbid every correction the overlay exists to make — measured, not reasoned — and the weakest counted the index
+  by name alone; all seven now go through one `assert_live_key_index` fixture, which itself gets a guard file
+  mutating the real index inside the test transaction. **66**: there was no lint gate to weaken — no `[tool.ruff]`,
+  `ruff` not a project dependency (a pyenv shim answered `uv run ruff`), and **no lint job in CI at all**. Now
+  `line-length = 88` with `E`/`F`/`W`, `src/`'s 52 lines reflowed (provably content-preserving: every non-docstring
+  string constant compared by `ast.parse` across all 16 files), ruff pinned, a CI `lint` job added, `ruff check .`
+  made safe (0.18 s) and `tests/`' 324 long lines carved out as [#79](https://github.com/cairn-ehr/drugref/issues/79).
+  The issue's "~88 every file is written to" holds for `src/` only. **76**: `curated_target_unresolved` shipped with
+  no consumer — the second time (db/010's was the first) — now read by `curation.unresolved_targets` and printed as
+  `drugref status`'s third block. Suite **943 → 956**. Full account: PROJECT-NOTES § "The gates-that-do-not-fire round".
 - **Identity-spine fix round ✅ DONE** (#27, #17, #26 — post-Plan-B). Made every other slice's coverage number real; every
   defect was invisible to the committed fixtures. `ingest/unii.py` read a **`PT` column the real UNII release does not have**
   (it is `Display Name`), so `row.get("PT") or ""` silently emptied all 168,046 labels — a production run would have

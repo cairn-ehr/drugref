@@ -54,7 +54,8 @@ def fires(majors: int, contributors: int,
     """
     if majors < 0 or contributors < 0:
         raise ValueError(
-            f"counts may not be negative (majors={majors}, contributors={contributors})")
+            f"counts may not be negative "
+            f"(majors={majors}, contributors={contributors})")
     if majors > contributors:
         raise ValueError(
             f"majors ({majors}) exceeds contributors ({contributors}): every major is "
@@ -108,7 +109,8 @@ def curate_effect(conn: psycopg.Connection, effect_class_uuid: uuid.UUID,
     """
     new_id = conn.execute(
         "INSERT INTO drugref.additive_effect (effect_class_uuid, accumulates, "
-        "threshold_major, threshold_total, severity, clinical_note, source, ingest_run) "
+        "threshold_major, threshold_total, severity, clinical_note, source, "
+        "ingest_run) "
         "VALUES (%s, %s, %s, %s, %s, %s, 'DRUGREF', %s) RETURNING additive_effect_id",
         (effect_class_uuid, accumulates, threshold_major, threshold_total, severity,
          clinical_note, ingest_run_id)).fetchone()[0]
