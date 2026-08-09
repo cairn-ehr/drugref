@@ -168,9 +168,17 @@ For `curated_interaction/v1` that list is, in order: `subject_moiety_uuid`, `obj
 `reviewed_against`, `reviewed_at`, `signer_key_fingerprint`, `signed_at`. For `curated_condition/v1`, the same
 with `object_condition_uuid` and `ruling` in place of `object_class_uuid`, `relationship` and `applies`.
 
-**`reviewed_at` must be supplied explicitly by the caller, not left to `db/029`'s `DEFAULT now()`.** A curator
-cannot sign bytes containing a timestamp they never saw. This changes `curation.py`'s two writers and every
-caller of them.
+**`reviewed_at` stays as `db/029` declared it — `NOT NULL DEFAULT now()` — and `curation.py`'s writers are
+unchanged.** An earlier draft of this section required the caller to supply it explicitly, on the grounds that a
+curator cannot sign bytes containing a timestamp they never saw. **That requirement was inherited from the
+in-row shape §3 rejected and does not survive it.** With a signature *column*, the bytes must be computed
+before the `INSERT`, so a DB-generated default is genuinely unsignable. With a detached signature, `drugref
+sign` reads the row *after* it exists and signs the value actually stored — so the default is not merely
+tolerable, it is the thing being attested.
+
+What the concern does earn is a display step: **`drugref sign` prints the canonical payload before signing**
+(and `--dry-run` prints it without writing), so "you can read exactly what you are about to attest" is
+satisfied by the tool rather than by breaking a writer's API and every caller of it.
 
 ### 4.6 Algorithm
 
@@ -198,14 +206,22 @@ one at it via `overlay.supersede`. The full status history of a key is therefore
 
 ### 5.2 `signing_key_status_kind` — the revocation rule as data
 
-`(status text PRIMARY KEY, invalidates_all_signatures boolean NOT NULL, note text)`, seeded:
+`(status text PRIMARY KEY, is_revocation boolean NOT NULL, invalidates_all_signatures boolean NOT NULL, note
+text)`, seeded:
 
-| status | `invalidates_all_signatures` | meaning |
-|---|---|---|
-| `active` | false | in use |
-| `rotated` | **false** | superseded by a new key; prior signatures stand |
-| `retired` | **false** | holder no longer curating; prior signatures stand |
-| `compromised` | **true** | the private key may be in other hands; every signature it made is suspect |
+| status | `is_revocation` | `invalidates_all_signatures` | meaning |
+|---|---|---|---|
+| `active` | false | false | in use |
+| `rotated` | true | **false** | superseded by a new key; prior signatures stand |
+| `retired` | true | **false** | holder no longer curating; prior signatures stand |
+| `compromised` | true | **true** | the private key may be in other hands; every signature it made is suspect |
+
+**Two booleans, not one, and the second is not redundant.** `status_from` on an `active` key is its *registration*
+time, and every signature it makes is necessarily after that — so a rule that expired any signature at or after
+`status_from` would expire **every** signature ever made. `is_revocation` is what tells the verdict rule that a
+`status_from` is an *end* boundary rather than a *start* one. The alternative is a Python-side test for
+`status == 'active'`, which would put a member of this vocabulary into a second place, and this project has
+spent four rounds on exactly that defect.
 
 `signing_key.status` is a **foreign key into this table**, not a CHECK — `db/006`'s finding, which this project
 has now applied four times: a vocabulary with a matching rule in a second place drifts, and the rule here is
@@ -274,8 +290,12 @@ belong in one slice.
 The manifest's canonical payload is the §4.2 form with two repeated groups: `--entries--` (each entry's
 `target_kind`, `target_id`, `payload_context`, `payload_digest`) and `--upstream--` (each loaded release's
 `source`, `writer`, `release`). Members are **sorted by their own encoding**, so the manifest body does not
-depend on the order rows came back in. `row_count` is a signed scalar field as well as being derivable from the
-entries — a redundancy on purpose, so a truncated entry list is detectable without recomputing the whole digest.
+depend on the order rows came back in.
+
+**Each group's cardinality is also a signed scalar field** — `entry_count` and `upstream_count` — derivable
+from the group itself and stated anyway, on purpose: a group truncated at its end is otherwise detectable only
+by recomputing the whole digest, and a scalar count makes the specific failure nameable. `row_count` on
+`release_manifest` is `entry_count` as a stored column.
 
 ## 6. Keys — registration, rotation, and what a fingerprint is
 
