@@ -52,8 +52,8 @@ Every task's requirements implicitly include this section.
 
 | File | Responsibility |
 |---|---|
-| `src/drugref/cli.py` *(modify)* | The DB-free argument layer only: `STEPS`, `ChainError` family, `resolve_inputs`, `selected_steps`, `check_release_agreement`, `_Parser`, `build_parser`, `main`. Drops to ~330 lines. |
-| `src/drugref/cli_handlers.py` *(create)* | The four existing `_handle_*` entry points and the seven `_run_*` wrappers — everything that takes a connection. ~190 lines. |
+| `src/drugref/cli_chain.py` *(create)* | The **pure** chain-planning layer, extracted: `IngestStep`, the `ChainError`/`InputResolutionError`/`ReleaseError` family, `_release_flag`, `resolve_inputs`, `selected_steps`, `check_release_agreement`. ~150 lines. **Imports nothing from `drugref`**, which is what makes an import cycle structurally impossible. |
+| `src/drugref/cli.py` *(modify)* | Keeps the seven `_run_*` wrappers, `STEPS`, the four `_handle_*` entry points, `_Parser`, `build_parser` and `main`; imports `cli_chain`. Drops to ~360 lines. |
 | `src/drugref/signing.py` *(create)* | **PURE.** No DB, no filesystem. Canonical payload encoder, value rendering, frozen field lists, Ed25519 keygen/sign/verify, fingerprint, digest, and the verdict rule. ~260 lines. |
 | `src/drugref/keys.py` *(create)* | The `signing_key` registry: register, revoke (via `overlay.supersede`), read. ~150 lines. |
 | `src/drugref/signatures.py` *(create)* | Build a target row's canonical payload from the database; record a signature; verify one target. ~200 lines. |
@@ -70,50 +70,73 @@ Task 6 → §5.1, §6, §10.2 · Task 7 → §4.4, §7.1, §10.3 · Task 8 → �
 
 ---
 
-### Task 1: Split `cli.py` into an argument layer and a handler layer
+### Task 1: Extract `cli.py`'s pure chain-planning layer into `cli_chain.py`
 
 **Why first:** `cli.py` is 508 lines, already over CLAUDE.md's ~500 cap, and PROJECT-NOTES states the remedy as a
 prerequisite — *"Splitting it is the next change to that file, before any new handler."* This slice adds seven
 handlers. **This task changes no behaviour**; the existing suite is the entire gate.
 
+**WHICH SIDE OF THE SEAM MOVES, and why it is this one.** PROJECT-NOTES describes the seam as the four `_handle_*`
+entry points (which take a connection) versus the DB-free argument layer above them. Extracting *either* side
+honours that seam — but extracting the **handlers** cannot work, and this was measured rather than reasoned:
+`STEPS` eagerly references the `_run_*` wrappers, so `cli` must import whatever module holds them, while
+`_handle_chain` calls `selected_steps`, `resolve_inputs` and `check_release_agreement`, so that module must import
+`cli`. The imports are mutual, and Python raises `AttributeError: partially initialized module … has no attribute
+'run_unii'` the moment anything imports the handler module first — which the signing tests would.
+
+Extracting the **pure** layer has no such hazard, because it depends on nothing in `drugref` at all. That property
+is what makes the cycle structurally impossible rather than merely absent today, and Step 1 pins it.
+
 **Files:**
-- Create: `src/drugref/cli_handlers.py`
+- Create: `src/drugref/cli_chain.py`
 - Modify: `src/drugref/cli.py`
-- Test: `tests/test_cli.py` (existing — imports updated), `tests/test_curation_orphans.py` (existing — the
-  no-SQL-in-the-CLI grep must learn the new file)
+- Test: `tests/test_cli.py` (existing — two new tests, plus any reference that must follow a moved name)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `cli_handlers.handle_chain(conn, args) -> int`, `handle_migrate(conn, args) -> int`,
-  `handle_status(conn, args) -> int`, `handle_ingest(conn, args) -> int`. Public names (no leading underscore)
-  because they are now referenced across a module boundary. `cli.STEPS`, `cli.build_parser`, `cli.main`,
-  `cli.resolve_inputs`, `cli.selected_steps`, `cli.check_release_agreement`, `cli.ChainError`,
-  `cli.InputResolutionError`, `cli.ReleaseError`, `cli.IngestStep` all keep their current names and locations.
+- Produces: `cli_chain.IngestStep`, `cli_chain.ChainError`, `cli_chain.InputResolutionError`,
+  `cli_chain.ReleaseError`, `cli_chain._release_flag`, `cli_chain.resolve_inputs`, `cli_chain.selected_steps`,
+  `cli_chain.check_release_agreement`. `cli.py` imports the names it uses, so `cli.STEPS`, `cli.resolve_inputs`,
+  `cli.selected_steps`, `cli.check_release_agreement`, `cli.IngestStep`, `cli.ChainError`, `cli.build_parser` and
+  `cli.main` all keep working unchanged. The four `_handle_*` entry points and the seven `_run_*` wrappers **stay
+  in `cli.py`** and keep their current names.
 
 - [ ] **Step 1: Write the failing test that pins the split**
 
 Add to `tests/test_cli.py`:
 
 ```python
-def test_the_argument_layer_holds_no_handler():
-    """cli.py is the DB-FREE argument layer; every function taking a connection lives
-    in cli_handlers.py.
+def test_cli_chain_imports_nothing_from_drugref():
+    """THE PROPERTY THAT MAKES THE IMPORT CYCLE IMPOSSIBLE, and the reason this split
+    runs in this direction rather than the other.
 
-    Pinned rather than left to review because the file was 508 lines -- over CLAUDE.md's
-    ~500 cap -- when slice 5c.4 began, and the split exists to keep it there as seven
-    signing handlers arrive. A grep, not a line count: a line count would pass the day
-    somebody deletes a comment, and the property that matters is WHICH functions live
-    where.
+    The first attempt at this task moved the HANDLERS out instead, and could not work.
+    `STEPS` eagerly references the `_run_*` wrappers, so cli must import whatever module
+    holds them; `_handle_chain` calls selected_steps/resolve_inputs/
+    check_release_agreement, so that module must import cli. Mutual -- and Python raises
+    `AttributeError: partially initialized module ... has no attribute 'run_unii'` as
+    soon as anything imports the handler module first, which the signing tests would.
+
+    Extracting the pure layer has no such hazard because it depends on nothing in
+    drugref. This test is what keeps that true: cli_chain must never grow a drugref
+    import, and if it ever needs one, the layering is wrong rather than the test.
     """
     import ast
     import inspect
-    from drugref import cli
+    from drugref import cli_chain
 
-    tree = ast.parse(inspect.getsource(cli))
-    handlers = [n.name for n in ast.walk(tree)
-                if isinstance(n, ast.FunctionDef) and n.name.startswith("_handle_")]
-    assert handlers == [], (
-        f"cli.py still defines {handlers}; handlers belong in cli_handlers.py")
+    tree = ast.parse(inspect.getsource(cli_chain))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+    from_drugref = {m for m in imported if m == "drugref" or m.startswith("drugref.")}
+    assert from_drugref == set(), (
+        f"cli_chain imports {sorted(from_drugref)} from drugref. It must import "
+        "nothing from drugref -- that is what makes the cycle structurally impossible "
+        "rather than merely absent today.")
 
 
 def test_cli_py_is_under_the_size_cap():
@@ -126,68 +149,83 @@ def test_cli_py_is_under_the_size_cap():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest tests/test_cli.py -k "argument_layer or size_cap" -v`
+Run: `DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest tests/test_cli.py -k "cli_chain or size_cap" -v`
 
-Expected: both FAIL — the first listing the four `_handle_*` names, the second reporting 508 lines.
+Expected: the first FAILS with `ModuleNotFoundError: No module named 'drugref.cli_chain'`, the second FAILS
+reporting 508 lines.
 
-- [ ] **Step 3: Create `cli_handlers.py`**
+- [ ] **Step 3: Create `cli_chain.py`**
 
-Move, verbatim, from `cli.py`: the seven `_run_*` wrappers, `_handle_chain`, `_handle_migrate`, `_handle_status`,
-`_handle_ingest`, and the `CROSSWALK`/`ALLOWLIST`/`_DATA` constants the `_run_*` wrappers need. Rename the four
-handlers to drop the leading underscore. Keep every docstring and comment **word-for-word** — they carry
-arguments (the `pg_rewrite` reasoning, the `_handle_status` exception, the `UndefinedTable` re-raise) that took
-review rounds to get right, and a reflow here would be an unreviewed rewrite. Head the new file:
+Move, **verbatim**, from `cli.py`: `IngestStep` (including its `__post_init__`), `ChainError`,
+`InputResolutionError`, `ReleaseError`, `_release_flag`, `resolve_inputs`, `selected_steps` and
+`check_release_agreement`. Keep every docstring and comment **word-for-word** — they carry arguments that took
+review rounds to get right (why both zero and several glob matches are errors, why `selected_steps` tests
+presence rather than truthiness, why the `secondary` exemption filters the claim and never the read). A reflow
+here would be an unreviewed rewrite. Head the new file:
 
 ```python
-# src/drugref/cli_handlers.py
-"""Every drugref CLI entry point that takes a database connection.
+# src/drugref/cli_chain.py
+"""Chain planning: everything that can settle an invocation BEFORE a database exists.
 
-SPLIT OUT OF cli.py in slice 5c.4, along the seam PROJECT-NOTES named: cli.py's
-argument layer settles every way an invocation can be wrong BEFORE a database exists to
-be wrong against, and these functions are what runs once one does. The file was 508
-lines -- over CLAUDE.md's ~500 cap -- and the signing slice adds seven more handlers, so
-the split had to happen before them rather than after.
+EXTRACTED FROM cli.py in slice 5c.4, along the seam PROJECT-NOTES named -- the DB-free
+argument layer versus the handlers that take a connection. cli.py was 508 lines, over
+CLAUDE.md's ~500 cap, and the signing slice adds seven handlers, so the split had to
+happen before them rather than after.
 
-THE `pg_rewrite` DISCIPLINE MOVES WITH `handle_status`, unchanged: its first two blocks
-embed SELECTs against operational views (loaded_release, ingest_run_incomplete), which
-nothing governs as append-only curated data; its third reads the CURATED overlay and
-therefore goes through curation.unresolved_targets rather than a third embedded SELECT.
-tests/test_curation_orphans.py parses THIS file as well as cli.py and cli_policy.py.
+THIS SIDE MOVED, NOT THE HANDLERS, and the reason is structural rather than aesthetic.
+cli.STEPS eagerly references the `_run_*` wrappers, so cli must import whatever module
+holds them; `_handle_chain` calls the three functions below, so that module would have
+to import cli. The imports are mutual, and Python raises AttributeError on a
+partially-initialised module the moment the handler module is imported first.
+
+THIS MODULE IMPORTS NOTHING FROM drugref, which is what makes that cycle impossible
+rather than merely absent -- pinned by test_cli_chain_imports_nothing_from_drugref. If
+a future change appears to need a drugref import here, the layering is wrong, not the
+test.
+
+DETERMINISTIC BUT NOT FILESYSTEM-FREE: `resolve_inputs` globs the downloads tree, so
+its tests want a tmp_path and nothing more.
 """
 ```
 
-`cli.py` keeps its module docstring but its fourth paragraph — *"THAT LAYER IS NOT
-'EVERYTHING ABOVE `main`'…"* — is now false, because the handlers have left. Replace that paragraph with:
+`cli.py` keeps its module docstring, but its fourth paragraph — *"THAT LAYER IS NOT
+'EVERYTHING ABOVE `main`'…"* — describes a layer that has now left the file. Replace that paragraph with:
 
 ```
-THAT LAYER IS NOW THE WHOLE FILE, which was not true before slice 5c.4: the `_run_*`
-wrappers and the four `_handle_*` entry points used to sit here too, every one of them
-taking a connection. They are in cli_handlers.py now, and this file is DB-free
-throughout -- deterministic, though not filesystem-free, since `resolve_inputs` globs
-the downloads tree.
+THAT ARGUMENT LAYER NOW LIVES IN cli_chain.py, extracted in slice 5c.4 -- the step
+table's type, the ChainError family, `resolve_inputs`, `selected_steps` and
+`check_release_agreement`. What remains here takes a connection or builds the parser:
+the `_run_*` wrappers, the four `_handle_*` entry points, `_Parser`, `build_parser` and
+`main`. The extraction ran in that direction because cli_chain can import nothing from
+drugref, which is what makes an import cycle structurally impossible; moving the
+handlers out instead creates one, since STEPS references the runners while
+`_handle_chain` needs the planning functions.
 ```
 
 - [ ] **Step 4: Rewire `cli.py`**
 
-Replace the handler references in `build_parser` and `STEPS`:
+Import from `cli_chain` exactly the names `cli.py` still uses — no more, or ruff's `F401` will fail the lint gate:
 
 ```python
-from drugref import cli_handlers, cli_policy, interactions
-...
-IngestStep("unii", (("unii", "UNII_Records_*.txt"),), cli_handlers.run_unii),
-...
-).set_defaults(handler=cli_handlers.handle_migrate)
+from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
+                               resolve_inputs, selected_steps)
 ```
 
-**Watch the import cycle:** `cli_handlers` must NOT import `cli`. `IngestStep` is defined in `cli.py` and
-`cli_handlers` does not need it — the `run_*` wrappers take `(conn, paths, release)` and know nothing about steps.
+`STEPS`, `_handle_chain`, `_Parser`, `build_parser` and `main` are otherwise untouched.
 
-- [ ] **Step 5: Teach the no-SQL grep about the new file**
+**`InputResolutionError` and `ReleaseError` are raised in `cli_chain` and caught nowhere in `cli.py`** (`main`
+catches the `ChainError` base), so importing them here would be unused. `tests/test_cli.py` references
+`cli.InputResolutionError` in four places — repoint those at `cli_chain.InputResolutionError` rather than adding
+a `noqa`. Report in your task report which test references you moved and why.
 
-In `tests/test_curation_orphans.py`, `test_the_cli_embeds_no_sql_against_a_curated_table` currently parses
-`cli.py` and `cli_policy.py`. Add `cli_handlers.py` to that list. **This matters more than it looks:** the whole
-point of that guard is that a Python-embedded writer to an append-only curated table is invisible to
-`pg_rewrite`, and the split just moved every candidate query into a file the guard did not know about.
+- [ ] **Step 5: Confirm the no-SQL grep still covers everything it should**
+
+`tests/test_curation_orphans.py`'s `test_the_cli_embeds_no_sql_against_a_curated_table` parses `cli.py` and
+`cli_policy.py`. **Under this split it needs no change** — the handlers stayed in `cli.py`, so no candidate query
+moved anywhere. Read the test and confirm that is actually so rather than assuming it: the guard exists because a
+Python-embedded writer to an append-only curated table is invisible to the `pg_rewrite` sweep that finds every
+other reader, and a split that silently moved a query out from under it would be exactly the kind of gap this
+project keeps finding. Say in your report which files the guard covers and that you verified no query left them.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -202,22 +240,30 @@ Expected: `All checks passed!`
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/drugref/cli.py src/drugref/cli_handlers.py tests/test_cli.py tests/test_curation_orphans.py
-git commit -m "refactor: split cli.py's handler layer into cli_handlers.py
+git add src/drugref/cli.py src/drugref/cli_chain.py tests/test_cli.py
+git commit -m "refactor: extract cli.py's pure chain-planning layer into cli_chain.py
 
 cli.py was 508 lines, over CLAUDE.md's ~500 cap, and PROJECT-NOTES recorded
 the split as a prerequisite for the next handler rather than a cleanup. The
-signing slice adds seven. Seam is the one PROJECT-NOTES named: the DB-free
-argument layer stays, everything taking a connection moves.
+signing slice adds seven.
+
+THE SEAM IS THE ONE PROJECT-NOTES NAMED -- handlers versus the DB-free
+argument layer -- but the extraction runs in the other direction, and that
+was measured rather than chosen. Moving the HANDLERS out cannot work: STEPS
+eagerly references the _run_* wrappers, so cli must import the handler
+module, while _handle_chain calls selected_steps/resolve_inputs/
+check_release_agreement, so the handler module must import cli. Mutual, and
+Python raises AttributeError on a partially-initialised module as soon as
+anything imports the handler module first -- which the signing tests would.
+
+The pure layer has no such hazard because it imports nothing from drugref,
+and test_cli_chain_imports_nothing_from_drugref keeps that structural rather
+than incidental.
 
 No behaviour change -- docstrings and comments moved word-for-word, because
-they carry arguments (the pg_rewrite discipline, handle_status' deliberate
-exception to it, the UndefinedTable re-raise) that cost review rounds.
-
-The no-SQL-against-a-curated-table grep now parses cli_handlers.py too. It
-had to: that guard exists because a Python-embedded writer is invisible to
-pg_rewrite, and this move put every candidate query in a file it did not
-know about.
+they carry arguments (why zero AND several glob matches are both errors, why
+selected_steps tests presence not truthiness, why `secondary` filters the
+claim and never the read) that cost review rounds.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
