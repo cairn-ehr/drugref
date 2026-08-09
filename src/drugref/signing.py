@@ -22,6 +22,7 @@ import hashlib
 import re
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -317,3 +318,67 @@ FIELD_LISTS = {
     "curated_condition/v1": CURATED_CONDITION_V1,
     "release_manifest/v1": RELEASE_MANIFEST_V1,
 }
+
+
+# ---- what a signature MEANS (spec 7.1) -------------------------------------
+#
+# SIX VERDICTS, NOT A BOOLEAN, and the reason is the revocation model. A consumer needs
+# to tell "this was forged" from "the curator's laptop was stolen last year", because
+# the first is an attack and the second is a re-review queue. Collapsing them into
+# pass/fail throws away the only information that decides what to do next.
+NO_SIGNATURE = "no_signature"
+UNKNOWN_KEY = "unknown_key"
+BAD_SIGNATURE = "bad_signature"
+KEY_REVOKED_COMPROMISED = "key_revoked_compromised"
+KEY_EXPIRED = "key_expired"
+VALID = "valid"
+
+
+@dataclass(frozen=True)
+class KeyStatus:
+    """What the registry currently says about the key a signature names.
+
+    Assembled by keys.py from signing_key's LIVE row joined to
+    signing_key_status_kind. The two booleans arrive as DATA rather than being derived
+    from `status` here, because `status` is db/030's vocabulary and a Python-side test
+    against one of its members is the second-home defect this project has paid for four
+    times over.
+    """
+    status: str
+    is_revocation: bool
+    invalidates_all_signatures: bool
+    status_from: dt.datetime
+
+
+def verdict(key_status: KeyStatus | None, *, signature_ok: bool,
+            signed_at: dt.datetime) -> str:
+    """What one signature is worth. PURE, and the ONE place the precedence lives.
+
+    ORDER IS LOAD-BEARING, and each step outranks the next for a stated reason:
+
+    1. UNKNOWN_KEY -- without the public key the mathematics cannot be checked at all,
+       so `signature_ok` is not evidence of anything here. Reporting this as
+       BAD_SIGNATURE files a registry gap as an attack.
+    2. BAD_SIGNATURE -- a forgery is a forgery first. Reporting a forged signature under
+       a revoked key as "revoked" would file an attack as a key-management event.
+    3. KEY_REVOKED_COMPROMISED -- blanket, ignoring signed_at, because after a
+       compromise you cannot tell the curator's signatures from the attacker's.
+    4. KEY_EXPIRED -- time-scoped: the key was rotated or retired and this signature is
+       at or after that boundary. `is_revocation` is what makes this an END boundary; an
+       active key's status_from is its registration time, so without that guard every
+       signature ever made would land here.
+    5. VALID.
+
+    NO_SIGNATURE is not returned here -- with no signature there is nothing to pass in.
+    The caller reports it; the constant lives beside its siblings so the six spellings
+    have one home.
+    """
+    if key_status is None:
+        return UNKNOWN_KEY
+    if not signature_ok:
+        return BAD_SIGNATURE
+    if key_status.invalidates_all_signatures:
+        return KEY_REVOKED_COMPROMISED
+    if key_status.is_revocation and signed_at >= key_status.status_from:
+        return KEY_EXPIRED
+    return VALID
