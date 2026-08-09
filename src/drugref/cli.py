@@ -41,23 +41,27 @@ be wrong BEFORE a database exists to be wrong against. Deterministic and DB-free
 not filesystem-free -- `resolve_inputs` globs the downloads tree, so its tests want a
 tmp_path and nothing more.
 
-THAT LAYER IS NOT "EVERYTHING ABOVE `main`", and the line is worth stating precisely
-because the file's shape suggests otherwise: the `_run_*` wrappers and the four
-`_handle_*` entry points also sit above `main`, and every one of them takes a
-connection. They are deliberately thin for that reason -- what cannot be tested
-without a database is kept to a dispatch the pure layer has already validated.
+THAT ARGUMENT LAYER NOW LIVES IN cli_chain.py, extracted in slice 5c.4 -- the step
+table's type, the ChainError family, `resolve_inputs`, `selected_steps` and
+`check_release_agreement`. What remains here takes a connection or builds the parser:
+the `_run_*` wrappers, the four `_handle_*` entry points, `_Parser`, `build_parser` and
+`main`. The extraction ran in that direction because cli_chain can import nothing from
+drugref, which is what makes an import cycle structurally impossible; moving the
+handlers out instead creates one, since STEPS references the runners while
+`_handle_chain` needs the planning functions.
 """
 import argparse
 import logging
 import pathlib
 import sys
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 
 import psycopg
 
 import drugref
 from drugref import cli_policy, curation, db, interactions
+from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
+                               resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
                             pbs_run, run)
 
@@ -68,42 +72,6 @@ CROSSWALK = _DATA / "usan_inn_crosswalk.tsv"
 ALLOWLIST = _DATA / "legacy_allowlist.tsv"
 
 log = logging.getLogger("drugref")
-
-
-@dataclass(frozen=True)
-class IngestStep:
-    """One orchestrator, as the CLI sees it.
-
-    `inputs` pairs an ARGUMENT NAME with a GLOB relative to --downloads, and both
-    consumers read the same tuple: the per-source subcommand turns each name into a
-    required `--name PATH` flag, and the chain resolves the same names by glob. One
-    declaration, so a step cannot grow an input the chain does not know about.
-
-    `secondary` names the inputs this step READS BUT DOES NOT DATE (#60). A step
-    records one release tag, describing its PRIMARY authority; mesh-relations reads
-    two -- MED-RT states the rule, MeSH defines its object -- and writes one
-    ingest_run row under source='MED-RT'. So its desc/supp inputs are dated by the
-    mesh step and merely consumed here, and check_release_agreement must not read
-    that as one file claimed to be two releases.
-
-    It names INPUTS, not paths, because the declaration belongs beside the glob it
-    qualifies and has to survive a glob's filename changing between releases.
-    """
-    name: str
-    inputs: tuple[tuple[str, str], ...]
-    runner: Callable[[object, dict[str, pathlib.Path], str], object]
-    secondary: tuple[str, ...] = ()
-
-    def __post_init__(self):
-        # A typo here would exempt nothing and leave the chain refusing the very
-        # invocation the exemption exists to allow -- a silent failure, in the field,
-        # of a check whose whole job is to be loud. Raised at import, where STEPS is
-        # built, so it cannot reach an operator.
-        undeclared = set(self.secondary) - {name for name, _ in self.inputs}
-        if undeclared:
-            raise ValueError(
-                f"{self.name}: secondary names an input this step does not declare: "
-                f"{', '.join(sorted(undeclared))}")
 
 
 def _run_unii(conn, paths, release):
@@ -186,138 +154,8 @@ STEPS = (
 )
 
 
-class ChainError(Exception):
-    """A chain invocation that cannot be run without recording something untrue.
-
-    One base so `main` catches the family rather than an ever-growing tuple, and so a
-    future pre-flight check is caught by construction rather than by remembering.
-    """
-
-
-class InputResolutionError(ChainError):
-    """A chain glob matched no file, or more than one.
-
-    BOTH are errors, and the second is the one that bites: two releases left in one
-    directory is the ordinary way this goes wrong, and silently taking either would
-    record the wrong bytes as this run's provenance.
-    """
-
-
-class ReleaseError(ChainError):
-    """A release tag that cannot be recorded honestly: absent, or self-contradicting.
-
-    `ingest_run` IS HISTORY -- append-only, never corrected -- so a wrong tag is not a
-    mistake an operator can take back. `writer` exists (db/025) precisely so a stale
-    projection is visible; provenance that is confidently wrong defeats it more
-    thoroughly than provenance that is missing.
-    """
-
-
-def _release_flag(step: IngestStep) -> str:
-    """`mesh-relations` -> `mesh_relations_release`, the argparse destination."""
-    return f"{step.name.replace('-', '_')}_release"
-
-
-def resolve_inputs(downloads: pathlib.Path,
-                   step: IngestStep) -> dict[str, pathlib.Path]:
-    """Resolve one step's inputs under `downloads`, by the globs it declares.
-
-    GLOBS RATHER THAN FIXED NAMES, because the real layout is irregular and a tidy
-    invented convention would match nothing: releases carry their version in the
-    filename (UNII_Records_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
-    name would go stale on the next download.
-    """
-    resolved = {}
-    for name, pattern in step.inputs:
-        matches = sorted(downloads.glob(pattern))
-        if len(matches) != 1:
-            # "found N files" (not just "found N"): this branch only ever fires for
-            # 0 or 2+ matches, so the plural reads correctly in both cases, and it is
-            # the phrase an operator scanning a wall of stderr can grep for.
-            raise InputResolutionError(
-                f"{step.name}: expected exactly one file matching '{pattern}' under "
-                f"{downloads}, found {len(matches)} files"
-                + (f": {', '.join(m.name for m in matches)}" if matches else ""))
-        resolved[name] = matches[0]
-    return resolved
-
-
-def selected_steps(args: argparse.Namespace) -> tuple[tuple[IngestStep, str], ...]:
-    """The steps this chain invocation includes, in STEPS order, with their releases.
-
-    SUPPLYING A RELEASE IS THE OPT-IN. No default set, no skip-list: a chain that ran
-    feeds nobody named would record provenance nobody stated, and this project does
-    not guess provenance. Returning them in STEPS order rather than flag order is what
-    makes the dependency order unbreakable from the command line.
-
-    PRESENCE, NOT TRUTHINESS, is what selects a step, and the difference is the trap
-    the spec's own list names: `--medrt-release ""` is a flag the operator DID pass,
-    and testing truthiness silently dropped the step it asked for -- a chain that
-    reports success having never touched a feed the command line named. Absent is the
-    opt-out (None); empty or blank is an error. "A convention that silently matches
-    nothing is worse than none" applies to flag values exactly as it does to globs.
-    """
-    selected = []
-    for step in STEPS:
-        release = getattr(args, _release_flag(step), None)
-        if release is None:
-            continue
-        if not release.strip():
-            raise ReleaseError(
-                f"--{step.name}-release was given an empty tag. It is the string "
-                "recorded as this run's provenance, so it cannot be blank; omit the "
-                "flag to leave the step out of the chain.")
-        selected.append((step, release))
-    return tuple(selected)
-
-
-def check_release_agreement(
-        plan: Sequence[tuple[IngestStep, str, dict[str, pathlib.Path]]]) -> None:
-    """Refuse a chain in which one FILE is claimed to be two different releases.
-
-    THE STEPS OVERLAP, and that is not incidental: `medrt` and `mesh-relations`
-    resolve the SAME Core_MEDRT_*_XML.xml. Their release tags are stated
-    independently, so `--medrt-release 2026.07.06 --mesh-relations-release 2026.05.04`
-    writes two different releases into ingest_run FROM IDENTICAL BYTES. One of them is
-    false, and ingest_run is history: nothing can take it back.
-
-    `mesh` and `mesh-relations` also share desc/supp, and that overlap is NOT a
-    conflict (#60): mesh-relations declares them `secondary`, so it reads them without
-    dating them. Comparing those claims refused the documented four-source invocation
-    for a disagreement that was never one -- two true statements about two different
-    authorities.
-
-    That is worse than a missing tag. db/025 added `writer` so an operator could see
-    that one half of MED-RT is a release behind the other; this makes the two halves
-    disagree on purpose, so the signal reports staleness that does not exist -- or
-    hides staleness that does. A pre-flight check costs nothing and the alternative
-    is uncorrectable.
-
-    Pure, and run over the resolved plan rather than over the flags, because the
-    question is about PATHS: two globs that happen to name one file must agree even
-    though the flags look independent.
-    """
-    stated: dict[pathlib.Path, tuple[str, str]] = {}   # path -> (release, step name)
-    for step, release, paths in plan:
-        for name, path in paths.items():
-            if name in step.secondary:
-                # READ, NOT DATED. This step states no release for this file, so it
-                # makes no claim that could contradict another step's. Skipping the
-                # record entirely (rather than recording and tolerating a mismatch)
-                # is what keeps a file dated by NO step from silently agreeing with
-                # itself.
-                continue
-            first_release, first_step = stated.setdefault(path, (release, step.name))
-            if first_release != release:
-                raise ReleaseError(
-                    f"{path} is read by both {first_step} and {step.name}, which were "
-                    f"given different release tags ('{first_release}' and "
-                    f"'{release}'). The same bytes cannot be two releases, and "
-                    "ingest_run is history -- it cannot be corrected afterwards.")
-
-
 def _handle_chain(conn, args) -> int:
-    steps = selected_steps(args)
+    steps = selected_steps(args, STEPS)
     if not steps:
         print("drugref: no sources selected; pass at least one --<source>-release",
               file=sys.stderr)

@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from drugref import cli
+from drugref import cli, cli_chain
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 
@@ -118,7 +118,7 @@ def test_resolve_inputs_refuses_a_glob_that_matches_nothing(tmp_path):
     """A convention that silently matches nothing is worse than no convention: the
     chain would report success having ingested a feed it never read."""
     step = next(s for s in cli.STEPS if s.name == "medrt")
-    with pytest.raises(cli.InputResolutionError) as exc:
+    with pytest.raises(cli_chain.InputResolutionError) as exc:
         cli.resolve_inputs(tmp_path, step)
     assert "MEDRT/Core_MEDRT_*_XML.xml" in str(exc.value)
     assert str(tmp_path) in str(exc.value)
@@ -132,7 +132,7 @@ def test_resolve_inputs_refuses_an_ambiguous_glob(tmp_path):
         (tmp_path / "MEDRT" / f"Core_MEDRT_{release}_XML.xml").write_text("x")
 
     step = next(s for s in cli.STEPS if s.name == "medrt")
-    with pytest.raises(cli.InputResolutionError) as exc:
+    with pytest.raises(cli_chain.InputResolutionError) as exc:
         cli.resolve_inputs(tmp_path, step)
     assert "2 files" in str(exc.value)
 
@@ -162,7 +162,7 @@ def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):
     (downloads / "GSRS" / "dump-public-2026-02-26.gsrs").write_text("")
     (downloads / "GSRS" / "dump-public-2026-05-01.gsrs").write_text("")
     step = next(s for s in cli.STEPS if s.name == "gsrs")
-    with pytest.raises(cli.InputResolutionError):
+    with pytest.raises(cli_chain.InputResolutionError):
         cli.resolve_inputs(downloads, step)
 
 
@@ -172,7 +172,7 @@ def test_a_source_joins_the_chain_only_if_its_release_is_given():
     args = cli.build_parser().parse_args(
         ["ingest", "chain", "--downloads", "d",
          "--unii-release", "26Feb2026", "--medrt-release", "2026.07.06"])
-    assert [(s.name, r) for s, r in cli.selected_steps(args)] == [
+    assert [(s.name, r) for s, r in cli.selected_steps(args, cli.STEPS)] == [
         ("unii", "26Feb2026"), ("medrt", "2026.07.06")]
 
 
@@ -181,12 +181,12 @@ def test_the_chain_runs_selected_steps_in_dependency_order():
     args = cli.build_parser().parse_args(
         ["ingest", "chain", "--downloads", "d",
          "--pbs-release", "2026-07", "--unii-release", "26Feb2026"])
-    assert [s.name for s, _ in cli.selected_steps(args)] == ["unii", "pbs"]
+    assert [s.name for s, _ in cli.selected_steps(args, cli.STEPS)] == ["unii", "pbs"]
 
 
 def test_the_chain_needs_at_least_one_release():
     args = cli.build_parser().parse_args(["ingest", "chain", "--downloads", "d"])
-    assert cli.selected_steps(args) == ()
+    assert cli.selected_steps(args, cli.STEPS) == ()
 
 
 def test_an_empty_release_tag_is_an_error_not_a_silent_skip():
@@ -198,8 +198,8 @@ def test_an_empty_release_tag_is_an_error_not_a_silent_skip():
     for tag in ("", "   "):
         args = cli.build_parser().parse_args(
             ["ingest", "chain", "--downloads", "d", "--medrt-release", tag])
-        with pytest.raises(cli.ReleaseError, match="empty tag"):
-            cli.selected_steps(args)
+        with pytest.raises(cli_chain.ReleaseError, match="empty tag"):
+            cli.selected_steps(args, cli.STEPS)
 
 
 def test_one_file_cannot_be_recorded_as_two_releases():
@@ -212,7 +212,7 @@ def test_one_file_cannot_be_recorded_as_two_releases():
     mesh_rel = next(s for s in cli.STEPS if s.name == "mesh-relations")
     xml = pathlib.Path("downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml")
 
-    with pytest.raises(cli.ReleaseError, match="cannot be two releases"):
+    with pytest.raises(cli_chain.ReleaseError, match="cannot be two releases"):
         cli.check_release_agreement([
             (medrt, "2026.07.06", {"medrt": xml}),
             (mesh_rel, "2026.05.04", {"medrt": xml, "desc": pathlib.Path("d.gz"),
@@ -261,7 +261,7 @@ def test_the_chain_resolves_every_steps_inputs_before_running_any(tmp_path, monk
         ["ingest", "chain", "--downloads", str(tmp_path),
          "--early-release", "r1", "--late-release", "r2"])
 
-    with pytest.raises(cli.InputResolutionError):
+    with pytest.raises(cli_chain.InputResolutionError):
         cli._handle_chain(object(), args)
 
     # The assertion that carries the property: on a generator-based `plan`, "early"
@@ -314,7 +314,7 @@ def test_two_steps_still_cannot_date_the_same_primary_file_differently():
     a release behind the other; letting the halves disagree on purpose makes that
     signal report staleness that does not exist.
     """
-    with pytest.raises(cli.ReleaseError) as exc:
+    with pytest.raises(cli_chain.ReleaseError) as exc:
         cli.check_release_agreement(_plan(
             ("medrt", "2026.07.06", {"medrt": MEDRT_XML}),
             ("mesh-relations", "2026.05.04",
@@ -356,6 +356,47 @@ def test_mesh_relations_is_the_only_step_with_a_secondary_input():
     exemption without anyone deciding to grant it fails here."""
     assert {s.name: s.secondary for s in cli.STEPS if s.secondary} == {
         "mesh-relations": ("desc", "supp")}
+
+
+def test_cli_chain_imports_nothing_from_drugref():
+    """THE PROPERTY THAT MAKES THE IMPORT CYCLE IMPOSSIBLE, and the reason this split
+    runs in this direction rather than the other.
+
+    The first attempt at this task moved the HANDLERS out instead, and could not work.
+    `STEPS` eagerly references the `_run_*` wrappers, so cli must import whatever module
+    holds them; `_handle_chain` calls selected_steps/resolve_inputs/
+    check_release_agreement, so that module must import cli. Mutual -- and Python raises
+    `AttributeError: partially initialized module ... has no attribute 'run_unii'` as
+    soon as anything imports the handler module first, which the signing tests would.
+
+    Extracting the pure layer has no such hazard because it depends on nothing in
+    drugref. This test is what keeps that true: cli_chain must never grow a drugref
+    import, and if it ever needs one, the layering is wrong rather than the test.
+    """
+    import ast
+    import inspect
+    from drugref import cli_chain
+
+    tree = ast.parse(inspect.getsource(cli_chain))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported.add(node.module or "")
+    from_drugref = {m for m in imported if m == "drugref" or m.startswith("drugref.")}
+    assert from_drugref == set(), (
+        f"cli_chain imports {sorted(from_drugref)} from drugref. It must import "
+        "nothing from drugref -- that is what makes the cycle structurally impossible "
+        "rather than merely absent today.")
+
+
+def test_cli_py_is_under_the_size_cap():
+    """CLAUDE.md rule 4, measured rather than assumed. 500 is the stated cap."""
+    import pathlib
+    from drugref import cli
+    lines = len(pathlib.Path(cli.__file__).read_text().splitlines())
+    assert lines <= 500, f"cli.py is {lines} lines, over the ~500 cap"
 
 
 def test_main_does_not_swallow_a_check_violation_from_an_ingest(monkeypatch, capsys):
