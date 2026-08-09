@@ -97,9 +97,18 @@ is what makes the cycle structurally impossible rather than merely absent today,
 - Produces: `cli_chain.IngestStep`, `cli_chain.ChainError`, `cli_chain.InputResolutionError`,
   `cli_chain.ReleaseError`, `cli_chain._release_flag`, `cli_chain.resolve_inputs`, `cli_chain.selected_steps`,
   `cli_chain.check_release_agreement`. `cli.py` imports the names it uses, so `cli.STEPS`, `cli.resolve_inputs`,
-  `cli.selected_steps`, `cli.check_release_agreement`, `cli.IngestStep`, `cli.ChainError`, `cli.build_parser` and
-  `cli.main` all keep working unchanged. The four `_handle_*` entry points and the seven `_run_*` wrappers **stay
-  in `cli.py`** and keep their current names.
+  `cli.check_release_agreement`, `cli.IngestStep`, `cli.ChainError`, `cli.build_parser` and `cli.main` all keep
+  working unchanged. The four `_handle_*` entry points and the seven `_run_*` wrappers **stay in `cli.py`** and
+  keep their current names.
+- **One signature changes: `selected_steps(args)` → `selected_steps(args, steps)`.** It is the only planning
+  function that reads a module global (`for step in STEPS`, cli.py:261), and a function's free variables resolve
+  against the namespace of the module it is *defined* in — so moving its source to `cli_chain.py`, where `STEPS`
+  does not exist, turns that into a `NameError`. **The parameter is required, with no default**, and the fix is
+  the shape its own sibling already has: `check_release_agreement(plan)` takes its data explicitly rather than
+  reaching for a global, so `selected_steps` was the odd one out and moving it merely exposed that. Five call
+  sites update — `_handle_chain` passes `STEPS`, and four in `tests/test_cli.py` pass `cli.STEPS`. A default
+  would defeat the point: an implicit table is exactly the hidden state being removed, and a wrong-or-empty
+  default fails silently, which this file's own docstrings warn against three separate times.
 
 - [ ] **Step 1: Write the failing test that pins the split**
 
@@ -161,7 +170,24 @@ Move, **verbatim**, from `cli.py`: `IngestStep` (including its `__post_init__`),
 `check_release_agreement`. Keep every docstring and comment **word-for-word** — they carry arguments that took
 review rounds to get right (why both zero and several glob matches are errors, why `selected_steps` tests
 presence rather than truthiness, why the `secondary` exemption filters the claim and never the read). A reflow
-here would be an unreviewed rewrite. Head the new file:
+here would be an unreviewed rewrite.
+
+**The single exception to "verbatim" is `selected_steps`' signature** (see Interfaces): it becomes
+`selected_steps(args, steps)` and iterates the parameter. Add a short paragraph to its docstring saying why the
+table is passed rather than read:
+
+```
+THE STEP TABLE IS A PARAMETER, not a module global, and that is what let this function
+move here at all: a function's free variables resolve against the namespace of the
+module it is DEFINED in, so reading `STEPS` from a file that does not define it is a
+NameError. It is also the shape its sibling already had -- check_release_agreement takes
+its plan explicitly -- so the global read was the anomaly. Required, with no default: an
+implicit table is the hidden state being removed here, and a wrong or empty default
+would select nothing while reporting success, which is the failure this module's own
+docstrings warn against three times over.
+```
+
+Head the new file:
 
 ```python
 # src/drugref/cli_chain.py
