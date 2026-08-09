@@ -17,7 +17,9 @@ per-signature randomness and therefore no RNG failure mode of the kind that leak
 ECDSA private key. The name is stored per key and per signature (db/030) so a second
 algorithm is an additive migration rather than a rewrite.
 """
+import datetime as dt
 import hashlib
+import uuid
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -87,3 +89,173 @@ def verify(public_key: bytes, payload: bytes, signature: bytes) -> bool:
     except (InvalidSignature, ValueError):
         return False
     return True
+
+
+# ---- the canonical payload (spec 4.1-4.5) ----------------------------------
+#
+# THE FORMAT, in full, so it is reimplementable from this comment alone:
+#
+#     drugref-sig-v1\n
+#     <context>\n
+#     <field-count>\n
+#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * field-count, FROZEN order
+#     --<group>--\n                                     * zero or more groups
+#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * members, each a field list,
+#                                                         sorted by their own encoding
+#
+# `tag` is S for a present value or N for SQL NULL (length 0, empty value). Lengths are
+# UTF-8 BYTE counts. The trailing newlines are readability only -- a parser uses the
+# lengths, which is exactly why a newline inside a value cannot forge a boundary.
+#
+# WHY NOT JSON/RFC 8785. JCS is a published standard and its genuinely hard part is
+# NUMBER canonicalisation, which this format sidesteps entirely by rendering every value
+# as a string. At that point JCS contributes JSON's familiarity and an escaping surface
+# to implement wrong. What it would have bought -- independent checkability -- is bought
+# instead by tests/fixtures/signing_vectors.json, which stores each payload beside its
+# digest so both can be checked without running drugref.
+PROLOGUE = b"drugref-sig-v1"
+
+
+def render(value) -> str | None:
+    """One Python value -> its canonical string form (or None for SQL NULL).
+
+    EVERY VALUE BECOMES A STRING, which is what removes number canonicalisation -- the
+    part of RFC 8785 that is hard to reimplement correctly -- from the problem entirely.
+
+    BOOL IS TESTED BEFORE INT ON PURPOSE: isinstance(True, int) is True in Python, so
+    the other order renders True as '1', which is also how the integer 1 renders. Two
+    different values, one spelling, under a valid signature.
+
+    An unrecognised type RAISES rather than falling back to str(). A fallback is what
+    makes a format silently wrong: a Decimal, a memoryview or a dict would each get
+    SOME spelling and none of them a specified one, so a second implementation would
+    disagree.
+
+    TEXT IS NOT NORMALISED. The signature commits to the bytes Postgres stored; NFC here
+    would make two distinct stored strings sign identically.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, uuid.UUID):
+        return str(value)                      # lowercase canonical 8-4-4-4-12
+    if isinstance(value, dt.datetime):
+        return _render_timestamp(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).hex()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    raise TypeError(
+        f"{type(value).__name__} has no canonical rendering. Add one deliberately -- a "
+        "str() fallback would give it a spelling nothing specifies, and a second "
+        "implementation of this format would choose differently.")
+
+
+def _render_timestamp(value: dt.datetime) -> str:
+    """RFC 3339, UTC, EXACTLY six fractional digits.
+
+    Six always, including when the microseconds are zero: a variable-length rendering
+    gives one instant two spellings and only one of them verifies. Postgres timestamptz
+    has microsecond resolution, so six is lossless.
+
+    A NAIVE datetime RAISES. psycopg returns timestamptz as aware, so a naive value
+    means somebody constructed it in Python, and rendering it would silently assume a
+    zone -- which would produce a valid signature over the wrong instant.
+    """
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        raise ValueError(
+            "a naive datetime has no canonical rendering: it names no instant, and "
+            "assuming a zone would sign the wrong one")
+    utc = value.astimezone(dt.timezone.utc)
+    return f"{utc:%Y-%m-%dT%H:%M:%S}.{utc.microsecond:06d}Z"
+
+
+def _encode_field(name: str, value: str | None) -> bytes:
+    """One `<len>:<name>:<tag>:<len>:<value>\\n` record."""
+    name_b = name.encode("utf-8")
+    if value is None:
+        return b"%d:%s:N:0:\n" % (len(name_b), name_b)
+    value_b = value.encode("utf-8")
+    return b"%d:%s:S:%d:%s\n" % (len(name_b), name_b, len(value_b), value_b)
+
+
+def canonical_payload(context: str,
+                      fields=(),
+                      groups=()) -> bytes:
+    """The bytes a signature is made over. THE LOAD-BEARING ARTEFACT OF THIS SLICE.
+
+    `context` is the domain separator (spec 4.4) -- `curated_interaction/v1`,
+    `curated_condition/v1`, `release_manifest/v1`. It is inside the payload, so bytes
+    signed as one kind of statement can never verify as another.
+
+    `fields` is a sequence of (name, rendered-value) pairs IN THE FROZEN ORDER for that
+    context. Order is part of the format: two orderings of one row are two different
+    payloads, which is why FIELD_LISTS is a frozen tuple and not a dict.
+
+    `groups` is a sequence of (group_name, members), each member itself a field-pair
+    sequence. MEMBERS ARE SORTED BY THEIR OWN ENCODING, because a manifest is built from
+    a SELECT and a SELECT without ORDER BY may return rows in any order -- if that order
+    reached the bytes, one database would publish two different manifests. Sorting the
+    ENCODED member (rather than by some key) means the rule needs no knowledge of what a
+    member contains.
+    """
+    out = [PROLOGUE, b"\n", context.encode("utf-8"), b"\n",
+           str(len(fields)).encode("ascii"), b"\n"]
+    out.extend(_encode_field(name, value) for name, value in fields)
+    for group_name, members in groups:
+        out.append(b"--" + group_name.encode("utf-8") + b"--\n")
+        out.extend(sorted(
+            b"".join(_encode_field(n, v) for n, v in member) for member in members))
+    return b"".join(out)
+
+
+# ---- the frozen field lists (spec 4.5) -------------------------------------
+#
+# FROZEN CONSTANTS, AND THIS DELIBERATELY INVERTS A STANDING RULE. The gates round's
+# rule reads "derive the covered set from the catalog, never from a list you maintain",
+# and here the opposite is required: deriving the payload from information_schema means
+# a later ALTER TABLE ADD COLUMN silently changes every payload and INVALIDATES EVERY
+# SIGNATURE EVER MADE.
+#
+# The alarm the rule exists for is rebuilt rather than abandoned --
+# tests/test_signing_payload_coverage.py compares these lists against the live catalog
+# and FAILS on a new column, forcing an explicit choice: bump to /v2, or exclude the
+# column with a stated reason. Frozen bytes, catalog-driven alarm.
+#
+# Adding a field to a list below without bumping the context is a BREAKING change to
+# every signature already recorded. There is no way to make that safe; there is only a
+# test that makes it deliberate.
+ATTESTATION_FIELDS = ("signer_key_fingerprint", "signed_at")
+
+CURATED_INTERACTION_V1 = (
+    "subject_moiety_uuid", "object_class_uuid", "relationship", "applies",
+    "severity", "mechanism", "management", "evidence_grade", "question_uuid",
+    "source", "reviewed_by", "reviewed_against", "reviewed_at",
+    *ATTESTATION_FIELDS)
+
+# NOTE THE ASYMMETRY, which mirrors db/029's own and is not an oversight: this table is
+# keyed on the (drug, condition) PAIR and carries `ruling` where its sibling carries
+# `relationship` + `applies`, because one pair genuinely holds both an indication and a
+# contraindication in 168 cases. See spec 3 of the 5c.1 design.
+CURATED_CONDITION_V1 = (
+    "subject_moiety_uuid", "object_condition_uuid", "ruling",
+    "severity", "mechanism", "management", "evidence_grade", "question_uuid",
+    "source", "reviewed_by", "reviewed_against", "reviewed_at",
+    *ATTESTATION_FIELDS)
+
+# The manifest's scalars. The two group cardinalities are stated as scalars as well as
+# being derivable from the groups themselves (spec 5.5): a group truncated at its END is
+# otherwise detectable only by recomputing the whole digest, and a scalar count makes
+# that specific failure nameable.
+RELEASE_MANIFEST_V1 = (
+    "release_tag", "published_by", "published_at", "entry_count", "upstream_count",
+    *ATTESTATION_FIELDS)
+
+FIELD_LISTS = {
+    "curated_interaction/v1": CURATED_INTERACTION_V1,
+    "curated_condition/v1": CURATED_CONDITION_V1,
+    "release_manifest/v1": RELEASE_MANIFEST_V1,
+}
