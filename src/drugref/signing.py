@@ -19,7 +19,9 @@ algorithm is an additive migration rather than a rewrite.
 """
 import datetime as dt
 import hashlib
+import re
 import uuid
+from collections.abc import Sequence
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -96,23 +98,48 @@ def verify(public_key: bytes, payload: bytes, signature: bytes) -> bool:
 # THE FORMAT, in full, so it is reimplementable from this comment alone:
 #
 #     drugref-sig-v1\n
-#     <context>\n
+#     <context>\n                                     * ^[a-z_]+/v[0-9]+$, validated
 #     <field-count>\n
 #     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * field-count, FROZEN order
-#     --<group>--\n                                     * zero or more groups
-#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * members, each a field list,
-#                                                         sorted by their own encoding
+#     --<len(group)>:<group>:<member-count>--\n         * zero or more groups
+#     <member-field-count>\n                            * one block per member; members
+#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n     sorted by their own COMPLETE
+#                                                        encoding, count line included
 #
-# `tag` is S for a present value or N for SQL NULL (length 0, empty value). Lengths are
-# UTF-8 BYTE counts. The trailing newlines are readability only -- a parser uses the
-# lengths, which is exactly why a newline inside a value cannot forge a boundary.
+# `tag` is S for a present value or N for SQL NULL (length 0, empty value). Lengths
+# are UTF-8 BYTE counts. The trailing newlines are readability only -- the lengths
+# and counts are what delimit, which is exactly why a newline inside a value cannot
+# forge a boundary.
+#
+# EVERY STRUCTURAL LINE IS SELF-DELIMITING, and that was a correction. The first
+# draft applied the length-prefix principle to VALUES but not to the format's own
+# structure, and three collisions followed -- each demonstrated against the shipped
+# encoder:
+#
+#   g=[{a:1,b:9},{a:2,b:8}] == g=[{a:1},{b:9,a:2,b:8}]   no per-member field count
+#   g=[{a:1},{b:2}]         == g=[{a:1,b:2}]             no member count
+#   group named "x--\n--y"  == two empty groups          group name not length-prefixed
+#   context "evil/v1\n99"                                context forged the count line
+#
+# No forgery followed in this codebase -- member arity is fixed by the code building
+# each group, and contexts are constants -- but a canonical format whose canonicity
+# depends on its callers behaving is not canonical, and this is a published reference
+# third parties implement against. Fixed while three test vectors existed and nothing
+# had been signed; after the first real signature the format can never change again.
+#
+# THE PAYLOAD IS GENERATE-AND-COMPARE. IT IS NEVER PARSED, by drugref or by anyone.
+# Verification re-derives the bytes from the stored row and compares. The format is
+# documented so a third party can REPRODUCE the bytes from their own copy of the
+# data, which is all a verifier needs -- not so anyone can write a parser and then
+# depend on guarantees a generator does not owe them.
 #
 # WHY NOT JSON/RFC 8785. JCS is a published standard and its genuinely hard part is
-# NUMBER canonicalisation, which this format sidesteps entirely by rendering every value
-# as a string. At that point JCS contributes JSON's familiarity and an escaping surface
-# to implement wrong. What it would have bought -- independent checkability -- is bought
-# instead by tests/fixtures/signing_vectors.json, which stores each payload beside its
-# digest so both can be checked without running drugref.
+# NUMBER canonicalisation, which this format sidesteps entirely by rendering every
+# value as a string. At that point JCS contributes JSON's familiarity and an
+# escaping surface to implement wrong. What it would have bought -- independent
+# checkability -- is bought instead by tests/fixtures/signing_vectors.json, which
+# stores each payload beside its digest so both can be checked without running
+# drugref.
 PROLOGUE = b"drugref-sig-v1"
 
 
@@ -182,33 +209,57 @@ def _encode_field(name: str, value: str | None) -> bytes:
     return b"%d:%s:S:%d:%s\n" % (len(name_b), name_b, len(value_b), value_b)
 
 
+_CONTEXT = re.compile(r"^[a-z_]+/v[0-9]+$")
+
+Field = tuple[str, str | None]
+Group = tuple[str, Sequence[Sequence[Field]]]
+
+
 def canonical_payload(context: str,
-                      fields=(),
-                      groups=()) -> bytes:
+                      fields: Sequence[Field] = (),
+                      groups: Sequence[Group] = ()) -> bytes:
     """The bytes a signature is made over. THE LOAD-BEARING ARTEFACT OF THIS SLICE.
 
     `context` is the domain separator (spec 4.4) -- `curated_interaction/v1`,
     `curated_condition/v1`, `release_manifest/v1`. It is inside the payload, so bytes
-    signed as one kind of statement can never verify as another.
+    signed as one kind of statement can never verify as another. VALIDATED against
+    `^[a-z_]+/v[0-9]+$` before use: the context occupies a whole line of the payload,
+    so an unvalidated one could embed its own newline and inject a forged line below
+    it -- the field-count line, most dangerously. Narrower than "no newline" on
+    purpose, closing the whole class of separator characters rather than the one
+    exploited in review.
 
     `fields` is a sequence of (name, rendered-value) pairs IN THE FROZEN ORDER for that
     context. Order is part of the format: two orderings of one row are two different
     payloads, which is why FIELD_LISTS is a frozen tuple and not a dict.
 
     `groups` is a sequence of (group_name, members), each member itself a field-pair
-    sequence. MEMBERS ARE SORTED BY THEIR OWN ENCODING, because a manifest is built from
-    a SELECT and a SELECT without ORDER BY may return rows in any order -- if that order
-    reached the bytes, one database would publish two different manifests. Sorting the
-    ENCODED member (rather than by some key) means the rule needs no knowledge of what a
-    member contains.
+    sequence. MEMBERS ARE SORTED BY THEIR OWN COMPLETE ENCODING -- the per-member field
+    count included -- because a manifest is built from a SELECT and a SELECT without
+    ORDER BY may return rows in any order; if that order reached the bytes, one
+    database would publish two different manifests. Sorting the ENCODED member (rather
+    than by some key) means the rule needs no knowledge of what a member contains.
     """
+    if not _CONTEXT.match(context):
+        raise ValueError(
+            f"{context!r} is not a valid context. It occupies a whole line of the "
+            "payload, so a newline in it forges the field-count line below; the "
+            "pattern is deliberately narrower than 'anything without a newline'.")
     out = [PROLOGUE, b"\n", context.encode("utf-8"), b"\n",
            str(len(fields)).encode("ascii"), b"\n"]
     out.extend(_encode_field(name, value) for name, value in fields)
     for group_name, members in groups:
-        out.append(b"--" + group_name.encode("utf-8") + b"--\n")
+        name_b = group_name.encode("utf-8")
+        out.append(b"--%d:%s:%d--\n" % (len(name_b), name_b, len(members)))
+        # Each member carries its OWN field count, and members sort by their complete
+        # encoding -- that count line included. Without the count, two members' fields
+        # ran together indistinguishably from one member holding all of them; without
+        # sorting on the complete encoding, two members could look like one merged
+        # member whose fields happened to total the same bytes.
         out.extend(sorted(
-            b"".join(_encode_field(n, v) for n, v in member) for member in members))
+            b"%d\n%s" % (len(member),
+                         b"".join(_encode_field(n, v) for n, v in member))
+            for member in members))
     return b"".join(out)
 
 

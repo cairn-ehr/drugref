@@ -86,8 +86,12 @@ def test_group_members_are_sorted_so_row_order_cannot_change_the_payload():
 
 
 def test_a_group_header_names_the_group():
+    """The header carries a length-prefixed name and a member count (spec 4.2):
+    `--<len(group)>:<group>:<member-count>--`. Length-prefixed, not bare, for the same
+    reason field names are -- see test_a_group_named_like_two_groups_is_not_two_groups
+    below for the collision a bare name allowed."""
     payload = signing.canonical_payload("t/v1", (), (("entries", [(("id", "1"),)]),))
-    assert b"--entries--\n" in payload
+    assert b"--7:entries:1--\n" in payload
 
 
 def test_two_groups_stay_distinct():
@@ -95,6 +99,77 @@ def test_two_groups_stay_distinct():
     m = (("id", "1"),)
     assert (signing.canonical_payload("t/v1", (), (("entries", [m]), ("upstream", [])))
             != signing.canonical_payload("t/v1", (), (("entries", []), ("upstream", [m]))))
+
+
+# ---- regressions for the four collisions the review caught -----------------
+#
+# The first draft of this format applied its length-prefix principle to VALUES but not
+# to the format's OWN structure: a group header carried a bare name and no member count,
+# and a member carried no field count of its own. Nothing in this codebase could exploit
+# that -- member arity is fixed by the code building each group, and contexts are
+# constants -- but a canonical format whose canonicity depends on its callers behaving
+# is not canonical, and this is a published reference third parties implement against.
+# Each test below was run against the PRE-FIX encoder (commit c0ba811) before being
+# written here, to confirm it really did collide there and is not merely asserting a
+# property the old code already had.
+
+
+def test_a_member_states_its_own_field_count():
+    """Without a per-member field count, two members' fields ran together
+    indistinguishably from one member holding all of them:
+    g=[{a:1,b:9},{a:2,b:8}] collided with g=[{a:1},{b:9,a:2,b:8}] under the pre-fix
+    encoder (verified independently before this test was written)."""
+    two_two = signing.canonical_payload(
+        "t/v1", (), (("g", [(("a", "1"), ("b", "9")), (("a", "2"), ("b", "8"))]),))
+    one_three = signing.canonical_payload(
+        "t/v1", (), (("g", [(("a", "1"),), (("b", "9"), ("a", "2"), ("b", "8"))]),))
+    assert two_two != one_three
+
+
+def test_a_group_states_its_member_count():
+    """Without a member count, two one-field members and one two-field member were the
+    same concatenation: g=[{a:1},{b:2}] collided with g=[{a:1,b:2}] under the pre-fix
+    encoder (verified independently before this test was written)."""
+    two_members = signing.canonical_payload(
+        "t/v1", (), (("g", [(("a", "1"),), (("b", "2"),)]),))
+    one_member = signing.canonical_payload(
+        "t/v1", (), (("g", [(("a", "1"), ("b", "2"))]),))
+    assert two_members != one_member
+
+
+def test_a_group_named_like_two_groups_is_not_two_groups():
+    """A bare group name made a group's own delimiter forgeable: a single empty group
+    named "x--\\n--y" collided with two separate empty groups "x" and "y" under the
+    pre-fix encoder (verified independently before this test was written), because
+    "--" + "x--\\n--y" + "--\\n" is byte-identical to "--x--\\n" + "--y--\\n". The
+    group name is now length-prefixed in the header, closing this the same way a
+    field's name and value are."""
+    one_group = signing.canonical_payload("t/v1", (), (("x--\n--y", []),))
+    two_groups = signing.canonical_payload("t/v1", (), (("x", []), ("y", [])))
+    assert one_group != two_groups
+
+
+def test_a_malformed_context_is_refused():
+    """The context occupies a whole, unbounded line of the payload (spec 4.2). Without
+    validation, `canonical_payload("evil/v1\\n99", (("z", "x"),))` did not raise under
+    the pre-fix encoder and instead produced a payload whose third line read b"99" --
+    an attacker-chosen value sitting where a naive reader would expect the field-count
+    line, not the real one (which was pushed one line further down). Verified
+    independently against the pre-fix encoder before this test was written. Fixed by
+    validating the context's *shape* outright (`^[a-z_]+/v[0-9]+$`), narrower than
+    merely 'no newline' on purpose -- it closes the whole class of separator
+    characters, not just the one exploited here."""
+    with pytest.raises(ValueError, match="context"):
+        signing.canonical_payload("evil/v1\n99", (("z", "x"),))
+
+
+def test_a_well_formed_context_is_not_refused():
+    """Negative control for the check above: the validation must not reject any of the
+    contexts the format actually uses, or the ad hoc "t/v1" this test file uses as a
+    stand-in for them."""
+    for context in ("curated_interaction/v1", "curated_condition/v1",
+                     "release_manifest/v1", "t/v1"):
+        signing.canonical_payload(context, (("x", "1"),))  # must not raise
 
 
 # ---- value rendering -------------------------------------------------------

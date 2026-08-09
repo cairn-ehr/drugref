@@ -19,7 +19,6 @@ any database. Ed25519 is deterministic, so its signatures are reproducible and c
 
 Run:  uv run python -m tests.make_signing_vectors > tests/fixtures/signing_vectors.json
 """
-import hashlib
 import json
 
 from drugref import signing
@@ -36,66 +35,77 @@ def _cases(fp: str) -> list[dict]:
     context, and each case supplies every field in that list -- these vectors are the
     format's published reference, so an incomplete row would publish a wrong example.
     """
+    # Case 1 and case 2's fields are built here, not inline below, because case 3's
+    # manifest entries reuse them: a manifest's payload_digest is the digest of the ROW
+    # it describes, so pointing case 3 at these two judgements' real payloads (rather
+    # than an arbitrary placeholder digest) makes the fixture describe something
+    # internally consistent, the way an actual release_manifest would.
+    interaction_fields = [
+        # Case 1: a realistic, fully-graded row. It plants a NULL (question_uuid) next
+        # to fourteen present fields, so a reviewer can see the "N" tag beside "S" tags
+        # in one payload rather than only in the isolated single-field property tests
+        # above. It also carries a `mechanism` value containing both a newline and a
+        # colon -- the two characters the encoding itself uses as punctuation -- which
+        # is what makes the committed payload demonstrate that LENGTH-PREFIXING, not
+        # delimiter-scanning, is what a parser must do: a naive line-or-colon-split
+        # parser would misparse this exact case.
+        ["subject_moiety_uuid", "3f7a1c22-0b64-5e9d-9a11-8c4f2e6b0d13"],
+        ["object_class_uuid", "c1d9e04a-7b23-5f18-8e6c-2a90d4f7b155"],
+        ["relationship", "CI_PE"],
+        ["applies", "true"],
+        ["severity", "major"],
+        ["mechanism",
+         "additive anticoagulant effect:\nplatelet inhibition also contributes"],
+        ["management", "monitor INR; consider dose reduction"],
+        ["evidence_grade", "established"],
+        ["question_uuid", None],
+        ["source", "DRUGREF"],
+        ["reviewed_by", "a curator"],
+        ["reviewed_against", "MED-RT 2026.07.06"],
+        ["reviewed_at", "2026-08-09T04:31:07.123456Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-08-09T04:33:52.008117Z"],
+    ]
+    condition_fields = [
+        # Case 2: a RETIRING ruling -- a curator has decided the pairing never should
+        # have been asserted, so four of the grading fields (severity, mechanism,
+        # management, evidence_grade) are NULL together. This is the shape a
+        # delimiter-scanning parser would find easiest to get right (lots of adjacent
+        # "empty" fields) and the shape most likely to hide an off-by-one in a
+        # length-prefixed parser (four consecutive zero-length runs), so it earns its
+        # place by being the opposite extreme from case 1's single NULL among fifteen
+        # fields. question_uuid is populated here (unlike case 1), so between the two
+        # cases both the "N" and "S" spelling of that field are on the record.
+        ["subject_moiety_uuid", "9b1f4a6e-2c3d-5e7f-a1b2-c3d4e5f6a7b8"],
+        ["object_condition_uuid", "1a2b3c4d-5e6f-5789-9abc-def012345678"],
+        ["ruling", "spurious"],
+        ["severity", None],
+        ["mechanism", None],
+        ["management", None],
+        ["evidence_grade", None],
+        ["question_uuid", "2c4e6a81-0b3d-5f79-8e12-4a6c8e0b2d4f"],
+        ["source", "DRUGREF"],
+        ["reviewed_by", "a second curator"],
+        ["reviewed_against", "post-hoc literature review 2026-08"],
+        ["reviewed_at", "2026-08-10T02:15:00.000000Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-08-10T02:16:41.500000Z"],
+    ]
+    interaction_payload = signing.canonical_payload(
+        "curated_interaction/v1", [(n, v) for n, v in interaction_fields])
+    condition_payload = signing.canonical_payload(
+        "curated_condition/v1", [(n, v) for n, v in condition_fields])
+
     return [
         {
-            # Case 1: a realistic, fully-graded row. It plants a NULL (question_uuid)
-            # next to fourteen present fields, so a reviewer can see the "N" tag beside
-            # "S" tags in one payload rather than only in the isolated single-field
-            # property tests above. It also carries a `mechanism` value containing both
-            # a newline and a colon -- the two characters the encoding itself uses as
-            # punctuation -- which is what makes the committed payload demonstrate that
-            # LENGTH-PREFIXING, not delimiter-scanning, is what a parser must do: a
-            # naive line-or-colon-split parser would misparse this exact case.
             "name": "an applying interaction judgement, fully graded",
             "context": "curated_interaction/v1",
-            "fields": [
-                ["subject_moiety_uuid", "3f7a1c22-0b64-5e9d-9a11-8c4f2e6b0d13"],
-                ["object_class_uuid", "c1d9e04a-7b23-5f18-8e6c-2a90d4f7b155"],
-                ["relationship", "CI_PE"],
-                ["applies", "true"],
-                ["severity", "major"],
-                ["mechanism",
-                 "additive anticoagulant effect:\nplatelet inhibition also contributes"],
-                ["management", "monitor INR; consider dose reduction"],
-                ["evidence_grade", "established"],
-                ["question_uuid", None],
-                ["source", "DRUGREF"],
-                ["reviewed_by", "a curator"],
-                ["reviewed_against", "MED-RT 2026.07.06"],
-                ["reviewed_at", "2026-08-09T04:31:07.123456Z"],
-                ["signer_key_fingerprint", fp],
-                ["signed_at", "2026-08-09T04:33:52.008117Z"],
-            ],
+            "fields": interaction_fields,
         },
         {
-            # Case 2: a RETIRING ruling -- a curator has decided the pairing never
-            # should have been asserted, so four of the grading fields (severity,
-            # mechanism, management, evidence_grade) are NULL together. This is the
-            # shape a delimiter-scanning parser would find easiest to get right (lots
-            # of adjacent "empty" fields) and the shape most likely to hide an off-by-
-            # one in a length-prefixed parser (four consecutive zero-length runs), so
-            # it earns its place by being the opposite extreme from case 1's single
-            # NULL among fifteen fields. question_uuid is populated here (unlike case
-            # 1), so between the two cases both the "N" and "S" spelling of that field
-            # are on the record.
             "name": "a retiring condition ruling, ungraded",
             "context": "curated_condition/v1",
-            "fields": [
-                ["subject_moiety_uuid", "9b1f4a6e-2c3d-5e7f-a1b2-c3d4e5f6a7b8"],
-                ["object_condition_uuid", "1a2b3c4d-5e6f-5789-9abc-def012345678"],
-                ["ruling", "spurious"],
-                ["severity", None],
-                ["mechanism", None],
-                ["management", None],
-                ["evidence_grade", None],
-                ["question_uuid", "2c4e6a81-0b3d-5f79-8e12-4a6c8e0b2d4f"],
-                ["source", "DRUGREF"],
-                ["reviewed_by", "a second curator"],
-                ["reviewed_against", "post-hoc literature review 2026-08"],
-                ["reviewed_at", "2026-08-10T02:15:00.000000Z"],
-                ["signer_key_fingerprint", fp],
-                ["signed_at", "2026-08-10T02:16:41.500000Z"],
-            ],
+            "fields": condition_fields,
         },
         {
             # Case 3: the only case exercising groups (spec 5.5) -- a release manifest
@@ -105,6 +115,18 @@ def _cases(fp: str) -> list[dict]:
             # before GSRS), so the fixture ITSELF is evidence the sort ran: if the
             # committed payload matched this source order, that would mean the sort
             # was a no-op or absent, not that it worked.
+            #
+            # Entry members carry target_kind, natural_key, payload_context,
+            # payload_digest -- NOT target_id (spec 5.5, corrected in review). target_id
+            # is a database-local GENERATED ALWAYS AS IDENTITY value; signing it would
+            # mean a node that rebuilt rather than restored its database could never
+            # match a manifest entry back to its row. natural_key is each row's own
+            # immortal/deterministic key instead: the interaction's is its
+            # (subject_moiety_uuid, object_class_uuid, relationship) triple, the
+            # condition's its (subject_moiety_uuid, object_condition_uuid) pair,
+            # slash-joined -- and each entry's payload_digest is the REAL digest of the
+            # matching case above, not a placeholder, so this manifest genuinely
+            # describes the two judgements this fixture also publishes.
             "name": "a release manifest with two entries and two upstream releases",
             "context": "release_manifest/v1",
             "fields": [
@@ -125,17 +147,19 @@ def _cases(fp: str) -> list[dict]:
                         # earlier string, so it sorts first).
                         [
                             ["target_kind", "curated_interaction"],
-                            ["target_id", "1"],
+                            ["natural_key",
+                             "3f7a1c22-0b64-5e9d-9a11-8c4f2e6b0d13/"
+                             "c1d9e04a-7b23-5f18-8e6c-2a90d4f7b155/CI_PE"],
                             ["payload_context", "curated_interaction/v1"],
-                            ["payload_digest",
-                             hashlib.sha256(b"vector-entry-interaction").hexdigest()],
+                            ["payload_digest", signing.digest(interaction_payload).hex()],
                         ],
                         [
                             ["target_kind", "curated_condition"],
-                            ["target_id", "7"],
+                            ["natural_key",
+                             "9b1f4a6e-2c3d-5e7f-a1b2-c3d4e5f6a7b8/"
+                             "1a2b3c4d-5e6f-5789-9abc-def012345678"],
                             ["payload_context", "curated_condition/v1"],
-                            ["payload_digest",
-                             hashlib.sha256(b"vector-entry-condition").hexdigest()],
+                            ["payload_digest", signing.digest(condition_payload).hex()],
                         ],
                     ],
                 },
