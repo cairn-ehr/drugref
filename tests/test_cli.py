@@ -4,6 +4,7 @@
 The parser and the step table are PURE -- no database, no filesystem -- so most of
 this module runs anywhere. Only the end-to-end test is DB-gated.
 """
+import ast
 import pathlib
 
 import pytest
@@ -358,6 +359,45 @@ def test_mesh_relations_is_the_only_step_with_a_secondary_input():
         "mesh-relations": ("desc", "supp")}
 
 
+def _drugref_imports_in(source: str) -> set[str]:
+    """Every import in `source` that reaches into the `drugref` package, reported as
+    the construct itself rather than a boolean -- so a failing assertion says WHICH
+    import tripped it, not just that one did.
+
+    RELATIVE IMPORTS COUNT, and that is the fix this helper exists to pin (found in
+    review of the first version of this guard). `cli_chain.py` lives INSIDE the
+    `drugref` package, so `from . import db` or `from .db import get_connection`
+    reaches exactly as far into `drugref` as `from drugref import db` does --
+    `ast.ImportFrom.level` is the only signal that tells the two apart. A scan that
+    reads `node.module` alone treats a relative import as importing nothing: `from .
+    import db` is `level=1, module=None`, and `node.module or ""` yields `""`, which
+    matches neither `"drugref"` nor a `"drugref."` prefix. That is the SAME defect one
+    construct over as the line-split string literal this project already learned to
+    distrust source text for (test_curation_orphans.py's
+    test_the_cli_embeds_no_sql_against_a_curated_table) -- a guard shaped like the
+    parse, not like the source text, has to use every field the parse gives it.
+
+    Extracted from the test body so the relative-import branch is checkable directly,
+    over a source string built for the purpose, without needing `cli_chain.py` itself
+    to carry a violation to prove the guard would catch one.
+    """
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names
+                         if alias.name == "drugref" or alias.name.startswith("drugref."))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                # A relative import inside a module that lives IN the `drugref`
+                # package reaches into `drugref` by construction -- no `node.module`
+                # value could make it not do so. Reported with its leading dots so the
+                # failure message shows a relative import, not a bare module name.
+                found.add("." * node.level + (node.module or ""))
+            elif node.module == "drugref" or (node.module or "").startswith("drugref."):
+                found.add(node.module)
+    return found
+
+
 def test_cli_chain_imports_nothing_from_drugref():
     """THE PROPERTY THAT MAKES THE IMPORT CYCLE IMPOSSIBLE, and the reason this split
     runs in this direction rather than the other.
@@ -372,23 +412,41 @@ def test_cli_chain_imports_nothing_from_drugref():
     Extracting the pure layer has no such hazard because it depends on nothing in
     drugref. This test is what keeps that true: cli_chain must never grow a drugref
     import, and if it ever needs one, the layering is wrong rather than the test.
+
+    Absolute AND relative both count -- `_drugref_imports_in` is what makes that so,
+    and `test_the_import_guard_catches_a_relative_import` pins the relative half
+    directly, since `cli_chain.py` carrying a violation is not how this test is meant
+    to prove that branch works.
     """
-    import ast
     import inspect
     from drugref import cli_chain
 
-    tree = ast.parse(inspect.getsource(cli_chain))
-    imported = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            imported.add(node.module or "")
-    from_drugref = {m for m in imported if m == "drugref" or m.startswith("drugref.")}
+    from_drugref = _drugref_imports_in(inspect.getsource(cli_chain))
     assert from_drugref == set(), (
         f"cli_chain imports {sorted(from_drugref)} from drugref. It must import "
         "nothing from drugref -- that is what makes the cycle structurally impossible "
         "rather than merely absent today.")
+
+
+def test_the_import_guard_catches_a_relative_import():
+    """KILLS THE REMOVAL of the `node.level > 0` branch in `_drugref_imports_in`.
+
+    The first version of this guard read `node.module or ""` and nothing else, which
+    treats `from . import db` (level=1, module=None) as importing the empty string --
+    matching neither `"drugref"` nor a `"drugref."` prefix, so a relative import into
+    the very package `cli_chain.py` lives in slipped past undetected. Driven over a
+    source STRING rather than `cli_chain.py` itself: the property under test is
+    "the guard would catch this if it ever happened," and making that true requires
+    the violation to exist somewhere, not for `cli_chain.py` to be made to carry one.
+
+    Both shapes of relative import are asserted, because they parse to different
+    `ast.ImportFrom` fields: `from . import db` carries the name on the alias
+    (`module=None`), `from .db import get_connection` carries it on `module` itself
+    (`module="db"`) -- a fix that only handled one would still be a fix a reviewer
+    could not tell from a coincidence.
+    """
+    assert _drugref_imports_in("from . import db\n") == {"."}
+    assert _drugref_imports_in("from .db import get_connection\n") == {".db"}
 
 
 def test_cli_py_is_under_the_size_cap():
