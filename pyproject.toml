@@ -6,7 +6,18 @@ requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 readme = "README.md"
-dependencies = ["psycopg[binary]>=3.2"]
+# RULE 6 (CLAUDE.md): every dependency must be AGPL-3.0-compatible, CHECKED BEFORE
+# ADDING. `cryptography` (PyCA) declares the license expression
+# "Apache-2.0 OR BSD-3-Clause" (PyPI metadata, verified against 50.0.0, which ships
+# both LICENSE.APACHE and LICENSE.BSD). Dual licensing lets drugref ELECT
+# BSD-3-Clause, which is AGPL-3.0-compatible outright -- so the clearance does not
+# even rest on Apache-2.0's one-way compatibility with GPLv3/AGPLv3.
+#
+# It is unavoidable rather than convenient: there is no Ed25519 in the Python standard
+# library, and a pure-Python implementation of a signature scheme is exactly the thing
+# not to hand-roll. NOTICE is unchanged -- it attributes bundled reference-data
+# SOURCES, and this redistributes no data.
+dependencies = ["psycopg[binary]>=3.2", "cryptography>=42"]
 
 [project.scripts]
 drugref = "drugref.cli:main"
