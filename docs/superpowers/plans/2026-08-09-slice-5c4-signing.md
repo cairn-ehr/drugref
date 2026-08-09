@@ -807,16 +807,38 @@ Append to `src/drugref/signing.py`:
 # THE FORMAT, in full, so it is reimplementable from this comment alone:
 #
 #     drugref-sig-v1\n
-#     <context>\n
+#     <context>\n                                       * ^[a-z_]+/v[0-9]+$, validated
 #     <field-count>\n
 #     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * field-count, FROZEN order
-#     --<group>--\n                                     * zero or more groups
-#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * members, each a field list,
-#                                                         sorted by their own encoding
+#     --<len(group)>:<group>:<member-count>--\n         * zero or more groups
+#     <member-field-count>\n                            * one block per member; members
+#     <len(name)>:<name>:<tag>:<len(value)>:<value>\n     sorted by their own COMPLETE
+#                                                        encoding, count line included
 #
 # `tag` is S for a present value or N for SQL NULL (length 0, empty value). Lengths are
-# UTF-8 BYTE counts. The trailing newlines are readability only -- a parser uses the
-# lengths, which is exactly why a newline inside a value cannot forge a boundary.
+# UTF-8 BYTE counts. The trailing newlines are readability only -- the lengths and counts
+# are what delimit, which is exactly why a newline inside a value cannot forge a boundary.
+#
+# EVERY STRUCTURAL LINE IS SELF-DELIMITING, and that was a correction. The first draft
+# applied the length-prefix principle to VALUES but not to the format's own structure,
+# and three collisions followed -- each demonstrated against the shipped encoder:
+#
+#   g=[{a:1,b:9},{a:2,b:8}] == g=[{a:1},{b:9,a:2,b:8}]   no per-member field count
+#   g=[{a:1},{b:2}]         == g=[{a:1,b:2}]             no member count
+#   group named "x--\n--y"  == two empty groups          group name not length-prefixed
+#   context "evil/v1\n99"                                context forged the count line
+#
+# No forgery followed in this codebase -- member arity is fixed by the code building each
+# group, and contexts are constants -- but a canonical format whose canonicity depends on
+# its callers behaving is not canonical, and this is a published reference third parties
+# implement against. Fixed while three test vectors existed and nothing had been signed;
+# after the first real signature the format can never change again.
+#
+# THE PAYLOAD IS GENERATE-AND-COMPARE. IT IS NEVER PARSED, by drugref or by anyone.
+# Verification re-derives the bytes from the stored row and compares. The format is
+# documented so a third party can REPRODUCE the bytes from their own copy of the data,
+# which is all a verifier needs -- not so anyone can write a parser and then depend on
+# guarantees a generator does not owe them.
 #
 # WHY NOT JSON/RFC 8785. JCS is a published standard and its genuinely hard part is
 # NUMBER canonicalisation, which this format sidesteps entirely by rendering every value
@@ -892,9 +914,15 @@ def _encode_field(name: str, value: str | None) -> bytes:
     return b"%d:%s:S:%d:%s\n" % (len(name_b), name_b, len(value_b), value_b)
 
 
+_CONTEXT = re.compile(r"^[a-z_]+/v[0-9]+$")
+
+Field = tuple[str, str | None]
+Group = tuple[str, Sequence[Sequence[Field]]]
+
+
 def canonical_payload(context: str,
-                      fields=(),
-                      groups=()) -> bytes:
+                      fields: Sequence[Field] = (),
+                      groups: Sequence[Group] = ()) -> bytes:
     """The bytes a signature is made over. THE LOAD-BEARING ARTEFACT OF THIS SLICE.
 
     `context` is the domain separator (spec 4.4) -- `curated_interaction/v1`,
@@ -912,13 +940,25 @@ def canonical_payload(context: str,
     ENCODED member (rather than by some key) means the rule needs no knowledge of what a
     member contains.
     """
+    if not _CONTEXT.match(context):
+        raise ValueError(
+            f"{context!r} is not a valid context. It occupies a whole line of the "
+            "payload, so a newline in it forges the field-count line below; the "
+            "pattern is deliberately narrower than 'anything without a newline'.")
     out = [PROLOGUE, b"\n", context.encode("utf-8"), b"\n",
            str(len(fields)).encode("ascii"), b"\n"]
     out.extend(_encode_field(name, value) for name, value in fields)
     for group_name, members in groups:
-        out.append(b"--" + group_name.encode("utf-8") + b"--\n")
+        name_b = group_name.encode("utf-8")
+        out.append(b"--%d:%s:%d--\n" % (len(name_b), name_b, len(members)))
+        # Each member carries its OWN field count, and members sort by their complete
+        # encoding -- that count line included. Without the count two members ran
+        # together into one; without sorting on the complete encoding a SELECT's row
+        # order could reach the bytes.
         out.extend(sorted(
-            b"".join(_encode_field(n, v) for n, v in member) for member in members))
+            b"%d\n%s" % (len(member),
+                         b"".join(_encode_field(n, v) for n, v in member))
+            for member in members))
     return b"".join(out)
 
 
@@ -1953,14 +1993,27 @@ CREATE TABLE IF NOT EXISTS drugref.release_manifest (
         CHECK (octet_length(manifest_digest) = 32)
 );
 
+-- KEYED ON THE NATURAL KEY, NEVER ON target_id. target_id is a database-local
+-- GENERATED ALWAYS AS IDENTITY value (section 5 says why it stays out of a signed
+-- payload), so keying a manifest on it would break the release layer in exactly the
+-- situation it exists for: a node that REBUILT rather than restored assigns different
+-- identity values, and every entry would fail to match. natural_key is stable across
+-- databases because moiety_uuid is immortal and class_uuid/condition_uuid are
+-- deterministic UUIDv5 mints -- and it is what makes `altered` nameable at all, since
+-- pairing on the digest alone could only ever report one drop plus one addition and
+-- leave a consumer to guess whether they were the same row.
+--
+-- target_id survives as an UNSIGNED convenience column so an operator can join an entry
+-- back to the local row it describes. Nothing verifies against it.
 CREATE TABLE IF NOT EXISTS drugref.release_manifest_entry (
     manifest_id     bigint NOT NULL REFERENCES drugref.release_manifest(manifest_id),
     target_kind     text   NOT NULL
                            REFERENCES drugref.signature_target_kind(target_kind),
+    natural_key     text   NOT NULL,
     target_id       bigint NOT NULL,
     payload_context text   NOT NULL,
     payload_digest  bytea  NOT NULL,
-    PRIMARY KEY (manifest_id, target_kind, target_id),
+    PRIMARY KEY (manifest_id, target_kind, natural_key),
     CONSTRAINT release_manifest_entry_digest_length
         CHECK (octet_length(payload_digest) = 32)
 );
@@ -2789,8 +2842,10 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `signing.canonical_payload`, `render`, `digest`, `sign`, `verify`, `verdict`;
   `signatures.payload_for`, `signatures.record`; `keys.key_status`, `keys.live`.
-- Produces: `releases.ManifestEntry` (frozen: `target_kind: str`, `target_id: int`, `payload_context: str`,
-  `payload_digest: bytes`) · `releases.enumerate_live(conn, *, signed_at) -> list[ManifestEntry]` ·
+- Produces: `releases.ManifestEntry` (frozen: `target_kind: str`, `natural_key: str`, `target_id: int`,
+  `payload_context: str`, `payload_digest: bytes` — **`natural_key` is what the signed group carries and what
+  verification pairs on; `target_id` is an unsigned local convenience pointer**) ·
+  `releases.enumerate_live(conn, *, signed_at) -> list[ManifestEntry]` ·
   `releases.manifest_payload(conn, *, release_tag, published_by, published_at, entries, upstream,
   key_fingerprint, signed_at) -> bytes` · `releases.publish(conn, *, release_tag, published_by, private_key,
   key_fingerprint, published_at=None, signed_at=None) -> int` ·
@@ -2899,7 +2954,8 @@ def test_a_row_whose_content_changed_is_an_ALTERATION(conn, institutional_key,
         severity="major", evidence_grade="established", reviewed_by="a curator",
         reviewed_against="MED-RT 2026.07.06")
     wrong = b"\xff" * 32
-    entries = [releases.ManifestEntry("curated_interaction", target_id,
+    natural_key = releases.natural_key_of(conn, "curated_interaction", target_id)
+    entries = [releases.ManifestEntry("curated_interaction", natural_key, target_id,
                                       "curated_interaction/v1", wrong)]
     payload = releases.manifest_payload(
         conn, release_tag="2026.08.12", published_by="an operator",
@@ -2912,9 +2968,9 @@ def test_a_row_whose_content_changed_is_an_ALTERATION(conn, institutional_key,
         "RETURNING manifest_id", (signing.digest(payload), PUBLISHED_AT)).fetchone()[0]
     conn.execute(
         "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
-        "target_id, payload_context, payload_digest) "
-        "VALUES (%s, 'curated_interaction', %s, 'curated_interaction/v1', %s)",
-        (manifest_id, target_id, wrong))
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', %s, %s, 'curated_interaction/v1', %s)",
+        (manifest_id, natural_key, target_id, wrong))
     signatures.record(
         conn, target_kind="release_manifest", target_id=manifest_id,
         payload_context="release_manifest/v1", payload=payload,
@@ -3022,9 +3078,17 @@ Key decisions the implementation must encode:
   empty `signer_key_fingerprint`** for entry digests, because a manifest entry attests *content*, not an
   attestation; document that clearly, since it is the one place the two uses of the payload diverge.
 - `manifest_payload` builds the `release_manifest/v1` payload: the six scalars plus the `--entries--` and
-  `--upstream--` groups, with `entry_count`/`upstream_count` rendered as scalars (spec §5.5).
-- `verify_release` compares manifest entries to `enumerate_live(conn, ...)` **as sets of (kind, id)** for
-  dropped/added, and compares digests for the intersection to find `altered`.
+  `--upstream--` groups, with `entry_count`/`upstream_count` rendered as scalars (spec §5.5). **Each entry
+  member carries `target_kind`, `natural_key`, `payload_context`, `payload_digest` — NOT `target_id`**, which is
+  database-local and would break verification on any node that rebuilt rather than restored.
+- `natural_key_of(conn, target_kind, target_id) -> str` renders a row's own key canonically, via
+  `signing.canonical_payload` over that table's key columns read from `signature_target_kind`. One home for the
+  rendering, so a manifest written by one drugref and verified by another cannot disagree about it.
+- `verify_release` compares manifest entries to `enumerate_live(conn, ...)` **as sets of
+  (target_kind, natural_key)** for dropped/added, and compares digests across the intersection to find
+  `altered`. Pairing on the natural key rather than on `target_id` is what makes the release layer survive a
+  node that rebuilt its database, and what lets `altered` be reported as an alteration rather than as an
+  unexplained drop beside an unexplained addition.
 - `ManifestVerdict.is_intact` is `self.signature == signing.VALID and not (dropped or added or altered)`.
 
 - [ ] **Step 4: Full suite, lint, commit.**

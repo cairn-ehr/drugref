@@ -106,18 +106,44 @@ able to verify without drugref's Python; unambiguous between SQL `NULL` and the 
 
 ```
 drugref-sig-v1
-<context>
+<context>                                              validated: ^[a-z_]+/v[0-9]+$
 <field-count>
 <len(name)>:<name>:<tag>:<len(value)>:<value>          one per field, in FROZEN order
 ...
---<group-name>--                                        zero or more repeated groups
-<len(name)>:<name>:<tag>:<len(value)>:<value>           members sorted by their own encoding
-...
+--<len(group)>:<group>:<member-count>--                zero or more repeated groups
+<member-field-count>                                   one block per member; members
+<len(name)>:<name>:<tag>:<len(value)>:<value>          sorted by their own COMPLETE
+...                                                    encoding, count line included
 ```
 
 `tag` is `S` for a present value or `N` for SQL `NULL` (length 0, empty value). Lengths are **UTF-8 byte
 counts**, so a `management` field containing a newline or a colon cannot forge a field boundary. Line breaks are
-decoration for readability; a parser uses the lengths.
+decoration for readability; the lengths and counts are what delimit.
+
+**Every structural line is self-delimiting, and that was a correction rather than the first draft.** The
+original form applied the length-prefix principle to *values* but not to the format's own structure: the group
+header carried a bare name, and a group carried no counts. Three collisions followed, each demonstrated
+against the shipped encoder before this text was rewritten:
+
+| two different structures | identical bytes, because |
+|---|---|
+| `g=[{a:1,b:9},{a:2,b:8}]` vs `g=[{a:1},{b:9,a:2,b:8}]` | no per-member field count, so members ran together |
+| `g=[{a:1},{b:2}]` vs `g=[{a:1,b:2}]` | no member count: two members and one merged member are the same concatenation |
+| a group named `x--\n--y` vs two empty groups | the group name was not length-prefixed |
+| context `evil/v1\n99` | the context was neither validated nor length-prefixed, so it forged the field-count line |
+
+**No forgery followed from any of them** in this codebase — member arity is fixed by the code that builds each
+group, and contexts are constants — but a canonical format whose canonicity depends on its callers behaving is
+not canonical, and this is a published reference third parties implement against. It was fixed while fixing was
+still free: three test vectors existed and nothing had been signed. After the first real signature the format
+can never change again.
+
+**THE PAYLOAD IS GENERATE-AND-COMPARE. IT IS NEVER PARSED — by drugref or by anyone.** Verification re-derives
+the bytes from the stored row and compares them; it never reads a payload back into fields. The format is
+documented so a third party can *reproduce* the bytes from their own copy of the data, which is the only thing
+a verifier needs. Worth stating outright because §4.3 calls the format "reimplementable from one paragraph",
+and a reader could take that as licence to write a parser and then rely on guarantees a generator does not owe
+them.
 
 **Value rendering.** uuid → lowercase canonical 8-4-4-4-12 · boolean → `true` / `false` · `timestamptz` → RFC
 3339 in **UTC** with exactly six fractional digits · bigint → plain decimal, no leading zeros · bytea →
@@ -280,17 +306,35 @@ not exist in the repo today), `manifest_digest` bytea, `row_count` integer, `ups
 snapshot of `loaded_release` at publication), `published_by`, `published_at`. Insert-only, same trigger as
 §5.3.
 
-`release_manifest_entry`: `(manifest_id, target_kind, target_id)` primary key, plus `payload_context` and
-`payload_digest`. Insert-only.
+`release_manifest_entry`: `(manifest_id, target_kind, natural_key)` primary key, plus `target_id`,
+`payload_context` and `payload_digest`. Insert-only.
 
 The manifest's own signature is an `assertion_signature` row with `target_kind = 'release_manifest'`, signed by
 the institutional key. **One mechanism carries both layers** — the payoff of §3, and the reason the two halves
 belong in one slice.
 
 The manifest's canonical payload is the §4.2 form with two repeated groups: `--entries--` (each entry's
-`target_kind`, `target_id`, `payload_context`, `payload_digest`) and `--upstream--` (each loaded release's
-`source`, `writer`, `release`). Members are **sorted by their own encoding**, so the manifest body does not
-depend on the order rows came back in.
+`target_kind`, **`natural_key`**, `payload_context`, `payload_digest`) and `--upstream--` (each loaded
+release's `source`, `writer`, `release`). Members are **sorted by their own encoding**, so the manifest body
+does not depend on the order rows came back in.
+
+**A MANIFEST ENTRY IS KEYED ON THE NATURAL KEY, NEVER ON `target_id`, and the first draft of this section had
+that wrong.** It listed `target_id` in the signed group while §5.3 twenty lines earlier explains that
+`target_id` is a database-local `GENERATED ALWAYS AS IDENTITY` value, deliberately kept out of a signed payload
+so a signature survives being carried into another database. The two statements cannot both stand, and the
+consequence of the wrong one is precise: **a node that rebuilt rather than restored would assign different
+identity values, and every entry would fail to match — the release layer would be broken in exactly the
+situation it exists for.**
+
+`natural_key` is the canonical rendering of the row's own key — `subject_moiety_uuid`, `object_class_uuid` and
+`relationship` for a curated interaction; `subject_moiety_uuid` and `object_condition_uuid` for a curated
+condition — and it is stable across databases because `moiety_uuid` is immortal and `class_uuid`/`condition_uuid`
+are deterministic UUIDv5 mints. That is what makes **`altered` nameable at all**: pairing on the natural key
+lets verification say "this row's content changed", where pairing on the digest alone could only ever report
+one `dropped` plus one `added` and leave a consumer to guess whether they were the same row.
+
+`target_id` stays as an **unsigned** column, purely so an operator can join an entry back to the local row it
+describes. It is a convenience pointer, and nothing verifies against it.
 
 **Each group's cardinality is also a signed scalar field** — `entry_count` and `upstream_count` — derivable
 from the group itself and stated anyway, on purpose: a group truncated at its end is otherwise detectable only
