@@ -156,7 +156,7 @@ def test_a_malformed_context_is_refused():
     an attacker-chosen value sitting where a naive reader would expect the field-count
     line, not the real one (which was pushed one line further down). Verified
     independently against the pre-fix encoder before this test was written. Fixed by
-    validating the context's *shape* outright (`^[a-z_]+/v[0-9]+$`), narrower than
+    validating the context's *shape* outright (`^[a-z_]+/v[0-9]+\\Z`), narrower than
     merely 'no newline' on purpose -- it closes the whole class of separator
     characters, not just the one exploited here."""
     with pytest.raises(ValueError, match="context"):
@@ -170,6 +170,25 @@ def test_a_well_formed_context_is_not_refused():
     for context in ("curated_interaction/v1", "curated_condition/v1",
                      "release_manifest/v1", "t/v1"):
         signing.canonical_payload(context, (("x", "1"),))  # must not raise
+
+
+def test_a_trailing_newline_context_is_refused():
+    """Regression for a second-round review finding: `$` in a Python regex matches at
+    end-of-string OR immediately before a single trailing newline, so a first-draft
+    `^[a-z_]+/v[0-9]+$` validator (checked with `.match()`) let
+    "curated_interaction/v1\\n" through -- the exact character this validator exists to
+    keep out of the context line, on the FIRST context anyone would try. Confirmed
+    independently against that `$`-anchored version before this test was written: it
+    accepted the trailing-newline context and produced
+    b"drugref-sig-v1\\ncurated_interaction/v1\\n\\n1\\n...\\n" rather than raising. Not
+    reachable as a collision here -- the field-count line that follows is always a bare
+    digit run, which a blank line injected by this trap can never equal -- but the
+    validator's own docstring claims it closes "the whole class of separator
+    characters", and a version that lets the one character it was built for through is
+    exactly the kind of overclaim this slice keeps finding. Fixed with `\\Z`, which has
+    no trailing-newline exception."""
+    with pytest.raises(ValueError, match="context"):
+        signing.canonical_payload("curated_interaction/v1\n", (("x", "1"),))
 
 
 # ---- value rendering -------------------------------------------------------

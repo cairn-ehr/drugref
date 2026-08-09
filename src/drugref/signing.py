@@ -209,7 +209,14 @@ def _encode_field(name: str, value: str | None) -> bytes:
     return b"%d:%s:S:%d:%s\n" % (len(name_b), name_b, len(value_b), value_b)
 
 
-_CONTEXT = re.compile(r"^[a-z_]+/v[0-9]+$")
+# \Z, NOT $ -- $ matches at end-of-string OR immediately before a single trailing
+# newline, so "curated_interaction/v1\n" would pass a $-anchored check and then supply
+# the exact newline this whole validator exists to keep out of the context line. \Z has
+# no such exception: it matches only the true end of the string. (.fullmatch() with a
+# $-anchored pattern would work too, since fullmatch requires consuming the whole
+# string regardless of $'s newline exception -- \Z is used here because it keeps the
+# existing .match() call below unchanged, so the fix is visible in the pattern alone.)
+_CONTEXT = re.compile(r"^[a-z_]+/v[0-9]+\Z")
 
 Field = tuple[str, str | None]
 Group = tuple[str, Sequence[Sequence[Field]]]
