@@ -959,15 +959,6 @@ CASES = [
 ]
 
 
-def build():
-    private = TEST_PRIVATE
-    public = signing.sign  # placeholder, replaced below
-    raise SystemExit("see step 4 notes")
-```
-
-**Do not ship the stub above.** Write it properly:
-
-```python
 def build() -> dict:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     public = Ed25519PrivateKey.from_private_bytes(TEST_PRIVATE).public_key(
@@ -2747,7 +2738,7 @@ import datetime as dt
 
 import pytest
 
-from drugref import curation, keys, releases, signing
+from drugref import curation, keys, releases, signatures, signing
 
 PUBLISHED_AT = dt.datetime(2026, 8, 9, 6, 0, 0, tzinfo=dt.timezone.utc)
 
@@ -2815,17 +2806,54 @@ def test_a_live_row_the_manifest_omits_is_an_ADDITION(conn, published, a_graded_
     assert not verdict.is_intact
 
 
-def test_a_row_whose_content_changed_is_an_ALTERATION(conn, published, a_graded_rule):
-    """The case an operator most wants to catch: someone edited severity in their own
-    copy. The curated table is append-only, so an 'alteration' in practice means the
-    manifest's digest for a target_id no longer matches the row now carrying that id --
-    reproduced here by publishing, then superseding, then re-checking the SUPERSEDED
-    id's digest against a row rebuilt with different content."""
-    # implementation note: see step 3 -- the fixture publishes, then this test writes a
-    # correction and asserts the ORIGINAL entry still matches (a correction is not an
-    # alteration), and separately mutates a digest in release_manifest_entry... which
-    # the insert-only floor forbids. So the alteration case is built the other way
-    # round: publish a manifest whose entry digest is deliberately wrong.
+def test_a_row_whose_content_changed_is_an_ALTERATION(conn, institutional_key,
+                                                      a_graded_rule):
+    """The case an operator most wants to catch: a curated row that no longer matches
+    what drugref published.
+
+    CONSTRUCTED BY HAND rather than by editing a row, because the floor forbids editing
+    either side: the curated table refuses UPDATE, and so does release_manifest_entry.
+    So the test INSERTs a manifest whose entry digest for a live row is deliberately
+    wrong -- which is byte-for-byte the state a consumer is in when their copy of the
+    row was altered, and the only state verification can actually observe.
+
+    The two assertions at the end are the point of the whole release layer: the manifest
+    signature is VALID -- it really is drugref's -- while its content claim is FALSE.
+    Authenticity and integrity are different questions, and a verifier that collapsed
+    them would report a tampered database as a bad signature.
+    """
+    target_id = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    wrong = b"\xff" * 32
+    entries = [releases.ManifestEntry("curated_interaction", target_id,
+                                      "curated_interaction/v1", wrong)]
+    payload = releases.manifest_payload(
+        conn, release_tag="2026.08.12", published_by="an operator",
+        published_at=PUBLISHED_AT, entries=entries, upstream=[],
+        key_fingerprint=institutional_key["fingerprint"], signed_at=PUBLISHED_AT)
+    manifest_id = conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.12', %s, 1, '[]'::jsonb, 'an operator', %s) "
+        "RETURNING manifest_id", (signing.digest(payload), PUBLISHED_AT)).fetchone()[0]
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', %s, 'curated_interaction/v1', %s)",
+        (manifest_id, target_id, wrong))
+    signatures.record(
+        conn, target_kind="release_manifest", target_id=manifest_id,
+        payload_context="release_manifest/v1", payload=payload,
+        key_fingerprint=institutional_key["fingerprint"],
+        signature=signing.sign(institutional_key["private"], payload),
+        signed_at=PUBLISHED_AT)
+    verdict = releases.verify_release(conn, "2026.08.12")
+    assert verdict.signature == signing.VALID
+    assert len(verdict.altered) == 1
+    assert (verdict.dropped, verdict.added) == ([], [])
+    assert not verdict.is_intact
 
 
 def test_an_empty_manifest_does_not_verify_a_database_that_has_rows(
@@ -2888,7 +2916,6 @@ def test_the_manifest_signature_is_an_ordinary_assertion_signature_row(conn, pub
 
 def test_a_compromised_publishing_key_flags_the_release(conn, published,
                                                         institutional_key):
-    releases.revoke_check = None  # no-op guard; see note
     keys.revoke(conn, key_fingerprint=institutional_key["fingerprint"],
                 status="compromised", revoked_by="an operator",
                 status_from=dt.datetime(2027, 1, 1, tzinfo=dt.timezone.utc))
@@ -2910,13 +2937,6 @@ def test_the_upstream_snapshot_is_recorded(conn, published):
         "WHERE release_tag = %s", (published,)).fetchone()[0]
     assert isinstance(upstream, list)
 ```
-
-**Two clean-ups the implementer must make when writing this file:** delete the stray
-`releases.revoke_check = None` line (a leftover, and a line that would silently create an attribute), and replace
-the `test_a_row_whose_content_changed_is_an_ALTERATION` stub body with a real one — publish normally, then build a
-*second* manifest under a different tag whose entry digest is deliberately wrong for a live row, and assert that
-tag verifies with exactly one `altered` finding. **A test with a comment for a body passes vacuously**, which is
-the failure this whole slice is about.
 
 - [ ] **Step 2: Run to verify failure.**
 
@@ -3182,13 +3202,14 @@ shape → Task 5 · §4.1–4.5 canonical payload → Task 3 · §4.6 Ed25519 �
 1. **The task-to-spec mapping in the header was wrong.** It assigned the CLI to Task 6; the CLI became Task 10
    once `keys.py` grew large enough to deserve its own review gate. The mapping line above is the corrected one.
    The **File Structure** table's `cli_signing.py` row should be read as "created in Task 10".
-2. **Task 8's `test_a_row_whose_content_changed_is_an_ALTERATION` is a stub** and is explicitly flagged as one
-   that must be written properly — the append-only floor forbids the obvious construction, so the test builds a
-   second manifest with a deliberately wrong entry digest instead. Left visible rather than silently dropped,
-   because a comment-bodied test passes vacuously and that is the failure this slice is about.
-3. **Two deliberate leftovers are called out for deletion** rather than quietly corrected: `make_signing_vectors`'s
-   `build()` stub (Task 3) and `releases.revoke_check = None` (Task 8). An implementer reading a task out of order
-   would otherwise ship either.
+2. **Three transcription hazards were REMOVED from the plan rather than annotated** (pre-flight scan, before
+   Task 1 was dispatched). Earlier drafts carried a `make_signing_vectors.build()` stub that raised
+   `SystemExit`, a stray `releases.revoke_check = None`, and a comment-bodied
+   `test_a_row_whose_content_changed_is_an_ALTERATION` — each with a note telling the implementer not to ship
+   it. **A caveat beside a code block is not a safeguard**: an implementer transcribing a task reads the block.
+   All three are now written correctly in place, and the ALTERATION test asserts the distinction that motivated
+   it — the manifest signature is `VALID` while its content claim is false, because authenticity and integrity
+   are different questions.
 
 **Type consistency.** `signing.KeyStatus` is constructed in exactly two places (`keys.key_status`, and the test
 constants) and consumed in one (`signing.verdict`) — checked. `signatures.payload_for` returns
