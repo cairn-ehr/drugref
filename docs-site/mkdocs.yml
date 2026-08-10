@@ -75,6 +75,7 @@ nav:
       - The expansion policy is append-only: decisions/expansion-policy-is-append-only.md
       - GSRS relationship direction runs target → record: decisions/gsrs-relationship-direction.md
       - Curating a drug–condition pair: decisions/curating-a-drug-condition-pair.md
+      - Signing the curated overlay: decisions/signing-the-curated-overlay.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

@@ -61,3 +61,7 @@ history is never lost — it remains in the git log and in the dated design spec
   overlay keys on the RULE while the drug–condition overlay keys on the PAIR without
   `relationship`, why a curated row references its candidate by natural key and never by
   foreign key, and why the overlay is signable rather than signed.
+- [Signing the curated overlay](signing-the-curated-overlay.md) — the two layers (curator
+  non-repudiation and release integrity), why curator-held keys are the only ones that prove
+  anything, why a compromised key invalidates blanket while a rotated one does not, why a
+  signature is never an admission gate — and, plainly, what signing does **not** fix.
