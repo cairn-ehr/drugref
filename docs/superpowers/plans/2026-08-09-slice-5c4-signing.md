@@ -57,7 +57,8 @@ Every task's requirements implicitly include this section.
 | `src/drugref/signing.py` *(create)* | **PURE.** No DB, no filesystem. Canonical payload encoder, value rendering, frozen field lists, Ed25519 keygen/sign/verify, fingerprint, digest, and the verdict rule. ~260 lines. |
 | `src/drugref/keys.py` *(create)* | The `signing_key` registry: register, revoke (via `overlay.supersede`), read. ~150 lines. |
 | `src/drugref/signatures.py` *(create)* | Build a target row's canonical payload from the database; record a signature; verify one target. ~200 lines. |
-| `src/drugref/releases.py` *(create)* | Build, publish and verify a release manifest. ~220 lines. |
+| `src/drugref/releases.py` *(create)* | Build and publish a release manifest: `natural_key_of`, `ManifestEntry`, `enumerate_live`, `manifest_payload`, `publish`. ~383 lines. |
+| `src/drugref/release_verification.py` *(create)* | Verify one: `ManifestVerdict`, `UnknownReleaseError`, `verify_release`. ~339 lines. **Split out during Task 8** — the Critical fix pushed the single file past the ~500 cap, and the seam is one-directional (verification imports building, never the reverse). A re-export back into `releases.py` was rejected because it recreates the import cycle the split exists to avoid. |
 | `src/drugref/cli_signing.py` *(create)* | `drugref keys generate\|register\|revoke\|list`, `sign`, `verify`, `publish`. ~280 lines. |
 | `db/030_signing.sql` *(create)* | Six tables, two seeded vocabularies, `forbid_any_rewrite`, the re-issued read views, `curated_signature_status`, `signature_backdated`. |
 | `tests/fixtures/signing_vectors.json` *(create)* | Committed canonical-format test vectors. |
