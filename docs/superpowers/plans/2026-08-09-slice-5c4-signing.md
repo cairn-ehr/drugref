@@ -2312,9 +2312,14 @@ class KeyRecord:
 
 def _record(row) -> KeyRecord:
     values = dict(zip(_COLUMNS, row, strict=True))
-    # psycopg returns bytea as `memoryview`; the caller compares it against the bytes it
-    # generated, and memoryview(b"a") != b"a" is False but `== ` is True only after a
-    # cast. Normalise once, here, rather than at every call site.
+    # NORMALISE bytea TO `bytes` SO THE ANNOTATION ABOVE IS TRUE, and note carefully what
+    # this is NOT for. An earlier draft of this comment claimed psycopg returns bytea as
+    # `memoryview` and that equality needs the cast. Both halves are false, measured on
+    # this project's pinned psycopg 3.3.4: bytea decodes to `bytes` in text AND binary
+    # mode, and `memoryview(b"a") == b"a"` is True regardless. What the cast actually
+    # buys is that `isinstance(record.public_key, bytes)` holds whatever a future adapter
+    # or driver version returns -- equality would survive a memoryview, `isinstance` and
+    # anything type-dispatching on it would not. Pinned by a test asserting the type.
     values["public_key"] = bytes(values["public_key"])
     return KeyRecord(**values)
 
