@@ -361,3 +361,208 @@ COMMENT ON TABLE drugref.release_manifest IS
     'carries both the row layer and this one. Verification is BIDIRECTIONAL: a row the '
     'manifest lists and the database lacks is a DROP, a live row the manifest omits is '
     'an ADDITION, and a digest mismatch is an ALTERATION.';
+
+-- ============================================================================
+-- 7. Read path
+-- ============================================================================
+-- REGISTRY-LEVEL ONLY. Postgres cannot verify an Ed25519 signature, so this view
+-- reports what SQL can know -- is a signature present, is its key registered, has that
+-- key been revoked -- and NOT whether the mathematics checks out. `drugref verify` is
+-- the only thing that does that.
+--
+-- NO VERIFICATION RESULT IS EVER CACHED IN A COLUMN. A stored "verified" flag is a
+-- claim nothing re-checks, which is the exact failure mode this slice exists to remove.
+--
+-- `signed` MEANS "NOTHING IN THE REGISTRY OBJECTS", not that the mathematics was
+-- checked: the live key naming a signature must be registered, its live status must
+-- not carry `invalidates_all_signatures`, and -- when that status IS a revocation --
+-- the signature must predate the boundary it draws. `is_revocation` is what makes
+-- `status_from` an END boundary at all: an active key's `status_from` is its
+-- REGISTRATION time, so without that guard every signature ever made would read as
+-- expired, including one made a second after the key was registered.
+CREATE OR REPLACE VIEW drugref.curated_signature_status AS
+WITH per_target AS (
+    SELECT s.target_kind,
+           s.target_id,
+           count(*) AS signature_count,
+           -- UNOBJECTED, not "valid": Postgres has not checked a single signature's
+           -- mathematics here, only whether the registry has anything to say against
+           -- it. A key the registry has never heard of (k.key_fingerprint IS NULL,
+           -- because assertion_signature carries no FK into signing_key -- section 5's
+           -- UNKNOWN_KEY case) counts as OBJECTED, on the same reasoning as
+           -- signing.verdict's own precedence: without the public key there is nothing
+           -- to vouch for the signature, so silence from the registry is not evidence
+           -- of anything.
+           count(*) FILTER (
+               WHERE k.key_fingerprint IS NOT NULL
+                 AND NOT t.invalidates_all_signatures
+                 AND NOT (t.is_revocation AND s.signed_at >= k.status_from)
+           ) AS unobjected_count
+    FROM   drugref.assertion_signature s
+           -- LEFT, twice over: an unregistered key must still produce a per_target row
+           -- (OBJECTED, via the FILTER above) rather than vanish from the aggregate,
+           -- and a key whose signing_key_status_kind lookup somehow failed must not
+           -- silently drop the row either. superseded_by IS NULL picks out the key's
+           -- LIVE status -- the only one that can answer "does the registry object
+           -- TODAY".
+    LEFT   JOIN drugref.signing_key k
+           ON  k.key_fingerprint = s.key_fingerprint
+           AND k.superseded_by IS NULL
+    LEFT   JOIN drugref.signing_key_status_kind t ON t.status = k.status
+    GROUP  BY s.target_kind, s.target_id
+)
+SELECT target_kind,
+       target_id,
+       signature_count,
+       unobjected_count,
+       -- ONLY TWO LABELS, deliberately coarser than signing.verdict's six: SQL cannot
+       -- tell BAD_SIGNATURE from VALID (no cryptography here), so both collapse into
+       -- whatever the registry says about the key that made them. One unobjected
+       -- signature is enough -- see the file-level comment on why "signed" does not
+       -- mean "every signature is unobjected".
+       CASE WHEN unobjected_count > 0 THEN 'signed'
+            ELSE 'signed_by_revoked_key' END AS signature_status
+FROM   per_target;
+
+COMMENT ON VIEW drugref.curated_signature_status IS
+    'REGISTRY-LEVEL SIGNATURE STATUS -- NOT CRYPTOGRAPHIC VERIFICATION. Postgres cannot '
+    'check an Ed25519 signature; this reports only whether a signature exists, whether '
+    'its key is registered, and whether that key has been revoked. `signed` means '
+    'NOTHING IN THE REGISTRY OBJECTS, not that the mathematics was checked -- run '
+    '`drugref verify` for that. A target with no row here is UNSIGNED, which is an '
+    'ordinary state: signing is optional per row.';
+
+-- A row whose signature claims a date long before this database learned of it. An
+-- OPERATOR SIGNAL, deliberately not a gap kind -- a curator with an air-gapped signing
+-- flow legitimately submits late -- on curated_target_unresolved's precedent. One day
+-- is the threshold because `drugref sign` writes within seconds of signing.
+CREATE OR REPLACE VIEW drugref.signature_backdated AS
+SELECT signature_id, target_kind, target_id, key_fingerprint,
+       signed_at, recorded_at, recorded_at - signed_at AS lag
+FROM   drugref.assertion_signature
+WHERE  signed_at < recorded_at - interval '1 day';
+
+COMMENT ON VIEW drugref.signature_backdated IS
+    'Signatures claiming a signed_at more than a day before this database recorded '
+    'them. signed_at is INSIDE the signed payload and so cannot be forged by an '
+    'attacker without the key -- but a compromised key CAN backdate, which is one '
+    'reason a compromise is blanket rather than time-scoped. An operator signal, not a '
+    'gap kind: a legitimate air-gapped flow also lands here.';
+
+-- ---- re-issue db/029's two read views: APPEND signature_status, nothing else moves --
+--
+-- `CREATE OR REPLACE VIEW` can only ADD a trailing column; it cannot reorder or rename
+-- an existing one, so both views below repeat db/029's SELECT list VERBATIM and add
+-- exactly one column at the end. tests/test_signature_read_path.py pins the full
+-- column list, in order, for both views -- the property a row-count comparison cannot
+-- see.
+--
+-- THE JOIN IS LEFT, AND IT MUST STAY LEFT. db/029 section 3 made curated_ddi_pair and
+-- curated_condition_ruling INNER joins against their curated tables for exactly the
+-- opposite reason this join is LEFT: there, an ungraded candidate reaching the view
+-- with a NULL severity would read as "reviewed and harmless". HERE, a signature is
+-- OPTIONAL per row and the overlay ships empty of them -- an INNER join against
+-- curated_signature_status would drop every unsigned curated row from the read path,
+-- which is nearly all of them today, and -- far more seriously -- would let a single
+-- key revocation silently withdraw a live contraindication ruling from every
+-- downstream consumer the moment its only signature stopped being unobjected. FEWER
+-- ROWS IS THE HARM DIRECTION FOR A CONTRAINDICATION (Plan B's central finding), and a
+-- key-management event must never be able to trigger it. `COALESCE(..., 'unsigned')`
+-- is what an ordinary, never-signed row reads as through the LEFT join.
+CREATE OR REPLACE VIEW drugref.curated_ddi_pair AS
+SELECT p.subject_moiety,
+       p.partner_moiety,
+       p.relationship,
+       p.via_class,
+       p.member_class,
+       p.is_direct,
+       c.severity,
+       c.mechanism,
+       c.management,
+       c.evidence_grade,
+       c.question_uuid,
+       c.source           AS curated_source,
+       c.reviewed_by,
+       c.reviewed_against,
+       c.reviewed_at,
+       p.upstream_release,          -- which release raised the candidate
+       p.source           AS candidate_source,
+       COALESCE(ss.signature_status, 'unsigned') AS signature_status
+FROM   drugref.ddi_candidate_pair p
+       -- INNER: an ungraded rule reaches this view NEVER, not with NULL columns.
+JOIN   drugref.curated_interaction c
+       ON  c.subject_moiety_uuid = p.subject_moiety
+       AND c.object_class_uuid   = p.via_class
+       AND c.relationship        = p.relationship
+       -- LEFT: see the block comment above this view.
+LEFT   JOIN drugref.curated_signature_status ss
+       ON  ss.target_kind = 'curated_interaction'
+       AND ss.target_id   = c.curated_interaction_id
+WHERE  c.superseded_by IS NULL
+AND    c.applies;
+
+COMMENT ON VIEW drugref.curated_ddi_pair IS
+    'Drug pairs carrying a live drugref grade, expanded from the class-level rule the '
+    'grade was written against -- so ONE curated row reaches every pair its rule '
+    'expands to. INNER JOIN by design: an ungraded candidate does not appear here at '
+    'all, because a NULL severity beside a real pair reads as "reviewed and harmless". '
+    'ddi_candidate_pair remains the place to ask what the release said. '
+    'signature_status is REGISTRY-LEVEL ONLY (see curated_signature_status) and its '
+    'join is LEFT: an unsigned row still appears, labelled ''unsigned'', and a key '
+    'revocation relabels a row rather than removing it -- fewer rows is the harm '
+    'direction for a contraindication.';
+
+CREATE OR REPLACE VIEW drugref.curated_condition_ruling AS
+SELECT c.subject_moiety_uuid  AS subject_moiety,
+       c.object_condition_uuid AS object_condition,
+       c.ruling,
+       c.severity,
+       c.mechanism,
+       c.management,
+       c.evidence_grade,
+       c.question_uuid,
+       c.source               AS curated_source,
+       c.reviewed_by,
+       c.reviewed_against,
+       c.reviewed_at,
+       cand.candidate_kind,
+       cand.relationship,
+       cand.source            AS candidate_source,
+       COALESCE(ss.signature_status, 'unsigned') AS signature_status
+FROM   drugref.curated_condition c
+       -- ONE ROW PER (ruling, candidate assertion), NOT one per ruling. The
+       -- beta-blocker case returns two rows carrying the same `context_dependent`
+       -- ruling, one naming may_treat and one naming CI_with -- which is exactly what
+       -- a consumer needs in order to render "both, in different states". Aggregating
+       -- the candidates into an array would hide which relationships the ruling
+       -- reconciles, and #41's finding was that folding a key component under an
+       -- aggregate breaks a view's grain.
+JOIN   (SELECT subject_moiety_uuid, object_condition_uuid, relationship, source,
+               'contraindication'::text AS candidate_kind
+          FROM drugref.moiety_condition_contraindication
+        UNION ALL
+        SELECT subject_moiety_uuid, object_condition_uuid, relationship, source,
+               'indication'
+          FROM drugref.moiety_condition_indication) cand
+       ON  cand.subject_moiety_uuid   = c.subject_moiety_uuid
+       AND cand.object_condition_uuid = c.object_condition_uuid
+       -- LEFT: the same refusal as curated_ddi_pair's, over curated_condition_id
+       -- instead. Both rows a single ruling produces share ONE curated_condition_id,
+       -- so both carry the SAME signature_status -- a ruling is signed once, not once
+       -- per candidate it reconciles.
+LEFT   JOIN drugref.curated_signature_status ss
+       ON  ss.target_kind = 'curated_condition'
+       AND ss.target_id   = c.curated_condition_id
+WHERE  c.superseded_by IS NULL
+       -- `spurious` is live and binds nothing: it records a disagreement without
+       -- acting on it. Nothing renders it as advice.
+AND    c.ruling <> 'spurious';
+
+COMMENT ON VIEW drugref.curated_condition_ruling IS
+    'Live drugref rulings on (drug, condition) pairs, joined to the upstream '
+    'assertions they rule on -- ONE ROW PER CANDIDATE, so a `context_dependent` ruling '
+    'over a pair asserted as both may_treat and CI_with returns both, and a consumer '
+    'can see exactly which claims the ruling reconciles. A `spurious` ruling appears '
+    'here never; the candidate it disagrees with stays in its projection. '
+    'signature_status is REGISTRY-LEVEL ONLY and LEFT-joined -- see curated_ddi_pair''s '
+    'comment, which states the refusal this view shares verbatim.';

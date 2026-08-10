@@ -209,6 +209,14 @@ def test_apply_migrations_is_idempotent(conn):
         # keyed on the natural key rather than the database-local target_id).
         "signing_key_status_kind", "signature_target_kind", "signing_key",
         "assertion_signature", "release_manifest", "release_manifest_entry",
+        # Slice 5c.4, db/030 section 7: the read path. curated_signature_status is
+        # REGISTRY-LEVEL ONLY (Postgres cannot check an Ed25519 signature) and
+        # LEFT-joined into curated_ddi_pair/curated_condition_ruling below, on pain
+        # of a key revocation silently withdrawing a contraindication from every
+        # consumer -- fewer rows is the harm direction for a contraindication.
+        # signature_backdated is an operator signal, not a gap kind. Both are VIEWs,
+        # named explicitly for the same information_schema.tables reason as above.
+        "curated_signature_status", "signature_backdated",
     }
 
 
