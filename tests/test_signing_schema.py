@@ -10,6 +10,11 @@ from drugref import signing
 FP = "a" * 64
 OTHER_FP = "b" * 64
 NOW = dt.datetime(2026, 8, 9, tzinfo=dt.timezone.utc)
+# A genuinely DIFFERENT instant from NOW, for the columns whose "no update" test would
+# otherwise write back the value already stored -- a no-op that an UPDATE ... SET x = x
+# trigger bug could pass by accident. See test_no_column_of_a_signature_can_be_updated's
+# `signed_at` case.
+LATER = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
 
 
 def _key(conn, fingerprint=FP, status="active", status_from=NOW):
@@ -144,9 +149,16 @@ def test_a_signature_cannot_be_deleted(conn):
 
 
 @pytest.mark.parametrize("column,value", [
-    ("signed_at", NOW), ("key_fingerprint", OTHER_FP), ("target_id", 99),
+    ("signed_at", LATER), ("key_fingerprint", OTHER_FP), ("target_id", 99),
     ("target_kind", "curated_condition"), ("payload_context", "curated_condition/v1"),
     ("payload_digest", b"\x09" * 32), ("signature", b"\x09" * 64),
+    # algorithm IS LEFT AS A NO-OP DELIBERATELY, not fixed to a "real" change like
+    # signed_at above: `algorithm`'s CHECK admits ONLY 'Ed25519' (db/030), so any
+    # value-changing UPDATE there is unreachable through this trigger -- it would fail
+    # on assertion_signature_algorithm's CheckViolation before forbid_any_rewrite's
+    # RaiseException ever fired, which would test the wrong guard under the wrong
+    # exception type. A same-value UPDATE is the only way to exercise "no UPDATE of
+    # this column, ever" without a second live value to update it TO.
     ("algorithm", "Ed25519"), ("recorded_at", NOW),
 ])
 def test_no_column_of_a_signature_can_be_updated(conn, column, value):
@@ -161,6 +173,24 @@ def test_no_column_of_a_signature_can_be_updated(conn, column, value):
     _signature(conn)
     with pytest.raises(psycopg.errors.RaiseException):
         conn.execute(f"UPDATE drugref.assertion_signature SET {column} = %s", (value,))
+
+
+@pytest.mark.parametrize("bad", [
+    "not/a/context", "curated_interaction", "curated_interaction/1",
+    "curated_interaction/v1x", "CURATED_INTERACTION/v1", "curated_interaction/v1\n99",
+])
+def test_a_malformed_payload_context_is_refused(conn, bad):
+    """SAME SHAPE signing._CONTEXT validates in Python, given a SQL counterpart --
+    db/030 review finding: the fingerprint shape is CHECKed twice over in this file but
+    the context, before this fix, had no SQL-side guard at all. Both floored tables are
+    insert-only, so a malformed context would otherwise be a permanently uncorrectable
+    row."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.assertion_signature (target_kind, target_id, "
+            "payload_context, payload_digest, key_fingerprint, algorithm, signature, "
+            "signed_at) VALUES ('curated_interaction', 1, %s, %s, %s, 'Ed25519', %s, %s)",
+            (bad, b"\x02" * 32, FP, b"\x03" * 64, NOW))
 
 
 def test_a_signature_of_the_wrong_length_is_refused(conn):
@@ -226,3 +256,40 @@ def test_a_release_tag_cannot_be_reused(conn):
             "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
             "row_count, upstream_releases, published_by, published_at) "
             "VALUES ('2026.08.11', %s, 0, '[]'::jsonb, 'op', %s)", (b"\x04" * 32, NOW))
+
+
+@pytest.mark.parametrize("tag,bad_json", [
+    # THE SCALAR-NULL CASE SPECIFICALLY: 'null'::jsonb is a JSON value PRESENT in the
+    # column, distinct from SQL NULL, so upstream_releases's plain NOT NULL admits it --
+    # this is is_active_component's "NULL != false" lesson turned on itself, and the one
+    # case NOT NULL alone cannot catch.
+    ("2026.08.12", "null"),
+    ("2026.08.13", '"hello"'),
+    ("2026.08.14", "42"),
+    ("2026.08.15", "{}"),
+])
+def test_upstream_releases_must_be_a_json_array(conn, tag, bad_json):
+    """jsonb_typeof rules out the scalar `null`, other scalars and objects -- only an
+    array (possibly empty, `[]`) passes. Without this CHECK, a manifest whose
+    provenance is the JSON scalar `null` reads identically to one that honestly
+    recorded an empty list, and the release layer is insert-only: a malformed row here
+    would be permanently uncorrectable."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+            "row_count, upstream_releases, published_by, published_at) "
+            "VALUES (%s, %s, 0, %s::jsonb, 'op', %s)",
+            (tag, b"\x04" * 32, bad_json, NOW))
+
+
+def test_an_empty_array_is_a_legitimate_upstream_releases_value(conn):
+    """The control for the CHECK above: without it, a guard that rejected every jsonb
+    value would pass every test above while making the ordinary case -- a release with
+    no upstream loads, or the first ever -- impossible to record."""
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.16', %s, 0, '[]'::jsonb, 'op', %s)", (b"\x04" * 32, NOW))
+    assert conn.execute(
+        "SELECT upstream_releases FROM drugref.release_manifest "
+        "WHERE release_tag = '2026.08.16'").fetchone()[0] == []

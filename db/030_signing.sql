@@ -218,6 +218,20 @@ CREATE TABLE IF NOT EXISTS drugref.assertion_signature (
     CONSTRAINT assertion_signature_length CHECK (octet_length(signature) = 64),
     CONSTRAINT assertion_signature_fingerprint_shape
         CHECK (key_fingerprint ~ '^[0-9a-f]{64}$'),
+    -- SAME SHAPE signing._CONTEXT validates in Python, given a SQL counterpart. This
+    -- table is insert-only, so a malformed context -- unlike a malformed fingerprint,
+    -- which this file already CHECKs twice over -- would otherwise be a permanently
+    -- uncorrectable row.
+    --
+    -- DELIBERATELY NOT A FOREIGN KEY into signature_target_kind(target_kind,
+    -- payload_context), tempting as that looks: that catalog holds the CURRENT
+    -- context for a target kind, and a signature is a historical fact about the
+    -- context it was actually signed under. A future `curated_interaction/v2` must
+    -- not retroactively invalidate every `curated_interaction/v1` signature on file --
+    -- which is exactly what an FK tracking the catalog's current value would do the
+    -- day the catalog moves on.
+    CONSTRAINT assertion_signature_context_shape
+        CHECK (payload_context ~ '^[a-z_]+/v[0-9]+$'),
     -- A DEDUPE GUARD, not an identity: re-signing with a later signed_at yields a
     -- different payload and therefore a different digest, so a second row is legitimate
     -- and both are true. This refuses only recording the SAME attestation twice.
@@ -230,12 +244,17 @@ CREATE TRIGGER assertion_signature_insert_only
     BEFORE UPDATE OR DELETE ON drugref.assertion_signature
     FOR EACH ROW EXECUTE FUNCTION drugref.forbid_any_rewrite();
 
--- The lookup every verification does, and the one the read views join on. Read only by
--- the planner, so a test asserts it by name -- as with the live-key indexes.
-CREATE INDEX IF NOT EXISTS assertion_signature_by_target
-    ON drugref.assertion_signature (target_kind, target_id);
+-- NO SEPARATE (target_kind, target_id) INDEX: assertion_signature_unique below is a
+-- UNIQUE index on (target_kind, target_id, key_fingerprint, payload_digest), and its
+-- leading two columns already serve the "what signed this row?" lookup every
+-- verification does. A second index on the same leading prefix would be a permanent
+-- duplicate write cost on the table that grows fastest, for a query the first index
+-- already answers.
+--
 -- The lookup a key revocation does: "what did this key sign?" is the re-review queue a
--- compromise produces, and without this it is a sequential scan.
+-- compromise produces, and key_fingerprint is only THIRD in the unique index -- not a
+-- usable prefix -- so this one earns its place. Read only by the planner, so a test
+-- asserts it by name -- as with the live-key indexes.
 CREATE INDEX IF NOT EXISTS assertion_signature_by_key
     ON drugref.assertion_signature (key_fingerprint);
 
@@ -266,15 +285,28 @@ CREATE TABLE IF NOT EXISTS drugref.release_manifest (
     manifest_digest   bytea       NOT NULL,
     -- REDUNDANT WITH THE ENTRIES ON PURPOSE: a group truncated at its END is otherwise
     -- detectable only by recomputing the whole digest, and a scalar count makes that
-    -- specific failure nameable.
+    -- specific failure nameable. WRITER-ASSERTED, not schema-enforced: nothing here
+    -- checks row_count against the entries actually inserted (that would need new
+    -- PL/pgSQL, out of scope for a floor migration, and genuinely belongs to the
+    -- writer). The release verifier (releases.py, task 7's `drugref verify --release`)
+    -- is what actually checks it, by recomputing the count from
+    -- release_manifest_entry and comparing.
     row_count         integer     NOT NULL,
+    -- AN ARRAY, ENFORCED: jsonb's NOT NULL admits the JSON scalar `null` (a value
+    -- present in the column, distinct from SQL NULL) -- so NOT NULL alone would let a
+    -- manifest with no recorded provenance read identically to one that honestly
+    -- recorded an empty list, this file's own is_active_component lesson turned on
+    -- itself. jsonb_typeof rules out `null`, scalars and objects; only an array
+    -- (possibly empty, `[]`) passes.
     upstream_releases jsonb       NOT NULL,
     published_by      text        NOT NULL,
     published_at      timestamptz NOT NULL,
     recorded_at       timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT release_manifest_row_count CHECK (row_count >= 0),
     CONSTRAINT release_manifest_digest_length
-        CHECK (octet_length(manifest_digest) = 32)
+        CHECK (octet_length(manifest_digest) = 32),
+    CONSTRAINT release_manifest_upstream_releases_array
+        CHECK (jsonb_typeof(upstream_releases) = 'array')
 );
 
 -- KEYED ON THE NATURAL KEY, NEVER ON target_id. target_id is a database-local
@@ -295,11 +327,19 @@ CREATE TABLE IF NOT EXISTS drugref.release_manifest_entry (
                            REFERENCES drugref.signature_target_kind(target_kind),
     natural_key     text   NOT NULL,
     target_id       bigint NOT NULL,
+    -- SAME SHAPE CHECK as assertion_signature.payload_context, and the same reason NOT
+    -- to promote it to an FK into signature_target_kind: this table is insert-only, so
+    -- a malformed context would be permanently uncorrectable, but the catalog holds
+    -- the CURRENT context for a target kind while an entry is a historical fact about
+    -- the context an ENTRY was actually built under -- a future `.../v2` must not
+    -- retroactively break a manifest entry recorded under `.../v1`.
     payload_context text   NOT NULL,
     payload_digest  bytea  NOT NULL,
     PRIMARY KEY (manifest_id, target_kind, natural_key),
     CONSTRAINT release_manifest_entry_digest_length
-        CHECK (octet_length(payload_digest) = 32)
+        CHECK (octet_length(payload_digest) = 32),
+    CONSTRAINT release_manifest_entry_context_shape
+        CHECK (payload_context ~ '^[a-z_]+/v[0-9]+$')
 );
 
 DROP TRIGGER IF EXISTS release_manifest_insert_only ON drugref.release_manifest;

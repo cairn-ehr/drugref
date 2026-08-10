@@ -82,8 +82,8 @@ def test_every_single_live_trigger_has_a_matching_index(conn, assert_live_key_in
     stop iterating over the pair. Both directions are needed.
     """
     tables = _single_live_tables(conn)
-    assert len(tables) >= 7, (
-        f"expected at least the seven known single-live tables, found {len(tables)}: "
+    assert len(tables) >= 8, (
+        f"expected at least the eight known single-live tables, found {len(tables)}: "
         f"{[t for t, _ in tables]} -- a trigger disappearing is itself the regression")
     for table, columns in tables:
         assert_live_key_index(f"{table}_live_key", table, columns)
