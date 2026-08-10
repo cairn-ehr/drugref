@@ -21,13 +21,13 @@ Run:  uv run python -m tests.make_signing_vectors > tests/fixtures/signing_vecto
 """
 import json
 
-from drugref import signing
+from drugref import releases, signing
 
 TEST_PRIVATE = bytes(range(32))
 
 
 def _cases(fp: str) -> list[dict]:
-    """The three vectors, each earning its place by showing something the property
+    """The four vectors, each earning its place by showing something the property
     tests in test_signing_payload.py cannot show together (see module docstring there
     for what those tests already prove in isolation).
 
@@ -91,6 +91,32 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-08-10T02:16:41.500000Z"],
     ]
+    # Case 4: THE SAME judgement as case 1, rebuilt the way a MANIFEST ENTRY's digest is
+    # -- the two attestation fields replaced by the entry sentinel pair. An entry attests
+    # CONTENT, never an attestation, so it names no signer (`signer_key_fingerprint` is a
+    # present EMPTY STRING, not a NULL: the field is there, it just identifies nobody)
+    # and no moment (`signed_at` is releases.ENTRY_DIGEST_SIGNED_AT, the fixed 1970
+    # sentinel every entry digest in every manifest is built under, forever).
+    #
+    # BOTH VALUES ARE READ FROM THE PRODUCTION CONSTANTS, never typed here, which is the
+    # whole point of the case: `ENTRY_DIGEST_SIGNED_AT` is a frozen wire constant that
+    # nothing used to read, so changing `1970-01-01` left the suite green while silently
+    # invalidating every manifest ever published. Regenerate this file after such a
+    # change and the committed bytes move; do not regenerate and
+    # test_the_entry_digest_sentinel_is_pinned_by_a_published_vector goes red. Either way
+    # the change stops being silent.
+    #
+    # It also publishes, checkable by eye and by sha256sum, the exact bytes a third party
+    # must reproduce to confirm ONE manifest entry -- which case 3 references as a digest
+    # but never spells out.
+    entry_digest_fields = [
+        [name, value] for name, value in interaction_fields
+        if name not in signing.ATTESTATION_FIELDS
+    ] + [
+        ["signer_key_fingerprint", ""],
+        ["signed_at", signing.render(releases.ENTRY_DIGEST_SIGNED_AT)],
+    ]
+
     interaction_payload = signing.canonical_payload(
         "curated_interaction/v1", [(n, v) for n, v in interaction_fields])
     condition_payload = signing.canonical_payload(
@@ -106,6 +132,11 @@ def _cases(fp: str) -> list[dict]:
             "name": "a retiring condition ruling, ungraded",
             "context": "curated_condition/v1",
             "fields": condition_fields,
+        },
+        {
+            "name": "a manifest ENTRY digest over case 1's judgement",
+            "context": "curated_interaction/v1",
+            "fields": entry_digest_fields,
         },
         {
             # Case 3: the only case exercising groups (spec 5.5) -- a release manifest

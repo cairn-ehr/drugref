@@ -789,7 +789,9 @@ Suite **943 → 956**.
 
 ### Issue 74 — the live-key index tests could not fail
 
-Seven tables carry a single-live natural-key partial index, and the tests protecting them asserted the property
+Eight tables carry a single-live natural-key partial index (**seven** when this round ran; `db/030`'s `signing_key`
+is the eighth, and the catalog-derived guard below picked it up the day that migration landed). The tests
+protecting them asserted the property
 in **three different strengths**: 5c.1's two checked existence + partial + non-unique + column list, the
 accumulation suite's four parametrized ones checked existence + the `WHERE` substring, and
 `class_expansion_policy_live_key` — the one the parametrized test never covered, because `db/027` added it four
@@ -977,13 +979,13 @@ rebuild script that caused it cannot gate on it; that is a CLI-contract decision
 ## Slice 5c.4 — signing the curated overlay (`db/030`, measured 2026-08-10 on `drugref_5c4`)
 
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md). Published record:
-[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1202**.
+[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1249**.
 
 **Two layers, one payload format, one key registry.** Curator-held Ed25519 keys sign one curated row's canonical
 payload (`assertion_signature`); an institutional key signs a per-release **content manifest** enumerating every
 live curated assertion (`release_manifest` + `release_manifest_entry`). Signatures are **detached rows, never a
 column** — which is what lets a row be signed at any later time and lets a second reviewer counter-sign.
-`cli.py` 508 → 346 lines, split into `cli.py` + `cli_chain.py` (the pure, DB-free argument layer), then
+`cli.py` 508 → 347 lines, split into `cli.py` + `cli_chain.py` (the pure, DB-free argument layer), then
 `cli_signing.py` + `cli_signing_release.py`.
 
 **MEASURED on a fresh `drugref_5c4`**, built from the real releases (UNII 26Feb2026 → MED-RT 2026.07.06 → MeSH 2026
@@ -1040,7 +1042,14 @@ and exit 1 — **authenticity and integrity are separate answers, and the CLI re
   its registration time, so treating it as a boundary would expire every signature ever made. Note the covering
   test is narrow: `test_a_signed_curated_row_reads_signed` does NOT pin it (its fixed `SIGNED_AT` predates the
   key's `status_from`, masking the comparison) — only
-  `test_one_good_signature_outweighs_one_revoked_one`, which signs LATER, catches its removal.
+  `test_one_good_signature_outweighs_one_revoked_one`, which signs LATER, catches its removal. **That one test
+  was itself a dated time bomb that failed OPEN** (final review): the key it compares against registered at the
+  DATABASE's `now()` while the signature sat at the fixed literal `2026-12-01`, so on and after that date the
+  comparison flips and the mutation survives with the suite green. Measured both ways. **Standing rule, second
+  instance in this same file: when a test compares two instants, BOTH must be absolute** — moving the literal
+  alone does not fix it. `test_the_sql_filter_and_signing_verdict_agree` is now a second, independent guard,
+  driving `db/030`'s SQL re-typing and `signing.verdict` over the same nine inputs (Postgres cannot call Python,
+  so the duplication is unavoidable — what was missing was anything pinning the two together).
 - **The read views join signatures with a LEFT join, and INNER would be a silent recall cut.** An unsigned
   curated row must still be served, labelled `unsigned`. Flipping either join to INNER fails exactly the
   unsigned-row tests and nothing else — **fewer rows is the harm direction for a contraindication**, and a
@@ -1063,10 +1072,39 @@ and exit 1 — **authenticity and integrity are separate answers, and the CLI re
   node that *rebuilt* rather than restored gets different ones and would report 100% churn against a manifest
   whose signed payload is byte-identical. Correction-vs-alteration is decided by walking the supersession chain
   with the digest comparison FIRST, never by comparing ids.
-- **The two seeded vocabulary tables carry no append-only floor** (deferred, matching the `ci_axis` /
-  `source_tier` precedent), so `UPDATE signing_key_status_kind SET invalidates_all_signatures = false WHERE
-  status = 'compromised'` silently disarms every compromise verdict. A floor here is purely additive later — a
-  trigger, not a column — which is why it did not have to land in the immutable file.
+- **WHICH COLUMNS render a `natural_key` is FROZEN in `signing.NATURAL_KEY_COLUMNS`, not read from
+  `pg_trigger`** (final review, C1). This is the SECOND place the house derive-from-the-catalog rule is
+  deliberately inverted, and it is much easier to miss than the field lists: a natural key looks like
+  bookkeeping, but `release_manifest_entry.natural_key` is a *rendered string* recorded at publish time, a signed
+  member of the entry group, AND the key verification pairs on. Deriving it from `pg_trigger.tgargs` (as
+  `releases._natural_key_columns` did) compares a past recording against today's schema — widen a curated table's
+  single-live trigger by one column, the additive migration `db/029` itself contemplates, and every live key
+  re-renders, none pairs, and an untouched database reports 100% churn. `enumerate_live` selects the frozen list
+  by the CURRENT context when publishing; `verify_release` passes the contexts read back off the manifest's own
+  entries. The alarm the rule exists for is rebuilt in `test_signing_payload_coverage.py`, exactly as it is for
+  `FIELD_LISTS`.
+- **`signatures._target_kind_catalog` and `._row_content_fields` have callers OUTSIDE `signatures.py`** despite
+  their leading underscore (`releases.py`, `release_verification.py`), and both docstrings now say so. A
+  near-duplicate `releases._target_table` existed for a while, justified in its own docstring on the grounds that
+  `_target_kind_catalog` "is private to signatures.py" — while `releases.py` was already calling it two functions
+  away. Deleted. **Fifth false WHY comment of this branch**: a comment that explains a choice by asserting
+  something about another module is a comment that has to be re-checked, not trusted.
+- **`release_manifest` is a real `signature_target_kind` row but NOT a per-row target.** Its payload is built
+  from `release_manifest_entry` and derived counts, so `drugref sign`/`verify --target-kind release_manifest`
+  used to die with an uncaught `psycopg.errors.UndefinedColumn: column "entry_count" does not exist` — and only
+  once a real release existed to name. `cli.main` catches `RuntimeError`, not `psycopg.Error`. Both commands now
+  reject the kind and point at `verify --release`.
+- **`signing_key_status_kind` carries no append-only floor** — now lodged as **issue 85** (deferred, matching
+  the `ci_axis` / `source_tier` precedent), so `UPDATE signing_key_status_kind SET invalidates_all_signatures =
+  false WHERE status = 'compromised'` silently disarms every compromise verdict. A floor here is purely additive
+  later — a trigger, not a column — which is why it did not have to land in the immutable file.
+  **CORRECTED by the final whole-branch review:** this note used to read "the **two** seeded vocabulary tables",
+  which names the wrong remedy. The floor belongs on `signing_key_status_kind` **alone**. Its sibling
+  `signature_target_kind` is *designed* to be updated — moving a target kind to a `/v2` `payload_context` is
+  precisely the migration the whole read-back mechanism exists to support (`payload_fields`' override,
+  `verify_target` rebuilding each signature under its own stored context, `FIELD_LISTS` keeping every retired
+  version forever, and since the final review `releases.publish` reading that column instead of a literal).
+  Flooring it would forbid the one migration that machinery was built for.
 - **`tests/test_cli_signing*.py` cannot really commit**, because other modules assert blanket unfiltered counts on
   shared tables. Its `_NoCommit` harness therefore fakes commit with `RELEASE SAVEPOINT`, which **cannot fire
   DEFERRED constraints** — nine deferred triggers were disabled for that file until `SET CONSTRAINTS ALL
@@ -1127,11 +1165,13 @@ overlay** for curated knowledge — **Plan C is the first content written to tha
 `class_expansion_policy` now sits on its floor too, **the third, edited-in-place category no longer exists** (that table is
 still cleared by no ingest).
 
-**"Signed" was an overstatement, corrected 2026-08-06 by the 5c.1 design round.** No signing infrastructure exists
-anywhere in the repo — no key management, no signing identity, no verification path — so the tier is **signable**, not
-signed. The constraint that follows is sharp and is why 5c.1 ships empty: the floor refuses UPDATE, so **a row committed
-before signing exists can never be signed retrospectively**, and signing must therefore land before the first curated
-row (5c.4, ahead of 5c.2's ONC content).
+**"Signed" was an overstatement in 5c.1 and is accurate again since 5c.4 (2026-08-10).** The 5c.1 design round
+corrected the word to **signable** because no signing infrastructure existed — no key management, no signing identity,
+no verification path. `db/030` built all three, so the tier is **SIGNED**: see § "Slice 5c.4" below and the
+[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/) record. The constraint
+5c.1 reasoned from — the floor refuses UPDATE, so a row committed before signing exists could never be signed
+retrospectively — is why 5c.1 shipped empty and why 5c.4 landed ahead of 5c.2's ONC content. **5c.4 also dissolved it**:
+signatures are DETACHED ROWS, not a column, so any row can be signed at any later time. Good ordering, not a trap.
 
 **Rule-6 determination, made in the same round: DDInter is CC BY-NC-SA and is OUT of the bundled ladder permanently** —
 non-commercial, so not AGPL-3.0-compatible. ROADMAP's old "DDInter *if its licence confirms*" predated the check. It may
@@ -1144,7 +1184,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1202 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1249 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
@@ -1241,11 +1281,15 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS `drugref_5c4`**
-  (built 2026-08-10 from the real releases, migrated through `db/030`): it holds every COUNT and INGEST SUMMARY in
-  § "Slice 5c.1" *and* § "Slice 5c.4", plus the only hot-path `EXPLAIN ANALYZE` taken against a **populated, signed**
-  overlay. Note it is no longer pristine post-chain — the 5c.4 end-to-end exercise left **two** curated
-  interaction rows, three registered keys (one `compromised`, one `rotated`), two row signatures and one published
-  release in it, all deliberately. The five must-not-move counts were taken **before** any of that.
+  (built 2026-08-10 from the real releases, migrated through `db/030`): it **REPRODUCED** every COUNT and INGEST
+  SUMMARY in § "Slice 5c.1" *and* § "Slice 5c.4" when the chain finished, and it is where the only hot-path
+  `EXPLAIN ANALYZE` against a **populated, signed** overlay was taken. **It does not still HOLD all of them** —
+  two sentences claiming both stood here until the final review — and the distinction decides whether a figure may
+  be read off it today: the 5c.4 end-to-end exercise afterwards left **two** curated interaction rows, three
+  registered keys (one `compromised`, one `rotated`), two row signatures and one published release in it, all
+  deliberately. The five must-not-move counts were taken **before** any of that and are unaffected (this slice
+  added no projection); the two curated rows have since moved `gap_uncurated_interaction_rule` from **595** to
+  **593** there. Re-measure on a fresh build before quoting a gap count.
 
   **CORRECTED 2026-08-10 — `drugref_5c1m` IS EMPTY, and this file said otherwise for two rounds.** It used to read
   "`drugref_5c1m` holds the real releases with the MERGED `db/029` … the current measurement database and the one to
@@ -1305,4 +1349,5 @@ ran in CI and `ruff` was not even a project dependency.
 - Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by `.github/workflows/docs.yml`; `uv run
   --group docs mkdocs build --strict -f docs-site/mkdocs.yml` is its test. Its **Design decisions** section holds *living*
   records and is **where a standing correction to an artefact that cannot be edited — an immutable spec, or a MERGED
-  migration's prose — goes**. **Four** live there; a reversed decision is removed, not tombstoned.
+  migration's prose — goes**. **Eleven** live there (re-count with `ls docs-site/docs/decisions/*.md`, never
+  quote); a reversed decision is removed, not tombstoned.

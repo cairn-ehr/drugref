@@ -5,9 +5,9 @@ database, right now (db/030, spec 5.5/7.2/8).
 SPLIT OUT OF `releases.py` ON SIZE, ONE DIRECTION ONLY. `releases.py` builds a
 manifest (`enumerate_live`, `manifest_payload`, `publish`); this module checks one.
 The dependency runs one way -- this module imports `ManifestEntry`, `enumerate_live`,
-`manifest_payload`, `ENTRY_DIGEST_SIGNED_AT` and `_target_table` FROM `releases.py`,
-and `releases.py` imports nothing back -- so there is no cycle: a manifest can be built
-without ever importing this file, and this file cannot exist without that one.
+`manifest_payload` and `ENTRY_DIGEST_SIGNED_AT` FROM `releases.py`, and `releases.py`
+imports nothing back -- so there is no cycle: a manifest can be built without ever
+importing this file, and this file cannot exist without that one.
 
 THE SIGNATURE HALF cannot reuse `signatures.verify_target`. That function assumes a
 payload built by selecting the frozen field list's names as literal COLUMNS of the
@@ -36,8 +36,8 @@ import psycopg
 from psycopg import sql
 
 from drugref import keys, signatures, signing
-from drugref.releases import (ENTRY_DIGEST_SIGNED_AT, ManifestEntry, _target_table,
-                              enumerate_live, manifest_payload)
+from drugref.releases import (ENTRY_DIGEST_SIGNED_AT, ManifestEntry, enumerate_live,
+                              manifest_payload)
 
 
 @dataclass(frozen=True)
@@ -166,8 +166,17 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
     `UnsupportedAlgorithmError` rather than being silently checked against the wrong
     scheme.
 
-    `keys.live`/`keys.key_status` ARE LOOKED UP PER SIGNATURE, since two signatures
-    over one manifest could legitimately name different keys (a rotation).
+    `keys.live`/`keys.key_status` ARE LOOKED UP PER SIGNATURE, UNCACHED, and the reason
+    is loop LENGTH, not differing keys -- an earlier version of this line said "since
+    two signatures over one manifest could legitimately name different keys (a
+    rotation)", which does not support the choice at all: `signatures.verify_target`
+    caches these two lookups keyed BY fingerprint precisely so differing keys ARE
+    handled and
+    repeated ones are not re-fetched. The honest reason is that this loop runs over the
+    signatures on ONE manifest -- one at publication, two if somebody counter-signs --
+    where a cache is machinery for a repetition that does not happen. `verify_target`
+    caches because it is called once per curated row across the whole overlay, which is
+    a different loop with a different cost.
     """
     published_by, published_at, upstream_releases = conn.execute(
         "SELECT published_by, published_at, upstream_releases "
@@ -212,6 +221,13 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
             key.public_key, payload, signature)
         verdicts.append(signing.verdict(
             status, signature_ok=signature_ok, signed_at=signed_at))
+    # `[0]` -- THE EARLIEST -- NOT `all(...)` AND NOT `any(...)`. See this function's
+    # docstring for why "any" is unsound; "all" is unsound in the mirror direction and
+    # was reachable for a while because the only two-signature test produced
+    # `[False, True]`, on which `[0]` and `all(...)` agree. A LATER counter-signature
+    # covers genuinely different bytes (`signed_at` is inside them, spec 4.4), so it
+    # NEVER matches `manifest_digest` and `all(...)` would report every legitimately
+    # counter-signed release as having a wrong digest.
     return _worst_verdict(verdicts), digest_matches[0]
 
 
@@ -255,7 +271,15 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
     direction that asks a human to look, which is strictly better than either of the
     two failure modes this function replaces.
     """
-    table, pk_column = _target_table(conn, target_kind)
+    # `signatures._target_kind_catalog` IS THE ONE READER of `signature_target_kind`
+    # (db/006's lesson), and its third value -- the CURRENT context -- is deliberately
+    # discarded here: this function is handed the context it must reproduce by its
+    # caller, read off the manifest entry being checked. An earlier draft called a
+    # near-duplicate `releases._target_table` instead, whose stated justification was
+    # that `_target_kind_catalog` "is private to signatures.py" -- while `releases.py`
+    # was already calling it two functions away. That second query is deleted.
+    table, pk_column, _current_context = signatures._target_kind_catalog(
+        conn, target_kind)
     current_id = live_target_id
     seen = {current_id}
     while True:
@@ -317,6 +341,14 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     only when it does not -- Task 7's C1 fix, one layer up: re-deriving context from
     the catalog is right when SIGNING and silently wrong for VERIFYING.
 
+    THE PAIRING KEY ITSELF IS ALSO RECONSTRUCTED FROM THE PAST, not re-derived from the
+    present schema -- C1 (final review). Which COLUMNS render a natural key is frozen
+    per context in `signing.NATURAL_KEY_COLUMNS`, and this function tells
+    `enumerate_live` which context each kind's entries were recorded under, so a later
+    migration that widens a curated table's natural key cannot silently re-key the
+    published set. See the comment at the `natural_key_contexts` construction below,
+    and that constant's own.
+
     ON A MISMATCH, `_published_content_is_history` decides DROPPED+ADDED (a legitimate
     append-only correction) from ALTERED (the manifest's claim matches nothing in this
     row's real history) -- see that function's own docstring; this is the fix for
@@ -347,9 +379,33 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     }
     row_count_ok = len(manifest_entries) == stored_row_count
 
+    # THE LIVE SIDE'S NATURAL KEYS ARE RENDERED UNDER THE ENTRIES' OWN STORED CONTEXTS,
+    # never today's -- C1 (final review), and the same "reconstruct the past" rule
+    # `payload_context` and `algorithm` already follow one column over.
+    # `release_manifest_entry.natural_key` is a RENDERED STRING recorded at publish time
+    # AND a signed member of the entry group; re-deriving which COLUMNS produced it from
+    # the present schema means comparing a past recording against a present shape. The
+    # reviewer measured the consequence by widening `curated_interaction`'s single-live
+    # trigger the way db/029 says an additive migration one day will: every live key
+    # re-rendered, none paired, and an untouched database reported 100% churn.
+    #
+    # ONE CONTEXT PER KIND, taken deterministically. `publish` writes one context for
+    # every entry of a kind in a manifest, so this mapping is a singleton per kind in
+    # anything drugref produced. Iterating the entries in sorted order and keeping the
+    # first makes a hand-built manifest that MIXED contexts for one kind deterministic
+    # too: entries under the other context simply fail to pair and report as
+    # dropped + added -- a loud finding that asks a human to look, which is the same
+    # conservative direction `_published_content_is_history` chose, and never a crash on
+    # the verification path.
+    natural_key_contexts = {}
+    for key in sorted(manifest_entries):
+        target_kind, _natural_key = key
+        natural_key_contexts.setdefault(target_kind, manifest_entries[key][0])
+
     live_entries = {
         (entry.target_kind, entry.natural_key): entry
-        for entry in enumerate_live(conn, signed_at=ENTRY_DIGEST_SIGNED_AT)
+        for entry in enumerate_live(conn, signed_at=ENTRY_DIGEST_SIGNED_AT,
+                                    natural_key_contexts=natural_key_contexts)
     }
 
     manifest_keys = set(manifest_entries)

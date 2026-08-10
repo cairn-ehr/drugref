@@ -1,8 +1,8 @@
 # src/drugref/releases.py
 """Release manifests: enumerate the live curated overlay and publish it as a signed
 manifest (db/030, spec 5.5/8). Verification lives in `release_verification.py` --
-see that module's docstring for why the split, and `_target_table`'s docstring below
-for the one direction this module is imported back across it.
+see that module's docstring for why the split and for the one direction this module
+is imported back across it.
 
 ONE MECHANISM, BOTH LAYERS. `signatures.py` signs one curated row; this module signs
 a whole RELEASE -- a snapshot enumeration of every live curated row at one moment --
@@ -43,8 +43,9 @@ from drugref import signatures, signing
 # has no stable row identity to snapshot at all -- see db/029's own note on
 # ddi_candidate_pair). This is a scope decision belonging to this module, not a second
 # copy of the target_kind -> table mapping: `signature_target_kind` remains the one
-# place that mapping lives (`_target_table` below reads it), and 'release_manifest'
-# itself is deliberately absent from this tuple -- a release cannot enumerate itself.
+# place that mapping lives (`signatures._target_kind_catalog` is the one function that
+# reads it, and this module calls it), and 'release_manifest' itself is deliberately
+# absent from this tuple -- a release cannot enumerate itself.
 _CURATED_KINDS = ("curated_interaction", "curated_condition")
 
 # THE SENTINEL A MANIFEST ENTRY'S DIGEST IS BUILT UNDER. See `enumerate_live`'s
@@ -53,95 +54,49 @@ _CURATED_KINDS = ("curated_interaction", "curated_condition")
 ENTRY_DIGEST_SIGNED_AT = dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
 
 
-def _target_table(conn: psycopg.Connection, target_kind: str) -> tuple[str, str]:
-    """`(target_table, pk_column)` for one `target_kind`, read from
-    `signature_target_kind` -- the one home for this mapping (db/006's lesson,
-    `signatures._target_kind_catalog`'s twin). Kept as this module's own small query
-    rather than importing that function: it is private to `signatures.py`, and the
-    query itself is a single SELECT against a seed table, not a second copy of the
-    vocabulary it reads.
-
-    IMPORTED BY `release_verification.py` -- the one place this module is read FROM
-    the other side of the split, never the reverse (no import cycle): that module
-    needs the same `(table, pk_column)` pair to walk a natural key's supersession
-    history, and re-deriving it a second way here would be exactly the kind of second
-    home this function's own first paragraph already refuses to create.
-    """
-    row = conn.execute(
-        "SELECT target_table, pk_column FROM drugref.signature_target_kind "
-        "WHERE target_kind = %s", (target_kind,)).fetchone()
-    if row is None:
-        raise signatures.UnknownTargetError(
-            f"{target_kind!r} is not a signature target kind. The vocabulary lives in "
-            "drugref.signature_target_kind; adding one is an INSERT there.")
-    return row
-
-
-def _natural_key_columns(conn: psycopg.Connection, table: str) -> tuple[str, ...]:
-    """The natural-key column list `table`'s single-live trigger enforces, read from
-    `pg_trigger.tgargs` rather than a second Python mapping -- the gates round's own
-    precedent (tests/test_live_key_index_guard.py's `_single_live_tables` derives
-    exactly this list, for the same reason). `forbid_multiple_live_assertions`'s
-    arguments ARE the natural key (db/020's floor: the trigger enforces "at most one
-    live row per this key", which is the overlay's own definition of one), so reading
-    them back is the same fact db/020's migration already wrote down once, not a second
-    guess at it. A hand-maintained `{"curated_interaction": (...), ...}` dict here would
-    be exactly the second home db/006 found drifting, and would silently stop covering a
-    ninth curated table the day its migration lands rather than the day its own tests
-    run.
-
-    EXACTLY ONE ROW EXPECTED, made explicit rather than assumed by `.fetchone()`
-    silently taking whichever the planner returns first: a table wired to TWO such
-    triggers would have two different candidate natural keys, and picking one
-    arbitrarily is a wrong answer dressed as a working one. `.fetchall()` plus a
-    length check turns that into a loud, immediate failure instead.
-    """
-    rows = conn.execute(
-        "SELECT encode(t.tgargs, 'escape') "
-        "FROM pg_trigger t "
-        "JOIN pg_class c ON c.oid = t.tgrelid "
-        "JOIN pg_proc p ON p.oid = t.tgfoid "
-        "JOIN pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = 'drugref' AND NOT t.tgisinternal "
-        "AND p.proname = 'forbid_multiple_live_assertions' AND c.relname = %s",
-        (table,)).fetchall()
-    if not rows:
-        raise ValueError(
-            f"drugref.{table} carries no single-live natural-key trigger (db/020's "
-            "floor), so it has no natural key this module can derive. Every table a "
-            "release covers must carry one -- see _CURATED_KINDS.")
-    if len(rows) > 1:
-        raise ValueError(
-            f"drugref.{table} carries {len(rows)} single-live triggers -- this "
-            "module cannot tell which one names the table's natural key. Every "
-            "curated table so far carries exactly one; a second is a schema change "
-            "this function needs to be taught about deliberately, not guess at.")
-    # Postgres's 'escape' format writes a NUL argument terminator as the literal text
-    # \000 (backslash, then three digit characters), NOT an actual NUL byte -- the same
-    # split test_live_key_index_guard.py uses for the identical reason.
-    return tuple(filter(None, rows[0][0].split("\\000")))
-
-
 def _render_natural_key(key_values) -> str:
     """The key columns' own rendered values, slash-joined -- spec 5.5's exact format:
     "the interaction's is its (subject_moiety_uuid, object_class_uuid, relationship)
-    triple ... slash-joined". Safe because every natural-key column on every curated
-    table is `NOT NULL` (db/029): `signing.render` never returns `None` for one, so a
-    stray key value can never collapse the join into ambiguous adjacent slashes.
+    triple ... slash-joined". The ONE join site, called by both `natural_key_of` and
+    `enumerate_live`, so the two can never disagree about the separator or the order.
+
+    THE HAZARD A SLASH-JOIN CARRIES IS AN EMBEDDED SLASH, not a missing value, and an
+    earlier version of this comment named the wrong one. A `None` cannot arrive
+    silently: every natural-key column on every curated table is `NOT NULL` (db/029),
+    and even if one were not, `signing.render(None)` returns `None` and `str.join`
+    raises `TypeError` immediately -- loud, never ambiguous.
+
+    A `/` INSIDE a value is the real ambiguity, since `a/b` + `c` and `a` + `b/c`
+    render identically. No key column can hold one today -- both curated keys are UUIDs
+    plus, for the interaction, `relationship`, whose values come from a CHECK vocabulary
+    with no slash in them -- so this is a property to re-check when a natural key first
+    admits free text, not a live defect. The signed bytes are not at risk either way:
+    `canonical_payload` length-prefixes this whole string as ONE field, so an ambiguous
+    key can confuse PAIRING but can never forge a field boundary.
     """
     return "/".join(signing.render(v) for v in key_values)
 
 
-def natural_key_of(conn: psycopg.Connection, target_kind: str, target_id: int) -> str:
+def natural_key_of(conn: psycopg.Connection, target_kind: str, target_id: int, *,
+                   payload_context: str | None = None) -> str:
     """One row's own natural key, canonically rendered. PUBLIC, and one of the two
     places this rendering happens -- `enumerate_live` derives the identical string from
     fields it has already fetched for a different reason (see its own docstring)
-    rather than calling back into this function per row, but both ultimately render
-    through `signing.render`, so a manifest built by one drugref and verified by
-    another can never disagree about what a row's natural key is.
+    rather than calling back into this function per row, but both read the SAME frozen
+    column list and both join through `_render_natural_key`, so a manifest built by one
+    drugref and verified by another can never disagree about a row's natural key.
+
+    `payload_context` IS AN OVERRIDE with `signatures.payload_fields`' exact meaning:
+    `None` reads today's context from `signature_target_kind` (right when a key is being
+    minted for a manifest about to be published), an explicit value pins a past one
+    (right when reproducing the key a published entry recorded). Which COLUMNS a context
+    names is frozen in `signing.NATURAL_KEY_COLUMNS` -- see that constant for why
+    reading them back out of `pg_trigger` instead was a measured defect.
     """
-    table, pk_column = _target_table(conn, target_kind)
-    columns = _natural_key_columns(conn, table)
+    table, pk_column, current_context = signatures._target_kind_catalog(
+        conn, target_kind)
+    context = payload_context if payload_context is not None else current_context
+    columns = signing.NATURAL_KEY_COLUMNS[context]
     row = conn.execute(
         sql.SQL("SELECT {cols} FROM drugref.{table} WHERE {pk} = %s").format(
             cols=sql.SQL(", ").join(sql.Identifier(c) for c in columns),
@@ -172,9 +127,17 @@ class ManifestEntry:
 
 
 def enumerate_live(conn: psycopg.Connection, *,
-                    signed_at: dt.datetime = ENTRY_DIGEST_SIGNED_AT
+                    signed_at: dt.datetime = ENTRY_DIGEST_SIGNED_AT,
+                    natural_key_contexts: dict[str, str] | None = None
                     ) -> list[ManifestEntry]:
     """Every LIVE row across both curated tables, as a `ManifestEntry`.
+
+    ONLY LIVE ROWS -- `WHERE superseded_by IS NULL` below is load-bearing and is not
+    merely tidy. Without it a corrected natural key contributes TWO entries, the old
+    and the new, and `verify_release` (which indexes this list by natural key) would
+    silently keep whichever came last, making the answer depend on a `SELECT`'s row
+    order. A manifest is a snapshot of what drugref asserts NOW, and a superseded row
+    is precisely what drugref no longer asserts.
 
     DEFAULTS TO `ENTRY_DIGEST_SIGNED_AT` rather than requiring the caller to name it
     every time (an earlier draft of this function made it mandatory) -- a required
@@ -204,10 +167,28 @@ def enumerate_live(conn: psycopg.Connection, *,
     THE NATURAL KEY IS A SUBSET OF THOSE SAME CONTENT FIELDS -- `_row_content_fields`
     already returns every frozen field, ALREADY RENDERED, and a curated table's natural
     key columns are always among them (a row's identity is always part of what gets
-    signed; `_natural_key_columns` and the frozen field lists have never disagreed on
-    this, and a KeyError below is exactly how that would be caught if they ever did).
+    signed; `signing.NATURAL_KEY_COLUMNS` and `signing.FIELD_LISTS` have never disagreed
+    on this, and a KeyError below is exactly how that would be caught if they ever did).
     So the natural key is read straight out of that same field list rather than issued
     as a second SELECT -- one row read, not two, per entry.
+
+    WHICH COLUMNS MAKE THE KEY IS FROZEN, AND WHICH FROZEN LIST APPLIES IS THE CALLER'S
+    CHOICE. `natural_key_contexts` maps `target_kind -> payload_context` and defaults to
+    `None`, meaning "use the catalog's CURRENT context for each kind" -- right when
+    PUBLISHING, because a manifest being minted now records today's keys.
+    `verify_release` passes the contexts it read off the manifest's OWN entries, because
+    pairing a past recording against today's columns is the C1 defect
+    `signing.NATURAL_KEY_COLUMNS` exists to close: widen a curated table's single-live
+    trigger by one column and every live key re-renders, pairs with nothing, and an
+    untouched database reports 100% churn. This is `signatures.payload_fields`'
+    `payload_context` override, one layer up and one question over.
+
+    NOTE THE ASYMMETRY WITH THE DIGEST, which is deliberate: the digest below is still
+    built under the CATALOG's current context, because `verify_release` recomputes it
+    under an entry's stored context itself when the two differ (and reuses this one when
+    they agree -- review round 2's C5). Only the natural key has to be reproduced here,
+    because only the natural key is what the two sides are PAIRED by: get it wrong and
+    there is no entry to compare a digest against at all.
 
     `signed_at` IS A FIXED SENTINEL, NOT A REAL SIGNING MOMENT -- the one place this
     module's construction diverges from `signatures.py`'s own. A curator's signature
@@ -228,7 +209,8 @@ def enumerate_live(conn: psycopg.Connection, *,
     entries = []
     for target_kind in _CURATED_KINDS:
         table, pk_column, context = signatures._target_kind_catalog(conn, target_kind)
-        key_columns = _natural_key_columns(conn, table)
+        key_context = (natural_key_contexts or {}).get(target_kind, context)
+        key_columns = signing.NATURAL_KEY_COLUMNS[key_context]
         rows = conn.execute(
             sql.SQL("SELECT {pk} FROM drugref.{table} "
                     "WHERE superseded_by IS NULL ORDER BY {pk}").format(
@@ -237,7 +219,7 @@ def enumerate_live(conn: psycopg.Connection, *,
             fields = signatures._row_content_fields(
                 conn, table, pk_column, target_id, context)
             field_map = dict(fields)
-            natural_key = "/".join(field_map[c] for c in key_columns)
+            natural_key = _render_natural_key(field_map[c] for c in key_columns)
             full_fields = fields + [
                 ("signer_key_fingerprint", ""),
                 ("signed_at", signing.render(signed_at))]
@@ -254,14 +236,18 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
     """The `release_manifest/v1` (or a later version's) canonical payload (spec 5.5):
     the six scalars, plus the `--entries--` and `--upstream--` groups.
 
-    `payload_context` DEFAULTS TO TODAY'S CONTEXT but is a real, overridable parameter
-    -- review round 2's C2: the first draft hard-coded the literal string
+    `payload_context` IS A REAL, OVERRIDABLE PARAMETER and BOTH production callers pass
+    it explicitly -- review round 2's C2: the first draft hard-coded the literal string
     `"release_manifest/v1"` with no way to build (or, critically, to REBUILD while
     VERIFYING) a payload under any other context, which is Task 7's C1 defect
     reintroduced in a different shape. `release_verification._verify_manifest_signature`
     passes the value it read back from the specific `assertion_signature` row it is
     checking, never assuming "today's" -- the same reconstruct-the-past discipline
-    `signatures.payload_for` already applies one layer down.
+    `signatures.payload_for` already applies one layer down -- and `publish` passes the
+    catalog's CURRENT value for `release_manifest` rather than this default. The default
+    therefore serves hand-built callers only (tests planting a deliberately malformed
+    manifest), which is why it is kept rather than made required: making it mandatory
+    would force every such caller to restate the same literal.
 
     `conn` IS UNUSED -- kept for the same reason every function in this module (and
     `signing.canonical_payload`'s callers throughout the codebase) takes it: this
@@ -341,12 +327,24 @@ def publish(conn: psycopg.Connection, *, release_tag: str, published_by: str,
     first). Nothing here commits: the caller owns the transaction, so a failure between
     the manifest row and its signature leaves nothing published in any state a reader
     outside this transaction can observe.
+
+    THE MANIFEST'S OWN CONTEXT IS READ FROM `signature_target_kind`, NOT TYPED HERE.
+    Both the payload's context and the recorded signature's used to be the literal
+    `'release_manifest/v1'`, which made the catalog's value for that kind dead: minting
+    a `/v2` there changed nothing, and `publish` would have gone on signing under `/v1`
+    while every other reader believed `/v2`. The other two kinds have always taken their
+    context from the catalog (`signatures.payload_fields` does it for them); this is the
+    third doing the same, and it is what `test_publish_signs_under_the_catalogs_context`
+    now pins. Both uses read the SAME local, so the bytes and the row can never name
+    different contexts.
     """
     published_at = (published_at if published_at is not None
                     else dt.datetime.now(dt.timezone.utc))
     signed_at = (signed_at if signed_at is not None
                 else dt.datetime.now(dt.timezone.utc))
 
+    _table, _pk_column, manifest_context = signatures._target_kind_catalog(
+        conn, "release_manifest")
     entries = enumerate_live(conn, signed_at=ENTRY_DIGEST_SIGNED_AT)
     upstream = [
         (source, writer, release) for source, writer, release in conn.execute(
@@ -356,7 +354,8 @@ def publish(conn: psycopg.Connection, *, release_tag: str, published_by: str,
     payload = manifest_payload(
         conn, release_tag=release_tag, published_by=published_by,
         published_at=published_at, entries=entries, upstream=upstream,
-        key_fingerprint=key_fingerprint, signed_at=signed_at)
+        key_fingerprint=key_fingerprint, signed_at=signed_at,
+        payload_context=manifest_context)
 
     manifest_id = conn.execute(
         "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
@@ -376,7 +375,7 @@ def publish(conn: psycopg.Connection, *, release_tag: str, published_by: str,
 
     signatures.record(
         conn, target_kind="release_manifest", target_id=manifest_id,
-        payload_context="release_manifest/v1", payload=payload,
+        payload_context=manifest_context, payload=payload,
         key_fingerprint=key_fingerprint, signature=signing.sign(private_key, payload),
         signed_at=signed_at)
 

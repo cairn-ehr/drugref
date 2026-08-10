@@ -147,8 +147,10 @@ The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tre
 
 ### Slice 5 — The interaction & contraindication layer
 Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b, 5b.2) seeded from public-domain
-regulatory-derived content, then the **append-only, signable curated overlay** (5c) — *signable*, not signed; see the
-[curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) decision record.
+regulatory-derived content, then the **append-only, SIGNED curated overlay** (5c) — signing shipped in `5c.4`
+(`db/030`); see the [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/)
+decision record, and [curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/)
+§3 for why the overlay's first content-bearing slice shipped empty to make that ordering possible.
 The projections give a defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable
 value-add built on top. Sequenced by licence-cleanliness, not by coverage.
 
@@ -337,7 +339,7 @@ asserts no line of therapy, no evidence strength and no ordering, and inventing 
 projection's.
 
 #### Slice 5c — The curated overlay (the moat)
-Append-only, **signable** overlay adding **severity + mechanism + management + evidence grading** — the dimensions the
+Append-only, **signed** overlay (5c.4, `db/030`) adding **severity + mechanism + management + evidence grading** — the dimensions the
 projections lack — **referencing** the 5a/5b candidate rows. **Plan C has already built the overlay MECHANISM** (surrogate key
 + deferred single-live + one-way supersession, generalised over five tables since `db/027`), so 5c inherits a working
 correction shape rather than inventing one, and owns #51, #52, #55 and now **#67**.
@@ -437,8 +439,8 @@ appended to both 5c.1 read views by `CREATE OR REPLACE`. **Two layers**: curator
 row's canonical payload, and an institutional key signing a per-release **content manifest** that enumerates
 every live curated assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as
 `added` and `altered`. **Revocation is data, not branches**: `rotated`/`retired` are time-scoped (prior
-signatures survive), `compromised` is blanket. `cli.py` was split first (508 → 346 lines) into `cli.py` +
-`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1202**.
+signatures survive), `compromised` is blanket. `cli.py` was split first (508 → 347 lines) into `cli.py` +
+`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1249**.
 
 **Measured on a fresh `drugref_5c4`** built from the same real releases (2026-08-10, chain wall-clock **132.96 s**,
 per-leg breakdown recorded for [#81](https://github.com/cairn-ehr/drugref/issues/81)): **every count that must not

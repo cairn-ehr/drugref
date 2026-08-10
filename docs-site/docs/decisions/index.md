@@ -36,8 +36,8 @@ history is never lost — it remains in the git log and in the dated design spec
   UUID, never keyed on a name.
 - [Append-only claims](append-only-claims.md) — corrections supersede; history is never
   overwritten.
-- [The hybrid store](hybrid-store.md) — rebuildable projections beside an append-only
-  signable overlay.
+- [The hybrid store](hybrid-store.md) — rebuildable projections beside an append-only,
+  signed overlay.
 - [Licensing is a blocker](licensing-is-a-blocker.md) — AGPL-compatible sources only,
   checked before adding.
 - [A structural chemical tree is not a clinical class](withheld-chemical-class-contraindications.md)
@@ -60,7 +60,8 @@ history is never lost — it remains in the git log and in the dated design spec
 - [Curating a drug–condition pair](curating-a-drug-condition-pair.md) — why the drug–drug
   overlay keys on the RULE while the drug–condition overlay keys on the PAIR without
   `relationship`, why a curated row references its candidate by natural key and never by
-  foreign key, and why the overlay is signable rather than signed.
+  foreign key, and why the tier's first content-bearing slice shipped empty (§3, now
+  delivered by the record below).
 - [Signing the curated overlay](signing-the-curated-overlay.md) — the two layers (curator
   non-repudiation and release integrity), why curator-held keys are the only ones that prove
   anything, why a compromised key invalidates blanket while a rotated one does not, why a

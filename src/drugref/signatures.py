@@ -82,8 +82,18 @@ def _target_kind_catalog(conn: psycopg.Connection,
 
     Split out so `verify_target` can look this up ONCE per call rather than once per
     signature: all three values depend only on `target_kind`, which does not vary
-    across the signatures checked in one call. `payload_fields` uses it too, so there
-    is exactly one place that reads `signature_target_kind` -- not a copy per caller.
+    across the signatures checked in one call. It is THE one function that reads
+    `drugref.signature_target_kind` -- db/006's lesson, and the point of the split.
+
+    IT HAS CALLERS OUTSIDE THIS MODULE, despite the leading underscore, and that is
+    stated here so a future "this is private, inline it" pass gets a signal from the
+    code rather than from a failing test: `releases.enumerate_live`, `releases.publish`,
+    `releases.natural_key_of` and `release_verification._published_content_is_history`
+    all call it. An earlier version of this docstring claimed "exactly one place reads
+    signature_target_kind" while `releases.py` ran its own near-duplicate SELECT
+    (`_target_table`) justified on the grounds that this function was private to
+    signatures.py -- two false statements propping each other up. The duplicate is
+    deleted; those callers now come here.
     """
     kind = conn.execute(
         "SELECT target_table, pk_column, payload_context "
@@ -107,6 +117,15 @@ def _row_content_fields(conn: psycopg.Connection, table: str, pk_column: str,
     across different ones: `signing.FIELD_LISTS` keeps every retired version, and a
     future `/v2` field list may name a different column set than `/v1` for the same
     table.
+
+    IT HAS CALLERS OUTSIDE THIS MODULE, despite the leading underscore, for the same
+    reason `_target_kind_catalog` does and recorded here for the same purpose (a static
+    signal against a future "inline this private helper" pass):
+    `releases.enumerate_live` and
+    `release_verification._published_content_is_history` both call it, deliberately,
+    rather than paying `payload_for`'s per-row catalog round trip -- see
+    `enumerate_live`'s own docstring for the measurement that made that the intended
+    path.
     """
     field_names = signing.FIELD_LISTS[context]
     row_columns = [f for f in field_names if f not in signing.ATTESTATION_FIELDS]

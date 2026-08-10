@@ -73,7 +73,7 @@ import datetime as dt
 import pytest
 
 from drugref import (cli, cli_signing, cli_signing_release, curation, db, keys,
-                     signatures, signing)
+                     release_verification, releases, signatures, signing)
 
 
 class _NoCommit:
@@ -877,3 +877,97 @@ def _constraint_definition(conn, table, name):
     """A short alias for `db.constraint_definition`, matching this file's
     other helpers' brevity for the two constraint-quoting tests above."""
     return db.constraint_definition(conn, table, name)
+
+
+# ---- final review: release_manifest is not a per-row target kind ---------------
+
+
+@pytest.mark.parametrize("command,extra", [
+    ("verify", []),
+    # `sign` also needs a --key; `verify` does not accept one. The guard fires
+    # before either command reads the file, but argparse still has to be given
+    # a well-formed command line for each.
+    ("sign", ["--key"]),
+])
+def test_release_manifest_is_rejected_as_a_per_row_target_kind(
+        wconn, conn, a_key_file, capsys, command, extra):
+    """I2 (final review). Both commands used to DIE with an uncaught
+    `psycopg.errors.UndefinedColumn: column "entry_count" does not exist`, and
+    -- worse -- only once a real release existed to name, so the crash was
+    unreachable on any database that had not published yet.
+
+    THE PATH TO THE CRASH: `release_manifest` is a legitimate row in
+    `signature_target_kind` (that is how a manifest's signature finds its
+    table), so nothing before this guard rejected it. `signatures.
+    _row_content_fields` then built its SELECT from `release_manifest/v1`'s
+    frozen field list read as literal COLUMNS -- and `entry_count` is a DERIVED
+    scalar, not a column on `release_manifest` at all. `cli.main` catches
+    `RuntimeError`, not `psycopg.Error`, so the operator got a traceback.
+
+    ARGPARSE CANNOT DO THIS WITH `choices=`: the value is a real member of a
+    vocabulary that lives in a table (db/006), and a Python list here would be
+    the second home that rule forbids. The rejection is a guard with a message
+    pointing at the command that DOES serve a manifest.
+    """
+    manifest_id = releases.publish(
+        conn, release_tag="2026.09.01-manifest-kind", published_by="an operator",
+        private_key=a_key_file["private"], key_fingerprint=a_key_file["fingerprint"])
+    capsys.readouterr()
+    argv = [command, "--target-kind", "release_manifest",
+            "--target-id", str(manifest_id)]
+    argv += [*extra, str(a_key_file["path"])] if extra else []
+    assert _run(wconn, argv) == 2
+    err = capsys.readouterr().err
+    assert "release_manifest is not a per-row target kind" in err
+    assert "--release" in err
+
+
+def test_sign_warns_when_the_key_is_not_registered(
+        wconn, a_signable_target, a_key_file, capsys):
+    """A signature by an unregistered key is a LEGITIMATE state -- `unknown_key`
+    is one of the six verdicts, and registration can honestly follow signing --
+    so this warns rather than refusing. But silence was the wrong default: the
+    operator gets a `signed:` line and no hint that every reader will call the
+    result `unknown_key` until somebody runs `keys register`.
+    """
+    assert _run(wconn, [
+        "sign", "--target-kind", "curated_interaction",
+        "--target-id", str(a_signable_target["target_id"]),
+        "--key", str(a_key_file["path"])]) == 0
+    err = capsys.readouterr().err
+    assert "no live signing_key row" in err
+    assert a_key_file["fingerprint"] in err
+
+
+def test_publish_warns_when_the_institutional_key_is_not_registered(
+        wconn, conn, a_key_file, capsys):
+    """The same warning, where it costs the most. `release_manifest.release_tag`
+    is UNIQUE and the table is insert-only, so publishing under an unregistered
+    key BURNS that tag: there is no second publish under it to correct with, and
+    `drugref verify --release` exits 1 on it for the life of the database.
+
+    THE RELEASE IS STILL PUBLISHED (exit 0) -- refusing would make the ordinary
+    air-gapped ordering impossible, and `releases.publish` is not the place to
+    invent an enrolment protocol the decision record explicitly says does not
+    exist. One line on stderr before the write is the whole fix.
+    """
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.09.02-unregistered", "--published-by",
+        "an operator", "--key", str(a_key_file["path"])]) == 0
+    captured = capsys.readouterr()
+    assert "no live signing_key row" in captured.err
+    assert "published manifest_id=" in captured.out
+    assert release_verification.verify_release(
+        conn, "2026.09.02-unregistered").signature == signing.UNKNOWN_KEY
+
+
+def test_publish_does_not_warn_when_the_key_is_registered(
+        wconn, conn, a_key_file, capsys):
+    """The control. Without it, a warning printed unconditionally would satisfy
+    both tests above while crying wolf on every correct publish."""
+    keys.register(conn, public_key=a_key_file["public"], holder="drugref.org",
+                  registered_by="an operator")
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.09.03-registered", "--published-by",
+        "an operator", "--key", str(a_key_file["path"])]) == 0
+    assert "no live signing_key row" not in capsys.readouterr().err

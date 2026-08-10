@@ -550,3 +550,437 @@ def test_worst_verdict_picks_the_most_severe():
          signing.KEY_EXPIRED]) == signing.BAD_SIGNATURE
     assert release_verification._worst_verdict(
         [signing.UNKNOWN_KEY, "some_future_verdict"]) == "some_future_verdict"
+
+
+# ---- final review: C1 -- the natural key is FROZEN, not re-derived ----------------
+
+
+def test_a_widened_natural_key_trigger_does_not_re_key_a_published_release(
+        conn, published):
+    """C1 (final review, Critical). A published entry's `natural_key` is a RENDERED
+    STRING recorded at publish time AND a signed member of the entry group -- so which
+    COLUMNS produced it must be reconstructed from the PAST, exactly as `payload_context`
+    and `algorithm` already are, never re-derived from the schema standing today.
+
+    MEASURED BEFORE THE FIX: `releases._natural_key_columns` read the column list out of
+    `pg_trigger.tgargs` on every call, including at verify time. Widening
+    `curated_interaction`'s single-live trigger -- the additive migration db/029 says in
+    as many words will one day happen ("If a real case ever needs per-relationship
+    grades it is an additive migration on a table that ships empty") -- re-rendered every
+    live natural key, so not one paired with a published entry: `dropped` and `added`
+    both non-empty, `is_intact` false, on a database in which NOTHING had changed. That
+    is C1-of-Task-8's failure mode reached through schema evolution instead of through
+    offset ids, and it is why `signing.NATURAL_KEY_COLUMNS` is frozen.
+
+    THE TRIGGER IS GENUINELY REPLACED HERE, not stubbed: the DDL runs inside this test's
+    own transaction (Postgres DDL is transactional and the `conn` fixture rolls back),
+    and the assertion below confirms the catalog really reports the wider key before the
+    verification is attempted -- without that, a test whose DDL silently failed would
+    pass for the wrong reason. `SET CONSTRAINTS ALL IMMEDIATE` first because `published`
+    left the deferred single-live trigger with a pending event, and Postgres refuses to
+    drop a trigger on a table that still has one.
+    """
+    from tests.test_live_key_index_guard import _single_live_tables
+
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    conn.execute("DROP TRIGGER curated_interaction_single_live "
+                 "ON drugref.curated_interaction")
+    conn.execute(
+        "CREATE CONSTRAINT TRIGGER curated_interaction_single_live "
+        "AFTER INSERT OR UPDATE ON drugref.curated_interaction "
+        "DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "
+        "drugref.forbid_multiple_live_assertions("
+        "'subject_moiety_uuid', 'object_class_uuid', 'relationship', 'severity')")
+    assert dict(_single_live_tables(conn))["curated_interaction"] == (
+        "subject_moiety_uuid, object_class_uuid, relationship, severity"), (
+        "the widened trigger did not take -- this test would then pass vacuously")
+
+    verdict = release_verification.verify_release(conn, published)
+    assert (verdict.dropped, verdict.added, verdict.altered) == ([], [], [])
+    assert verdict.is_intact
+
+
+def test_verification_re_renders_a_natural_key_under_the_entrys_stored_context(
+        conn, institutional_key, a_graded_rule, monkeypatch):
+    """C1's other half: it is the ENTRY'S OWN `payload_context` that decides which frozen
+    key list applies, not today's catalog row -- the same read-back discipline
+    `signatures.payload_fields` applies to the field list one layer down.
+
+    A `curated_interaction/v2` whose natural key is the SAME triple would prove nothing,
+    so the `/v2` registered here (for this test only, `monkeypatch`, auto-reverted) keys
+    on a DIFFERENT pair. The manifest entry is written under `/v2` with the `/v2`-shaped
+    key; if `verify_release` rendered the live side under the catalog's current `/v1`
+    triple instead, the two would not pair and the release would report one drop and one
+    addition.
+    """
+    v2_key = ("subject_moiety_uuid", "object_class_uuid")
+    monkeypatch.setitem(signing.FIELD_LISTS, "curated_interaction/v2",
+                        signing.CURATED_INTERACTION_V1)
+    monkeypatch.setitem(signing.NATURAL_KEY_COLUMNS, "curated_interaction/v2", v2_key)
+
+    target_id = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    v2_natural_key = releases.natural_key_of(
+        conn, "curated_interaction", target_id, payload_context="curated_interaction/v2")
+    assert v2_natural_key.count("/") == 1, "the /v2 key must differ from /v1's triple"
+    _, payload = signatures.payload_for(
+        conn, "curated_interaction", target_id, key_fingerprint="",
+        signed_at=releases.ENTRY_DIGEST_SIGNED_AT,
+        payload_context="curated_interaction/v2")
+    entries = [releases.ManifestEntry(
+        "curated_interaction", v2_natural_key, target_id, "curated_interaction/v2",
+        signing.digest(payload))]
+    _publish_manually(
+        conn, release_tag="2026.08.30", published_by="an operator",
+        key_fingerprint=institutional_key["fingerprint"],
+        private_key=institutional_key["private"], entries=entries)
+
+    verdict = release_verification.verify_release(conn, "2026.08.30")
+    assert (verdict.dropped, verdict.added, verdict.altered) == ([], [], [])
+    assert verdict.is_intact
+
+
+# ---- final review: C2 -- the mutation gate for the MANIFEST's signed members ------
+#
+# THE ROW LAYER HAD THIS AND THIS LAYER DID NOT. tests/test_signatures_writer.py runs one
+# mutation case per field of `curated_interaction/v1`, per spec 12's rule ("one mutation
+# test per signed field"), and the manifest's own signed members -- seven scalars plus
+# four fields on every `--entries--` member and three on every `--upstream--` one -- had
+# none at all: dropping `payload_digest`, `natural_key` or `entry_count` from
+# `manifest_payload`'s output left the whole 210-test signing suite green.
+#
+# `release_manifest_entry` IS INSERT-ONLY, so the row-layer trick (edit the row, rebuild)
+# is unavailable and unnecessary: the test rebuilds the PAYLOAD with one member changed
+# and checks the recorded signature against those bytes, which is what
+# test_signatures_writer.py does one layer down for the same reason.
+
+_MANIFEST_SCALARS = {
+    "release_tag": "2026.08.31",
+    "published_by": "an operator",
+    "published_at": PUBLISHED_AT,
+    "signed_at": PUBLISHED_AT,
+}
+
+
+def _manifest_parts(entries, upstream, *, key_fingerprint):
+    """The `(fields, groups)` pair `releases.manifest_payload` builds internally, rebuilt
+    here so ONE member can be mutated in isolation.
+
+    A LOCAL REBUILD IS ONLY SAFE BECAUSE IT IS CHECKED. Every caller below asserts the
+    UNMUTATED rebuild is byte-identical to `manifest_payload`'s own output before
+    applying any mutation -- tests/test_signatures_writer.py's M2 baseline discipline:
+    without it, a rebuild that had drifted from production for some unrelated reason
+    would make every case pass vacuously, both payloads merely differing for reasons
+    having nothing to do with the field under test.
+    """
+    scalar_values = {
+        "release_tag": _MANIFEST_SCALARS["release_tag"],
+        "published_by": _MANIFEST_SCALARS["published_by"],
+        "published_at": signing.render(_MANIFEST_SCALARS["published_at"]),
+        "entry_count": str(len(entries)),
+        "upstream_count": str(len(upstream)),
+        "signer_key_fingerprint": key_fingerprint,
+        "signed_at": signing.render(_MANIFEST_SCALARS["signed_at"]),
+    }
+    fields = [(name, scalar_values[name])
+              for name in signing.FIELD_LISTS["release_manifest/v1"]]
+    entry_members = [
+        [("target_kind", e.target_kind), ("natural_key", e.natural_key),
+         ("payload_context", e.payload_context),
+         ("payload_digest", signing.render(e.payload_digest))]
+        for e in entries]
+    upstream_members = [[("source", s), ("writer", w), ("release", r)]
+                        for s, w, r in upstream]
+    return fields, [("entries", entry_members), ("upstream", upstream_members)]
+
+
+def _two_entries():
+    """Two manifest entries and two upstream releases -- enough that a mutation to ONE
+    member cannot be confused with a change to the group's cardinality, and enough for
+    `entry_count`/`upstream_count` to be a number other than 0 or 1."""
+    entries = [
+        releases.ManifestEntry("curated_interaction", "aaa/bbb/CI_MoA", 1,
+                               "curated_interaction/v1", b"\x11" * 32),
+        releases.ManifestEntry("curated_condition", "ccc/ddd", 2,
+                               "curated_condition/v1", b"\x22" * 32),
+    ]
+    upstream = [("MED-RT", "association", "2026.07.06"), ("GSRS", "load", "2026-02-26")]
+    return entries, upstream
+
+
+# (group_or_None, field_name, mutated_value). `None` names a top-level scalar.
+_MANIFEST_MUTATIONS = [
+    (None, "release_tag", "2026.09.99"),
+    (None, "published_by", "somebody else"),
+    (None, "published_at", "2000-01-01T00:00:00.000000Z"),
+    (None, "entry_count", "1"),
+    (None, "upstream_count", "1"),
+    (None, "signer_key_fingerprint", "b" * 64),
+    (None, "signed_at", "2000-01-01T00:00:00.000000Z"),
+    ("entries", "target_kind", "curated_condition"),
+    ("entries", "natural_key", "zzz/yyy/CI_ChemClass"),
+    ("entries", "payload_context", "curated_condition/v1"),
+    ("entries", "payload_digest", ("ff" * 32)),
+    ("upstream", "source", "SOMETHING-ELSE"),
+    ("upstream", "writer", "another_writer"),
+    ("upstream", "release", "1999.01.01"),
+]
+
+
+def test_the_manifest_mutation_gate_covers_every_signed_member(conn,
+                                                               institutional_key):
+    """M1's discipline, applied to this gate: guards the parametrisation above against
+    becoming a second, unenforced copy of what `manifest_payload` actually signs. A
+    member added to the payload with no case here would otherwise be invisible -- which
+    is precisely how `entry_count`, `natural_key` and `payload_digest` came to be
+    uncovered in the first place."""
+    entries, upstream = _two_entries()
+    fields, groups = _manifest_parts(
+        entries, upstream, key_fingerprint=institutional_key["fingerprint"])
+    covered = {(group, name) for group, name, _ in _MANIFEST_MUTATIONS}
+    expected = {(None, name) for name, _ in fields}
+    for group_name, members in groups:
+        expected |= {(group_name, name) for name, _ in members[0]}
+    assert covered == expected
+
+
+@pytest.mark.parametrize("group,field,mutated", _MANIFEST_MUTATIONS)
+def test_changing_any_signed_manifest_member_breaks_the_signature(
+        conn, institutional_key, group, field, mutated):
+    """ONE TEST PER SIGNED MEMBER of `release_manifest/v1`, spec 12 item 2 -- the rule
+    the row layer already followed and this layer did not.
+
+    A member silently missing from the payload is the one defect this layer cannot
+    survive: the manifest signature would keep verifying while the omitted member was
+    free to be anything. Drop `payload_digest` and a manifest attests only that some rows
+    with these natural keys existed; drop `natural_key` and it attests only how many;
+    drop `entry_count` and a group truncated at its end -- the exact failure spec 5.5
+    says the scalar count exists to make nameable -- stops being nameable.
+    """
+    entries, upstream = _two_entries()
+    fingerprint = institutional_key["fingerprint"]
+    payload = releases.manifest_payload(
+        conn, entries=entries, upstream=upstream, key_fingerprint=fingerprint,
+        **_MANIFEST_SCALARS)
+    signature = signing.sign(institutional_key["private"], payload)
+
+    fields, groups = _manifest_parts(entries, upstream, key_fingerprint=fingerprint)
+    baseline = signing.canonical_payload("release_manifest/v1", fields, groups)
+    assert baseline == payload, (
+        "the unmutated rebuild does not match manifest_payload's own bytes -- this "
+        "test's premise (that a difference below is caused by the mutated member "
+        "alone) does not hold, and every case would pass vacuously")
+
+    if group is None:
+        fields = [(n, mutated if n == field else v) for n, v in fields]
+    else:
+        groups = [
+            (g, [[(n, mutated if (g == group and n == field and i == 0) else v)
+                  for n, v in member]
+                 for i, member in enumerate(members)])
+            for g, members in groups]
+    rebuilt = signing.canonical_payload("release_manifest/v1", fields, groups)
+    assert rebuilt != payload, (
+        f"changing {group or 'scalar'}.{field} did not change the payload -- it is not "
+        "covered by the manifest's signed bytes, so a signature says nothing about it")
+    assert signing.verify(institutional_key["public"], rebuilt, signature) is False
+
+
+# ---- final review: C3 -- is_intact really does need a VALID signature -------------
+
+
+@pytest.mark.parametrize("signature", [
+    signing.BAD_SIGNATURE, signing.UNKNOWN_KEY, signing.KEY_REVOKED_COMPROMISED,
+    signing.KEY_EXPIRED])
+def test_a_non_valid_signature_alone_makes_a_release_not_intact(signature):
+    """C3 (final review, Critical). `is_intact`'s FIRST clause -- `signature ==
+    signing.VALID` -- had no test that killed its removal: deleting it left the whole
+    suite green, because the only test exercising a non-VALID release signature
+    (`test_a_compromised_publishing_key_flags_the_release`) asserted `.signature` and
+    never `.is_intact`.
+
+    THE OTHER FOUR CLAUSES ARE HELD TRUE HERE ON PURPOSE, so nothing but the signature
+    can be what fails. `NO_SIGNATURE` is deliberately NOT a case: on that path
+    `manifest_digest_ok` is `None` and independently sinks the property, so it could
+    never distinguish the clause -- which is the coincidence
+    `_verify_manifest_signature`'s own docstring already warns is not a guarantee.
+
+    `drugref verify --release`'s exit code rides entirely on this property
+    (`cli_signing_release._verify_release`), so an unregistered or revoked institutional
+    key must fail a deploy gate, and this is the test that says so.
+    """
+    verdict = release_verification.ManifestVerdict(
+        release_tag="2026.08.09", signature=signature, dropped=[], added=[], altered=[],
+        row_count_ok=True, manifest_digest_ok=True)
+    assert not verdict.is_intact
+
+
+def test_a_valid_signature_with_nothing_else_wrong_is_intact():
+    """The control for the four cases above. Without it, an `is_intact` hard-wired to
+    `False` would satisfy every one of them and report every real release as broken."""
+    verdict = release_verification.ManifestVerdict(
+        release_tag="2026.08.09", signature=signing.VALID, dropped=[], added=[],
+        altered=[], row_count_ok=True, manifest_digest_ok=True)
+    assert verdict.is_intact
+
+
+# ---- final review: I7/I8 and the earliest-signature digest -----------------------
+
+
+def test_publish_signs_under_the_catalogs_context_not_a_literal(
+        conn, institutional_key, monkeypatch):
+    """I7 (final review). `publish` used to hard-code `'release_manifest/v1'` twice --
+    once as the payload's context, once on the `assertion_signature` row -- which made
+    `signature_target_kind`'s value for that kind DEAD: minting a `/v2` there changed
+    nothing at all, and `publish` would have gone on signing `/v1` bytes while every
+    reader that consults the catalog believed `/v2`. The other two target kinds have
+    always taken their context from the catalog (`signatures.payload_fields` does it);
+    this is the third doing the same.
+
+    `signature_target_kind` CARRIES NO APPEND-ONLY FLOOR, deliberately -- it is designed
+    to move to a `/v2` (that is the whole reason `payload_context` is read back per
+    signature), so an UPDATE here is the ordinary migration path, not a violation. The
+    `conn` fixture rolls it back regardless.
+    """
+    monkeypatch.setitem(signing.FIELD_LISTS, "release_manifest/v2",
+                        signing.RELEASE_MANIFEST_V1)
+    conn.execute("UPDATE drugref.signature_target_kind "
+                 "SET payload_context = 'release_manifest/v2' "
+                 "WHERE target_kind = 'release_manifest'")
+
+    manifest_id = releases.publish(
+        conn, release_tag="2026.08.28", published_by="an operator",
+        private_key=institutional_key["private"],
+        key_fingerprint=institutional_key["fingerprint"],
+        published_at=PUBLISHED_AT, signed_at=PUBLISHED_AT)
+
+    assert conn.execute(
+        "SELECT payload_context FROM drugref.assertion_signature "
+        "WHERE target_kind = 'release_manifest' AND target_id = %s",
+        (manifest_id,)).fetchone()[0] == "release_manifest/v2"
+    # AND THE BYTES AGREE WITH THE ROW: a signature recorded as /v2 over /v1 bytes would
+    # pass the assertion above and fail here, which is the half that actually matters.
+    assert release_verification.verify_release(
+        conn, "2026.08.28").signature == signing.VALID
+
+
+def test_enumerate_live_omits_a_superseded_row(conn, a_graded_rule):
+    """I8 (final review). `enumerate_live`'s `WHERE superseded_by IS NULL` had no test
+    that killed its removal: without it a corrected natural key yields TWO entries, and
+    every caller that indexes the list BY natural key -- `verify_release` does -- silently
+    keeps whichever the SELECT happened to return last, so the existing correction test
+    passed either way. A manifest is a snapshot of what drugref asserts NOW, and a
+    superseded row is exactly what drugref no longer asserts.
+    """
+    first = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    correction = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="contraindicated", evidence_grade="established",
+        reviewed_by="a curator", reviewed_against="MED-RT 2026.07.06")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_interaction").fetchone()[0] == 2, (
+        "the correction did not create a second row -- this test needs a real "
+        "supersession to have anything to omit")
+
+    entries = releases.enumerate_live(conn)
+    assert [e.target_id for e in entries] == [correction], (
+        f"enumerate_live returned {[e.target_id for e in entries]}; only the live row "
+        f"{correction} belongs in a manifest, never its superseded predecessor {first}")
+
+
+def test_a_matching_context_reuses_the_digest_enumerate_live_already_built(
+        conn, published, monkeypatch):
+    """I8's other half. `verify_release` reuses `enumerate_live`'s ALREADY-COMPUTED
+    digest when the entry's stored `payload_context` matches the live one, and only falls
+    back to `signatures.payload_for` when it does not -- review round 2's C5, which
+    measured the recompute as doubling this function's query count for nothing.
+
+    FORCING THE SLOW PATH ALWAYS IS BEHAVIOURALLY INVISIBLE (recomputing under the SAME
+    context yields the same digest), so no assertion about a verdict can catch it. The
+    property is therefore pinned where it actually lives: `payload_for` must not be
+    called at all on the ordinary path. `test_verification_re_renders_a_natural_key_
+    under_the_entrys_stored_context` and its sibling cover the other direction -- that
+    the fallback is really taken when the contexts DIFFER.
+    """
+    calls = []
+    real_payload_for = signatures.payload_for
+
+    def counting_payload_for(*args, **kwargs):
+        calls.append(kwargs.get("payload_context"))
+        return real_payload_for(*args, **kwargs)
+
+    monkeypatch.setattr(signatures, "payload_for", counting_payload_for)
+    assert release_verification.verify_release(conn, published).is_intact
+    assert calls == [], (
+        f"verify_release recomputed {len(calls)} entry digest(s) that enumerate_live "
+        "had already built one line earlier, under the identical context")
+
+
+def test_a_matching_earliest_digest_is_not_condemned_by_a_later_counter_signature(
+        conn, institutional_key):
+    """The DISTINGUISHING case for `digest_matches[0]`, which `all(...)` fails and the
+    existing "any" test could not reach: there, the two answers were `[False, True]`, on
+    which `[0]` and `all(...)` agree, so replacing one with the other left the suite
+    green.
+
+    Here the EARLIEST signature's payload is exactly what `manifest_digest` records --
+    the correct, ordinary state `publish` produces -- and a later counter-signature
+    covers genuinely different bytes (`signed_at` is inside them, spec 4.4) and so can
+    never match. `all(...)` would report every legitimately counter-signed release as
+    carrying a wrong digest; `[0]` reports the truth.
+    """
+    early, later = PUBLISHED_AT, PUBLISHED_AT + dt.timedelta(days=1)
+    kwargs = dict(release_tag="2026.08.29", published_by="an operator",
+                  published_at=PUBLISHED_AT, entries=[], upstream=[],
+                  key_fingerprint=institutional_key["fingerprint"])
+    payload_first = releases.manifest_payload(conn, signed_at=early, **kwargs)
+    payload_second = releases.manifest_payload(conn, signed_at=later, **kwargs)
+    assert payload_first != payload_second, (
+        "the two signatures must cover different bytes for this test to distinguish "
+        "anything")
+    manifest_id = conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.29', %s, 0, '[]'::jsonb, 'an operator', %s) "
+        "RETURNING manifest_id",
+        (signing.digest(payload_first), PUBLISHED_AT)).fetchone()[0]
+    for payload, moment in ((payload_first, early), (payload_second, later)):
+        signatures.record(
+            conn, target_kind="release_manifest", target_id=manifest_id,
+            payload_context="release_manifest/v1", payload=payload,
+            key_fingerprint=institutional_key["fingerprint"],
+            signature=signing.sign(institutional_key["private"], payload),
+            signed_at=moment)
+    verdict = release_verification.verify_release(conn, "2026.08.29")
+    assert verdict.signature == signing.VALID
+    assert verdict.manifest_digest_ok
+    assert verdict.is_intact
+
+
+def test_the_entry_digest_sentinel_is_pinned_by_a_published_vector(conn):
+    """I3 (final review). `releases.ENTRY_DIGEST_SIGNED_AT` is a frozen WIRE constant --
+    every manifest entry digest ever computed, at publish time and at every later
+    verification, is built under it -- and nothing read its value: changing
+    `1970-01-01` left the whole suite green while every previously published manifest
+    silently stopped verifying.
+
+    PINNED AGAINST THE COMMITTED VECTOR rather than against a literal repeated here, so
+    the constant is tied to bytes a third party can check with `sha256sum` (fixture case
+    4). A second Python literal would only be a second home for the same value.
+    """
+    import json
+    import pathlib
+    vectors = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "signing_vectors.json").read_text())
+    case = next(c for c in vectors["cases"] if c["context"] == "curated_interaction/v1"
+                and dict((n, v) for n, v in c["fields"])["signer_key_fingerprint"] == "")
+    fields = dict((n, v) for n, v in case["fields"])
+    assert fields["signed_at"] == signing.render(releases.ENTRY_DIGEST_SIGNED_AT)
+    assert fields["signer_key_fingerprint"] == "", (
+        "an entry digest names no signer -- see enumerate_live's docstring")

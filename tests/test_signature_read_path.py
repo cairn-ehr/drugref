@@ -19,23 +19,41 @@ which is most of them today (assertion_signature ships empty).
 """
 import datetime as dt
 
+import pytest
+
 from drugref import curation, keys, signatures, signing
 
 SIGNED_AT = dt.datetime(2026, 8, 9, 4, 33, 52, tzinfo=dt.timezone.utc)
 LATER = dt.datetime(2026, 12, 1, tzinfo=dt.timezone.utc)
+# AN ABSOLUTE REGISTRATION INSTANT, EARLIER THAN BOTH OF THE ABOVE. `keys.register`
+# defaults `status_from` to the DATABASE's `now()`, and a test that pairs a wall-clock
+# registration with a FIXED signing literal is a dated time bomb: which side of the
+# boundary the signature falls on depends on what day the suite runs. That is exactly
+# what test_one_good_signature_outweighs_one_revoked_one was, and it failed OPEN -- see
+# its docstring. Passing this explicitly makes both sides of every comparison absolute.
+EARLY = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
 
 
-def _sign(conn, target_kind, target_id, *, holder="a curator", signed_at=SIGNED_AT):
+def _sign(conn, target_kind, target_id, *, holder="a curator", signed_at=SIGNED_AT,
+          status_from=EARLY):
     """Register a fresh key and record one valid signature over one target row.
 
     Returns the fingerprint, so a caller that needs to revoke it afterwards has it.
     Mirrors tests/test_signatures_writer.py's `signed_rule` fixture, inlined here
     rather than imported across test modules -- this repo's established convention
     (conftest.py's own comment on `a_graded_rule`/`a_contradicted_pair` states it).
+
+    `status_from` IS STATED, NEVER LEFT TO `now()`. `signature_backdated`'s two tests
+    genuinely need wall-clock time (they measure `signed_at` against the DATABASE's
+    `recorded_at`), but every OTHER test in this file measures `signed_at` against a
+    KEY's `status_from`, and mixing a wall-clock registration with a fixed signing
+    literal is how a mutation-killing test quietly stops killing anything on a
+    particular calendar date. Both sides absolute, always.
     """
     private, public = signing.generate_keypair()
     fingerprint = signing.fingerprint(public)
-    keys.register(conn, public_key=public, holder=holder, registered_by="an operator")
+    keys.register(conn, public_key=public, holder=holder, registered_by="an operator",
+                  status_from=status_from)
     context, payload = signatures.payload_for(
         conn, target_kind, target_id, key_fingerprint=fingerprint, signed_at=signed_at)
     signatures.record(
@@ -165,13 +183,30 @@ def test_a_row_signed_by_a_compromised_key_is_still_served(conn, a_graded_rule):
 def test_one_good_signature_outweighs_one_revoked_one(conn, a_graded_rule):
     """`signed` means NOTHING IN THE REGISTRY OBJECTS -- so ONE unobjected signature
     is enough, regardless of how many other signatures on the same row are
-    compromised."""
+    compromised.
+
+    THIS IS THE ONLY TEST THAT KILLS REMOVAL OF db/030's `is_revocation` CLAUSE (the
+    `NOT (t.is_revocation AND s.signed_at >= k.status_from)` term in
+    `curated_signature_status`'s FILTER), and it was a DATED TIME BOMB THAT FAILED OPEN
+    -- I1 of the final review, and the second instance of the standing rule in this very
+    file. Curator B's key used to register with `status_from = now()` while signing at
+    the fixed literal `LATER` (2026-12-01). Before that date, `signed_at >= status_from`
+    holds and dropping the clause objects to B's signature, so the mutation is caught;
+    ON AND AFTER 2026-12-01, `now()` overtakes `LATER`, the comparison flips, and the
+    suite stays green with the clause gone -- silently, with nothing to notice.
+
+    Both sides are now absolute: B registers at `EARLY` (2026-01-01) and signs at
+    `LATER`, so `signed_at >= status_from` is true by construction on every run,
+    forever. Moving the literal alone would not have fixed it -- one side would still
+    have been the wall clock.
+    """
     target_id = _graded(conn, a_graded_rule)
     compromised_fp = _sign(conn, "curated_interaction", target_id, holder="curator A")
     keys.revoke(conn, key_fingerprint=compromised_fp, status="compromised",
                 revoked_by="an operator", status_from=LATER)
     conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
-    _sign(conn, "curated_interaction", target_id, holder="curator B", signed_at=LATER)
+    _sign(conn, "curated_interaction", target_id, holder="curator B", signed_at=LATER,
+          status_from=EARLY)
     assert conn.execute(
         "SELECT signature_status FROM drugref.curated_ddi_pair "
         "WHERE subject_moiety = %s", (a_graded_rule["subject"],)
@@ -273,3 +308,124 @@ def test_signature_backdated_reports_a_signed_at_long_before_recorded_at(
           signed_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30))
     assert conn.execute(
         "SELECT count(*) FROM drugref.signature_backdated").fetchone() == (1,)
+
+
+# ---- db/030's SQL and signing.verdict must agree (final review, I9) -----------------
+#
+# UNAVOIDABLE DUPLICATION, PREVIOUSLY UNPINNED. `curated_signature_status`'s FILTER
+# re-types three of `signing.verdict`'s five precedence steps in SQL -- the registered-key
+# check, the blanket `invalidates_all_signatures` check and the time-scoped
+# `is_revocation AND signed_at >= status_from` check. Postgres cannot call Python, so
+# there is no way to make this ONE implementation; what there is a way to do is DRIVE
+# BOTH OVER THE SAME INPUTS and assert they answer alike, which is what the table below
+# does. Nothing did that before, so the two could have drifted in either direction
+# without a single test noticing.
+#
+# BAD_SIGNATURE IS THE ONE STEP DELIBERATELY ABSENT: SQL has no cryptography, so
+# `signature_status` collapses "the mathematics is wrong" into whatever the registry says
+# about the key, and every case below therefore drives `signing.verdict` with
+# `signature_ok=True`. That is the honest comparison -- db/030's own view comment says
+# `signed` never means verified -- rather than a comparison rigged to agree.
+#
+# EVERY BOUNDARY IS AN ABSOLUTE LITERAL, both sides. See EARLY's comment above.
+
+BOUNDARY = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)
+BEFORE = BOUNDARY - dt.timedelta(days=1)
+AT_OR_AFTER = BOUNDARY
+
+_VERDICT_CASES = [
+    # (status, signed_at, register_the_key)
+    ("active", BEFORE, True),
+    ("active", AT_OR_AFTER, True),
+    ("rotated", BEFORE, True),
+    ("rotated", AT_OR_AFTER, True),
+    ("retired", BEFORE, True),
+    ("retired", AT_OR_AFTER, True),
+    ("compromised", BEFORE, True),
+    ("compromised", AT_OR_AFTER, True),
+    ("active", BEFORE, False),
+]
+
+
+def _sign_under_a_key_with_status(conn, target_id, *, status, signed_at, registered):
+    """One signature over `target_id`, by a key in exactly `status` from `BOUNDARY`.
+
+    `registered=False` records the signature under a fingerprint the registry has never
+    heard of -- `signing.UNKNOWN_KEY`'s case, and the one the SQL reaches through its
+    `k.key_fingerprint IS NOT NULL` term rather than through the status vocabulary.
+    Recorded through `signatures.record`, which deliberately stores signatures it cannot
+    vouch for (see its docstring), so this needs no floor-bending at all.
+    """
+    private, public = signing.generate_keypair()
+    fingerprint = signing.fingerprint(public)
+    if registered:
+        keys.register(conn, public_key=public, holder="a curator",
+                      registered_by="an operator", status_from=BOUNDARY)
+        if status != "active":
+            keys.revoke(conn, key_fingerprint=fingerprint, status=status,
+                        revoked_by="an operator", status_from=BOUNDARY)
+            conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    context, payload = signatures.payload_for(
+        conn, "curated_interaction", target_id, key_fingerprint=fingerprint,
+        signed_at=signed_at)
+    signatures.record(
+        conn, target_kind="curated_interaction", target_id=target_id,
+        payload_context=context, payload=payload, key_fingerprint=fingerprint,
+        signature=signing.sign(private, payload), signed_at=signed_at)
+    return fingerprint
+
+
+@pytest.mark.parametrize("status,signed_at,registered", _VERDICT_CASES)
+def test_the_sql_filter_and_signing_verdict_agree(conn, a_graded_rule, status,
+                                                  signed_at, registered):
+    """One signature, one key, one moment -- answered twice, in two languages, and the
+    two answers must match.
+
+    SQL says `signed` exactly when its FILTER counts the signature as UNOBJECTED; Python
+    says `signing.VALID` exactly when nothing in the registry objects either. Any
+    disagreement means db/030's re-typing and `signing.verdict` have drifted, and the
+    consequence is a read view labelling a row `signed` that `drugref verify` calls
+    revoked, or the reverse -- two of drugref's own surfaces contradicting each other
+    about the same signature.
+    """
+    target_id = _graded(conn, a_graded_rule)
+    fingerprint = _sign_under_a_key_with_status(
+        conn, target_id, status=status, signed_at=signed_at, registered=registered)
+
+    sql_status = conn.execute(
+        "SELECT signature_status FROM drugref.curated_signature_status "
+        "WHERE target_kind = 'curated_interaction' AND target_id = %s",
+        (target_id,)).fetchone()[0]
+    python_verdict = signing.verdict(
+        keys.key_status(conn, fingerprint), signature_ok=True, signed_at=signed_at)
+
+    assert (sql_status == "signed") == (python_verdict == signing.VALID), (
+        f"db/030's SQL says {sql_status!r} while signing.verdict says "
+        f"{python_verdict!r} for a {status} key signed at {signed_at}. The two "
+        "implementations of spec 7.1's precedence have drifted.")
+
+
+def test_the_verdict_agreement_table_reaches_both_answers():
+    """The control the parametrisation above cannot give itself: if every case happened
+    to land on the SAME side, an agreement test would pass under a SQL filter that always
+    said `signed` beside a `verdict` that always said VALID. This asserts the table
+    genuinely straddles the boundary -- at least one case each way.
+
+    DRIVEN PURELY IN PYTHON, with no database at all: what is being checked is a property
+    of the TABLE (does it cover both outcomes), not of either implementation, and
+    round-tripping every case through Postgres here would only re-run the test above at
+    twice the cost.
+    """
+    covered = {
+        signing.verdict(
+            signing.KeyStatus(status=status, is_revocation=status != "active",
+                              invalidates_all_signatures=status == "compromised",
+                              status_from=BOUNDARY) if registered else None,
+            signature_ok=True, signed_at=signed_at)
+        for status, signed_at, registered in _VERDICT_CASES}
+    assert signing.VALID in covered, (
+        "no case in _VERDICT_CASES is expected to verify -- the agreement test above "
+        "would pass under an implementation that objects to everything")
+    assert covered - {signing.VALID}, (
+        "every case in _VERDICT_CASES lands on VALID -- the agreement test above would "
+        "pass under an implementation that never objects to anything")

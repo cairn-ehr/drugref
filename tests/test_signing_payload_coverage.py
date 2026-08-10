@@ -1,8 +1,19 @@
 # tests/test_signing_payload_coverage.py
-"""The alarm that lets the frozen field lists stay frozen (spec 4.5). DB-gated."""
+"""The alarms that let the frozen field lists AND the frozen natural-key column lists
+stay frozen (spec 4.5, 5.5). DB-gated.
+
+TWO CONSTANTS, ONE PATTERN. `signing.FIELD_LISTS` decides which columns enter a payload;
+`signing.NATURAL_KEY_COLUMNS` decides which columns render the `natural_key` a manifest
+entry is PAIRED by. Both are frozen against the standing derive-from-the-catalog rule,
+for the same reason -- they enter signed bytes, so deriving them means a migration
+silently rewrites history -- and both therefore need the same alarm: a test that
+compares the frozen list against what the live database says TODAY and fails loudly on a
+divergence, forcing a deliberate `/v2` rather than a silent one.
+"""
 import pytest
 
 from drugref import signing
+from tests.test_live_key_index_guard import _single_live_tables
 
 CURATED = [
     ("curated_interaction/v1", "curated_interaction", "curated_interaction_id"),
@@ -41,3 +52,66 @@ def test_the_frozen_field_list_accounts_for_every_column(conn, context, table, p
         "A new column is a DELIBERATE decision: sign it under a new /v2 context, or "
         "add it to deliberately_unsigned with the reason. Do not add it to the v1 "
         "list -- that invalidates every signature already recorded.")
+
+
+@pytest.mark.parametrize("context,table,pk", CURATED)
+def test_the_frozen_natural_key_columns_match_todays_trigger(conn, context, table, pk):
+    """A CHANGE TO A CURATED TABLE'S NATURAL KEY MUST FAIL HERE rather than silently
+    re-key everything drugref has ever published. The alarm for
+    `signing.NATURAL_KEY_COLUMNS`, and the exact counterpart of the field-list alarm
+    above -- same inversion, same reason, one question over.
+
+    WHAT THIS REPLACED, and why the replacement needed an alarm at all. `releases.py`
+    used to read these columns straight out of `pg_trigger.tgargs` on every call --
+    derived, catalog-driven, the house rule. But `release_manifest_entry.natural_key`
+    stores a RENDERED STRING from publish time and is a SIGNED member of every manifest
+    entry, so at VERIFY time that derivation reconstructs the PRESENT schema and compares
+    it against a PAST recording. Widen this trigger by one column -- the additive
+    migration db/029 explicitly contemplates for `curated_condition` -- and every live
+    key re-renders, pairs with nothing, and an untouched database reports 100% churn.
+    `test_a_widened_natural_key_trigger_does_not_re_key_a_published_release` in
+    tests/test_releases.py is that scenario, driven end to end.
+
+    THE TRIGGER IS STILL THE SOURCE OF TRUTH ABOUT WHAT THE OVERLAY MEANS BY "ONE ROW"
+    (db/020's floor: at most one live row per this key). Freezing the Python copy does
+    not dispute that -- it only refuses to let a change to it rewrite the past silently.
+    So this test asserts the two AGREE today, which is what turns a future migration into
+    a red test and a deliberate `/v2` decision instead of a silent re-keying.
+    """
+    trigger_columns = dict(_single_live_tables(conn))[table].split(", ")
+    assert list(signing.NATURAL_KEY_COLUMNS[context]) == trigger_columns, (
+        f"drugref.{table}'s single-live trigger and {context}'s frozen natural-key "
+        f"columns disagree. Trigger: {trigger_columns}. Frozen: "
+        f"{list(signing.NATURAL_KEY_COLUMNS[context])}. A natural key that changes is a "
+        "DELIBERATE decision: mint a /v2 context, add its frozen key list here, and "
+        "leave /v1's alone. Editing the /v1 tuple re-keys every manifest entry ever "
+        "published, and a published entry's natural_key is inside signed bytes.")
+
+
+@pytest.mark.parametrize("context,table,pk", CURATED)
+def test_every_natural_key_column_is_also_a_signed_field(conn, context, table, pk):
+    """`releases.enumerate_live` reads a row's natural-key values straight out of the
+    content fields it already fetched, so a key column that is NOT in the same context's
+    frozen field list is a `KeyError` at publish time -- on the one code path that must
+    never fail halfway. This asserts the containment directly rather than waiting for
+    that crash, and it is a real property rather than a tautology: a row's identity being
+    part of what gets signed is a design commitment (spec 4.5), not an accident of which
+    columns the two tuples happen to name.
+    """
+    assert set(signing.NATURAL_KEY_COLUMNS[context]) <= set(signing.FIELD_LISTS[context])
+
+
+def test_every_curated_context_has_a_frozen_natural_key():
+    """The coverage check on the coverage check: a third curated target kind whose
+    context is missing from NATURAL_KEY_COLUMNS would make `enumerate_live` raise
+    `KeyError` the first time a release enumerated it, and the two parametrized alarms
+    above would never notice, because they iterate CURATED -- a list in this file.
+    `releases._CURATED_KINDS` is the real scope, so it is what gets checked."""
+    from drugref import releases
+    assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition"}
+    for context in ("curated_interaction/v1", "curated_condition/v1"):
+        assert context in signing.NATURAL_KEY_COLUMNS
+    # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
+    # own closing note. Asserted, not merely stated, so the day somebody adds it out of
+    # tidiness the reason has to be re-read.
+    assert "release_manifest/v1" not in signing.NATURAL_KEY_COLUMNS

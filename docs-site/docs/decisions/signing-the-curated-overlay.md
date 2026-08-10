@@ -116,6 +116,14 @@ They **can**:
   closed here**. It is arguably *more* visible now, because dropping a trigger is the remaining way to remove
   a signature. Verification against a signed release still catches the resulting content drift on any node
   that runs it — but the local database's own floor is not what stops a superuser.
+- **Disarm every compromise verdict with one `UPDATE`.** `signing_key_status_kind` carries the revocation
+  rule as data — which is the point — but, unlike `signing_key` and `assertion_signature`, it carries **no
+  append-only floor**, so `UPDATE signing_key_status_kind SET invalidates_all_signatures = false WHERE
+  status = 'compromised'` silently turns the blanket revocation above into a time-scoped one on that node.
+  Flooring it is purely additive later (a trigger, not a column) and is tracked as
+  [issue 85](https://github.com/cairn-ehr/drugref/issues/85). Note the floor belongs on that table **only**:
+  its sibling `signature_target_kind` is *designed* to be updated, since moving a target kind to a `/v2`
+  payload context is exactly the migration the read-back machinery exists to support.
 
 Signing converts **trust the database** into **trust the key holders**. That is a real reduction in what a
 consumer must take on faith, and it is **not** the same as making the database tamper-proof.
@@ -137,12 +145,19 @@ records which releases were loaded at publication, it does not verify that a con
 - **The hot path did not regress.** The filtered `curated_ddi_pair` lookup, measured at 2.5 ms in 5c.1, runs
   at **~1.4 ms** with the new signature join executing against a populated, signed overlay (~1.3 ms with an
   empty one) — measured on a fresh database built from the real 2026 upstream releases.
-- **The field lists are frozen, and the standing rule is inverted deliberately.** Everywhere else in drugref,
-  a column list is derived so it cannot drift. Here it is written down, because a signature must be verifiable
-  against the payload that *was* signed — a derived list would silently change the payload when the table
-  gains a column, invalidating every historical signature. The same reasoning makes verification read
-  `payload_context` and `algorithm` **back from the recorded row** rather than re-deriving them from the
-  current catalog: verification reconstructs the past, it does not re-describe the present.
+- **The frozen column lists, and the standing rule inverted deliberately.** Everywhere else in drugref, a
+  column list is derived so it cannot drift. **Two** lists here are written down instead — the payload's
+  fields, and the columns that render a manifest entry's `natural_key` — because both enter signed bytes,
+  and a derived list would silently change what was signed the moment a migration touched the table. The
+  natural key is the subtler of the two and was caught in final review: it is a *rendered string* recorded
+  at publication and also the key verification **pairs** on, so deriving its columns from today's schema
+  compared a past recording against a present shape. An additive migration widening a curated table's key
+  would have re-keyed every live row and reported 100% churn on a database nobody had touched.
+  <br>Both lists keep the alarm the derive-from-the-catalog rule exists for: a test compares each against
+  the live catalog and fails on any divergence, forcing a deliberate `/v2` rather than a silent rewrite.
+  The same reasoning makes verification read `payload_context` and `algorithm` **back from the recorded
+  row** rather than re-deriving them: verification reconstructs the past, it does not re-describe the
+  present.
 
 ## Related
 

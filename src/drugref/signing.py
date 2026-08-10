@@ -320,6 +320,47 @@ FIELD_LISTS = {
 }
 
 
+# ---- the frozen natural-key columns (spec 5.5) -----------------------------
+#
+# FROZEN FOR EXACTLY THE REASON THE FIELD LISTS ABOVE ARE, and it is easy to miss,
+# because a natural key reads like bookkeeping rather than content. It IS content:
+# `release_manifest_entry.natural_key` stores a RENDERED STRING -- the key columns' own
+# values, slash-joined, as they stood at publish time -- and that string is a SIGNED
+# member of every manifest entry (spec 5.5's `--entries--` group). It is also the
+# PAIRING KEY verification uses to find the live row an entry describes.
+#
+# DERIVING THE COLUMN LIST FROM `pg_trigger.tgargs` WAS MEASURED WRONG, which is why
+# this constant exists. That derivation reads the PRESENT schema and compares it against
+# a PAST recording: simulate the additive migration db/029 contemplates ("If a real case
+# ever needs per-relationship grades it is an additive migration on a table that ships
+# empty") -- widen `curated_interaction`'s single-live trigger by one column -- and
+# every live row re-keys, not one new key pairs with a published entry, and a verifier
+# reports 100% churn on a database nobody touched: C1-of-Task-8's failure mode reached
+# through schema evolution instead of through id offsets.
+#
+# Spec 4.5 already states the general rule this follows: the standing
+# derive-from-the-catalog discipline is deliberately INVERTED for anything that enters
+# signed bytes, and `natural_key` does.
+#
+# THE ALARM IS REBUILT THE SAME WAY, so freezing does not mean going blind:
+# tests/test_signing_payload_coverage.py compares these tuples against what the
+# single-live triggers actually enforce TODAY and fails on any change, forcing a
+# deliberate `/v2` decision rather than a silent re-keying of everything published.
+#
+# `release_manifest/v1` IS DELIBERATELY ABSENT: a release is never itself enumerated
+# by a release (`releases._CURATED_KINDS` says as much one layer up), so it has no
+# natural key to render and a lookup for it is a bug worth a loud KeyError.
+CURATED_INTERACTION_V1_KEY = (
+    "subject_moiety_uuid", "object_class_uuid", "relationship")
+
+CURATED_CONDITION_V1_KEY = ("subject_moiety_uuid", "object_condition_uuid")
+
+NATURAL_KEY_COLUMNS = {
+    "curated_interaction/v1": CURATED_INTERACTION_V1_KEY,
+    "curated_condition/v1": CURATED_CONDITION_V1_KEY,
+}
+
+
 # ---- what a signature MEANS (spec 7.1) -------------------------------------
 #
 # SIX VERDICTS, NOT A BOOLEAN, and the reason is the revocation model. A consumer needs

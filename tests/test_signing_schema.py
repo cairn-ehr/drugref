@@ -74,13 +74,30 @@ def test_a_fifth_status_cannot_inherit_a_guess_about_either_boolean(conn):
                      "VALUES ('suspended', 'x')")
 
 
-def test_the_catalog_and_signing_py_agree_on_the_contexts(conn):
-    """Two vocabularies that must not drift: a target kind whose context signing.py
-    cannot encode is a row that makes `drugref sign` fail at the last moment, and a
-    frozen field list no target kind names is dead code nothing exercises."""
+def test_every_catalog_context_can_be_encoded(conn):
+    """ONE DIRECTION ONLY, AND THE OTHER DIRECTION WOULD BE A TRAP. Every context named
+    in `signature_target_kind` must have a frozen field list, because a target kind whose
+    context `signing.py` cannot encode is a row that makes `drugref sign` fail at the
+    last moment with a `KeyError`.
+
+    THE CONVERSE IS DELIBERATELY NOT ASSERTED (`<=`, not `==`), and this test used to get
+    it exactly backwards -- set EQUALITY, with a docstring calling an unreferenced field
+    list "dead code nothing exercises". That is the opposite of Task 7's C1 fix, which
+    `signatures.py` records in as many words: "signing.FIELD_LISTS keeps every retired
+    context version forever -- a version is stopped being minted, never deleted." A
+    retired `/v1` list is the ONLY thing that can reproduce the bytes a past signature
+    was made over. The day anyone mints a `/v2`, the catalog moves on and this test went
+    red, and its docstring named the fatal remedy: deleting the `/v1` entry makes every
+    historical signature raise `KeyError` on rebuild, and re-signing is impossible
+    because the private keys belong to the curators, not to drugref. A retired list is
+    load-bearing history, not dead code.
+    """
     contexts = {row[0] for row in conn.execute(
         "SELECT payload_context FROM drugref.signature_target_kind").fetchall()}
-    assert contexts == set(signing.FIELD_LISTS)
+    assert contexts <= set(signing.FIELD_LISTS), (
+        f"signature_target_kind names contexts signing.FIELD_LISTS cannot encode: "
+        f"{sorted(contexts - set(signing.FIELD_LISTS))}. Add the frozen field list "
+        "BEFORE the catalog row -- never the other way round.")
 
 
 def test_signing_key_refuses_a_delete(conn):

@@ -21,8 +21,70 @@ from datetime import datetime, timezone
 import psycopg
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from drugref import release_verification, releases, signatures, signing
+from drugref import keys, release_verification, releases, signatures, signing
 from drugref.cli_signing import _BlankArgumentError, _reject_blank, _write
+
+# THE ONE TARGET KIND NEITHER `sign` NOR `verify --target-kind` CAN SERVE. It is a real
+# row in `signature_target_kind` -- `release_manifest` is how a manifest's signature
+# finds its table -- so argparse cannot rule it out with `choices=` without becoming the
+# second home for that vocabulary db/006 forbids, and the catalog cannot rule it out
+# either, since the value belongs there. See `_reject_manifest_kind` for what goes wrong
+# without this guard.
+_MANIFEST_KIND = "release_manifest"
+
+
+def _reject_manifest_kind(target_kind: str) -> bool:
+    """True having already explained why `release_manifest` is not a per-row target.
+
+    WITHOUT THIS, BOTH COMMANDS CRASH WITH A RAW TRACEBACK, and only once a real release
+    exists -- the worst time to find out. `signatures._row_content_fields` builds its
+    SELECT from the context's frozen field list read as literal COLUMNS of the target's
+    table, and `release_manifest/v1`'s list names `entry_count`, `upstream_count` and
+    `release_tag`-plus-derived scalars, of which `release_manifest` actually has only
+    some: the SELECT raises `psycopg.errors.UndefinedColumn: column "entry_count" does
+    not exist`. `cli.main` catches `RuntimeError`, not `psycopg.Error`, so that reaches
+    the operator as a traceback rather than as a sentence. (On an EMPTY database it
+    fails one step earlier and more confusingly still, on the missing manifest row.)
+
+    A MANIFEST IS NOT SIGNED FROM ITS OWN COLUMNS AT ALL -- that is the substance, not a
+    missing feature. Its payload is built from `release_manifest_entry` and two derived
+    counts by `releases.manifest_payload`, which is why `release_verification` cannot
+    reuse `signatures.verify_target` either (see that module's docstring). So the answer
+    is not to teach `sign` a special case: `drugref publish` is how a manifest gets
+    signed, and `drugref verify --release` is how it gets checked.
+    """
+    if target_kind != _MANIFEST_KIND:
+        return False
+    print(f"drugref: {_MANIFEST_KIND} is not a per-row target kind -- a manifest's "
+          "payload is built from its entries and derived counts, not from columns of "
+          "one row. Use `drugref publish` to create and sign one, and `drugref verify "
+          "--release TAG` to check it.", file=sys.stderr)
+    return True
+
+
+def _warn_if_key_is_unregistered(conn, fingerprint: str, what: str) -> None:
+    """Warn -- never refuse -- when the private key's own fingerprint names no LIVE
+    `signing_key` row.
+
+    NOT A REFUSAL, because recording a signature by an unregistered key is a legitimate
+    state the whole verdict vocabulary already has a word for: `unknown_key`, and
+    registration can honestly follow signing (an air-gapped curator, a key enrolled by a
+    different operator later in the day). `record` deliberately stores signatures it
+    cannot vouch for -- see `signatures.record`'s own docstring on why a recorder that
+    refused could not store the evidence that a bad signature exists.
+
+    BUT SILENCE HERE IS EXPENSIVE, AND MOST EXPENSIVE FOR `publish`. A release tag is
+    UNIQUE and `release_manifest` is insert-only, so publishing under an unregistered
+    key BURNS that tag on a manifest reading `unknown_key` forever: there is no second
+    publish under the same tag to correct it with, and `verify --release` will exit 1 on
+    it for the rest of the database's life. One line on stderr before the write is the
+    whole fix.
+    """
+    if keys.live(conn, fingerprint) is not None:
+        return
+    print(f"drugref: warning -- no live signing_key row for {fingerprint}. This "
+          f"{what} will read `unknown_key` until the key is registered "
+          "(`drugref keys register --public-key ...`).", file=sys.stderr)
 
 
 def _read_private_key(path) -> bytes | None:
@@ -62,10 +124,13 @@ def _handle_sign(conn, args) -> int:
     runs on the curator's machine, and the private key never touches
     drugref's infrastructure).
     """
+    if _reject_manifest_kind(args.target_kind):
+        return 2
     private_key = _read_private_key(args.key)
     if private_key is None:
         return 2
     fingerprint = signing.fingerprint(_public_key_of(private_key))
+    _warn_if_key_is_unregistered(conn, fingerprint, "signature")
     signed_at = datetime.now(timezone.utc)
 
     # UnknownTargetError (a RuntimeError) propagates to cli.main unhandled:
@@ -201,6 +266,8 @@ def _handle_verify(conn, args) -> int:
         print("drugref: verify needs --release, or both --target-kind and "
               "--target-id", file=sys.stderr)
         return 2
+    if _reject_manifest_kind(args.target_kind):
+        return 2
     return _verify_target(conn, args)
 
 
@@ -216,6 +283,7 @@ def _handle_publish(conn, args) -> int:
     if private_key is None:
         return 2
     fingerprint = signing.fingerprint(_public_key_of(private_key))
+    _warn_if_key_is_unregistered(conn, fingerprint, "release")
 
     # release_manifest_row_count/_digest_length/_upstream_releases_array are
     # all values THIS process computes and can never genuinely fail; the one
