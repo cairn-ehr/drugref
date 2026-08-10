@@ -22,7 +22,6 @@ import datetime as dt
 from drugref import curation, keys, signatures, signing
 
 SIGNED_AT = dt.datetime(2026, 8, 9, 4, 33, 52, tzinfo=dt.timezone.utc)
-LONG_AGO = SIGNED_AT - dt.timedelta(days=30)
 LATER = dt.datetime(2026, 12, 1, tzinfo=dt.timezone.utc)
 
 
@@ -228,8 +227,25 @@ def test_a_signed_condition_ruling_reads_signed_on_both_rows(
 # ---- signature_backdated ------------------------------------------------------------
 
 def test_signature_backdated_is_empty_for_a_normal_signature(conn, a_graded_rule):
+    """"Normal" means SIGNED NOW, not signed at a literal date -- and that is why
+    this test's `signed_at` is `dt.datetime.now(dt.timezone.utc)` rather than the
+    module's own `SIGNED_AT`. `signature_backdated` compares `signed_at` against
+    `recorded_at`, which is the DATABASE's `now()` at the moment this test actually
+    runs; a fixed calendar literal is "normal" only until wall-clock carries it more
+    than a day behind whatever `recorded_at` turns out to be, and then it silently
+    becomes the wrong fixture for the case it is supposed to cover. That is exactly
+    what happened here: this test used `SIGNED_AT` (2026-08-09 04:33:52 UTC) until
+    real time crossed 2026-08-10 04:33:52 UTC, at which point a signature that was
+    never backdated started failing this assertion. Deriving `signed_at` from `now()`
+    makes the test's premise -- "this signature is unremarkable" -- true by
+    construction, on every run, rather than true only within a one-day calendar
+    window. `SIGNED_AT` itself is UNCHANGED and still used elsewhere in this module,
+    where what matters is a value's relationship to `LATER` (a revoked key's
+    `status_from`), not its distance from today.
+    """
     target_id = _graded(conn, a_graded_rule)
-    _sign(conn, "curated_interaction", target_id)
+    _sign(conn, "curated_interaction", target_id,
+          signed_at=dt.datetime.now(dt.timezone.utc))
     assert conn.execute(
         "SELECT count(*) FROM drugref.signature_backdated").fetchone() == (0,)
 
@@ -239,8 +255,21 @@ def test_signature_backdated_reports_a_signed_at_long_before_recorded_at(
     """An OPERATOR SIGNAL, not a forgery report: signed_at is inside the signed
     payload and cannot be forged without the key, but a legitimate air-gapped signing
     flow also lands here -- see the view's own COMMENT for why this is deliberately
-    not a gap kind."""
+    not a gap kind.
+
+    SIGNED 30 DAYS BEFORE NOW, not before a fixed calendar date -- the sibling test
+    above's fix, applied here too, and for the identical reason: the module used to
+    derive this from `SIGNED_AT` (`LONG_AGO = SIGNED_AT - timedelta(days=30)`), which
+    anchored "backdated" to the same 2026-08-09 literal that drifted out from under
+    the OTHER test. `signature_backdated`'s rule only cares that `signed_at` precedes
+    `recorded_at` by more than a day, not by any particular calendar distance, so
+    `now() - 30 days` sits on the correct side of that one-day threshold FOREVER,
+    the same way `now()` alone does for the "not backdated" case -- the two tests are
+    opposite sides of one boundary by construction, not by which calendar page
+    happens to be showing when the suite runs.
+    """
     target_id = _graded(conn, a_graded_rule)
-    _sign(conn, "curated_interaction", target_id, signed_at=LONG_AGO)
+    _sign(conn, "curated_interaction", target_id,
+          signed_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30))
     assert conn.execute(
         "SELECT count(*) FROM drugref.signature_backdated").fetchone() == (1,)
