@@ -58,11 +58,18 @@ class ManifestVerdict:
     `row_count_ok`/`manifest_digest_ok` answer MANIFEST SELF-CONSISTENCY: does
     `release_manifest.row_count`/`.manifest_digest` -- both WRITER-ASSERTED, neither
     schema-enforced (db/030's own comment: "The release verifier ... is what actually
-    checks it") -- still match what `release_manifest_entry` and the signature actually
-    hold. Independent of both other halves: an attacker who edits only these two
-    columns (impossible in practice, since the table is insert-only, but a genuine
-    write-time bug could still get either one wrong) leaves the content pairing and the
-    signature both looking fine.
+    checks it") -- still match what `release_manifest_entry` and the EARLIEST recorded
+    signature actually hold. Independent of both other halves: an attacker who edits
+    only these two columns (impossible in practice, since the table is insert-only, but
+    a genuine write-time bug could still get either one wrong) leaves the content
+    pairing and the signature both looking fine.
+
+    `manifest_digest_ok` IS `None`, NOT `False`, WHEN THE MANIFEST IS UNSIGNED --
+    "unverifiable" and "verified wrong" are different claims, and there is no signed
+    payload to recompute a digest from at all. `is_intact` below still reports
+    `False` in that case, because `signature` is `NO_SIGNATURE` regardless of what
+    this field says -- not because this field was coerced into meaning something it
+    does not.
     """
     release_tag: str
     signature: str
@@ -70,7 +77,7 @@ class ManifestVerdict:
     added: list
     altered: list
     row_count_ok: bool
-    manifest_digest_ok: bool
+    manifest_digest_ok: bool | None
 
     @property
     def is_intact(self) -> bool:
@@ -78,10 +85,14 @@ class ManifestVerdict:
         bookkeeping matches its own entries. All five, ANDed: a database that matches
         the manifest byte-for-byte under a forged signature is not intact either -- it
         only means an attacker forged a manifest that happens to describe reality,
-        which is not the same claim as "this is really what drugref published"."""
+        which is not the same claim as "this is really what drugref published". `bool()`
+        around `manifest_digest_ok` is deliberate: `None` (unsigned) and `False`
+        (verified wrong) must both fail this property, and Python already treats `None`
+        as falsy in a boolean context, but writing it explicitly says so rather than
+        relying on the reader to know that."""
         return (self.signature == signing.VALID
                 and not (self.dropped or self.added or self.altered)
-                and self.row_count_ok and self.manifest_digest_ok)
+                and self.row_count_ok and bool(self.manifest_digest_ok))
 
 
 class UnknownReleaseError(RuntimeError):
@@ -110,10 +121,32 @@ def _worst_verdict(verdicts: list) -> str:
 
 def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
                                release_tag: str, manifest_digest: bytes
-                               ) -> tuple[str, bool]:
+                               ) -> tuple[str, bool | None]:
     """The manifest's own signature verdict, and whether `release_manifest.
-    manifest_digest` matches at least one recorded signature's rebuilt payload.
-    Returns `(signature, manifest_digest_ok)`.
+    manifest_digest` matches the EARLIEST recorded signature's rebuilt payload.
+    Returns `(signature, manifest_digest_ok)`; `manifest_digest_ok` is `None` when
+    there is no signature to check it against at all (see below).
+
+    EARLIEST, NOT "ANY" -- review round 2 shipped "any signature's payload matches",
+    which review round 3 found unsound: `manifest_digest` is written ONCE, by
+    `publish`, over exactly the payload of the ONE signature `publish` records at that
+    moment. "Any" lets a LATER, legitimate counter-signature (a genuinely different
+    payload -- `signed_at` is inside the signed bytes, spec 4.4) vouch for a digest the
+    ORIGINAL signature no longer matches, which is reachable only through a writer bug
+    -- precisely the class of defect this column exists to catch.
+    `test_a_wrong_manifest_digest_still_reports_wrong_when_a_later_counter_signature_
+    would_have_matched` is the test "any" could not pass and "earliest" does.
+    `sig_rows` is already `ORDER BY signature_id` -- the order signatures were
+    RECORDED, `keys.history`'s own precedent for why (an operator may supply
+    `signed_at` out of order; the surrogate key is the order that actually happened)
+    -- so the first entry appended to `digest_matches` below is exactly the earliest.
+
+    `None` FOR THE UNSIGNED CASE, NOT `False` -- review round 3's other finding:
+    "unverifiable" and "verified wrong" are different claims, and returning `False`
+    for both conflated them. Harmless today only because `NO_SIGNATURE` independently
+    sinks `ManifestVerdict.is_intact` regardless of what `manifest_digest_ok` says --
+    a coincidence, not a guarantee, and exactly the kind that stops holding the day
+    another caller reads this field directly.
 
     EACH SIGNATURE IS REBUILT UNDER ITS OWN STORED `payload_context` -- review round
     2's C2, and Task 7's C1 defect reintroduced in hard-coded form: the first draft of
@@ -156,7 +189,7 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
         "WHERE target_kind = 'release_manifest' AND target_id = %s "
         "ORDER BY signature_id", (manifest_id,)).fetchall()
     if not sig_rows:
-        return signing.NO_SIGNATURE, False
+        return signing.NO_SIGNATURE, None
 
     verdicts = []
     digest_matches = []
@@ -179,7 +212,7 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
             key.public_key, payload, signature)
         verdicts.append(signing.verdict(
             status, signature_ok=signature_ok, signed_at=signed_at))
-    return _worst_verdict(verdicts), any(digest_matches)
+    return _worst_verdict(verdicts), digest_matches[0]
 
 
 def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
@@ -226,14 +259,29 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
     current_id = live_target_id
     seen = {current_id}
     while True:
-        predecessor = conn.execute(
+        # EXACTLY ONE PREDECESSOR EXPECTED, made explicit the same way
+        # `releases._natural_key_columns` was -- `.fetchone()` would silently pick
+        # whichever row the planner returns first. `overlay.supersede`'s own UPDATE
+        # targets every row matching the natural key with `superseded_by IS NULL`, so
+        # more than one row pointing `superseded_by` at the same successor is
+        # structurally expressible mid-transaction even though db/020's DEFERRED
+        # single-live trigger makes it unreachable at COMMIT -- and a verification
+        # function must not silently choose one and hide that a violation is still
+        # visible right now.
+        predecessors = conn.execute(
             sql.SQL("SELECT {pk} FROM drugref.{table} "
                     "WHERE superseded_by = %s").format(
                 pk=sql.Identifier(pk_column), table=sql.Identifier(table)),
-            (current_id,)).fetchone()
-        if predecessor is None:
+            (current_id,)).fetchall()
+        if not predecessors:
             return False
-        predecessor_id = predecessor[0]
+        if len(predecessors) > 1:
+            raise ValueError(
+                f"drugref.{table} row {current_id} is pointed at by "
+                f"{len(predecessors)} superseded_by values -- the single-live "
+                "invariant should make this unreachable at COMMIT, but this "
+                "function cannot silently pick one mid-transaction.")
+        predecessor_id = predecessors[0][0]
         if predecessor_id in seen:
             # Defensive only: db/029's floor forbids a cycle (supersession always
             # points at a LATER row, never back to one already superseded), so this

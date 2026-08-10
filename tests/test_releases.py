@@ -414,7 +414,13 @@ def test_verify_release_raises_on_an_unsupported_algorithm(conn, published):
 def test_an_unsigned_manifest_reports_no_signature(conn):
     """The `NO_SIGNATURE` path -- unreachable through `publish`, which always signs,
     but a real state nonetheless (a manifest row written and never signed, or not yet).
-    Constructed by hand: no `assertion_signature` row at all."""
+    Constructed by hand: no `assertion_signature` row at all.
+
+    `manifest_digest_ok is None` (review round 3, R2): there is no signed payload to
+    recompute a digest from at all, which is a different claim from "recomputed and it
+    was wrong" (`False`). `is_intact` still reports `False` regardless -- via
+    `signature`, not via this field -- so the distinction is real but was, until this
+    test, unobserved from outside the function."""
     conn.execute(
         "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
         "row_count, upstream_releases, published_by, published_at) "
@@ -422,6 +428,7 @@ def test_an_unsigned_manifest_reports_no_signature(conn):
         (b"\x04" * 32, PUBLISHED_AT))
     verdict = release_verification.verify_release(conn, "2026.08.23")
     assert verdict.signature == signing.NO_SIGNATURE
+    assert verdict.manifest_digest_ok is None
     assert not verdict.is_intact
 
 
@@ -472,3 +479,74 @@ def test_a_wrong_manifest_digest_is_reported(conn, institutional_key):
     assert verdict.signature == signing.VALID
     assert not verdict.manifest_digest_ok
     assert not verdict.is_intact
+
+
+def test_a_wrong_manifest_digest_is_not_excused_by_a_later_counter_signature(
+        conn, institutional_key):
+    """R2 (review round 3, decided now rather than deferred): `manifest_digest_ok`
+    must key on the EARLIEST recorded signature, not "any" recorded signature.
+    `release_manifest.manifest_digest` is written exactly once, by `publish`, over the
+    payload of the ONE signature it records at that moment. "Any" would let a LATER,
+    entirely legitimate counter-signature (a genuinely different payload --
+    `signed_at` is inside the signed bytes, spec 4.4) vouch for a digest the ORIGINAL
+    signature no longer matches -- reachable only through a writer bug, which is
+    precisely what this column exists to catch.
+
+    Constructed so "any" and "earliest" would disagree: `manifest_digest` is set to
+    the SECOND signature's payload digest, not the first's -- the shape a bug that
+    wrote the wrong signature's digest into `release_manifest.manifest_digest` would
+    leave behind. Under "any", the second signature's match would have hidden the
+    first's mismatch entirely; under "earliest", it does not.
+    """
+    early, later = PUBLISHED_AT, PUBLISHED_AT + dt.timedelta(days=1)
+    payload_first = releases.manifest_payload(
+        conn, release_tag="2026.08.26", published_by="an operator",
+        published_at=PUBLISHED_AT, entries=[], upstream=[],
+        key_fingerprint=institutional_key["fingerprint"], signed_at=early)
+    payload_second = releases.manifest_payload(
+        conn, release_tag="2026.08.26", published_by="an operator",
+        published_at=PUBLISHED_AT, entries=[], upstream=[],
+        key_fingerprint=institutional_key["fingerprint"], signed_at=later)
+    manifest_id = conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.26', %s, 0, '[]'::jsonb, 'an operator', %s) "
+        "RETURNING manifest_id",
+        (signing.digest(payload_second), PUBLISHED_AT)).fetchone()[0]
+    signatures.record(
+        conn, target_kind="release_manifest", target_id=manifest_id,
+        payload_context="release_manifest/v1", payload=payload_first,
+        key_fingerprint=institutional_key["fingerprint"],
+        signature=signing.sign(institutional_key["private"], payload_first),
+        signed_at=early)
+    signatures.record(
+        conn, target_kind="release_manifest", target_id=manifest_id,
+        payload_context="release_manifest/v1", payload=payload_second,
+        key_fingerprint=institutional_key["fingerprint"],
+        signature=signing.sign(institutional_key["private"], payload_second),
+        signed_at=later)
+    verdict = release_verification.verify_release(conn, "2026.08.26")
+    assert verdict.signature == signing.VALID          # both signatures are genuine
+    assert not verdict.manifest_digest_ok              # but the EARLIEST is checked
+
+
+def test_worst_verdict_picks_the_most_severe():
+    """`_worst_verdict` has no coverage through `verify_release` at all today -- no
+    test builds a manifest signed more than once with genuinely differing verdicts, so
+    the single-element lists every other test in this file produces would pass under
+    ANY reduction rule, including `verdicts[0]`. Driven directly rather than through a
+    manifest, since building a real multi-signature scenario for this alone would
+    exercise `signatures.record`'s dedupe guard as much as this function.
+
+    Includes an UNKNOWN VERDICT -- a future sixth constant this module has not been
+    taught about -- to pin the deliberate `-1` ranking (review round 2's design, the
+    fix for C4's `KeyError` crash): it must rank WORST, beating even
+    `signing.UNKNOWN_KEY`, rather than raising or being silently treated as best.
+    """
+    assert release_verification._worst_verdict(
+        [signing.VALID, signing.KEY_EXPIRED]) == signing.KEY_EXPIRED
+    assert release_verification._worst_verdict(
+        [signing.VALID, signing.BAD_SIGNATURE,
+         signing.KEY_EXPIRED]) == signing.BAD_SIGNATURE
+    assert release_verification._worst_verdict(
+        [signing.UNKNOWN_KEY, "some_future_verdict"]) == "some_future_verdict"

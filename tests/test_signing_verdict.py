@@ -99,3 +99,47 @@ def test_every_verdict_constant_is_distinct():
     values = [signing.NO_SIGNATURE, signing.UNKNOWN_KEY, signing.BAD_SIGNATURE,
               signing.KEY_REVOKED_COMPROMISED, signing.KEY_EXPIRED, signing.VALID]
     assert len(set(values)) == 6
+
+
+def test_verdict_precedence_matches_verdicts_actual_behaviour():
+    """`signing.VERDICT_PRECEDENCE` (added for review round 2's C4, so a caller
+    combining several `assertion_signature` rows -- the release verifier folding
+    several signatures over one manifest into one answer -- has a single ranking
+    rather than a second hand-typed copy of this file's own order) is a RESTATEMENT of
+    `verdict`'s if-chain, co-located but not DERIVED from it. Nothing pinned the two
+    together before this test: round 3's review reversed the tuple and 177 tests
+    stayed green.
+
+    Each line below builds inputs that satisfy TWO of `verdict`'s conditions AT ONCE,
+    so which verdict comes back is the precedence in ACTION, not a second copy of the
+    constant read back at itself:
+
+    - `key_status=None` always wins over whatever `signature_ok` would otherwise say
+      (UNKNOWN_KEY beats BAD_SIGNATURE -- a signature cannot even be checked without
+      the public key).
+    - A signature that is actually forged (`signature_ok=False`) on a COMPROMISED key
+      still reports the forgery, not the revocation (BAD_SIGNATURE beats
+      KEY_REVOKED_COMPROMISED).
+    - `compromised` is `is_revocation=True` as well as `invalidates_all_signatures=True`
+      in db/030's own seed data, so ONE call to a compromised key with a signature made
+      after its own `status_from` satisfies both the blanket-revocation condition and
+      the time-scoped-expiry condition simultaneously; the blanket one wins
+      (KEY_REVOKED_COMPROMISED beats KEY_EXPIRED).
+    - A rotated key's signature made after `status_from` is EXPIRED, never VALID
+      (KEY_EXPIRED beats VALID -- the fallback, reached only when nothing else fired).
+
+    Asserting the observed sequence equals `list(VERDICT_PRECEDENCE)` is what makes a
+    reversed (or merely reordered) tuple fail this test, rather than one that happens
+    to still contain the same five members.
+    """
+    observed = [
+        signing.verdict(None, signature_ok=False, signed_at=LATE),
+        signing.verdict(COMPROMISED, signature_ok=False, signed_at=EARLY),
+        signing.verdict(COMPROMISED, signature_ok=True, signed_at=LATE),
+        signing.verdict(ROTATED, signature_ok=True, signed_at=LATE),
+        signing.verdict(ACTIVE, signature_ok=True, signed_at=LATE),
+    ]
+    assert observed == [signing.UNKNOWN_KEY, signing.BAD_SIGNATURE,
+                        signing.KEY_REVOKED_COMPROMISED, signing.KEY_EXPIRED,
+                        signing.VALID]
+    assert observed == list(signing.VERDICT_PRECEDENCE)
