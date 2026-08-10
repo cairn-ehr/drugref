@@ -198,6 +198,17 @@ def test_apply_migrations_is_idempotent(conn):
         # Named explicitly for the same information_schema.tables reason as above.
         "gap_uncurated_condition_contradiction", "gap_uncurated_interaction_rule",
         "curated_target_unresolved",
+        # Slice 5c.4, db/030: the signing tables. Two seeded vocabularies --
+        # signing_key_status_kind (the revocation rule as DATA) and
+        # signature_target_kind (what a signature may point at, one home for the
+        # kind -> table/pk_column/context mapping) -- plus the key registry
+        # (signing_key, db/020's overlay floor's EIGHTH table, no new PL/pgSQL),
+        # assertion_signature (one canonical-payload signature per row, insert-only
+        # under the new forbid_any_rewrite), and the release layer
+        # (release_manifest + release_manifest_entry, also insert-only, entries
+        # keyed on the natural key rather than the database-local target_id).
+        "signing_key_status_kind", "signature_target_kind", "signing_key",
+        "assertion_signature", "release_manifest", "release_manifest_entry",
     }
 
 
