@@ -102,7 +102,15 @@ def _handle_sign(conn, args) -> int:
 
 
 def _verify_target(conn, args) -> int:
-    """Every recorded signature over one curated row, each checked fresh."""
+    """Every recorded signature over one curated row, each checked fresh.
+
+    THE EXIT RULE HERE AND `_verify_release`'s ARE DELIBERATELY DIFFERENT --
+    see that function's own docstring for the full reasoning, and see it
+    BEFORE changing either one to match the other: a review round's residual
+    finding was that "make them consistent" is exactly the wrong instinct
+    here, because the two commands are answering different questions
+    (per-row signing is optional; a published release is always signed).
+    """
     verdicts = signatures.verify_target(conn, args.target_kind, args.target_id)
     if not verdicts:
         # UNSIGNED IS THE ORDINARY STATE (signatures.py's own docstring):
@@ -130,7 +138,19 @@ def _verify_target(conn, args) -> int:
 
 
 def _verify_release(conn, args) -> int:
-    """One published release's signature, content and self-consistency."""
+    """One published release's signature, content and self-consistency.
+
+    THE EXIT RULE IS DELIBERATELY NOT `_verify_target`'s "non-zero only on
+    bad_signature" -- a review round's Priority-1 finding, measured rather
+    than assumed: applying that same rule here (`return 0 if verdict.
+    signature != signing.BAD_SIGNATURE else 1`) leaves a published release
+    that gained an EXTRA live row (`added` non-empty) exiting 0, because
+    `added` is a content finding, not a signature one, and the unified rule
+    never looks at it. A script gating a deploy on this command would then
+    pass silently on exactly the case `verify_release`'s bidirectional
+    check exists to catch. See `is_intact`'s own property docstring for the
+    full accounting; the short version is below.
+    """
     verdict = release_verification.verify_release(conn, args.release)
     print(f"release {args.release}: signature={verdict.signature} "
           f"intact={verdict.is_intact}")
@@ -147,6 +167,18 @@ def _verify_release(conn, args) -> int:
     # code. Every one of is_intact's five ANDed conditions -- signature,
     # dropped, added, altered, the manifest's own bookkeeping -- is therefore
     # a real thing an operator running this in a script wants to gate on.
+    #
+    # NOTE THE REACH OF THAT FIRST CONDITION: `is_intact` requires `signature
+    # == signing.VALID` (release_verification.ManifestVerdict's own
+    # property), which is a STRICTER gate than "not bad_signature" --
+    # `unknown_key` and `key_revoked_compromised` both fail it too, so they
+    # also exit 1 here, unlike an unregistered or revoked key on a single
+    # ROW (_verify_target), which prints the finding but still exits 0. That
+    # is the right default for a release specifically: an institutional key
+    # going unregistered or revoked is exactly the kind of registry event a
+    # deploy script gating on this command should stop for, where the
+    # per-row case protects the ordinary, expected state of an unsigned
+    # curator judgement instead.
     return 0 if verdict.is_intact else 1
 
 

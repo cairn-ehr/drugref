@@ -3,15 +3,33 @@
 db/030), plus the shared helpers `cli_signing_release.py` reuses for `sign`,
 `verify` and `publish`.
 
-SPLIT FROM `cli_signing_release.py` ON SIZE, ONE DIRECTION ONLY. A single
-`cli_signing.py` covering `keys generate|register|revoke|list` AND
+SPLIT FROM `cli_signing_release.py` ON SIZE, NOT ON DEPENDENCY DIRECTION. A
+single `cli_signing.py` covering `keys generate|register|revoke|list` AND
 `sign`/`verify`/`publish` measured 515 lines against CLAUDE.md's ~500 cap --
 the same debt Task 1 split `cli.py`/`cli_chain.py` to avoid accumulating a
 second time (see that split's own note in cli.py). The seam is the natural
 one: this file owns the KEY REGISTRY, `cli_signing_release.py` owns everything
-that CONSUMES a key (signing a row, verifying one, publishing a release). The
-two shared helpers below (`_reject_blank`, `_write`) are DEFINED here and
-IMPORTED there, never the reverse, so there is no cycle.
+that CONSUMES a key (signing a row, verifying one, publishing a release).
+
+THERE IS A REAL IMPORT CYCLE HERE, NOT AN ABSENT ONE -- an earlier draft of
+this paragraph claimed otherwise, which was wrong and worth correcting rather
+than leaving for a reader to discover by hoisting an import and watching it
+break. The two shared helpers (`_reject_blank`, `_write`) are DEFINED here and
+IMPORTED, module-level, at the top of `cli_signing_release.py`; THIS file
+imports `cli_signing_release` back, inside `register()`'s own body, to reach
+its `register(commands)` function. That is the cycle both ways round, and it
+is broken only by WHEN the second half runs: `register()` is a function body,
+not top-level module code, so Python does not execute that `import` statement
+until something calls `cli_signing.register(commands)` -- by which point this
+module has already finished executing top to bottom and `_reject_blank`/
+`_write`/`_BlankArgumentError` already exist for `cli_signing_release` to
+import. Hoisting that one import to this file's own top-level import block
+would reintroduce the cycle for real: Python would reach it while THIS
+module is still mid-definition, `cli_signing_release`'s own top-level `from
+drugref.cli_signing import ...` would find those three names not yet bound,
+and the result is `ImportError: cannot import name '_write' from partially
+initialized module 'drugref.cli_signing'`. The local import is therefore
+load-bearing, not a style choice -- do not hoist it.
 
 MODELLED ON `cli_policy.py`, DELIBERATELY. That file is the precedent for
 every shape below: `_reject_blank` guards a required flag whose value strips
@@ -42,12 +60,22 @@ vocabulary a verifier branches on belongs in a table, not a CHECK list), so an
 unrecognised `--status` on `keys revoke` raises `ForeignKeyViolation`, not
 `CheckViolation` -- a different exception class naming the identical hazard
 db/006 found. `release_manifest.release_tag` is UNIQUE rather than either, so
-a reused tag on `drugref publish` raises `UniqueViolation`. `db.constraint_
-definition` quotes any of the three identically (it reads `pg_get_
+a reused tag on `drugref publish` raises `UniqueViolation`. `keys register`
+on a fingerprint that is ALREADY live is a fourth shape again:
+`signing_key`'s single-live trigger is `DEFERRABLE INITIALLY DEFERRED` (db/030
+section 3, `keys.register`'s own docstring), so the INSERT itself succeeds
+and only the COMMIT raises -- as a bare PL/pgSQL `RAISE EXCEPTION`, which
+psycopg surfaces as `RaiseException`, not any of the other three. `db.
+constraint_definition` quotes the first three identically (it reads `pg_get_
 constraintdef`, which does not care what KIND of constraint it is
-describing), so one helper still serves every call -- it is only the
-exception CLASS that differs per writer, and each call site states its own
-explicitly rather than one shared tuple catching all three everywhere. That
+describing) and does nothing for the fourth, which has no `pg_constraint` row
+at all -- it is a trigger, not a constraint. `db.referenced_vocabulary`
+answers the one part `constraint_definition` leaves flat for a FOREIGN KEY
+specifically: unlike a CHECK, an FK's own definition does not enumerate the
+values it admits, only the table it defers to. One pair of helpers still
+serves every call -- it is only the exception CLASS (and, for a FOREIGN KEY,
+the extra lookup) that differs per writer, and each call site states its own
+explicitly rather than one shared tuple catching all four everywhere. That
 distinction matters most for `sign` (`cli_signing_release.py`):
 `signatures.record`'s own CHECKs all check values THAT MODULE computed, never
 a raw operator string, so a violation there is a drugref bug, not a typo --
@@ -70,12 +98,26 @@ from drugref import db, keys, signing
 class _BlankArgumentError(ValueError):
     """A required flag was passed, but its value strips to empty.
 
-    Duplicated from `cli_policy._reject_blank`'s shape rather than imported --
-    each CLI module in this project owns its own copy of this small guard
-    (`cli_policy.py`'s docstring calls out the same "copy the shape" precedent
-    this whole file follows), and a private cross-module import of an
-    underscore-prefixed name would be a stranger dependency than the six lines
-    it would save.
+    Duplicated from `cli_policy._reject_blank`'s SHAPE rather than imported
+    from `cli_policy` -- `cli_policy.py`'s docstring calls out the same "copy
+    the shape" precedent this whole file follows, and a private cross-module
+    import reaching into a genuinely SEPARATE, unrelated CLI module (one this
+    file has no other dependency on at all) would be a stranger coupling
+    than the six lines copying it saves.
+
+    THIS IS NOT THE SAME QUESTION `cli_signing_release.py` ANSWERS THE OTHER
+    WAY, and the difference is worth being explicit about rather than
+    leaving two docstrings that look like they disagree: that module DOES
+    import this exact class (and `_reject_blank`, `_write`) by name, from
+    here. The two files are not unrelated -- they are the two halves of one
+    module split apart on line count alone (see this module's own docstring,
+    "SPLIT... NOT ON DEPENDENCY DIRECTION"), on `cli.py`/`cli_chain.py`'s own
+    precedent, which imports across that identical kind of split rather than
+    duplicating `IngestStep`/`ChainError`. A sibling file born from a size
+    cap sharing its parent's private helpers is the ordinary case that
+    precedent covers; reaching into `cli_policy.py`, a module this file
+    shares no split history with, is the "stranger dependency" the first
+    paragraph above still refuses.
     """
 
 
@@ -109,15 +151,35 @@ def _write(conn, writer, catches, **kwargs) -> int | None:
     or UniqueViolation depending on the writer) rather than being one constant
     every caller shares.
 
+    THE COMMIT IS INSIDE THE TRY, NOT AFTER IT -- a defect a review round
+    caught: `signing_key`'s single-live check
+    (`forbid_multiple_live_assertions`) is `DEFERRABLE INITIALLY DEFERRED`,
+    and `keys.py`'s own docstring says so in as many words -- "the single-live
+    check is DEFERRED -- so registering a second live row for one fingerprint
+    surfaces at the caller's COMMIT, not here." An operator re-running `keys
+    register` for a key already registered (ordinary shell-history error) is
+    exactly this case: the INSERT itself succeeds, and only `conn.commit()`
+    raises. A commit sitting after the try, as `cli_policy._write`'s own
+    shape has it, would let that exception reach `cli.main` as a raw
+    traceback -- `cli_policy._write` never needed this because none of
+    `interactions.py`'s writers commit through a deferred trigger.
+    `_handle_keys_register` therefore passes `psycopg.errors.RaiseException`
+    (the class a bare PL/pgSQL `RAISE EXCEPTION` surfaces as) in its
+    `catches` tuple alongside `CheckViolation`.
+
     ROLLED BACK EXPLICITLY, not left to `with db.connect(...)`, for
     `cli_policy._write`'s own reason: relying on a COMMIT-of-an-aborted-
     transaction behaving like a rollback is relying on a coincidence, and the
     explicit rollback is what makes the connection usable for the catalogue
     read below (a query issued on a still-aborted transaction raises
-    InFailedSqlTransaction instead of running).
+    InFailedSqlTransaction instead of running). This holds whether the
+    exception came from the INSERT or from the deferred check at COMMIT: a
+    failed COMMIT leaves the same aborted-transaction state a failed INSERT
+    does, and needs the same recovery.
     """
     try:
         new_id = writer(conn, **kwargs)
+        conn.commit()
     except catches as exc:
         conn.rollback()
         # Rendered from exc.diag, never from a Python list of valid values --
@@ -130,8 +192,18 @@ def _write(conn, writer, catches, **kwargs) -> int | None:
             conn, exc.diag.table_name, exc.diag.constraint_name)
         if definition:
             print(f"drugref: that constraint is {definition}", file=sys.stderr)
+        # A FOREIGN KEY, UNLIKE A CHECK, DOES NOT ENUMERATE ITS OWN
+        # VOCABULARY -- pg_get_constraintdef above names the referenced
+        # table and stops, so an operator would still have to open psql to
+        # learn what it holds. db.referenced_vocabulary reads those values
+        # from the SAME place constraint_definition read the constraint's
+        # shape from: the catalogue, never a second Python list.
+        if isinstance(exc, psycopg.errors.ForeignKeyViolation):
+            values = db.referenced_vocabulary(
+                conn, exc.diag.table_name, exc.diag.constraint_name)
+            if values:
+                print(f"drugref: valid values are: {values}", file=sys.stderr)
         return None
-    conn.commit()
     return new_id
 
 
@@ -190,13 +262,20 @@ def _handle_keys_register(conn, args) -> int:
 
     public_key = pathlib.Path(args.public_key).read_bytes()
     # signing_key_public_key_length's CHECK (octet_length = 32) is the one
-    # constraint this writer can hit from an operator mistake -- the wrong
-    # file handed to --public-key -- so it is the one CheckViolation this call
+    # CHECK this writer can hit from an operator mistake -- the wrong file
+    # handed to --public-key -- so it is the one CheckViolation this call
     # catches; algorithm and the fingerprint shape are both values THIS
     # process computes, never operator text, so neither can genuinely fail
-    # here.
+    # here. RaiseException is the SECOND real operator mistake, and a
+    # different shape of one: registering a fingerprint that is ALREADY
+    # live raises nothing at the INSERT (there is no UNIQUE(key_fingerprint)
+    # -- db/030's own note, since a correction briefly needs two live rows),
+    # only at this call's own COMMIT, from signing_key's DEFERRED single-
+    # live trigger. See _write's docstring for why the commit had to move
+    # inside the try for this catch to ever fire.
     signing_key_id = _write(
-        conn, keys.register, psycopg.errors.CheckViolation,
+        conn, keys.register,
+        (psycopg.errors.CheckViolation, psycopg.errors.RaiseException),
         public_key=public_key, holder=args.holder,
         registered_by=args.registered_by)
     if signing_key_id is None:
@@ -296,10 +375,17 @@ def register(commands) -> None:
     revoke.add_argument("--key-fingerprint", required=True)
     # No `choices`: see _handle_keys_revoke's comment. The vocabulary lives in
     # signing_key_status_kind; an unrecognised value reaches the database.
+    # THE HELP TEXT NAMES NO VALUES, deliberately -- db/006's lesson applies
+    # to a help string exactly as it does to a Python `choices=` list: an
+    # "(e.g. rotated, retired, compromised)" parenthetical here would be a
+    # second, partial copy of the same table a review round already flagged
+    # this file for approaching. `keys revoke --status <run it to see>`
+    # answers the question from the one place the vocabulary actually lives.
     revoke.add_argument(
         "--status", required=True,
-        help="the new status, as signing_key_status_kind defines it "
-             "(e.g. rotated, retired, compromised)")
+        help="the new status -- see the signing_key_status_kind table for "
+             "the live vocabulary; an unrecognised value is rejected with "
+             "the current list")
     revoke.add_argument("--revoked-by", required=True,
                         help="the operator running this command")
     revoke.set_defaults(handler=_handle_keys_revoke)

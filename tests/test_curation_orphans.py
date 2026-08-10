@@ -237,7 +237,22 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
 
 @pytest.mark.parametrize(
     "module", ["cli", "cli_policy", "cli_signing", "cli_signing_release"])
-@pytest.mark.parametrize("table", ["curated_interaction", "curated_condition"])
+@pytest.mark.parametrize("table", [
+    "curated_interaction", "curated_condition",
+    # THE FOUR SLICE-5C.4 TABLES, added the round cli_signing.py/
+    # cli_signing_release.py landed -- and a defect in its own right until
+    # a review round measured it: an earlier version of this test's
+    # docstring NAMED these four as the reason cli_signing/cli_signing_
+    # release joined `module` above, while `table` here still listed only
+    # the two 5c.1 tables. That meant registering `"INSERT INTO
+    # drugref.signing_key ..."` in either new file would have passed this
+    # test silently -- proved by planting exactly that string plus reads of
+    # assertion_signature/release_manifest and confirming all parametrized
+    # cases still went green. All six curated/append-only tables these
+    # four modules could reach are listed now, so the docstring's claim and
+    # the parametrize list agree.
+    "signing_key", "assertion_signature", "release_manifest",
+    "release_manifest_entry"])
 def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     """cli.py's own discipline, pinned. `_handle_status` is allowed to embed SELECTs
     against operational views, and that exception must not creep to cover the curated
@@ -262,10 +277,11 @@ def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     `cli_signing.py` AND `cli_signing_release.py` (slice 5c.4) are scanned for the
     identical reason, added the round those two files landed: `signing_key`,
     `assertion_signature`, `release_manifest` and `release_manifest_entry` are all
-    curated, append-only tables a Python-embedded writer could reach invisibly, and
-    the sign/verify/publish surface is a NEW file full of candidate target_kind
-    strings ("curated_interaction", "curated_condition") that must stay confined to
-    argument values and help text, never grow into an embedded `FROM drugref.{table}`.
+    curated, append-only tables a Python-embedded writer could reach invisibly. See
+    the `table` parametrize list's own comment above for why all SIX tables --
+    not just the two 5c.1 ones this test started with -- are checked against
+    BOTH new modules: the two claims (which tables, which modules) have to be
+    kept in the same place or one of them silently stops meaning anything.
     """
     import ast
     import importlib

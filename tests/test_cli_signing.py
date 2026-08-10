@@ -38,17 +38,34 @@ can ever see it. See `_NoCommit`'s own docstring for why a plain "swallow every
 commit() call" wrapper is not enough on its own (it would also swallow the
 transaction BOUNDARY a later command's rollback needs to stop at).
 
-WHY THIS FILE CALLS HANDLERS DIRECTLY (`_run`), NOT `cli.main`. Once nothing may
-commit for real, `cli.main`'s own connection -- opened fresh via `db.connect
-(args.dsn)` from `$DRUGREF_DSN` -- is no longer usable: it is a SEPARATE
-connection from the wrapped `conn` this file's fixtures build a test's rows on,
-so it would see none of them. `_run` parses argv with the REAL parser
-(`cli.build_parser`) and calls the resulting handler directly against a wrapped
-connection, which still exercises real argument parsing and real handler logic
--- everything `cli.main` adds on top is `db.connect` plus dispatch, and
-`test_keys_list_is_wired_into_cli_main` below is the one test that proves THAT
-still works, through a read-only command specifically because it is the one
-command class safe to run for real.
+WHY THIS FILE STILL CALLS THE REAL `cli.main` (`_run`), NOT A HANDLER
+DIRECTLY. Once nothing may commit for real, `cli.main`'s own connection --
+opened fresh via `db.connect(args.dsn)` from `$DRUGREF_DSN` -- is no longer
+usable as-is: it would be a SEPARATE connection from the wrapped `conn` this
+file's fixtures build a test's rows on, so it would see none of them. The
+`wconn` fixture below monkeypatches `cli.db.connect` to hand back the wrapped
+connection instead, so `_run` can call `cli.main(argv)` UNCHANGED -- real
+argument parsing, real dispatch, AND `main`'s own try/except around the
+RuntimeError family, all still exercised. An earlier draft called
+`args.handler(wconn, args)` directly, skipping `main` entirely, and a review
+round measured the cost: `keys.NoLiveKeyError` (and every other RuntimeError
+this module's handlers raise) is caught in `main`, not in `cli_signing.py`,
+so that draft could not tell "handler returns exit 2" from "handler raises
+and nothing catches it" for any of them.
+
+WHY `_NoCommit.commit()` ALSO NEEDS `SET CONSTRAINTS ALL IMMEDIATE`, NOT JUST
+`RELEASE SAVEPOINT` -- a second review-round finding, on the first one's
+heels. `signing_key`'s single-live check is one of NINE `DEFERRABLE INITIALLY
+DEFERRED` triggers in this schema, meaning it fires at a REAL `COMMIT`, not
+at `RELEASE SAVEPOINT` -- so the harness, left as `RELEASE SAVEPOINT` alone,
+silently disarmed all nine for every test in this file, which is a semantic
+difference from a real commit, not merely a durability one. `_NoCommit.
+commit()` now forces the pending deferred checks to run (and raise, if one
+fails) with `SET CONSTRAINTS ALL IMMEDIATE` before releasing the savepoint,
+then restores DEFERRED mode afterwards so the rest of a test's writes behave
+under the same deferred semantics a fresh transaction starts in.
+`test_keys_register_a_second_time_for_the_same_key_is_reported_cleanly`
+below is the test that could not have caught the bug this fixes without it.
 """
 import argparse
 import datetime as dt
@@ -74,17 +91,47 @@ class _NoCommit:
     re-opening under the same name is what makes each commit() call a fresh
     boundary, exactly as a real COMMIT starting a new transaction would be,
     without ever letting a byte reach disk.
+
+    `SET CONSTRAINTS ALL IMMEDIATE` RUNS FIRST, and this is the part a
+    review round found missing: nine triggers in this schema are
+    `DEFERRABLE INITIALLY DEFERRED` (`signing_key`'s single-live check among
+    them), meaning postgres checks them at a REAL `COMMIT`, never at
+    `RELEASE SAVEPOINT` -- so `RELEASE SAVEPOINT` alone silently disarms
+    every one of the nine for the whole test, which is a SEMANTIC gap, not a
+    durability one: a write this harness accepts could be one a real `drugref
+    keys register` would reject at commit. Forcing an immediate check here,
+    then releasing, is what makes `commit()` raise in exactly the cases a
+    real commit would. `SET CONSTRAINTS ALL DEFERRED` restores deferred mode
+    afterwards so a LATER write in the same test starts from the same mode a
+    fresh transaction would (every deferred trigger here is `INITIALLY
+    DEFERRED`) -- without it, every write after the first commit() would run
+    under IMMEDIATE mode instead, which is a second way to diverge from a
+    real session, just in the opposite direction.
+
+    `commit_count` IS COUNTED, NOT MERELY CALLED -- a second, separate review
+    finding: nothing before this counted whether a handler called commit()
+    AT ALL. A read WITHIN one test's still-open transaction sees an earlier
+    write regardless of whether that write was ever committed (ordinary
+    same-transaction MVCC visibility), so a test asserting "the row is
+    there" cannot tell a handler that commits from one that silently does
+    not -- and removing `conn.commit()` from `_handle_sign` was measured to
+    leave the full suite passing. See the module docstring's closing note on
+    what asserting this count does and does not prove.
     """
 
     _SAVEPOINT = "drugref_cli_test"
 
     def __init__(self, real):
         self._real = real
+        self.commit_count = 0
         self._real.execute(f"SAVEPOINT {self._SAVEPOINT}")
 
     def commit(self) -> None:
+        self.commit_count += 1
+        self._real.execute("SET CONSTRAINTS ALL IMMEDIATE")
         self._real.execute(f"RELEASE SAVEPOINT {self._SAVEPOINT}")
         self._real.execute(f"SAVEPOINT {self._SAVEPOINT}")
+        self._real.execute("SET CONSTRAINTS ALL DEFERRED")
 
     def rollback(self) -> None:
         self._real.execute(f"ROLLBACK TO SAVEPOINT {self._SAVEPOINT}")
@@ -285,6 +332,17 @@ def test_keys_register_prints_the_fingerprint_it_derived(
     out = capsys.readouterr().out
     assert a_registerable_key["fingerprint"] in out
     assert "registered signing_key_id=" in out
+    # `wconn.commit_count` proves the handler actually CALLED conn.commit(),
+    # which a same-transaction read of the row above cannot: that read would
+    # see an uncommitted INSERT exactly as readily as a committed one. See
+    # _NoCommit's own docstring for what this counter does and does not
+    # prove -- it is not a substitute for a second-connection read-back, only
+    # the weaker check that remains possible once nothing here may commit
+    # for real (test_cli_policy.py's own `_and_commits` tests prove theirs
+    # by reading back on a genuinely separate connection; that proof is not
+    # available to a file whose whole design is to never let a write reach
+    # disk).
+    assert wconn.commit_count == 1
 
 
 def test_keys_register_refuses_a_blank_holder_before_any_write(
@@ -335,6 +393,49 @@ def test_keys_register_rejects_a_public_key_of_the_wrong_length(
     assert "InFailedSqlTransaction" not in err and "Traceback" not in err
 
 
+def test_keys_register_a_second_time_for_the_same_key_is_reported_cleanly(
+        wconn, conn, a_registerable_key, capsys):
+    """CRITICAL: `signing_key`'s single-live check
+    (`forbid_multiple_live_assertions`) is `DEFERRABLE INITIALLY DEFERRED`
+    (db/030 section 3; `keys.register`'s own docstring: "the single-live
+    check is DEFERRED -- so registering a second live row for one
+    fingerprint surfaces at the caller's COMMIT, not here"). Re-running `keys
+    register` for a key already registered -- ordinary shell-history error,
+    not a novel input -- therefore succeeds at the INSERT and fails only at
+    COMMIT, which a review round found landing as a raw `RaiseException`
+    traceback because `_write`'s `conn.commit()` used to sit AFTER its own
+    `try`. Proved by the absence of a traceback (a bare exit-code check
+    would not distinguish "one clean line" from "unhandled exception, pytest
+    still reports the assertion that follows as failed") and by the FIRST
+    registration surviving with its ORIGINAL signing_key_id, unmoved by the
+    rejected second attempt.
+
+    ALSO THE TEST THAT NEEDS `_NoCommit.commit()`'s `SET CONSTRAINTS ALL
+    IMMEDIATE` fix to mean anything: `RELEASE SAVEPOINT` alone never fires a
+    DEFERRED trigger, so without that fix this test's second `_run` call
+    would silently commit clean, both rows would read back live, and the
+    exit-code assertion below would simply be wrong about what a real
+    `drugref keys register` does.
+    """
+    assert _run(wconn, [
+        "keys", "register", "--public-key", str(a_registerable_key["path"]),
+        "--holder", "a curator", "--registered-by", "an operator"]) == 0
+    first_id = keys.live(conn, a_registerable_key["fingerprint"]).signing_key_id
+    capsys.readouterr()
+
+    assert _run(wconn, [
+        "keys", "register", "--public-key", str(a_registerable_key["path"]),
+        "--holder", "a curator", "--registered-by", "an operator"]) == 2
+    err = capsys.readouterr().err
+    assert "Traceback" not in err
+    assert "live rows" in err
+
+    record = keys.live(conn, a_registerable_key["fingerprint"])
+    assert record is not None
+    assert record.signing_key_id == first_id
+    assert record.status == "active"
+
+
 # ---- keys revoke ---------------------------------------------------------------
 
 
@@ -344,18 +445,30 @@ def test_keys_revoke_with_an_unrecognised_status_quotes_the_constraint(
     signing_key_status_kind (db/030 section 2), and signing_key.status is a
     FOREIGN KEY rather than a CHECK -- so the constraint `_write` quotes here
     is a FOREIGN KEY definition, not a CHECK, and the test proves the catch
-    reaches that exception class too."""
+    reaches that exception class too.
+
+    ALSO ASSERTS `db.referenced_vocabulary`'s OWN LINE, and this is the part
+    a CHECK-only test would not need: `pg_get_constraintdef` degrades for a
+    FOREIGN KEY the way it never does for a CHECK -- it names the referenced
+    table and stops, rather than enumerating the values -- so the message
+    would otherwise send an operator to psql to learn what
+    signing_key_status_kind actually holds.
+    """
     assert _run(wconn, [
         "keys", "register", "--public-key", str(a_registerable_key["path"]),
         "--holder", "a curator", "--registered-by", "an operator"]) == 0
     capsys.readouterr()
 
     expected = _constraint_definition(conn, "signing_key", "signing_key_status_fkey")
+    expected_values = db.referenced_vocabulary(
+        conn, "signing_key", "signing_key_status_fkey")
     assert _run(wconn, [
         "keys", "revoke", "--key-fingerprint", a_registerable_key["fingerprint"],
         "--status", "nonsense", "--revoked-by", "an operator"]) == 2
     err = capsys.readouterr().err
     assert expected in err
+    assert expected_values in err
+    assert "active" in expected_values and "compromised" in expected_values
     assert "Traceback" not in err
     assert keys.live(conn, a_registerable_key["fingerprint"]).status == "active"
 
@@ -372,6 +485,10 @@ def test_keys_revoke_changes_the_live_status(wconn, conn, a_registerable_key, ca
     out = capsys.readouterr().out
     assert "compromised" in out
     assert keys.live(conn, a_registerable_key["fingerprint"]).status == "compromised"
+    # One commit for the register above, one for this revoke -- see
+    # test_keys_register_prints_the_fingerprint_it_derived's comment for what
+    # this counter does and does not prove.
+    assert wconn.commit_count == 2
 
 
 def test_keys_revoke_a_fingerprint_nobody_registered_is_reported_cleanly(
@@ -474,6 +591,15 @@ def test_sign_records_a_verifiable_signature(
     verdicts = signatures.verify_target(
         conn, "curated_interaction", a_signable_target["target_id"])
     assert [v.verdict for v in verdicts] == [signing.UNKNOWN_KEY]
+    # THE REGRESSION THIS COUNTER EXISTS FOR: a same-transaction read (the
+    # verify_target call above) sees an uncommitted INSERT exactly as
+    # readily as a committed one, so it cannot by itself prove `_handle_sign`
+    # calls conn.commit() -- measured directly by deleting that line and
+    # finding this file's suite still 24 green. `commit_count` is the
+    # narrower thing that IS still checkable once nothing here may commit
+    # for real; see _NoCommit's own docstring for the full accounting of
+    # what it does and does not prove.
+    assert wconn.commit_count == 1
 
 
 # ---- verify -----------------------------------------------------------------
@@ -514,7 +640,12 @@ def test_verify_exits_nonzero_on_a_bad_signature(
         "--target-id", str(a_signable_target["target_id"])])
     out = capsys.readouterr().out
     assert "bad_signature" in out
-    assert exit_code != 0
+    # == 1, NOT != 0 -- `!= 0` would still pass if `_verify_target` returned
+    # 2 (this surface's OPERATOR-ERROR code) for a bad signature instead of
+    # its own dedicated integrity code, which would make a bad_signature
+    # indistinguishable from a malformed --target-kind to a script checking
+    # the exit status alone.
+    assert exit_code == 1
 
 
 def test_verify_exits_zero_on_an_unknown_key_signature(
@@ -572,6 +703,10 @@ def test_publish_and_verify_release_round_trip(
     out = capsys.readouterr().out
     assert "signature=valid" in out
     assert "intact=True" in out
+    # One commit for `publish` -- `verify` never writes, so it adds none.
+    # See test_keys_register_prints_the_fingerprint_it_derived's comment for
+    # what this counter does and does not prove.
+    assert wconn.commit_count == 1
 
 
 def test_publish_refuses_a_blank_release_tag_before_any_write(
@@ -587,6 +722,50 @@ def test_publish_refuses_a_blank_release_tag_before_any_write(
     assert conn.execute(
         "SELECT 1 FROM drugref.release_manifest "
         "WHERE release_tag = '   '").fetchone() is None
+
+
+def test_verify_release_exits_nonzero_when_a_row_is_added_after_publish(
+        wconn, conn, a_signable_target, a_key_file, ingest_run_id, a_moiety,
+        capsys):
+    """PRIORITY-1 RESIDUAL: the exit rule `_verify_release` uses (`is_intact`)
+    has to differ from `_verify_target`'s ("non-zero only on bad_signature")
+    for THIS case specifically to be caught. Applying the unified rule here
+    -- `return 0 if verdict.signature != signing.BAD_SIGNATURE else 1` --
+    leaves this test failing: the manifest's own signature is genuinely
+    `valid` (nothing forged it), so a rule that looks only at `signature`
+    reports exit 0 on a release a later row was added to. A script gating a
+    deploy on this command would then pass silently on exactly the
+    completeness check `verify_release`'s bidirectional comparison exists to
+    make.
+
+    THE ADDED ROW IS A GENUINELY SEPARATE NATURAL KEY (a fresh class, a
+    different relationship), not a revision of `a_signable_target`'s own row
+    -- `enumerate_live` pairs on `(target_kind, natural_key)`, so reusing the
+    same key would make this a content ALTERATION test, not an ADDITION one,
+    and prove a different (already-covered, in test_releases.py) code path.
+    """
+    from tests.test_curated_overlay import _a_class
+
+    keys.register(conn, public_key=a_key_file["public"], holder="drugref.org",
+                  registered_by="an operator")
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.08.09-added", "--published-by",
+        "an operator", "--key", str(a_key_file["path"])]) == 0
+    capsys.readouterr()
+
+    second_class = _a_class(conn, ingest_run_id, code="N0000000099",
+                            name="A second test MoA [MoA]")
+    curation.record_interaction_judgement(
+        conn, a_moiety, second_class, "CI_PE", True, severity="minor",
+        evidence_grade="theoretical", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+
+    exit_code = _run(wconn, ["verify", "--release", "2026.08.09-added"])
+    out = capsys.readouterr().out
+    assert "signature=valid" in out   # the manifest's signature is genuine
+    assert "intact=False" in out
+    assert "added=[" in out and "added=[]" not in out
+    assert exit_code == 1
 
 
 def _constraint_definition(conn, table, name):
