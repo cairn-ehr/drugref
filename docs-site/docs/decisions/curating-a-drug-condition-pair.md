@@ -1,7 +1,7 @@
-# Curating a drug–condition pair: the asymmetric key, a natural-key reference, and signable not signed
+# Curating a drug–condition pair: the asymmetric key, a natural-key reference, and shipping empty
 
 **Status:** Active
-**Last reviewed:** 2026-08-06
+**Last reviewed:** 2026-08-10
 **Applies to:** `drugref.curated_interaction`, `drugref.curated_condition` (`db/029`); their read views
 `curated_ddi_pair`, `curated_condition_ruling`; their worklists `gap_uncurated_interaction_rule`,
 `gap_uncurated_condition_contradiction`; and the operator check `curated_target_unresolved`
@@ -78,20 +78,24 @@ view, modelled on `expansion_policy_unresolved`, deliberately **not** a gap kind
 an upstream-change signal for whoever ran the ingest, not a clinical question for a curator. Measured empty
 on the real releases (§ below), as it must be with zero curated rows.
 
-**3. The tier is signable, not signed — and that is why this slice ships with zero curated rows.**
+**3. The tier was signable, not signed — and that is why this slice ships with zero curated rows.**
 
-No signing infrastructure exists anywhere in the repo: no key management, no signing identity, no
-verification path. `ROADMAP.md` and `PROJECT-NOTES.md` used to say "signed overlay" outright, which
-asserted a security property the schema does not have; both are corrected, and this record is the
-standing statement of what stands instead. Adding a signature column later is an ordinary additive
-migration and costs nothing on its own. What cannot be done later is signing a row that already exists:
-the append-only floor refuses `UPDATE`, so a row committed before signing exists is permanently unsigned.
+When this record was written there was no signing infrastructure anywhere in the repo: no key
+management, no signing identity, no verification path. `ROADMAP.md` and `PROJECT-NOTES.md` said "signed
+overlay" outright, asserting a security property the schema did not have; both were corrected. What
+cannot be done later is signing a row that already exists: the append-only floor refuses `UPDATE`, so a
+row committed before signing exists would be permanently unsigned.
 
 That asymmetry is the whole argument for shipping this slice's tables empty. With no curated rows, there
-is nothing to strand, and the sequencing constraint falls out for free: **signing must land (5c.4) before
-the first curated row** — which arrives with 5c.2's ONC-floor content, not with this slice. Until then,
-"signable" is the honest word: the mechanism that will let a row be signed exists (`db/029`'s floor,
-Plan C's supersession discipline), the mechanism that actually signs one does not yet.
+was nothing to strand, and the sequencing constraint fell out for free: **signing must land before the
+first curated row** — which arrives with 5c.2's ONC-floor content, not with this slice.
+
+**Delivered, 2026-08-10, and the ordering held.** Slice 5c.4 (`db/030`) built the registry, both
+signature layers and `drugref verify`; see
+[signing the curated overlay](signing-the-curated-overlay.md). It also **relaxed the constraint stated
+above rather than merely satisfying it**: signatures are *detached rows*, not a column, so a curated row
+can be signed at any later time and the irreversibility this section warned about is gone. Shipping
+empty was good ordering, not a trap — and this tier is now signed, not merely signable.
 
 ## Consequences
 
@@ -139,7 +143,8 @@ Plan C's supersession discipline), the mechanism that actually signs one does no
 
 ## Related
 
-- [The hybrid store](hybrid-store.md) — the signable/signed distinction restated at the architecture level.
+- [The hybrid store](hybrid-store.md) — the same tier at the architecture level, now signed.
+- [Signing the curated overlay](signing-the-curated-overlay.md) — what §3 above was waiting for.
 - [A curated correction needs a deferred check, not a unique index](correcting-a-curated-assertion.md) —
   the single-live mechanism both new tables reuse unchanged.
 - [The expansion policy is append-only, and `withdrawn` is a decision](expansion-policy-is-append-only.md)

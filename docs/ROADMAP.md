@@ -22,8 +22,8 @@ reference-data service** — it never sits on Cairn's signed inter-node wire cor
   but append-only/identity integrity is enforced **in PostgreSQL** (constraints/triggers/RLS), not app code. Postgres (≥ 18)
   is the integration substrate.
 - **Hybrid store** — ingested feeds are **rebuildable projections** (drop-and-rebuild, version-pinned, `ingest_run`
-  provenance); curated knowledge is an **append-only, signable overlay** (the moat) — *signable*, because the floor is
-  built and **nothing signs anything yet**; see § Slice 5c.
+  provenance); curated knowledge is an **append-only, signed overlay** (the moat) — signing shipped in `5c.4`
+  (`db/030`), at two layers, with signatures **detached** rather than a column; see § Slice 5c.
 - **Own immortal UUIDs, never key on a name** (principle 2); external IDs attach as **append-only claims**; cross-source
   identity is reconciled by **linking, never re-keying**.
 
@@ -147,8 +147,10 @@ The prescribable generic level (**RxNorm SCD** as the skeleton). Composition-tre
 
 ### Slice 5 — The interaction & contraindication layer
 Two halves, per the hybrid store: **ingested rebuildable projections** (5a, 5b, 5b.2) seeded from public-domain
-regulatory-derived content, then the **append-only, signable curated overlay** (5c) — *signable*, not signed; see the
-[curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) decision record.
+regulatory-derived content, then the **append-only, SIGNED curated overlay** (5c) — signing shipped in `5c.4`
+(`db/030`); see the [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/)
+decision record, and [curating a drug–condition pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/)
+§3 for why the overlay's first content-bearing slice shipped empty to make that ordering possible.
 The projections give a defensible safety layer *fast*, from sources drugref already holds; the overlay is the durable
 value-add built on top. Sequenced by licence-cleanliness, not by coverage.
 
@@ -337,29 +339,40 @@ asserts no line of therapy, no evidence strength and no ordering, and inventing 
 projection's.
 
 #### Slice 5c — The curated overlay (the moat)
-Append-only, **signable** overlay adding **severity + mechanism + management + evidence grading** — the dimensions the
+Append-only, **signed** overlay (5c.4, `db/030`) adding **severity + mechanism + management + evidence grading** — the dimensions the
 projections lack — **referencing** the 5a/5b candidate rows. **Plan C has already built the overlay MECHANISM** (surrogate key
 + deferred single-live + one-way supersession, generalised over five tables since `db/027`), so 5c inherits a working
 correction shape rather than inventing one, and owns #51, #52, #55 and now **#67**.
 The **"moat" is quality-control — who may assert — not access or leverage**: data ships paywall-free under copyleft.
 Institutionally owned, never a volunteer wiki.
 
-**"Signed" was an overstatement and is corrected here: the tier is SIGNABLE, not signed.** No signing infrastructure
-exists anywhere in the repo — no key management, no signing identity, no verification path. A signature column is an
-additive migration, but **a row committed before signing exists can never be signed retrospectively**, since the floor
-refuses UPDATE. That is the argument for 5c.1 shipping EMPTY, and the sequencing constraint it produces: **signing lands
-before the first curated row.**
+**"Signable, not signed" was true through 5c.1 and is no longer: `5c.4` shipped the signing subsystem** — key
+registry with two kinds of revocation, a canonical payload format, per-row curator signatures, per-release
+institutional manifests, one verification path over both, and the operator CLI. **The overlay is signed at two
+layers, and a signature never gates a read.** Published record: [signing the curated
+overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/).
+
+**The old irreversibility argument does not survive the shape 5c.4 chose, and the correction matters for
+sequencing.** 5c.1 reasoned that a signature would be a *column*, so — the floor refusing `UPDATE` — a row
+committed before signing existed could never be signed. `5c.4` made signatures **detached**, in their own
+insert-only table, which **dissolves that constraint**: a detached signature can be written at any time,
+including years after the row. See the callout below for what remains of the sequencing rule.
 
 **The five subsystems ROADMAP used to bundle here, now sequenced** — the design round of 2026-08-06 split them, because
 one spec covering all five is one nobody can review and one branch nobody can measure:
 
-> **⇒ EXECUTION ORDER IS NOT THE NUMBERING. 5c.1 ✅ → `5c.4` (signing) → then 5c.2 / 5c.3 in either order.**
-> They are numbered by subject and listed below in that numbering, which is **not** the order to build them in.
-> The constraint above is hard and irreversible: **a row committed before signing exists can never be signed
-> retrospectively**, because the append-only floor refuses `UPDATE`. 5c.2 and 5c.3 both write curated rows;
-> `5c.4` writes none. A session that reads this file for sequencing (CLAUDE.md sends it here, and here alone)
-> and starts 5c.2 next spends the slice producing rows that can never be signed. **No spec exists for any of the
-> three** — each opens with its own brainstorm/design round.
+> **⇒ EXECUTION ORDER IS NOT THE NUMBERING. 5c.1 ✅ → `5c.4` ✅ (signing) → then 5c.2 / 5c.3 in either order.**
+> They are numbered by subject and listed below in that numbering, which is **not** the order they were built in.
+>
+> **THE REASON FOR THIS ORDER CHANGED, AND A LATER ROUND REORDERING THINGS MUST KNOW THAT.** 5c.1 recorded the
+> constraint as *hard and irreversible* — a row committed before signing existed could never be signed, because
+> the append-only floor refuses `UPDATE`. **That argument assumed a signature COLUMN, and `5c.4` did not build
+> one.** Signatures are detached rows in `assertion_signature`, so any row can be signed at any later time, and
+> the irreversibility is gone. Running `5c.4` first turned out to be **good order, not a trap**: curators do not
+> accumulate a backlog of unsigned judgements waiting on a tool, and 5c.2's ONC floor is exactly the content
+> whose provenance most wants attesting. **A future round with a reason to reorder the remaining slices may** —
+> it is weighing convenience against convenience now, not stepping on a one-way door. **No spec exists for
+> 5c.2 or 5c.3** — each opens with its own brainstorm/design round.
 
 ##### 5c.1 — the assertion shape ✅ DONE — merged as PR [#77](https://github.com/cairn-ehr/drugref/pull/77) (2026-08-06)
 Spec: [slice-5c.1 curated
@@ -405,7 +418,9 @@ distinguish it, since the row counts are identical either way. The `EXPLAIN ANAL
 
 ##### 5c.2 — the ONC high-priority DDI floor
 First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
-the first curated rows, so 5c.4's signing must land first. **Also owns a deferral 5c.1 named but did not resolve:**
+the first curated rows. **`5c.4`'s signing has landed**, so these can be signed as they are written rather than
+retrospectively (and, since signatures are detached, retrospectively remains possible either way).
+**Also owns a deferral 5c.1 named but did not resolve:**
 a `spurious` ruling (`curated_condition.ruling`) records drugref's disagreement with an upstream assertion
 *without acting on it* — the candidate stays in its projection and no view renders either as advice — and
 deciding whether, or how, to surface "drugref believes this upstream row is wrong" to a consumer needs content
@@ -415,8 +430,29 @@ pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) for th
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own.
 
-##### 5c.4 — signing
-Per the constraint above: no row can be signed retrospectively, so this must land before 5c.2's first curated row.
+##### 5c.4 — signing ✅ DONE
+Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md); published record:
+[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). **`db/030`**: six
+tables (`signing_key`, `signing_key_status_kind`, `assertion_signature`, `signature_target_kind`,
+`release_manifest`, `release_manifest_entry`), `forbid_any_rewrite`, and a trailing `signature_status` column
+appended to both 5c.1 read views by `CREATE OR REPLACE`. **Two layers**: curator-held Ed25519 keys signing one
+row's canonical payload, and an institutional key signing a per-release **content manifest** that enumerates
+every live curated assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as
+`added` and `altered`. **Revocation is data, not branches**: `rotated`/`retired` are time-scoped (prior
+signatures survive), `compromised` is blanket. `cli.py` was split first (508 → 347 lines) into `cli.py` +
+`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1260**.
+
+**Measured on a fresh `drugref_5c4`** built from the same real releases (2026-08-10, chain wall-clock **132.96 s**,
+per-leg breakdown recorded for [#81](https://github.com/cairn-ehr/drugref/issues/81)): **every count that must not
+move held exactly** — `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** · `open_question` **21,842** ·
+`gap_uncurated_interaction_rule` **595** · `gap_uncurated_condition_contradiction` **168**. This slice adds no
+projection and no gap kind, so none of them had licence to move. The filtered `curated_ddi_pair` hot path runs at
+**~1.4 ms** with the new signature join executing against a populated, signed overlay (~1.3 ms empty), against
+5c.1's recorded 2.5 ms — no regression. Full account: PROJECT-NOTES § "Slice 5c.4".
+
+**What it deliberately does not do**: close [issue 2](https://github.com/cairn-ehr/drugref/issues/2) (a superuser
+can still drop the append-only triggers), gate any read on a signature, define an enrolment protocol or trust root
+beyond "an operator registered it", or interpret N-of-M counter-signatures.
 
 **Separately: #52** (a projection defect — the row carries no `concept_ui`), **#55** (a read-path split on the
 projection tier), **#67** (salt↔base strength equivalence: a factor per `(salt, base)` pair, a different data shape

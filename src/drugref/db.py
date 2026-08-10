@@ -12,6 +12,7 @@ import pathlib
 from collections.abc import Mapping, Sequence
 
 import psycopg
+from psycopg import sql
 
 # WHERE THE MIGRATIONS LIVE, in the two layouts this package is ever run from, and
 # why the answer cannot be a single constant. In a source checkout the .sql files sit
@@ -162,6 +163,68 @@ def constraint_definition(conn: psycopg.Connection, table: str | None,
         "WHERE n.nspname = 'drugref' AND t.relname = %s AND c.conname = %s",
         (table, name)).fetchone()
     return row[0] if row else None
+
+
+def referenced_vocabulary(conn: psycopg.Connection, table: str | None,
+                          name: str | None) -> str | None:
+    """Every value the FOREIGN KEY named `name` on `table` currently admits,
+    read from the table it references -- or None if `table`/`name` name no
+    such constraint. `constraint_definition`'s companion, for the one case
+    that function alone does not make actionable.
+
+    WHY THIS EXISTS BESIDE `constraint_definition`. `pg_get_constraintdef`
+    degrades for a FOREIGN KEY the way it never does for a CHECK: a CHECK's
+    definition ENUMERATES its vocabulary inline (spelling out every value the
+    column may hold, as `class_expansion_policy_decision` does for
+    `--decision`), so quoting it is already actionable on its own. An FK's
+    definition only names the referenced table and column (`FOREIGN KEY
+    (status) REFERENCES signing_key_status_kind(status)`) and stops there --
+    an operator reading that message still has to open psql to learn what
+    the table actually contains. This is that lookup, read from the
+    database exactly as `constraint_definition` is: no second Python list
+    of valid statuses, only two catalogue queries -- first to find WHICH
+    table and column the FOREIGN KEY references (from `pg_constraint.
+    confrelid`/`confkey`, not assumed), then to read that column's own
+    live values.
+
+    ONLY THE FIRST REFERENCED COLUMN (`confkey[1]`), on purpose: every
+    FOREIGN KEY this function is called against today (`signing_key.status`)
+    references a single-column PRIMARY KEY, and a composite-key vocabulary
+    table is not a shape this project has anywhere else. Reading only the
+    first column rather than trying to join all of them is a known
+    simplification for that reason, not an oversight -- revisit if a
+    composite-key vocabulary arrives.
+
+    SAME SHAPE AS `constraint_definition` in every other respect: both
+    arguments typed `str | None` and both None-safe for the identical reason
+    (a caller in the middle of reporting one failure must not be handed a
+    second), scoped to the `drugref` schema, and requiring the transaction to
+    already be rolled back (the violation that supplies `table`/`name` also
+    aborts the transaction, so a query issued before the rollback fails with
+    InFailedSqlTransaction).
+    """
+    if table is None or name is None:
+        return None
+    row = conn.execute(
+        "SELECT rn.nspname, rt.relname, ra.attname "
+        "FROM pg_constraint c "
+        "JOIN pg_class t ON t.oid = c.conrelid "
+        "JOIN pg_namespace n ON n.oid = t.relnamespace "
+        "JOIN pg_class rt ON rt.oid = c.confrelid "
+        "JOIN pg_namespace rn ON rn.oid = rt.relnamespace "
+        "JOIN pg_attribute ra "
+        "  ON ra.attrelid = c.confrelid AND ra.attnum = c.confkey[1] "
+        "WHERE n.nspname = 'drugref' AND t.relname = %s AND c.conname = %s "
+        "AND c.contype = 'f'",
+        (table, name)).fetchone()
+    if row is None:
+        return None
+    ref_schema, ref_table, ref_column = row
+    values = conn.execute(
+        sql.SQL("SELECT {col} FROM {schema}.{table} ORDER BY {col}").format(
+            col=sql.Identifier(ref_column), schema=sql.Identifier(ref_schema),
+            table=sql.Identifier(ref_table))).fetchall()
+    return ", ".join(str(v[0]) for v in values)
 
 
 def migration_dir() -> pathlib.Path:

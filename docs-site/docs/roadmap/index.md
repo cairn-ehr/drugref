@@ -36,11 +36,16 @@ This is a reader-friendly summary; the working roadmap lives in the
   rule, and `curated_condition`, keyed on the (drug, condition) pair — see
   [Curating a drug–condition pair](../decisions/curating-a-drug-condition-pair.md).
   It also holds the accumulation model (many drugs, one effect that adds up) and
-  role-based interaction groups. All of it ships **empty by design** — signing must
-  exist before the first curated row — with its worklists published as queryable gap
-  views: against the current releases, 168 drug–condition pairs asserted as both an
-  indication and a contraindication, and 595 interaction rules awaiting severity
-  grading.
+  role-based interaction groups. All of it ships **empty by design**, with its worklists
+  published as queryable gap views: against the current releases, 168 drug–condition
+  pairs asserted as both an indication and a contraindication, and 595 interaction rules
+  awaiting severity grading.
+- **Signing the curated overlay** — curator-held Ed25519 keys signing individual
+  judgements, an institutional key signing a per-release content manifest that catches
+  omission as well as alteration, a key registry with time-scoped and blanket
+  revocation, and `drugref keys | sign | verify | publish` over both. A signature is
+  published as metadata and **never gates a read** — see
+  [signing the curated overlay](../decisions/signing-the-curated-overlay.md).
 - **Local-tier proof (Australia)** — a minimal PBS product layer bridged to the
   global moiety spine by name, the only licence-clean join, proving the local-tier
   pattern of jurisdiction scoping and structural encumbrance quarantine.
@@ -50,10 +55,6 @@ This is a reader-friendly summary; the working roadmap lives in the
 
 ## Next
 
-- **Signing** — key management, a signing identity, and a verification path for the
-  curated overlay. Sequenced first among the curation slices: the append-only floor
-  refuses `UPDATE`, so a row committed before signing exists can never be signed
-  retrospectively.
 - **First curated content** — the ONC high-priority drug–drug interaction list
   (Phansalkar 2012 / Ayvaz 2015) as the first curated rows — severity, mechanism,
   management, evidence grading — then label mining from SPL/DailyMed.

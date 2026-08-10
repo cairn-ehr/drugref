@@ -39,13 +39,14 @@ Two kinds of data with opposite update semantics live side by side:
 - **Rebuildable projections** — everything ingested from a public feed. Drop-and-rebuild
   per source, version-pinned, provenance-tagged via `ingest_run`. A new upstream release
   cleanly replaces its own projection.
-- **An append-only, signable overlay** — curated knowledge (the durable value-add, e.g.
+- **An append-only, signed overlay** — curated knowledge (the durable value-add, e.g.
   interaction severity and management). Never overwritten; corrections supersede.
-  *Signable*, not yet signed: the floor refuses `UPDATE`, so signing infrastructure
-  must land before the first curated row — a row committed unsigned stays unsigned
-  forever.
+  Signatures are **detached**, in their own insert-only table rather than a column, so a
+  row can be signed at any time — including long after it was written — and can carry
+  more than one signature when a second reviewer counter-signs.
 
-See the decision record on the [hybrid store](../decisions/hybrid-store.md).
+See the decision records on the [hybrid store](../decisions/hybrid-store.md) and
+[signing the curated overlay](../decisions/signing-the-curated-overlay.md).
 
 ## Immortal identity & append-only claims
 

@@ -1,0 +1,476 @@
+# tests/test_signing_schema.py
+"""db/030's floor and vocabularies (spec 5). DB-gated."""
+import datetime as dt
+
+import psycopg
+import pytest
+
+from drugref import signing
+
+FP = "a" * 64
+OTHER_FP = "b" * 64
+NOW = dt.datetime(2026, 8, 9, tzinfo=dt.timezone.utc)
+# A genuinely DIFFERENT instant from NOW, for the columns whose "no update" test would
+# otherwise write back the value already stored -- a no-op that an UPDATE ... SET x = x
+# trigger bug could pass by accident. See test_no_column_of_a_signature_can_be_updated's
+# `signed_at` case.
+LATER = dt.datetime(2026, 8, 10, tzinfo=dt.timezone.utc)
+
+
+def _key(conn, fingerprint=FP, status="active", status_from=NOW):
+    return conn.execute(
+        "INSERT INTO drugref.signing_key (key_fingerprint, public_key, algorithm, "
+        "holder, status, status_from, registered_by) "
+        "VALUES (%s, %s, 'Ed25519', 'a curator', %s, %s, 'an operator') "
+        "RETURNING signing_key_id",
+        (fingerprint, b"\x01" * 32, status, status_from)).fetchone()[0]
+
+
+def _signature(conn, target_id=1, kind="curated_interaction", digest=b"\x02" * 32):
+    return conn.execute(
+        "INSERT INTO drugref.assertion_signature (target_kind, target_id, "
+        "payload_context, payload_digest, key_fingerprint, algorithm, signature, "
+        "signed_at) VALUES (%s, %s, 'curated_interaction/v1', %s, %s, 'Ed25519', %s, %s)"
+        " RETURNING signature_id",
+        (kind, target_id, digest, FP, b"\x03" * 64, NOW)).fetchone()[0]
+
+
+def _manifest(conn, tag):
+    """One release_manifest row, for tests that need a live FK target for
+    release_manifest_entry -- an empty upstream_releases array and a zero row_count,
+    since no test needing this helper cares about either."""
+    return conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES (%s, %s, 0, '[]'::jsonb, 'op', %s) RETURNING manifest_id",
+        (tag, b"\x04" * 32, NOW)).fetchone()[0]
+
+
+@pytest.mark.parametrize("status,is_revocation,invalidates", [
+    ("active", False, False),
+    ("rotated", True, False),
+    ("retired", True, False),
+    ("compromised", True, True),
+])
+def test_the_status_vocabulary_carries_its_rule_as_data(
+        conn, status, is_revocation, invalidates):
+    """The revocation rule lives in a TABLE an auditor can read, not in a Python
+    if-statement -- the same shape as ci_axis.expands_descendants and
+    class_expansion_policy. Asserted value by value: a seed that silently flipped
+    `compromised` to non-invalidating would be the single most consequential wrong row
+    in this schema, and no aggregate count would show it."""
+    row = conn.execute(
+        "SELECT is_revocation, invalidates_all_signatures "
+        "FROM drugref.signing_key_status_kind WHERE status = %s", (status,)).fetchone()
+    assert row == (is_revocation, invalidates)
+
+
+def test_a_fifth_status_cannot_inherit_a_guess_about_either_boolean(conn):
+    """NO DEFAULT on either column. class_expansion_policy's `allow` != absent and
+    is_active_component's NULL != false are the same lesson; here the guess would decide
+    whether a revocation destroys a curator's evidence."""
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute("INSERT INTO drugref.signing_key_status_kind (status, note) "
+                     "VALUES ('suspended', 'x')")
+
+
+def test_every_catalog_context_can_be_encoded(conn):
+    """ONE DIRECTION ONLY, AND THE OTHER DIRECTION WOULD BE A TRAP. Every context named
+    in `signature_target_kind` must have a frozen field list, because a target kind whose
+    context `signing.py` cannot encode is a row that makes `drugref sign` fail at the
+    last moment with a `KeyError`.
+
+    THE CONVERSE IS DELIBERATELY NOT ASSERTED (`<=`, not `==`), and this test used to get
+    it exactly backwards -- set EQUALITY, with a docstring calling an unreferenced field
+    list "dead code nothing exercises". That is the opposite of Task 7's C1 fix, which
+    `signatures.py` records in as many words: "signing.FIELD_LISTS keeps every retired
+    context version forever -- a version is stopped being minted, never deleted." A
+    retired `/v1` list is the ONLY thing that can reproduce the bytes a past signature
+    was made over. The day anyone mints a `/v2`, the catalog moves on and this test went
+    red, and its docstring named the fatal remedy: deleting the `/v1` entry makes every
+    historical signature raise `KeyError` on rebuild, and re-signing is impossible
+    because the private keys belong to the curators, not to drugref. A retired list is
+    load-bearing history, not dead code.
+    """
+    contexts = {row[0] for row in conn.execute(
+        "SELECT payload_context FROM drugref.signature_target_kind").fetchall()}
+    assert contexts <= set(signing.FIELD_LISTS), (
+        f"signature_target_kind names contexts signing.FIELD_LISTS cannot encode: "
+        f"{sorted(contexts - set(signing.FIELD_LISTS))}. Add the frozen field list "
+        "BEFORE the catalog row -- never the other way round.")
+
+
+def test_signing_key_refuses_a_delete(conn):
+    _key(conn)
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("DELETE FROM drugref.signing_key WHERE key_fingerprint = %s", (FP,))
+
+
+def test_signing_key_refuses_an_in_place_edit(conn):
+    """Revocation is a CORRECTION -- insert the new status, point the old row at it --
+    never an UPDATE. Editing in place would overwrite the history that makes 'was this
+    key already revoked when that signature was made?' answerable at all."""
+    _key(conn)
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("UPDATE drugref.signing_key SET status = 'compromised' "
+                     "WHERE key_fingerprint = %s", (FP,))
+
+
+def test_signing_key_permits_only_superseded_by_to_change(conn):
+    first = _key(conn)
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    second = _key(conn, status="compromised")
+    conn.execute("UPDATE drugref.signing_key SET superseded_by = %s "
+                 "WHERE signing_key_id = %s", (second, first))
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT status FROM drugref.signing_key WHERE superseded_by IS NULL "
+        "AND key_fingerprint = %s", (FP,)).fetchone()[0] == "compromised"
+
+
+def test_two_live_rows_for_one_fingerprint_are_refused_at_commit(conn):
+    """The single-live check is DEFERRED, so this fails at SET CONSTRAINTS IMMEDIATE
+    rather than at the second INSERT. A test that never forces the check proves nothing
+    -- Plan C's standing note -- which is why the immediate call is here."""
+    _key(conn)
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    _key(conn, status="retired")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_two_live_rows_for_DIFFERENT_fingerprints_coexist(conn):
+    """The control for the test above: without it, a trigger that rejected EVERY second
+    row would pass that one and forbid ever registering a second key."""
+    _key(conn, FP)
+    _key(conn, OTHER_FP)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.signing_key "
+        "WHERE superseded_by IS NULL").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("bad", ["ABC", "A" * 64, "a" * 63, "g" * 64, ""])
+def test_a_malformed_fingerprint_is_refused(conn, bad):
+    """The fingerprint is the identity a signature names, in a text column. A truncated
+    or upper-case value is a row that silently matches no signature -- which looks
+    exactly like a key nobody registered, and so reports UNKNOWN_KEY forever."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _key(conn, fingerprint=bad)
+
+
+def test_signing_key_is_discovered_as_an_eighth_single_live_table(conn):
+    """DERIVED FROM THE CATALOG, not asserted as a literal eight. The gates round
+    rebuilt the live-key coverage set from pg_trigger.tgargs precisely so a new table is
+    guarded the day its migration lands with no list to edit. This asserts the
+    derivation actually picked db/030's table up -- the property that matters."""
+    from tests.test_live_key_index_guard import _single_live_tables
+    tables = dict(_single_live_tables(conn))
+    assert "signing_key" in tables
+    assert tables["signing_key"] == "key_fingerprint"
+
+
+def test_a_signature_cannot_be_deleted(conn):
+    _signature(conn)
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("DELETE FROM drugref.assertion_signature")
+
+
+@pytest.mark.parametrize("column,value", [
+    ("signed_at", LATER), ("key_fingerprint", OTHER_FP), ("target_id", 99),
+    ("target_kind", "curated_condition"), ("payload_context", "curated_condition/v1"),
+    ("payload_digest", b"\x09" * 32), ("signature", b"\x09" * 64),
+    # algorithm IS LEFT AS A NO-OP DELIBERATELY, not fixed to a "real" change like
+    # signed_at above: `algorithm`'s CHECK admits ONLY 'Ed25519' (db/030), so any
+    # value-changing UPDATE there is unreachable through this trigger -- it would fail
+    # on assertion_signature_algorithm's CheckViolation before forbid_any_rewrite's
+    # RaiseException ever fired, which would test the wrong guard under the wrong
+    # exception type. A same-value UPDATE is the only way to exercise "no UPDATE of
+    # this column, ever" without a second live value to update it TO.
+    ("algorithm", "Ed25519"), ("recorded_at", NOW),
+])
+def test_no_column_of_a_signature_can_be_updated(conn, column, value):
+    """STRICTER THAN forbid_overlay_rewrite, which exists to permit exactly one column
+    to change. A signature has no superseded_by and needs none: a curator who mis-signed
+    corrects the JUDGEMENT (a new curated row), and a key whose signatures must all be
+    repudiated is handled at the KEY layer by `compromised`. A signature is a historical
+    fact about a moment, not an assertion that can be revised.
+
+    ONE TEST PER COLUMN rather than one for the table: a trigger comparing a SUBSET of
+    columns is exactly the defect a single-column check would pass."""
+    _signature(conn)
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute(f"UPDATE drugref.assertion_signature SET {column} = %s", (value,))
+
+
+@pytest.mark.parametrize("bad", [
+    "not/a/context", "curated_interaction", "curated_interaction/1",
+    "curated_interaction/v1x", "CURATED_INTERACTION/v1", "curated_interaction/v1\n99",
+])
+def test_a_malformed_payload_context_is_refused(conn, bad):
+    """SAME SHAPE signing._CONTEXT validates in Python, given a SQL counterpart --
+    db/030 review finding: the fingerprint shape is CHECKed twice over in this file but
+    the context, before this fix, had no SQL-side guard at all. Both floored tables are
+    insert-only, so a malformed context would otherwise be a permanently uncorrectable
+    row."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.assertion_signature (target_kind, target_id, "
+            "payload_context, payload_digest, key_fingerprint, algorithm, signature, "
+            "signed_at) VALUES ('curated_interaction', 1, %s, %s, %s, 'Ed25519', %s, %s)",
+            (bad, b"\x02" * 32, FP, b"\x03" * 64, NOW))
+
+
+def test_a_signature_of_the_wrong_length_is_refused(conn):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.assertion_signature (target_kind, target_id, "
+            "payload_context, payload_digest, key_fingerprint, algorithm, signature, "
+            "signed_at) VALUES ('curated_interaction', 1, 'curated_interaction/v1', "
+            "%s, %s, 'Ed25519', %s, %s)", (b"\x02" * 32, FP, b"\x03" * 10, NOW))
+
+
+def test_an_unknown_target_kind_is_refused_by_the_foreign_key(conn):
+    """An FK into signature_target_kind rather than a CHECK, for db/006's reason: the
+    mapping from a kind to its table, key column and context has one home, so a fourth
+    kind is one INSERT there rather than an edit in three places."""
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        _signature(conn, kind="something_else")
+
+
+def test_the_same_key_cannot_record_one_identical_attestation_twice(conn):
+    _signature(conn)
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        _signature(conn)
+
+
+def test_the_same_key_may_re_sign_the_same_target_at_a_later_moment(conn):
+    """The control for the dedupe guard: a later signed_at yields a different payload
+    and therefore a different digest, so a second row is legitimate and both are true.
+    A uniqueness constraint on (kind, id, key) alone would forbid it."""
+    _signature(conn, digest=b"\x02" * 32)
+    _signature(conn, digest=b"\x05" * 32)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.assertion_signature").fetchone()[0] == 2
+
+
+def test_a_manifest_is_insert_only(conn):
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.09', %s, 0, '[]'::jsonb, 'an operator', %s)",
+        (b"\x04" * 32, NOW))
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("UPDATE drugref.release_manifest SET row_count = 1")
+
+
+def test_a_manifest_cannot_be_deleted(conn):
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.10', %s, 0, '[]'::jsonb, 'an operator', %s)",
+        (b"\x04" * 32, NOW))
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("DELETE FROM drugref.release_manifest")
+
+
+def test_a_release_tag_cannot_be_reused(conn):
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.11', %s, 0, '[]'::jsonb, 'op', %s)", (b"\x04" * 32, NOW))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+            "row_count, upstream_releases, published_by, published_at) "
+            "VALUES ('2026.08.11', %s, 0, '[]'::jsonb, 'op', %s)", (b"\x04" * 32, NOW))
+
+
+@pytest.mark.parametrize("tag,bad_json", [
+    # THE SCALAR-NULL CASE SPECIFICALLY: 'null'::jsonb is a JSON value PRESENT in the
+    # column, distinct from SQL NULL, so upstream_releases's plain NOT NULL admits it --
+    # this is is_active_component's "NULL != false" lesson turned on itself, and the one
+    # case NOT NULL alone cannot catch.
+    ("2026.08.12", "null"),
+    ("2026.08.13", '"hello"'),
+    ("2026.08.14", "42"),
+    ("2026.08.15", "{}"),
+])
+def test_upstream_releases_must_be_a_json_array(conn, tag, bad_json):
+    """jsonb_typeof rules out the scalar `null`, other scalars and objects -- only an
+    array (possibly empty, `[]`) passes. Without this CHECK, a manifest whose
+    provenance is the JSON scalar `null` reads identically to one that honestly
+    recorded an empty list, and the release layer is insert-only: a malformed row here
+    would be permanently uncorrectable."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+            "row_count, upstream_releases, published_by, published_at) "
+            "VALUES (%s, %s, 0, %s::jsonb, 'op', %s)",
+            (tag, b"\x04" * 32, bad_json, NOW))
+
+
+def test_an_empty_array_is_a_legitimate_upstream_releases_value(conn):
+    """The control for the CHECK above: without it, a guard that rejected every jsonb
+    value would pass every test above while making the ordinary case -- a release with
+    no upstream loads, or the first ever -- impossible to record."""
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.16', %s, 0, '[]'::jsonb, 'op', %s)", (b"\x04" * 32, NOW))
+    assert conn.execute(
+        "SELECT upstream_releases FROM drugref.release_manifest "
+        "WHERE release_tag = '2026.08.16'").fetchone()[0] == []
+
+
+def test_a_manifest_entry_accepts_a_well_formed_row(conn):
+    """THE NEGATIVE CONTROL this table never had. A re-review finding: before this
+    test, `grep -rn "release_manifest_entry" tests/` found no INSERT into this table
+    anywhere in the suite -- not malformed, not even well-formed. Without this test, a
+    CHECK (or, worse, a typo'd column list) that rejected EVERY insert would still pass
+    every other test in this file, because nothing had ever proven a valid entry is
+    representable at all."""
+    manifest_id = _manifest(conn, "2026.08.17")
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', 'nk-1', 1, 'curated_interaction/v1', %s)",
+        (manifest_id, b"\x06" * 32))
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.release_manifest_entry "
+        "WHERE manifest_id = %s", (manifest_id,)).fetchone()[0] == 1
+
+
+def _an_entry(conn, release_tag):
+    """One manifest holding one well-formed entry. Returns its manifest_id."""
+    manifest_id = _manifest(conn, release_tag)
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', 'nk-floor', 1, 'curated_interaction/v1', "
+        "%s)", (manifest_id, b"\x07" * 32))
+    return manifest_id
+
+
+def test_a_manifest_entry_cannot_be_deleted(conn):
+    """C4: THE FLOOR THAT PROTECTS THE `dropped` FINDING.
+
+    MEASURED GAP: dropping `release_manifest_entry_insert_only` from db/030 left the
+    whole suite green at 1260 passed. The table had exactly two tests -- one accepting a
+    well-formed row, one refusing a malformed context -- and neither touched UPDATE or
+    DELETE, though spec 12 item 10 names all THREE insert-only tables.
+
+    `DELETE FROM release_manifest_entry` is the most direct way to erase a `dropped`
+    finding from a published release: remove the entry and the row it enumerated stops
+    being missed. Combined with the release layer's signature check having had no
+    negative test either (C1), the omission detection this slice exists for had no
+    test-level guard on either half."""
+    _an_entry(conn, "2026.08.19")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("DELETE FROM drugref.release_manifest_entry")
+
+
+@pytest.mark.parametrize("column, value", [
+    ("natural_key", "'a-different-key'"),
+    ("payload_digest", r"'\x00'::bytea"),
+    ("target_id", "999"),
+    ("payload_context", "'curated_condition/v1'"),
+])
+def test_a_manifest_entry_is_insert_only(conn, column, value):
+    """The UPDATE half, per column rather than once -- `assertion_signature`'s own
+    nine-case parametrize sets the standard, and `forbid_any_rewrite` being table-level
+    is not a reason to test only one column: the point is that no INDIVIDUAL field of a
+    published manifest entry can be rewritten. Editing `payload_digest` alone would let
+    an altered curated row keep matching its manifest entry, which is the `altered`
+    finding silently erased."""
+    _an_entry(conn, f"2026.08.20-{column}")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute(
+            f"UPDATE drugref.release_manifest_entry SET {column} = {value}")
+
+
+@pytest.mark.parametrize("bad", [
+    "not/a/context", "curated_interaction", "curated_interaction/1",
+    "curated_interaction/v1x", "CURATED_INTERACTION/v1", "curated_interaction/v1\n99",
+])
+def test_a_manifest_entrys_malformed_payload_context_is_refused(conn, bad):
+    """release_manifest_entry_context_shape is TEXTUALLY IDENTICAL to
+    assertion_signature_context_shape, but a copy-pasted CHECK is still a SEPARATE
+    clause -- this project's standing rule is one test per clause that kills its
+    removal, not one test per wording. A re-review confirmed the gap empirically: with
+    this CHECK dropped, the same malformed row this test sends inserted successfully
+    and the rest of the suite stayed green, because nothing else here ever touched this
+    table (see this file's git history / the task report for the manual verification
+    of that drop-and-restore)."""
+    manifest_id = _manifest(conn, "2026.08.18")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+            "natural_key, target_id, payload_context, payload_digest) "
+            "VALUES (%s, 'curated_interaction', 'nk-2', 1, %s, %s)",
+            (manifest_id, bad, b"\x06" * 32))
+
+
+def test_the_by_key_index_exists(conn):
+    """REVIEW S1: db/030's own comment says of `assertion_signature_by_key` that it is
+    "Read only by the planner, so a test asserts it by name -- as with the live-key
+    indexes". No test did. The live-key indexes genuinely have that test
+    (conftest's `assert_live_key_index`), so the comment read as if this one did too --
+    a claim about the suite that the suite did not back."""
+    assert conn.execute(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname = 'assertion_signature_by_key'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("table, column, other_columns, values", [
+    ("assertion_signature", "payload_digest",
+     "target_kind, target_id, key_fingerprint, algorithm, signature, payload_context, "
+     "signed_at",
+     "'curated_interaction', 1, %s, 'Ed25519', %s, 'curated_interaction/v1', now()"),
+])
+def test_a_short_digest_is_refused(conn, table, column, other_columns, values):
+    """The digest-length CHECKs had no test. A short digest is the quiet failure mode:
+    it never matches anything, so every comparison against it reports `altered` forever
+    and the row looks structurally fine. `octet_length = 32` is what stops a truncated
+    or wrong-algorithm digest being stored at all."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            f"INSERT INTO drugref.{table} ({other_columns}, {column}) "
+            f"VALUES ({values}, %s)",
+            ("f" * 64, b"\x00" * 64, b"\x00" * 16))
+
+
+def test_a_short_manifest_digest_is_refused(conn):
+    """`release_manifest_digest_length`'s own clause -- a separate constraint on a
+    separate table, so a separate test, per this project's one-test-per-clause rule."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+            "row_count, upstream_releases, published_by, published_at) "
+            "VALUES ('2026.08.23', %s, 0, '[]'::jsonb, 'an operator', %s)",
+            (b"\x00" * 16, NOW))
+
+
+def test_a_short_manifest_entry_digest_is_refused(conn):
+    manifest_id = _manifest(conn, "2026.08.24")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+            "natural_key, target_id, payload_context, payload_digest) "
+            "VALUES (%s, 'curated_interaction', 'nk-short', 1, "
+            "'curated_interaction/v1', %s)", (manifest_id, b"\x00" * 16))
+
+
+@pytest.mark.parametrize("bad", ["no-slash", "curated_interaction/vX", "UPPER/v1",
+                                 "curated_interaction/v1\n"])
+def test_the_catalogs_payload_context_shape_is_refused(conn, bad):
+    """REVIEW I8: `signature_target_kind.payload_context` carried NO shape CHECK, unlike
+    the two columns holding the same kind of value on `assertion_signature` and
+    `release_manifest_entry`. It is also the one an operator is MEANT to edit -- pointing
+    a kind at a `/v2` is the migration the read-back machinery exists to support -- so
+    the table most likely to be hand-edited was the only one not saying so at once."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.signature_target_kind "
+            "(target_kind, target_table, pk_column, payload_context) "
+            "VALUES ('a_new_kind', 'a_table', 'a_id', %s)", (bad,))

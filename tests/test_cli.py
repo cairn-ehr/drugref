@@ -4,11 +4,12 @@
 The parser and the step table are PURE -- no database, no filesystem -- so most of
 this module runs anywhere. Only the end-to-end test is DB-gated.
 """
+import ast
 import pathlib
 
 import pytest
 
-from drugref import cli
+from drugref import cli, cli_chain
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 
@@ -103,6 +104,9 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     out = capsys.readouterr().out
     assert "loaded releases: none" in out
     assert "unfinished runs: none" in out
+    # The fourth block (review I7) says "none" in the same voice as the other three --
+    # a bare header would read as truncated output on a fresh database.
+    assert "backdated signatures: none" in out
 
 
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):
@@ -118,7 +122,7 @@ def test_resolve_inputs_refuses_a_glob_that_matches_nothing(tmp_path):
     """A convention that silently matches nothing is worse than no convention: the
     chain would report success having ingested a feed it never read."""
     step = next(s for s in cli.STEPS if s.name == "medrt")
-    with pytest.raises(cli.InputResolutionError) as exc:
+    with pytest.raises(cli_chain.InputResolutionError) as exc:
         cli.resolve_inputs(tmp_path, step)
     assert "MEDRT/Core_MEDRT_*_XML.xml" in str(exc.value)
     assert str(tmp_path) in str(exc.value)
@@ -132,7 +136,7 @@ def test_resolve_inputs_refuses_an_ambiguous_glob(tmp_path):
         (tmp_path / "MEDRT" / f"Core_MEDRT_{release}_XML.xml").write_text("x")
 
     step = next(s for s in cli.STEPS if s.name == "medrt")
-    with pytest.raises(cli.InputResolutionError) as exc:
+    with pytest.raises(cli_chain.InputResolutionError) as exc:
         cli.resolve_inputs(tmp_path, step)
     assert "2 files" in str(exc.value)
 
@@ -162,7 +166,7 @@ def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):
     (downloads / "GSRS" / "dump-public-2026-02-26.gsrs").write_text("")
     (downloads / "GSRS" / "dump-public-2026-05-01.gsrs").write_text("")
     step = next(s for s in cli.STEPS if s.name == "gsrs")
-    with pytest.raises(cli.InputResolutionError):
+    with pytest.raises(cli_chain.InputResolutionError):
         cli.resolve_inputs(downloads, step)
 
 
@@ -172,7 +176,7 @@ def test_a_source_joins_the_chain_only_if_its_release_is_given():
     args = cli.build_parser().parse_args(
         ["ingest", "chain", "--downloads", "d",
          "--unii-release", "26Feb2026", "--medrt-release", "2026.07.06"])
-    assert [(s.name, r) for s, r in cli.selected_steps(args)] == [
+    assert [(s.name, r) for s, r in cli.selected_steps(args, cli.STEPS)] == [
         ("unii", "26Feb2026"), ("medrt", "2026.07.06")]
 
 
@@ -181,12 +185,12 @@ def test_the_chain_runs_selected_steps_in_dependency_order():
     args = cli.build_parser().parse_args(
         ["ingest", "chain", "--downloads", "d",
          "--pbs-release", "2026-07", "--unii-release", "26Feb2026"])
-    assert [s.name for s, _ in cli.selected_steps(args)] == ["unii", "pbs"]
+    assert [s.name for s, _ in cli.selected_steps(args, cli.STEPS)] == ["unii", "pbs"]
 
 
 def test_the_chain_needs_at_least_one_release():
     args = cli.build_parser().parse_args(["ingest", "chain", "--downloads", "d"])
-    assert cli.selected_steps(args) == ()
+    assert cli.selected_steps(args, cli.STEPS) == ()
 
 
 def test_an_empty_release_tag_is_an_error_not_a_silent_skip():
@@ -198,8 +202,8 @@ def test_an_empty_release_tag_is_an_error_not_a_silent_skip():
     for tag in ("", "   "):
         args = cli.build_parser().parse_args(
             ["ingest", "chain", "--downloads", "d", "--medrt-release", tag])
-        with pytest.raises(cli.ReleaseError, match="empty tag"):
-            cli.selected_steps(args)
+        with pytest.raises(cli_chain.ReleaseError, match="empty tag"):
+            cli.selected_steps(args, cli.STEPS)
 
 
 def test_one_file_cannot_be_recorded_as_two_releases():
@@ -212,7 +216,7 @@ def test_one_file_cannot_be_recorded_as_two_releases():
     mesh_rel = next(s for s in cli.STEPS if s.name == "mesh-relations")
     xml = pathlib.Path("downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml")
 
-    with pytest.raises(cli.ReleaseError, match="cannot be two releases"):
+    with pytest.raises(cli_chain.ReleaseError, match="cannot be two releases"):
         cli.check_release_agreement([
             (medrt, "2026.07.06", {"medrt": xml}),
             (mesh_rel, "2026.05.04", {"medrt": xml, "desc": pathlib.Path("d.gz"),
@@ -261,7 +265,7 @@ def test_the_chain_resolves_every_steps_inputs_before_running_any(tmp_path, monk
         ["ingest", "chain", "--downloads", str(tmp_path),
          "--early-release", "r1", "--late-release", "r2"])
 
-    with pytest.raises(cli.InputResolutionError):
+    with pytest.raises(cli_chain.InputResolutionError):
         cli._handle_chain(object(), args)
 
     # The assertion that carries the property: on a generator-based `plan`, "early"
@@ -314,7 +318,7 @@ def test_two_steps_still_cannot_date_the_same_primary_file_differently():
     a release behind the other; letting the halves disagree on purpose makes that
     signal report staleness that does not exist.
     """
-    with pytest.raises(cli.ReleaseError) as exc:
+    with pytest.raises(cli_chain.ReleaseError) as exc:
         cli.check_release_agreement(_plan(
             ("medrt", "2026.07.06", {"medrt": MEDRT_XML}),
             ("mesh-relations", "2026.05.04",
@@ -356,6 +360,104 @@ def test_mesh_relations_is_the_only_step_with_a_secondary_input():
     exemption without anyone deciding to grant it fails here."""
     assert {s.name: s.secondary for s in cli.STEPS if s.secondary} == {
         "mesh-relations": ("desc", "supp")}
+
+
+def _drugref_imports_in(source: str) -> set[str]:
+    """Every import in `source` that reaches into the `drugref` package, reported as
+    the construct itself rather than a boolean -- so a failing assertion says WHICH
+    import tripped it, not just that one did.
+
+    RELATIVE IMPORTS COUNT, and that is the fix this helper exists to pin (found in
+    review of the first version of this guard). `cli_chain.py` lives INSIDE the
+    `drugref` package, so `from . import db` or `from .db import get_connection`
+    reaches exactly as far into `drugref` as `from drugref import db` does --
+    `ast.ImportFrom.level` is the only signal that tells the two apart. A scan that
+    reads `node.module` alone treats a relative import as importing nothing: `from .
+    import db` is `level=1, module=None`, and `node.module or ""` yields `""`, which
+    matches neither `"drugref"` nor a `"drugref."` prefix. That is the SAME defect one
+    construct over as the line-split string literal this project already learned to
+    distrust source text for (test_curation_orphans.py's
+    test_the_cli_embeds_no_sql_against_a_curated_table) -- a guard shaped like the
+    parse, not like the source text, has to use every field the parse gives it.
+
+    Extracted from the test body so the relative-import branch is checkable directly,
+    over a source string built for the purpose, without needing `cli_chain.py` itself
+    to carry a violation to prove the guard would catch one.
+    """
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names
+                         if alias.name == "drugref" or alias.name.startswith("drugref."))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                # A relative import inside a module that lives IN the `drugref`
+                # package reaches into `drugref` by construction -- no `node.module`
+                # value could make it not do so. Reported with its leading dots so the
+                # failure message shows a relative import, not a bare module name.
+                found.add("." * node.level + (node.module or ""))
+            elif node.module == "drugref" or (node.module or "").startswith("drugref."):
+                found.add(node.module)
+    return found
+
+
+def test_cli_chain_imports_nothing_from_drugref():
+    """THE PROPERTY THAT MAKES THE IMPORT CYCLE IMPOSSIBLE, and the reason this split
+    runs in this direction rather than the other.
+
+    The first attempt at this task moved the HANDLERS out instead, and could not work.
+    `STEPS` eagerly references the `_run_*` wrappers, so cli must import whatever module
+    holds them; `_handle_chain` calls selected_steps/resolve_inputs/
+    check_release_agreement, so that module must import cli. Mutual -- and Python raises
+    `AttributeError: partially initialized module ... has no attribute 'run_unii'` as
+    soon as anything imports the handler module first, which the signing tests would.
+
+    Extracting the pure layer has no such hazard because it depends on nothing in
+    drugref. This test is what keeps that true: cli_chain must never grow a drugref
+    import, and if it ever needs one, the layering is wrong rather than the test.
+
+    Absolute AND relative both count -- `_drugref_imports_in` is what makes that so,
+    and `test_the_import_guard_catches_a_relative_import` pins the relative half
+    directly, since `cli_chain.py` carrying a violation is not how this test is meant
+    to prove that branch works.
+    """
+    import inspect
+    from drugref import cli_chain
+
+    from_drugref = _drugref_imports_in(inspect.getsource(cli_chain))
+    assert from_drugref == set(), (
+        f"cli_chain imports {sorted(from_drugref)} from drugref. It must import "
+        "nothing from drugref -- that is what makes the cycle structurally impossible "
+        "rather than merely absent today.")
+
+
+def test_the_import_guard_catches_a_relative_import():
+    """KILLS THE REMOVAL of the `node.level > 0` branch in `_drugref_imports_in`.
+
+    The first version of this guard read `node.module or ""` and nothing else, which
+    treats `from . import db` (level=1, module=None) as importing the empty string --
+    matching neither `"drugref"` nor a `"drugref."` prefix, so a relative import into
+    the very package `cli_chain.py` lives in slipped past undetected. Driven over a
+    source STRING rather than `cli_chain.py` itself: the property under test is
+    "the guard would catch this if it ever happened," and making that true requires
+    the violation to exist somewhere, not for `cli_chain.py` to be made to carry one.
+
+    Both shapes of relative import are asserted, because they parse to different
+    `ast.ImportFrom` fields: `from . import db` carries the name on the alias
+    (`module=None`), `from .db import get_connection` carries it on `module` itself
+    (`module="db"`) -- a fix that only handled one would still be a fix a reviewer
+    could not tell from a coincidence.
+    """
+    assert _drugref_imports_in("from . import db\n") == {"."}
+    assert _drugref_imports_in("from .db import get_connection\n") == {".db"}
+
+
+def test_cli_py_is_under_the_size_cap():
+    """CLAUDE.md rule 4, measured rather than assumed. 500 is the stated cap."""
+    import pathlib
+    from drugref import cli
+    lines = len(pathlib.Path(cli.__file__).read_text().splitlines())
+    assert lines <= 500, f"cli.py is {lines} lines, over the ~500 cap"
 
 
 def test_main_does_not_swallow_a_check_violation_from_an_ingest(monkeypatch, capsys):

@@ -18,110 +18,112 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 5c.1 — the curated overlay's assertion
-shape** (PR [#77](https://github.com/cairn-ehr/drugref/pull/77), merged **2026-08-06**, `db/029`, EMPTY as planned). **`db/029` is
-MERGED and FROZEN** — corrections need a new `db/NNN`. Figures and traps: PROJECT-NOTES § "Slice 5c.1".
+**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 5c.1 — the curated overlay's assertion shape** (PR
+[#77](https://github.com/cairn-ehr/drugref/pull/77), `db/029`, EMPTY as planned), plus the gates-that-do-not-fire round and the review of PR
+#80. **`db/029` is MERGED and FROZEN** — corrections need a new `db/NNN`; `db/030` freezes the same way once this branch merges. Figures and
+traps: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ RE-MEASURED POST-MERGE (2026-08-08) on a fresh `drugref_5c1m`** (PR [#78](https://github.com/cairn-ehr/drugref/pull/78)), because
-every published 5c.1 figure was taken on a schema the two review rounds then edited twice. **Every COUNT and INGEST SUMMARY
-reproduces EXACTLY** (`ddi_candidate_pair` 21,664 · **168** contradicted pairs · **595** interaction rules · `open_question`
-**21,842**); the `EXPLAIN ANALYZE` timings and the suite figure were **not** re-run. Chain 144 s against 127.5 s — **uncontrolled**,
-filed as #81, not a warm cache. **Its own review** closed twelve findings, all in the state files; the two substantive (the `~739`
-catalog fix that no test killed → now `tests/test_curated_interaction_comment.py`; `pair_count` "verified" on a reading identical on
-the BROKEN view → `drugref_5c1` **kept as the control**) plus two new standing rules are in PROJECT-NOTES.
+**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1297.** The overlay is signed at **two
+layers**: curator-held Ed25519 keys over one row's canonical payload, an institutional key over a per-release **content manifest**
+enumerating every live assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as `added`/`altered`.
+Signatures are **detached rows, not a column**, so any row can be signed later and counter-signing works. Revocation is **data, not
+branches**: `rotated`/`retired` time-scoped, `compromised` blanket **and now permanent**. `cli.py` 508 → 379, split into `cli.py` +
+`cli_chain.py`, then `cli_signing*.py`. Record: [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/).
 
-**⇒ THE GATES-THAT-DO-NOT-FIRE ROUND (issues 74, 66, 76) — no migration, suite 943 → 969.** Three checks that existed and never
-fired. **74**: five of the seven single-live index tests **passed a `UNIQUE` mutation** — measured, not reasoned — which would forbid
-every correction the overlay exists to make. All seven now share one `assert_live_key_index` fixture (**four** properties, not three)
-with its own guard file mutating the real index inside the test transaction, and **the seven are DERIVED from `pg_trigger.tgargs`**
-so an eighth cannot arrive unguarded. **66**: there was **no lint gate at all** — no `[tool.ruff]`, `ruff` not a project dependency
-(a pyenv shim answered `uv run ruff`), **no lint job in CI**. Now `line-length = 88` + `E`/`F`/`W`, `src/`'s 52 lines reflowed, ruff
-pinned, a CI `lint` job, and **`ruff check .` is the right command** — 0.18 s *because ruff honours `.gitignore`*, NOT because of
-`extend-exclude`, which is belt-and-braces; the old "used to hang on `downloads/`" claim does **not** reproduce. `tests/`' **334**
-long lines are carved out as #79 — a figure with a date, not a constant. **76**: `curated_target_unresolved` had no consumer — the
-second time — now `curation.unresolved_targets`, printed as `drugref status`'s third block. Full account: PROJECT-NOTES § "The
-gates-that-do-not-fire round".
+**⇒ A FIVE-REVIEWER ROUND (PR [#84](https://github.com/cairn-ehr/drugref/pull/84)) FOUND FOUR THINGS FOUR EARLIER ROUNDS DID NOT — two
+MEASURED, not argued. 1260 → 1297; `db/030`'s payload format and every committed vector UNCHANGED.** (1) **Deleting the release layer's
+Ed25519 check outright left the suite GREEN** — that layer had no negative test at all. (2) **`drugref keys revoke --status active` undid a
+`compromised` revocation**, returning the thief's signatures to `valid`: both readers used the LIVE row, while db/030 §3's own comment
+justified the whole design on the status history being read — which nothing did. (3) **One planted `payload_context` denied verification of
+a curated row FOREVER** (insert-only table, uncaught `KeyError`); it is a verdict now, and honest signatures beside it still report `valid`.
+(4) **`release_manifest_entry` had no floor test** — the `dropped` finding's guard. Also: `verify` exited **0** on `unknown_key` (the
+*cheaper* forgery); `generate_keypair`'s tuple let a transposed unpack write the PRIVATE key into `signing_key.public_key`, permanently;
+`ManifestVerdict`'s findings were mutable inside a frozen dataclass. **Full account and every trap: PROJECT-NOTES § "Slice 5c.4"**, which
+now leads with this round. Deferred: [#86](https://github.com/cairn-ehr/drugref/issues/86) (label vocabulary),
+[#87](https://github.com/cairn-ehr/drugref/issues/87), [#88](https://github.com/cairn-ehr/drugref/issues/88).
 
-**⇒ THE REVIEW OF PR #80 — the round's own thesis turned on it; suite 956 → 969. Three gates this branch ADDED did not fire either.**
-(1) `test_a_superseded_judgement_is_not_an_orphan` never deleted the candidate, so its empty result was over-determined — removing
-`superseded_by IS NULL` from **both** arms of db/029's view left the suite green. (2) CI's `Confirm nothing was skipped` step piped
-pytest through `tee` under `bash -e` — **no pipefail** — so 5 failures exited 0. (3) The "no SQL in cli.py" grep was blind to
-line-split literals, `INSERT`, `UPDATE` and `JOIN` — and **this round's own 88-column gate is what forces SQL to wrap**, so the lint
-rule weakened the guard beside it. All three are now mutation-verified dead; the grep is rewritten over `ast.parse`d string constants
-and covers `cli_policy.py`, which the rule was always about. Orphan exit-code channel → #82.
+**⇒ MEASURED on a fresh `drugref_5c4`** from the real releases (2026-08-10). **All five must-not-move counts held exactly** —
+`ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** · `open_question` **21,842** · `gap_uncurated_interaction_rule` **595** ·
+`gap_uncurated_condition_contradiction` **168** — **taken BEFORE the end-to-end exercise, which left two curated rows, so that DB reads 593
+today.** Hot path **~1.4 ms** populated, **re-measured after the revocation fix added a `NOT EXISTS` to the read view**: old view 1.337–1.371
+ms vs new 1.309–1.455 ms on a `TEMPLATE drugref_5c4` clone — no regression. **Chain 132.96 s WITH the per-leg breakdown
+[#81](https://github.com/cairn-ehr/drugref/issues/81) asked for** — `mesh-relations` 58.9 + `mesh` 41.8 = **75.7%**; `unii` 7.2 · `medrt`
+9.8 · `gsrs` 15.0. **#81 answered on the breakdown, open on the variance** (127.5 → 144 → 133 s).
 
-**⇒ NEXT SLICE: `5c.4` — signing, BEFORE `5c.2`'s first curated row**: a row committed before signing exists can never be signed
-retrospectively, since the floor refuses `UPDATE`. **The order lives in ROADMAP § 5c as an execution-order callout** — the file
-CLAUDE.md makes authoritative for sequencing. Nothing in the repo signs anything today — no key management, no signing identity, no
-verification path — so this is a subsystem from scratch, not a column. `5c.1`'s worklist is the payload waiting on it: **168**
-contradicted pairs and **595** ungraded interaction rules, both queryable today.
+**⇒ THE MEASUREMENT DB IS `drugref_5c4`, NOT `drugref_5c1m`** — the latter is EMPTY despite two rounds of PROJECT-NOTES saying otherwise
+(verified twice). `drugref_5c4` REPRODUCED the counts; it no longer holds them all. § "Repo facts" says which.
+
+**⇒ NEXT SLICE: `5c.2` — the ONC high-priority DDI floor** (Phansalkar 2012 / Ayvaz 2015), the first curated content, signable as written.
+**ROADMAP § 5c's execution-order callout has been CORRECTED and a reordering round must read it**: 5c.1 recorded the order as *hard and
+irreversible* assuming a signature **column**; 5c.4 built detached signatures, so the irreversibility is gone — **good order, not a trap**.
+Payload waiting: **168** contradicted pairs, **595** ungraded rules, on a CLEAN chain (`drugref_5c4` reads **593**) — re-measure, never
+quote.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:** near
 `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.
 
 ## Open follow-ups (all filed as GitHub issues)
 
-**Filed by the last three rounds** — [#79](https://github.com/cairn-ehr/drugref/issues/79) **`tests/` is exempt from E501** (its
-title's 324 has drifted to **334** — re-measure, never quote; the carve-out is **debt, not policy** — delete the block in
-`pyproject.toml` when 79 closes) · [#81](https://github.com/cairn-ehr/drugref/issues/81) **the chain's 127.5 s → 144 s delta is
-uncontrolled**: take a per-leg breakdown and a repeat on the next full run · [#82](https://github.com/cairn-ehr/drugref/issues/82)
-**`drugref status` reports orphans to humans only** — it exits 0, so the rebuild script that CAUSED them cannot see it; a
-CLI-contract call, not a cleanup.
+**Filed by slice 5c.4 and its final review** (detail in PROJECT-NOTES § "Slice 5c.4") — **issue 85** `signing_key_status_kind` has **no
+append-only floor**, so one `UPDATE` disarms every compromise verdict (additive later). **Its parked note said "the two seeded vocabulary
+tables" and named the wrong remedy — floor that one ALONE**: `signature_target_kind` is *designed* to move to a `/v2`, the migration the
+read-back machinery exists for. Still carried, unfiled: `tests/test_cli_signing*.py` **cannot commit for real** — other modules assert
+blanket unfiltered counts on shared tables, a test-isolation problem shaped like [#2](https://github.com/cairn-ehr/drugref/issues/2) ·
+`db/030` is 568 lines vs `db/029`'s 579: precedent, not debt.
 
-**Still open from slice 5c.1** — [#75](https://github.com/cairn-ehr/drugref/issues/75) **`gap_uncurated_interaction_rule` costs
-~2.7s**, an unfiltered read of `ddi_candidate_pair` inherited whole from that view, not a new defect; not urgent at today's
-cardinality and no consumer yet. (**76 and 74 are closed by the gates round**, whose fix also covered the fifth Plan C index the
-parametrized test had never named.)
+**Filed by the last three rounds** — [#79](https://github.com/cairn-ehr/drugref/issues/79) **`tests/` is exempt from E501** (its title's 324
+has drifted — re-measure, never quote; **debt, not policy** — delete the `pyproject.toml` block when 79 closes) ·
+[#81](https://github.com/cairn-ehr/drugref/issues/81) per-leg breakdown now taken (above), variance remains ·
+[#82](https://github.com/cairn-ehr/drugref/issues/82) **`drugref status` reports orphans to humans only** — it exits 0, so the rebuild
+script that CAUSED them cannot see it; a CLI-contract call, not a cleanup · [#75](https://github.com/cairn-ehr/drugref/issues/75)
+**`gap_uncurated_interaction_rule` costs ~2.7s**, inherited whole from `ddi_candidate_pair`'s unfiltered scan, not a new defect; no consumer
+yet. (**74 and 76 closed by the gates round**, whose fix also covered the fifth Plan C index the parametrized test had never named.)
 
 **Filed by the slice-3 design, its measurement, and the whole-branch review** — [#67](https://github.com/cairn-ehr/drugref/issues/67)
 **salt↔base strength equivalence has no source** (409 *assay* specs, not conversion factors; MW covers 5.4%), routed to 5c ·
 [#68](https://github.com/cairn-ehr/drugref/issues/68) **3,631 moieties carry a GSRS `ACTIVE MOIETY` edge to something else** (~19%;
-unrepairable — immortal `moiety_uuid`, monotone gate; why issue 33 stays open) ·
-[#69](https://github.com/cairn-ehr/drugref/issues/69) the 27-edge scope question above ·
-[#70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites reachable and queued by nothing** ·
-[#71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834 unregistered-component edges dropped, counted only
-transiently** · [#73](https://github.com/cairn-ehr/drugref/issues/73) **both views read every source at once**; `db/028` is
-immutable, so the next migration there carries it.
+unrepairable — immortal `moiety_uuid`, monotone gate; why issue 33 stays open) · [#69](https://github.com/cairn-ehr/drugref/issues/69) the
+27-edge scope question · [#70](https://github.com/cairn-ehr/drugref/issues/70) **354 all-false composites reachable and queued by nothing**
+· [#71](https://github.com/cairn-ehr/drugref/issues/71) **8,163 of 16,834 unregistered-component edges dropped, counted only transiently** ·
+[#73](https://github.com/cairn-ehr/drugref/issues/73) **both views read every source at once** (`db/028` is immutable, so the next migration
+there carries it).
 
 **Filed by the policy-surface round** — [#65](https://github.com/cairn-ehr/drugref/issues/65) **no index serves a HISTORY query** on
-`class_expansion_policy`; unfixed at 14 rows, revisit at curation. (**66 is closed by the gates round**, which found the gap wider
-than the issue said: ruff was not a dependency and CI never linted.)
+`class_expansion_policy`; unfixed at 14 rows, revisit at curation. (**66 is closed by the gates round**, which found the gap wider than the
+issue said: ruff was not a dependency and CI never linted.) **Owned by 5c** (5c.1's design round routed all three here, unanswered) —
+[#51](https://github.com/cairn-ehr/drugref/issues/51) **the 168 contradicted pairs**: 5c.1 gives them a queue and a home for the ruling
+(`curated_condition`); answering them is 5c.2+ · [#52](https://github.com/cairn-ehr/drugref/issues/52) **the 422 broadened assertions**: no
+`concept_ui` on the row · [#55](https://github.com/cairn-ehr/drugref/issues/55) **`indications_for_condition` generalises through a
+boolean**.
 
-**Owned by 5c** (5c.1's own design round routed all three here, unanswered) — [#51](https://github.com/cairn-ehr/drugref/issues/51)
-**the 168 contradicted pairs**: 5c.1 gives them a queue (`gap_uncurated_condition_contradiction`) and a home for the ruling
-(`curated_condition`); answering them is 5c.2+ · [#52](https://github.com/cairn-ehr/drugref/issues/52) **the 422 broadened
-assertions**: no `concept_ui` on the row · [#55](https://github.com/cairn-ehr/drugref/issues/55) **`indications_for_condition`
-generalises through a boolean**.
+**Filed by the interaction debt round** — [#48](https://github.com/cairn-ehr/drugref/issues/48) **a non-expanding predicate with no direct
+member is equally dead and is deliberately not reported**; unreachable until a *class-side* predicate stops expanding. **Retired by the five
+debt rounds** (#50, #39, #31, #45 · #40, #17, #42, #41, #43 · #16, #47 · #35 · #59, #60, #61, #63), each verified against the code first;
+their **standing rules** are in [`PROJECT-NOTES.md`](PROJECT-NOTES.md).
 
-**Filed by the interaction debt round** — [#48](https://github.com/cairn-ehr/drugref/issues/48) **a non-expanding predicate with no
-direct member is equally dead and is deliberately not reported**; unreachable until a *class-side* predicate stops expanding.
-**Retired by the five debt rounds** (#50, #39, #31, #45 · #40, #17, #42, #41, #43 · #16, #47 · #35 ·
-#59, #60, #61, #63), each verified against the code first; their **standing rules** are in
-[`PROJECT-NOTES.md`](PROJECT-NOTES.md) § "Standing rules".
+**Floor, identity and ingest correctness** — [#2](https://github.com/cairn-ehr/drugref/issues/2) **floor hardening** (the `TRUNCATE` +
+owner-role bypass; blocked on test isolation — **13** `TRUNCATE`-ing modules depend on it, re-grep before quoting); **5c.4 does NOT close it
+and makes it more visible** — a superuser dropping a trigger is now the way to remove a signature ·
+[#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** · [#33](https://github.com/cairn-ehr/drugref/issues/33)
+**MeSH CAS keys name specific forms** — slice 3 does **not** settle it, its own proposed fix is refuted, blocked behind **#68** ·
+[#30](https://github.com/cairn-ehr/drugref/issues/30) (`strip_salt`) **unmeasured** for slice 3 ·
+[#5](https://github.com/cairn-ehr/drugref/issues/5) INN from UNII's `Display Name` ·
+[#7](https://github.com/cairn-ehr/drugref/issues/7)/[#29](https://github.com/cairn-ehr/drugref/issues/29) **row-at-a-time ingest** (MED-RT
+~31k, PBS ~28k round trips) — **now quantified: the two MeSH legs are 75.7% of a 133 s chain.**
 
-**Floor, identity and ingest correctness** — [#2](https://github.com/cairn-ehr/drugref/issues/2) **floor hardening** (the `TRUNCATE`
-+ owner-role bypass; blocked on test isolation — **eleven** `TRUNCATE`-ing modules depend on it, re-grep before quoting) ·
-[#3](https://github.com/cairn-ehr/drugref/issues/3) **UNII-change immortality** ·
-[#33](https://github.com/cairn-ehr/drugref/issues/33) **MeSH CAS keys name specific forms** — slice 3 does **not** settle it, its own
-proposed fix is refuted, blocked behind **#68** · [#30](https://github.com/cairn-ehr/drugref/issues/30) (`strip_salt`) **unmeasured**
-for slice 3 · [#5](https://github.com/cairn-ehr/drugref/issues/5) INN sourced from UNII's `Display Name` ·
-[#7](https://github.com/cairn-ehr/drugref/issues/7)/[#29](https://github.com/cairn-ehr/drugref/issues/29) **row-at-a-time ingest**,
-MED-RT ~31k round trips and PBS ~28k; the MeSH-keyed leg is the slowest of ~127-137 s.
-
-**Interaction model** — [#19](https://github.com/cairn-ehr/drugref/issues/19) **CI rules whose object class is unpopulated**, filed
-as 41 of 739 but `gap_unpopulated_contraindication` returns **13**, so **re-measure before acting on the issue text** ·
+**Interaction model** — [#19](https://github.com/cairn-ehr/drugref/issues/19) **CI rules whose object class is unpopulated**, filed as 41 of
+739 but `gap_unpopulated_contraindication` returns **13**, so **re-measure before acting on the issue text** ·
 [#20](https://github.com/cairn-ehr/drugref/issues/20) **n-ary interactions**, Plan C's `interaction_group` is the shape ·
 [#8](https://github.com/cairn-ehr/drugref/issues/8) **class-level `has_*` assertions unused** ·
 [#36](https://github.com/cairn-ehr/drugref/issues/36) **discovery counts descendant classes, not reachable members** ·
-[#37](https://github.com/cairn-ehr/drugref/issues/37) **the DAG is expanded unprunably on every query** — restricting the *root set*
-is safe, restricting the *walk* deletes the coagulation case; **#75 above is the same cost, measured unfiltered**.
-
-**Before the first production load** — every parser re-run against a current release, the `add_claim` canonicalisation check from
-#17, and **three** rule-6 deeds (#6, #25, GSRS's *"unless otherwise noted"*): see PROJECT-NOTES § "Verify".
+[#37](https://github.com/cairn-ehr/drugref/issues/37) **the DAG is expanded unprunably on every query** — restricting the *root set* is
+safe, restricting the *walk* deletes the coagulation case. **Before the first production load**: every parser re-run against a current
+release, the `add_claim` canonicalisation check from #17, and **three** rule-6 deeds (#6, #25, GSRS's *"unless otherwise noted"*) —
+PROJECT-NOTES § "Verify".
 
 ## Current DSN
 
 - **The one home for this value.** Dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`. Set it
   as `DRUGREF_TEST_DSN` for the DB-gated tests. **Which verification database to read, what it holds and what it does not, is stated
-  once in `PROJECT-NOTES.md` § Repo facts** — read **`drugref_5c1m`**. Not restated here: this file is compressed every session, so a
+  once in `PROJECT-NOTES.md` § Repo facts** — read **`drugref_5c4`**. Not restated here: this file is compressed every session, so a
   second copy would outlive the first and disagree with it.
