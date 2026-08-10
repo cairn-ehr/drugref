@@ -440,7 +440,7 @@ row's canonical payload, and an institutional key signing a per-release **conten
 every live curated assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as
 `added` and `altered`. **Revocation is data, not branches**: `rotated`/`retired` are time-scoped (prior
 signatures survive), `compromised` is blanket. `cli.py` was split first (508 → 347 lines) into `cli.py` +
-`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1249**.
+`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1260**.
 
 **Measured on a fresh `drugref_5c4`** built from the same real releases (2026-08-10, chain wall-clock **132.96 s**,
 per-leg breakdown recorded for [#81](https://github.com/cairn-ehr/drugref/issues/81)): **every count that must not

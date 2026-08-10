@@ -395,8 +395,14 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     # first makes a hand-built manifest that MIXED contexts for one kind deterministic
     # too: entries under the other context simply fail to pair and report as
     # dropped + added -- a loud finding that asks a human to look, which is the same
-    # conservative direction `_published_content_is_history` chose, and never a crash on
-    # the verification path.
+    # conservative direction `_published_content_is_history` chose.
+    #
+    # THAT LAST SENTENCE USED TO END "and never a crash on the verification path", which
+    # was FALSE AS WRITTEN and is now true because `unpairable` below makes it so. This
+    # dict is built from a column with no foreign key behind it, so an entry can name a
+    # context no frozen list knows, and the first version of this code subscripted the
+    # frozen dicts directly -- an uncaught `KeyError`, which `cli.main` does not catch
+    # (it catches `RuntimeError`), reachable with one INSERT.
     natural_key_contexts = {}
     for key in sorted(manifest_entries):
         target_kind, _natural_key = key
@@ -411,11 +417,26 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     manifest_keys = set(manifest_entries)
     live_keys = set(live_entries)
 
-    dropped = sorted(manifest_keys - live_keys)
-    added = sorted(live_keys - manifest_keys)
+    # AN ENTRY WHOSE STORED CONTEXT CANNOT BE REBUILT FAILS TO PAIR -- removed from
+    # the intersection below and reported on BOTH sides (dropped, because the
+    # manifest's claim cannot be checked against anything; added, because the live row
+    # it might have described is then unmatched). R1 of the final re-review, and the
+    # reason it sits here rather than inside the loop: "unverifiable" is a property of
+    # the ENTRY, decidable before any comparison, and deciding it here is what keeps
+    # `signatures.payload_for` and `_published_content_is_history` from ever being
+    # reached with a context they would raise `KeyError` (unknown) or
+    # `UndefinedColumn` (another kind's) on. `enumerate_live` already applies the same
+    # test to the natural-key half.
+    unpairable = {
+        key for key in manifest_keys & live_keys
+        if not signing.entry_context_is_reproducible(
+            manifest_entries[key][0], live_entries[key].payload_context)}
+
+    dropped = sorted((manifest_keys - live_keys) | unpairable)
+    added = sorted((live_keys - manifest_keys) | unpairable)
     altered = []
 
-    for key in sorted(manifest_keys & live_keys):
+    for key in sorted((manifest_keys & live_keys) - unpairable):
         target_kind, _natural_key = key
         payload_context, digest_m = manifest_entries[key]
         live_entry = live_entries[key]

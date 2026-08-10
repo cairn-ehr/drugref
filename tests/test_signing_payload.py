@@ -312,3 +312,59 @@ def test_the_vector_signatures_verify_under_the_committed_test_key():
         payload = case["payload"].encode("utf-8")
         assert signing.sign(private, payload).hex() == case["signature"], case["name"]
         assert signing.verify(public, payload, bytes.fromhex(case["signature"]))
+
+
+# ---- entry_context_is_reproducible (final re-review, R1) --------------------
+
+
+@pytest.mark.parametrize("entry_context,current_context,expected", [
+    # the ordinary case: an entry recorded under the context its kind still signs under
+    ("curated_interaction/v1", "curated_interaction/v1", True),
+    ("curated_condition/v1", "curated_condition/v1", True),
+    # a context no frozen list knows -- storable, because
+    # release_manifest_entry.payload_context has a regex CHECK and no foreign key
+    ("bogus/v9", "curated_interaction/v1", False),
+    # a REAL context, but the other kind's: `in FIELD_LISTS` would wave this through,
+    # and rebuilding would then SELECT object_condition_uuid from curated_interaction
+    ("curated_condition/v1", "curated_interaction/v1", False),
+    ("curated_interaction/v1", "curated_condition/v1", False),
+    # the manifest's own context names no row columns at all, so it can never describe
+    # a curated entry
+    ("release_manifest/v1", "curated_interaction/v1", False),
+    # an unknown CURRENT context: nothing can be reproduced against a shape this module
+    # has no frozen list for, and saying so beats subscripting and raising
+    ("curated_interaction/v1", "bogus/v9", False),
+])
+def test_entry_context_is_reproducible(entry_context, current_context, expected):
+    """PURE, and the reason it exists is a crash, not a nicety: `verify_release` reads
+    `payload_context` off a table with no foreign key behind it, so every value here is
+    one INSERT away. Subscripting the frozen dicts instead raised `KeyError`, which is
+    not a `RuntimeError` and so escaped `cli.main` as a traceback.
+
+    THE CASES ARE THE THREE SHAPES OF UNUSABLE, not one: never-known, another kind's, and
+    the manifest's own -- plus an unknown CURRENT context, which no database test can
+    reach today because the catalog is seeded correctly, and which is exactly the kind of
+    branch that goes unexercised until it fires.
+    """
+    assert signing.entry_context_is_reproducible(
+        entry_context, current_context) is expected
+
+
+def test_a_retired_context_stays_reproducible_when_its_kind_moves_to_v2(monkeypatch):
+    """THE CASE THE CONTAINMENT TEST MUST NOT BREAK, and the reason it is written as
+    containment rather than equality. `signing.FIELD_LISTS` keeps every retired context
+    forever precisely so a `/v1` signature still verifies after its kind moves to `/v2`
+    (`signatures.py`'s standing rule). A `/v2` that ADDS a column -- the realistic
+    evolution, and the one tests/test_signing_payload_coverage.py's alarm forces a
+    decision about -- must therefore leave every `/v1` manifest entry still reproducible,
+    or this guard would quietly convert the whole published history into `dropped`.
+    """
+    v2 = ("subject_moiety_uuid", "object_class_uuid", "relationship", "applies",
+          "severity", "mechanism", "management", "evidence_grade", "question_uuid",
+          "source", "reviewed_by", "reviewed_against", "reviewed_at", "a_new_column",
+          *signing.ATTESTATION_FIELDS)
+    monkeypatch.setitem(signing.FIELD_LISTS, "curated_interaction/v2", v2)
+    monkeypatch.setitem(signing.NATURAL_KEY_COLUMNS, "curated_interaction/v2",
+                        signing.CURATED_INTERACTION_V1_KEY)
+    assert signing.entry_context_is_reproducible(
+        "curated_interaction/v1", "curated_interaction/v2") is True

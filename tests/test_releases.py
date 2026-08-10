@@ -576,13 +576,21 @@ def test_a_widened_natural_key_trigger_does_not_re_key_a_published_release(
     own transaction (Postgres DDL is transactional and the `conn` fixture rolls back),
     and the assertion below confirms the catalog really reports the wider key before the
     verification is attempted -- without that, a test whose DDL silently failed would
-    pass for the wrong reason. `SET CONSTRAINTS ALL IMMEDIATE` first because `published`
-    left the deferred single-live trigger with a pending event, and Postgres refuses to
-    drop a trigger on a table that still has one.
+    pass for the wrong reason.
+
+    NO `SET CONSTRAINTS ALL IMMEDIATE` IS NEEDED FIRST, and an earlier version of this
+    test both called it and explained it wrongly ("Postgres refuses to drop a trigger on a
+    table that still has one [pending deferred event]"). Measured false in both
+    directions: with `published`'s pending single-live event outstanding, `DROP TRIGGER`
+    succeeds, and removing the call left this test passing. What Postgres actually refuses
+    with pending trigger events is `ALTER TABLE` ("cannot ALTER TABLE ... because it has
+    pending trigger events") and `TRUNCATE` -- the latter measured true, which is why
+    `test_a_row_the_manifest_lists_but_the_database_lacks_is_a_DROP` legitimately does
+    call it. The line is deleted rather than re-justified: a call kept for a reason that
+    does not hold is a call the next reader has to disprove again.
     """
     from tests.test_live_key_index_guard import _single_live_tables
 
-    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
     conn.execute("DROP TRIGGER curated_interaction_single_live "
                  "ON drugref.curated_interaction")
     conn.execute(
@@ -984,3 +992,96 @@ def test_the_entry_digest_sentinel_is_pinned_by_a_published_vector(conn):
     assert fields["signed_at"] == signing.render(releases.ENTRY_DIGEST_SIGNED_AT)
     assert fields["signer_key_fingerprint"] == "", (
         "an entry digest names no signer -- see enumerate_live's docstring")
+
+
+# ---- final re-review: R1 -- an unusable entry context must not crash the verifier ----
+
+
+@pytest.mark.parametrize("bogus_context,why", [
+    ("bogus/v9", "no frozen field list has ever known this context"),
+    ("curated_condition/v1", "a real context, but for the OTHER target kind"),
+])
+def test_an_unreproducible_entry_context_fails_to_pair_rather_than_raising(
+        conn, institutional_key, a_graded_rule, bogus_context, why):
+    """R1 (final re-review, Important) -- a defect the C1 fix INTRODUCED.
+
+    `release_manifest_entry.payload_context` carries a regex CHECK and, deliberately, no
+    foreign key, so both values below are storable with one INSERT. The first version of
+    the C1 fix subscripted `signing.NATURAL_KEY_COLUMNS` / `signing.FIELD_LISTS` directly
+    and raised `KeyError` -- which is not a `RuntimeError`, so `cli.main` does not catch
+    it and `drugref verify --release` printed a raw traceback.
+
+    THAT WAS A REGRESSION, NOT MERELY A GAP: the `pg_trigger` code the fix replaced
+    reported drop+add here. It also contradicted two comments in the fix's own diff --
+    `_worst_verdict`'s stated principle that a crash at the verification core is strictly
+    worse than treating an unknown outcome with maximum suspicion, and `verify_release`'s
+    own claim that an unmatched context is reported "and never a crash".
+
+    THE ANSWER IS THE ONE THOSE COMMENTS ALREADY PROMISED: the entry fails to pair. It is
+    reported `dropped` (its claim can be checked against nothing) and the live row it
+    might have described is reported `added` (nothing matched it), the verdict is not
+    intact, and no exception escapes. The second case matters separately from the first:
+    `curated_condition/v1` IS a known context, so a mere `in FIELD_LISTS` test would let
+    it through to `signatures.payload_for`, which would SELECT `object_condition_uuid`
+    from `curated_interaction` and raise `psycopg.errors.UndefinedColumn` instead -- the
+    same crash, one layer over.
+    """
+    target_id = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    # THE NATURAL KEY IS THE REAL ONE, so the entry would otherwise PAIR -- that is what
+    # drives the bogus context all the way into the digest rebuild. An entry that failed
+    # to pair on its key alone would never reach the code under test.
+    natural_key = releases.natural_key_of(conn, "curated_interaction", target_id)
+    entries = [releases.ManifestEntry(
+        "curated_interaction", natural_key, target_id, bogus_context, b"\x33" * 32)]
+    _publish_manually(
+        conn, release_tag=f"2026.09.10-{bogus_context.replace('/', '-')}",
+        published_by="an operator", key_fingerprint=institutional_key["fingerprint"],
+        private_key=institutional_key["private"], entries=entries)
+
+    verdict = release_verification.verify_release(
+        conn, f"2026.09.10-{bogus_context.replace('/', '-')}")
+    assert verdict.signature == signing.VALID       # the manifest really is drugref's
+    assert verdict.dropped == [("curated_interaction", natural_key)], why
+    assert verdict.added == [("curated_interaction", natural_key)], why
+    assert verdict.altered == []
+    assert not verdict.is_intact
+
+
+def test_an_unreproducible_context_does_not_hide_the_rest_of_the_manifest(
+        conn, institutional_key, a_graded_rule, ingest_run_id):
+    """The control for the pair above, and the reason `enumerate_live` FALLS BACK to the
+    current context rather than skipping the kind: one unusable entry must not take the
+    rest of the enumeration down with it.
+
+    Skipping the kind would empty the live side for `curated_interaction`, so a second,
+    perfectly good live row would silently stop being reported as `added` -- FEWER
+    FINDINGS, which is the wrong direction for a verifier exactly as fewer rows is the
+    wrong direction for a contraindication. Here the manifest holds one unusable entry and
+    the database holds a second, genuinely unpublished rule; both must be reported.
+    """
+    from tests.test_signature_read_path import _a_second_graded_rule
+
+    target_id = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    natural_key = releases.natural_key_of(conn, "curated_interaction", target_id)
+    entries = [releases.ManifestEntry(
+        "curated_interaction", natural_key, target_id, "bogus/v9", b"\x44" * 32)]
+    _publish_manually(
+        conn, release_tag="2026.09.11", published_by="an operator",
+        key_fingerprint=institutional_key["fingerprint"],
+        private_key=institutional_key["private"], entries=entries)
+    second = _a_second_graded_rule(conn, ingest_run_id, a_graded_rule["subject"])
+    second_key = releases.natural_key_of(
+        conn, "curated_interaction", second["curated_interaction_id"])
+
+    verdict = release_verification.verify_release(conn, "2026.09.11")
+    assert second_key in [k for _kind, k in verdict.added], (
+        "the second live rule vanished from `added` -- an unusable entry must not empty "
+        "the live enumeration for its whole target kind")
+    assert natural_key in [k for _kind, k in verdict.dropped]
+    assert not verdict.is_intact

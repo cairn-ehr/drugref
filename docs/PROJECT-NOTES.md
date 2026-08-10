@@ -979,7 +979,7 @@ rebuild script that caused it cannot gate on it; that is a CLI-contract decision
 ## Slice 5c.4 — signing the curated overlay (`db/030`, measured 2026-08-10 on `drugref_5c4`)
 
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md). Published record:
-[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1249**.
+[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1260**.
 
 **Two layers, one payload format, one key registry.** Curator-held Ed25519 keys sign one curated row's canonical
 payload (`assertion_signature`); an institutional key signs a per-release **content manifest** enumerating every
@@ -1083,12 +1083,29 @@ and exit 1 — **authenticity and integrity are separate answers, and the CLI re
   by the CURRENT context when publishing; `verify_release` passes the contexts read back off the manifest's own
   entries. The alarm the rule exists for is rebuilt in `test_signing_payload_coverage.py`, exactly as it is for
   `FIELD_LISTS`.
+- **A MANIFEST ENTRY'S `payload_context` IS UNCONSTRAINED INPUT, and the verifier must never subscript a frozen
+  dict with it.** `release_manifest_entry.payload_context` carries a regex CHECK and, deliberately, NO foreign
+  key, so `'bogus/v9'` — or a real context belonging to the OTHER target kind — is one INSERT away. The first
+  version of the C1 fix above raised `KeyError` on both, and `KeyError` is not a `RuntimeError`, so `cli.main`
+  does not catch it and `drugref verify --release` printed a raw traceback: a REGRESSION, since the code C1
+  replaced reported drop+add. `signing.entry_context_is_reproducible` is the single test (containment, both the
+  field list and the natural-key columns, so the cross-kind case cannot reach `UndefinedColumn` one layer over),
+  and an unusable entry now FAILS TO PAIR — dropped + added, never a raise. `enumerate_live` falls back to the
+  current context rather than skipping the kind, deliberately: skipping would empty the live side and silently
+  stop reporting genuinely unpublished rows as `added`, and **fewer findings is the wrong direction for a
+  verifier** exactly as fewer rows is for a contraindication.
 - **`signatures._target_kind_catalog` and `._row_content_fields` have callers OUTSIDE `signatures.py`** despite
   their leading underscore (`releases.py`, `release_verification.py`), and both docstrings now say so. A
   near-duplicate `releases._target_table` existed for a while, justified in its own docstring on the grounds that
   `_target_kind_catalog` "is private to signatures.py" — while `releases.py` was already calling it two functions
   away. Deleted. **Fifth false WHY comment of this branch**: a comment that explains a choice by asserting
-  something about another module is a comment that has to be re-checked, not trusted.
+  something about another module is a comment that has to be re-checked, not trusted. **The count reached SEVEN**,
+  and the last two were written by the round that fixed the first five — `_render_natural_key` called
+  `curated_interaction.relationship` a "CHECK vocabulary" when it is a FOREIGN KEY into `ci_axis(relationship)`,
+  whose primary key is unconstrained `text` (so a slash-bearing axis is one INSERT away, not a migration away),
+  and a test claimed Postgres refuses `DROP TRIGGER` on a table with pending deferred events. **Measured false:**
+  `DROP TRIGGER` succeeds; `ALTER TABLE` and `TRUNCATE` are what Postgres refuses. Writing a WHY is not the same
+  as checking one, and a fix round is no safer than the code it fixes.
 - **`release_manifest` is a real `signature_target_kind` row but NOT a per-row target.** Its payload is built
   from `release_manifest_entry` and derived counts, so `drugref sign`/`verify --target-kind release_manifest`
   used to die with an uncaught `psycopg.errors.UndefinedColumn: column "entry_count" does not exist` — and only
@@ -1184,7 +1201,7 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1249 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1260 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before

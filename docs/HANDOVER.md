@@ -23,22 +23,23 @@
 #80. **`db/029` is MERGED and FROZEN** — corrections need a new `db/NNN`; `db/030` freezes the same way once this branch merges. Figures and
 traps: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1249.** The overlay is signed at **two
-layers**: curator-held Ed25519 keys over one row's canonical payload, and an institutional key over a per-release **content manifest**
+**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1260.** The overlay is signed at **two
+layers**: curator-held Ed25519 keys over one row's canonical payload, an institutional key over a per-release **content manifest**
 enumerating every live assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as `added`/`altered`.
 Signatures are **detached rows, not a column**, so any row can be signed later and counter-signing works. Revocation is **data, not
-branches**: `rotated`/`retired` are time-scoped, `compromised` blanket. `cli.py` 508 → 347, split into `cli.py` + `cli_chain.py`, then
-`cli_signing.py` + `cli_signing_release.py`. Record: [signing the curated
-overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). **Traps: PROJECT-NOTES § "Slice 5c.4"** — the TWO frozen column
-lists (fields *and* natural keys, both inverting the house rule deliberately), `is_revocation`, the LEFT joins, `signed` ≠ verified, the
-per-signature rebuild, the empty manifest, natural-key entries.
+branches**: `rotated`/`retired` time-scoped, `compromised` blanket. `cli.py` 508 → 347, split into `cli.py` + `cli_chain.py`, then
+`cli_signing*.py`. Record: [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). **Traps:
+PROJECT-NOTES § "Slice 5c.4"** — the TWO frozen column lists (fields *and* natural keys, both inverting the house rule), `is_revocation`,
+the LEFT joins, `signed` ≠ verified, the per-signature rebuild, the empty manifest.
 
 **⇒ FINAL WHOLE-BRANCH REVIEW APPLIED (PR [#84](https://github.com/cairn-ehr/drugref/pull/84)); `db/030` and the canonical payload format
-are UNCHANGED — the reviewer could not break either.** Code, tests, docs only; 1202 → 1249. **C1:** the manifest's pairing key was
-re-derived from the PRESENT schema, so a later migration widening a curated natural key re-keyed 100% of a published release — the columns
-are now frozen in `signing.NATURAL_KEY_COLUMNS` with the alarm `FIELD_LISTS` has. **C2–C4 + I1** closed four gates firing at nothing: no
-mutation coverage on the manifest's signed members, `is_intact` not needing a VALID signature, a committed test whose remedy would have
-destroyed every historical signature, and a **dated time bomb that failed OPEN on 2026-12-01**.
+are UNCHANGED — the reviewer could not break either.** Code/tests/docs only; 1202 → 1260. **C1:** the manifest's pairing key was re-derived
+from the PRESENT schema, so a migration widening a curated natural key re-keyed 100% of a published release — the columns are now frozen in
+`signing.NATURAL_KEY_COLUMNS`, with the same alarm. **C2–C4 + I1** closed four gates firing at nothing: no mutation coverage on the
+manifest's signed members, `is_intact` not needing a VALID signature, a committed test whose remedy would have destroyed every historical
+signature, and a **dated time bomb failing OPEN on 2026-12-01**. A re-review caught three residuals in the fix wave ITSELF: C1's first cut
+turned a conservative drop+add into an uncaught `KeyError`, and **the false-WHY count reached SEVEN — the last two written by the fixing
+round.**
 
 **⇒ MEASURED on a fresh `drugref_5c4`** from the real releases (2026-08-10). **All five must-not-move counts held exactly** —
 `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** · `open_question` **21,842** · `gap_uncurated_interaction_rule` **595** ·
@@ -55,8 +56,8 @@ measurement DB is `drugref_5c4`** — it REPRODUCED the counts, it no longer hol
 **⇒ NEXT SLICE: `5c.2` — the ONC high-priority DDI floor** (Phansalkar 2012 / Ayvaz 2015), the first curated content, signable as written.
 **ROADMAP § 5c's execution-order callout has been CORRECTED and a reordering round must read it**: 5c.1 recorded the order as *hard and
 irreversible* assuming a signature **column**; 5c.4 built detached signatures, so the irreversibility is gone — **good order, not a trap**.
-Payload waiting: **168** contradicted pairs, **595** ungraded rules, on a CLEAN chain (`drugref_5c4` itself reads **593**) — re-measure;
-never quote a "today".
+Payload waiting: **168** contradicted pairs, **595** ungraded rules, on a CLEAN chain (`drugref_5c4` reads **593**) — re-measure, never
+quote.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:** near
 `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.

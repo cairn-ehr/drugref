@@ -361,6 +361,50 @@ NATURAL_KEY_COLUMNS = {
 }
 
 
+def entry_context_is_reproducible(entry_context: str, current_context: str) -> bool:
+    """Can a manifest entry recorded under `entry_context` be rebuilt against a row
+    whose kind signs under `current_context` today? PURE -- both arguments are strings.
+
+    WHY THIS IS A QUESTION AT ALL. `release_manifest_entry.payload_context` carries only
+    a regex CHECK and, deliberately, NO foreign key -- an entry may name any well-shaped
+    context string, including one no frozen list has ever known (`bogus/v9`) or one
+    belonging to a DIFFERENT target kind (`curated_condition/v1` on a
+    `curated_interaction` entry). Both are one INSERT away on a table nothing else
+    constrains.
+
+    A VERIFIER MUST NOT CRASH ON EITHER, and the first version of the C1 fix did: it
+    subscripted `FIELD_LISTS`/`NATURAL_KEY_COLUMNS` directly, so an unknown context
+    threw `KeyError` -- not a `RuntimeError`, so `cli.main` does not catch it and
+    `drugref verify --release` printed a raw traceback. That is strictly worse than the
+    behaviour it replaced (the old derive-from-`pg_trigger` code reported drop+add), and
+    it contradicts `release_verification._worst_verdict`'s own stated principle: a crash
+    at the verification core is worse than treating an unknown outcome with maximum
+    suspicion. Callers use this to make an unusable entry FAIL TO PAIR -- reported as
+    dropped -- instead.
+
+    THE TEST IS CONTAINMENT, both halves of it. `entry_context`'s fields must all be
+    columns the current context also names (that is what makes
+    `signatures._row_content_fields`' SELECT resolvable against the kind's table -- a
+    cross-kind context otherwise raises `UndefinedColumn`, the same crash one layer
+    over), and its natural-key columns likewise, since `enumerate_live` reads them out
+    of exactly that field set.
+
+    A STATED, CONSERVATIVE LIMITATION: a future `/v2` that both ADDS and REMOVES a
+    column would make a genuine `/v1` entry non-containable once the catalog moved on,
+    and this reports it as dropped+added rather than comparing it. That is a misread
+    in the direction that asks a human to look -- `_published_content_is_history`'s own
+    limitation, chosen the same way -- and never a false clean bill of health. Version
+    evolution that only ADDS columns (the realistic direction, and the one the alarm in
+    tests/test_signing_payload_coverage.py forces a decision about) is unaffected.
+    """
+    fields = FIELD_LISTS.get(entry_context)
+    key_columns = NATURAL_KEY_COLUMNS.get(entry_context)
+    current = FIELD_LISTS.get(current_context)
+    if fields is None or key_columns is None or current is None:
+        return False
+    return set(fields) <= set(current) and set(key_columns) <= set(current)
+
+
 # ---- what a signature MEANS (spec 7.1) -------------------------------------
 #
 # SIX VERDICTS, NOT A BOOLEAN, and the reason is the revocation model. A consumer needs

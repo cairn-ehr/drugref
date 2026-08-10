@@ -66,13 +66,23 @@ def _render_natural_key(key_values) -> str:
     and even if one were not, `signing.render(None)` returns `None` and `str.join`
     raises `TypeError` immediately -- loud, never ambiguous.
 
-    A `/` INSIDE a value is the real ambiguity, since `a/b` + `c` and `a` + `b/c`
-    render identically. No key column can hold one today -- both curated keys are UUIDs
-    plus, for the interaction, `relationship`, whose values come from a CHECK vocabulary
-    with no slash in them -- so this is a property to re-check when a natural key first
-    admits free text, not a live defect. The signed bytes are not at risk either way:
-    `canonical_payload` length-prefixes this whole string as ONE field, so an ambiguous
-    key can confuse PAIRING but can never forge a field boundary.
+    A `/` INSIDE a value is the real ambiguity, since `a/b` + `c` and `a` + `b/c` render
+    identically. No key column holds one TODAY, but note how weak the guard actually is,
+    because an earlier version of this paragraph overstated it: `curated_condition`'s
+    key is two UUIDs and cannot, but `curated_interaction`'s third column,
+    `relationship`, is NOT CHECK-constrained -- it is a FOREIGN KEY into
+    `drugref.ci_axis(relationship)`, whose primary key is plain `text` with no shape
+    constraint of any kind (db/006). `CI_MoA` and `CI_PE` have no slash in them; a
+    slash-bearing axis is therefore ONE ORDINARY INSERT into a seed table away, not a
+    migration away, and nothing in the schema would object.
+
+    THE SIGNED BYTES ARE NOT AT RISK EITHER WAY, which is why this is a note rather than
+    a guard: `canonical_payload` length-prefixes this whole string as ONE field, so an
+    ambiguous key can confuse PAIRING (two different rows rendering one key string,
+    which `verify_release` would report as drop+add) but can never forge a field
+    boundary. If a slash-bearing `relationship` is ever admitted, the fix is to escape
+    here and mint a `/v2` -- changing this rendering under `/v1` would re-key every
+    published manifest, which is the C1 defect one door over.
     """
     return "/".join(signing.render(v) for v in key_values)
 
@@ -210,6 +220,14 @@ def enumerate_live(conn: psycopg.Connection, *,
     for target_kind in _CURATED_KINDS:
         table, pk_column, context = signatures._target_kind_catalog(conn, target_kind)
         key_context = (natural_key_contexts or {}).get(target_kind, context)
+        # AN UNUSABLE REQUESTED CONTEXT FALLS BACK, IT NEVER RAISES -- see
+        # `signing.entry_context_is_reproducible` for what "unusable" means and for the
+        # traceback this replaced. Falling back to the CURRENT context (rather than
+        # skipping the kind) is what keeps the `added` direction honest: a skipped kind
+        # would drop its live rows out of the enumeration silently, so a manifest that
+        # omits a live row would stop reporting it.
+        if not signing.entry_context_is_reproducible(key_context, context):
+            key_context = context
         key_columns = signing.NATURAL_KEY_COLUMNS[key_context]
         rows = conn.execute(
             sql.SQL("SELECT {pk} FROM drugref.{table} "
