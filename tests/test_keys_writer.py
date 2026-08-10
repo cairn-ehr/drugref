@@ -28,6 +28,17 @@ def test_a_registered_key_is_live_and_findable_by_fingerprint(conn, a_key):
     assert record.status_from == NOW
 
 
+def test_public_key_reads_back_as_bytes_not_a_driver_specific_buffer(conn, a_key):
+    """KeyRecord annotates `public_key: bytes`, and _record's cast is what makes that
+    true regardless of what the driver actually hands back. Equality alone does not
+    cover this -- `record.public_key == a_key` passes identically whether or not the
+    cast runs, because a memoryview compares equal to the bytes it wraps. isinstance
+    does not: it is the one check a driver-version change could silently break, and the
+    one this test exists to pin."""
+    record = keys.live(conn, signing.fingerprint(a_key))
+    assert isinstance(record.public_key, bytes)
+
+
 def test_an_unregistered_fingerprint_reads_as_None_not_an_error(conn):
     """A signature naming a key nobody registered is an ORDINARY finding -- it is the
     UNKNOWN_KEY verdict -- so the read returns None and the verdict rule decides. An
@@ -42,6 +53,17 @@ def test_register_derives_the_fingerprint_rather_than_accepting_one():
     caller store one that does not match its key -- a row that verifies nothing, reports
     UNKNOWN_KEY forever, and looks entirely healthy in every listing."""
     assert "key_fingerprint" not in inspect.signature(keys.register).parameters
+
+
+def test_the_stored_fingerprint_always_matches_the_stored_key(conn, a_key):
+    """The parameter-name check above is cheap but only catches ONE spelling of the
+    hazard -- a differently-named argument that reintroduced a caller-supplied
+    fingerprint would walk straight past it. This is the property that actually
+    matters and holds for every row this module ever writes: the fingerprint recorded
+    beside a key is always the one THAT KEY derives, never a value taken on trust from
+    a caller."""
+    record = keys.live(conn, signing.fingerprint(a_key))
+    assert record.key_fingerprint == signing.fingerprint(record.public_key)
 
 
 def test_revoking_supersedes_rather_than_editing(conn, a_key):
@@ -101,9 +123,17 @@ def test_key_status_assembles_the_rule_from_the_vocabulary_table(conn, a_key):
 
 def test_nothing_here_commits(conn, a_key):
     """The caller owns the transaction, as everywhere in these modules. Proved by
-    rolling back and finding nothing rather than by reading the source."""
+    rolling back and finding nothing rather than by reading the source.
+
+    ASSERTS PRESENCE BEFORE THE ROLLBACK, not just absence after: an empty result after
+    rollback is equally consistent with register() writing nothing at all, or with
+    live() being broken and unable to find a row regardless of commit state. Confirming
+    the key is found FIRST rules both out, so only a genuine commit-vs-rollback
+    difference can produce the absence asserted below."""
+    fp = signing.fingerprint(a_key)
+    assert keys.live(conn, fp) is not None
     conn.rollback()
-    assert keys.live(conn, signing.fingerprint(a_key)) is None
+    assert keys.live(conn, fp) is None
 
 
 def test_two_keys_for_one_holder_coexist(conn, a_key):
