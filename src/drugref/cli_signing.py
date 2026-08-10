@@ -26,10 +26,14 @@ module has already finished executing top to bottom and `_reject_blank`/
 import. Hoisting that one import to this file's own top-level import block
 would reintroduce the cycle for real: Python would reach it while THIS
 module is still mid-definition, `cli_signing_release`'s own top-level `from
-drugref.cli_signing import ...` would find those three names not yet bound,
-and the result is `ImportError: cannot import name '_write' from partially
-initialized module 'drugref.cli_signing'`. The local import is therefore
-load-bearing, not a style choice -- do not hoist it.
+drugref.cli_signing import ...` would find those three names not yet bound
+-- and, because Python looks them up in the order the `import` statement
+names them (`_BlankArgumentError` first), the result is `ImportError: cannot
+import name '_BlankArgumentError' from partially initialized module
+'drugref.cli_signing'`, not `'_write'` even though `_write` is the one this
+paragraph talks about most. Verified against a real two-module reproduction
+of the shape, not assumed. The local import is therefore load-bearing, not a
+style choice -- do not hoist it.
 
 MODELLED ON `cli_policy.py`, DELIBERATELY. That file is the precedent for
 every shape below: `_reject_blank` guards a required flag whose value strips

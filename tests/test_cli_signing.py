@@ -115,8 +115,19 @@ class _NoCommit:
     same-transaction MVCC visibility), so a test asserting "the row is
     there" cannot tell a handler that commits from one that silently does
     not -- and removing `conn.commit()` from `_handle_sign` was measured to
-    leave the full suite passing. See the module docstring's closing note on
-    what asserting this count does and does not prove.
+    leave the full suite passing.
+
+    WHAT ASSERTING THIS COUNT DOES AND DOES NOT PROVE -- stated here, the
+    one place it actually lives, rather than pointed at from a "module
+    docstring's closing note" that does not exist (a round-3 review finding:
+    the pointer was wrong). It proves a handler's code path reached
+    `.commit()`, and nothing more. It is NOT a substitute for
+    `test_cli_policy.py`'s `_and_commits` tests, which prove theirs by
+    reading the row back on a genuinely SEPARATE connection -- a write
+    reaching disk is not a claim this file's own design (nothing here may
+    ever commit for real; see the module docstring's second paragraph) can
+    demonstrate at all. Every assertion-site comment that says "see
+    `_NoCommit`'s own docstring" means exactly this paragraph.
     """
 
     _SAVEPOINT = "drugref_cli_test"
@@ -128,13 +139,63 @@ class _NoCommit:
 
     def commit(self) -> None:
         self.commit_count += 1
+        # NO try/finally HERE -- see rollback()'s own docstring for why a
+        # finally clause restoring DEFERRED mode immediately after this
+        # SET CONSTRAINTS call fails would itself fail: the transaction is
+        # ABORTED the instant a deferred trigger raises, and postgres
+        # refuses every statement (including SET CONSTRAINTS) on an
+        # aborted transaction until something un-aborts it. Only
+        # ROLLBACK TO SAVEPOINT can do that, and only the CALLER's own
+        # recovery path (`_write`'s `except`, which always calls
+        # `conn.rollback()`) is positioned to run it -- so the restore has
+        # to live there, not here.
         self._real.execute("SET CONSTRAINTS ALL IMMEDIATE")
         self._real.execute(f"RELEASE SAVEPOINT {self._SAVEPOINT}")
         self._real.execute(f"SAVEPOINT {self._SAVEPOINT}")
         self._real.execute("SET CONSTRAINTS ALL DEFERRED")
 
     def rollback(self) -> None:
+        """Recover after ANY failure -- a rejected write, or a fake commit
+        whose own `SET CONSTRAINTS ALL IMMEDIATE` raised -- and restore
+        DEFERRED mode as part of that recovery, not as an afterthought.
+
+        A ROUND-3 REVIEW FINDING, AND THE ONE THIS FILE'S OWN C1 TEST COULD
+        NOT SEE: `commit()`'s restore (`SET CONSTRAINTS ALL DEFERRED`,
+        formerly its own last line) only ran on the SUCCESS path -- when
+        `SET CONSTRAINTS ALL IMMEDIATE` itself raises (test_keys_register_a_
+        second_time_...'s exact case, and the only case this whole fix
+        exists for), the three statements after it never execute, and
+        `ROLLBACK TO SAVEPOINT` does NOT undo a constraint-mode change --
+        measured directly by a reviewer's control, not assumed: a
+        LEGITIMATE `keys.revoke` (insert-then-supersede, which genuinely
+        needs DEFERRED mode) raised `RaiseException` immediately after a
+        prior command's failed fake commit and this method's own recovery
+        rollback, with nothing wrong in `revoke` at all. Every statement
+        after a failed fake commit was therefore running under IMMEDIATE
+        mode no real session is ever in -- state that did not exist before
+        the `SET CONSTRAINTS ALL IMMEDIATE` fix landed (this harness used
+        to be unconditionally DEFERRED).
+
+        THE FIX BELONGS HERE, NOT IN A `try`/`finally` INSIDE `commit()`,
+        because `rollback()` is the one place EVERY recovery path already
+        goes through -- `_write`'s `except` calls `conn.rollback()`
+        unconditionally after ANY caught exception, whether it came from
+        the writer call or from `commit()` itself -- and because it is the
+        only place safe to run `SET CONSTRAINTS ALL DEFERRED` at all: that
+        statement cannot run until `ROLLBACK TO SAVEPOINT` has already
+        un-aborted the transaction, so a restore attempted inside
+        `commit()`'s own failure path would have to duplicate this exact
+        rollback first. Centralising it here also covers the harmless case
+        for free -- a failure from the WRITER call, before `commit()` ever
+        ran, never touched constraint mode in the first place, so
+        re-issuing DEFERRED here is a no-op, not a risk.
+
+        `test_a_legitimate_write_still_works_after_a_failed_fake_commit`
+        reproduces the reviewer's control directly: it forces the leak,
+        then proves recovery with a real `keys.revoke` in the same test.
+        """
         self._real.execute(f"ROLLBACK TO SAVEPOINT {self._SAVEPOINT}")
+        self._real.execute("SET CONSTRAINTS ALL DEFERRED")
 
     def __getattr__(self, name):
         return getattr(self._real, name)
@@ -434,6 +495,50 @@ def test_keys_register_a_second_time_for_the_same_key_is_reported_cleanly(
     assert record is not None
     assert record.signing_key_id == first_id
     assert record.status == "active"
+
+
+def test_a_legitimate_write_still_works_after_a_failed_fake_commit(
+        wconn, conn, a_registerable_key):
+    """IMPORTANT (round 3): `_NoCommit.commit()` used to restore DEFERRED
+    mode only on the SUCCESS path -- the three statements after `SET
+    CONSTRAINTS ALL IMMEDIATE` (including the restore) never ran when
+    IMMEDIATE itself raised, which is `test_keys_register_a_second_time_...`'s
+    own case, and the ONLY case this fix exists for. `ROLLBACK TO SAVEPOINT`
+    does NOT undo a constraint-mode change (measured directly, not assumed:
+    a control run confirmed a legitimate `keys.revoke` -- insert-then-
+    supersede, which genuinely needs DEFERRED mode because the natural key
+    is briefly two live rows between the INSERT and the UPDATE that
+    supersedes -- raised `RaiseException` immediately after a prior
+    command's failed fake commit and `_write`'s own recovery rollback, with
+    no bug in `revoke` at all). So every statement after a failed fake
+    commit used to run under IMMEDIATE mode no real session is ever in --
+    the dangerous direction, since a future "this command is rightly
+    rejected" test could pass for the wrong reason (the leaked mode) rather
+    than the one it claims to test.
+
+    This test reproduces that exact sequence: force the leak (register the
+    same key twice, exactly as the CRITICAL test above does), then prove
+    recovery by running a LEGITIMATE `keys.revoke` immediately afterwards,
+    in the SAME test, on the SAME connection -- it must succeed.
+    """
+    assert _run(wconn, [
+        "keys", "register", "--public-key", str(a_registerable_key["path"]),
+        "--holder", "a curator", "--registered-by", "an operator"]) == 0
+    # Force the leak: the second registration fails at _NoCommit.commit()'s
+    # own SET CONSTRAINTS ALL IMMEDIATE (the CRITICAL test's exact path),
+    # and is recovered by _write's conn.rollback() -- which is exactly the
+    # recovery step that used to leave constraint mode stuck on IMMEDIATE.
+    assert _run(wconn, [
+        "keys", "register", "--public-key", str(a_registerable_key["path"]),
+        "--holder", "a curator", "--registered-by", "an operator"]) == 2
+
+    # A LEGITIMATE revoke, immediately after the leak. If constraint mode is
+    # still IMMEDIATE here, keys.revoke's own insert-then-supersede raises
+    # RaiseException -- not because anything about THIS command is wrong.
+    assert _run(wconn, [
+        "keys", "revoke", "--key-fingerprint", a_registerable_key["fingerprint"],
+        "--status", "retired", "--revoked-by", "an operator"]) == 0
+    assert keys.live(conn, a_registerable_key["fingerprint"]).status == "retired"
 
 
 # ---- keys revoke ---------------------------------------------------------------
