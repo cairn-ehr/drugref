@@ -35,6 +35,17 @@ def _signature(conn, target_id=1, kind="curated_interaction", digest=b"\x02" * 3
         (kind, target_id, digest, FP, b"\x03" * 64, NOW)).fetchone()[0]
 
 
+def _manifest(conn, tag):
+    """One release_manifest row, for tests that need a live FK target for
+    release_manifest_entry -- an empty upstream_releases array and a zero row_count,
+    since no test needing this helper cares about either."""
+    return conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES (%s, %s, 0, '[]'::jsonb, 'op', %s) RETURNING manifest_id",
+        (tag, b"\x04" * 32, NOW)).fetchone()[0]
+
+
 @pytest.mark.parametrize("status,is_revocation,invalidates", [
     ("active", False, False),
     ("rotated", True, False),
@@ -293,3 +304,43 @@ def test_an_empty_array_is_a_legitimate_upstream_releases_value(conn):
     assert conn.execute(
         "SELECT upstream_releases FROM drugref.release_manifest "
         "WHERE release_tag = '2026.08.16'").fetchone()[0] == []
+
+
+def test_a_manifest_entry_accepts_a_well_formed_row(conn):
+    """THE NEGATIVE CONTROL this table never had. A re-review finding: before this
+    test, `grep -rn "release_manifest_entry" tests/` found no INSERT into this table
+    anywhere in the suite -- not malformed, not even well-formed. Without this test, a
+    CHECK (or, worse, a typo'd column list) that rejected EVERY insert would still pass
+    every other test in this file, because nothing had ever proven a valid entry is
+    representable at all."""
+    manifest_id = _manifest(conn, "2026.08.17")
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', 'nk-1', 1, 'curated_interaction/v1', %s)",
+        (manifest_id, b"\x06" * 32))
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.release_manifest_entry "
+        "WHERE manifest_id = %s", (manifest_id,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("bad", [
+    "not/a/context", "curated_interaction", "curated_interaction/1",
+    "curated_interaction/v1x", "CURATED_INTERACTION/v1", "curated_interaction/v1\n99",
+])
+def test_a_manifest_entrys_malformed_payload_context_is_refused(conn, bad):
+    """release_manifest_entry_context_shape is TEXTUALLY IDENTICAL to
+    assertion_signature_context_shape, but a copy-pasted CHECK is still a SEPARATE
+    clause -- this project's standing rule is one test per clause that kills its
+    removal, not one test per wording. A re-review confirmed the gap empirically: with
+    this CHECK dropped, the same malformed row this test sends inserted successfully
+    and the rest of the suite stayed green, because nothing else here ever touched this
+    table (see this file's git history / the task report for the manual verification
+    of that drop-and-restore)."""
+    manifest_id = _manifest(conn, "2026.08.18")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+            "natural_key, target_id, payload_context, payload_digest) "
+            "VALUES (%s, 'curated_interaction', 'nk-2', 1, %s, %s)",
+            (manifest_id, bad, b"\x06" * 32))
