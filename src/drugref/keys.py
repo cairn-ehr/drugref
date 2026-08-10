@@ -30,7 +30,7 @@ import psycopg
 from drugref import overlay, signing
 
 
-class NoLiveKeyError(RuntimeError):
+class NoLiveKeyError(signing.SigningError):
     """Revoking a key with no live row. Raised rather than no-op'ing.
 
     interactions.NoLiveDecisionError's precedent, and the argument is the same one
@@ -48,6 +48,14 @@ class NoLiveKeyError(RuntimeError):
 # mode instead of testing for it; strict=True catches a column gained or lost.
 _COLUMNS = ("signing_key_id", "key_fingerprint", "public_key", "algorithm", "holder",
             "status", "status_from", "registered_by", "registered_at", "superseded_by")
+
+# THE ONE PYTHON SPELLING OF THE REGISTRATION STATUS, on signing.ED25519's precedent and
+# for its reason. `signing_key_status_kind` is this vocabulary's home and `signing_key.
+# status` is a FOREIGN KEY into it -- but that column has no SQL DEFAULT, so Python must
+# write SOME value when registering. This constant exists because of that, not as a
+# second list to disagree with the first: an unrecognised value raises
+# ForeignKeyViolation from the database, which is the intended behaviour.
+ACTIVE = "active"
 
 
 @dataclass(frozen=True)
@@ -85,7 +93,7 @@ _SELECT = f"SELECT {', '.join(_COLUMNS)} FROM drugref.signing_key "
 
 def register(conn: psycopg.Connection, *, public_key: bytes, holder: str,
              registered_by: str, algorithm: str = signing.ED25519,
-             status: str = "active",
+             status: str = ACTIVE,
              status_from: dt.datetime | None = None) -> int:
     """Register a public key. Returns the new signing_key_id.
 
@@ -159,12 +167,44 @@ def key_status(conn: psycopg.Connection,
     THE TWO BOOLEANS COME FROM signing_key_status_kind, never from a Python mapping over
     `status`. That table is where the revocation rule lives (db/030 section 1), and a
     second copy here is the defect db/006 named and four rounds have paid for.
+
+    THE WHOLE HISTORY IS READ, NOT THE LIVE ROW ALONE, and that is a security property
+    rather than a nicety. A BLANKET revocation is PERMANENT: once any row for this
+    fingerprint carries `invalidates_all_signatures`, no later row can take it back.
+
+    Reading the live row alone was the defect. `revoke` writes whatever status it is
+    handed and refuses no transition, so `drugref keys revoke --status active` on a
+    compromised key -- one supported command, no raw SQL, no superuser, no dropped
+    trigger -- silently returned every signature that key ever made to `valid`,
+    INCLUDING every one the thief made with the stolen private half. Blanket revocation
+    is the design's ONLY answer to a stolen key (spec 5.2, 7.4), and it was undoable by
+    the same command that applied it.
+
+    THIS IS WHAT db/030 SECTION 3 ALREADY PROMISED. Its comment justifies the whole
+    insert-then-supersede shape on the grounds that "the full status history of a key is
+    therefore readable, which is the only thing that makes 'was this key already revoked
+    when that signature was made?' answerable" -- and until this query, nothing anywhere
+    read that history. It was written every time and consulted never.
+
+    ONLY BLANKET REVOCATIONS ARE PERMANENT. `rotated` and `retired` stay reversible,
+    because a mistaken revocation must be correctable on an append-only floor and a new
+    laptop must not unsound a curator's past work. Which statuses are permanent is read
+    off `invalidates_all_signatures` -- still the vocabulary table's answer, never a
+    status name spelled again here.
+
+    `ORDER BY ... DESC` puts a blanket row ahead of the live one; the `signing_key_id`
+    tiebreak picks the EARLIEST compromise, so `status_from` reports when the key was
+    first declared lost rather than when it was last re-declared. `LIMIT 1` then yields
+    the blanket row if the key has ever carried one, and the live row otherwise.
     """
     row = conn.execute(
         "SELECT k.status, t.is_revocation, t.invalidates_all_signatures, k.status_from "
         "FROM drugref.signing_key k "
         "JOIN drugref.signing_key_status_kind t ON t.status = k.status "
-        "WHERE k.key_fingerprint = %s AND k.superseded_by IS NULL",
+        "WHERE k.key_fingerprint = %s "
+        "  AND (k.superseded_by IS NULL OR t.invalidates_all_signatures) "
+        "ORDER BY t.invalidates_all_signatures DESC, k.signing_key_id "
+        "LIMIT 1",
         (key_fingerprint,)).fetchone()
     if row is None:
         return None

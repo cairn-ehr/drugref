@@ -13,7 +13,7 @@ LATER = dt.datetime(2026, 12, 1, tzinfo=dt.timezone.utc)
 
 @pytest.fixture
 def a_key(conn):
-    _, public = signing.generate_keypair()
+    public = signing.generate_keypair().public_key
     keys.register(conn, public_key=public, holder="a curator",
                   registered_by="an operator", status_from=NOW)
     return public
@@ -121,6 +121,72 @@ def test_key_status_assembles_the_rule_from_the_vocabulary_table(conn, a_key):
     assert revoked.status_from == LATER
 
 
+def test_a_compromise_is_not_undone_by_a_later_status_change(conn, a_key):
+    """A BLANKET REVOCATION IS PERMANENT, and this is the test that says so.
+
+    `revoke` writes whatever status it is handed, so `--status active` on a compromised
+    key is one ordinary command -- no raw SQL, no superuser, no dropped trigger. Before
+    this, `key_status` read the LIVE row alone, so that command silently returned every
+    signature the key ever made to `valid`, INCLUDING the attacker's. That is the one
+    outcome blanket revocation exists to prevent: after a compromise there is no way to
+    tell the holder's signatures from the thief's, and a status change cannot create
+    that knowledge retrospectively.
+
+    db/030 section 3 justifies the whole insert-then-supersede shape on the grounds that
+    a key's status HISTORY is readable -- "the only thing that makes 'was this key
+    already revoked when that signature was made?' answerable". Nothing read it until
+    this fix; the history was written and never consulted.
+    """
+    fp = signing.fingerprint(a_key)
+    keys.revoke(conn, key_fingerprint=fp, status="compromised",
+                revoked_by="an operator", status_from=LATER)
+    keys.revoke(conn, key_fingerprint=fp, status="active",
+                revoked_by="an attacker", status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    assert keys.live(conn, fp).status == "active"      # the live row really did move
+    status = keys.key_status(conn, fp)
+    assert status.invalidates_all_signatures is True   # ...and the verdict did not
+    assert status.status == "compromised"
+
+
+def test_a_compromise_is_not_downgraded_to_a_time_scoped_revocation(conn, a_key):
+    """The quieter half of the same defect. `--status rotated` on a compromised key
+    turned a BLANKET revocation into a TIME-SCOPED one, so every signature the attacker
+    backdated before `status_from` verified again -- and `signed_at` is chosen by
+    whoever holds the private key, which after a compromise is the attacker."""
+    fp = signing.fingerprint(a_key)
+    keys.revoke(conn, key_fingerprint=fp, status="compromised",
+                revoked_by="an operator", status_from=LATER)
+    keys.revoke(conn, key_fingerprint=fp, status="rotated",
+                revoked_by="an attacker", status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    assert keys.key_status(conn, fp).invalidates_all_signatures is True
+
+
+def test_a_time_scoped_revocation_IS_still_reversible(conn, a_key):
+    """THE ANTI-VACUITY CONTROL, and the reason the fix reads the vocabulary table
+    rather than freezing a status name: only a status carrying
+    `invalidates_all_signatures` is permanent. A key rotated onto a new laptop and then
+    legitimately reinstated must go back to `active` -- a mistaken revocation has to be
+    correctable on an append-only floor, which is exactly what supersession is for.
+
+    Without this test the two above would pass on a `key_status` that simply refused
+    every reinstatement."""
+    fp = signing.fingerprint(a_key)
+    keys.revoke(conn, key_fingerprint=fp, status="rotated",
+                revoked_by="an operator", status_from=LATER)
+    keys.revoke(conn, key_fingerprint=fp, status="active",
+                revoked_by="an operator", status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    status = keys.key_status(conn, fp)
+    assert status.status == "active"
+    assert status.invalidates_all_signatures is False
+    assert status.is_revocation is False
+
+
 def test_nothing_here_commits(conn, a_key):
     """The caller owns the transaction, as everywhere in these modules. Proved by
     rolling back and finding nothing rather than by reading the source.
@@ -139,7 +205,7 @@ def test_nothing_here_commits(conn, a_key):
 def test_two_keys_for_one_holder_coexist(conn, a_key):
     """A rotation registers a NEW key beside the old one. `holder` is not a natural key,
     and two live keys for one person is an ordinary state during a rotation."""
-    _, second = signing.generate_keypair()
+    second = signing.generate_keypair().public_key
     keys.register(conn, public_key=second, holder="a curator",
                   registered_by="an operator", status_from=LATER)
     conn.execute("SET CONSTRAINTS ALL IMMEDIATE")

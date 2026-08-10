@@ -71,7 +71,16 @@ CREATE TABLE IF NOT EXISTS drugref.signature_target_kind (
     target_kind     text PRIMARY KEY,
     target_table    text NOT NULL,
     pk_column       text NOT NULL,
-    payload_context text NOT NULL
+    payload_context text NOT NULL,
+    -- THE SAME SHAPE ITS TWO SIBLINGS CARRY. `assertion_signature.payload_context` and
+    -- `release_manifest_entry.payload_context` are both CHECKed against this pattern;
+    -- this column held the same kind of value with no constraint at all, and it is the
+    -- one an operator is MEANT to update (pointing a kind at a /v2 is exactly the
+    -- migration the read-back machinery exists to support). A malformed value here
+    -- reaches `signing.canonical_payload`'s own ValueError by way of every writer, so
+    -- the table an operator edits by hand was the only one not telling them at once.
+    CONSTRAINT signature_target_kind_context_shape
+        CHECK (payload_context ~ '^[a-z_]+/v[0-9]+$')
 );
 
 INSERT INTO drugref.signature_target_kind
@@ -244,7 +253,7 @@ CREATE TRIGGER assertion_signature_insert_only
     BEFORE UPDATE OR DELETE ON drugref.assertion_signature
     FOR EACH ROW EXECUTE FUNCTION drugref.forbid_any_rewrite();
 
--- NO SEPARATE (target_kind, target_id) INDEX: assertion_signature_unique below is a
+-- NO SEPARATE (target_kind, target_id) INDEX: assertion_signature_unique above is a
 -- UNIQUE index on (target_kind, target_id, key_fingerprint, payload_digest), and its
 -- leading two columns already serve the "what signed this row?" lookup every
 -- verification does. A second index on the same leading prefix would be a permanent
@@ -380,6 +389,23 @@ COMMENT ON TABLE drugref.release_manifest IS
 -- `status_from` an END boundary at all: an active key's `status_from` is its
 -- REGISTRATION time, so without that guard every signature ever made would read as
 -- expired, including one made a second after the key was registered.
+--
+-- A BLANKET REVOCATION IS PERMANENT, AND THAT IS WHY THE LIVE ROW IS NOT THE WHOLE
+-- ANSWER. `keys.revoke` writes whatever status it is handed, so `drugref keys revoke
+-- --status active` on a compromised key -- one supported command, no raw SQL and no
+-- superuser -- moved the LIVE row back to `active` and returned every one of that
+-- key's rows to `signed` here, including every signature the thief made with the
+-- stolen private half. The `NOT EXISTS` below asks the question section 3's own
+-- comment promised the status history would answer, and which nothing asked until
+-- now: has this fingerprint EVER carried a blanket revocation? `rotated` and
+-- `retired` stay reversible -- a mistaken revocation must be correctable on an
+-- append-only floor -- because permanence keys off `invalidates_all_signatures`
+-- alone, never off a status name spelled again here.
+--
+-- `keys.key_status` runs the SAME rule for `drugref verify`, and
+-- tests/test_signature_read_path.py pins the two against each other case by case: a
+-- consumer reading this column and an operator running the verifier must never be
+-- told different things about one key, or the cheaper answer is the believed one.
 CREATE OR REPLACE VIEW drugref.curated_signature_status AS
 WITH per_target AS (
     SELECT s.target_kind,
@@ -397,6 +423,20 @@ WITH per_target AS (
                WHERE k.key_fingerprint IS NOT NULL
                  AND NOT t.invalidates_all_signatures
                  AND NOT (t.is_revocation AND s.signed_at >= k.status_from)
+                 -- ...AND THE KEY HAS NEVER BEEN COMPROMISED IN ITS WHOLE HISTORY, not
+                 -- merely in its live row. See this section's header: without this a
+                 -- single `keys revoke --status active` undid a blanket revocation.
+                 -- Written as NOT EXISTS over every row for the fingerprint rather
+                 -- than as a join, so a key with several superseded statuses still
+                 -- contributes at most one objection and the FILTER's count stays a
+                 -- count of SIGNATURES.
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM   drugref.signing_key bk
+                     JOIN   drugref.signing_key_status_kind bt ON bt.status = bk.status
+                     WHERE  bk.key_fingerprint = s.key_fingerprint
+                       AND  bt.invalidates_all_signatures
+                 )
            ) AS unobjected_count
     FROM   drugref.assertion_signature s
            -- LEFT, twice over: an unregistered key must still produce a per_target row
@@ -420,6 +460,15 @@ SELECT target_kind,
        -- whatever the registry says about the key that made them. One unobjected
        -- signature is enough -- see the file-level comment on why "signed" does not
        -- mean "every signature is unobjected".
+       -- NOTE WHAT THE `ELSE` LABEL ACTUALLY COVERS: not only a revoked key, but a
+       -- key the registry has NEVER HEARD OF (the `k.key_fingerprint IS NULL` case
+       -- above, correctly counted as objected). `signed_by_revoked_key` therefore
+       -- reads "the registry objects", NOT "the key was revoked" -- and an unknown
+       -- key is the MORE suspicious of the two, not the less: `signing.verdict`
+       -- ranks UNKNOWN_KEY above KEY_REVOKED_COMPROMISED. A consumer needing them
+       -- apart runs `drugref verify`. A third value here is additive later (this is
+       -- CREATE OR REPLACE) but changes a PUBLISHED vocabulary, so it is issue 86
+       -- rather than a quiet widening.
        CASE WHEN unobjected_count > 0 THEN 'signed'
             ELSE 'signed_by_revoked_key' END AS signature_status
 FROM   per_target;
@@ -430,7 +479,9 @@ COMMENT ON VIEW drugref.curated_signature_status IS
     'its key is registered, and whether that key has been revoked. `signed` means '
     'NOTHING IN THE REGISTRY OBJECTS, not that the mathematics was checked -- run '
     '`drugref verify` for that. A target with no row here is UNSIGNED, which is an '
-    'ordinary state: signing is optional per row.';
+    'ordinary state: signing is optional per row. `signed_by_revoked_key` means THE '
+    'REGISTRY OBJECTS -- the key was revoked, OR it was never registered at all; '
+    'run `drugref verify` to tell those apart.';
 
 -- A row whose signature claims a date long before this database learned of it. An
 -- OPERATOR SIGNAL, deliberately not a gap kind -- a curator with an air-gapped signing

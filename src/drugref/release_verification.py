@@ -73,19 +73,26 @@ class ManifestVerdict:
     """
     release_tag: str
     signature: str
-    dropped: list
-    added: list
-    altered: list
+    # TUPLES, NOT LISTS, and `frozen=True` is exactly why it matters. Freezing blocks
+    # REBINDING an attribute; it does nothing about mutating the object bound there, so
+    # `verdict.dropped.clear()` flipped `is_intact` from False to True on the one type
+    # whose entire job is answering "is this release intact". The element type is
+    # `(target_kind, natural_key)` -- never `target_id`, for `ManifestEntry`'s reason.
+    dropped: tuple[tuple[str, str], ...]
+    added: tuple[tuple[str, str], ...]
+    altered: tuple[tuple[str, str], ...]
     row_count_ok: bool
     manifest_digest_ok: bool | None
 
     @property
     def is_intact(self) -> bool:
         """VALID signature, nothing dropped/added/altered, and the manifest's own
-        bookkeeping matches its own entries. All five, ANDed: a database that matches
-        the manifest byte-for-byte under a forged signature is not intact either -- it
-        only means an attacker forged a manifest that happens to describe reality,
-        which is not the same claim as "this is really what drugref published". `bool()`
+        bookkeeping matches its own entries. All SIX fields, ANDed as four conditions
+        (the three finding lists share one `not (... or ... or ...)`): a database that
+        matches the manifest byte-for-byte under a forged signature is not intact
+        either -- it only means an attacker forged a manifest that happens to describe
+        reality, which is not the same claim as "this is really what drugref
+        published". `bool()`
         around `manifest_digest_ok` is deliberate: `None` (unsigned) and `False`
         (verified wrong) must both fail this property, and Python already treats `None`
         as falsy in a boolean context, but writing it explicitly says so rather than
@@ -95,7 +102,35 @@ class ManifestVerdict:
                 and self.row_count_ok and bool(self.manifest_digest_ok))
 
 
-class UnknownReleaseError(RuntimeError):
+class MalformedManifestError(signing.SigningError):
+    """A stored manifest this verifier cannot read at all -- as opposed to one it
+    reads and finds wanting, which is a VERDICT rather than an exception.
+
+    `release_manifest.upstream_releases` is CHECKed only as `jsonb_typeof = 'array'`;
+    nothing constrains its members, so a hand-written manifest can hold a scalar or
+    an object with different keys. Raised as a SigningError so `cli.main` renders one
+    sentence: as a bare `KeyError` this escaped that catch and printed a traceback,
+    permanently, the table being insert-only."""
+
+
+class AmbiguousSupersessionError(signing.SigningError):
+    """More than one row points `superseded_by` at a single successor, so the
+    history walk cannot say which predecessor a row came from.
+
+    REACHED IN REVIEW, not hypothetical: round 3 committed two such rows directly,
+    with `SET CONSTRAINTS ALL IMMEDIATE` confirming no trigger objected -- db/020's
+    deferred single-live check counts LIVE rows per natural key and says nothing
+    about how many rows point AT one successor. `overlay.supersede`'s guarded UPDATE
+    is what prevents it on the ordinary path, and raw SQL is what bypasses that
+    guard.
+
+    A SigningError so `cli.main` renders it as a sentence. This was a bare
+    `ValueError`, which that catch misses -- so `drugref verify --release` printed a
+    raw traceback on a database in the very state the docstring below documents as
+    reachable."""
+
+
+class UnknownReleaseError(signing.SigningError):
     """No `release_manifest` row names this `release_tag`. Raised rather than returning
     an empty/vacuous verdict -- `keys.NoLiveKeyError`'s precedent: silence is the worst
     answer a lookup can give, and a mistyped tag would otherwise read as "this release
@@ -134,7 +169,7 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
     payload -- `signed_at` is inside the signed bytes, spec 4.4) vouch for a digest the
     ORIGINAL signature no longer matches, which is reachable only through a writer bug
     -- precisely the class of defect this column exists to catch.
-    `test_a_wrong_manifest_digest_still_reports_wrong_when_a_later_counter_signature_
+    `test_a_wrong_manifest_digest_is_not_excused_by_a_later_counter_signature`
     would_have_matched` is the test "any" could not pass and "earliest" does.
     `sig_rows` is already `ORDER BY signature_id` -- the order signatures were
     RECORDED, `keys.history`'s own precedent for why (an operator may supply
@@ -182,7 +217,21 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
         "SELECT published_by, published_at, upstream_releases "
         "FROM drugref.release_manifest WHERE manifest_id = %s",
         (manifest_id,)).fetchone()
-    upstream = [(u["source"], u["writer"], u["release"]) for u in upstream_releases]
+    # SHAPE-CHECKED, NOT SUBSCRIPTED BLIND (review I3). `release_manifest.
+    # upstream_releases` carries only `jsonb_typeof(...) = 'array'`; its ELEMENTS are
+    # unconstrained, so a member that is a scalar or carries different keys raised
+    # `KeyError`/`TypeError` here -- neither a `RuntimeError`, so `cli.main` printed a
+    # traceback, and `release_manifest` is insert-only so the row could never be fixed.
+    # Same class as the planted `payload_context` one function down.
+    try:
+        upstream = [(u["source"], u["writer"], u["release"]) for u in upstream_releases]
+    except (KeyError, TypeError) as exc:
+        raise MalformedManifestError(
+            f"release_manifest {manifest_id} ({release_tag!r}) has an "
+            f"upstream_releases member this verifier cannot read: {exc!r}. Every "
+            "member must be an object with `source`, `writer` and `release` -- the "
+            "shape `releases.publish` writes. The column's CHECK constrains only the "
+            "value to an array, so a hand-written manifest can reach this.") from exc
     entries = [
         ManifestEntry(target_kind, natural_key, target_id, payload_context,
                      bytes(payload_digest))
@@ -209,16 +258,27 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
                 f"assertion_signature {signature_id} was signed with {algorithm!r}, "
                 "which this module cannot verify -- signing.verify only implements "
                 f"{signing.ED25519}.")
-        payload = manifest_payload(
-            conn, release_tag=release_tag, published_by=published_by,
-            published_at=published_at, entries=entries, upstream=upstream,
-            key_fingerprint=key_fingerprint, signed_at=signed_at,
-            payload_context=payload_context)
-        digest_matches.append(signing.digest(payload) == manifest_digest)
         key = keys.live(conn, key_fingerprint)
         status = keys.key_status(conn, key_fingerprint)
-        signature_ok = key is not None and signing.verify(
-            key.public_key, payload, signature)
+        # THE SAME PLANTED-CONTEXT GUARD verify_target applies one layer down (review
+        # C3). `assertion_signature.payload_context` is unconstrained beyond its regex
+        # here too, and `manifest_payload` subscripts `signing.FIELD_LISTS` with it --
+        # so one planted `release_manifest` signature turned `drugref verify --release`
+        # into a raw `KeyError` traceback for the life of the database, the manifest
+        # table being insert-only. The digest cannot be compared either: there are no
+        # bytes to compare.
+        if not signing.context_is_usable_for(payload_context, "release_manifest"):
+            digest_matches.append(False)
+            signature_ok = False
+        else:
+            payload = manifest_payload(
+                conn, release_tag=release_tag, published_by=published_by,
+                published_at=published_at, entries=entries, upstream=upstream,
+                key_fingerprint=key_fingerprint, signed_at=signed_at,
+                payload_context=payload_context)
+            digest_matches.append(signing.digest(payload) == manifest_digest)
+            signature_ok = key is not None and signing.verify(
+                key.public_key, payload, signature)
         verdicts.append(signing.verdict(
             status, signature_ok=signature_ok, signed_at=signed_at))
     # `[0]` -- THE EARLIEST -- NOT `all(...)` AND NOT `any(...)`. See this function's
@@ -284,7 +344,8 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
     seen = {current_id}
     while True:
         # EXACTLY ONE PREDECESSOR EXPECTED, made explicit the same way
-        # `releases._natural_key_columns` was -- `.fetchone()` would silently pick
+        # the now-DELETED `releases._natural_key_columns` was, before
+        # `signing.NATURAL_KEY_COLUMNS` replaced it -- `.fetchone()` would silently pick
         # whichever row the planner returns first. NOT PREVENTED BY ANY TRIGGER:
         # `forbid_multiple_live_assertions` counts LIVE rows per natural key and says
         # nothing about how many rows point `superseded_by` AT one successor, so
@@ -303,7 +364,7 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
         if not predecessors:
             return False
         if len(predecessors) > 1:
-            raise ValueError(
+            raise AmbiguousSupersessionError(
                 f"drugref.{table} row {current_id} is pointed at by "
                 f"{len(predecessors)} superseded_by values -- normal use through "
                 "overlay.supersede's guarded UPDATE should make this unreachable, "
@@ -461,7 +522,11 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     dropped.sort()
     added.sort()
 
+    # FROZEN AT THE BOUNDARY. The three are built as lists because they are appended to
+    # and sorted above; they become tuples the moment they enter the verdict, so no
+    # caller can empty one and turn a broken release intact.
     return ManifestVerdict(release_tag=release_tag, signature=signature,
-                           dropped=dropped, added=added, altered=altered,
+                           dropped=tuple(dropped), added=tuple(added),
+                           altered=tuple(altered),
                            row_count_ok=row_count_ok,
                            manifest_digest_ok=manifest_digest_ok)

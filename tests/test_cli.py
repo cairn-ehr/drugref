@@ -104,6 +104,9 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     out = capsys.readouterr().out
     assert "loaded releases: none" in out
     assert "unfinished runs: none" in out
+    # The fourth block (review I7) says "none" in the same voice as the other three --
+    # a bare header would read as truncated output on a fresh database.
+    assert "backdated signatures: none" in out
 
 
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):

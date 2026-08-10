@@ -23,35 +23,35 @@
 #80. **`db/029` is MERGED and FROZEN** — corrections need a new `db/NNN`; `db/030` freezes the same way once this branch merges. Figures and
 traps: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1260.** The overlay is signed at **two
+**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1297.** The overlay is signed at **two
 layers**: curator-held Ed25519 keys over one row's canonical payload, an institutional key over a per-release **content manifest**
 enumerating every live assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as `added`/`altered`.
 Signatures are **detached rows, not a column**, so any row can be signed later and counter-signing works. Revocation is **data, not
-branches**: `rotated`/`retired` time-scoped, `compromised` blanket. `cli.py` 508 → 347, split into `cli.py` + `cli_chain.py`, then
-`cli_signing*.py`. Record: [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). **Traps:
-PROJECT-NOTES § "Slice 5c.4"** — the TWO frozen column lists (fields *and* natural keys, both inverting the house rule), `is_revocation`,
-the LEFT joins, `signed` ≠ verified, the per-signature rebuild, the empty manifest.
+branches**: `rotated`/`retired` time-scoped, `compromised` blanket **and now permanent**. `cli.py` 508 → 379, split into `cli.py` +
+`cli_chain.py`, then `cli_signing*.py`. Record: [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/).
 
-**⇒ FINAL WHOLE-BRANCH REVIEW APPLIED (PR [#84](https://github.com/cairn-ehr/drugref/pull/84)); `db/030` and the canonical payload format
-are UNCHANGED — the reviewer could not break either.** Code/tests/docs only; 1202 → 1260. **C1:** the manifest's pairing key was re-derived
-from the PRESENT schema, so a migration widening a curated natural key re-keyed 100% of a published release — the columns are now frozen in
-`signing.NATURAL_KEY_COLUMNS`, with the same alarm. **C2–C4 + I1** closed four gates firing at nothing: no mutation coverage on the
-manifest's signed members, `is_intact` not needing a VALID signature, a committed test whose remedy would have destroyed every historical
-signature, and a **dated time bomb failing OPEN on 2026-12-01**. A re-review caught three residuals in the fix wave ITSELF: C1's first cut
-turned a conservative drop+add into an uncaught `KeyError`, and **the false-WHY count reached SEVEN — the last two written by the fixing
-round.**
+**⇒ A FIVE-REVIEWER ROUND (PR [#84](https://github.com/cairn-ehr/drugref/pull/84)) FOUND FOUR THINGS FOUR EARLIER ROUNDS DID NOT — two
+MEASURED, not argued. 1260 → 1297; `db/030`'s payload format and every committed vector UNCHANGED.** (1) **Deleting the release layer's
+Ed25519 check outright left the suite GREEN** — that layer had no negative test at all. (2) **`drugref keys revoke --status active` undid a
+`compromised` revocation**, returning the thief's signatures to `valid`: both readers used the LIVE row, while db/030 §3's own comment
+justified the whole design on the status history being read — which nothing did. (3) **One planted `payload_context` denied verification of
+a curated row FOREVER** (insert-only table, uncaught `KeyError`); it is a verdict now, and honest signatures beside it still report `valid`.
+(4) **`release_manifest_entry` had no floor test** — the `dropped` finding's guard. Also: `verify` exited **0** on `unknown_key` (the
+*cheaper* forgery); `generate_keypair`'s tuple let a transposed unpack write the PRIVATE key into `signing_key.public_key`, permanently;
+`ManifestVerdict`'s findings were mutable inside a frozen dataclass. **Full account and every trap: PROJECT-NOTES § "Slice 5c.4"**, which
+now leads with this round. Deferred: [#86](https://github.com/cairn-ehr/drugref/issues/86) (label vocabulary),
+[#87](https://github.com/cairn-ehr/drugref/issues/87), [#88](https://github.com/cairn-ehr/drugref/issues/88).
 
 **⇒ MEASURED on a fresh `drugref_5c4`** from the real releases (2026-08-10). **All five must-not-move counts held exactly** —
 `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** · `open_question` **21,842** · `gap_uncurated_interaction_rule` **595** ·
-`gap_uncurated_condition_contradiction` **168** — as they must, this slice adding no projection and no gap kind. Hot path **~1.42 ms**
-populated / ~1.32 ms empty vs 5c.1's 2.5 ms: no regression. **Chain 132.96 s WITH the per-leg breakdown
+`gap_uncurated_condition_contradiction` **168** — **taken BEFORE the end-to-end exercise, which left two curated rows, so that DB reads 593
+today.** Hot path **~1.4 ms** populated, **re-measured after the revocation fix added a `NOT EXISTS` to the read view**: old view 1.337–1.371
+ms vs new 1.309–1.455 ms on a `TEMPLATE drugref_5c4` clone — no regression. **Chain 132.96 s WITH the per-leg breakdown
 [#81](https://github.com/cairn-ehr/drugref/issues/81) asked for** — `mesh-relations` 58.9 + `mesh` 41.8 = **75.7%**; `unii` 7.2 · `medrt`
-9.8 · `gsrs` 15.0. **#81 answered on the breakdown, open on the variance** (127.5 → 144 → 133 s). End to end: generate → register → sign →
-verify → publish → verify release → revoke `compromised` → verdict flips **and all 9 rows stay served**.
+9.8 · `gsrs` 15.0. **#81 answered on the breakdown, open on the variance** (127.5 → 144 → 133 s).
 
-**⇒ A STATE-FILE DEFECT WAS FOUND AND FIXED, NOT REPEATED.** PROJECT-NOTES claimed `drugref_5c1m` "holds the real releases with the MERGED
-`db/029` … the one to read rather than re-running the chain". **It is EMPTY** (schema 029, `substance_moiety` **0**), verified twice. **The
-measurement DB is `drugref_5c4`** — it REPRODUCED the counts, it no longer holds them all; § "Repo facts" says which.
+**⇒ THE MEASUREMENT DB IS `drugref_5c4`, NOT `drugref_5c1m`** — the latter is EMPTY despite two rounds of PROJECT-NOTES saying otherwise
+(verified twice). `drugref_5c4` REPRODUCED the counts; it no longer holds them all. § "Repo facts" says which.
 
 **⇒ NEXT SLICE: `5c.2` — the ONC high-priority DDI floor** (Phansalkar 2012 / Ayvaz 2015), the first curated content, signable as written.
 **ROADMAP § 5c's execution-order callout has been CORRECTED and a reordering round must read it**: 5c.1 recorded the order as *hard and

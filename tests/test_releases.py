@@ -79,7 +79,8 @@ def _publish_manually(conn, *, release_tag, published_by, key_fingerprint, priva
 
 @pytest.fixture
 def institutional_key(conn):
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     keys.register(conn, public_key=public, holder="drugref.org",
                   registered_by="an operator")
     return {"private": private, "public": public,
@@ -104,7 +105,7 @@ def test_a_published_release_verifies_intact(conn, published):
     verdict = release_verification.verify_release(conn, published)
     assert verdict.signature == signing.VALID
     assert verdict.is_intact
-    assert (verdict.dropped, verdict.added, verdict.altered) == ([], [], [])
+    assert (verdict.dropped, verdict.added, verdict.altered) == ((), (), ())
 
 
 def test_the_manifest_enumerates_every_live_curated_row(conn, published):
@@ -136,6 +137,9 @@ def test_a_row_the_manifest_lists_but_the_database_lacks_is_a_DROP(conn, publish
     conn.execute("TRUNCATE drugref.curated_interaction CASCADE")
     verdict = release_verification.verify_release(conn, published)
     assert len(verdict.dropped) == 1
+    # The complement, as its ADDITION and ALTERATION siblings already assert: a verifier
+    # that reported every finding in every list would satisfy the line above alone.
+    assert (verdict.added, verdict.altered) == ((), ())
     assert not verdict.is_intact
 
 
@@ -181,7 +185,7 @@ def test_a_row_whose_content_changed_is_an_ALTERATION(conn, institutional_key,
     verdict = release_verification.verify_release(conn, "2026.08.12")
     assert verdict.signature == signing.VALID
     assert len(verdict.altered) == 1
-    assert (verdict.dropped, verdict.added) == ([], [])
+    assert (verdict.dropped, verdict.added) == ((), ())
     assert not verdict.is_intact
 
 
@@ -231,7 +235,7 @@ def test_a_correction_is_an_addition_not_an_alteration(conn, published, a_graded
     conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
     verdict = release_verification.verify_release(conn, published)
     assert len(verdict.dropped) == 1 and len(verdict.added) == 1
-    assert verdict.altered == []
+    assert verdict.altered == ()
 
 
 def test_the_manifest_signature_is_an_ordinary_assertion_signature_row(conn, published):
@@ -260,11 +264,79 @@ def test_an_unknown_release_tag_raises(conn):
 
 def test_the_upstream_snapshot_is_recorded(conn, published):
     """`reviewed_against` says which release each JUDGEMENT was formed against; this
-    says which releases the DATABASE held at publication. Different questions."""
+    says which releases the DATABASE held at publication. Different questions.
+
+    ASSERTS THE SHAPE, NOT MERELY THE TYPE (review I3). This read
+    `assert isinstance(upstream, list)`, which is TRUE FOR `[]` -- and `[]` is what it
+    always got, because `drugref.loaded_release` filters `finished_at IS NOT NULL` and
+    conftest's `ingest_run_id` fixture never sets it. The writer/reader key contract was
+    therefore exercised only by committed rows another test file happened to leave
+    behind, so renaming a jsonb key passed under `pytest tests/test_releases.py` and
+    failed only under some collection orders. `test_the_upstream_snapshot_round_trips`
+    below is the real gate; this one keeps the empty case honest."""
     upstream = conn.execute(
         "SELECT upstream_releases FROM drugref.release_manifest "
         "WHERE release_tag = %s", (published,)).fetchone()[0]
     assert isinstance(upstream, list)
+
+
+def test_the_upstream_snapshot_round_trips(conn, institutional_key, a_graded_rule):
+    """REVIEW I3: THE WRITER AND THE READER MUST AGREE ON THE JSONB KEYS.
+
+    `releases.publish` writes `{source, writer, release}` objects;
+    `_verify_manifest_signature` reads exactly those three keys back, and the members
+    are SIGNED (they form the `--upstream--` group). Renaming a key on either side
+    produced `KeyError` at verify time -- not a `RuntimeError`, so `cli.main` printed a
+    traceback -- and nothing in this file noticed, because every manifest here was
+    published against an empty `loaded_release`.
+
+    A FINISHED ingest_run is what makes the view return anything at all: it filters
+    `finished_at IS NOT NULL`, which the shared fixture deliberately leaves unset. This
+    test sets it explicitly rather than depending on whatever another module committed.
+    """
+    conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, "
+        "writer, finished_at) "
+        "VALUES ('UNII', '2026.08.01', 'abc123', 'unii_run', now())")
+    curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    releases.publish(
+        conn, release_tag="2026.08.21", published_by="an operator",
+        private_key=institutional_key["private"],
+        key_fingerprint=institutional_key["fingerprint"],
+        published_at=PUBLISHED_AT, signed_at=PUBLISHED_AT)
+
+    stored = conn.execute(
+        "SELECT upstream_releases FROM drugref.release_manifest "
+        "WHERE release_tag = '2026.08.21'").fetchone()[0]
+    assert {"source": "UNII", "writer": "unii_run",
+            "release": "2026.08.01"} in stored, (
+        "publish must record each loaded release under exactly these three keys -- "
+        "they are what _verify_manifest_signature reads back into signed bytes")
+
+    # AND THE READER SURVIVES THE ROUND TRIP. Asserting the stored shape alone would
+    # still pass if the verifier read different keys; this drives the real path.
+    verdict = release_verification.verify_release(conn, "2026.08.21")
+    assert verdict.signature == signing.VALID
+    assert verdict.is_intact
+
+
+def test_a_malformed_upstream_member_is_reported_not_a_traceback(
+        conn, institutional_key, published):
+    """The other half of I3. `upstream_releases` is CHECKed only as an ARRAY, so its
+    members are unconstrained -- a hand-written manifest holding a scalar, or objects
+    with different keys, reached a bare `KeyError`/`TypeError` that `cli.main` does not
+    catch, on an insert-only table with no correction path."""
+    conn.execute(
+        "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+        "row_count, upstream_releases, published_by, published_at) "
+        "VALUES ('2026.08.22', %s, 0, '[{\"src\": \"UNII\"}]'::jsonb, 'op', %s)",
+        (b"\x09" * 32, PUBLISHED_AT))
+    with pytest.raises(release_verification.MalformedManifestError,
+                       match="upstream_releases member"):
+        release_verification.verify_release(conn, "2026.08.22")
 
 
 # ---- review round 2 additions -------------------------------------------------
@@ -339,7 +411,7 @@ def test_a_rebuilt_nodes_offset_ids_do_not_hide_a_real_alteration(
         private_key=institutional_key["private"], entries=entries)
     verdict = release_verification.verify_release(conn, "2026.08.21")
     assert len(verdict.altered) == 1
-    assert (verdict.dropped, verdict.added) == ([], [])
+    assert (verdict.dropped, verdict.added) == ((), ())
 
 
 def test_verify_release_reconstructs_the_manifest_signatures_past_context(
@@ -481,6 +553,95 @@ def test_a_wrong_manifest_digest_is_reported(conn, institutional_key):
     assert not verdict.is_intact
 
 
+def test_a_manifest_signed_by_a_different_key_reports_bad_signature(
+        conn, institutional_key, a_graded_rule):
+    """C1: THE RELEASE LAYER'S ED25519 CHECK, PROVED NEGATIVELY.
+
+    MEASURED GAP, not a hypothetical: replacing `_verify_manifest_signature`'s
+    `signature_ok = key is not None and signing.verify(...)` with
+    `signature_ok = key is not None` -- deleting the cryptography from the release layer
+    outright -- left the whole suite green at 1260 passed. The row layer had
+    `test_a_forged_signature_reports_bad_signature`; this layer had nothing, and the
+    only test that mentioned BAD_SIGNATURE here called `_worst_verdict` directly or
+    hand-built a `ManifestVerdict`, never reaching the production call site.
+
+    THE ATTACK THIS IS: an attacker with SQL write access plants a manifest, its
+    entries, and an `assertion_signature` row naming the institution's REGISTERED
+    fingerprint but signed with their own private key. The key is known, so this must
+    report BAD_SIGNATURE rather than UNKNOWN_KEY -- and `drugref verify --release` must
+    not report the release intact.
+    """
+    curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    forger_private = signing.generate_keypair().private_key
+    _publish_manually(
+        conn, release_tag="2026.08.13", published_by="an operator",
+        key_fingerprint=institutional_key["fingerprint"],   # the INSTITUTION's name...
+        private_key=forger_private,                         # ...the ATTACKER's key
+        entries=releases.enumerate_live(conn))
+
+    verdict = release_verification.verify_release(conn, "2026.08.13")
+    assert verdict.signature == signing.BAD_SIGNATURE
+    assert verdict.is_intact is False
+
+
+def test_a_manifest_body_tampered_after_signing_reports_bad_signature(
+        conn, institutional_key, published, a_graded_rule):
+    """C1's second half: THE SIGNATURE COVERS THE STORED ENTRIES, not the digest column.
+
+    `release_manifest_entry` permits INSERT (it refuses only UPDATE and DELETE), so an
+    attacker can append a row to a manifest that was already published and signed. The
+    payload `_verify_manifest_signature` rebuilds is built FROM those stored entries, so
+    an appended one changes the bytes and the signature over the old bytes must stop
+    verifying.
+
+    This is the case that proves the verifier rebuilds rather than trusting
+    `release_manifest.manifest_digest`: a verifier that compared the stored digest
+    against itself, or checked nothing, would call this release intact.
+    """
+    manifest_id = conn.execute(
+        "SELECT manifest_id FROM drugref.release_manifest WHERE release_tag = %s",
+        (published,)).fetchone()[0]
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', 'a/forged/key', 9999, "
+        "'curated_interaction/v1', %s)",
+        (manifest_id, b"\xab" * 32))
+
+    verdict = release_verification.verify_release(conn, published)
+    assert verdict.signature == signing.BAD_SIGNATURE
+    assert verdict.is_intact is False
+
+
+def test_an_unusable_manifest_signature_context_is_a_verdict_not_a_crash(
+        conn, institutional_key, published):
+    """C3, the manifest half. `assertion_signature.payload_context` is unconstrained
+    beyond its regex on this path too, and `manifest_payload` subscripted
+    `signing.FIELD_LISTS` with it -- so one planted row made `drugref verify --release`
+    raise `KeyError` (not a `RuntimeError`, so `cli.main` printed a traceback) for the
+    life of the database, `release_manifest` being insert-only.
+
+    The genuine signature recorded by `publish` still reports VALID, and `_worst_verdict`
+    reports the worst of the two -- so the release is correctly no longer intact, but
+    the operator gets a verdict to act on instead of a stack trace."""
+    manifest_id = conn.execute(
+        "SELECT manifest_id FROM drugref.release_manifest WHERE release_tag = %s",
+        (published,)).fetchone()[0]
+    conn.execute(
+        "INSERT INTO drugref.assertion_signature (target_kind, target_id, algorithm, "
+        "key_fingerprint, signature, payload_digest, payload_context, signed_at) "
+        "VALUES ('release_manifest', %s, %s, %s, %s, %s, 'bogus/v9', %s)",
+        (manifest_id, signing.ED25519, institutional_key["fingerprint"],
+         b"\x00" * 64, b"\x00" * 32, PUBLISHED_AT))
+
+    verdict = release_verification.verify_release(conn, published)
+    assert verdict.signature == signing.BAD_SIGNATURE
+    assert verdict.is_intact is False
+
+
 def test_a_wrong_manifest_digest_is_not_excused_by_a_later_counter_signature(
         conn, institutional_key):
     """R2 (review round 3, decided now rather than deferred): `manifest_digest_ok`
@@ -604,7 +765,7 @@ def test_a_widened_natural_key_trigger_does_not_re_key_a_published_release(
         "the widened trigger did not take -- this test would then pass vacuously")
 
     verdict = release_verification.verify_release(conn, published)
-    assert (verdict.dropped, verdict.added, verdict.altered) == ([], [], [])
+    assert (verdict.dropped, verdict.added, verdict.altered) == ((), (), ())
     assert verdict.is_intact
 
 
@@ -646,7 +807,7 @@ def test_verification_re_renders_a_natural_key_under_the_entrys_stored_context(
         private_key=institutional_key["private"], entries=entries)
 
     verdict = release_verification.verify_release(conn, "2026.08.30")
-    assert (verdict.dropped, verdict.added, verdict.altered) == ([], [], [])
+    assert (verdict.dropped, verdict.added, verdict.altered) == ((), (), ())
     assert verdict.is_intact
 
 
@@ -1044,9 +1205,9 @@ def test_an_unreproducible_entry_context_fails_to_pair_rather_than_raising(
     verdict = release_verification.verify_release(
         conn, f"2026.09.10-{bogus_context.replace('/', '-')}")
     assert verdict.signature == signing.VALID       # the manifest really is drugref's
-    assert verdict.dropped == [("curated_interaction", natural_key)], why
-    assert verdict.added == [("curated_interaction", natural_key)], why
-    assert verdict.altered == []
+    assert verdict.dropped == (("curated_interaction", natural_key),), why
+    assert verdict.added == (("curated_interaction", natural_key),), why
+    assert verdict.altered == ()
     assert not verdict.is_intact
 
 
@@ -1085,3 +1246,97 @@ def test_an_unreproducible_context_does_not_hide_the_rest_of_the_manifest(
         "the live enumeration for its whole target kind")
     assert natural_key in [k for _kind, k in verdict.dropped]
     assert not verdict.is_intact
+
+
+# ---- review round 4 additions: the two defensive branches, tested ---------------
+
+def test_two_predecessors_pointing_at_one_successor_are_refused_not_guessed(
+        conn, institutional_key, a_graded_rule):
+    """REVIEW I9: THIS BRANCH WAS DOCUMENTED AS REACHED, AND NEVER TESTED.
+
+    `_published_content_is_history`'s own comment records that round 3 committed two
+    rows pointing `superseded_by` at one successor, with `SET CONSTRAINTS ALL IMMEDIATE`
+    confirming NO TRIGGER OBJECTED -- db/020's deferred single-live check counts LIVE
+    rows per natural key and says nothing about how many rows point AT one successor.
+    That measurement was never preserved as a test, so deleting the guard and taking
+    `predecessors[0]` left the suite green while the verifier silently picked whichever
+    row the planner returned first when deciding `altered` vs `dropped`+`added`.
+
+    ALSO PINS THE CLASS. It raised a bare `ValueError`, which `cli.main`'s
+    `(RuntimeError, ...)` catch misses, so `drugref verify --release` printed a raw
+    traceback on a database in this state rather than one sentence.
+    """
+    # A THREE-LINK CHAIN on ONE natural key: first -> second -> third. Every row here
+    # is a legitimate correction, so the floor's two rules both hold -- `superseded_by`
+    # points at a LATER row, and a correction keeps the same natural key.
+    first = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    second = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="moderate", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    third = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="contraindicated", evidence_grade="established",
+        reviewed_by="a curator", reviewed_against="MED-RT 2026.07.06")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert first < second < third
+
+    # `first` BENT to point past `second`, straight at `third`, so `third` has TWO
+    # predecessors. THE FLOOR IS SUSPENDED FOR THAT ONE STATEMENT, deliberately and
+    # narrowly: `superseded_by` is ONE-WAY (NULL -> an id, exactly once), which is what
+    # makes this state unreachable through any ordinary path -- and therefore what makes
+    # the guard under test a defence against a database somebody has already got at,
+    # not against drugref's own writers. Review round 3 reached the same branch the same
+    # way. Re-enabled immediately, and `conn` rolls the whole thing back regardless.
+    conn.execute("ALTER TABLE drugref.curated_interaction DISABLE TRIGGER USER")
+    conn.execute(
+        "UPDATE drugref.curated_interaction SET superseded_by = %s "
+        "WHERE curated_interaction_id = %s", (third, first))
+    conn.execute("ALTER TABLE drugref.curated_interaction ENABLE TRIGGER USER")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_interaction WHERE superseded_by = %s",
+        (third,)).fetchone()[0] == 2, "the ambiguous state must really exist"
+
+    with pytest.raises(release_verification.AmbiguousSupersessionError,
+                       match="superseded_by values"):
+        release_verification._published_content_is_history(
+            conn, "curated_interaction", third, "curated_interaction/v1",
+            b"\x00" * 32)
+
+
+def test_the_curated_signature_status_counts_are_real(conn, a_graded_rule):
+    """REVIEW S2: `signature_count` and `unobjected_count` are the published companion
+    columns spec 9 promises at the curated-row grain, and nothing asserted either. With
+    `count(*) AS signature_count` mutated to `1 AS signature_count` the suite stayed
+    green -- so a consumer reading "how many curators attested this?" had no gate behind
+    it at all. Two signatures by two different curators, both unobjected."""
+    from drugref import keys, signatures as sigs
+
+    target_id = curation.record_interaction_judgement(
+        conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="MED-RT 2026.07.06")
+    for holder, when in (("a curator", PUBLISHED_AT),
+                         ("a second curator", PUBLISHED_AT + dt.timedelta(days=1))):
+        keypair = signing.generate_keypair()
+        fingerprint = signing.fingerprint(keypair.public_key)
+        keys.register(conn, public_key=keypair.public_key, holder=holder,
+                      registered_by="an operator",
+                      status_from=PUBLISHED_AT - dt.timedelta(days=1))
+        context, payload = sigs.payload_for(
+            conn, "curated_interaction", target_id,
+            key_fingerprint=fingerprint, signed_at=when)
+        sigs.record(conn, target_kind="curated_interaction", target_id=target_id,
+                    payload_context=context, payload=payload,
+                    key_fingerprint=fingerprint,
+                    signature=signing.sign(keypair.private_key, payload),
+                    signed_at=when)
+
+    assert conn.execute(
+        "SELECT signature_count, unobjected_count "
+        "FROM drugref.curated_signature_status "
+        "WHERE target_kind = 'curated_interaction' AND target_id = %s",
+        (target_id,)).fetchone() == (2, 2)

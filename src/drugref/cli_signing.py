@@ -72,8 +72,13 @@ and only the COMMIT raises -- as a bare PL/pgSQL `RAISE EXCEPTION`, which
 psycopg surfaces as `RaiseException`, not any of the other three. `db.
 constraint_definition` quotes the first three identically (it reads `pg_get_
 constraintdef`, which does not care what KIND of constraint it is
-describing) and does nothing for the fourth, which has no `pg_constraint` row
-at all -- it is a trigger, not a constraint. `db.referenced_vocabulary`
+describing) and does nothing for the fourth -- not because a
+constraint trigger has no `pg_constraint` row (it does, `contype = 't'`), but
+because a bare PL/pgSQL `RAISE EXCEPTION` populates neither `table_name` nor
+`constraint_name` in psycopg's diagnostics, so `constraint_definition`
+returns `None` at its own guard. `pg_get_constraintdef` on such a row would
+in any case print only `TRIGGER DEFERRABLE INITIALLY DEFERRED`.
+`db.referenced_vocabulary`
 answers the one part `constraint_definition` leaves flat for a FOREIGN KEY
 specifically: unlike a CHECK, an FK's own definition does not enumerate the
 values it admits, only the table it defers to. One pair of helpers still
@@ -165,8 +170,14 @@ def _write(conn, writer, catches, **kwargs) -> int | None:
     exactly this case: the INSERT itself succeeds, and only `conn.commit()`
     raises. A commit sitting after the try, as `cli_policy._write`'s own
     shape has it, would let that exception reach `cli.main` as a raw
-    traceback -- `cli_policy._write` never needed this because none of
-    `interactions.py`'s writers commit through a deferred trigger.
+    traceback. `cli_policy._write` never needed this -- but NOT because its
+    tables lack a deferred trigger: `class_expansion_policy` carries one
+    (db/027), and `interactions.record_expansion_decision`'s own docstring
+    says so. The real difference is SUPERSESSION: every `interactions.py`
+    writer supersedes within its own call, so it never leaves two live rows
+    for the deferred check to fire on, whereas `keys.register` deliberately
+    does not supersede -- which is what makes the deferred check reachable
+    from an ordinary re-run.
     `_handle_keys_register` therefore passes `psycopg.errors.RaiseException`
     (the class a bare PL/pgSQL `RAISE EXCEPTION` surfaces as) in its
     `catches` tuple alongside `CheckViolation`.
@@ -237,7 +248,8 @@ def _handle_keys_generate(conn, args) -> int:
                 "you meant to create a second key.", file=sys.stderr)
             return 2
 
-    private_key, public_key = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private_key, public_key = _kp.private_key, _kp.public_key
     # 0600 AT CREATION, not a chmod afterwards -- os.open's mode argument sets
     # the permission atomically, so there is no window where the private key
     # sits world-readable on disk waiting for a second syscall that has not
@@ -256,7 +268,7 @@ def _handle_keys_generate(conn, args) -> int:
 def _handle_keys_register(conn, args) -> int:
     """Register a public key as trusted. THE TRUST ROOT IS THIS COMMAND: a key
     is trusted because an operator with database access ran it (db/030
-    section 6) -- there is no enrolment protocol behind it to check.
+    section 3) -- there is no enrolment protocol behind it to check.
     """
     try:
         _reject_blank(args, "holder", "registered_by")
@@ -307,7 +319,7 @@ def _handle_keys_revoke(conn, args) -> int:
         return 2
 
     # NO `choices=` ON --status. The vocabulary lives in
-    # signing_key_status_kind (db/030 section 2), and a second list here is
+    # signing_key_status_kind (db/030 section 1), and a second list here is
     # exactly the defect db/006 named -- cli_policy's `--decision` is the
     # precedent, including quoting the constraint rather than restating it.
     # signing_key.status is a FOREIGN KEY, not a CHECK (unlike

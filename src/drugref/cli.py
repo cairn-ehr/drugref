@@ -59,7 +59,7 @@ from collections.abc import Sequence
 import psycopg
 
 import drugref
-from drugref import cli_policy, cli_signing, curation, db, interactions
+from drugref import cli_policy, cli_signing, curation, db, interactions, signatures
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -236,6 +236,38 @@ def _handle_status(conn, args) -> int:
                 o.reviewed_by, o.reviewed_against))
     else:
         print("\nunresolved curated targets: none")
+
+    # THE FOURTH BLOCK, and it exists because a detector without a caller is not a
+    # detector (review I7). `signature_backdated` was written, commented and tested, and
+    # then read by nothing in `src/` -- so the one residual signal against a stolen key
+    # backdating past a TIME-SCOPED revocation was reachable only by an operator who
+    # wrote their own SQL. Issue 76 gave `curated_target_unresolved` a block here for
+    # the same reason; this is that precedent applied to the view modelled on it.
+    #
+    # AN OPERATOR SIGNAL, NOT A FAILURE, so `status` still returns 0: an air-gapped
+    # curator submitting a week late lands here legitimately. The wording says what to
+    # check rather than asserting an attack.
+    #
+    # SAME UndefinedTable GUARD, SAME NARROW SCOPE as the block above: a database
+    # predating db/030 has no view to read, and that must be one sentence rather than a
+    # traceback arriving after three blocks of real answers.
+    try:
+        backdated = signatures.backdated(conn)
+    except psycopg.errors.UndefinedTable as exc:
+        raise RuntimeError(
+            "drugref.signature_backdated is missing: this database predates db/030, so "
+            "backdated signatures cannot be reported. Run `drugref migrate` and re-run "
+            "status.") from exc
+    if backdated:
+        print(f"\nbackdated signatures: {len(backdated)}"
+              "  ** signed_at long precedes recording -- confirm each was a late "
+              "submission, not a key in the wrong hands **")
+        for b in backdated:
+            print(f"  #{b.signature_id} {b.target_kind} {b.target_id} "
+                  f"by {b.key_fingerprint[:12]}... signed {b.signed_at} "
+                  f"recorded {b.recorded_at} (lag {b.lag})")
+    else:
+        print("\nbackdated signatures: none")
     return 0
 
 

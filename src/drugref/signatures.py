@@ -42,9 +42,9 @@ check on the signature, only on `record`'s own inputs agreeing with each other, 
 guards a mistake this insert-only table gives no later step a chance to correct.
 
 NOTHING HERE COMMITS. The caller owns the transaction, as everywhere in these modules,
-and the two append-only triggers on `assertion_signature` mean any attempt to correct a
-mistake here is a new row, not an edit -- there is nothing to roll back to, only
-something new to add.
+and `assertion_signature_insert_only` -- ONE trigger, covering both UPDATE and DELETE
+through `forbid_any_rewrite` -- means any attempt to correct a mistake here is a new
+row, not an edit: there is nothing to roll back to, only something new to add.
 """
 import datetime as dt
 from dataclasses import dataclass
@@ -55,7 +55,7 @@ from psycopg import sql
 from drugref import keys, signing
 
 
-class UnknownTargetError(RuntimeError):
+class UnknownTargetError(signing.SigningError):
     """Either `target_kind` names no row in `signature_target_kind`, or the target row
     itself does not exist. Raised rather than silently building a payload of NULLs --
     see `_row_content_fields` for why that would be worse than an exception, and
@@ -64,7 +64,14 @@ class UnknownTargetError(RuntimeError):
     """
 
 
-class UnsupportedAlgorithmError(RuntimeError):
+class DeclaredContextMismatchError(signing.SigningError):
+    """A payload whose first bytes disagree with the `payload_context` recorded
+    beside it. Refused rather than stored: `assertion_signature` is insert-only, so
+    a signature whose declared context can never reproduce its own bytes would be a
+    permanently unverifiable row."""
+
+
+class UnsupportedAlgorithmError(signing.SigningError):
     """A signature names an algorithm this module cannot mathematically check.
     `signing.verify` implements Ed25519 only, so a row naming anything else must be
     reported as unverifiable rather than silently checked against the wrong scheme --
@@ -244,7 +251,13 @@ def record(conn: psycopg.Connection, *, target_kind: str, target_id: int,
     """
     declared_header = signing.PROLOGUE + b"\n" + payload_context.encode("utf-8") + b"\n"
     if not payload.startswith(declared_header):
-        raise ValueError(
+        # SigningError, NOT ValueError: `cli.main` catches the RuntimeError family
+        # and renders one sentence, so a bare ValueError here is a traceback in an
+        # operator's terminal. Unreachable from the CLI today (`_handle_sign` passes
+        # `payload_for`'s own returned context, so the two always agree) -- typed
+        # correctly anyway, because "unreachable from today's callers" is exactly
+        # what was said about the KeyError that later escaped.
+        raise DeclaredContextMismatchError(
             f"payload_context={payload_context!r} does not match the context this "
             "payload was actually built under (its first bytes disagree). Recording it "
             "anyway would store a signature whose declared context can never reproduce "
@@ -310,7 +323,9 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
     `payload_context`, cached by that key), which are constant across every signature
     checked here -- not on which signature is being checked. The naive per-signature
     version paid the `signature_target_kind` lookup and the target-row SELECT once EACH
-    per signature (roughly 4 queries per signature, measured at 13 for 3 signatures);
+    per signature (several queries each -- the figure this comment used to quote was
+    never recorded anywhere, so it is stated qualitatively rather than as a number
+    nothing can check);
     this version pays the catalog lookup once total and the row read once per DISTINCT
     `payload_context` seen (once, in the common case where nothing has moved to a `/v2`
     yet). `keys.live` and `keys.key_status` are cached by `key_fingerprint` for the same
@@ -353,23 +368,40 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
                 "which this module cannot verify -- signing.verify only implements "
                 f"{signing.ED25519}. A second algorithm needs a second verify path "
                 "before any row naming it can be checked, not an assumption here.")
-        if payload_context not in row_fields_by_context:
-            row_fields_by_context[payload_context] = _row_content_fields(
-                conn, table, pk_column, target_id, payload_context)
-        fields = row_fields_by_context[payload_context] + [
-            ("signer_key_fingerprint", key_fingerprint),
-            ("signed_at", signing.render(signed_at))]
-        payload = signing.canonical_payload(payload_context, fields)
         if key_fingerprint not in key_cache:
             key_cache[key_fingerprint] = (keys.live(conn, key_fingerprint),
                                           keys.key_status(conn, key_fingerprint))
         key, status = key_cache[key_fingerprint]
-        # WITH NO REGISTERED KEY THERE IS NO MATHEMATICS TO CHECK -- `signing.verdict`
-        # ignores `signature_ok` entirely when `key_status` is None (UNKNOWN_KEY
-        # outranks it), so `False` here is never read as "this signature is bad" rather
-        # than "this key is unknown".
-        signature_ok = key is not None and signing.verify(
-            key.public_key, payload, signature)
+        # AN UNUSABLE payload_context IS A VERDICT, NEVER A RAISE (review C3). This
+        # column carries only a regex CHECK and no FK, so `bogus/v9` or another kind's
+        # context is one INSERT away -- and rebuilding under it raised `KeyError` or
+        # psycopg's `UndefinedColumn`, neither caught by `cli.main`. Because the table
+        # is INSERT-ONLY the offending row could never be deleted, so one planted row
+        # denied verification of that curated row FOREVER, including the honest
+        # signatures on it: verify_target raised inside this loop, so nothing was
+        # reported at all.
+        #
+        # `signature_ok = False` rather than a seventh verdict constant: the six are
+        # published and spec 7.1 ranks them. Setting the flag and letting
+        # `signing.verdict` decide also keeps the precedence intact -- an unusable
+        # context under an UNREGISTERED key must still report UNKNOWN_KEY, because
+        # filing a registry gap as a forgery is what step 1 exists to prevent.
+        if not signing.context_is_usable_for(payload_context, target_kind):
+            signature_ok = False
+        else:
+            if payload_context not in row_fields_by_context:
+                row_fields_by_context[payload_context] = _row_content_fields(
+                    conn, table, pk_column, target_id, payload_context)
+            fields = row_fields_by_context[payload_context] + [
+                ("signer_key_fingerprint", key_fingerprint),
+                ("signed_at", signing.render(signed_at))]
+            payload = signing.canonical_payload(payload_context, fields)
+            # WITH NO REGISTERED KEY THERE IS NO MATHEMATICS TO CHECK --
+            # `signing.verdict` ignores `signature_ok` entirely when `key_status` is
+            # None (UNKNOWN_KEY outranks it), so `False` here is never read as "this
+            # signature is bad" rather than "this key is unknown".
+            signature_ok = key is not None and signing.verify(
+                key.public_key, payload, signature)
         verdicts.append(SignatureVerdict(
             signature_id=signature_id,
             key_fingerprint=key_fingerprint,
@@ -378,3 +410,47 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
             verdict=signing.verdict(
                 status, signature_ok=signature_ok, signed_at=signed_at)))
     return verdicts
+
+
+@dataclass(frozen=True)
+class BackdatedSignature:
+    """One row of `signature_backdated` -- a signature claiming a `signed_at` more
+    than a day before this database recorded it."""
+    signature_id: int
+    target_kind: str
+    target_id: int
+    key_fingerprint: str
+    signed_at: dt.datetime
+    recorded_at: dt.datetime
+    lag: dt.timedelta
+
+
+def backdated(conn: psycopg.Connection) -> list[BackdatedSignature]:
+    """Every signature `signature_backdated` flags, oldest claim first.
+
+    A DETECTOR NEEDS A CALLER (review I7). `signature_backdated` shipped with none:
+    nothing in `src/` read it, so the one residual signal against a stolen key
+    backdating its way past a TIME-SCOPED revocation was reachable only by an operator
+    who wrote their own SQL. `curated_target_unresolved` -- the view this one's design
+    was modelled on -- was given a `drugref status` block by issue 76 for exactly this
+    reason, and spec 12's standing rule about detectors nobody calls says the rest.
+
+    WHY IT MATTERS CONCRETELY: `signed_at` is inside the signed payload, so it cannot be
+    forged WITHOUT the key -- but it is chosen by whoever HOLDS the key. After a
+    `rotated` or `retired` revocation (time-scoped, by design), anyone holding the
+    private half can mint signatures dated before `status_from`; those verify `valid`,
+    read `signed`, and exit 0. The gap between the claimed `signed_at` and this
+    database's own `recorded_at` is the only thing left that notices.
+
+    NOT A GAP KIND, and reported as an OPERATOR SIGNAL rather than a failure: a curator
+    with an air-gapped signing flow legitimately submits late. See the view's own
+    COMMENT.
+
+    Ordered by `signed_at` so the oldest claim -- the one least likely to be an ordinary
+    late submission -- is read first; `signature_id` breaks ties so the output is
+    totally ordered and a multi-row test cannot flake.
+    """
+    return [BackdatedSignature(*row) for row in conn.execute(
+        "SELECT signature_id, target_kind, target_id, key_fingerprint, signed_at, "
+        "recorded_at, lag FROM drugref.signature_backdated "
+        "ORDER BY signed_at, signature_id").fetchall()]

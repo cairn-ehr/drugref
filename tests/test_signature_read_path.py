@@ -50,7 +50,8 @@ def _sign(conn, target_kind, target_id, *, holder="a curator", signed_at=SIGNED_
     literal is how a mutation-killing test quietly stops killing anything on a
     particular calendar date. Both sides absolute, always.
     """
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)
     keys.register(conn, public_key=public, holder=holder, registered_by="an operator",
                   status_from=status_from)
@@ -178,6 +179,66 @@ def test_a_row_signed_by_a_compromised_key_is_still_served(conn, a_graded_rule):
         "SELECT signature_status FROM drugref.curated_ddi_pair "
         "WHERE subject_moiety = %s", (a_graded_rule["subject"],)
     ).fetchall() == [("signed_by_revoked_key",)]
+
+
+def test_a_compromise_is_not_undone_in_the_READ_PATH_either(conn, a_graded_rule):
+    """THE SQL HALF OF THE SAME FIX (tests/test_keys_writer.py holds the Python half).
+
+    `curated_signature_status` resolved a key's status with `superseded_by IS NULL` --
+    the LIVE row -- exactly as `keys.key_status` did, so one `keys revoke --status
+    active` returned a compromised key's rows to `signed` in the served view too. The
+    two halves must agree: a consumer reading `signature_status` off `curated_ddi_pair`
+    and an operator running `drugref verify` cannot be told different things about the
+    same key, or the cheaper of the two answers is the one that gets believed.
+
+    THE ROW IS STILL SERVED, which is the property the whole file exists to protect --
+    this asserts the LABEL is right, never that the row disappeared."""
+    target_id = _graded(conn, a_graded_rule)
+    fingerprint = _sign(conn, "curated_interaction", target_id)
+    keys.revoke(conn, key_fingerprint=fingerprint, status="compromised",
+                revoked_by="an operator", status_from=LATER)
+    keys.revoke(conn, key_fingerprint=fingerprint, status="active",
+                revoked_by="an attacker", status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT signature_status FROM drugref.curated_ddi_pair "
+        "WHERE subject_moiety = %s", (a_graded_rule["subject"],)
+    ).fetchall() == [("signed_by_revoked_key",)]
+
+
+def test_a_time_scoped_revocation_IS_still_reversible_in_the_read_path(conn,
+                                                                       a_graded_rule):
+    """THE ANTI-VACUITY CONTROL for the test above, in SQL. The permanence must key off
+    `invalidates_all_signatures` and nothing else: a key rotated onto a new laptop, its
+    signature falling AFTER the boundary (so it really does read
+    `signed_by_revoked_key` first), returns to `signed` when the rotation is corrected.
+
+    Without this, the fix above would pass just as well on a view that refused every
+    reinstatement -- which would make a mistaken revocation permanent and is the
+    opposite defect."""
+    boundary = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)   # BEFORE SIGNED_AT
+    target_id = _graded(conn, a_graded_rule)
+    fingerprint = _sign(conn, "curated_interaction", target_id)
+    keys.revoke(conn, key_fingerprint=fingerprint, status="rotated",
+                revoked_by="an operator", status_from=boundary)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT signature_status FROM drugref.curated_ddi_pair "
+        "WHERE subject_moiety = %s", (a_graded_rule["subject"],)
+    ).fetchall() == [("signed_by_revoked_key",)]          # the boundary really bit
+
+    # BACK TO DEFERRED BEFORE THE NEXT REVOKE. `revoke` INSERTs the new status row and
+    # only then supersedes the old one, so it is momentarily two-live by design; with
+    # the constraint left IMMEDIATE from the assertion above, the INSERT fires it before
+    # supersede can run. Same reason _NoCommit.rollback() restores DEFERRED mode.
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    keys.revoke(conn, key_fingerprint=fingerprint, status="active",
+                revoked_by="an operator", status_from=boundary)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    assert conn.execute(
+        "SELECT signature_status FROM drugref.curated_ddi_pair "
+        "WHERE subject_moiety = %s", (a_graded_rule["subject"],)
+    ).fetchall() == [("signed",)]
 
 
 def test_one_good_signature_outweighs_one_revoked_one(conn, a_graded_rule):
@@ -356,7 +417,8 @@ def _sign_under_a_key_with_status(conn, target_id, *, status, signed_at, registe
     Recorded through `signatures.record`, which deliberately stores signatures it cannot
     vouch for (see its docstring), so this needs no floor-bending at all.
     """
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)
     if registered:
         keys.register(conn, public_key=public, holder="a curator",
@@ -429,3 +491,45 @@ def test_the_verdict_agreement_table_reaches_both_answers():
     assert covered - {signing.VALID}, (
         "every case in _VERDICT_CASES lands on VALID -- the agreement test above would "
         "pass under an implementation that never objects to anything")
+
+
+def test_status_reports_a_backdated_signature(conn, a_graded_rule, capsys):
+    """REVIEW I7: `signature_backdated` HAD NO CALLER, so the one residual signal
+    against a stolen key backdating past a TIME-SCOPED revocation was reachable only by
+    an operator who wrote their own SQL. `curated_target_unresolved` -- the view this
+    one was modelled on -- got a `drugref status` block from issue 76 for the same
+    reason.
+
+    Backdated by 30 days against the DATABASE's own `recorded_at`, which the writer
+    stamps with `now()`. That makes this one of the two tests in this file that
+    legitimately use wall-clock time on both sides -- the threshold is a one-day lag
+    between two values the database itself produces, not a comparison against a fixed
+    literal, so it cannot become a dated time bomb."""
+    from drugref import cli
+
+    target_id = _graded(conn, a_graded_rule)
+    long_ago = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)
+    fingerprint = _sign(conn, "curated_interaction", target_id, signed_at=long_ago,
+                        status_from=EARLY)
+
+    assert cli._handle_status(conn, None) == 0
+    out = capsys.readouterr().out
+    assert "backdated signatures: 1" in out
+    assert fingerprint[:12] in out
+    assert "key in the wrong hands" in out
+
+
+def test_status_does_not_report_a_promptly_recorded_signature(conn, a_graded_rule,
+                                                              capsys):
+    """THE ANTI-VACUITY CONTROL. Without it the test above would pass just as well on a
+    block that reported EVERY signature as backdated, which would train an operator to
+    ignore the one line that matters. `drugref sign` records within seconds of signing,
+    so the ordinary case must be silent."""
+    from drugref import cli
+
+    target_id = _graded(conn, a_graded_rule)
+    _sign(conn, "curated_interaction", target_id,
+          signed_at=dt.datetime.now(dt.timezone.utc), status_from=EARLY)
+
+    assert cli._handle_status(conn, None) == 0
+    assert "backdated signatures: none" in capsys.readouterr().out

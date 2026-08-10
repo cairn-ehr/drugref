@@ -167,7 +167,9 @@ def enumerate_live(conn: psycopg.Connection, *,
     convenience wrapper: every call re-runs `_target_kind_catalog` (a
     `signature_target_kind` SELECT) AND `_row_content_fields` (the row's own SELECT)
     from scratch, which is fine for signing one row and ruinous for enumerating an
-    entire overlay -- measured at 5.1 `execute()` calls per row before this fix.
+    entire overlay -- several `execute()` calls per row before this fix (the exact
+    figure this comment once quoted was never recorded anywhere, so it is not restated
+    as a number nothing can check).
     `signatures.verify_target` solved the identical problem for its own loop (Task 7's
     review) by hoisting the SAME two private helpers, and its own docstring names this
     function as the reason it mattered ("Task 8's release verifier runs this across
@@ -252,7 +254,8 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
                      key_fingerprint: str, signed_at: dt.datetime,
                      payload_context: str = "release_manifest/v1") -> bytes:
     """The `release_manifest/v1` (or a later version's) canonical payload (spec 5.5):
-    the six scalars, plus the `--entries--` and `--upstream--` groups.
+    the SEVEN scalars (five manifest facts plus the two attestation fields), plus
+    the `--entries--` and `--upstream--` groups.
 
     `payload_context` IS A REAL, OVERRIDABLE PARAMETER and BOTH production callers pass
     it explicitly -- review round 2's C2: the first draft hard-coded the literal string
@@ -267,7 +270,8 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
     manifest), which is why it is kept rather than made required: making it mandatory
     would force every such caller to restate the same literal.
 
-    `conn` IS UNUSED -- kept for the same reason every function in this module (and
+    `conn` IS UNUSED -- kept for the same reason every DATABASE-FACING function in
+    this module (and
     `signing.canonical_payload`'s callers throughout the codebase) takes it: this
     function builds bytes from ALREADY-SUPPLIED Python values, no row of its own to
     read, but sharing one call shape with `enumerate_live`/`publish` means a caller
@@ -339,10 +343,15 @@ def publish(conn: psycopg.Connection, *, release_tag: str, published_by: str,
     function too (a hardware key, an air-gapped signer) -- so both are ordinary,
     overridable Python defaults.
 
-    THE TWO WRITES -- `release_manifest` then its entries -- HAPPEN BEFORE THE
-    SIGNATURE, because `signing.sign` needs `manifest_payload`'s bytes, and those bytes
-    need `entries` to already be built (though not yet written; `enumerate_live` runs
-    first). Nothing here commits: the caller owns the transaction, so a failure between
+    THE `release_manifest` ROW IS WRITTEN BEFORE THE SIGNATURE because
+    `signatures.record` needs `manifest_id` as its `target_id`, and that identity value
+    does not exist until the INSERT returns it. The ENTRY rows could honestly go either
+    side; they sit here so a manifest and its entries land as one contiguous block.
+    (An earlier version of this paragraph said the writes precede the signature because
+    `signing.sign` needs bytes built from `entries` -- which its own parenthetical then
+    conceded are needed "though not yet written". That is the reason `enumerate_live`
+    and `manifest_payload` run before `sign`; it is not a reason to write either table
+    first.) Nothing here commits: the caller owns the transaction, so a failure between
     the manifest row and its signature leaves nothing published in any state a reader
     outside this transaction can observe.
 

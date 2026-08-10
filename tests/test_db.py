@@ -434,3 +434,51 @@ def test_constraint_definition_does_not_match_another_tables_constraint(conn):
     and quote it at an operator as the one they just tripped."""
     assert db.constraint_definition(
         conn, "ingest_run", "class_expansion_policy_decision") is None
+
+
+def test_referenced_vocabulary_returns_none_for_missing_diagnostics(conn):
+    """REVIEW: THE GUARD ITS SIBLING ALREADY HAD A TEST FOR.
+
+    `constraint_definition` has three tests, including this exact None-safety case;
+    `referenced_vocabulary` had none -- it was exercised only through
+    tests/test_cli_signing.py, always with real, valid arguments. Deleting its
+    `if table is None or name is None: return None` guard therefore left the suite green
+    while producing a `TypeError` in production, INSIDE THE ERROR-REPORTING PATH: psycopg
+    populates `exc.diag.table_name`/`constraint_name` as None for a bare PL/pgSQL `RAISE
+    EXCEPTION`, which is precisely the exception class `_write` hands it. Its own
+    docstring makes the point -- "a caller in the middle of reporting one failure must
+    not be handed a second" -- and that reasoning deserved the same test the sibling got.
+    """
+    assert db.referenced_vocabulary(conn, None, None) is None
+    assert db.referenced_vocabulary(conn, "signing_key", None) is None
+    assert db.referenced_vocabulary(conn, None, "signing_key_status_fk") is None
+
+
+def test_referenced_vocabulary_returns_none_for_a_constraint_that_is_not_an_fk(conn):
+    """The `AND c.contype = 'f'` half. `assertion_signature_algorithm` is a CHECK, and
+    a CHECK enumerates its own admitted values in its definition -- that is exactly why
+    `constraint_definition` suffices for one and this function exists for the other.
+    Dropping the contype filter would have this return something for a constraint whose
+    `confrelid` is 0."""
+    assert db.referenced_vocabulary(
+        conn, "assertion_signature", "assertion_signature_algorithm") is None
+
+
+def test_referenced_vocabulary_lists_the_statuses_a_signing_key_may_hold(conn):
+    """The positive control, and the reason the function exists: an FK's own definition
+    names the table it defers to, never the values that table currently admits, so an
+    operator who typed an unrecognised `--status` needs the vocabulary read OUT of
+    signing_key_status_kind. Compared against the live table rather than a literal list,
+    which would be the second home db/006 forbids."""
+    fk = conn.execute(
+        "SELECT conname FROM pg_constraint c "
+        "JOIN pg_class t ON t.oid = c.conrelid "
+        "JOIN pg_namespace n ON n.oid = t.relnamespace "
+        "WHERE n.nspname = 'drugref' AND t.relname = 'signing_key' "
+        "AND c.contype = 'f'").fetchone()[0]
+    listed = db.referenced_vocabulary(conn, "signing_key", fk)
+    expected = [r[0] for r in conn.execute(
+        "SELECT status FROM drugref.signing_key_status_kind ORDER BY status").fetchall()]
+    assert listed is not None
+    for status in expected:
+        assert status in listed

@@ -79,8 +79,16 @@ The distinction is the substance of the layer. A new laptop or a scheduled rotat
 curator's prior clinical work; a leaked private key must, because after a compromise there is no way to tell
 the holder's signatures from the attacker's.
 
+A blanket revocation is **permanent**, and that is enforced by reading a key's whole history rather than its
+current row. Both the verifier (`keys.key_status`) and the read view ask *has this fingerprint ever carried a
+status with `invalidates_all_signatures`?* — because `keys revoke` writes whatever status it is handed, so
+resolving from the live row alone made `keys revoke --status active` on a compromised key silently return every
+signature it ever made, **including the thief's**, to `valid`. A time-scoped revocation stays reversible: a
+mistaken `rotated` must be correctable on an append-only floor, and a new laptop must not unsound past work.
+
 Revocation is itself a **correction, never a column edit**: `keys revoke` inserts a new `signing_key` row and
-points the old one at it, so the registry's own history stays readable. The verdict rule is a pure function in
+points the old one at it, so the registry's own history stays readable — which is what the permanence rule above
+actually reads. The verdict rule is a pure function in
 `signing.py`, on `accumulation.fires`' precedent — drugref publishes facts rather than verdicts, and hands out
 the rule as code so "why did this verify?" has one answer everywhere.
 
@@ -94,6 +102,11 @@ make the entire curated tier invisible until curators are signing, and — far w
 silently withdraw contraindication advice from every downstream consumer. **Fewer rows is the harm direction
 for a contraindication.** A key-management event must not be able to cause it. drugref publishes the fact and
 lets the consumer set policy, the same posture as `is_direct`.
+
+`signed_by_revoked_key` is the coarser of two SQL labels and covers a key the registry has **never heard of**
+as well as a revoked one — an unknown key being the *more* suspicious of the two. Telling them apart is
+`drugref verify`'s job; whether the view should carry a third value is
+[issue 86](https://github.com/cairn-ehr/drugref/issues/86).
 
 **`signed` does not mean verified.** Postgres cannot verify an Ed25519 signature, so `signature_status`
 reports registry-level facts only: is a signature present, is its key known, has that key been revoked. Only
@@ -121,7 +134,10 @@ They **can**:
   append-only floor**, so `UPDATE signing_key_status_kind SET invalidates_all_signatures = false WHERE
   status = 'compromised'` silently turns the blanket revocation above into a time-scoped one on that node.
   Flooring it is purely additive later (a trigger, not a column) and is tracked as
-  [issue 85](https://github.com/cairn-ehr/drugref/issues/85). Note the floor belongs on that table **only**:
+  [issue 85](https://github.com/cairn-ehr/drugref/issues/85). **A second route to the same outcome — needing no
+  raw SQL at all, just `drugref keys revoke --status active` on a compromised key — was found in review and is
+  CLOSED**: permanence is now read off the key's whole history, not its live row. Issue 85 covers the remaining
+  one. Note the floor belongs on that table **only**:
   its sibling `signature_target_kind` is *designed* to be updated, since moving a target kind to a `/v2`
   payload context is exactly the migration the read-back machinery exists to support.
 
@@ -145,6 +161,13 @@ records which releases were loaded at publication, it does not verify that a con
 - **The hot path did not regress.** The filtered `curated_ddi_pair` lookup, measured at 2.5 ms in 5c.1, runs
   at **~1.4 ms** with the new signature join executing against a populated, signed overlay (~1.3 ms with an
   empty one) — measured on a fresh database built from the real 2026 upstream releases.
+- **A signature that cannot be rebuilt is a verdict, never a crash.** Every `payload_context` column carries a
+  shape check and deliberately no foreign key — a signature records the context it was *actually* signed under,
+  and a future `/v2` must not retroactively invalidate every `/v1` signature on file. The cost is that the column
+  accepts a context no field list knows, or one belonging to another target kind; since these tables are
+  insert-only, a verifier that raised on one would have had verification of that row **denied permanently**, which
+  is a cheaper attack than forging anything. Such a signature reports `bad_signature`, and the honest signatures
+  beside it still report `valid`.
 - **The frozen column lists, and the standing rule inverted deliberately.** Everywhere else in drugref, a
   column list is derived so it cannot drift. **Two** lists here are written down instead — the payload's
   fields, and the columns that render a manifest entry's `natural_key` — because both enter signed bytes,

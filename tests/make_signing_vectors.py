@@ -18,6 +18,12 @@ THE TEST KEY IS 32 BYTES OF 00..1f -- obviously not a real key, and never regist
 any database. Ed25519 is deterministic, so its signatures are reproducible and committable.
 
 Run:  uv run python -m tests.make_signing_vectors > tests/fixtures/signing_vectors.json
+
+CASES ARE REFERRED TO BY NAME, NEVER BY ORDINAL. The numbering used to disagree
+with the order this file emits -- the manifest-ENTRY case was inserted third
+without renumbering, so comments called it "case 4" while it shipped as case 3.
+This file's whole purpose is a published, third-party-checkable fixture, so a
+cross-reference that quietly points at the wrong vector is worse than none.
 """
 import json
 
@@ -35,9 +41,11 @@ def _cases(fp: str) -> list[dict]:
     context, and each case supplies every field in that list -- these vectors are the
     format's published reference, so an incomplete row would publish a wrong example.
     """
-    # Case 1 and case 2's fields are built here, not inline below, because case 3's
+    # The two curated judgements' fields are built here, not inline below, because the
+    # MANIFEST case's
     # manifest entries reuse them: a manifest's payload_digest is the digest of the ROW
-    # it describes, so pointing case 3 at these two judgements' real payloads (rather
+    # it describes, so pointing the manifest case at these two judgements' real
+    # payloads (rather
     # than an arbitrary placeholder digest) makes the fixture describe something
     # internally consistent, the way an actual release_manifest would.
     interaction_fields = [
@@ -91,7 +99,8 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-08-10T02:16:41.500000Z"],
     ]
-    # Case 4: THE SAME judgement as case 1, rebuilt the way a MANIFEST ENTRY's digest is
+    # THE MANIFEST-ENTRY case: the SAME judgement as the first, rebuilt the way an
+    # ENTRY's digest is
     # -- the two attestation fields replaced by the entry sentinel pair. An entry attests
     # CONTENT, never an attestation, so it names no signer (`signer_key_fingerprint` is a
     # present EMPTY STRING, not a NULL: the field is there, it just identifies nobody)
@@ -107,7 +116,8 @@ def _cases(fp: str) -> list[dict]:
     # the change stops being silent.
     #
     # It also publishes, checkable by eye and by sha256sum, the exact bytes a third party
-    # must reproduce to confirm ONE manifest entry -- which case 3 references as a digest
+    # must reproduce to confirm ONE manifest entry -- which the manifest case
+    # references as a digest
     # but never spells out.
     entry_digest_fields = [
         [name, value] for name, value in interaction_fields
@@ -139,7 +149,8 @@ def _cases(fp: str) -> list[dict]:
             "fields": entry_digest_fields,
         },
         {
-            # Case 3: the only case exercising groups (spec 5.5) -- a release manifest
+            # THE MANIFEST case: the only one exercising groups (spec 5.5) -- a release
+            # manifest
             # with two `--entries--` and two `--upstream--` members. Both groups'
             # members are listed here in REVERSE of the order canonical_payload will
             # sort them into (entries: interaction before condition; upstream: MED-RT

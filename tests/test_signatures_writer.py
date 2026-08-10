@@ -17,7 +17,8 @@ def signed_rule(conn, a_graded_rule):
     Builds on conftest's `a_graded_rule`, which sets up the CI_MoA rule and its
     membership but deliberately does not grade it -- the grading is this fixture's job.
     """
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)
     keys.register(conn, public_key=public, holder="a curator",
                   registered_by="an operator")
@@ -130,7 +131,8 @@ def test_two_curators_may_counter_sign_one_judgement(conn, signed_rule):
     """Several signatures per row is the point of detaching them -- a second reviewer
     attesting the same judgement is ordinary clinical governance, and a signature COLUMN
     could not represent it at all."""
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)
     keys.register(conn, public_key=public, holder="a second curator",
                   registered_by="an operator")
@@ -152,7 +154,8 @@ def test_each_signature_is_checked_against_its_OWN_signed_at(conn, signed_rule):
     the payload. Rebuilding one payload and reusing it for every signature would fail
     all but the last -- the defect this test exists to catch, since the symptom looks
     exactly like a forgery."""
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)
     keys.register(conn, public_key=public, holder="a second curator",
                   registered_by="an operator")
@@ -169,7 +172,8 @@ def test_each_signature_is_checked_against_its_OWN_signed_at(conn, signed_rule):
 
 
 def test_a_signature_by_an_unregistered_key_reports_unknown_key(conn, signed_rule):
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     fingerprint = signing.fingerprint(public)          # deliberately NOT registered
     context, payload = signatures.payload_for(
         conn, "curated_interaction", signed_rule["target_id"],
@@ -191,7 +195,7 @@ def test_a_forged_signature_reports_bad_signature(conn, signed_rule):
     private key but recorded under a REGISTERED key's fingerprint is what an attempted
     forgery against a real curator's identity looks like: the key is known, so this
     must be told apart from UNKNOWN_KEY, and the maths must actually fail."""
-    forger_private, _ = signing.generate_keypair()
+    forger_private = signing.generate_keypair().private_key
     context, payload = signatures.payload_for(
         conn, "curated_interaction", signed_rule["target_id"],
         key_fingerprint=signed_rule["fingerprint"], signed_at=LATER)
@@ -204,6 +208,68 @@ def test_a_forged_signature_reports_bad_signature(conn, signed_rule):
     verdicts = signatures.verify_target(
         conn, "curated_interaction", signed_rule["target_id"])
     assert [v.verdict for v in verdicts] == [signing.VALID, signing.BAD_SIGNATURE]
+
+
+def _plant(conn, target_id, payload_context, fingerprint):
+    """Insert one assertion_signature row naming an arbitrary `payload_context`.
+
+    Written as raw SQL on purpose -- `signatures.record` derives the context from the
+    catalog and could not produce these rows. The column carries only a regex CHECK and,
+    deliberately, NO foreign key (db/030 section 5), so this is one ordinary INSERT for
+    anyone with write access, which is precisely the threat the verifier faces.
+    """
+    conn.execute(
+        "INSERT INTO drugref.assertion_signature (target_kind, target_id, algorithm, "
+        "key_fingerprint, signature, payload_digest, payload_context, signed_at) "
+        "VALUES ('curated_interaction', %s, %s, %s, %s, %s, %s, %s)",
+        (target_id, signing.ED25519, fingerprint, b"\x00" * 64, b"\x00" * 32,
+         payload_context, LATER))
+
+
+@pytest.mark.parametrize("poisoned_context", [
+    # A context no frozen list has ever known. Subscripting FIELD_LISTS with it raised
+    # KeyError -- not a RuntimeError, so cli.main did not catch it.
+    "bogus/v9",
+    # A context belonging to a DIFFERENT target kind. This one composed a SELECT of
+    # curated_condition's columns against curated_interaction's table and raised
+    # psycopg UndefinedColumn, which additionally ABORTS THE TRANSACTION -- so a caller
+    # looping verify_target over the overlay lost the connection at the first bad row.
+    "curated_condition/v1",
+])
+def test_an_unusable_payload_context_is_a_verdict_not_a_crash(conn, signed_rule,
+                                                              poisoned_context):
+    """C3: A PLANTED CONTEXT MUST NOT DENY VERIFICATION OF THE WHOLE ROW.
+
+    `assertion_signature` is insert-only, so a row that made verify_target raise could
+    never be deleted -- verification of that curated row was denied PERMANENTLY, and an
+    attacker who cannot forge a signature could reach the same end far more cheaply.
+
+    THE GENUINE SIGNATURE STILL REPORTS VALID, which is the half that matters most and
+    the reason this is a verdict rather than a raise: verify_target raised inside the
+    loop, so the honest signatures on the row never got reported at all.
+
+    BAD_SIGNATURE, not a new constant: the six verdicts are published and spec 7.1's
+    precedence ranks them. A payload that cannot be rebuilt is a signature whose
+    mathematics cannot be made to agree with what is on record, and treating an
+    unknown outcome with maximum suspicion is `_worst_verdict`'s stated principle.
+    """
+    _plant(conn, signed_rule["target_id"], poisoned_context, signed_rule["fingerprint"])
+    verdicts = signatures.verify_target(
+        conn, "curated_interaction", signed_rule["target_id"])
+    assert [v.verdict for v in verdicts] == [signing.VALID, signing.BAD_SIGNATURE]
+
+
+def test_an_unusable_context_under_an_unregistered_key_still_reports_unknown_key(
+        conn, signed_rule):
+    """PRECEDENCE IS UNCHANGED BY THE FIX. UNKNOWN_KEY outranks BAD_SIGNATURE (spec
+    7.1 step 1: without the public key there is nothing to check), and forcing
+    `signature_ok` to False for an unusable context must not promote a registry gap
+    into a reported forgery. Pins that the new branch sets `signature_ok` and lets
+    `signing.verdict` rank, rather than returning BAD_SIGNATURE directly."""
+    _plant(conn, signed_rule["target_id"], "bogus/v9", "f" * 64)
+    verdicts = signatures.verify_target(
+        conn, "curated_interaction", signed_rule["target_id"])
+    assert [v.verdict for v in verdicts] == [signing.VALID, signing.UNKNOWN_KEY]
 
 
 def test_a_compromised_key_flags_every_signature_it_made(conn, signed_rule):
@@ -326,12 +392,17 @@ def test_record_refuses_a_payload_context_that_contradicts_the_payload(conn,
     payload would collide with assertion_signature_unique before this check is ever
     reached -- a real failure, but the wrong one, and not the one this test exists to
     catch.
+
+    THE CLASS IS PART OF THE ASSERTION. It was a bare `ValueError`, which `cli.main`'s
+    `(RuntimeError, ...)` catch misses -- so the refusal would have reached an operator
+    as a traceback rather than as a sentence.
     """
     context, payload = signatures.payload_for(
         conn, "curated_interaction", signed_rule["target_id"],
         key_fingerprint=signed_rule["fingerprint"], signed_at=LATER)
     assert context == "curated_interaction/v1"          # the TRUE context of `payload`
-    with pytest.raises(ValueError, match="does not match"):
+    with pytest.raises(signatures.DeclaredContextMismatchError,
+                       match="does not match"):
         signatures.record(
             conn, target_kind="curated_interaction", target_id=signed_rule["target_id"],
             payload_context="curated_condition/v1",      # THE LIE
@@ -343,7 +414,7 @@ def test_a_condition_payload_does_not_verify_as_an_interaction(conn, a_contradic
     """Spec 4.4's domain separation, exercised end to end rather than on synthetic
     field lists: the two contexts differ, so the bytes differ, so the signature does
     not carry across."""
-    private, public = signing.generate_keypair()
+    public = signing.generate_keypair().public_key
     fingerprint = signing.fingerprint(public)
     keys.register(conn, public_key=public, holder="a curator",
                   registered_by="an operator")

@@ -115,3 +115,53 @@ def test_every_curated_context_has_a_frozen_natural_key():
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of
     # tidiness the reason has to be re-read.
     assert "release_manifest/v1" not in signing.NATURAL_KEY_COLUMNS
+
+
+def test_every_curated_catalog_kind_is_covered_by_a_release(conn):
+    """REVIEW I4: THE ALARM USED TO POINT THE WRONG WAY.
+
+    `test_every_curated_context_has_a_frozen_natural_key` above asserts
+    `_CURATED_KINDS` equals a literal pair written in this file, so it fires when
+    somebody edits the PYTHON CONSTANT and never when `signature_target_kind` gains a
+    curated kind. A future slice adding a third curated table would leave
+    `_CURATED_KINDS` untouched and the whole suite green -- while `enumerate_live`
+    silently stopped enumerating an entire class of live curated assertions.
+
+    THAT IS THE VACUOUS PASS IN THE ONE LAYER WHOSE JOB IS COMPLETENESS. The omitted
+    rows would be absent from the manifest AND absent from the live side of the
+    comparison, so they would never be reported as `added` either: `verify_release`
+    would call an incomplete release intact.
+
+    Derived from the catalog, so the catalog is what raises the alarm. `release_manifest`
+    is excluded because a release cannot enumerate itself -- stated as a subtraction
+    rather than a second literal list, so adding a fourth kind cannot satisfy it by
+    accident."""
+    from drugref import releases
+
+    catalog_kinds = {row[0] for row in conn.execute(
+        "SELECT target_kind FROM drugref.signature_target_kind").fetchall()}
+    assert catalog_kinds - {"release_manifest"} == set(releases._CURATED_KINDS)
+
+
+def test_every_frozen_context_names_its_own_target_kind(conn):
+    """`signing.context_is_usable_for` decides whether a stored `payload_context` can be
+    rebuilt against a target by comparing `context_target_kind(context)` -- the part
+    before the `/v` -- against the target kind. That turns a NAMING CONVENTION into a
+    security check, so the convention needs an alarm of its own.
+
+    Both directions: every frozen field list's prefix must be a real catalog kind, and
+    every catalog row's own context must name the kind it belongs to. Without this, a
+    kind registered as `('curated_severity', ..., 'severity/v1')` would make every
+    signature over it report BAD_SIGNATURE forever, with nothing pointing at why."""
+    catalog = dict(conn.execute(
+        "SELECT target_kind, payload_context "
+        "FROM drugref.signature_target_kind").fetchall())
+
+    for context in signing.FIELD_LISTS:
+        assert signing.context_target_kind(context) in catalog, (
+            f"{context} names a target kind the catalog does not have")
+
+    for target_kind, context in catalog.items():
+        assert signing.context_target_kind(context) == target_kind, (
+            f"{target_kind} signs under {context}, whose prefix names a different kind "
+            "-- signing.context_is_usable_for would reject every signature it makes")

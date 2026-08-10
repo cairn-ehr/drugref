@@ -74,11 +74,18 @@ def _warn_if_key_is_unregistered(conn, fingerprint: str, what: str) -> None:
     refused could not store the evidence that a bad signature exists.
 
     BUT SILENCE HERE IS EXPENSIVE, AND MOST EXPENSIVE FOR `publish`. A release tag is
-    UNIQUE and `release_manifest` is insert-only, so publishing under an unregistered
-    key BURNS that tag on a manifest reading `unknown_key` forever: there is no second
-    publish under the same tag to correct it with, and `verify --release` will exit 1 on
-    it for the rest of the database's life. One line on stderr before the write is the
-    whole fix.
+    UNIQUE and `release_manifest` is insert-only, so this manifest is the only one that
+    tag will ever name -- and until somebody registers the key, `verify --release`
+    exits 1 on it and every consumer reads `unknown_key`.
+
+    REGISTERING THE KEY LATER DOES FIX IT, which is why this warns rather than refuses.
+    `_verify_manifest_signature` looks the key up FRESH on every verification and
+    nothing caches a verdict, so the release verifies the moment a matching
+    `signing_key` row exists. (An earlier version of this paragraph said the tag was
+    burned "forever" and that `verify --release` would fail "for the rest of the
+    database's life" -- which contradicted this same docstring three paragraphs up, and
+    would push an operator into needlessly burning a second release tag.) One line on
+    stderr before the write is the whole fix.
     """
     if keys.live(conn, fingerprint) is not None:
         return
@@ -117,6 +124,21 @@ def _public_key_of(private_key: bytes) -> bytes:
     """
     return Ed25519PrivateKey.from_private_bytes(
         private_key).public_key().public_bytes_raw()
+
+
+def _holder_of(verdict) -> str:
+    """A verdict's holder, or a stated reason there is none.
+
+    NOT `v.holder or '(unregistered key)'`. That was an `or`-fallback on an IDENTITY
+    value: `signing_key.holder` is `NOT NULL` but carries no non-blank CHECK, and
+    `_reject_blank` guards only the CLI path -- so a key registered by any other writer
+    with `holder=''` printed "(unregistered key)" for a key that IS registered and whose
+    signature may well be VALID. `SignatureVerdict` documents the real test
+    (`holder is None` exactly when the verdict is UNKNOWN_KEY), so branch on that.
+    """
+    if verdict.holder is None:
+        return "(unregistered key)"
+    return verdict.holder or "(blank holder)"
 
 
 def _handle_sign(conn, args) -> int:
@@ -186,18 +208,39 @@ def _verify_target(conn, args) -> int:
         return 0
     for v in verdicts:
         print(f"  signature_id={v.signature_id} key_fingerprint={v.key_fingerprint} "
-              f"holder={v.holder or '(unregistered key)'} signed_at={v.signed_at} "
+              f"holder={_holder_of(v)} signed_at={v.signed_at} "
               f"verdict={v.verdict}")
-    # NON-ZERO ONLY ON bad_signature (spec 7.1's precedence, one further
-    # decision layered on top for the EXIT CODE specifically). unknown_key,
-    # key_revoked_compromised and key_expired are all printed above, and are
-    # real findings an operator should read -- but they are REGISTRY-level
-    # facts, the same class db/030's own read-path view reports as `signed`
-    # vs `signed_by_revoked_key` rather than as a hard failure (section 9: "a
-    # signature is not an admission gate"). bad_signature alone means the
-    # mathematics itself disagrees with what is on record, which is the one
-    # finding worth failing a script over.
+    # NON-ZERO UNLESS SOMETHING ACTUALLY VOUCHES FOR THIS ROW. Two conditions,
+    # and the second was missing (review I1):
+    #
+    #   * ANY bad_signature -> 1. Evidence of an attempted forgery is worth
+    #     failing a script over even when a good signature sits beside it.
+    #   * NO valid signature at all -> 1. A row whose only signature reports
+    #     `unknown_key` is a row where THE MATHEMATICS WAS NEVER CHECKED, and
+    #     that is the CHEAPER forgery, not the rarer one: an attacker generates
+    #     their own keypair, writes a curated row naming any `reviewed_by`, and
+    #     records a signature over it. Reaching `bad_signature` instead requires
+    #     naming a REGISTERED fingerprint and then failing to sign for it.
+    #     Exiting 0 on the easy attack and 1 on the hard one is backwards.
+    #     `key_expired` and `key_revoked_compromised` fall under the same rule:
+    #     the registry objects to every signature this row has.
+    #
+    # THIS IS NOT SPEC 9's "NOT AN ADMISSION GATE", which the earlier version
+    # cited. That refusal is about WITHHOLDING ROWS from the read views, where
+    # fewer rows is the harm direction for a contraindication. Nothing is
+    # withheld here: every verdict is printed above regardless, and an exit code
+    # answers a different question -- "is this row's authorship provable right
+    # now?". `_verify_release` already answers it this way, since `is_intact`
+    # requires VALID; only this surface disagreed. db/030's read-path view
+    # agrees too: it counts an unregistered key as OBJECTED.
+    #
+    # ONE VALID SIGNATURE IS ENOUGH, matching `curated_signature_status`'s
+    # `unobjected_count > 0`: a row counter-signed by two curators, one of whom
+    # has since rotated a key, is still provably authored. The unsigned case
+    # returns 0 above and never reaches here -- signing is optional per row.
     if any(v.verdict == signing.BAD_SIGNATURE for v in verdicts):
+        return 1
+    if not any(v.verdict == signing.VALID for v in verdicts):
         return 1
     return 0
 
@@ -219,9 +262,13 @@ def _verify_release(conn, args) -> int:
     verdict = release_verification.verify_release(conn, args.release)
     print(f"release {args.release}: signature={verdict.signature} "
           f"intact={verdict.is_intact}")
-    print(f"  dropped={verdict.dropped}")
-    print(f"  added={verdict.added}")
-    print(f"  altered={verdict.altered}")
+    # PRINTED AS LISTS though the verdict holds tuples: `[]` and `[(...)]` are what an
+    # operator reads, and a one-element tuple renders as `((...),)`, whose trailing
+    # comma reads like a typo. The storage shape is immutable for `is_intact`'s sake
+    # (see ManifestVerdict); the display shape answers a different question.
+    print(f"  dropped={list(verdict.dropped)}")
+    print(f"  added={list(verdict.added)}")
+    print(f"  altered={list(verdict.altered)}")
     print(f"  row_count_ok={verdict.row_count_ok} "
           f"manifest_digest_ok={verdict.manifest_digest_ok}")
     # is_intact, NOT "signature == bad_signature" alone -- and deliberately a

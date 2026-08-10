@@ -341,6 +341,54 @@ def test_a_manifest_entry_accepts_a_well_formed_row(conn):
         "WHERE manifest_id = %s", (manifest_id,)).fetchone()[0] == 1
 
 
+def _an_entry(conn, release_tag):
+    """One manifest holding one well-formed entry. Returns its manifest_id."""
+    manifest_id = _manifest(conn, release_tag)
+    conn.execute(
+        "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+        "natural_key, target_id, payload_context, payload_digest) "
+        "VALUES (%s, 'curated_interaction', 'nk-floor', 1, 'curated_interaction/v1', "
+        "%s)", (manifest_id, b"\x07" * 32))
+    return manifest_id
+
+
+def test_a_manifest_entry_cannot_be_deleted(conn):
+    """C4: THE FLOOR THAT PROTECTS THE `dropped` FINDING.
+
+    MEASURED GAP: dropping `release_manifest_entry_insert_only` from db/030 left the
+    whole suite green at 1260 passed. The table had exactly two tests -- one accepting a
+    well-formed row, one refusing a malformed context -- and neither touched UPDATE or
+    DELETE, though spec 12 item 10 names all THREE insert-only tables.
+
+    `DELETE FROM release_manifest_entry` is the most direct way to erase a `dropped`
+    finding from a published release: remove the entry and the row it enumerated stops
+    being missed. Combined with the release layer's signature check having had no
+    negative test either (C1), the omission detection this slice exists for had no
+    test-level guard on either half."""
+    _an_entry(conn, "2026.08.19")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute("DELETE FROM drugref.release_manifest_entry")
+
+
+@pytest.mark.parametrize("column, value", [
+    ("natural_key", "'a-different-key'"),
+    ("payload_digest", r"'\x00'::bytea"),
+    ("target_id", "999"),
+    ("payload_context", "'curated_condition/v1'"),
+])
+def test_a_manifest_entry_is_insert_only(conn, column, value):
+    """The UPDATE half, per column rather than once -- `assertion_signature`'s own
+    nine-case parametrize sets the standard, and `forbid_any_rewrite` being table-level
+    is not a reason to test only one column: the point is that no INDIVIDUAL field of a
+    published manifest entry can be rewritten. Editing `payload_digest` alone would let
+    an altered curated row keep matching its manifest entry, which is the `altered`
+    finding silently erased."""
+    _an_entry(conn, f"2026.08.20-{column}")
+    with pytest.raises(psycopg.errors.RaiseException):
+        conn.execute(
+            f"UPDATE drugref.release_manifest_entry SET {column} = {value}")
+
+
 @pytest.mark.parametrize("bad", [
     "not/a/context", "curated_interaction", "curated_interaction/1",
     "curated_interaction/v1x", "CURATED_INTERACTION/v1", "curated_interaction/v1\n99",
@@ -361,3 +409,68 @@ def test_a_manifest_entrys_malformed_payload_context_is_refused(conn, bad):
             "natural_key, target_id, payload_context, payload_digest) "
             "VALUES (%s, 'curated_interaction', 'nk-2', 1, %s, %s)",
             (manifest_id, bad, b"\x06" * 32))
+
+
+def test_the_by_key_index_exists(conn):
+    """REVIEW S1: db/030's own comment says of `assertion_signature_by_key` that it is
+    "Read only by the planner, so a test asserts it by name -- as with the live-key
+    indexes". No test did. The live-key indexes genuinely have that test
+    (conftest's `assert_live_key_index`), so the comment read as if this one did too --
+    a claim about the suite that the suite did not back."""
+    assert conn.execute(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'drugref' "
+        "AND indexname = 'assertion_signature_by_key'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("table, column, other_columns, values", [
+    ("assertion_signature", "payload_digest",
+     "target_kind, target_id, key_fingerprint, algorithm, signature, payload_context, "
+     "signed_at",
+     "'curated_interaction', 1, %s, 'Ed25519', %s, 'curated_interaction/v1', now()"),
+])
+def test_a_short_digest_is_refused(conn, table, column, other_columns, values):
+    """The digest-length CHECKs had no test. A short digest is the quiet failure mode:
+    it never matches anything, so every comparison against it reports `altered` forever
+    and the row looks structurally fine. `octet_length = 32` is what stops a truncated
+    or wrong-algorithm digest being stored at all."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            f"INSERT INTO drugref.{table} ({other_columns}, {column}) "
+            f"VALUES ({values}, %s)",
+            ("f" * 64, b"\x00" * 64, b"\x00" * 16))
+
+
+def test_a_short_manifest_digest_is_refused(conn):
+    """`release_manifest_digest_length`'s own clause -- a separate constraint on a
+    separate table, so a separate test, per this project's one-test-per-clause rule."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
+            "row_count, upstream_releases, published_by, published_at) "
+            "VALUES ('2026.08.23', %s, 0, '[]'::jsonb, 'an operator', %s)",
+            (b"\x00" * 16, NOW))
+
+
+def test_a_short_manifest_entry_digest_is_refused(conn):
+    manifest_id = _manifest(conn, "2026.08.24")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.release_manifest_entry (manifest_id, target_kind, "
+            "natural_key, target_id, payload_context, payload_digest) "
+            "VALUES (%s, 'curated_interaction', 'nk-short', 1, "
+            "'curated_interaction/v1', %s)", (manifest_id, b"\x00" * 16))
+
+
+@pytest.mark.parametrize("bad", ["no-slash", "curated_interaction/vX", "UPPER/v1",
+                                 "curated_interaction/v1\n"])
+def test_the_catalogs_payload_context_shape_is_refused(conn, bad):
+    """REVIEW I8: `signature_target_kind.payload_context` carried NO shape CHECK, unlike
+    the two columns holding the same kind of value on `assertion_signature` and
+    `release_manifest_entry`. It is also the one an operator is MEANT to edit -- pointing
+    a kind at a `/v2` is the migration the read-back machinery exists to support -- so
+    the table most likely to be hand-edited was the only one not saying so at once."""
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.signature_target_kind "
+            "(target_kind, target_table, pk_column, payload_context) "
+            "VALUES ('a_new_kind', 'a_table', 'a_id', %s)", (bad,))

@@ -979,7 +979,67 @@ rebuild script that caused it cannot gate on it; that is a CLI-contract decision
 ## Slice 5c.4 — signing the curated overlay (`db/030`, measured 2026-08-10 on `drugref_5c4`)
 
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md). Published record:
-[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1260**.
+[signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). Suite **969 → 1297**
+(1260 before the five-reviewer round below).
+
+**⇒ THE FIVE-REVIEWER ROUND (PR [#84](https://github.com/cairn-ehr/drugref/pull/84)) FOUND FOUR THINGS THE FOUR
+EARLIER ROUNDS DID NOT, and two of them were MEASURED rather than argued.** Read this block before trusting any
+"already reviewed" claim about this slice.
+
+1. **THE RELEASE LAYER'S ED25519 CHECK HAD NO NEGATIVE TEST.** Replacing `_verify_manifest_signature`'s
+   `signature_ok = key is not None and signing.verify(...)` with `signature_ok = key is not None` — deleting the
+   cryptography from the release layer outright — left the suite **green at 1260 passed**. The row layer had
+   `test_a_forged_signature_reports_bad_signature`; the release layer's only BAD_SIGNATURE mentions called
+   `_worst_verdict` directly or hand-built a `ManifestVerdict`, so the production call site was never driven.
+   Closed by `test_a_manifest_signed_by_a_different_key_reports_bad_signature` and
+   `test_a_manifest_body_tampered_after_signing_reports_bad_signature`, **both confirmed to fail under that exact
+   mutation**.
+2. **A `compromised` REVOCATION WAS UNDOABLE BY ONE ORDINARY COMMAND.** `keys.key_status` and
+   `curated_signature_status` both resolved a key's status from the LIVE ROW, and `keys.revoke` refuses no
+   transition — so `drugref keys revoke --status active` on a compromised key returned every signature it ever
+   made, INCLUDING the thief's, to `valid`/`signed`. Blanket revocation is the design's only answer to a stolen
+   key, and it was reversible by the same command that applied it. **db/030 section 3's own comment justified the
+   whole insert-then-supersede shape on the grounds that the status history is readable — and NOTHING read it.**
+   Both halves now read the whole history; only `invalidates_all_signatures` is permanent, so `rotated`/`retired`
+   stay correctable. Distinct from [#85](https://github.com/cairn-ehr/drugref/issues/85), which a floor on
+   `signing_key_status_kind` would close and this needed no raw SQL to reach.
+3. **A PLANTED `payload_context` DENIED VERIFICATION PERMANENTLY.** `verify_target` subscripted
+   `signing.FIELD_LISTS` with the value off the signature row, so one INSERT (`bogus/v9`, or another kind's
+   context) raised `KeyError`/`UndefinedColumn` — neither a `RuntimeError`, so `cli.main` printed a traceback —
+   and `assertion_signature` being insert-only, the row could never be removed. `signing.entry_context_is_
+   reproducible` existed for exactly this and had been wired into the RELEASE path only. Now
+   `signing.context_is_usable_for` gates both, and an unusable context is a **verdict** (BAD_SIGNATURE), so the
+   honest signatures on the same row still report VALID.
+4. **`release_manifest_entry` HAD NO APPEND-ONLY FLOOR TEST.** Removing its trigger left the suite green;
+   `DELETE FROM release_manifest_entry` is the most direct way to erase a `dropped` finding. Five tests now fail
+   without it. Spec §12 item 10 named all three insert-only tables; only two were covered.
+
+**Also closed in that round:** `drugref verify` exited **0** on `unknown_key` — the CHEAPER forgery (an attacker's
+own keypair) — while failing only on `bad_signature`, the harder one; `generate_keypair` returned an unpackable
+`tuple[bytes, bytes]`, so a transposed unpack wrote the PRIVATE key into `signing_key.public_key` (32 bytes either
+way, on a table the floor forbids DELETE and UPDATE on) — it is now `signing.Keypair`, which raises `TypeError` on
+unpacking; `ManifestVerdict`'s three finding lists were MUTABLE inside a `frozen=True` dataclass, so
+`verdict.dropped.clear()` flipped `is_intact`; `_CURATED_KINDS`' alarm fired on editing the Python constant and
+never on the CATALOG gaining a curated kind; `upstream_releases`' only coverage was `assert isinstance(x, list)`
+(true for `[]`, which is what it always got) riding on ambient rows another test file left behind; and four
+verification-core paths raised `ValueError`/`KeyError` outside `cli.main`'s catch, now all `signing.SigningError`.
+**`signature_backdated` had no caller at all** and is now `drugref status`' fourth block.
+
+**The published canonical-format reference still specified `$`** — the regex this branch had already fixed to `\Z`
+because `$` also matches before a trailing newline, which is the context-line injection the validator exists to
+stop. It sat inside the comment that bills itself as "reimplementable from this comment alone", so a third-party
+reimplementation would have inherited the exact defect. **`db/030` and the canonical payload format are otherwise
+UNCHANGED; no committed vector moved** (`make_signing_vectors` reproduces `signing_vectors.json` byte for byte).
+
+**RULE 4 BREACHED AND LODGED, NOT HIDDEN**: `signing.py` 480 → **582** and `release_verification.py` 467 → **532**
+crossed the ~500-line guideline in this wave — almost entirely the mandatory prose documenting the four defects
+above. Splitting the most security-critical pure module inside the same PR that changed how verdicts are reached
+would have made the diff unreviewable as a set of fixes, so it is
+[#89](https://github.com/cairn-ehr/drugref/issues/89), with the natural seam named there.
+
+**HOT PATH RE-MEASURED after the view change**, because the compromise fix adds a `NOT EXISTS` to
+`curated_signature_status`: on a `TEMPLATE drugref_5c4` clone, old view **1.337–1.371 ms**, new view
+**1.309–1.455 ms** — no regression, consistent with the ~1.4 ms below.
 
 **Two layers, one payload format, one key registry.** Curator-held Ed25519 keys sign one curated row's canonical
 payload (`assertion_signature`); an institutional key signs a per-release **content manifest** enumerating every
@@ -993,6 +1053,9 @@ column** — which is what lets a row be signed at any later time and lets a sec
 `ddi_candidate_pair` **21,664** · `substance_moiety` **19,438** · `open_question` **21,842** ·
 `gap_uncurated_interaction_rule` **595** · `gap_uncurated_condition_contradiction` **168**. This slice adds no
 projection and no gap kind, so none of them had licence to move; every ingest summary also reproduced 5c.1's.
+**ALL FIVE WERE TAKEN BEFORE THE END-TO-END SIGNING EXERCISE**, which afterwards left two curated rows in that
+database — so `drugref_5c4` READS 593 for `gap_uncurated_interaction_rule` TODAY, not 595, and the qualifier
+belongs here at the claim rather than only in § "Repo facts" 300 lines below. Re-measure on a fresh build.
 
 **Chain wall-clock 132.96 s, and this is [#81](https://github.com/cairn-ehr/drugref/issues/81)'s per-leg
 breakdown** — the thing that issue has been waiting for, against 127.5 s (5c.1) and 144 s (post-merge):

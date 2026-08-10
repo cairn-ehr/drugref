@@ -283,7 +283,8 @@ def a_key_file(tmp_path):
     key-file handling (the two would otherwise rise and fall together, and
     neither test would catch the other breaking).
     """
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     path = tmp_path / "curator.key"
     path.write_bytes(private)
     return {"path": path, "private": private, "public": public,
@@ -295,7 +296,8 @@ def a_registerable_key(tmp_path):
     """A public key file on disk, for `keys register --public-key`. Separate
     from `a_key_file`: register operates on the PUBLIC half, sign/publish on
     the PRIVATE half, and no single test needs both from one fixture."""
-    private, public = signing.generate_keypair()
+    _kp = signing.generate_keypair()
+    private, public = _kp.private_key, _kp.public_key
     path = tmp_path / "curator.pub"
     path.write_bytes(public)
     return {"path": path, "public": public, "private": private,
@@ -648,7 +650,7 @@ def test_keys_list_shows_a_registered_key(conn, capsys):
     """The populated case, isolated on the ordinary rollback-per-test `conn`
     fixture directly (no `_run`/`wconn` needed: `keys.all_live` is read-only,
     so there is no commit() to intercept)."""
-    _, public = signing.generate_keypair()
+    public = signing.generate_keypair().public_key
     keys.register(conn, public_key=public, holder="a curator",
                   registered_by="an operator")
     assert cli_signing._handle_keys_list(conn, None) == 0
@@ -753,21 +755,34 @@ def test_verify_exits_nonzero_on_a_bad_signature(
     assert exit_code == 1
 
 
-def test_verify_exits_zero_on_an_unknown_key_signature(
+def test_verify_exits_NONZERO_on_an_unknown_key_signature(
         wconn, a_signable_target, a_key_file, capsys):
-    """THE WORD 'ONLY' IN 'non-zero only on bad_signature', pinned directly:
-    an unknown-key signature is a real, printed finding -- but not one that
-    fails the command, exactly as an unsigned row does not. Only mathematical
-    forgery (bad_signature) gates the exit code."""
+    """REVIEW I1, AND THIS TEST USED TO ASSERT THE OPPOSITE.
+
+    `unknown_key` means the mathematics was NEVER CHECKED, and that is the cheaper
+    forgery, not the rarer one: an attacker generates their own keypair, writes a
+    curated row claiming any `reviewed_by`, and records a signature over it -- verdict
+    `unknown_key`, and the command used to exit 0. Reaching `bad_signature` (the only
+    verdict that failed) is strictly HARDER: it needs a REGISTERED fingerprint plus
+    bytes that do not verify under it. A script gating on this command concluded
+    "authentic" for the easy attack and "forged" for the hard one.
+
+    The old test cited spec 9's "a signature is not an admission gate", but that
+    refusal is about withholding ROWS from the read views -- nothing is withheld here,
+    and the verdict is still printed either way. `_verify_release` has always failed on
+    `unknown_key` (via `is_intact`), and db/030's own view counts an unregistered key as
+    OBJECTED; only this exit code disagreed with both."""
     assert _run(wconn, [
         "sign", "--target-kind", "curated_interaction",
         "--target-id", str(a_signable_target["target_id"]),
         "--key", str(a_key_file["path"])]) == 0
     capsys.readouterr()
 
+    # == 1, not != 0: 2 is this surface's OPERATOR-ERROR code, and an unverifiable
+    # signature must not read as a mistyped flag to a script checking the status alone.
     assert _run(wconn, [
         "verify", "--target-kind", "curated_interaction",
-        "--target-id", str(a_signable_target["target_id"])]) == 0
+        "--target-id", str(a_signable_target["target_id"])]) == 1
     assert "unknown_key" in capsys.readouterr().out
 
 

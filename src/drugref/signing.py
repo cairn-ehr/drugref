@@ -35,16 +35,55 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 ED25519 = "Ed25519"
 
 
-def generate_keypair() -> tuple[bytes, bytes]:
-    """A fresh keypair as (private_32, public_32) RAW bytes.
+class SigningError(RuntimeError):
+    """Base for every operator-facing failure the signing subsystem raises.
 
-    Raw rather than PEM or DER deliberately: the private half is written to a file the
-    curator holds and the public half into a bytea column, and both want the smallest
+    RuntimeError IS A CONTRACT WITH `cli.main`, not a default. That function catches
+    `(RuntimeError, ChainError, interactions.NoLiveDecisionError)` and renders one clean
+    sentence instead of a traceback, so an exception class outside that family is a
+    traceback in an operator's terminal by construction. This branch already paid for
+    that lesson once: `entry_context_is_reproducible` exists because a `KeyError`
+    escaped the catch and `drugref verify --release` printed a stack trace.
+
+    A COMMON BASE so a caller wanting the whole family names one class rather than five
+    across three modules -- and so nobody reaches for `except RuntimeError`, which is
+    far too wide to mean anything.
+    """
+
+
+@dataclass(frozen=True)
+class Keypair:
+    """A fresh Ed25519 keypair. DELIBERATELY NOT A TUPLE, AND NOT UNPACKABLE.
+
+    THE ONE MIX-UP IN THIS SLICE THAT CANNOT BE UNDONE. While this returned
+    `tuple[bytes, bytes]`, `public, private = generate_keypair()` type-checked, ran, and
+    wrote the PRIVATE key into `signing_key.public_key`. Nothing catches it: both halves
+    are 32 bytes, so `octet_length(public_key) = 32` passes; and `signing_key` sits on
+    db/020's overlay floor, which forbids DELETE and every UPDATE except `superseded_by`
+    -- so the private key is in the database PERMANENTLY, and drugref's own API cannot
+    remove it. Verification would later fail (the fingerprint covers the wrong bytes),
+    but the disclosure is done and irreversible long before anyone notices.
+
+    NO RUNTIME CHECK CAN CLOSE THIS. Any 32 bytes is a valid Ed25519 private seed, so
+    `keys.register` cannot tell a public key from a private one by inspection. A
+    distinct type is the only thing that can, and a `NamedTuple` would not be it --
+    unpacking is exactly what has to stop being expressible. Unpacking this raises
+    `TypeError`.
+
+    RAW BYTES rather than PEM or DER: the private half is written to a file the curator
+    holds and the public half into a bytea column, and both want the smallest
     unambiguous encoding. A container format would add a parser -- and a second way for
     two 32-byte keys to compare unequal.
     """
+    private_key: bytes
+    public_key: bytes
+
+
+def generate_keypair() -> Keypair:
+    """A fresh Ed25519 keypair. See `Keypair` for why it is not a tuple."""
     private = Ed25519PrivateKey.generate()
-    return (private.private_bytes_raw(), private.public_key().public_bytes_raw())
+    return Keypair(private_key=private.private_bytes_raw(),
+                   public_key=private.public_key().public_bytes_raw())
 
 
 def fingerprint(public_key: bytes) -> str:
@@ -99,7 +138,7 @@ def verify(public_key: bytes, payload: bytes, signature: bytes) -> bool:
 # THE FORMAT, in full, so it is reimplementable from this comment alone:
 #
 #     drugref-sig-v1\n
-#     <context>\n                                     * ^[a-z_]+/v[0-9]+$, validated
+#     <context>\n                        * ^[a-z_]+/v[0-9]+\Z, validated (\Z NOT $)
 #     <field-count>\n
 #     <len(name)>:<name>:<tag>:<len(value)>:<value>\n   * field-count, FROZEN order
 #     --<len(group)>:<group>:<member-count>--\n         * zero or more groups
@@ -231,7 +270,11 @@ def canonical_payload(context: str,
     `context` is the domain separator (spec 4.4) -- `curated_interaction/v1`,
     `curated_condition/v1`, `release_manifest/v1`. It is inside the payload, so bytes
     signed as one kind of statement can never verify as another. VALIDATED against
-    `^[a-z_]+/v[0-9]+$` before use: the context occupies a whole line of the payload,
+    `^[a-z_]+/v[0-9]+\\Z` before use (`\\Z`, NOT `$` -- in Python `$` also matches
+    immediately before a single trailing newline, which is precisely the injection this
+    validator exists to stop; see `_CONTEXT`'s own comment. Postgres ARE `$` is
+    end-of-string only, so db/030's three CHECKs using `$` are correct as written):
+    the context occupies a whole line of the payload,
     so an unvalidated one could embed its own newline and inject a forged line below
     it -- the field-count line, most dangerously. Narrower than "no newline" on
     purpose, closing the whole class of separator characters rather than the one
@@ -284,6 +327,13 @@ def canonical_payload(context: str,
 # and FAILS on a new column, forcing an explicit choice: bump to /v2, or exclude the
 # column with a stated reason. Frozen bytes, catalog-driven alarm.
 #
+# THAT ALARM COVERS THE TWO CURATED LISTS ONLY, and saying so matters because this
+# block heads THREE. `RELEASE_MANIFEST_V1`'s members are DERIVED scalars and two group
+# cardinalities, not columns of `release_manifest`, so there is no catalog to compare
+# it against -- the coverage test parametrizes over the curated contexts alone. What
+# guards that list instead is the committed vector in tests/fixtures/signing_vectors.
+# json, which pins its bytes.
+#
 # Adding a field to a list below without bumping the context is a BREAKING change to
 # every signature already recorded. There is no way to make that safe; there is only a
 # test that makes it deliberate.
@@ -309,6 +359,14 @@ CURATED_CONDITION_V1 = (
 # being derivable from the groups themselves (spec 5.5): a group truncated at its END is
 # otherwise detectable only by recomputing the whole digest, and a scalar count makes
 # that specific failure nameable.
+#
+# THEY ARE NOT INDEPENDENTLY CHECKABLE AT VERIFY TIME, and a reader should not
+# expect them to be: `manifest_payload` derives both from `len(entries)`/
+# `len(upstream)` when PUBLISHING and again when VERIFYING, so they can never
+# disagree with the groups they count. What actually catches a truncated entry
+# list is `release_manifest.row_count`, which `verify_release` compares against
+# the stored entries (`row_count_ok`). These two scalars put the group sizes into
+# the SIGNED bytes, which is a different job.
 RELEASE_MANIFEST_V1 = (
     "release_tag", "published_by", "published_at", "entry_count", "upstream_count",
     *ATTESTATION_FIELDS)
@@ -359,6 +417,50 @@ NATURAL_KEY_COLUMNS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1_KEY,
     "curated_condition/v1": CURATED_CONDITION_V1_KEY,
 }
+
+
+def context_target_kind(context: str) -> str:
+    """The target kind a payload context belongs to: everything before the `/v`. PURE.
+
+    A CONVENTION MADE CHECKABLE. Every context is spelled `<target_kind>/v<n>` -- the
+    shape both `_CONTEXT` and db/030's three CHECKs already enforce, and true of every
+    row `signature_target_kind` ships. Until now nothing depended on the first half
+    MEANING anything, so nothing verified it; `context_is_usable_for` below does, and
+    tests/test_signing_payload_coverage.py pins every frozen list's prefix against the
+    live catalog so the convention cannot drift into a lie.
+    """
+    return context.split("/", 1)[0]
+
+
+def context_is_usable_for(stored_context: str, target_kind: str) -> bool:
+    """Can a payload recorded under `stored_context` be rebuilt against `target_kind`'s
+    own table? PURE -- both arguments are strings.
+
+    THE QUESTION A VERIFIER MUST ASK BEFORE SUBSCRIPTING ANYTHING. Every
+    `payload_context` column in db/030 carries only a regex CHECK and, deliberately, NO
+    foreign key, so a signature may name any well-shaped context: one no frozen list has
+    ever known (`bogus/v9`), or one belonging to a DIFFERENT target kind
+    (`curated_condition/v1` on a `curated_interaction` row). Both are one ordinary
+    INSERT away, and rebuilding under either crashed -- `KeyError` for the first,
+    psycopg's `UndefinedColumn` for the second, neither of them a `RuntimeError`, so
+    `cli.main` caught neither. `UndefinedColumn` additionally ABORTS THE TRANSACTION.
+    Because `assertion_signature` is INSERT-ONLY the offending row can never be deleted,
+    so one planted row denied verification of that target PERMANENTLY -- a far cheaper
+    attack than forging a signature.
+
+    IT DOES NOT CONSULT THE CATALOG, AND THAT IS THE POINT. An earlier cut of this fix
+    compared the stored context against `signature_target_kind`'s CURRENT context and
+    reported a signature unusable whenever the catalog had moved on -- which is the
+    "re-describe the present" error this whole slice is built to avoid, and it broke
+    `test_verification_reconstructs_the_past_context_not_the_present` exactly as it
+    should have. A `curated_interaction/v1` signature stays rebuildable after the
+    catalog moves to a `/v2` this build has never heard of: `/v2` can only ADD columns,
+    so `/v1`'s field names still resolve against the table. The only thing that matters
+    is whether the stored context's fields are columns of THIS kind's table, and the
+    `<target_kind>/v<n>` naming answers that without a round trip.
+    """
+    return (stored_context in FIELD_LISTS
+            and context_target_kind(stored_context) == target_kind)
 
 
 def entry_context_is_reproducible(entry_context: str, current_context: str) -> bool:
