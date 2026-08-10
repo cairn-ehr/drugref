@@ -2487,13 +2487,30 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Consumes: `signing.canonical_payload`, `render`, `FIELD_LISTS`, `ATTESTATION_FIELDS`, `digest`, `verify`,
   `verdict`, `ED25519`, the verdict constants; `keys.key_status`, `keys.live`.
 - Produces: `signatures.payload_for(conn, target_kind: str, target_id: int, *, key_fingerprint: str, signed_at:
-  datetime) -> tuple[str, bytes]` returning `(payload_context, payload_bytes)` ·
+  datetime, payload_context: str | None = None) -> tuple[str, bytes]` returning `(payload_context,
+  payload_bytes)`, and `signatures.payload_fields(...)` taking the same parameters and returning
+  `(context, fields)` ·
   `signatures.record(conn, *, target_kind, target_id, payload_context, payload: bytes, key_fingerprint,
   signature: bytes, signed_at, algorithm=signing.ED25519) -> int` ·
   `signatures.SignatureVerdict` (frozen dataclass: `signature_id: int`, `key_fingerprint: str`,
   `holder: str | None`, `signed_at: datetime`, `verdict: str`) ·
   `signatures.verify_target(conn, target_kind, target_id) -> list[SignatureVerdict]` ·
-  `signatures.UnknownTargetError(RuntimeError)`.
+  `signatures.UnknownTargetError(RuntimeError)` · `signatures.UnsupportedAlgorithmError(RuntimeError)`.
+
+**`payload_context` is an OVERRIDE, and it is what makes verification reconstruct the past rather than the
+present.** `None` means *"read today's context from `signature_target_kind`"* — correct when **signing**, since a
+new signature is made under the current context. Verification must instead pass the context **stored on the
+signature row**: the day a `curated_interaction/v2` is registered, re-deriving from the catalog would rebuild
+every historical `/v1` signature under `/v2`, produce different bytes, and report the lot as forgeries. That is
+precisely the hazard `db/030` cites when it rejects a composite FK to `signature_target_kind` — rejecting the FK
+for that reason and then re-deriving in the verifier gets the worst of both. **`signing.FIELD_LISTS` therefore
+keeps every retired context version forever**; a version is never deleted, only stopped being minted.
+
+**`algorithm` has the same shape and the same fix.** `assertion_signature.algorithm` records what was actually
+used; verification must read it back rather than assume Ed25519, and raise `UnsupportedAlgorithmError` on a value
+this module cannot check. Unreachable today because the CHECK admits one value — which is exactly what makes it
+easy to ship — so it is tested by dropping that CHECK inside the test transaction, the technique 5c.1 used to
+reach `pair_count`'s second-authority case.
 
 - [ ] **Step 1: Write the failing tests**
 
