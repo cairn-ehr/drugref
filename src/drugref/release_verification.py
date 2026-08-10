@@ -261,13 +261,16 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
     while True:
         # EXACTLY ONE PREDECESSOR EXPECTED, made explicit the same way
         # `releases._natural_key_columns` was -- `.fetchone()` would silently pick
-        # whichever row the planner returns first. `overlay.supersede`'s own UPDATE
-        # targets every row matching the natural key with `superseded_by IS NULL`, so
-        # more than one row pointing `superseded_by` at the same successor is
-        # structurally expressible mid-transaction even though db/020's DEFERRED
-        # single-live trigger makes it unreachable at COMMIT -- and a verification
-        # function must not silently choose one and hide that a violation is still
-        # visible right now.
+        # whichever row the planner returns first. NOT PREVENTED BY ANY TRIGGER:
+        # `forbid_multiple_live_assertions` counts LIVE rows per natural key and says
+        # nothing about how many rows point `superseded_by` AT one successor, so
+        # db/020's deferred single-live trigger gives this no protection at all. What
+        # actually prevents it, on the ordinary path, is `overlay.supersede`'s one
+        # guarded UPDATE (WHERE the natural key matches AND superseded_by IS NULL) --
+        # and that guard is exactly what raw SQL against the table bypasses. This is a
+        # measured fact, not a hypothetical: round 3's re-review reached this branch by
+        # committing two predecessor rows pointing at one successor directly, with
+        # `SET CONSTRAINTS ALL IMMEDIATE` confirming no trigger objected.
         predecessors = conn.execute(
             sql.SQL("SELECT {pk} FROM drugref.{table} "
                     "WHERE superseded_by = %s").format(
@@ -278,9 +281,9 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
         if len(predecessors) > 1:
             raise ValueError(
                 f"drugref.{table} row {current_id} is pointed at by "
-                f"{len(predecessors)} superseded_by values -- the single-live "
-                "invariant should make this unreachable at COMMIT, but this "
-                "function cannot silently pick one mid-transaction.")
+                f"{len(predecessors)} superseded_by values -- normal use through "
+                "overlay.supersede's guarded UPDATE should make this unreachable, "
+                "but this function cannot silently pick one mid-transaction.")
         predecessor_id = predecessors[0][0]
         if predecessor_id in seen:
             # Defensive only: db/029's floor forbids a cycle (supersession always
