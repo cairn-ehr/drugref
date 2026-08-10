@@ -235,7 +235,8 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
     assert "None" not in out and "[]" not in out
 
 
-@pytest.mark.parametrize("module", ["cli", "cli_policy"])
+@pytest.mark.parametrize(
+    "module", ["cli", "cli_policy", "cli_signing", "cli_signing_release"])
 @pytest.mark.parametrize("table", ["curated_interaction", "curated_condition"])
 def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     """cli.py's own discipline, pinned. `_handle_status` is allowed to embed SELECTs
@@ -257,6 +258,14 @@ def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
 
     `cli_policy.py` is scanned too. The rule the module docstring states is ABOUT
     cli_policy ("THE POLICY COMMANDS HOLD NO SQL"), and nothing checked it.
+
+    `cli_signing.py` AND `cli_signing_release.py` (slice 5c.4) are scanned for the
+    identical reason, added the round those two files landed: `signing_key`,
+    `assertion_signature`, `release_manifest` and `release_manifest_entry` are all
+    curated, append-only tables a Python-embedded writer could reach invisibly, and
+    the sign/verify/publish surface is a NEW file full of candidate target_kind
+    strings ("curated_interaction", "curated_condition") that must stay confined to
+    argument values and help text, never grow into an embedded `FROM drugref.{table}`.
     """
     import ast
     import importlib
