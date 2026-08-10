@@ -18,11 +18,28 @@ that catalog -- they are drugref's own seed values, so there was never an inject
 composition makes that visible at a glance instead of requiring the reader to trace
 where the names came from.
 
+VERIFICATION RECONSTRUCTS THE PAST, NOT THE PRESENT -- a correction made after review
+found the first draft re-deriving `payload_context` from the catalog's CURRENT row on
+every check, which is right for SIGNING (a new signature is always made under today's
+context) and silently wrong for VERIFYING: the day a second context version is minted,
+every historical signature would be rebuilt under the new one, produce different bytes,
+and be reported as a forgery. `payload_context` is therefore an OVERRIDE on
+`payload_fields`/`payload_for` -- `None` reads the catalog's current value, an explicit
+value pins one -- and `verify_target` always passes the value STORED on the signature
+row it is checking, never the catalog's idea of "current". `signing.FIELD_LISTS` keeps
+every retired context version for exactly this reason: a version is stopped being
+minted, never deleted. `algorithm` carries the identical hazard and the identical fix --
+recorded per row, read back rather than assumed, because `signing.verify` only
+implements one scheme.
+
 RECORDING AND VERIFYING ARE SEPARATE ACTS. `record` stores whatever it is given and
-asserts nothing about validity, deliberately: a recorder that refused an invalid
-signature could not store the evidence that an invalid one exists, and reporting that
-evidence -- "this row carries a signature that does NOT verify" -- is precisely what a
-node needs to be able to do.
+asserts nothing about the SIGNATURE's validity, deliberately: a recorder that refused an
+invalid signature could not store the evidence that an invalid one exists, and reporting
+that evidence -- "this row carries a signature that does NOT verify" -- is precisely
+what a node needs to be able to do. It DOES check that `payload_context` truthfully
+names the bytes it is being stored beside (see `record`'s docstring) -- that is not a
+check on the signature, only on `record`'s own inputs agreeing with each other, and it
+guards a mistake this insert-only table gives no later step a chance to correct.
 
 NOTHING HERE COMMITS. The caller owns the transaction, as everywhere in these modules,
 and the two append-only triggers on `assertion_signature` mean any attempt to correct a
@@ -41,28 +58,32 @@ from drugref import keys, signing
 class UnknownTargetError(RuntimeError):
     """Either `target_kind` names no row in `signature_target_kind`, or the target row
     itself does not exist. Raised rather than silently building a payload of NULLs --
-    see `payload_fields` for why that would be worse than an exception.
+    see `_row_content_fields` for why that would be worse than an exception, and
+    `verify_target` for why a target row that never existed must raise here too rather
+    than reading identically to an ordinary unsigned one.
     """
 
 
-def payload_fields(conn: psycopg.Connection, target_kind: str, target_id: int, *,
-                    key_fingerprint: str, signed_at: dt.datetime
-                    ) -> tuple[str, list[signing.Field]]:
-    """The (name, rendered-value) pairs for one target row, in FROZEN order.
+class UnsupportedAlgorithmError(RuntimeError):
+    """A signature names an algorithm this module cannot mathematically check.
+    `signing.verify` implements Ed25519 only, so a row naming anything else must be
+    reported as unverifiable rather than silently checked against the wrong scheme --
+    the same failure mode `payload_context` re-derivation risked for the canonical
+    format, one column over. Unreachable today because `assertion_signature`'s CHECK
+    admits exactly one value, which is exactly what makes shipping this gap easy: db/030
+    itself says "a second algorithm is stored per key and per signature so it is
+    additive rather than a rewrite" -- this is the module's half of honouring that.
+    """
 
-    Returns `(payload_context, fields)`. PUBLIC rather than a private helper: the
-    per-field mutation gate in tests/test_signatures_writer.py calls this directly so
-    the test exercises the production code path that builds a payload, rather than a
-    parallel reimplementation of it that could silently disagree.
 
-    THE TABLE, KEY COLUMN AND CONTEXT COME FROM signature_target_kind -- never from a
-    dict in Python. A fourth target kind is then one INSERT in db/030 rather than an
-    edit here, in the migration and in a CHECK, which is db/006's lesson.
+def _target_kind_catalog(conn: psycopg.Connection,
+                          target_kind: str) -> tuple[str, str, str]:
+    """`(target_table, pk_column, current payload_context)` for one `target_kind`.
 
-    The SELECT is composed with psycopg.sql.Identifier over names read from the
-    catalogue. They are drugref's own seed values rather than user input, so there was
-    never an injection here -- but composition makes that visible at a glance instead of
-    requiring the reader to trace where the names came from.
+    Split out so `verify_target` can look this up ONCE per call rather than once per
+    signature: all three values depend only on `target_kind`, which does not vary
+    across the signatures checked in one call. `payload_fields` uses it too, so there
+    is exactly one place that reads `signature_target_kind` -- not a copy per caller.
     """
     kind = conn.execute(
         "SELECT target_table, pk_column, payload_context "
@@ -72,11 +93,21 @@ def payload_fields(conn: psycopg.Connection, target_kind: str, target_id: int, *
         raise UnknownTargetError(
             f"{target_kind!r} is not a signature target kind. The vocabulary lives in "
             "drugref.signature_target_kind; adding one is an INSERT there.")
-    table, pk_column, context = kind
-    # The frozen field list includes the two attestation fields (signer_key_fingerprint,
-    # signed_at) at its tail, but those are supplied by the CALLER, not read from the
-    # target table -- no such columns exist on curated_interaction or curated_condition.
-    # Excluding them here is what makes the SELECT below name only real columns.
+    return kind
+
+
+def _row_content_fields(conn: psycopg.Connection, table: str, pk_column: str,
+                         target_id: int, context: str) -> list[signing.Field]:
+    """One target row's own columns, rendered, in the order `context`'s frozen field
+    list names -- everything EXCEPT the two attestation fields, which are supplied per
+    signature rather than read from any table (see `payload_fields`).
+
+    `context` picks which frozen field list -- and therefore which columns -- to read,
+    which is exactly why this is safe to CACHE keyed by context but never to share
+    across different ones: `signing.FIELD_LISTS` keeps every retired version, and a
+    future `/v2` field list may name a different column set than `/v1` for the same
+    table.
+    """
     field_names = signing.FIELD_LISTS[context]
     row_columns = [f for f in field_names if f not in signing.ATTESTATION_FIELDS]
     row = conn.execute(
@@ -90,30 +121,73 @@ def payload_fields(conn: psycopg.Connection, target_kind: str, target_id: int, *
             "that does not exist would produce a payload of NULLs -- a valid signature "
             "over nothing, which looks like a real one.")
     # strict=True catches row_columns and the fetched row disagreeing in length -- a
-    # column the catalog's context names but the live table lost (or vice versa) would
+    # column the frozen list names that the live table lost (or vice versa) would
     # otherwise zip silently short and mis-pair every field after the gap.
-    fields = [(name, signing.render(value))
-              for name, value in zip(row_columns, row, strict=True)]
+    return [(name, signing.render(value))
+            for name, value in zip(row_columns, row, strict=True)]
+
+
+def payload_fields(conn: psycopg.Connection, target_kind: str, target_id: int, *,
+                    key_fingerprint: str, signed_at: dt.datetime,
+                    payload_context: str | None = None
+                    ) -> tuple[str, list[signing.Field]]:
+    """The (name, rendered-value) pairs for one target row, in FROZEN order.
+
+    Returns `(payload_context, fields)`. PUBLIC rather than a private helper: the
+    per-field mutation gate in tests/test_signatures_writer.py calls this directly so
+    the test exercises the production code path that builds a payload, rather than a
+    parallel reimplementation of it that could silently disagree.
+
+    `payload_context` IS AN OVERRIDE, and it is what lets verification reconstruct the
+    PAST rather than the PRESENT. `None` (the default) means "read today's context from
+    signature_target_kind" -- correct when SIGNING, since a new signature is always made
+    under whatever context is current right now. An explicit value means "use exactly
+    this one", which is REQUIRED when verifying: a signature recorded under
+    `curated_interaction/v1` must still verify after `signature_target_kind`'s row for
+    `curated_interaction` moves on to `/v2`, and re-deriving from the catalog would
+    rebuild the payload under the new context, change the bytes, and report every
+    historical signature as a forgery. `signing.FIELD_LISTS` therefore keeps every
+    retired context version forever -- a version is stopped being minted, never deleted.
+
+    THE TABLE AND KEY COLUMN COME FROM signature_target_kind -- never from a dict in
+    Python -- regardless of whether `payload_context` overrides the context: one target
+    kind names one table for its whole life, only which FIELD LIST applies to it can
+    change between versions. A fourth target kind is then one INSERT in db/030 rather
+    than an edit here, in the migration and in a CHECK, which is db/006's lesson.
+
+    The SELECT (inside `_row_content_fields`) is composed with psycopg.sql.Identifier
+    over names read from the catalogue. They are drugref's own seed values rather than
+    user input, so there was never an injection here -- but composition makes that
+    visible at a glance instead of requiring the reader to trace where the names came
+    from.
+    """
+    table, pk_column, current_context = _target_kind_catalog(conn, target_kind)
+    context = payload_context if payload_context is not None else current_context
+    fields = _row_content_fields(conn, table, pk_column, target_id, context)
     # THE ATTESTATION FIELDS, appended last, matching FIELD_LISTS' own tail order. Both
     # are supplied by the caller rather than read from any table: `signed_at` is the
-    # instant the curator is attesting AT, which is chosen by whoever is signing, not
-    # stored anywhere until `record` writes it; `key_fingerprint` names the key about to
-    # sign, which no target row could possibly already contain.
-    fields.append(("signer_key_fingerprint", key_fingerprint))
-    fields.append(("signed_at", signing.render(signed_at)))
-    return context, fields
+    # instant being attested AT (chosen by whoever is signing, or read back from a
+    # recorded row when re-verifying); `key_fingerprint` names the key -- no target row
+    # could possibly already contain either.
+    return context, fields + [("signer_key_fingerprint", key_fingerprint),
+                              ("signed_at", signing.render(signed_at))]
 
 
 def payload_for(conn: psycopg.Connection, target_kind: str, target_id: int, *,
-                 key_fingerprint: str, signed_at: dt.datetime) -> tuple[str, bytes]:
+                 key_fingerprint: str, signed_at: dt.datetime,
+                 payload_context: str | None = None) -> tuple[str, bytes]:
     """The canonical payload bytes for one target row, ready to sign or to verify
     against. A thin wrapper over `payload_fields` -> `signing.canonical_payload`; kept
     separate from `payload_fields` only because the mutation gate needs the
     (name, value) pairs themselves, not the encoded bytes, to build a mutated payload.
+
+    See `payload_fields` for what `payload_context` means -- `None` to sign under
+    today's context, the row's own stored value to verify against what was actually
+    signed.
     """
     context, fields = payload_fields(
-        conn, target_kind, target_id,
-        key_fingerprint=key_fingerprint, signed_at=signed_at)
+        conn, target_kind, target_id, key_fingerprint=key_fingerprint,
+        signed_at=signed_at, payload_context=payload_context)
     return context, signing.canonical_payload(context, fields)
 
 
@@ -124,17 +198,39 @@ def record(conn: psycopg.Connection, *, target_kind: str, target_id: int,
     """Store one signature. Returns the new `signature_id`.
 
     RECORDING IS NOT VERIFYING, and that is deliberate rather than an oversight: a
-    recorder that refused an invalid signature could not store the evidence that an
+    recorder that refused an invalid SIGNATURE could not store the evidence that an
     invalid one exists, which is precisely what a node needs to be able to report (a
     forged or corrupted signature is itself a finding, not something to discard).
     Whether `signature` is valid over `payload` is `verify_target`'s question, asked
     fresh every time rather than cached -- spec 7.3 is explicit that no verification
     result is ever stored in a column.
 
-    `payload_digest` (not the payload itself) is what gets stored, alongside the
-    fingerprint and instant the payload already commits to -- `signing.digest` is a
-    comparison key for dedup and manifest lookups, never the thing signed.
+    ONE THING IS CHECKED, and it is not the signature: that `payload_context` actually
+    NAMES the context `payload` was built under. Without this, `record` could be called
+    with a `curated_interaction/v1` payload and `payload_context='curated_condition/v1'`
+    and would store the lie -- harmless only by accident today, because nothing used to
+    read the column back. Now that `verify_target` rebuilds against the STORED context
+    (see `payload_fields`), a wrong `payload_context` here is how a row permanently
+    stops verifying, on an insert-only table with no correction path: there is no UPDATE
+    to fix it with afterwards.
+
+    THIS IS A PREFIX CHECK, NOT A PARSE, and the distinction matters because the format
+    is generate-and-compare and must never be parsed by anyone (signing.py's own
+    comment). `canonical_payload` always writes PROLOGUE, a newline, the context, and a
+    newline, in that fixed order, before a single field -- so confirming `payload`
+    BEGINS WITH exactly those bytes for the declared context checks that the two agree
+    without interpreting a length, a field, or anything past that fixed header, which is
+    the one part of the format simple enough to check by inspection rather than by
+    reproducing the whole encoder.
     """
+    declared_header = signing.PROLOGUE + b"\n" + payload_context.encode("utf-8") + b"\n"
+    if not payload.startswith(declared_header):
+        raise ValueError(
+            f"payload_context={payload_context!r} does not match the context this "
+            "payload was actually built under (its first bytes disagree). Recording it "
+            "anyway would store a signature whose declared context can never reproduce "
+            "the bytes it claims to describe -- and there is no UPDATE to fix that "
+            "afterwards.")
     return conn.execute(
         "INSERT INTO drugref.assertion_signature "
         "(target_kind, target_id, payload_context, payload_digest, key_fingerprint, "
@@ -164,38 +260,91 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
                    target_id: int) -> list[SignatureVerdict]:
     """Every signature recorded against one target row, each checked fresh.
 
-    UNSIGNED IS NOT AN ERROR: a target with no recorded signature returns `[]`, because
-    signing is optional per row and the overlay ships with most rows unsigned.
+    UNSIGNED IS NOT AN ERROR: a target that EXISTS but carries no recorded signature
+    returns `[]`, because signing is optional per row and the overlay ships with most
+    rows unsigned. A target_id that never existed at all is a DIFFERENT thing and raises
+    `UnknownTargetError` -- exactly what `payload_for` raises for the same id -- so a
+    mistyped id cannot read identically to an ordinary unsigned row (`keys.revoke`'s
+    precedent: silence is the worst answer a lookup can give).
 
-    EACH SIGNATURE IS REBUILT AGAINST ITS OWN signed_at AND key_fingerprint, not one
-    shared payload for the whole row. Both values are INSIDE the signed bytes (spec
-    4.4), so two signatures over one row -- a counter-signature, or a re-sign after a
-    key rotation -- cover genuinely DIFFERENT bytes. Building one payload and reusing it
-    for every row would make every signature but the one it happened to match look like
-    a forgery, which is the worst possible way for this bug to present: silent, and
-    indistinguishable from an actual attack.
+    EACH SIGNATURE IS REBUILT AGAINST ITS OWN signed_at, key_fingerprint AND
+    payload_context -- never one shared payload for the whole row. `signed_at` and
+    `key_fingerprint` are inside the signed bytes (spec 4.4), so two signatures over one
+    row -- a counter-signature, or a re-sign after a key rotation -- cover genuinely
+    DIFFERENT bytes. `payload_context` is read back from THIS SIGNATURE ROW rather than
+    re-derived from the catalog, so a later `/v2` context cannot rebuild an old
+    signature under new bytes and report it as a forgery (see `payload_fields`).
+    Sharing any of the three across signatures would make some subset look forged,
+    which is the worst possible way for this to fail: silent, and indistinguishable
+    from an actual attack.
+
+    ALGORITHM IS CHECKED TOO: `signing.verify` only implements Ed25519, so a row naming
+    anything else raises `UnsupportedAlgorithmError` rather than being silently checked
+    against the wrong scheme.
 
     ORDERED BY signature_id, i.e. the order signatures were recorded in -- the surrogate
     key, not `signed_at`, which an operator may supply out of order (a late-recorded
     signature can honestly claim an earlier instant); `keys.history`'s precedent.
+
+    THE CATALOG LOOKUP AND THE ROW READ ARE HOISTED OUT OF THE PER-SIGNATURE LOOP.
+    Both depend only on `target_kind`/`target_id` (the row read also on
+    `payload_context`, cached by that key), which are constant across every signature
+    checked here -- not on which signature is being checked. The naive per-signature
+    version paid the `signature_target_kind` lookup and the target-row SELECT once EACH
+    per signature (roughly 4 queries per signature, measured at 13 for 3 signatures);
+    this version pays the catalog lookup once total and the row read once per DISTINCT
+    `payload_context` seen (once, in the common case where nothing has moved to a `/v2`
+    yet). `keys.live` and `keys.key_status` are cached by `key_fingerprint` for the same
+    reason: two signatures by the same key -- one curator re-signing, or the
+    KEY_EXPIRED pair -- do not repeat the same registry lookup. This matters now because
+    Task 8's release verifier runs this across the whole overlay.
     """
+    table, pk_column, _ = _target_kind_catalog(conn, target_kind)
     rows = conn.execute(
-        "SELECT signature_id, key_fingerprint, signature, signed_at "
+        "SELECT signature_id, key_fingerprint, algorithm, signature, signed_at, "
+        "payload_context "
         "FROM drugref.assertion_signature "
         "WHERE target_kind = %s AND target_id = %s "
         "ORDER BY signature_id",
         (target_kind, target_id)).fetchall()
+    if not rows:
+        # UNSIGNED (return []) and NEVER EXISTED (raise) are indistinguishable up to
+        # this point -- both have zero assertion_signature rows -- so the target row
+        # itself must be checked before handing back the empty, ordinary-case answer.
+        exists = conn.execute(
+            sql.SQL("SELECT 1 FROM drugref.{table} WHERE {pk} = %s").format(
+                table=sql.Identifier(table), pk=sql.Identifier(pk_column)),
+            (target_id,)).fetchone()
+        if exists is None:
+            raise UnknownTargetError(
+                f"drugref.{table} has no row with {pk_column} = {target_id}. A "
+                "mistyped id would otherwise read identically to an ordinary unsigned "
+                "row, which is the one place this layer must not stay silent.")
+        return []
+
+    row_fields_by_context = {}
+    key_cache = {}
     verdicts = []
-    for signature_id, key_fingerprint, signature, signed_at in rows:
-        _, payload = payload_for(
-            conn, target_kind, target_id,
-            key_fingerprint=key_fingerprint, signed_at=signed_at)
-        # THE TWO REGISTRY LOOKUPS, not one: `live` gives the public key material (and
-        # the holder name to report), `key_status` gives the two booleans the verdict
-        # rule branches on. Both come back None together for an unregistered
-        # fingerprint -- there is no live signing_key row to join against either way.
-        key = keys.live(conn, key_fingerprint)
-        status = keys.key_status(conn, key_fingerprint)
+    for row in rows:
+        (signature_id, key_fingerprint, algorithm, signature, signed_at,
+         payload_context) = row
+        if algorithm != signing.ED25519:
+            raise UnsupportedAlgorithmError(
+                f"assertion_signature {signature_id} was signed with {algorithm!r}, "
+                "which this module cannot verify -- signing.verify only implements "
+                f"{signing.ED25519}. A second algorithm needs a second verify path "
+                "before any row naming it can be checked, not an assumption here.")
+        if payload_context not in row_fields_by_context:
+            row_fields_by_context[payload_context] = _row_content_fields(
+                conn, table, pk_column, target_id, payload_context)
+        fields = row_fields_by_context[payload_context] + [
+            ("signer_key_fingerprint", key_fingerprint),
+            ("signed_at", signing.render(signed_at))]
+        payload = signing.canonical_payload(payload_context, fields)
+        if key_fingerprint not in key_cache:
+            key_cache[key_fingerprint] = (keys.live(conn, key_fingerprint),
+                                          keys.key_status(conn, key_fingerprint))
+        key, status = key_cache[key_fingerprint]
         # WITH NO REGISTERED KEY THERE IS NO MATHEMATICS TO CHECK -- `signing.verdict`
         # ignores `signature_ok` entirely when `key_status` is None (UNKNOWN_KEY
         # outranks it), so `False` here is never read as "this signature is bad" rather
