@@ -333,6 +333,17 @@ KEY_REVOKED_COMPROMISED = "key_revoked_compromised"
 KEY_EXPIRED = "key_expired"
 VALID = "valid"
 
+# THE PRECEDENCE ABOVE, AS DATA -- `verdict`'s own five-step order (see its docstring),
+# restated here as an ordered tuple so a caller that combines SEVERAL verdicts into one
+# (Task 8's release verifier folds several `assertion_signature` rows over one manifest
+# into a single answer) has ONE place to rank them, worst first, rather than re-typing
+# the order as a second hand-maintained dict -- exactly the "second home" db/006 found
+# drifting. `NO_SIGNATURE` is deliberately absent: `verdict` never returns it (its own
+# docstring: "with no signature there is nothing to pass in"), so a combiner only ever
+# ranks among these five and reports `NO_SIGNATURE` itself, for the zero-signature case.
+VERDICT_PRECEDENCE = (UNKNOWN_KEY, BAD_SIGNATURE, KEY_REVOKED_COMPROMISED, KEY_EXPIRED,
+                      VALID)
+
 
 @dataclass(frozen=True)
 class KeyStatus:
