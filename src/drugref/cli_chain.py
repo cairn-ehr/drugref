@@ -42,6 +42,20 @@ class IngestStep:
     mesh step and merely consumed here, and check_release_agreement must not read
     that as one file claimed to be two releases.
 
+    `packaged_defaults` names the inputs that SHIP INSIDE THE PACKAGE rather than
+    being downloaded (fix round 1, slice 5c.2's onchigh step) -- as (name, path)
+    pairs, `path` being the file drugref carries under its own `data/` directory.
+    Both consumers `inputs` already serves read this the same way: `build_parser`
+    uses it as the per-source flag's `default=` instead of requiring `--name PATH`,
+    and `resolve_inputs` below falls back to it when the declared glob matches
+    NOTHING under `--downloads` -- a chain that selects this step must not abort
+    just because no copy of drugref's own file happens to sit in the downloads tree.
+    IT LIVES HERE, ON THE DECLARATION, RATHER THAN AS A NAME CHECK IN
+    `resolve_inputs` OR `build_parser`, because a name-based special case
+    (`if step.name == "onchigh"`) is a second list that can drift from `inputs` --
+    exactly the failure mode `secondary`'s own validation below already guards
+    against for a different field.
+
     It names INPUTS, not paths, because the declaration belongs beside the glob it
     qualifies and has to survive a glob's filename changing between releases.
     """
@@ -49,6 +63,7 @@ class IngestStep:
     inputs: tuple[tuple[str, str], ...]
     runner: Callable[[object, dict[str, pathlib.Path], str], object]
     secondary: tuple[str, ...] = ()
+    packaged_defaults: tuple[tuple[str, pathlib.Path], ...] = ()
 
     def __post_init__(self):
         # A typo here would exempt nothing and leave the chain refusing the very
@@ -60,6 +75,17 @@ class IngestStep:
             raise ValueError(
                 f"{self.name}: secondary names an input this step does not declare: "
                 f"{', '.join(sorted(undeclared))}")
+
+        # SAME GUARD, SAME REASON, for the field fix round 1 added: a typo in
+        # packaged_defaults would silently grant no fallback, so a chain missing the
+        # real file would fail exactly as it did before this field existed -- loud at
+        # import, not a mystery an operator hits in the field.
+        undeclared_defaults = ({dname for dname, _ in self.packaged_defaults}
+                               - {name for name, _ in self.inputs})
+        if undeclared_defaults:
+            raise ValueError(
+                f"{self.name}: packaged_defaults names an input this step does not "
+                f"declare: {', '.join(sorted(undeclared_defaults))}")
 
 
 class ChainError(Exception):
@@ -102,10 +128,25 @@ def resolve_inputs(downloads: pathlib.Path,
     invented convention would match nothing: releases carry their version in the
     filename (UNII_Records_26Feb2026.txt, Core_MEDRT_2026.07.06_XML.xml) and a fixed
     name would go stale on the next download.
+
+    A ZERO-MATCH INPUT WITH A PACKAGED DEFAULT (fix round 1) resolves to that default
+    instead of raising: `onc_high_priority.toml` ships inside the drugref package, not
+    under `--downloads`, so an operator's downloads tree legitimately never contains
+    it, and the chain must not abort for that reason alone. This is a FALLBACK, not a
+    fixed answer -- an operator who deliberately drops a same-named override under
+    `--downloads` still gets it back here, because that branch is only reached when
+    the glob found NOTHING. Ambiguity (2+ matches) still raises regardless of any
+    default: a packaged file breaking a tie between two conflicting downloaded ones
+    would be the wrong file winning silently, which is worse than the operator's own
+    conflict was.
     """
+    defaults = dict(step.packaged_defaults)
     resolved = {}
     for name, pattern in step.inputs:
         matches = sorted(downloads.glob(pattern))
+        if len(matches) == 0 and name in defaults:
+            resolved[name] = defaults[name]
+            continue
         if len(matches) != 1:
             # "found N files" (not just "found N"): this branch only ever fires for
             # 0 or 2+ matches, so the plural reads correctly in both cases, and it is

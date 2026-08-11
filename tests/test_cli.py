@@ -180,6 +180,70 @@ def test_onchigh_onc_flag_defaults_to_the_packaged_file():
     assert args.onc == cli.ONC
 
 
+def test_the_chain_resolves_onchigh_via_its_packaged_default(tmp_path):
+    """FIX ROUND 1 regression test -- the reviewer traced this concretely:
+
+        selected steps: ['onchigh']
+        InputResolutionError: onchigh: expected exactly one file matching
+        'onc_high_priority.toml' under <downloads>, found 0 files
+
+    `_handle_chain` resolves every selected step's inputs via `resolve_inputs`
+    BEFORE running any of them (see its own docstring), and `resolve_inputs` globbed
+    the declared pattern literally against `--downloads` with no knowledge of ONC --
+    the per-source subcommand's argparse `default=` never protected this path, because
+    `_handle_chain` never goes through argparse defaults, only `resolve_inputs`. So
+    `drugref ingest chain --onchigh-release Y` aborted the WHOLE chain before touching
+    the database, even with every other input present and even though the file is
+    drugref's own packaged data, never a download.
+
+    `downloads` here is EMPTY on purpose: the point is that no copy of the file needs
+    to exist under `--downloads` at all for a chain that selects onchigh to resolve.
+    Driven through `build_parser` + `selected_steps`, the same path `_handle_chain`
+    itself uses, so this exercises the actual chain resolution path rather than only
+    `IngestStep`'s declared shape (which is all the three tests above this one check --
+    they all passed while this bug was live).
+    """
+    args = cli.build_parser().parse_args(
+        ["ingest", "chain", "--downloads", str(tmp_path), "--onchigh-release", "2026"])
+    step, _release = cli.selected_steps(args, cli.STEPS)[0]
+    assert cli.resolve_inputs(tmp_path, step) == {"onc": cli.ONC}
+
+
+def test_an_override_under_downloads_still_wins_over_the_packaged_default(tmp_path):
+    """A packaged default is a FALLBACK, not a fixed answer: an operator who deliberately
+    drops a file matching the declared pattern under --downloads (to test a modified
+    ONC list through the real chain, say) must not have it silently ignored in favour
+    of the file drugref ships. Only an ABSENT match falls back; a present one still
+    wins, exactly as it would for any other step."""
+    (tmp_path / "onc_high_priority.toml").write_text("# override")
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    resolved = cli.resolve_inputs(tmp_path, step)
+    assert resolved == {"onc": tmp_path / "onc_high_priority.toml"}
+
+
+def test_packaged_defaults_must_name_an_input_the_step_declares():
+    """The same typo-guard `secondary` already has (test_secondary_must_name_an_
+    input_the_step_declares), for the same reason: a name-based special case (checking
+    `step.name == "onchigh"` inside resolve_inputs or build_parser) is the second list
+    that drifts from `inputs`, which is exactly what packaged_defaults exists to avoid
+    by living ON the step declaration instead."""
+    with pytest.raises(ValueError) as exc:
+        cli.IngestStep("broken", (("onc", "onc_high_priority.toml"),), lambda *a: None,
+                       packaged_defaults=(("wrong", pathlib.Path("x")),))
+    assert "wrong" in str(exc.value)
+
+
+def test_onchigh_is_the_only_step_with_a_packaged_default():
+    """Restated independently, mirroring test_mesh_relations_is_the_only_step_with_a_
+    secondary_input: a step that gains this exemption without anyone deciding to grant
+    it fails here. CROSSWALK/ALLOWLIST are packaged the same way but are NOT declared
+    IngestStep inputs at all (unlike ONC, they carry no per-invocation override flag,
+    so there is nothing for packaged_defaults to attach to) -- see the comment beside
+    them in cli.py for why that stays true."""
+    assert {s.name: s.packaged_defaults for s in cli.STEPS if s.packaged_defaults} == {
+        "onchigh": (("onc", cli.ONC),)}
+
+
 def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):
     """Silently taking either would record the wrong bytes as this run's provenance."""
     downloads = tmp_path / "downloads"

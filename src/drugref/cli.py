@@ -70,11 +70,17 @@ from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
 _DATA = pathlib.Path(drugref.__file__).resolve().parent / "data"
 CROSSWALK = _DATA / "usan_inn_crosswalk.tsv"
 ALLOWLIST = _DATA / "legacy_allowlist.tsv"
-# The ONC high-priority DDI list is the same kind of file: drugref's own hand-curated
-# data, not an upstream release. Unlike CROSSWALK/ALLOWLIST it is still a declared
-# IngestStep input (onchigh's `onc` entry below) rather than a hardcoded constant, so
-# `build_parser` gives it a default instead of the required `--name PATH` flag every
-# other step's inputs get -- see the special case in the per-source loop below.
+# CROSSWALK/ALLOWLIST stay bare constants, never IngestStep inputs, and that is a
+# decision to keep re-checking rather than an oversight: _run_unii passes them to
+# ingest_unii directly, with NO per-invocation override -- no `--crosswalk` flag has
+# ever existed, on the per-source subcommand or the chain. There is nothing for a
+# packaged default to attach to, because there is no declared input to attach it to.
+# ONC differs precisely because it DOES need one: the per-source subcommand exposes
+# `--onc` so an operator can point it at a different candidate list, and that same
+# input is what the chain resolves by glob under `--downloads`. Give CROSSWALK or
+# ALLOWLIST a real override flag some day and this same treatment (declare the input,
+# attach an IngestStep.packaged_defaults entry) is what to reach for -- not a new
+# special case.
 ONC = _DATA / "onc_high_priority.toml"
 
 log = logging.getLogger("drugref")
@@ -170,7 +176,15 @@ STEPS = (
     # The glob has no wildcard, unlike every other step's: this file carries no release
     # version in its name (it is drugref's own committed data, not an upstream
     # download), so "onc_high_priority.toml" is the whole pattern.
-    IngestStep("onchigh", (("onc", "onc_high_priority.toml"),), _run_onchigh),
+    #
+    # packaged_defaults=(("onc", ONC),) is what makes that default reachable from BOTH
+    # places that read `inputs` (fix round 1): build_parser uses it for the per-source
+    # `--onc` flag's default, and resolve_inputs falls back to it when the glob above
+    # matches nothing under --downloads -- which it never will, since this file simply
+    # is not there. Without this, a chain that selected onchigh aborted before running
+    # ANY step, even with every other input present.
+    IngestStep("onchigh", (("onc", "onc_high_priority.toml"),), _run_onchigh,
+              packaged_defaults=(("onc", ONC),)),
 )
 
 
@@ -347,13 +361,18 @@ def build_parser() -> argparse.ArgumentParser:
         sub = sources.add_parser(step.name, help=f"ingest one {step.name} release")
         sub.add_argument("--release", required=True,
                          help="the upstream release tag, recorded as provenance")
+        defaults = dict(step.packaged_defaults)
         for name, glob in step.inputs:
-            if step.name == "onchigh":
-                # Drugref's own committed data (see ONC above), not a download -- the
-                # one input this loop does not force an operator to supply.
-                sub.add_argument(f"--{name}", type=pathlib.Path, default=ONC,
+            default = defaults.get(name)
+            if default is not None:
+                # Ships inside the package (declared via IngestStep.packaged_defaults
+                # -- see the comment beside ONC above), not a download, so this is the
+                # one flag shape in this loop that is not required. Read from the step
+                # declaration rather than checked by name, so a future packaged input
+                # needs no edit here.
+                sub.add_argument(f"--{name}", type=pathlib.Path, default=default,
                                  help=f"path to the {name} file "
-                                      f"(default: packaged {ONC.name})")
+                                      f"(default: packaged {default.name})")
             else:
                 sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
                                  help=f"path to the {name} file (chain glob: {glob})")
