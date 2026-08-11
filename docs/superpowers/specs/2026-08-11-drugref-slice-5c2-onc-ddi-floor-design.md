@@ -66,7 +66,7 @@ genuinely source-less content will face them again:
 **When curator-originated rules do become necessary, `basis` is the shape to reach for**, and this slice
 deliberately leaves the door open by not spending the column on content that has a source.
 
-## 3. `db/031` — three changes, no new table
+## 3. `db/031` — four changes, one small projection table
 
 1. **Widen `class_contraindication_source`** from `CHECK (source = 'MED-RT')` to
    `CHECK (source IN ('MED-RT', 'ONCHIGH'))`.
@@ -76,6 +76,13 @@ deliberately leaves the door open by not spending the column on content that has
 3. **One `ci_axis` INSERT: `CI_EPC → has_EPC`, `expands_descendants = true`**, plus gap kind
    `unresolved_onc_endpoint` appended to `open_question_gap_kind` (§7) by the same idempotent `DO $$` pattern
    db/029 used.
+4. **`ingest_unresolved_onc_endpoint`** — a small rebuildable projection table, plus the
+   `gap_unresolved_onc_endpoint` view over it. **This is a correction to an earlier draft of this section**,
+   which claimed no new table: `questions._GAP_SOURCES` derives every gap kind **from a view**, and an endpoint
+   that resolves to nothing is by definition not in any table yet, so it must be *recorded* before it can
+   become a question. db/016 solved the identical problem for slice 5b with
+   `ingest_unresolved_ci_object` + `gap_unresolved_ci_object`, and this mirrors that shape exactly — keyed on
+   `(ingest_run, source, entry_id, endpoint_role)`, cleared per source with the rest of the ONC projection.
 
 **Why a third axis rather than forcing every endpoint onto MoA/PE.** The ONC endpoints split across both
 vocabularies and neither subsumes the other: `Cyclooxygenase Inhibitors [MoA]` carries **56** members against
@@ -91,27 +98,35 @@ relationship CHECK already admits `has_EPC`. Neither db/029 nor db/030 is edited
 
 ## 4. The encoded list — one file, two lifetimes per entry
 
-`src/drugref/data/onc_high_priority.yaml`, committed to the repository. Each entry carries two blocks, because
+`src/drugref/data/onc_high_priority.toml`, committed to the repository. Each entry carries two blocks, because
 one interaction is the unit a curator thinks in, but the two halves have **different lifetimes**:
 
-```yaml
-- entry_id: warfarin-nsaid          # stable within the file; the human's handle
-  candidate:                        # WHAT THE PAPERS SAY -- rebuildable projection
-    subject:
-      unii: 5Q7ZVV76EI              # warfarin. The KEY.
-      name: warfarin                # review aid ONLY -- see below
-    object:
-      medrt_code: N0000175722       # Nonsteroidal Anti-inflammatory Drug [EPC]
-      name: Nonsteroidal Anti-inflammatory Drug [EPC]
-    axis: CI_EPC
-    citation: "Phansalkar 2012, Table 2"
-  judgement:                        # WHAT DRUGREF SAYS -- append-only overlay
-    applies: true
-    severity: major
-    evidence_grade: established
-    mechanism: "…drugref's own prose, never the paper's…"
-    management: "…drugref's own prose, never the paper's…"
+```toml
+[[entry]]
+entry_id = "warfarin-nsaid"          # stable within the file; the human's handle
+
+[entry.candidate]                    # WHAT THE PAPERS SAY -- rebuildable projection
+subject_unii = "5Q7ZVV76EI"          # warfarin. The KEY.
+subject_name = "warfarin"            # review aid ONLY -- see below
+object_medrt_code = "N0000175722"    # the KEY.
+object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar 2012, Table 2"
+
+[entry.judgement]                    # WHAT DRUGREF SAYS -- append-only overlay
+applies = true
+severity = "major"
+evidence_grade = "established"
+mechanism = """…drugref's own prose, never the paper's…"""
+management = """…drugref's own prose, never the paper's…"""
 ```
+
+**TOML, not YAML or JSON, and the reason is rule 6.** `tomllib` is in the standard library at the project's
+`requires-python = ">=3.12"` floor, so the format costs **no new dependency and therefore no licence check**,
+while still taking the two things this file genuinely needs: comments (a curator annotating why an endpoint was
+chosen) and multi-line strings (the `mechanism`/`management` prose). YAML would mean adding PyYAML — MIT, so it
+would clear, but a dependency added for file-format taste is one the project does not have to carry. JSON takes
+neither comments nor readable multi-line prose.
 
 The two identifiers above are **real and verified** against `drugref_5c4` (warfarin `5Q7ZVV76EI`; NSAID [EPC]
 `N0000175722`); only the two prose fields are illustrative, and they are the fields §10 requires drugref to
@@ -134,8 +149,10 @@ Per the architecture invariant — parsers pure and streaming, orchestrators the
 - **`ingest/onchigh.py`** — pure. Reads the file, validates structure, returns frozen dataclasses. **No
   database access**, so every structural rule is testable without a DSN.
 - **`ingest/onchigh_run.py`** — the orchestrator, owning one transaction: resolve identifiers to UUIDs, expand
-  salt forms (§6), **delete-and-rebuild `class_contraindication WHERE source = 'ONCHIGH'`**, record the
-  `ingest_run`, rebuild `open_question`.
+  salt forms (§6), **delete-and-rebuild `class_contraindication WHERE source = 'ONCHIGH'`** through the
+  existing `interactions.clear_source_contraindications` / `interactions.add_contraindication` (both already
+  take `source` — this slice adds no writer for the candidate tier), record the unresolved endpoints (§7),
+  close the `ingest_run`, rebuild `open_question`.
 
 **Two commands, not one, because they write different tiers:**
 
@@ -191,7 +208,9 @@ two treatments:**
 - A **malformed** entry (unknown axis, missing block, name↔identifier mismatch) **raises and aborts the
   ingest.** The file is hand-authored; a typo is a bug, not a gap.
 - An entry whose identifier is well-formed but names a substance or class **drugref does not hold** is a
-  genuine coverage gap in the identity spine, and registers as gap kind **`unresolved_onc_endpoint`** (the
+  genuine coverage gap in the identity spine. The orchestrator **records it** into
+  `ingest_unresolved_onc_endpoint` (§3.4) — a gap kind is derived from a view, and an unresolvable endpoint is
+  in no table until one puts it there — whence it registers as gap kind **`unresolved_onc_endpoint`** (the
   fifteenth kind — the CHECK currently lists fourteen). Its `gap_key` is **`ONCHIGH:<entry_id>:<identifier>`**
   — the entry's handle plus the endpoint identifier that failed to resolve, so two unresolved endpoints in one
   entry are two questions rather than one that flickers. **The format is frozen at mint time** like every other
