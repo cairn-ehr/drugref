@@ -76,6 +76,7 @@ nav:
       - GSRS relationship direction runs target → record: decisions/gsrs-relationship-direction.md
       - Curating a drug–condition pair: decisions/curating-a-drug-condition-pair.md
       - Signing the curated overlay: decisions/signing-the-curated-overlay.md
+      - The ONC high-priority floor is facts, not text: decisions/the-onc-high-priority-floor.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

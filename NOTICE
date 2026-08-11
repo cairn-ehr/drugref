@@ -30,3 +30,16 @@ Seed data attributions:
   The committed MED-RT fixture (tests/fixtures/medrt_subset.xml) additionally carries
   the MeSH concept names and ConceptUIs named as endpoints by the MED-RT associations
   it extracts.
+- ONCHIGH (the ONC high-priority drug-drug interaction list) — Phansalkar et al., 2012,
+  and the Ayvaz/Boyce 2015 update, identified under a U.S. Office of the National
+  Coordinator for Health IT (ONC) contract performed by RAND Corporation, whose
+  government-contract terms grant the U.S. government an irrevocable licence to reuse
+  the work. drugref's own determination does not rest on that licence alone: the drug
+  pairs the papers identify are facts, and facts are not copyrightable (Feist
+  Publications, Inc. v. Rural Telephone Service Co., 499 U.S. 340 (1991)). drugref
+  re-encodes the interactions, never the papers' text — no verbatim text from either
+  paper enters any field, every `mechanism` and `management` string is authored by
+  drugref itself, and each entry cites its source paper so provenance is inspectable.
+  See "The ONC high-priority floor is facts, not text"
+  (https://docs.drugref.org/decisions/the-onc-high-priority-floor/) for the full
+  argument.
