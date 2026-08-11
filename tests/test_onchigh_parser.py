@@ -1,0 +1,107 @@
+# tests/test_onchigh_parser.py
+"""The ONC file's structural rules. PURE -- no DSN, no database.
+
+Every rule here is one a hand-authored file gets wrong, and each is a RAISE
+rather than a skip: the file is curated, so a malformed entry is a bug and a
+silently-dropped entry is a clinical claim going missing (issue 71's lesson).
+"""
+import pathlib
+
+import pytest
+
+from drugref.ingest import onchigh
+
+FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "onc_fixture.toml"
+
+# One valid entry's fields, as defaults for _entry_with below. Mirrors the
+# FIXTURE file's own "warfarin-nsaid" entry so the two stay recognisably the
+# same shape, but this dict is deliberately separate from the fixture: the
+# fixture must stay parseable as a WHOLE FILE (test_parses_a_well_formed_entry
+# calls onchigh.parse(FIXTURE) and expects it to succeed), while every test
+# below needs a file that is broken in exactly one, controlled way. Mixing
+# the two would mean a single committed file could serve neither job.
+_DEFAULTS = {
+    "entry_id": "warfarin-nsaid",
+    "subject_unii": "5Q7ZVV76EI",
+    "subject_name": "warfarin",
+    "object_medrt_code": "N0000175722",
+    "object_name": "Nonsteroidal Anti-inflammatory Drug [EPC]",
+    "axis": "CI_EPC",
+    "citation": "unit test citation, not real ONC content",
+    "applies": True,
+    "severity": "major",
+    "evidence_grade": "established",
+}
+
+
+def _entry_with(**overrides):
+    """Emit one valid [[entry]] TOML block, with named fields overridden or
+    (passed as None) omitted entirely. Kept as dumb string formatting -- a
+    helper that itself needs testing is not a helper -- so every case below
+    is readable as "the default entry, minus/instead of this one thing"."""
+    fields = {**_DEFAULTS, **overrides}
+    lines = ["[[entry]]", f'entry_id = "{fields["entry_id"]}"', "", "[entry.candidate]"]
+    for key in ("subject_unii", "subject_name", "object_medrt_code",
+                "object_name", "axis", "citation"):
+        if fields[key] is not None:
+            lines.append(f'{key} = "{fields[key]}"')
+    lines += ["", "[entry.judgement]", f'applies = {str(fields["applies"]).lower()}']
+    for key in ("severity", "evidence_grade"):
+        if fields[key] is not None:
+            lines.append(f'{key} = "{fields[key]}"')
+    return "\n".join(lines) + "\n"
+
+
+def test_parses_a_well_formed_entry():
+    entries = onchigh.parse(FIXTURE)
+    entry = next(e for e in entries if e.entry_id == "warfarin-nsaid")
+    assert entry.candidate.subject_unii == "5Q7ZVV76EI"
+    assert entry.candidate.axis == "CI_EPC"
+    assert entry.judgement.applies is True
+    assert entry.judgement.severity == "major"
+
+
+def test_an_unknown_axis_raises(tmp_path):
+    """ci_axis is the vocabulary's one home, but the PARSER still refuses a value
+    it can see is wrong -- the alternative is an ingest that fails halfway with
+    half the file already written."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(axis="CI_INVENTED"))
+    with pytest.raises(onchigh.OncFormatError, match="CI_INVENTED"):
+        onchigh.parse(bad)
+
+
+def test_an_asserting_entry_without_severity_raises(tmp_path):
+    """db/029's completeness CHECK would refuse this row anyway. Catching it in
+    the parser means the curator learns WHICH ENTRY is wrong, by entry_id, rather
+    than reading a constraint name off a traceback."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(applies=True, severity=None))
+    with pytest.raises(onchigh.OncFormatError, match="warfarin-nsaid"):
+        onchigh.parse(bad)
+
+
+def test_a_non_asserting_entry_carrying_a_grade_raises(tmp_path):
+    """The other half of the same CHECK: 'not real, but graded major' must be
+    unrepresentable, not merely discouraged."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(applies=False, severity="major"))
+    with pytest.raises(onchigh.OncFormatError):
+        onchigh.parse(bad)
+
+
+def test_a_duplicate_entry_id_raises(tmp_path):
+    """entry_id is the handle a gap_key is built from, so two entries sharing one
+    would mint a single question_uuid for two different gaps."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with() + "\n" + _entry_with())
+    with pytest.raises(onchigh.OncFormatError, match="duplicate"):
+        onchigh.parse(bad)
+
+
+def test_a_missing_citation_raises(tmp_path):
+    """Rule 6: a claim with no source is exactly what this slice must not ship."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(citation=None))
+    with pytest.raises(onchigh.OncFormatError, match="citation"):
+        onchigh.parse(bad)

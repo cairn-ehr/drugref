@@ -1,0 +1,53 @@
+# tests/fixtures/onc_fixture.toml
+#
+# HAND-WRITTEN TEST FIXTURE -- NOT real ONC high-priority list content. The real
+# file (Phansalkar 2012 / Ayvaz-Boyce 2015, re-encoded per rule 6) lands in
+# Task 9, gated on a clinician's review. This file exists only to give
+# test_onchigh_parser.py and later orchestrator tests something structurally
+# valid to parse. Nothing here is a clinical claim: `severity` and
+# `evidence_grade` are controlled-vocabulary tokens the parser must accept
+# SOME value for, not an assertion about warfarin or tranylcypromine, and
+# `mechanism`/`management` are left out entirely rather than inventing prose
+# that would read as one.
+#
+# Both endpoints below are real, verified identifiers (per the task-3 brief)
+# so a later orchestrator test can resolve them against a test database:
+#   - warfarin, UNII 5Q7ZVV76EI
+#   - tranylcypromine, UNII 3E3V44J4Z9
+#   - MED-RT N0000175722 = "Nonsteroidal Anti-inflammatory Drug [EPC]"
+#   - MED-RT N0000000160 = "Cyclooxygenase Inhibitors [MoA]"
+# The PAIRING of subject to object below is arbitrary test scaffolding, not a
+# clinical statement -- tranylcypromine is not asserted here to interact with
+# COX inhibitors; the class was picked only because both its identifier and
+# axis (CI_MoA) are real and resolvable, giving a second axis to exercise
+# alongside entry one's CI_EPC.
+
+[[entry]]
+entry_id = "warfarin-nsaid"
+
+[entry.candidate]
+subject_unii = "5Q7ZVV76EI"
+subject_name = "warfarin"
+object_medrt_code = "N0000175722"
+object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"
+axis = "CI_EPC"
+citation = "test fixture only -- not a real citation"
+
+[entry.judgement]
+applies = true
+severity = "major"
+evidence_grade = "established"
+
+[[entry]]
+entry_id = "tranylcypromine-cox"
+
+[entry.candidate]
+subject_unii = "3E3V44J4Z9"
+subject_name = "tranylcypromine"
+object_medrt_code = "N0000000160"
+object_name = "Cyclooxygenase Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "test fixture only -- not a real citation"
+
+[entry.judgement]
+applies = false
