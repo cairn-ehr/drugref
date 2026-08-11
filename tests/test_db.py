@@ -223,6 +223,18 @@ def test_apply_migrations_is_idempotent(conn):
         # view (gap kind fifteen), named explicitly for the same
         # information_schema.tables reason as above.
         "ingest_unresolved_onc_endpoint", "gap_unresolved_onc_endpoint",
+        # Slice 5c.2, db/032: the class-subject round (spec section 14). A SECOND
+        # interaction-rule grain beside class_contraindication/curated_interaction's
+        # moiety x class shape, needed once retrieving the ONC list showed 8 of its
+        # 15 entries are class x class and 1 is a class self-pair.
+        # class_pair_contraindication mirrors class_contraindication exactly
+        # (rebuildable, source-scoped candidate tier); curated_class_interaction
+        # mirrors curated_interaction exactly (append-only overlay, same floor
+        # reused rather than copied). Two tables rather than a nullable column on
+        # the existing pair, because forbid_multiple_live_assertions compares the
+        # natural key by EQUALITY and NULL = NULL is never true -- a polymorphic
+        # subject would silently stop guarding.
+        "class_pair_contraindication", "curated_class_interaction",
     }
 
 
