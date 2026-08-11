@@ -55,11 +55,27 @@ from drugref.ingest import onchigh
 # identifier_scheme` is free text (db/031), a descriptive label rather than a
 # closed set -- so keeping the two spellings as named constants here is only
 # about not hand-typing the same literal at every call site, not a second copy
-# of a CHECK. Chosen to mirror the OncCandidate field names they come from
-# (`subject_unii` / `object_medrt_code`) so a curator reading
-# `gap_unresolved_onc_endpoint` recognises the scheme immediately.
+# of a CHECK.
+#
+# SUBJECT_SCHEME mirrors `identity_claim.scheme` exactly ('UNII').
+#
+# OBJECT_SCHEME MUST SPELL THE AUTHORITY THE WAY THE REST OF THE REPO SPELLS
+# IT -- 'MED-RT', never the hyphen-less 'MEDRT' the OncCandidate field name
+# (`object_medrt_code`) might tempt a reader to copy. `ids.canonical_source`
+# exists precisely because this project already lost a round to spelling
+# drift: three spellings of one source minted one class_uuid but were stored
+# under three different strings, and a per-source rebuild silently missed
+# rows it owned (ids.py's own docstring). Getting this wrong here is worse
+# than that: Task 5's `_GAP_SOURCES` entry builds an unresolved endpoint's
+# `gap_key` as `'ONCHIGH:' || entry_id || ':' || identifier_scheme || ':' ||
+# identifier_value`, and `question_uuid = uuid5(gap_kind, gap_key)` is
+# immortal and cited by external tooling -- so 'MEDRT' would not just be an
+# inconsistent label, it would be PERMANENTLY BAKED into a question a curator
+# might already be tracking. Do not "tidy" this back to match the Python
+# field name; the value must match `substance_class.source` and
+# `ids._SOURCE_CANONICAL`'s canonical spelling instead.
 SUBJECT_SCHEME = "UNII"
-OBJECT_SCHEME = "MEDRT"
+OBJECT_SCHEME = "MED-RT"
 
 
 class EndpointMismatchError(ValueError):
