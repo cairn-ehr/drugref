@@ -223,6 +223,33 @@ def test_a_first_run_writes_one_judgement_per_resolved_form(conn, seeded, ingest
     assert summary.judgements_superseded == 0
 
 
+def test_every_entry_is_accounted_for_in_exactly_one_bucket(conn, seeded, ingested):
+    """FIXTURE carries two entries and `seeded` deliberately resolves only one of
+    them: "warfarin-nsaid" resolves fully, "tranylcypromine-cox" resolves NEITHER
+    endpoint (neither tranylcypromine's UNII nor its MED-RT class is registered
+    here) -- the same mixed-resolution fixture test_onchigh_run.py documents on
+    its own copy of FIXTURE. Fix round 1 found that fact was true of the fixture
+    but untested here, and that `curate_onchigh` dropped the unresolved entry with
+    no counter and no log line -- exactly issue 71's "a dropped row counted into
+    nothing" defect. This test pins BOTH: the reconciliation equation every future
+    outcome must keep true, and the concrete split this fixture produces today, so
+    a change that quietly widened `seeded` to resolve both entries would also be
+    caught (by the second pair of assertions) rather than passing on a vacuously
+    satisfied equation.
+    """
+    summary = cli_curate.curate_onchigh(conn, path=FIXTURE, reviewed_by="Dr X",
+                                        reviewed_against="ONCHigh-2015")
+    # THE EQUATION: every entry `onchigh.parse` returned lands in EXACTLY ONE of
+    # these two buckets, always -- true regardless of how many entries or how they
+    # resolve, so a third outcome added later without a matching counter breaks
+    # this line rather than going quiet.
+    assert summary.rules_seen == summary.entries_resolved + summary.entries_unresolved
+    # THE CONCRETE SPLIT, so "tranylcypromine-cox doesn't resolve" stays a fact
+    # this suite checks rather than one only a docstring asserts.
+    assert summary.entries_resolved == 1
+    assert summary.entries_unresolved == 1
+
+
 def test_a_second_run_against_an_unedited_file_writes_nothing(conn, seeded, ingested):
     """Idempotent by COMPARISON, not by luck. The table is append-only, so a
     re-run that blindly inserted would write a permanent duplicate on every

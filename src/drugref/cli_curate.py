@@ -47,6 +47,7 @@ two lists that drift the moment one of them is widened. An illegal value reaches
 CheckViolation` there, unmodified and uncaught -- see `_handle_curate_onchigh` below
 for why the CLI layer does not catch it either.
 """
+import logging
 import pathlib
 import sys
 from dataclasses import dataclass
@@ -54,6 +55,8 @@ from dataclasses import dataclass
 import drugref
 from drugref import curation
 from drugref.ingest import onchigh, onchigh_run
+
+log = logging.getLogger(__name__)
 
 # Same packaged file `ingest onchigh` defaults to (cli.py's own ONC constant) --
 # re-derived here rather than imported from cli.py. cli.py imports THIS module to
@@ -93,19 +96,40 @@ class CurateSummary:
     dataclass (e.g. `onchigh_run.OncSummary`) so a caller or test can assert on it
     rather than parse printed output.
 
-    `rules_seen` counts FILE ENTRIES, resolved or not -- mirroring `OncSummary.
-    entries_read` -- so an operator can tell "the file defines N rules" from "N of
-    them actually resolved and were graded", the same distinction `ingest onchigh`
-    already reports via its own `endpoints_unresolved`.
+    TWO GRAINS, DELIBERATELY KEPT SEPARATE AND EACH INTERNALLY RECONCILED -- fix
+    round 1 found that an earlier version of this dataclass counted `rules_seen` at
+    the FILE-ENTRY grain while silently dropping every entry that failed to resolve
+    on the floor, so the four numbers a caller could see could never be reconciled
+    against each other (issue 71's lesson: a dropped row counted into nothing is
+    exactly the defect a worklist exists to catch).
 
-    The other three counts are per RESOLVED SALT FORM (one curated_interaction
-    natural key per element of `ResolvedEndpoint.subject_moiety_uuids`), because that
-    is the grain `record_interaction_judgement` writes at: one file entry with two
-    gated-in salt forms yields up to two rows, exactly as `ingest onchigh`'s own
-    `salt_forms_expanded` counts `class_contraindication` rows rather than file
-    entries.
+    1. ENTRY grain: `rules_seen == entries_resolved + entries_unresolved`, always --
+       every entry `onchigh.parse` returns lands in EXACTLY ONE of those two buckets,
+       and `test_cli_curate.py::test_every_entry_is_accounted_for_in_exactly_one_bucket`
+       pins the equation so a third outcome added later without a counter fails the
+       build instead of going quiet.
+    2. FORM grain: `judgements_written + judgements_superseded + unchanged` sums to
+       the total number of RESOLVED salt forms across every entry in
+       `entries_resolved` -- one curated_interaction natural key per element of
+       `ResolvedEndpoint.subject_moiety_uuids`, exactly as `ingest onchigh`'s own
+       `salt_forms_expanded` counts `class_contraindication` rows rather than file
+       entries. This total is NOT `entries_resolved`, because one entry with two
+       gated-in salt forms contributes two form-grain outcomes -- possibly two
+       DIFFERENT ones, if a salt form the composition tree only just gated in has no
+       live judgement yet while its sibling was already graded identically on a
+       previous run.
+
+    `entries_unresolved` counts ENTRIES, not endpoints (contrast `onchigh_run.
+    OncSummary.endpoints_unresolved`, which can be up to 2 per entry): an entry whose
+    subject OR object fails to resolve contributes exactly 1 here, because
+    `curate_onchigh` skips the whole entry rather than half-grading it. See
+    `curate_onchigh`'s own docstring for why this module does not also write
+    `ingest_unresolved_onc_endpoint` -- that table's PRIMARY KEY includes
+    `ingest_run`, which this command never opens.
     """
     rules_seen: int
+    entries_resolved: int
+    entries_unresolved: int
     judgements_written: int
     judgements_superseded: int
     unchanged: int
@@ -146,10 +170,29 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
     FUNCTIONS `ingest onchigh` calls -- not `class_contraindication` itself. The
     candidate projection and the curated overlay are independently rebuildable /
     append-only, so this function resolves straight from the file's own UNII/MED-RT
-    identifiers rather than trusting whatever the candidate tier last wrote; an entry
-    whose subject or object does not currently resolve is SKIPPED here exactly as it
-    is queued (not written) by `ingest onchigh` -- grading an unresolvable rule would
-    write a judgement with no candidate row for `curated_ddi_pair` to join against.
+    identifiers rather than trusting whatever the candidate tier last wrote.
+
+    AN UNRESOLVED ENTRY IS SKIPPED, NOT SILENTLY -- fix round 1 found an earlier
+    version of this loop dropped it with neither a counter nor a log line, which is
+    precisely the defect issue 71 was filed to stop: a dropped row counted into
+    nothing is a number nobody can act on. This function counts it into
+    `CurateSummary.entries_unresolved` and logs it (`entry_id` plus how many of its
+    two endpoints failed) so an operator reading the summary or the log can tell "the
+    whole file graded" from "some entries vanished quietly".
+
+    THIS FUNCTION DELIBERATELY DOES NOT ALSO WRITE `ingest_unresolved_onc_endpoint`.
+    That table's PRIMARY KEY is `(ingest_run, source, entry_id, endpoint_role)`
+    (db/031) -- an `ingest_run` row is not optional context, it is part of the key --
+    and `curate_onchigh` never opens one: db/029's own docstring on
+    `curated_interaction` is explicit that "a human curator's assertion has no
+    ingest run at all". Manufacturing a fake ingest_run here purely to satisfy that
+    key would misrepresent this command as an ingest, and `ingest onchigh` already
+    owns that worklist (gap kind fifteen, `unresolved_onc_endpoint`) -- writing to it
+    a second time from a command with no run of its own would either need to borrow
+    someone else's `ingest_run_id` (attributing the finding to the wrong run) or
+    invent one (a run that ingested nothing). `entries_unresolved` plus the log line
+    is therefore the ONLY signal this command gives; the durable, queryable worklist
+    entry is `ingest onchigh`'s job, run separately.
 
     PER RESOLVED SALT FORM, not per file entry: `resolve_entry` already expands the
     subject to every gated-in salt form before this function ever sees it (see
@@ -166,15 +209,23 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
     path = pathlib.Path(path)
     entries = onchigh.parse(path)
 
+    entries_resolved = entries_unresolved = 0
     judgements_written = judgements_superseded = unchanged = 0
     for entry in entries:
         resolved = onchigh_run.resolve_entry(conn, entry)
         if not isinstance(resolved, onchigh_run.ResolvedEndpoint):
             # A well-formed identifier drugref does not (yet) hold is a coverage
-            # gap `ingest onchigh` already reports on its own worklist -- grading a
-            # rule with no resolvable candidate would write a judgement that
+            # gap -- not a bug in the file (see `resolve_entry`'s own docstring) --
+            # so this is a WARNING an operator can act on, not a silent drop.
+            # Grading a rule with no resolvable candidate would write a judgement
             # `curated_ddi_pair` can never join to a pair.
+            entries_unresolved += 1
+            log.warning(
+                "curate onchigh: entry %r did not resolve (%d of 2 endpoints) -- "
+                "no judgement written; run `drugref ingest onchigh` to record it on "
+                "the coverage-gap worklist", entry.entry_id, len(resolved))
             continue
+        entries_resolved += 1
 
         judgement = entry.judgement
         for subject_moiety_uuid in resolved.subject_moiety_uuids:
@@ -195,7 +246,8 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
                 judgements_superseded += 1
 
     return CurateSummary(
-        rules_seen=len(entries), judgements_written=judgements_written,
+        rules_seen=len(entries), entries_resolved=entries_resolved,
+        entries_unresolved=entries_unresolved, judgements_written=judgements_written,
         judgements_superseded=judgements_superseded, unchanged=unchanged)
 
 
