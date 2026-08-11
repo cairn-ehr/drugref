@@ -12,7 +12,7 @@ small, consensus-derived, publicly-funded set of interactions that a prescribing
 
 | | |
 |---|---|
-| **In scope** | the encoded ONC list as a second **candidate source** · `db/031` (three changes, no new table) · a pure parser and an orchestrator · salt-form resolution · one new gap kind · drugref's own graded judgements over the list · the signing round-trip · the rule-6 determination in writing |
+| **In scope** | the encoded ONC list as a second **candidate source** · `db/031` (four changes) · a pure parser and an orchestrator · salt-form resolution · one new gap kind · drugref's own graded judgements over the list · the signing round-trip · the rule-6 determination in writing · **`db/032`'s class-subject rule (§14 — added after the list was retrieved and measured)** |
 | Not in scope | curator-**originated** rules with no upstream backing — §2.3 records why this slice does not need them |
 | Not in scope | SPL/DailyMed mining (5c.3) |
 | Not in scope | `curated_condition` content — this slice touches the **interaction** half only; the 168 contradicted pairs (issue 51) stay queued |
@@ -301,3 +301,81 @@ restated that way, and the tests assert the halves independently:
 | A MED-RT release later asserts the same rule | Intended and harmless: `source` is in the candidate PK so both coexist, and `curated_interaction`'s key omits `source` so one judgement still covers both |
 | `CI_EPC` expansion is wider than expected | Measured before content lands: per-entry pair counts are reported by the orchestrator and reviewed against the paper's intent |
 | Per-form expansion multiplies rows | Counted and reported in §11; all forms derive from one file entry, so they cannot disagree |
+
+## 14. The class-subject round — what retrieving the list changed
+
+**This section was written after Tasks 1–8 shipped, when the ONC list was actually retrieved.** It records a
+design error in §2 and the decision that corrects it. §2 is deliberately left standing: the reasoning there was
+sound on the evidence it had, and the evidence it lacked is the point.
+
+### 14.1 The error
+
+§2.1 measured whether **MED-RT** carried the ONC pairs. It never asked what shape the **ONC list itself** is
+in — and that is the question that decides the slice. Retrieved from Phansalkar 2012's Table 2 (PMID 22539083,
+PMC3422823, open access), the fifteen entries divide like this:
+
+| shape | count | entries |
+|---|---|---|
+| **drug × class** — fits the moiety×class grain as built | **4** | atazanavir × PPIs · irinotecan × CYP3A4 inhibitors · ramelteon × CYP1A2 inhibitors · tizanidine × CYP1A2 inhibitors |
+| drug × drug — the object must be a *class* here | 2 | febuxostat × azathioprine/mercaptopurine · tranylcypromine × procarbazine |
+| **class × class** | **8** | SSRIs · TCAs · triptans · amphetamine derivatives · narcotic analgesics — each × MAOIs; statins × CYP3A4 inhibitors; CYP3A4 inhibitors × ergot alkaloids; CYP3A4 inducers × protease inhibitors |
+| class **self-pair** | 1 | QT-prolonging agents × QT-prolonging agents |
+
+So the grain this slice built holds **four** of fifteen. A slice delivering four could not honestly be called a
+floor.
+
+### 14.2 Why flattening was rejected
+
+The cheap answer is to invert each class×class entry so the enumerable side becomes the subject — the shape
+MED-RT itself uses, and the reason `tranylcypromine × Serotonin Uptake Inhibitors [MoA]` already exists as a
+candidate — then write one curated row per member moiety. It needs no migration and the Task 1–8 machinery
+carries it unchanged.
+
+It was rejected on the measured cost. Member counts on `drugref_5c4`: `Serotonin Uptake Inhibitors [MoA]`
+**73** · `Cytochrome P450 3A4 Inhibitors [MoA]` **46** · `Monoamine Oxidase Inhibitors [MoA]` **31** ·
+`Cytochrome P450 1A2 Inhibitors [MoA]` **21** · `Cytochrome P450 3A4 Inducers [MoA]` **21** · statins **18** ·
+PPIs **17**. The five MAOI entries alone flatten to **~155 curated rows for five clinical facts**, before
+salt-form expansion — each separately graded, separately signed, separately supersedable, and each an
+opportunity for two rows stating one fact to disagree. That is the defect 5c.1's key design was written to
+prevent, reintroduced one tier up. It also makes the *choice of orientation* an unrecorded curation
+judgement, and orientation is not always obvious.
+
+### 14.3 The decision: `db/032` adds a class-subject rule
+
+A rule whose **subject is a class**, expanded on **both** sides at read time. One row holds one ONC entry.
+
+**Two new tables, not a polymorphic subject column.** Making `subject_moiety_uuid` nullable beside a new
+`subject_class_uuid` would break the overlay floor: `forbid_multiple_live_assertions` compares natural-key
+columns by equality, and `NULL = NULL` is not true, so the single-live guard would silently stop guarding —
+the exact class of defect this project keeps finding. Slice 5b set the precedent when a `condition` turned out
+not to be a `substance_class`: **two relations, because the endpoints are different kinds of thing.**
+
+- `class_pair_contraindication` — the candidate tier: `(subject_class_uuid, object_class_uuid, relationship,
+  source, ingest_run)`, PK including `source`, rebuildable and source-scoped exactly like
+  `class_contraindication`.
+- `curated_class_interaction` — the overlay tier: the same grading columns, the same append-only floor
+  triggers, the same deferred single-live guard, natural key `(subject_class_uuid, object_class_uuid,
+  relationship)`.
+
+**The self-pair becomes expressible, and that is a real gain.** `QT-prolonging × QT-prolonging` is a subject
+class equal to its object class; the expansion excludes identical moieties, which `db/014` already requires at
+the pair level. So the target is **15 of 15**, not fourteen. It remains *pairwise* — issue 20's genuine n-ary
+question is untouched.
+
+**One consumer view, not two.** `curated_ddi_pair` is `CREATE OR REPLACE`d (as `db/030` already did to append
+`signature_status`) to carry both grains, gaining `rule_grain` (`moiety_rule` | `class_rule`) and
+`via_subject_class` (NULL for a moiety rule). Rationale unchanged from §8: fewer rows is the harm direction for
+a contraindication, so a consumer who forgets a filter must get **more** advice, never less. Its existing rows
+keep their exact meaning and remain a strict subset.
+
+**The cost, stated.** Both-side expansion is members × members: SSRIs (73) × MAOIs (31) is ~2,263 pairs from
+one rule. That is the point of the shape — but it lands next to issue 37 (the DAG expanded unprunably per
+query) and issue 75 (`gap_uncurated_interaction_rule`'s ~2.7 s), so the hot path **must be measured, not
+assumed**, against 5c.4's ~1.4 ms baseline, and the measurement reported whichever way it goes.
+
+### 14.4 What this does not change
+
+`db/031` is applied and frozen; `db/032` is additive. Tasks 1–8 stand unaltered — the class-subject shape is a
+second grain beside the first, not a replacement, and the four drug×class entries still land through the
+moiety×class path built for them. §2.3's rejection of a `basis` column also stands: these rules have an
+upstream authority, and `candidate_source` still distinguishes it.

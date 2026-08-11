@@ -749,9 +749,141 @@ git commit -m "test: the ONC read path, per-source counts and the signing round-
 
 ---
 
-### Task 9: The clinical content
+### Task 9: `db/032` — the class-subject rule
 
-**This task does not begin until Tasks 1–8 are green, and no row it produces is committed without the reviewing clinician's sign-off.**
+**Added by the class-subject round; the argument is spec §14, which must be read before starting.** Retrieving Phansalkar 2012's Table 2 showed that only **4 of 15** entries are drug×class; **8** are class×class and **1** is a class self-pair. This task adds the second grain.
+
+**Files:**
+- Create: `db/032_class_subject_rule.sql`
+- Test: `tests/test_class_subject_schema.py`
+
+**Interfaces:**
+- Produces: `drugref.class_pair_contraindication (subject_class_uuid, object_class_uuid, relationship, source, ingest_run)` — candidate tier, PK includes `source`, rebuildable; `drugref.curated_class_interaction` — overlay tier, natural key `(subject_class_uuid, object_class_uuid, relationship)`, same grading columns and same floor as `curated_interaction`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover, each for its stated reason:
+
+```python
+def test_a_class_pair_candidate_can_be_written(conn, two_classes, an_ingest_run): ...
+
+def test_the_candidate_key_includes_source(conn, two_classes, medrt_run, onchigh_run):
+    """Two authorities may assert the same class pair; both rows coexist, exactly
+    as class_contraindication already allows for the moiety grain."""
+
+def test_a_self_pair_is_permitted_at_the_CLASS_grain(conn, one_class, an_ingest_run):
+    """QT-prolonging x QT-prolonging is a real ONC entry. db/014 forbids a MOIETY
+    pairing with itself, and that stays true -- the expansion excludes identical
+    moieties. A class contraindicated with its own members is not the same claim."""
+
+def test_curated_class_interaction_refuses_an_update(conn, ...):
+    """The overlay floor, on the new table. Without this the append-only
+    guarantee is a guarantee about one table out of two."""
+
+def test_curated_class_interaction_refuses_two_live_rows_for_one_key(conn, ...):
+    """The deferred single-live guard. It compares natural-key columns by
+    EQUALITY, which is why this table exists rather than a nullable
+    subject_moiety_uuid beside a nullable subject_class_uuid -- NULL = NULL is
+    not true, and the guard would have silently stopped guarding."""
+
+def test_a_correction_supersedes_and_the_old_row_survives(conn, ...): ...
+
+def test_the_completeness_check_is_enforced_here_too(conn, ...):
+    """applies AND severity AND evidence_grade, or NOT applies AND neither --
+    'real but ungraded' and 'not real but graded major' stay unrepresentable."""
+```
+
+- [ ] **Step 2: Run them, confirm they fail** with `UndefinedTable`.
+
+Run: `DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest tests/test_class_subject_schema.py -v`
+
+- [ ] **Step 3: Write `db/032_class_subject_rule.sql`**
+
+Mirror `db/029`'s `curated_interaction` section closely — reuse `drugref.forbid_overlay_rewrite` and `drugref.forbid_multiple_live_assertions` (both already generic over the natural key), the partial live-key index matching the trigger's predicate exactly, and the `question_uuid` index. Do **not** copy the vocabulary CHECKs by hand where an FK will do: `relationship` is an FK into `ci_axis`, as in db/029.
+
+Comment the two decisions spec §14 records: why two tables rather than a polymorphic subject column (the `NULL = NULL` failure of the single-live guard), and why a class self-pair is legal here while a moiety self-pair is not.
+
+- [ ] **Step 4: Run them, confirm they pass. Then the full suite.**
+
+A failure in an existing test means db/032 disturbed an invariant — investigate, never re-baseline.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add db/032_class_subject_rule.sql tests/test_class_subject_schema.py
+git commit -m "feat(db): db/032 adds the class-subject interaction rule"
+```
+
+---
+
+### Task 10: Class-subject entries end to end
+
+**Files:**
+- Modify: `src/drugref/ingest/onchigh.py`, `src/drugref/ingest/onchigh_run.py`, `src/drugref/cli_curate.py`, `src/drugref/interactions.py`, `src/drugref/curation.py`
+- Test: `tests/test_onchigh_parser.py`, `tests/test_onchigh_run.py`, `tests/test_cli_curate.py`
+
+**Interfaces:**
+- The TOML `[entry.candidate]` block gains an alternative subject: `subject_medrt_code` + `subject_name` instead of `subject_unii` + `subject_name`. **Exactly one of the two forms**, enforced in the pure parser with a test that plants both and plants neither.
+- `interactions.add_class_pair_contraindication(...)` / `clear_source_class_pair_contraindications(conn, source)` mirroring the existing pair.
+- `curation.record_class_interaction_judgement(...)` / `live_class_interaction_judgement(...)` mirroring the existing pair.
+
+- [ ] **Step 1: Write the failing tests**
+
+Parser: a class-subject entry parses; both subject forms present raises naming the `entry_id`; neither raises. Resolver: a class subject resolves by MED-RT code, and the name-mismatch check applies to it exactly as to a UNII subject. Orchestrator: a class-subject entry writes a `class_pair_contraindication` row; an unresolvable class subject becomes an `unresolved_onc_endpoint` question with `identifier_scheme = 'MED-RT'`. Curate: idempotence and supersession on the new table; the reconciliation assertion from Task 7 still holds across **both** grains.
+
+**Salt-form expansion does not apply to a class subject** — a class has no salt forms — and a test should pin that rather than leaving it implied.
+
+- [ ] **Step 2: Run, confirm failure. Step 3: implement. Step 4: run, confirm pass, then the full suite.**
+
+**Watch file sizes.** `onchigh_run.py` was 490 lines and `questions.py` 499 before this task. If either would cross ~500, split on a real seam — the class-subject path is a natural one — and say why in the commit. Do not append past the guideline; issue 89 is already open on two files that did.
+
+- [ ] **Step 5: Commit**
+
+---
+
+### Task 11: The two-grain read path, and the measurement
+
+**Files:**
+- Modify: `db/032_class_subject_rule.sql` **only if it has not yet been applied anywhere** — otherwise a new `db/033`. Check the ledger: if Task 9's migration is committed and applied in any database you did not create yourself, it is frozen and this goes in `db/033`.
+- Test: `tests/test_class_subject_read_path.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_a_graded_class_rule_reaches_curated_ddi_pair(conn, ...):
+    """One curated_class_interaction row must reach every pair its two classes
+    expand to -- that is the whole point of the grain."""
+
+def test_the_rule_grain_column_distinguishes_them(conn, ...):
+    """moiety_rule | class_rule, so a consumer can tell which shape produced a
+    row without joining back."""
+
+def test_a_class_rule_never_pairs_a_moiety_with_itself(conn, ...):
+    """The self-pair entry (QT x QT) expands to distinct pairs only. This is the
+    test that makes the self-pair safe rather than merely permitted."""
+
+def test_the_moiety_grain_rows_are_unchanged(conn, ...):
+    """curated_ddi_pair's existing rows keep their exact meaning and remain a
+    strict subset -- fewer rows is the harm direction, so widening must add."""
+```
+
+- [ ] **Step 2: Run, confirm failure. Step 3: `CREATE OR REPLACE VIEW drugref.curated_ddi_pair`** carrying both grains plus `rule_grain` and `via_subject_class` (NULL for a moiety rule), expanding the class subject through `ci_class_subtree` + `class_membership` exactly as the object side already is, honouring `ci_axis.expands_descendants` and `class_expansion_policy_current` on both sides, and excluding `subject_moiety = partner_moiety`.
+
+- [ ] **Step 4: MEASURE, and report the number whichever way it goes.**
+
+```sql
+EXPLAIN ANALYZE SELECT * FROM drugref.curated_ddi_pair WHERE subject_moiety = '<a moiety>';
+```
+
+Baseline is 5c.4's **~1.4 ms** populated. Both-side expansion is members × members — SSRIs (73) × MAOIs (31) is ~2,263 pairs from one rule — so this lands next to issue 37 and issue 75. **A regression is a finding to report, not a number to bury**: record it in the report with the query plan, and do not adjust the test to accommodate it.
+
+- [ ] **Step 5: Full suite, then commit.**
+
+---
+
+### Task 12: The clinical content
+
+**This task does not begin until Tasks 1–11 are green, and no row it produces is committed without the reviewing clinician's sign-off.** It now encodes **all fifteen** entries across **two grains** — see spec §14 and Tasks 9–11.
 
 **Files:**
 - Create: `src/drugref/data/onc_high_priority.toml`
@@ -800,7 +932,7 @@ git commit -m "feat(data): the ONC high-priority DDI floor, clinically reviewed"
 
 ---
 
-### Task 10: Documentation and the ROADMAP correction
+### Task 13: Documentation and the ROADMAP correction
 
 **Files:**
 - Modify: `docs/PROJECT-NOTES.md`, `docs/ROADMAP.md`, `docs/HANDOVER.md`
