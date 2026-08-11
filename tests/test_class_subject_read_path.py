@@ -21,7 +21,7 @@ classes for exactly this reason, since that view was previously scoped only to
 `class_contraindication.object_class_uuid`.
 """
 
-from drugref import curation, ids, interactions
+from drugref import classes, curation, ids, interactions
 
 # `_a_class` (a single MED-RT class row) and `a_graded_rule` (a moiety-grain rule,
 # already graded via its own test) are conftest.py / test_curated_overlay.py
@@ -186,3 +186,143 @@ def test_the_moiety_grain_rows_are_unchanged(conn, a_graded_rule, ingest_run_id)
         "FROM drugref.curated_ddi_pair WHERE subject_moiety = %s",
         (a_graded_rule["subject"],)).fetchall() == [
             (a_graded_rule["partner"], "major", "avoid", "moiety_rule", None)]
+
+
+# ============================================================================
+# DAG descent and policy gating, on BOTH sides of the class grain (fix round 1)
+# ============================================================================
+# WHY THIS SECTION EXISTS. Every test above uses DIRECT membership only on both
+# sides -- none inserts a `class_parent` edge or a `class_expansion_policy` row.
+# That leaves db/033's actually-new behaviour -- the SUBJECT side descending the
+# class DAG and being gated by `class_expansion_policy_current`, something Tasks
+# 1-8 never needed because their subject was always one fixed moiety -- completely
+# unpinned: a broken subtree walk or a dropped deny-gate on either side would not
+# fail a single test in this suite. A `deny` policy that stopped being honoured
+# would silently resurrect exactly the pairs db/027 exists to withhold.
+#
+# THE OBJECT SIDE'S OWN CTE (`class_rule_partner_member`) gets the same two tests,
+# not only the subject side. It is SHAPED like `ddi_candidate_pair`'s long-tested
+# object expansion (test_ddi_pairs.py's test_a_rule_on_a_parent_reaches_a_member_
+# of_the_child and test_a_rule_on_a_denied_root_reaches_direct_members_only), but
+# it is NOT that code -- `class_rule_partner_member` is a separate CTE over
+# `curated_class_interaction`/`class_pair_contraindication`, and a defect local to
+# it (a copy-paste slip naming the wrong side's class, say) would not be caught by
+# any test of `ddi_candidate_pair`, which never touches these tables at all.
+# Duplicating the ASSERTION SHAPE across two already-proven-safe axes is cheap;
+# leaving a whole CTE unpinned because its neighbour is well-tested is the exact
+# complacency that let the subject side go uncovered.
+
+
+def _a_descent_and_policy_fixture(conn, ingest_run_id, *, expanding_side):
+    """A class-subject rule with ONE class expanding (a direct member plus a
+    descendant-only member below it in `class_parent`) and the OTHER class fixed
+    to one direct member, so the two mechanisms under test -- DAG descent and
+    policy gating -- are isolated to a single, named side.
+
+    Returns a dict: `expanding_class` (the class carrying the parent/child pair),
+    `direct`/`descendant_only` (its two members), `fixed_class`/`fixed` (the
+    other side, kept to one class and one direct member so a failure can only be
+    about the side under test), and `subject_class`/`object_class` (the rule's
+    actual two ends, i.e. `expanding_class` relabelled by which side it plays --
+    returned explicitly rather than left for the caller to reconstruct, which is
+    exactly the mistake an earlier draft of this fixture made).
+    """
+    tag = "4" if expanding_side == "subject" else "5"
+    parent = _a_class(conn, ingest_run_id, code=f"N0000000{tag}01",
+                       name=f"{expanding_side.title()} Parent [MoA]")
+    child = _a_class(conn, ingest_run_id, code=f"N0000000{tag}02",
+                      name=f"{expanding_side.title()} Child [MoA]")
+    classes.add_parent_edge(conn, child, parent, ingest_run_id)
+    fixed_class = _a_class(conn, ingest_run_id, code=f"N0000000{tag}03",
+                            name=f"{expanding_side.title()} Fixed [MoA]")
+
+    direct = _a_moiety(conn, ingest_run_id, f"TESTUNII{tag}0", "direct-member")
+    _file_member(conn, direct, parent, ingest_run_id)
+    descendant_only = _a_moiety(conn, ingest_run_id, f"TESTUNII{tag}1",
+                                 "descendant-only-member")
+    _file_member(conn, descendant_only, child, ingest_run_id)  # NOT filed on `parent`
+    fixed = _a_moiety(conn, ingest_run_id, f"TESTUNII{tag}2", "fixed-side-member")
+    _file_member(conn, fixed, fixed_class, ingest_run_id)
+
+    subject_class, object_class = (
+        (parent, fixed_class) if expanding_side == "subject" else (fixed_class, parent))
+    interactions.add_class_pair_contraindication(
+        conn, subject_class, object_class, "CI_MoA", "ONCHIGH", ingest_run_id)
+    curation.record_class_interaction_judgement(
+        conn, subject_class, object_class, "CI_MoA", True,
+        severity="major", evidence_grade="established", reviewed_by="test",
+        reviewed_against="Phansalkar 2012")
+    return dict(expanding_class=parent, direct=direct, descendant_only=descendant_only,
+                fixed_class=fixed_class, fixed=fixed,
+                subject_class=subject_class, object_class=object_class)
+
+
+def _rows_for_rule(conn, subject_class_uuid, object_class_uuid):
+    """(subject_moiety, partner_moiety) pairs for the class-grain rule identified
+    by its (subject_class, object_class) natural key -- unambiguous regardless of
+    which side is expanding, unlike filtering on `via_subject_class` alone (which
+    only narrows to the rule when the SUBJECT is the expanding class)."""
+    return set(conn.execute(
+        "SELECT subject_moiety, partner_moiety FROM drugref.curated_ddi_pair "
+        "WHERE via_subject_class = %s AND via_class = %s",
+        (subject_class_uuid, object_class_uuid)).fetchall())
+
+
+def _deny(conn, class_uuid, name):
+    """File a `deny` decision against the (source, source_code) `class_uuid`
+    names -- the natural key `class_expansion_policy_current` is keyed on, not
+    the UUID. Mirrors tests/test_expansion_policy.py's own INSERT shape."""
+    source, source_code = conn.execute(
+        "SELECT source, source_code FROM drugref.substance_class "
+        "WHERE class_uuid = %s", (class_uuid,)).fetchone()
+    conn.execute(
+        "INSERT INTO drugref.class_expansion_policy "
+        "(source, source_code, decision, class_name, rationale, reviewed_by, "
+        " reviewed_against) VALUES (%s, %s, 'deny', %s, 'test deny', 'test', "
+        "'2026.07.06')", (source, source_code, name))
+
+
+def test_a_class_rule_descends_the_subject_side_dag(conn, ingest_run_id):
+    """DAG descent, SUBJECT side. A rule naming a PARENT subject class must reach a
+    moiety filed only under a CHILD of it -- the subject-side mirror of
+    test_ddi_pairs.py's test_a_rule_on_a_parent_reaches_a_member_of_the_child, and
+    the exact behaviour Tasks 1-8 never needed to build because their subject was
+    always a single fixed moiety."""
+    f = _a_descent_and_policy_fixture(conn, ingest_run_id, expanding_side="subject")
+    pairs = _rows_for_rule(conn, f["subject_class"], f["object_class"])
+    assert pairs == {(f["direct"], f["fixed"]), (f["descendant_only"], f["fixed"])}
+
+
+def test_a_deny_policy_blocks_subject_side_descent_but_not_the_direct_member(
+        conn, ingest_run_id):
+    """Policy gating, SUBJECT side. A `deny` decision on the class the rule NAMES
+    must stop the descendant-only member from reaching the pair while leaving the
+    direct member untouched -- test_ddi_pairs.py's test_a_rule_on_a_denied_root_
+    reaches_direct_members_only, mirrored to the subject. If this regressed, a
+    curator's `deny` would silently stop being honoured on exactly the axis db/033
+    adds -- resurrecting the pairs db/027 exists to withhold."""
+    f = _a_descent_and_policy_fixture(conn, ingest_run_id, expanding_side="subject")
+    _deny(conn, f["expanding_class"], "Subject Parent [MoA]")
+    pairs = _rows_for_rule(conn, f["subject_class"], f["object_class"])
+    assert pairs == {(f["direct"], f["fixed"])}
+
+
+def test_a_class_rule_descends_the_object_side_dag(conn, ingest_run_id):
+    """DAG descent, OBJECT side, for THIS grain's own CTE
+    (`class_rule_partner_member`) -- not a re-test of `ddi_candidate_pair`, which
+    never touches `class_pair_contraindication`/`curated_class_interaction` and so
+    provides no coverage of this code at all, however similar the shape."""
+    f = _a_descent_and_policy_fixture(conn, ingest_run_id, expanding_side="object")
+    pairs = _rows_for_rule(conn, f["subject_class"], f["object_class"])
+    assert pairs == {(f["fixed"], f["direct"]), (f["fixed"], f["descendant_only"])}
+
+
+def test_a_deny_policy_blocks_object_side_descent_but_not_the_direct_member(
+        conn, ingest_run_id):
+    """Policy gating, OBJECT side, for `class_rule_partner_member` specifically --
+    see the docstring above on why this is not redundant with `ddi_candidate_pair`'s
+    own long-standing coverage of the identically-shaped predicate."""
+    f = _a_descent_and_policy_fixture(conn, ingest_run_id, expanding_side="object")
+    _deny(conn, f["expanding_class"], "Object Parent [MoA]")
+    pairs = _rows_for_rule(conn, f["subject_class"], f["object_class"])
+    assert pairs == {(f["fixed"], f["direct"])}
