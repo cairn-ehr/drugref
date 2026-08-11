@@ -25,7 +25,7 @@ import psycopg
 # written before db/025, when two orchestrators shared a source and nothing told them
 # apart -- and no code should ever write it.
 WRITERS = ("unii_run", "chebi", "medrt_run", "mesh_run", "mesh_rel_run", "pbs_run",
-           "curation", "unattributed", "gsrs_run")
+           "curation", "unattributed", "gsrs_run", "onchigh_run")
 
 
 def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,

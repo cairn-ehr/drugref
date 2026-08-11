@@ -8,13 +8,16 @@ raw identifiers meet the registry: `resolve_entry` turns one OncEntry's
 (or reports that one or both could not be found), and `subject_forms` expands
 a resolved subject to every salt form of it drugref actually holds.
 
-THE WRITE HALF -- rebuilding `class_contraindication` rows, opening the
-`ingest_run`, recording unresolved endpoints into
-`ingest_unresolved_onc_endpoint` -- is a later task and is deliberately not
-built here. This module opens no transaction and writes no row; it only
-reads, mirroring the read side of every other orchestrator's split (pbs_run,
-medrt_run) one level earlier than usual, because slice 5c.2 splits ingest
-into resolution and write as two separate, independently testable steps.
+THE WRITE HALF -- `ingest_onchigh`, at the bottom of this module -- opens the
+`ingest_run`, rebuilds `class_contraindication` for source ONCHIGH, records
+unresolved endpoints into `ingest_unresolved_onc_endpoint`, and re-derives the
+open-question register. It is a separate function from the resolution
+functions above, not merely a separate section: `resolve_entry` and
+`subject_forms` (Task 4) open no transaction and write no row on their own,
+and `ingest_onchigh` (Task 5) is their only caller in this module -- slice
+5c.2 splits ingest into resolution and write as two independently testable
+steps, one level earlier than pbs_run/medrt_run's own read/write split
+usually falls.
 
 WHY SALT EXPANSION LIVES HERE, ON THE PROJECTION SIDE, AND NOT AT READ TIME
 OR IN THE CURATED ROWS THEMSELVES (design spec §6, three reasons, in order of
@@ -40,13 +43,18 @@ resolved salt form), all written from the one entry by the one orchestrator
 run, so they can never disagree with each other -- but the row count grows,
 and the write-half task must report it (design spec §11).
 """
+import logging
+import pathlib
 import uuid
 from dataclasses import dataclass
 
 import psycopg
 
-from drugref import ids
+from drugref import db, ids, interactions, provenance, questions
 from drugref.ingest import onchigh
+from drugref.ingest.checksum import checksum
+
+log = logging.getLogger(__name__)
 
 # The `identifier_scheme` values recorded when an endpoint fails to resolve
 # (and, symmetrically, describes what each endpoint's identifier IS in the
@@ -281,3 +289,202 @@ def resolve_entry(
         subject_moiety_uuids=subject_forms(conn, subject[0]),
         object_class_uuid=obj[0],
         axis=candidate.axis)
+
+
+# ============================================================================
+# THE WRITE HALF (Task 5)
+# ============================================================================
+SOURCE = "ONCHIGH"
+# WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
+# (db/025). Declared in provenance.WRITERS and ingest_run's already-widened
+# `writer` CHECK (db/031) -- a pair. db/031 built the schema half of that pair
+# (it is schema-only, per its own docstring); this task is the first to
+# actually CALL provenance.open_run(writer=WRITER), so it is where the
+# Python-side half gets completed.
+WRITER = "onchigh_run"
+
+# The worklist table this orchestrator owns BEYOND class_contraindication.
+# interactions.clear_source_contraindications already owns that one for any
+# source -- db/006 put `source` into class_contraindication's own primary key
+# precisely so a second authority could share the table safely, and the
+# candidate tier needs no new contraindication writer for it (task-5 brief).
+# ingest_unresolved_onc_endpoint is different: it is ONCHIGH's OWN worklist
+# (db/031), so clearing and writing it is this module's job, not
+# interactions.py's -- interactions.py's docstring lists the four tables IT
+# writes, and this is not one of them.
+#
+# Restated as its own module constant, mirroring every other writer's
+# declared-ownership convention (classes.CLASS_EDGE_TABLES,
+# local.LOCAL_PRODUCT_TABLES, interactions.MESH_CONTRAINDICATION_TABLES, ...)
+# so test_source_clear_contract.py can pin it independently of this module's
+# own code: dropping a table from a writer's tuple with nothing failing is
+# precisely the defect that module's docstring exists to catch, and here the
+# consequence is concrete and was named directly by the task brief -- a stale
+# unresolved-endpoint row would keep answering a question the file no longer
+# asks, exactly as a stale class_contraindication row would keep asserting a
+# rule the file no longer makes.
+UNRESOLVED_ENDPOINT_TABLES = ("ingest_unresolved_onc_endpoint",)
+
+
+@dataclass(frozen=True)
+class OncSummary:
+    """What one ONC high-priority ingest did (design spec §11) -- returned so
+    a caller (or test) can assert on it, mirroring every other orchestrator's
+    summary dataclass.
+
+    `salt_forms_expanded` is the number the design's cost trade-off (this
+    module's own top-of-file docstring, point 2) obliges this task to report:
+    one file entry becomes several `class_contraindication` rows, one per
+    resolved subject salt form, so the row count genuinely grows on ingest,
+    and that growth must be visible rather than folded silently into a single
+    opaque "rules written" figure.
+
+    `rules_written` counts only rows that were actually NEW
+    (`interactions.add_contraindication`'s ON CONFLICT DO NOTHING return
+    value) -- it can be LOWER than `salt_forms_expanded` only when two salt
+    forms of the same file collide on the same (subject, object, relationship,
+    source) key within ONE run, since the clear step (below) already removed
+    every row from any earlier run before this run writes a single one.
+    """
+    entries_read: int
+    rules_written: int
+    salt_forms_expanded: int
+    endpoints_unresolved: int
+
+
+def _record_unresolved(conn: psycopg.Connection, run_id: int,
+                       endpoints: list[UnresolvedEndpoint]) -> None:
+    """Persist every UnresolvedEndpoint this run found, in one batch.
+
+    Batched via executemany rather than a per-endpoint execute(), mirroring
+    interactions.record_unresolved_ci_objects: nobody needs the per-row
+    insert-vs-conflict answer, only the rows landing.
+
+    ON CONFLICT DO NOTHING (against the table's PK -- ingest_run, source,
+    entry_id, endpoint_role) is belt and braces here, not a needed safeguard:
+    resolve_entry reports at most one UnresolvedEndpoint per (entry, role)
+    already, and onchigh.parse refuses a duplicate entry_id before any of
+    this runs, so a conflict would mean this function was handed the same
+    endpoint twice -- a caller bug, not a real collision between two upstream
+    facts (contrast db/016's object worklist, where two DIFFERENT source
+    releases can legitimately name the same object).
+    """
+    if not endpoints:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO drugref.ingest_unresolved_onc_endpoint "
+            "(ingest_run, source, entry_id, endpoint_role, identifier_scheme, "
+            " identifier_value, endpoint_name) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            [(run_id, SOURCE, e.entry_id, e.endpoint_role, e.identifier_scheme,
+              e.identifier_value, e.endpoint_name) for e in endpoints])
+
+
+def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
+                   upstream_release: str) -> OncSummary:
+    """Ingest one ONC high-priority DDI file. Owns the transaction end to end.
+
+    ORDER, mirroring pbs_run's convention rather than mesh_run's/gsrs_run's
+    (task-5 brief, step 3):
+
+      1. Checksum the file, then open the provenance row -- WHICH COMMITS
+         (provenance.open_run's own docstring), so a crash anywhere after this
+         point still leaves a traceable run with `finished_at IS NULL`
+         (ingest_run_incomplete reports it). Opened BEFORE parsing, unlike
+         mesh_run/gsrs_run (whose releases are large enough that protecting a
+         long parse window from leaving no trace at all is worth it) -- this
+         file is a small, hand-curated list, so there is no comparable window
+         to protect, and pbs_run's precedent (open first, read after) is the
+         closer match.
+      2. Parse the file. A structurally malformed file (OncFormatError) is
+         raised here, AFTER the run row exists: a curator sees the run and
+         its unfinished state, rather than the failure leaving no trace.
+      3. CLEAR this source's previous projection -- BOTH tables a re-ingest
+         must replace rather than accumulate: `class_contraindication` (via
+         interactions.clear_source_contraindications, scoped to SOURCE so
+         MED-RT's rows are untouched) and `ingest_unresolved_onc_endpoint`
+         (this module's own worklist, via UNRESOLVED_ENDPOINT_TABLES above).
+         Clearing the worklist in this SAME step, alongside the candidate
+         rows, is deliberate (task-5 brief): a stale unresolved-endpoint row
+         would keep answering a question the file no longer asks, exactly as
+         a stale class_contraindication row would keep asserting a rule the
+         file no longer makes.
+      4. Per entry, resolve_entry returns either a ResolvedEndpoint (one
+         class_contraindication row per resolved salt form, via
+         subject_forms already expanded onto it -- see ResolvedEndpoint's own
+         docstring) or a list[UnresolvedEndpoint] (queued and written once,
+         batched, after the loop).
+      5. Re-derive the open-question register (Plan A) -- LAST, because it
+         reads the very tables this run just rebuilt in steps 3-4, and
+         reading them mid-rebuild would close, then reopen, every question
+         they feed.
+      6. Stamp the run finished and commit, atomically with everything step 4
+         wrote.
+
+    TRANSACTION OWNERSHIP: TWO transactions on one connection, exactly as
+    pbs_run/mesh_run document. provenance.open_run commits the run record
+    before the writes, so a crash during them leaves it standing with
+    `finished_at` NULL; everything from there on is the work, which this
+    function owns, commits on success, and rolls back before re-raising. A
+    caller with pending work of its own must commit it before calling --
+    provenance.open_run's early commit will otherwise sweep that work along
+    with the run record.
+
+    A NAME/IDENTIFIER MISMATCH (EndpointMismatchError) aborts the WHOLE
+    ingest, not just the one entry -- it propagates out of the loop below like
+    any other exception, is caught by the `except` clause, rolls back, and
+    re-raises. resolve_entry's own docstring is where the reasoning for that
+    lives: a mismatch is a bug in the hand-authored file, and continuing past
+    it would mean this run wrote (or silently skipped) a row nobody actually
+    approved.
+    """
+    path = pathlib.Path(path)
+    try:
+        run_id = provenance.open_run(
+            conn, source=SOURCE, upstream_release=upstream_release,
+            source_checksum=checksum(path), writer=WRITER)
+
+        entries = onchigh.parse(path)
+
+        interactions.clear_source_contraindications(conn, SOURCE)
+        db.clear_source_tables(conn, UNRESOLVED_ENDPOINT_TABLES, SOURCE)
+
+        rules_written = salt_forms_expanded = endpoints_unresolved = 0
+        unresolved_batch: list[UnresolvedEndpoint] = []
+
+        for entry in entries:
+            result = resolve_entry(conn, entry)
+            if isinstance(result, ResolvedEndpoint):
+                for moiety_uuid in result.subject_moiety_uuids:
+                    salt_forms_expanded += 1
+                    if interactions.add_contraindication(
+                            conn, moiety_uuid, result.object_class_uuid,
+                            result.axis, SOURCE, run_id):
+                        rules_written += 1
+            else:
+                endpoints_unresolved += len(result)
+                unresolved_batch.extend(result)
+
+        _record_unresolved(conn, run_id, unresolved_batch)
+
+        # Re-derive the open-question register (Plan A), last and for the
+        # same reason mesh_run/gsrs_run do: this run rewrote
+        # class_contraindication and ingest_unresolved_onc_endpoint, both of
+        # which gap views read, so every currently-open gap (not only this
+        # run's own gap kind) is refreshed here.
+        questions.register_from_gaps(conn, run_id)
+
+        provenance.finish_run(conn, run_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        log.exception("ONC high-priority ingest failed for release %s; rolled back",
+                      upstream_release)
+        raise
+
+    summary = OncSummary(entries_read=len(entries), rules_written=rules_written,
+                         salt_forms_expanded=salt_forms_expanded,
+                         endpoints_unresolved=endpoints_unresolved)
+    log.info("ONC high-priority ingest %s complete: %s", upstream_release, summary)
+    return summary

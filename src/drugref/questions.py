@@ -303,6 +303,30 @@ _GAP_SOURCES = {
             "The release asserts the contraindication and grades nothing. ' || "
             "pair_count || ' drug pair(s) inherit the answer.'"),
     },
+    # Slice 5c.2, db/031. The ONC high-priority list's own worklist: a pair
+    # endpoint (subject OR object) naming a well-formed identifier drugref does
+    # not hold at all -- one pipeline stage EARLIER than the two kinds above,
+    # which ask about a rule drugref already holds but has not graded. This
+    # one asks "should drugref hold this identity at all?", a coverage
+    # question in unmatched_ingredient's / unresolved_ci_object's family, not
+    # a curation one.
+    #
+    # THE gap_key FORMAT BELOW IS FROZEN -- question_uuid is uuid5(gap_kind,
+    # gap_key), immortal and externally citable, and onchigh_run.OBJECT_SCHEME
+    # already lost one round to this exact key (spelling MED-RT's scheme
+    # 'MEDRT' would have baked the wrong spelling in forever). A later
+    # reformat orphans every question already registered under the old key.
+    "unresolved_onc_endpoint": {
+        "view": "gap_unresolved_onc_endpoint",
+        "key_sql": ("'ONCHIGH:' || entry_id || ':' || identifier_scheme || "
+                    "':' || identifier_value"),
+        "text_sql": (
+            "'Does drugref hold ' || coalesce(endpoint_name, identifier_value) || "
+            "' (' || identifier_scheme || ' ' || identifier_value || ')? The ONC "
+            "high-priority list names it as the ' || endpoint_role || ' of entry ' || "
+            "entry_id || ', and no drugref identity resolves it, so that "
+            "interaction cannot be projected at all.'"),
+    },
 }
 
 

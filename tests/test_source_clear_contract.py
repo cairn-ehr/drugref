@@ -28,6 +28,7 @@ import psycopg
 import pytest
 
 from drugref import classes, composition, conditions, db, indications, interactions, local
+from drugref.ingest import onchigh_run
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -58,6 +59,15 @@ EXPECTED_TABLES = {
     "local.LOCAL_PRODUCT_TABLES": (
         local.LOCAL_PRODUCT_TABLES,
         ("local_product_moiety", "local_unmatched_ingredient", "local_product")),
+    # Slice 5c.2, gap kind fifteen: onchigh_run's OWN worklist, distinct from
+    # interactions.CONTRAINDICATION_TABLES above (which it also clears, for
+    # class_contraindication -- ONCHIGH is a second source sharing that table,
+    # not a second table). Added when the ONCHIGH write half (Task 5) first
+    # gave this contract a fifteenth writer to restate -- see that task's
+    # commit message for why this entry, and not a silent gap, is the correct
+    # outcome of adding one.
+    "onchigh_run.UNRESOLVED_ENDPOINT_TABLES": (
+        onchigh_run.UNRESOLVED_ENDPOINT_TABLES, ("ingest_unresolved_onc_endpoint",)),
 }
 
 
