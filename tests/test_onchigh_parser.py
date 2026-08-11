@@ -23,6 +23,7 @@ FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "onc_fixture.toml"
 _DEFAULTS = {
     "entry_id": "warfarin-nsaid",
     "subject_unii": "5Q7ZVV76EI",
+    "subject_medrt_code": None,
     "subject_name": "warfarin",
     "object_medrt_code": "N0000175722",
     "object_name": "Nonsteroidal Anti-inflammatory Drug [EPC]",
@@ -38,11 +39,17 @@ def _entry_with(**overrides):
     """Emit one valid [[entry]] TOML block, with named fields overridden or
     (passed as None) omitted entirely. Kept as dumb string formatting -- a
     helper that itself needs testing is not a helper -- so every case below
-    is readable as "the default entry, minus/instead of this one thing"."""
+    is readable as "the default entry, minus/instead of this one thing".
+
+    `subject_medrt_code` defaults to None (omitted), so every EXISTING case
+    below stays a moiety-subject entry unchanged; a test exercising the
+    class-subject shape passes it explicitly (see
+    test_a_class_subject_entry_parses and its neighbours below).
+    """
     fields = {**_DEFAULTS, **overrides}
     lines = ["[[entry]]", f'entry_id = "{fields["entry_id"]}"', "", "[entry.candidate]"]
-    for key in ("subject_unii", "subject_name", "object_medrt_code",
-                "object_name", "axis", "citation"):
+    for key in ("subject_unii", "subject_medrt_code", "subject_name",
+                "object_medrt_code", "object_name", "axis", "citation"):
         if fields[key] is not None:
             lines.append(f'{key} = "{fields[key]}"')
     lines += ["", "[entry.judgement]", f'applies = {str(fields["applies"]).lower()}']
@@ -104,4 +111,50 @@ def test_a_missing_citation_raises(tmp_path):
     bad = tmp_path / "bad.toml"
     bad.write_text(_entry_with(citation=None))
     with pytest.raises(onchigh.OncFormatError, match="citation"):
+        onchigh.parse(bad)
+
+
+# ---- Task 10: the class-subject shape (design spec section 14) --------------
+
+
+def test_a_class_subject_entry_parses(tmp_path):
+    """subject_medrt_code + subject_name is the alternative subject form --
+    a drug CLASS, not a moiety -- and it parses to a candidate carrying no
+    subject_unii at all."""
+    good = tmp_path / "good.toml"
+    good.write_text(_entry_with(
+        subject_unii=None, subject_medrt_code="N0000175724",
+        subject_name="Monoamine Oxidase Inhibitors [MoA]"))
+    entries = onchigh.parse(good)
+    entry = next(e for e in entries if e.entry_id == "warfarin-nsaid")
+    assert entry.candidate.subject_unii is None
+    assert entry.candidate.subject_medrt_code == "N0000175724"
+    assert entry.candidate.is_class_subject is True
+
+
+def test_a_moiety_subject_entry_is_not_a_class_subject(tmp_path):
+    """The other half of is_class_subject -- pinned explicitly rather than
+    inferred only from the class-subject case above."""
+    entries = onchigh.parse(FIXTURE)
+    entry = next(e for e in entries if e.entry_id == "warfarin-nsaid")
+    assert entry.candidate.is_class_subject is False
+
+
+def test_both_subject_forms_present_raises(tmp_path):
+    """subject_unii and subject_medrt_code are MUTUALLY EXCLUSIVE -- a subject
+    cannot be both a single moiety and a whole class at once, and a file
+    carrying both leaves it ambiguous which one drugref should resolve."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(subject_medrt_code="N0000175724"))
+    with pytest.raises(onchigh.OncFormatError, match="warfarin-nsaid"):
+        onchigh.parse(bad)
+
+
+def test_neither_subject_form_present_raises(tmp_path):
+    """The other half of the same rule: a subject named by NEITHER form is not
+    a class-subject entry left implicit, it is a broken entry with no subject
+    at all."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with(subject_unii=None))
+    with pytest.raises(onchigh.OncFormatError, match="warfarin-nsaid"):
         onchigh.parse(bad)

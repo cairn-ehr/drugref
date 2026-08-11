@@ -103,6 +103,83 @@ def test_an_unknown_grade_is_refused_by_the_database(conn, a_moiety, ingest_run_
             reviewed_against="2026.07.06")
 
 
+# ---- Task 10: the class-subject grain (db/032, design spec section 14) -------
+
+
+def test_recording_a_class_judgement_makes_it_live(conn, ingest_run_id):
+    """Mirrors test_recording_a_judgement_makes_it_live, one grain over: BOTH
+    endpoints are classes instead of a moiety and a class."""
+    subject = _a_class(conn, ingest_run_id, code="N0000000911")
+    obj = _a_class(conn, ingest_run_id, code="N0000000912")
+    curation.record_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA", True, severity="major",
+        evidence_grade="established", mechanism="additive serotonergic effect",
+        management="avoid the combination", reviewed_by="test",
+        reviewed_against="Phansalkar 2012")
+    assert conn.execute(
+        "SELECT severity FROM drugref.curated_class_interaction "
+        "WHERE superseded_by IS NULL AND subject_class_uuid = %s", (subject,)
+    ).fetchone() == ("major",)
+
+
+def test_revising_a_class_judgement_supersedes_rather_than_overwrites(
+        conn, ingest_run_id):
+    """The class-subject twin of test_revising_a_judgement_supersedes_rather_
+    than_overwrites: the previous grade must still be answerable afterwards."""
+    subject = _a_class(conn, ingest_run_id, code="N0000000913")
+    obj = _a_class(conn, ingest_run_id, code="N0000000914")
+    first = curation.record_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA", True, severity="major",
+        evidence_grade="suspected", reviewed_by="test",
+        reviewed_against="Phansalkar 2012")
+    second = curation.record_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA", True, severity="moderate",
+        evidence_grade="established", reviewed_by="test",
+        reviewed_against="Phansalkar 2012 rev2")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")   # a test that never commits proves nothing
+    assert conn.execute(
+        "SELECT curated_class_interaction_id, severity FROM "
+        "drugref.curated_class_interaction WHERE superseded_by IS NULL").fetchall() \
+        == [(second, "moderate")]
+    assert conn.execute(
+        "SELECT superseded_by, severity FROM drugref.curated_class_interaction "
+        "WHERE curated_class_interaction_id = %s", (first,)).fetchone() == \
+        (second, "major")
+
+
+def test_live_class_interaction_judgement_returns_only_the_graded_fields(
+        conn, ingest_run_id):
+    """Mirrors curation.live_interaction_judgement's own contract: the answer
+    carries the five GRADED fields only, never reviewed_at/reviewed_by --
+    the whole reason curate_onchigh's idempotence-by-comparison works on this
+    grain too."""
+    subject = _a_class(conn, ingest_run_id, code="N0000000915")
+    obj = _a_class(conn, ingest_run_id, code="N0000000916")
+    assert curation.live_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA") is None
+    curation.record_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA", True, severity="major",
+        evidence_grade="established", reviewed_by="test",
+        reviewed_against="Phansalkar 2012")
+    assert curation.live_class_interaction_judgement(
+        conn, subject, obj, "CI_MoA") == {
+            "applies": True, "severity": "major", "mechanism": None,
+            "management": None, "evidence_grade": "established"}
+
+
+def test_an_unknown_grade_is_refused_by_the_database_on_the_class_grain(
+        conn, ingest_run_id):
+    """No Python list of legal severities on this writer either -- db/006's
+    lesson, restated once per table rather than assumed to hold everywhere."""
+    subject = _a_class(conn, ingest_run_id, code="N0000000917")
+    obj = _a_class(conn, ingest_run_id, code="N0000000918")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        curation.record_class_interaction_judgement(
+            conn, subject, obj, "CI_MoA", True, severity="major",
+            evidence_grade="anecdotal", reviewed_by="test",
+            reviewed_against="Phansalkar 2012")
+
+
 def test_the_writer_does_not_commit(conn, a_moiety, ingest_run_id):
     """The caller owns the transaction, as everywhere in these modules -- so a rollback
     must take the row with it."""

@@ -54,13 +54,15 @@ from typing import NoReturn
 # rule everything else in this file follows.
 _KNOWN_AXES = frozenset({"CI_MoA", "CI_PE", "CI_EPC"})
 
-# The candidate fields the design spec (section 4) declares required on every
-# entry, regardless of `applies`. All six are meant to be short, stable
-# identifiers/labels -- unlike severity/evidence_grade there is no vocabulary
-# to check, only "is something here at all".
+# The candidate fields ALWAYS required, regardless of `applies` or which
+# subject form the entry uses. `subject_unii`/`subject_medrt_code` are
+# deliberately NOT in this tuple -- Task 10 (design spec section 14) widened
+# the subject to two mutually exclusive forms (a moiety by UNII, or a drug
+# CLASS by MED-RT code), and _parse_candidate below enforces "exactly one of
+# the two" as its own rule, separate from this generic "must be present"
+# loop, which has no way to express an either/or.
 _CANDIDATE_FIELDS = (
-    "subject_unii", "subject_name", "object_medrt_code", "object_name",
-    "axis", "citation")
+    "subject_name", "object_medrt_code", "object_name", "axis", "citation")
 
 
 class OncFormatError(ValueError):
@@ -80,17 +82,39 @@ class OncCandidate:
     """WHAT THE PAPER SAYS -- the endpoint pair and citation, unresolved.
 
     Every field is the raw value as the file states it. Nothing here is
-    looked up: the orchestrator, not this module, turns subject_unii into a
-    moiety_uuid and object_medrt_code into a class_uuid.
+    looked up: the orchestrator, not this module, turns subject_unii /
+    subject_medrt_code into a moiety_uuid / class_uuid, and object_medrt_code
+    into a class_uuid.
+
+    THE SUBJECT IS ONE OF TWO MUTUALLY EXCLUSIVE FORMS (design spec section
+    14, the class-subject round). `subject_unii` names a MOIETY -- Tasks 1-8's
+    own shape. `subject_medrt_code` names a drug CLASS -- Task 10's addition,
+    for the 8 of 15 ONC entries whose subject is a class (SSRIs, MAOIs,
+    statins, ...), not a single drug. Exactly one is ever set, enforced by
+    _parse_candidate below rather than by this dataclass's own construction
+    (a frozen dataclass has no natural place to raise without a
+    __post_init__ that would only restate the parser's check a second time).
     """
-    subject_unii: str
+    subject_unii: str | None
+    subject_medrt_code: str | None
     subject_name: str          # review aid ONLY -- not verified against the
-                                # UNII by this module (needs a database; see
-                                # the orchestrator, a later task)
+                                # identifier by this module (needs a
+                                # database; see the orchestrator)
     object_medrt_code: str
     object_name: str           # review aid ONLY, same caveat
     axis: str                  # checked against _KNOWN_AXES -- see above
     citation: str               # rule 6: never absent
+
+    @property
+    def is_class_subject(self) -> bool:
+        """True when this entry's subject is a drug CLASS
+        (`subject_medrt_code` set), false when it is a moiety
+        (`subject_unii` set). Exactly one is ever set -- see
+        _parse_candidate's enforcement -- so this is a safe either/or, not a
+        guess: the one place a caller should ask "which kind", instead of
+        re-deriving `subject_medrt_code is not None` at every call site.
+        """
+        return self.subject_medrt_code is not None
 
 
 @dataclass(frozen=True)
@@ -152,17 +176,28 @@ def _require_str(block: dict, key: str, block_name: str,
 
 
 def _parse_candidate(entry: dict, entry_id: str) -> OncCandidate:
-    """Build one OncCandidate, checking presence of all six fields plus the
-    one vocabulary this module is allowed to police: axis."""
+    """Build one OncCandidate: checks presence of the five always-required
+    fields, the subject's EXACTLY-ONE-OF shape (subject_unii XOR
+    subject_medrt_code), and the one vocabulary this module is allowed to
+    police -- axis."""
     block = _require_block(entry, "candidate", entry_id)
     values = {key: _require_str(block, key, "candidate", entry_id)
                for key in _CANDIDATE_FIELDS}
+    subject_unii = _optional_str(block, "subject_unii")
+    subject_medrt_code = _optional_str(block, "subject_medrt_code")
+    if (subject_unii is None) == (subject_medrt_code is None):
+        _fail(entry_id,
+              "[entry.candidate] must carry EXACTLY ONE of 'subject_unii' "
+              "(a moiety subject) or 'subject_medrt_code' (a class subject) "
+              "-- both present or both absent leaves the subject's kind "
+              "unresolvable")
     if values["axis"] not in _KNOWN_AXES:
         _fail(entry_id,
               f"unknown axis {values['axis']!r} -- ci_axis (db/031) currently "
               f"carries {sorted(_KNOWN_AXES)}; a genuinely new axis needs its "
               "own migration before this file can use it")
-    return OncCandidate(**values)
+    return OncCandidate(subject_unii=subject_unii,
+                        subject_medrt_code=subject_medrt_code, **values)
 
 
 def _optional_str(block: dict, key: str) -> str | None:

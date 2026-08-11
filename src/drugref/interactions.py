@@ -294,6 +294,54 @@ def add_moiety_contraindication(conn: psycopg.Connection,
     return cur.rowcount == 1
 
 
+# ---- Task 10: the class-subject grain (db/032, design spec section 14) --------
+#
+# A second candidate-tier table, not a second write path for the existing one:
+# class_pair_contraindication holds rules whose SUBJECT is a class ("SSRIs are
+# contraindicated with MAOIs"), where class_contraindication above only ever
+# holds rules whose subject is a single moiety. db/032's own preamble records
+# why this is two tables rather than a nullable column on the first: the
+# deferred single-live guard (db/023) compares natural-key columns by
+# EQUALITY, and NULL = NULL is never true in SQL, so a polymorphic subject
+# would make that guard silently stop guarding for exactly the rows it was
+# widened to cover.
+CLASS_PAIR_CONTRAINDICATION_TABLES = ("class_pair_contraindication",)
+
+
+def clear_source_class_pair_contraindications(conn: psycopg.Connection,
+                                              source: str) -> None:
+    """Drop every class-subject contraindication contributed by `source`.
+
+    Mirrors clear_source_contraindications exactly, one grain over: called at
+    the start of a re-ingest so a new upstream release REPLACES the previous
+    one, scoped by the run's source so an unrelated feed's rows survive.
+    """
+    db.clear_source_tables(conn, CLASS_PAIR_CONTRAINDICATION_TABLES, source)
+
+
+def add_class_pair_contraindication(conn: psycopg.Connection,
+                                    subject_class_uuid: uuid.UUID,
+                                    object_class_uuid: uuid.UUID,
+                                    relationship: str, source: str,
+                                    ingest_run_id: int) -> bool:
+    """Record that every member of `subject_class_uuid` is contraindicated
+    with a co-administered member of `object_class_uuid`, on axis
+    `relationship` (CI_MoA / CI_PE / CI_EPC).
+
+    Mirrors add_contraindication exactly, one grain over: BOTH endpoints are
+    classes here instead of a moiety and a class. Returns True if a new row
+    was inserted. ON CONFLICT DO NOTHING keeps a file that repeats the same
+    assertion harmless -- the same discipline add_contraindication already
+    follows, extended to the shape Task 10 adds.
+    """
+    cur = conn.execute(
+        "INSERT INTO drugref.class_pair_contraindication "
+        "(subject_class_uuid, object_class_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (subject_class_uuid, object_class_uuid, relationship, source, ingest_run_id))
+    return cur.rowcount == 1
+
+
 def record_unresolved_ci_objects(
         conn: psycopg.Connection,
         rows: Iterable[tuple[str, str, str, str, str | None, str, int]],

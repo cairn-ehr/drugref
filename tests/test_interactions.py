@@ -13,7 +13,8 @@ from drugref import interactions, ids
 
 # The writer implied by each source this module's tests actually open a run
 # under (db/025). A KeyError on an unlisted source beats a silent NotNullViolation.
-_WRITER_BY_SOURCE = {"MED-RT": "medrt_run", "MeSH": "mesh_run"}
+_WRITER_BY_SOURCE = {"MED-RT": "medrt_run", "MeSH": "mesh_run",
+                     "ONCHIGH": "onchigh_run"}
 
 
 def _run(conn, source="MED-RT"):
@@ -66,6 +67,43 @@ def test_clear_source_contraindications_removes_only_that_sources_rows(conn):
     survivors = conn.execute(
         "SELECT relationship FROM drugref.class_contraindication "
         "WHERE subject_moiety_uuid = %s", (m,)).fetchall()
+    assert survivors == [("CI_PE",)]
+
+
+# ---- Task 10: the class-subject grain (db/032, design spec section 14) -------
+
+
+def test_add_class_pair_contraindication_inserts_once_and_dedupes(conn):
+    """Mirrors test_add_contraindication_inserts_once_and_dedupes exactly, one
+    grain over: BOTH endpoints are classes instead of a moiety and a class."""
+    run_id = _run(conn, "ONCHIGH")
+    subject = _class(conn, run_id, "N0000000903")
+    obj = _class(conn, run_id, "N0000000904")
+    assert interactions.add_class_pair_contraindication(
+        conn, subject, obj, "CI_MoA", "ONCHIGH", run_id) is True
+    assert interactions.add_class_pair_contraindication(
+        conn, subject, obj, "CI_MoA", "ONCHIGH", run_id) is False
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_pair_contraindication "
+        "WHERE subject_class_uuid = %s", (subject,)).fetchone()[0] == 1
+
+
+def test_clear_source_class_pair_contraindications_removes_only_that_sources_rows(conn):
+    """Rebuild semantics, mirroring the moiety-grain test above: a re-ingest
+    replaces ONCHIGH's class-pair rules and leaves an unrelated feed's rows
+    untouched, since class_pair_contraindication's PK includes `source`
+    (db/032, mirroring db/006's own class_contraindication fix)."""
+    onchigh_run, medrt_run = _run(conn, "ONCHIGH"), _run(conn, "MED-RT")
+    subject = _class(conn, onchigh_run, "N0000000905")
+    obj = _class(conn, onchigh_run, "N0000000906")
+    interactions.add_class_pair_contraindication(
+        conn, subject, obj, "CI_MoA", "ONCHIGH", onchigh_run)
+    interactions.add_class_pair_contraindication(
+        conn, subject, obj, "CI_PE", "MED-RT", medrt_run)
+    interactions.clear_source_class_pair_contraindications(conn, "ONCHIGH")
+    survivors = conn.execute(
+        "SELECT relationship FROM drugref.class_pair_contraindication "
+        "WHERE subject_class_uuid = %s", (subject,)).fetchall()
     assert survivors == [("CI_PE",)]
 
 

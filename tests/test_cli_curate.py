@@ -140,6 +140,23 @@ def seeded(conn, ingest_run_id) -> Seeded:
 
 
 @pytest.fixture
+def class_seeded(conn, ingest_run_id, seeded) -> uuid.UUID:
+    """One extra MED-RT class beyond `seeded`'s own nsaid_class, standing in
+    for a CLASS SUBJECT (design spec section 14, Task 10): Monoamine Oxidase
+    Inhibitors, contraindicated with `seeded`'s own nsaid_class as the object
+    side. A separate fixture from `seeded` -- most of this module's tests
+    exercise only the moiety-subject grain and never ask about a second
+    class."""
+    maoi_class = ids.mint_class_uuid("MED-RT", "N0000175724")
+    conn.execute(
+        "INSERT INTO drugref.substance_class "
+        "(class_uuid, source, source_code, class_name, concept_type, first_seen_ingest) "
+        "VALUES (%s, 'MED-RT', 'N0000175724', %s, 'MoA', %s) ON CONFLICT DO NOTHING",
+        (maoi_class, "Monoamine Oxidase Inhibitors [MoA]", ingest_run_id))
+    return maoi_class
+
+
+@pytest.fixture
 def ingested(conn, seeded):
     """The candidate tier already populated -- the realistic precondition for
     `curate onchigh`: an operator runs `ingest onchigh` (Task 6) before
@@ -213,6 +230,91 @@ def FIXTURE_BAD_SEVERITY(tmp_path) -> pathlib.Path:
         'applies = true\n'
         'severity = "critical"\n'
         'evidence_grade = "established"\n')
+    return path
+
+
+@pytest.fixture
+def CLASS_FIXTURE(tmp_path) -> pathlib.Path:
+    """One ONC entry whose subject is a CLASS (design spec section 14, Task
+    10) -- isolated at tmp_path rather than folded into the committed
+    onc_fixture.toml, which this module's entry-count assertions already pin
+    to exactly two moiety-subject entries (task-10 brief). Resolves fully
+    against `seeded` + `class_seeded`."""
+    path = tmp_path / "onc_class_subject.toml"
+    path.write_text(
+        '[[entry]]\n'
+        'entry_id = "maoi-nsaid"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N0000175724"\n'
+        'subject_name = "Monoamine Oxidase Inhibitors [MoA]"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = true\n'
+        'severity = "major"\n'
+        'evidence_grade = "established"\n')
+    return path
+
+
+@pytest.fixture
+def BOTH_GRAINS_FIXTURE(tmp_path) -> pathlib.Path:
+    """One moiety-subject entry (warfarin-nsaid, identical to FIXTURE's own),
+    one class-subject entry (maoi-nsaid, identical to CLASS_FIXTURE's own),
+    and one deliberately unresolvable entry -- so the reconciliation equation
+    Task 7 pinned (`rules_seen == entries_resolved + entries_unresolved`) is
+    exercised across BOTH grains in a single run, not just proven separately
+    for each (task-10 brief: 'extend it, do not weaken it')."""
+    path = tmp_path / "onc_both_grains.toml"
+    path.write_text(
+        '[[entry]]\n'
+        'entry_id = "warfarin-nsaid"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_unii = "5Q7ZVV76EI"\n'
+        'subject_name = "warfarin"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_EPC"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = true\n'
+        'severity = "major"\n'
+        'evidence_grade = "established"\n'
+        '\n'
+        '[[entry]]\n'
+        'entry_id = "maoi-nsaid"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N0000175724"\n'
+        'subject_name = "Monoamine Oxidase Inhibitors [MoA]"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = true\n'
+        'severity = "major"\n'
+        'evidence_grade = "established"\n'
+        '\n'
+        '[[entry]]\n'
+        'entry_id = "unresolved-class-subject"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N9999999999"\n'
+        'subject_name = "Not A Real Class"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
     return path
 
 
@@ -293,3 +395,82 @@ def test_an_illegal_severity_reaches_the_database_check(
     with pytest.raises(psycopg.errors.CheckViolation):
         cli_curate.curate_onchigh(conn, path=FIXTURE_BAD_SEVERITY,
                                   reviewed_by="Dr X", reviewed_against="x")
+
+
+# ---- Task 10: the class-subject grain (design spec section 14) --------------
+
+
+def test_a_class_subject_entry_writes_one_class_judgement(
+        conn, seeded, class_seeded, CLASS_FIXTURE):
+    """The class-subject twin of test_a_first_run_writes_one_judgement_per_
+    resolved_form: a class-subject entry writes EXACTLY ONE
+    curated_class_interaction row (no salt-form expansion, design spec
+    section 14.3), and counts as one resolved entry."""
+    summary = cli_curate.curate_onchigh(conn, path=CLASS_FIXTURE, reviewed_by="Dr X",
+                                        reviewed_against="ONCHigh-2015")
+    assert summary.entries_resolved == 1
+    assert summary.entries_unresolved == 0
+    assert summary.judgements_written == 1
+    assert summary.judgements_superseded == 0
+    assert conn.execute(
+        "SELECT severity FROM drugref.curated_class_interaction "
+        "WHERE superseded_by IS NULL").fetchone() == ("major",)
+
+
+def test_a_second_run_against_the_class_fixture_writes_nothing(
+        conn, seeded, class_seeded, CLASS_FIXTURE):
+    """The class-subject twin of test_a_second_run_against_an_unedited_file_
+    writes_nothing: idempotent by comparison on this grain too."""
+    cli_curate.curate_onchigh(conn, path=CLASS_FIXTURE, reviewed_by="Dr X",
+                              reviewed_against="ONCHigh-2015")
+    conn.commit()
+    second = cli_curate.curate_onchigh(conn, path=CLASS_FIXTURE, reviewed_by="Dr X",
+                                       reviewed_against="ONCHigh-2015")
+    assert second.judgements_written == 0
+    assert second.unchanged == 1
+
+
+def test_a_class_judgement_supersedes_rather_than_mutates(
+        conn, seeded, class_seeded, CLASS_FIXTURE, tmp_path):
+    """The class-subject twin of test_an_edited_grade_supersedes_rather_than_
+    mutates: a regraded class-subject entry supersedes on
+    curated_class_interaction, not curated_interaction."""
+    cli_curate.curate_onchigh(conn, path=CLASS_FIXTURE, reviewed_by="Dr X",
+                              reviewed_against="ONCHigh-2015")
+    conn.commit()
+    regraded = tmp_path / "onc_class_regraded.toml"
+    regraded.write_text(CLASS_FIXTURE.read_text().replace(
+        'severity = "major"', 'severity = "contraindicated"'))
+    summary = cli_curate.curate_onchigh(conn, path=regraded, reviewed_by="Dr X",
+                                        reviewed_against="ONCHigh-2015")
+    conn.commit()
+    assert summary.judgements_superseded == 1
+    rows = conn.execute(
+        "SELECT severity, superseded_by IS NULL FROM drugref.curated_class_interaction "
+        "ORDER BY curated_class_interaction_id").fetchall()
+    assert rows[0] == ("major", False)
+    assert rows[-1] == ("contraindicated", True)
+
+
+def test_the_reconciliation_equation_holds_across_both_grains(
+        conn, seeded, class_seeded, BOTH_GRAINS_FIXTURE):
+    """Task 7's reconciliation assertion, EXTENDED to cover both grains in one
+    run rather than weakened (task-10 brief): every entry lands in exactly
+    one of entries_resolved/entries_unresolved regardless of which grain it
+    belongs to, and every resolved judgement target -- salt forms on the
+    moiety grain, the single rule on the class grain -- lands in exactly one
+    of judgements_written/judgements_superseded/unchanged."""
+    summary = cli_curate.curate_onchigh(
+        conn, path=BOTH_GRAINS_FIXTURE, reviewed_by="Dr X",
+        reviewed_against="ONCHigh-2015")
+    assert summary.rules_seen == summary.entries_resolved + summary.entries_unresolved
+    assert summary.rules_seen == 3
+    assert summary.entries_resolved == 2
+    assert summary.entries_unresolved == 1
+    # warfarin-nsaid expands to 2 salt forms (warfarin, warfarin sodium);
+    # maoi-nsaid contributes exactly 1 class rule -- 3 judgement targets in
+    # total, all newly written on a first run.
+    total_targets = (summary.judgements_written + summary.judgements_superseded
+                     + summary.unchanged)
+    assert total_targets == 3
+    assert summary.judgements_written == 3

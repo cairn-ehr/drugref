@@ -52,6 +52,16 @@ EXPECTED_TABLES = {
         ("moiety_condition_indication", "moiety_induced_condition")),
     "interactions.CONTRAINDICATION_TABLES": (
         interactions.CONTRAINDICATION_TABLES, ("class_contraindication",)),
+    # Task 10 (db/032, design spec section 14): the class-subject grain's own
+    # candidate table, cleared by a SEPARATE function
+    # (clear_source_class_pair_contraindications) from the moiety-grain one
+    # above -- two relations, because a class-subject rule and a
+    # moiety-subject rule are different kinds of statement (db/032's own
+    # preamble), so dropping either table from its writer's tuple must fail
+    # loudly here rather than letting a rebuild quietly stop covering it.
+    "interactions.CLASS_PAIR_CONTRAINDICATION_TABLES": (
+        interactions.CLASS_PAIR_CONTRAINDICATION_TABLES,
+        ("class_pair_contraindication",)),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
         interactions.MESH_CONTRAINDICATION_TABLES,
         ("moiety_condition_contraindication", "moiety_contraindication",

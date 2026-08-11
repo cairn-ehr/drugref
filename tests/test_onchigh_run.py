@@ -97,16 +97,61 @@ def _entry(entry_id="warfarin-nsaid", subject_unii="5Q7ZVV76EI",
     3) already owns turning a file into these dataclasses; every test here
     only needs the dataclasses themselves, so building them directly keeps
     each test's intent (which identifier is under test) in the test body
-    rather than buried in a temp-file fixture."""
+    rather than buried in a temp-file fixture. Always a MOIETY subject
+    (subject_medrt_code=None) -- see `_class_entry` below for the class-subject
+    twin Task 10 adds."""
     return onchigh.OncEntry(
         entry_id=entry_id,
         candidate=onchigh.OncCandidate(
-            subject_unii=subject_unii, subject_name=subject_name,
+            subject_unii=subject_unii, subject_medrt_code=None,
+            subject_name=subject_name,
             object_medrt_code=object_medrt_code, object_name=object_name,
             axis=axis, citation="test fixture only -- not a real citation"),
         judgement=onchigh.OncJudgement(
             applies=False, severity=None, evidence_grade=None,
             mechanism=None, management=None))
+
+
+def _class_entry(entry_id="maoi-nsaid", subject_medrt_code="N0000175724",
+                 subject_name="Monoamine Oxidase Inhibitors [MoA]",
+                 object_medrt_code="N0000175722",
+                 object_name="Nonsteroidal Anti-inflammatory Drug [EPC]",
+                 axis="CI_MoA"):
+    """The class-subject twin of `_entry` (Task 10, design spec section 14):
+    subject_unii=None, subject_medrt_code set instead. Defaults resolve
+    against `class_seeded` below (the subject) and `seeded.nsaid_class` (the
+    object) -- a genuinely different MED-RT class from the subject, since a
+    real ONC entry (SSRIs x MAOIs, ...) never pairs a class with itself
+    except the one deliberate self-pair (QT-prolonging), which is Task 11's
+    read-path concern, not this resolver's."""
+    return onchigh.OncEntry(
+        entry_id=entry_id,
+        candidate=onchigh.OncCandidate(
+            subject_unii=None, subject_medrt_code=subject_medrt_code,
+            subject_name=subject_name,
+            object_medrt_code=object_medrt_code, object_name=object_name,
+            axis=axis, citation="test fixture only -- not a real citation"),
+        judgement=onchigh.OncJudgement(
+            applies=False, severity=None, evidence_grade=None,
+            mechanism=None, management=None))
+
+
+@pytest.fixture
+def class_seeded(conn, seeded, ingest_run_id) -> uuid.UUID:
+    """One extra MED-RT class beyond `seeded`'s own nsaid_class, standing in
+    for a CLASS SUBJECT (design spec section 14): Monoamine Oxidase
+    Inhibitors, resolved against `_class_entry`'s default subject_medrt_code
+    above. A separate fixture from `seeded`, not folded into it, because most
+    of this module's tests never exercise the class-subject grain and would
+    otherwise carry a row they never ask about."""
+    maoi_class = ids.mint_class_uuid("MED-RT", "N0000175724")
+    conn.execute(
+        "INSERT INTO drugref.substance_class "
+        "(class_uuid, source, source_code, class_name, concept_type, first_seen_ingest) "
+        "VALUES (%s, 'MED-RT', 'N0000175724', %s, 'MoA', %s) "
+        "ON CONFLICT DO NOTHING",
+        (maoi_class, "Monoamine Oxidase Inhibitors [MoA]", ingest_run_id))
+    return maoi_class
 
 
 @pytest.fixture
@@ -278,6 +323,53 @@ def test_salt_expansion_admits_only_gated_in_moieties(conn, seeded):
     assert seeded.ungated_warfarin_ester not in forms
 
 
+# ---- Task 10: the class-subject resolver (design spec section 14) -----------
+
+
+def test_resolves_a_class_subject_by_medrt_code(conn, seeded, class_seeded):
+    """The class-subject twin of test_resolves_a_subject_by_unii_and_an_
+    object_by_medrt_code: BOTH endpoints resolve as classes, through the same
+    MED-RT lookup."""
+    entry = _class_entry()
+    resolved = onchigh_run.resolve_entry(conn, entry)
+    assert isinstance(resolved, onchigh_run.ResolvedClassEndpoint)
+    assert resolved.subject_class_uuid == class_seeded
+    assert resolved.object_class_uuid == seeded.nsaid_class
+
+
+def test_a_class_subject_name_mismatch_raises(conn, seeded, class_seeded):
+    """The name<->identifier check applies to a class subject exactly as to a
+    UNII subject (task-10 brief) -- same exception, same reasoning."""
+    entry = _class_entry(subject_name="an entirely different class")
+    with pytest.raises(onchigh_run.EndpointMismatchError, match="maoi-nsaid"):
+        onchigh_run.resolve_entry(conn, entry)
+
+
+def test_an_unresolvable_class_subject_is_returned_as_unresolved(conn, seeded):
+    """Mirrors test_an_unknown_unii_is_returned_as_unresolved_not_raised, one
+    grain over: a well-formed MED-RT code naming a class drugref does not
+    hold is a coverage gap, not a bug -- and its identifier_scheme is
+    OBJECT_SCHEME ('MED-RT'), the SAME spelling an unresolved object already
+    uses, never a distinct 'MEDRT' (onchigh_run.OBJECT_SCHEME's own
+    docstring)."""
+    entry = _class_entry(subject_medrt_code="N9999999999")
+    result = onchigh_run.resolve_entry(conn, entry)
+    assert [u.endpoint_role for u in result] == ["subject"]
+    assert result[0].identifier_scheme == "MED-RT"
+    assert result[0].identifier_value == "N9999999999"
+
+
+def test_class_subject_gets_no_salt_form_expansion(conn, seeded, class_seeded):
+    """A class has no salt forms (design spec section 14.3) -- pinned
+    explicitly, per the task-10 brief, rather than left implied by the
+    dataclass shape. ResolvedClassEndpoint carries a single
+    subject_class_uuid, never a subject_moiety_uuids tuple to expand."""
+    entry = _class_entry()
+    resolved = onchigh_run.resolve_entry(conn, entry)
+    assert not hasattr(resolved, "subject_moiety_uuids")
+    assert resolved.subject_class_uuid == class_seeded
+
+
 # ---- the write half (Task 5): ingest_onchigh ---------------------------------
 
 
@@ -321,6 +413,113 @@ def test_the_ingest_run_records_source_and_writer(conn, seeded):
         "SELECT source, writer, upstream_release, finished_at IS NOT NULL "
         "FROM drugref.ingest_run WHERE source = 'ONCHIGH'").fetchone()
     assert row == ("ONCHIGH", "onchigh_run", "ONCHigh-2015", True)
+
+
+# ---- Task 10: the class-subject write half -----------------------------------
+
+
+@pytest.fixture
+def CLASS_FIXTURE(tmp_path) -> pathlib.Path:
+    """One ONC entry whose subject is a CLASS, not a moiety (design spec
+    section 14) -- isolated in its own tmp_path file rather than added to
+    the committed onc_fixture.toml, which test_cli_curate.py's entry-count
+    assertions already pin to exactly two moiety-subject entries (task-10
+    brief: 'update every assertion that counts entries' if the shared
+    fixture grows a third). Resolves fully against `seeded` + `class_seeded`.
+    """
+    path = tmp_path / "onc_class_subject.toml"
+    path.write_text(
+        '[[entry]]\n'
+        'entry_id = "maoi-nsaid"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N0000175724"\n'
+        'subject_name = "Monoamine Oxidase Inhibitors [MoA]"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
+    return path
+
+
+@pytest.fixture
+def CLASS_FIXTURE_UNRESOLVED(tmp_path) -> pathlib.Path:
+    """One ONC entry whose CLASS SUBJECT resolves to nothing -- the
+    class-subject twin of FIXTURE_WITH_UNKNOWN above, so the same worklist
+    proves it covers a class subject exactly as it covers a moiety subject
+    or an object."""
+    path = tmp_path / "onc_class_subject_unknown.toml"
+    path.write_text(
+        '[[entry]]\n'
+        'entry_id = "unknown-class-subject"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N9999999999"\n'
+        'subject_name = "Not A Real Class"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
+    return path
+
+
+def _class_pair_count(conn, source: str) -> int:
+    """How many class_pair_contraindication rows `source` currently owns --
+    the class-subject twin of this module's own `_count`."""
+    return conn.execute(
+        "SELECT count(*) FROM drugref.class_pair_contraindication "
+        "WHERE source = %s", (source,)).fetchone()[0]
+
+
+def test_a_class_subject_entry_writes_a_class_pair_contraindication_row(
+        conn, seeded, class_seeded, CLASS_FIXTURE):
+    """The orchestrator-level twin of test_resolves_a_class_subject_by_medrt_
+    code: a class-subject entry reaches the database as ONE
+    class_pair_contraindication row, counted in OncSummary's own
+    class_rules_written field (Task 10), separate from the moiety-grain
+    rules_written/salt_forms_expanded fields."""
+    summary = onchigh_run.ingest_onchigh(
+        conn, path=CLASS_FIXTURE, upstream_release="test")
+    assert summary.class_rules_written == 1
+    assert summary.rules_written == 0
+    assert summary.salt_forms_expanded == 0
+    assert _class_pair_count(conn, "ONCHIGH") == 1
+
+
+def test_a_class_pair_rebuild_replaces_only_this_sources_rows(
+        conn, seeded, class_seeded, CLASS_FIXTURE):
+    """Mirrors test_a_rebuild_replaces_only_this_sources_rows, one grain over:
+    run TWICE, so a rebuild that merely appended (rather than
+    clear-then-rewrite) would double the count on the second call."""
+    onchigh_run.ingest_onchigh(conn, path=CLASS_FIXTURE, upstream_release="test-1")
+    onchigh_run.ingest_onchigh(conn, path=CLASS_FIXTURE, upstream_release="test-2")
+    assert _class_pair_count(conn, "ONCHIGH") == 1
+
+
+def test_an_unresolvable_class_subject_becomes_a_question(
+        conn, seeded, CLASS_FIXTURE_UNRESOLVED):
+    """The class-subject twin of test_an_unresolved_endpoint_becomes_a_
+    question: a class subject that fails to resolve lands on the SAME
+    worklist (gap kind fifteen) a moiety subject or an object already does,
+    with identifier_scheme = 'MED-RT' -- OBJECT_SCHEME's exact spelling, per
+    the task-10 brief, never the hyphen-less 'MEDRT'."""
+    summary = onchigh_run.ingest_onchigh(
+        conn, path=CLASS_FIXTURE_UNRESOLVED, upstream_release="test")
+    assert summary.endpoints_unresolved == 1
+    row = conn.execute(
+        "SELECT identifier_scheme FROM drugref.ingest_unresolved_onc_endpoint "
+        "WHERE entry_id = 'unknown-class-subject' AND endpoint_role = 'subject'"
+    ).fetchone()
+    assert row == ("MED-RT",)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_onc_endpoint' AND is_current").fetchone()[0] == 1
 
 
 def test_a_resolved_rule_reaches_the_worklist(conn, seeded):

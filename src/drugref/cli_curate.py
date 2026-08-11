@@ -18,7 +18,13 @@ overlay is a different kind of thing and does not belong in it.
 LIKE `cli_policy.py` AND `cli_signing.py`, THIS MODULE WRITES NO SQL OF ITS OWN for the
 curated read/write path: `curate_onchigh` reads through `curation.live_interaction_
 judgement` and writes through `curation.record_interaction_judgement`, never a bare
-SELECT/INSERT against `curated_interaction` embedded here.
+SELECT/INSERT against `curated_interaction` embedded here. Task 10 (design spec
+section 14) widens this to a SECOND overlay table, `curated_class_interaction`, for
+a class-subject rule -- through the identically-shaped `curation.
+live_class_interaction_judgement` / `curation.record_class_interaction_judgement`
+pair, dispatched on `onchigh_run.resolve_entry`'s return type rather than a second
+command: an operator runs one `curate onchigh`, and this module tells the two grains
+apart internally.
 
 IDEMPOTENT BY COMPARISON, NOT BY LUCK -- this is the module's central discipline, and
 the reason `live_interaction_judgement` exists at all. `curated_interaction` is
@@ -50,6 +56,7 @@ for why the CLI layer does not catch it either.
 import logging
 import pathlib
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import drugref
@@ -101,23 +108,32 @@ class CurateSummary:
     the FILE-ENTRY grain while silently dropping every entry that failed to resolve
     on the floor, so the four numbers a caller could see could never be reconciled
     against each other (issue 71's lesson: a dropped row counted into nothing is
-    exactly the defect a worklist exists to catch).
+    exactly the defect a worklist exists to catch). Task 10 widens BOTH grains to
+    cover the class-subject shape (design spec section 14) without adding a third:
+    a class-subject entry is still exactly one ENTRY-grain outcome, and its single
+    graded rule is still exactly one FORM-grain outcome -- see `test_cli_curate.py::
+    test_the_reconciliation_equation_holds_across_both_grains`, which exercises both
+    grains together in one run rather than trusting each grain's own test alone.
 
     1. ENTRY grain: `rules_seen == entries_resolved + entries_unresolved`, always --
        every entry `onchigh.parse` returns lands in EXACTLY ONE of those two buckets,
-       and `test_cli_curate.py::test_every_entry_is_accounted_for_in_exactly_one_bucket`
+       regardless of whether its subject is a moiety or a class (Task 10), and
+       `test_cli_curate.py::test_every_entry_is_accounted_for_in_exactly_one_bucket`
        pins the equation so a third outcome added later without a counter fails the
        build instead of going quiet.
     2. FORM grain: `judgements_written + judgements_superseded + unchanged` sums to
-       the total number of RESOLVED salt forms across every entry in
-       `entries_resolved` -- one curated_interaction natural key per element of
-       `ResolvedEndpoint.subject_moiety_uuids`, exactly as `ingest onchigh`'s own
-       `salt_forms_expanded` counts `class_contraindication` rows rather than file
-       entries. This total is NOT `entries_resolved`, because one entry with two
-       gated-in salt forms contributes two form-grain outcomes -- possibly two
-       DIFFERENT ones, if a salt form the composition tree only just gated in has no
-       live judgement yet while its sibling was already graded identically on a
-       previous run.
+       the total number of RESOLVED JUDGEMENT TARGETS across every entry in
+       `entries_resolved` -- one `curated_interaction` natural key per element of a
+       moiety-subject entry's `ResolvedEndpoint.subject_moiety_uuids` (exactly as
+       `ingest onchigh`'s own `salt_forms_expanded` counts `class_contraindication`
+       rows rather than file entries), OR one `curated_class_interaction` natural
+       key for a class-subject entry's single `ResolvedClassEndpoint` (Task 10 --
+       design spec section 14.3: a class has no salt forms, so it contributes
+       exactly one target, never several). This total is NOT `entries_resolved`,
+       because one moiety-subject entry with two gated-in salt forms contributes
+       two form-grain outcomes -- possibly two DIFFERENT ones, if a salt form the
+       composition tree only just gated in has no live judgement yet while its
+       sibling was already graded identically on a previous run.
 
     `entries_unresolved` counts ENTRIES, not endpoints (contrast `onchigh_run.
     OncSummary.endpoints_unresolved`, which can be up to 2 per entry): an entry whose
@@ -139,14 +155,16 @@ def _graded_fields_match(live: dict, judgement: onchigh.OncJudgement) -> bool:
     """True when every one of the five GRADED fields already matches the file's
     judgement -- the whole test for "nothing to write here".
 
-    Compares `live` (as `curation.live_interaction_judgement` returns it) against the
-    parsed `OncJudgement` field by field, NOT by building a second dict and comparing
-    dicts wholesale -- `live`'s keys are `curation`'s own column names and
-    `OncJudgement`'s are the parser's dataclass fields, and the two happen to share
-    spelling today only because nobody has had a reason to diverge them yet. Naming
-    each comparison explicitly means a future rename on either side fails loudly
-    (`AttributeError`/`KeyError`) rather than silently comparing two fields that used
-    to mean the same thing and no longer do.
+    Compares `live` (as `curation.live_interaction_judgement` OR `curation.
+    live_class_interaction_judgement` returns it -- both share the same five
+    column names, Task 10) against the parsed `OncJudgement` field by field, NOT by
+    building a second dict and comparing dicts wholesale -- `live`'s keys are
+    `curation`'s own column names and `OncJudgement`'s are the parser's dataclass
+    fields, and the two happen to share spelling today only because nobody has had
+    a reason to diverge them yet. Naming each comparison explicitly means a future
+    rename on either side fails loudly (`AttributeError`/`KeyError`) rather than
+    silently comparing two fields that used to mean the same thing and no longer
+    do.
     """
     return (live["applies"] == judgement.applies
             and live["severity"] == judgement.severity
@@ -155,10 +173,37 @@ def _graded_fields_match(live: dict, judgement: onchigh.OncJudgement) -> bool:
             and live["evidence_grade"] == judgement.evidence_grade)
 
 
+def _grade(live: dict | None, judgement: onchigh.OncJudgement,
+          write: Callable[[], int]) -> str:
+    """Decide, idempotently, whether one judgement target needs a write --
+    shared by both grains (Task 10) so the compare-then-write sequence is
+    stated once rather than twice with two different natural keys.
+
+    `live` is the target's already-fetched live graded fields (or None if
+    nothing is curated yet). `write` is a zero-argument callable that performs
+    the actual INSERT-then-supersede when called -- a closure the caller
+    builds so this function stays ignorant of WHICH curation writer
+    (`record_interaction_judgement` or `record_class_interaction_judgement`)
+    and WHICH natural key it closes over.
+
+    Returns 'written', 'superseded', or 'unchanged' -- named outcomes rather
+    than three separately-incremented integers, so the call site reads as
+    English and the three-way tally lives in exactly one place (the dict
+    `curate_onchigh` accumulates into) instead of three repeated
+    `if/elif/else` blocks, one per grain.
+    """
+    if live is not None and _graded_fields_match(live, judgement):
+        return "unchanged"
+    write()
+    return "written" if live is None else "superseded"
+
+
 def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
                    reviewed_against: str) -> CurateSummary:
     """Grade every resolvable rule in the ONC high-priority file, writing (or
-    revising) drugref's own judgement into `curated_interaction`.
+    revising) drugref's own judgement into `curated_interaction` (a moiety-subject
+    rule) or `curated_class_interaction` (Task 10's class-subject rule, design spec
+    section 14) -- whichever `onchigh_run.resolve_entry` says the entry is.
 
     DOES NOT COMMIT. The caller owns the transaction -- `curation.
     record_interaction_judgement`'s own rule, restated here because this function is
@@ -166,11 +211,13 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
     caller that commits; a test driving this function directly must commit its own
     work to see it survive a rollback-scoped `conn` fixture.
 
-    RESOLUTION REUSES `onchigh_run.resolve_entry` AND `subject_forms`, THE SAME
-    FUNCTIONS `ingest onchigh` calls -- not `class_contraindication` itself. The
-    candidate projection and the curated overlay are independently rebuildable /
-    append-only, so this function resolves straight from the file's own UNII/MED-RT
-    identifiers rather than trusting whatever the candidate tier last wrote.
+    RESOLUTION REUSES `onchigh_run.resolve_entry`, THE SAME FUNCTION `ingest onchigh`
+    calls -- not `class_contraindication`/`class_pair_contraindication` themselves.
+    The candidate projection and the curated overlay are independently rebuildable /
+    append-only, so this function resolves straight from the file's own
+    UNII/MED-RT identifiers rather than trusting whatever the candidate tier last
+    wrote. `resolve_entry` already dispatches on the entry's subject kind (Task 10),
+    so this function only has to tell apart the THREE shapes it can return.
 
     AN UNRESOLVED ENTRY IS SKIPPED, NOT SILENTLY -- fix round 1 found an earlier
     version of this loop dropped it with neither a counter nor a log line, which is
@@ -194,26 +241,73 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
     is therefore the ONLY signal this command gives; the durable, queryable worklist
     entry is `ingest onchigh`'s job, run separately.
 
-    PER RESOLVED SALT FORM, not per file entry: `resolve_entry` already expands the
-    subject to every gated-in salt form before this function ever sees it (see
-    `ResolvedEndpoint`'s own docstring), so one file entry with two salt forms writes
-    up to two curated_interaction rows, one per (salt form, class, axis) natural key.
+    ONE TARGET PER RESOLVED SALT FORM ON THE MOIETY GRAIN, EXACTLY ONE TARGET ON THE
+    CLASS GRAIN: `resolve_entry` already expands a moiety subject to every gated-in
+    salt form before this function ever sees it (see `ResolvedEndpoint`'s own
+    docstring), so one moiety-subject entry with two salt forms writes up to two
+    `curated_interaction` rows, one per (salt form, class, axis) natural key. A
+    class-subject entry (`ResolvedClassEndpoint`, Task 10) is never expanded --
+    design spec section 14.3, a class has no salt forms -- so it writes AT MOST ONE
+    `curated_class_interaction` row.
 
-    THE COMPARISON THAT MAKES THIS IDEMPOTENT: `curation.live_interaction_judgement`
-    is read for each natural key BEFORE any write. No live row -> write. A live row
-    whose graded fields already match -> counted as `unchanged`, nothing written. A
-    live row that differs -> `record_interaction_judgement` is called again, which
-    supersedes it (INSERT the new row, then point the old one at it) rather than
-    mutating it -- `curated_interaction` refuses UPDATE outright.
+    THE COMPARISON THAT MAKES THIS IDEMPOTENT, ON EITHER GRAIN: `curation.
+    live_interaction_judgement` / `curation.live_class_interaction_judgement` is read
+    for each natural key BEFORE any write, and `_grade` (above) turns that read plus
+    the file's judgement into one of three outcomes -- see its own docstring. No live
+    row -> written. A live row that already matches -> unchanged, nothing written. A
+    live row that differs -> superseded (INSERT the new row, then point the old one
+    at it) rather than mutated -- both curated tables refuse UPDATE outright.
     """
     path = pathlib.Path(path)
     entries = onchigh.parse(path)
 
     entries_resolved = entries_unresolved = 0
-    judgements_written = judgements_superseded = unchanged = 0
+    outcomes = {"written": 0, "superseded": 0, "unchanged": 0}
     for entry in entries:
         resolved = onchigh_run.resolve_entry(conn, entry)
-        if not isinstance(resolved, onchigh_run.ResolvedEndpoint):
+        judgement = entry.judgement
+
+        if isinstance(resolved, onchigh_run.ResolvedClassEndpoint):
+            entries_resolved += 1
+            live = curation.live_class_interaction_judgement(
+                conn, resolved.subject_class_uuid, resolved.object_class_uuid,
+                resolved.axis)
+
+            def _write_class_judgement() -> int:
+                return curation.record_class_interaction_judgement(
+                    conn, resolved.subject_class_uuid, resolved.object_class_uuid,
+                    resolved.axis, judgement.applies, severity=judgement.severity,
+                    mechanism=judgement.mechanism, management=judgement.management,
+                    evidence_grade=judgement.evidence_grade, reviewed_by=reviewed_by,
+                    reviewed_against=reviewed_against)
+
+            outcomes[_grade(live, judgement, _write_class_judgement)] += 1
+
+        elif isinstance(resolved, onchigh_run.ResolvedEndpoint):
+            entries_resolved += 1
+            for subject_moiety_uuid in resolved.subject_moiety_uuids:
+                live = curation.live_interaction_judgement(
+                    conn, subject_moiety_uuid, resolved.object_class_uuid,
+                    resolved.axis)
+
+                def _write_judgement(smu=subject_moiety_uuid) -> int:
+                    # Default-arg capture, not a closure over the loop variable
+                    # directly: every lambda/def created inside a for-loop
+                    # shares the SAME cell for `subject_moiety_uuid` unless the
+                    # current value is bound as a default at definition time,
+                    # so without this every salt form's write would silently
+                    # use whichever UUID the loop landed on LAST.
+                    return curation.record_interaction_judgement(
+                        conn, smu, resolved.object_class_uuid, resolved.axis,
+                        judgement.applies, severity=judgement.severity,
+                        mechanism=judgement.mechanism,
+                        management=judgement.management,
+                        evidence_grade=judgement.evidence_grade,
+                        reviewed_by=reviewed_by, reviewed_against=reviewed_against)
+
+                outcomes[_grade(live, judgement, _write_judgement)] += 1
+
+        else:
             # A well-formed identifier drugref does not (yet) hold is a coverage
             # gap -- not a bug in the file (see `resolve_entry`'s own docstring) --
             # so this is a WARNING an operator can act on, not a silent drop.
@@ -224,31 +318,13 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
                 "curate onchigh: entry %r did not resolve (%d of 2 endpoints) -- "
                 "no judgement written; run `drugref ingest onchigh` to record it on "
                 "the coverage-gap worklist", entry.entry_id, len(resolved))
-            continue
-        entries_resolved += 1
-
-        judgement = entry.judgement
-        for subject_moiety_uuid in resolved.subject_moiety_uuids:
-            live = curation.live_interaction_judgement(
-                conn, subject_moiety_uuid, resolved.object_class_uuid, resolved.axis)
-            if live is not None and _graded_fields_match(live, judgement):
-                unchanged += 1
-                continue
-            curation.record_interaction_judgement(
-                conn, subject_moiety_uuid, resolved.object_class_uuid, resolved.axis,
-                judgement.applies, severity=judgement.severity,
-                mechanism=judgement.mechanism, management=judgement.management,
-                evidence_grade=judgement.evidence_grade, reviewed_by=reviewed_by,
-                reviewed_against=reviewed_against)
-            if live is None:
-                judgements_written += 1
-            else:
-                judgements_superseded += 1
 
     return CurateSummary(
         rules_seen=len(entries), entries_resolved=entries_resolved,
-        entries_unresolved=entries_unresolved, judgements_written=judgements_written,
-        judgements_superseded=judgements_superseded, unchanged=unchanged)
+        entries_unresolved=entries_unresolved,
+        judgements_written=outcomes["written"],
+        judgements_superseded=outcomes["superseded"],
+        unchanged=outcomes["unchanged"])
 
 
 def _handle_curate_onchigh(conn, args) -> int:
