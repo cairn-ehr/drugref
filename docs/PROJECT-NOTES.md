@@ -1264,7 +1264,10 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1260 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1297 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# and then 1260 while it was at 1297, both times because the five-reviewer round that
+# added the tests updated its OWN section and not this line -- verified green on
+# 2026-08-11 at 1297 passed in 48 s;
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before

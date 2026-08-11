@@ -440,7 +440,14 @@ row's canonical payload, and an institutional key signing a per-release **conten
 every live curated assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as
 `added` and `altered`. **Revocation is data, not branches**: `rotated`/`retired` are time-scoped (prior
 signatures survive), `compromised` is blanket. `cli.py` was split first (508 → 347 lines) into `cli.py` +
-`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1260**.
+`cli_chain.py`, then `cli_signing.py` + `cli_signing_release.py`. Suite **969 → 1260 → 1297**, the last step being
+the **five-reviewer round on PR [#84](https://github.com/cairn-ehr/drugref/pull/84)** (merged 2026-08-10), which found
+four defects four earlier rounds had not — two of them *measured*: deleting the release layer's Ed25519 check outright
+left the suite green, and `drugref keys revoke --status active` undid a `compromised` revocation. `db/030`'s payload
+format and every committed vector came through it **unchanged**. Full account: PROJECT-NOTES § "Slice 5c.4", which
+leads with that round. **`db/030` is MERGED and therefore FROZEN** — corrections need a new `db/NNN`. That wave also
+pushed `signing.py` to 582 lines and `release_verification.py` to 532, breaching rule 4 and lodged as
+[#89](https://github.com/cairn-ehr/drugref/issues/89) rather than split inside a security-fix diff.
 
 **Measured on a fresh `drugref_5c4`** built from the same real releases (2026-08-10, chain wall-clock **132.96 s**,
 per-leg breakdown recorded for [#81](https://github.com/cairn-ehr/drugref/issues/81)): **every count that must not

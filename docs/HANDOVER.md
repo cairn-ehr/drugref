@@ -23,7 +23,8 @@
 #80. **`db/029` is MERGED and FROZEN** — corrections need a new `db/NNN`; `db/030` freezes the same way once this branch merges. Figures and
 traps: PROJECT-NOTES § "Slice 5c.1".
 
-**⇒ JUST FINISHED — SLICE `5c.4`, SIGNING (`db/030`), on branch `feat/slice-5c4-signing`. Suite 969 → 1297.** The overlay is signed at **two
+**⇒ SLICE `5c.4`, SIGNING (`db/030`) IS MERGED** — PR [#84](https://github.com/cairn-ehr/drugref/pull/84), 2026-08-10; `main` is clean and
+**`db/030` is now FROZEN** like `db/029`. Suite **969 → 1297, re-verified green on 2026-08-11** (`ruff check .` clean too). The overlay is signed at **two
 layers**: curator-held Ed25519 keys over one row's canonical payload, an institutional key over a per-release **content manifest**
 enumerating every live assertion — so verification is bidirectional and catches **omission** (`dropped`) as well as `added`/`altered`.
 Signatures are **detached rows, not a column**, so any row can be signed later and counter-signing works. Revocation is **data, not
@@ -69,7 +70,9 @@ append-only floor**, so one `UPDATE` disarms every compromise verdict (additive 
 tables" and named the wrong remedy — floor that one ALONE**: `signature_target_kind` is *designed* to move to a `/v2`, the migration the
 read-back machinery exists for. Still carried, unfiled: `tests/test_cli_signing*.py` **cannot commit for real** — other modules assert
 blanket unfiltered counts on shared tables, a test-isolation problem shaped like [#2](https://github.com/cairn-ehr/drugref/issues/2) ·
-`db/030` is 568 lines vs `db/029`'s 579: precedent, not debt.
+`db/030` is 568 lines vs `db/029`'s 579: precedent, not debt. **[#89](https://github.com/cairn-ehr/drugref/issues/89)** — `signing.py`
+(582) and `release_verification.py` (532) breach rule 4; the seam is named in the issue, and it was deliberately not split inside a
+security-fix diff.
 
 **Filed by the last three rounds** — [#79](https://github.com/cairn-ehr/drugref/issues/79) **`tests/` is exempt from E501** (its title's 324
 has drifted — re-measure, never quote; **debt, not policy** — delete the `pyproject.toml` block when 79 closes) ·
