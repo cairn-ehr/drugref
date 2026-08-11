@@ -145,6 +145,41 @@ def record_condition_ruling(
     return new_id
 
 
+_GRADED_COLUMNS = ("applies", "severity", "mechanism", "management", "evidence_grade")
+
+
+def live_interaction_judgement(
+        conn: psycopg.Connection,
+        subject_moiety_uuid: uuid.UUID,
+        object_class_uuid: uuid.UUID,
+        relationship: str) -> dict | None:
+    """The live row's GRADED fields for one (subject, class, relationship) natural
+    key, or None if nothing has been curated yet.
+
+    THIS IS WHAT MAKES `drugref curate` IDEMPOTENT BY COMPARISON RATHER THAN BY LUCK.
+    curated_interaction is append-only, so a caller re-running the same file must be
+    able to tell "nothing changed" from "this needs a new row" BEFORE writing --
+    inserting unconditionally would leave a permanent duplicate that the deferred
+    single-live trigger only reports at COMMIT, long after the write happened.
+
+    RETURNS ONLY THE FIVE GRADED FIELDS -- `applies`, `severity`, `mechanism`,
+    `management`, `evidence_grade` -- and deliberately NOT `reviewed_at` or
+    `reviewed_by`. Those two describe WHO ran this comparison and WHEN, not WHAT was
+    judged: `reviewed_at` moves on every invocation and `reviewed_by` is whatever the
+    operator typed on this run, so a caller comparing them against a fresh judgement
+    would supersede the entire file every time it ran -- which is the opposite of the
+    append-only discipline this function exists to protect.
+    """
+    row = conn.execute(
+        f"SELECT {', '.join(_GRADED_COLUMNS)} FROM drugref.curated_interaction "
+        "WHERE subject_moiety_uuid = %s AND object_class_uuid = %s "
+        "AND relationship = %s AND superseded_by IS NULL",
+        (subject_moiety_uuid, object_class_uuid, relationship)).fetchone()
+    if row is None:
+        return None
+    return dict(zip(_GRADED_COLUMNS, row, strict=True))
+
+
 @dataclass(frozen=True)
 class UnresolvedTarget:
     """One live curated row whose candidate is no longer projected.

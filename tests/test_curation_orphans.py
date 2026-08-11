@@ -236,7 +236,8 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
 
 
 @pytest.mark.parametrize(
-    "module", ["cli", "cli_policy", "cli_signing", "cli_signing_release"])
+    "module",
+    ["cli", "cli_policy", "cli_signing", "cli_signing_release", "cli_curate"])
 @pytest.mark.parametrize("table", [
     "curated_interaction", "curated_condition",
     # THE FOUR SLICE-5C.4 TABLES, added the round cli_signing.py/
@@ -282,6 +283,12 @@ def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     not just the two 5c.1 ones this test started with -- are checked against
     BOTH new modules: the two claims (which tables, which modules) have to be
     kept in the same place or one of them silently stops meaning anything.
+
+    `cli_curate.py` (slice 5c.2, task 7) JOINS THE LIST FOR THE SAME REASON, not a
+    new one: it is the first CLI module whose whole job is WRITING into
+    `curated_interaction` (via `curation.record_interaction_judgement`/
+    `curation.live_interaction_judgement`), which makes an embedded write here a
+    strictly worse instance of the exact hazard this test already exists to catch.
     """
     import ast
     import importlib

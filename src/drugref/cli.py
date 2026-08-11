@@ -59,7 +59,8 @@ from collections.abc import Sequence
 import psycopg
 
 import drugref
-from drugref import cli_policy, cli_signing, curation, db, interactions, signatures
+from drugref import (cli_curate, cli_policy, cli_signing, curation, db, interactions,
+                     signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -390,6 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     cli_policy.register(commands)
     cli_signing.register(commands)
+    cli_curate.register(commands)
 
     return parser
 
