@@ -217,6 +217,12 @@ def test_apply_migrations_is_idempotent(conn):
         # signature_backdated is an operator signal, not a gap kind. Both are VIEWs,
         # named explicitly for the same information_schema.tables reason as above.
         "curated_signature_status", "signature_backdated",
+        # Slice 5c.2, db/031: the ONC high-priority DDI list's worklist for a pair
+        # endpoint that did not resolve to a moiety or class -- db/016's precedent
+        # one pipeline stage earlier, over CI_ChemClass objects -- plus its gap
+        # view (gap kind fifteen), named explicitly for the same
+        # information_schema.tables reason as above.
+        "ingest_unresolved_onc_endpoint", "gap_unresolved_onc_endpoint",
     }
 
 
