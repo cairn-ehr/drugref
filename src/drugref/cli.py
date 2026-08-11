@@ -63,13 +63,19 @@ from drugref import cli_policy, cli_signing, curation, db, interactions, signatu
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
-                            pbs_run, run)
+                            onchigh_run, pbs_run, run)
 
-# The two closed seed files ship INSIDE the package (they are drugref's own curated
+# The closed seed files ship INSIDE the package (they are drugref's own curated
 # data, not a download), so they are defaults rather than required arguments.
 _DATA = pathlib.Path(drugref.__file__).resolve().parent / "data"
 CROSSWALK = _DATA / "usan_inn_crosswalk.tsv"
 ALLOWLIST = _DATA / "legacy_allowlist.tsv"
+# The ONC high-priority DDI list is the same kind of file: drugref's own hand-curated
+# data, not an upstream release. Unlike CROSSWALK/ALLOWLIST it is still a declared
+# IngestStep input (onchigh's `onc` entry below) rather than a hardcoded constant, so
+# `build_parser` gives it a default instead of the required `--name PATH` flag every
+# other step's inputs get -- see the special case in the per-source loop below.
+ONC = _DATA / "onc_high_priority.toml"
 
 log = logging.getLogger("drugref")
 
@@ -107,6 +113,10 @@ def _run_pbs(conn, paths, release):
 def _run_gsrs(conn, paths, release):
     return gsrs_run.ingest_gsrs(conn, dump_path=paths["dump"],
                                 upstream_release=release)
+
+
+def _run_onchigh(conn, paths, release):
+    return onchigh_run.ingest_onchigh(conn, path=paths["onc"], upstream_release=release)
 
 
 # ORDER IS A CONSTANT, NOT AN ARGUMENT, and ONE POSITION IN IT IS A DATA DEPENDENCY:
@@ -151,6 +161,16 @@ STEPS = (
                secondary=("desc", "supp")),
     IngestStep("pbs", (("items", "tables_as_csv/items.csv"),), _run_pbs),
     IngestStep("gsrs", (("dump", "GSRS/dump-public-*.gsrs"),), _run_gsrs),
+    # `onchigh` MUST run LAST, and this one position IS a data dependency (unlike the
+    # rest of the order below unii, which is convention): resolve_entry looks up
+    # UNII-registered moieties and MED-RT classes, and subject_forms expands each
+    # resolved subject to every salt form via the composition tree GSRS builds. Run it
+    # before unii, medrt or gsrs and every entry in the file resolves to nothing.
+    #
+    # The glob has no wildcard, unlike every other step's: this file carries no release
+    # version in its name (it is drugref's own committed data, not an upstream
+    # download), so "onc_high_priority.toml" is the whole pattern.
+    IngestStep("onchigh", (("onc", "onc_high_priority.toml"),), _run_onchigh),
 )
 
 
@@ -328,8 +348,15 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--release", required=True,
                          help="the upstream release tag, recorded as provenance")
         for name, glob in step.inputs:
-            sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
-                             help=f"path to the {name} file (chain glob: {glob})")
+            if step.name == "onchigh":
+                # Drugref's own committed data (see ONC above), not a download -- the
+                # one input this loop does not force an operator to supply.
+                sub.add_argument(f"--{name}", type=pathlib.Path, default=ONC,
+                                 help=f"path to the {name} file "
+                                      f"(default: packaged {ONC.name})")
+            else:
+                sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
+                                 help=f"path to the {name} file (chain glob: {glob})")
         sub.set_defaults(handler=_handle_ingest, step=step)
 
     chain = sources.add_parser(

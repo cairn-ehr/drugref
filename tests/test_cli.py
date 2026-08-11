@@ -19,7 +19,7 @@ def test_every_orchestrator_has_a_subcommand():
     uses. Driving this off cli.STEPS would pass whatever cli.STEPS said; the point is
     that an orchestrator added without a subcommand fails here."""
     assert tuple(s.name for s in cli.STEPS) == (
-        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs", "gsrs")
+        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs", "gsrs", "onchigh")
 
 
 def test_unii_runs_before_every_feed_that_joins_to_what_it_registers():
@@ -157,6 +157,27 @@ def test_the_gsrs_glob_matches_the_real_release_name(tmp_path):
     step = next(s for s in cli.STEPS if s.name == "gsrs")
     resolved = cli.resolve_inputs(downloads, step)
     assert resolved["dump"].name == "dump-public-2026-02-26.gsrs"
+
+
+def test_onchigh_is_the_last_chain_step():
+    """It needs moieties (UNII), MED-RT classes, and the composition tree (GSRS) for
+    salt expansion, so it cannot run before any of them."""
+    names = [s.name for s in cli.STEPS]
+    assert names[-1] == "onchigh"
+    assert names.index("gsrs") < names.index("onchigh")
+
+
+def test_onchigh_declares_its_input():
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    assert step.inputs == (("onc", "onc_high_priority.toml"),)
+
+
+def test_onchigh_onc_flag_defaults_to_the_packaged_file():
+    """Like CROSSWALK and ALLOWLIST above it, the ONC list is drugref's own committed
+    data rather than an upstream download, so the per-source subcommand must not force
+    an operator to supply a path for a file this repository already carries."""
+    args = cli.build_parser().parse_args(["ingest", "onchigh", "--release", "2026"])
+    assert args.onc == cli.ONC
 
 
 def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):
