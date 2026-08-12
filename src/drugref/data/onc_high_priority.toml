@@ -382,3 +382,120 @@ Avoid the combination. When an MAOI cannot be stopped, avoid triptans
 metabolised primarily by MAO-A (e.g. sumatriptan, rizatriptan, zolmitriptan)
 and discuss non-triptan abortive options with the prescriber.
 """
+
+[[entry]]
+entry_id = "statins-cyp3a4-inhibitors"
+# Paper candidate #25.
+
+[entry.candidate]
+subject_medrt_code = "N0000000121"
+subject_name = "Hydroxymethylglutaryl-CoA Reductase Inhibitors [MoA]"
+object_medrt_code = "N0000182141"
+object_name = "Cytochrome P450 3A4 Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #25)"
+# Subject class chosen as [MoA] (18 members: atorvastatin, cerivastatin,
+# fluvastatin, lovastatin, pitavastatin, pravastatin, rosuvastatin,
+# simvastatin, plus salt forms) over "HMG-CoA Reductase Inhibitor [EPC]"
+# (N0000175589, 7 members -- the same statins without salts and without
+# cerivastatin), both for completeness and because CYP3A4 Inhibitors exists
+# in MED-RT only as [MoA] -- the same-kind constraint (file header) requires
+# a [MoA] subject to pair with it. cerivastatin was withdrawn from the
+# market in 2001 for rhabdomyolysis risk; its inclusion here is harmless
+# (a withdrawn drug generates no real prescriptions to flag) and is kept
+# rather than hand-pruned, since the class membership is MED-RT's own data.
+
+[entry.judgement]
+applies = true
+severity = "major"
+evidence_grade = "established"
+# severity applies uniformly across all 18 members of this class, but
+# CYP3A4 dependence varies sharply by statin -- simvastatin and lovastatin
+# are markedly CYP3A4-dependent (the classic myopathy/rhabdomyolysis risk);
+# rosuvastatin, pravastatin and pitavastatin are only weakly affected. The
+# class-pair grain cannot express a per-member severity; flagged in
+# task-12a-report.md as a known limitation of the shape, not an oversight.
+mechanism = """
+Several HMG-CoA reductase inhibitors (particularly simvastatin and
+lovastatin) are cleared mainly by CYP3A4. Strong inhibition of that enzyme
+raises statin plasma concentrations substantially, increasing the risk of
+dose-dependent myopathy and, rarely, rhabdomyolysis. Statins with little
+CYP3A4 dependence are far less affected by this specific mechanism.
+"""
+management = """
+For CYP3A4-dependent statins, avoid strong CYP3A4 inhibitors or use the
+lowest effective statin dose with close monitoring for muscle symptoms and
+creatine kinase. Where the interacting drug is essential, switch to a statin
+with minimal CYP3A4 dependence (e.g. rosuvastatin, pravastatin,
+pitavastatin).
+"""
+
+[[entry]]
+entry_id = "cyp3a4-inducers-protease-inhibitors"
+# Paper candidate #23.
+
+[entry.candidate]
+subject_medrt_code = "N0000185506"
+subject_name = "Cytochrome P450 3A4 Inducers [MoA]"
+object_medrt_code = "N0000000246"
+object_name = "HIV Protease Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #23)"
+# Object class chosen deliberately: "HIV Protease Inhibitors [MoA]"
+# (N0000000246, 17 members) over the broader "Protease Inhibitors [MoA]"
+# (N0000000076, includes non-HIV proteases such as hepatitis C NS3/4A
+# inhibitors -- the wrong population) and over "Human Immunodeficiency Virus
+# Protease Inhibitor [EPC]" (N0000175520), which has ZERO members in
+# drugref_5c4 and is unusable regardless of kind-matching.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+HIV protease inhibitors are cleared largely through CYP3A4. Strong CYP3A4
+induction accelerates their metabolism, lowering plasma concentrations below
+the threshold needed for durable viral suppression and raising the risk of
+virologic failure and resistance.
+"""
+management = """
+Avoid strong CYP3A4 inducers during protease-inhibitor-based antiretroviral
+therapy. Where the inducer cannot be avoided, select an antiretroviral
+regimen not dependent on CYP3A4 and consult an HIV pharmacotherapy
+specialist.
+"""
+
+# ============================================================================
+# OMITTED ENTRIES -- four of the paper's fifteen, deliberately not encoded.
+# Full reasoning in task-12a-report.md (same slice's sdd directory); summary
+# kept here so a reader of this file alone sees why the count is 11, not 15.
+#
+# #6  Febuxostat - Azathioprine/mercaptopurine. Object must be a class (a
+#     drug x drug shape). No MED-RT class fits: "Purine Antimetabolite [EPC]"
+#     (N0000175712) has 2 members and EXCLUDES mercaptopurine; the one class
+#     both drugs share, "Nucleic Acid Synthesis Inhibitors [MoA]"
+#     (N0000000233), has 77 members spanning unrelated antineoplastics,
+#     antivirals and antimalarials. Omitted rather than encoded against a
+#     population that would misstate the interaction.
+#
+# #30 Tranylcypromine - Procarbazine. Same shape, same defect: procarbazine's
+#     only MED-RT classes (the same 77-member Nucleic Acid Synthesis
+#     Inhibitors [MoA], plus Alkylating Activity [MoA], Alkylating Drug
+#     [EPC], Antineoplastic Agent [TC]) do not reflect its incidental
+#     MAO-inhibiting activity, which is the actual mechanism at issue. No
+#     genuinely-right class exists. Omitted.
+#
+# #21 QT prolonging agents x QT prolonging agents. MED-RT (as ingested into
+#     drugref_5c4) carries NO class for QT/torsades/arrhythmia prolongation
+#     at all -- searched exhaustively (%QT%, %torsad%, %prolong%), zero rows.
+#     This is the entry the class-subject self-pair shape (db/032) was
+#     designed to express, and it cannot be encoded for want of upstream
+#     data, not for want of the shape. Omitted.
+#
+# #27 CYP3A4 inhibitors x Ergot alkaloids. The same-kind constraint (file
+#     header) cannot be satisfied: CYP3A4 inhibitors exist in MED-RT only as
+#     [MoA] (confirmed no [EPC] twin), and ergot alkaloids exist only as
+#     [EPC] (confirmed no [MoA] twin). Any axis choice would ingest cleanly
+#     and then silently expand to zero pairs at read time. Omitted rather
+#     than shipping a rule that looks live but produces nothing.
+# ============================================================================
