@@ -186,3 +186,199 @@ Avoid concurrent use with strong CYP1A2 inhibitors. If the interacting drug
 is essential, do not use tizanidine and select an alternative muscle
 relaxant.
 """
+
+# ============================================================================
+# GRAIN 2: class x class -- Task 10's addition (db/032, design spec section
+# 14). Five of the eight class x class paper entries share MAOIs as the
+# object; all five use the SAME MAOI class for consistency -- see the note
+# on entry one of this group for why it is the [EPC] class, not [MoA].
+# ============================================================================
+
+[[entry]]
+entry_id = "amphetamines-maoi"
+# Paper candidate #3.
+#
+# THE MAOI OBJECT CLASS, EXPLAINED ONCE FOR ALL FIVE ENTRIES IN THIS GROUP:
+# "Monoamine Oxidase Inhibitor [EPC]" (N0000175744, 5 members: isocarboxazid,
+# phenelzine, rasagiline, selegiline, tranylcypromine) is used rather than
+# "Monoamine Oxidase Inhibitors [MoA]" (N0000000184, 31 members) for two
+# reasons: (1) the MoA class also tags amphetamine, dextroamphetamine,
+# methamphetamine, benzphetamine, diethylpropion, phendimetrazine and
+# phentermine as "MAO inhibitors" -- a MED-RT classification quirk, and
+# self-referential against THIS very entry's subject class; (2) the same-kind
+# constraint documented at the top of this file means an [EPC] subject class
+# (as every subject below is) can only be paired with an [EPC] object class,
+# or the object side expands to zero members at read time. The EPC class
+# excludes furazolidone, which does carry incidental MAO-inhibiting activity
+# -- flagged in task-12a-report.md as a judgement call worth clinician review.
+
+[entry.candidate]
+subject_medrt_code = "N0000175739"
+subject_name = "Central Nervous System Stimulant [EPC]"
+object_medrt_code = "N0000175744"
+object_name = "Monoamine Oxidase Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #3)"
+# Subject class (7 members: amphetamine, caffeine, dexmethylphenidate,
+# dextroamphetamine, lisdexamfetamine, methamphetamine, methylphenidate) is
+# the closest MED-RT population to "amphetamine derivatives": no MED-RT class
+# is scoped to amphetamines alone without ALSO losing amphetamine and
+# dextroamphetamine themselves (the narrower "Sympathomimetic Amine
+# Anorectic [EPC]" holds only benzphetamine, diethylpropion, phendimetrazine,
+# phentermine). Caffeine's inclusion is a materially weaker interaction than
+# the others in this class -- flagged in task-12a-report.md.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Amphetamine-type stimulants promote release of stored catecholamines from
+presynaptic neurons. When monoamine oxidase is inhibited, those catecholamines
+are not broken down and accumulate, and the combination can precipitate a
+hypertensive crisis.
+"""
+management = """
+Avoid the combination. If a stimulant is clinically necessary, discontinue
+the MAOI and observe the required washout interval before starting the
+stimulant, and vice versa.
+"""
+
+[[entry]]
+entry_id = "ssri-maoi"
+# Paper candidate #8.
+
+[entry.candidate]
+subject_medrt_code = "N0000175696"
+subject_name = "Serotonin Reuptake Inhibitor [EPC]"
+object_medrt_code = "N0000175744"
+object_name = "Monoamine Oxidase Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #8)"
+# Subject class (8 members: citalopram, escitalopram, fluoxetine,
+# fluvoxamine, nefazodone, paroxetine, sertraline, trazodone) is MED-RT's FDA
+# EPC grouping and is broader than "SSRI" in the strict sense -- it also
+# carries nefazodone and trazodone (serotonin antagonist/reuptake
+# inhibitors). Both genuinely carry serotonin-syndrome risk with an MAOI, so
+# their inclusion is not considered a defect, but is noted for the record.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Both drug classes raise synaptic serotonin -- one by blocking its reuptake,
+the other by blocking its enzymatic breakdown. Combined, they can produce a
+dangerous serotonergic excess (serotonin syndrome), with autonomic
+instability, neuromuscular hyperactivity and altered mental status.
+"""
+management = """
+Avoid concurrent use. Observe an adequate washout period when switching
+between an MAOI and a serotonin reuptake inhibitor in either direction
+(longer for agents with active metabolites, e.g. fluoxetine).
+"""
+
+[[entry]]
+entry_id = "narcotic-analgesics-maoi"
+# Paper candidate #16.
+
+[entry.candidate]
+subject_medrt_code = "N0000175690"
+subject_name = "Opioid Agonist [EPC]"
+object_medrt_code = "N0000175744"
+object_name = "Monoamine Oxidase Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #16)"
+# Subject class, 18 members: alfentanil, codeine anhydrous, dihydrocodeine,
+# fentanyl, hydrocodone, hydromorphone, levorphanol, loperamide, methadone,
+# morphine, oxycodone, oxymorphone, pethidine, propoxyphene, remifentanil,
+# sufentanil, tapentadol, tramadol. loperamide is an OTC antidiarrheal with
+# minimal CNS penetration at labelled doses and is unlikely to produce a
+# clinically meaningful MAOI interaction -- flagged in task-12a-report.md as
+# a judgement call worth clinician review; the other 17 members are all
+# genuine analgesics.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Certain opioids (classically pethidine, and to varying degrees tramadol,
+methadone and fentanyl) add serotonergic activity to MAO inhibition, risking
+serotonin syndrome; others contribute additive CNS and respiratory
+depression.
+"""
+management = """
+Avoid the combination, particularly pethidine and tramadol. Where opioid
+analgesia is required, select an agent with minimal serotonergic activity,
+use the lowest effective dose, and monitor closely for agitation,
+hyperthermia and respiratory depression.
+"""
+
+[[entry]]
+entry_id = "tca-maoi"
+# Paper candidate #20.
+
+[entry.candidate]
+subject_medrt_code = "N0000175752"
+subject_name = "Tricyclic Antidepressant [EPC]"
+object_medrt_code = "N0000175744"
+object_name = "Monoamine Oxidase Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #20)"
+# Subject class, 9 members: amitriptyline, amoxapine, clomipramine,
+# desipramine, doxepin, imipramine, nortriptyline, protriptyline,
+# trimipramine. Clean match, no contamination found.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Tricyclic antidepressants inhibit norepinephrine and serotonin reuptake;
+combined with MAO inhibition, the resulting monoamine excess can cause
+hyperthermia, hypertensive crisis, seizures and serotonin syndrome.
+"""
+management = """
+Avoid concurrent use. Observe an adequate washout period (generally at least
+two weeks) when switching between a tricyclic antidepressant and an MAOI in
+either direction.
+"""
+
+[[entry]]
+entry_id = "triptans-maoi"
+# Paper candidate #31.
+
+[entry.candidate]
+subject_medrt_code = "N0000175765"
+subject_name = "Serotonin-1b and Serotonin-1d Receptor Agonist [EPC]"
+object_medrt_code = "N0000175744"
+object_name = "Monoamine Oxidase Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #31)"
+# Subject class, 7 members: almotriptan, eletriptan, frovatriptan,
+# naratriptan, rizatriptan, sumatriptan, zolmitriptan -- an exact match for
+# "triptans" (no MED-RT class is literally named "triptan", but this class's
+# full membership IS the triptan class).
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "probable"
+# evidence_grade drafted as "probable" rather than "established": the
+# FDA-label caution for triptan+MAOI combinations is well known, but the
+# underlying evidence for serotonin syndrome from this specific combination
+# is thinner in the literature than for SSRI-MAOI or TCA-MAOI (regulatory
+# caution plus isolated case reports rather than a large case series) --
+# flagged in task-12a-report.md for clinician confirmation or upgrade.
+mechanism = """
+Triptans are partly cleared by monoamine oxidase (notably the MAO-A isoform).
+Inhibiting that enzyme both raises triptan exposure and adds to overall
+serotonergic tone, with a theoretical and case-report-supported risk of
+serotonin syndrome or exaggerated vasoconstriction.
+"""
+management = """
+Avoid the combination. When an MAOI cannot be stopped, avoid triptans
+metabolised primarily by MAO-A (e.g. sumatriptan, rizatriptan, zolmitriptan)
+and discuss non-triptan abortive options with the prescriber.
+"""
