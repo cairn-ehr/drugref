@@ -1,0 +1,188 @@
+# src/drugref/data/onc_high_priority.toml
+#
+# The ONC high-priority drug-drug interaction floor (slice 5c.2, design spec
+# 2026-08-11-drugref-slice-5c2-onc-ddi-floor-design.md).
+#
+# SOURCE: Phansalkar S, Desai AA, Bell D, Yoshida E, Doole J, Czochanski M,
+# Middleton B, Bates DW. "High-priority drug-drug interactions for use in
+# electronic health records." J Am Med Inform Assoc 2012;19(5):735-43.
+# DOI 10.1136/amiajnl-2011-000612. PMID 22539083. PMC3422823 (open access).
+# Table 2 -- the fifteen ONC high-priority pairs. The pairs themselves are
+# facts and are not copyrightable; per rule 6 (spec section 10), NO verbatim
+# text from the paper appears anywhere in this file -- every `mechanism` and
+# `management` string below is drugref's own prose, drafted from general
+# pharmacology knowledge, not a quotation or paraphrase of the source.
+#
+# THIS CONTENT IS NOT CLINICALLY REVIEWED. It is a drafting agent's best
+# attempt at fifteen well-known drug class interactions, awaiting a
+# physician's sign-off before `drugref curate onchigh` ever writes it to the
+# append-only overlay. See task-12a-report.md (same slice's sdd directory)
+# for the full resolution trail, every member-count measurement, and a list
+# of judgement calls a reviewing clinician should check first.
+#
+# GRAIN (design spec section 14): each entry carries EXACTLY ONE of
+# `subject_unii` (a single drug, moiety-subject grain, Tasks 1-8) or
+# `subject_medrt_code` (a drug class, class-subject grain, Task 10/db-032).
+# `object_medrt_code` is always a MED-RT class -- the object is never a bare
+# moiety in this schema, which is why two paper entries with a drug as the
+# object (febuxostat-azathioprine/mercaptopurine, tranylcypromine-
+# procarbazine) are OMITTED below rather than encoded against a wrong class.
+#
+# AXIS AND THE SAME-KIND CONSTRAINT. `axis` selects ONE class_membership
+# relationship (CI_MoA -> has_MoA, CI_EPC -> has_EPC) used to expand a class
+# into its member moieties. For a class-SUBJECT entry this expansion runs on
+# BOTH the subject and the object class (db/033's class_rule_subject_member /
+# class_rule_partner_member), so subject and object must be the SAME kind
+# ([MoA] with [MoA], or [EPC] with [EPC]) or one side silently expands to
+# zero members. Verified directly against drugref_5c4:
+# class_membership.relationship for every class checked below equals exactly
+# its own [MoA]/[EPC] bracket suffix. This constraint is why, e.g., the MAOI
+# object below is always the [EPC] class (matching every [EPC] subject class
+# used against it) rather than the differently-populated [MoA] class, and why
+# "CYP3A4 inhibitors x ergot alkaloids" (paper candidate #27) is OMITTED:
+# CYP3A4 inhibitors exist in MED-RT only as [MoA] and ergot alkaloids only as
+# [EPC], with no same-kind pair available.
+#
+# Member counts recorded per entry are a point-in-time measurement against
+# drugref_5c4 on 2026-08-11/12, kept as a comment so a future re-measurement
+# can see what changed.
+
+# ============================================================================
+# GRAIN 1: moiety (single drug) x class -- four paper entries fit this shape
+# as built by Tasks 1-8.
+# ============================================================================
+
+[[entry]]
+entry_id = "atazanavir-ppi"
+# Paper candidate #4. atazanavir UNII confirmed against drugref_5c4
+# (salt form atazanavir sulfate, UNII 4MT4VIE29P, is expanded automatically
+# by the orchestrator's salt-form logic -- not listed here).
+
+[entry.candidate]
+subject_unii = "QZU4H47A3S"
+subject_name = "atazanavir"
+object_medrt_code = "N0000175525"
+object_name = "Proton Pump Inhibitor [EPC]"
+axis = "CI_EPC"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #4)"
+# object_medrt_code chosen deliberately: "Proton Pump Inhibitor [EPC]"
+# (N0000175525, 6 members: dexlansoprazole, esomeprazole, lansoprazole,
+# omeprazole, pantoprazole, rabeprazole) over "Proton Pump Inhibitors [MoA]"
+# (N0000000147, 17 members) -- the MoA class is contaminated with
+# "pyrithione zinc" (a topical antidandruff agent, not a systemic acid
+# suppressant) and "vonoprazan" (a potassium-competitive acid blocker, a
+# different mechanism class), so the EPC class is the population that
+# actually matches clinical intent here.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Atazanavir's oral absorption depends on an acidic gastric environment for
+adequate dissolution and solubility. Proton pump inhibitors suppress gastric
+acid secretion for the drug's entire dosing interval (unlike shorter-acting
+H2-receptor antagonists), which can reduce atazanavir plasma concentrations
+enough to risk virologic failure and the emergence of resistance.
+"""
+management = """
+Avoid the combination in antiretroviral-naive patients. Where a PPI is
+unavoidable, use it only with ritonavir- or cobicistat-boosted atazanavir,
+keep the PPI to the lowest effective dose, separate dosing so atazanavir is
+taken well after the PPI, and monitor virologic response closely.
+"""
+
+[[entry]]
+entry_id = "irinotecan-cyp3a4-inhibitors"
+# Paper candidate #11. irinotecan UNII confirmed against drugref_5c4 (salt
+# forms irinotecan hydrochloride 042LAQ1IIS and irinotecan sucrosofate
+# OL741S3N8B are expanded automatically by the orchestrator, not listed
+# here).
+
+[entry.candidate]
+subject_unii = "7673326042"
+subject_name = "irinotecan"
+object_medrt_code = "N0000182141"
+object_name = "Cytochrome P450 3A4 Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #11)"
+# Only one CYP3A4-inhibitor class exists in MED-RT (46 members) -- no [EPC]
+# twin, so no deliberation needed on which population to pick.
+
+[entry.judgement]
+applies = true
+severity = "major"
+evidence_grade = "established"
+mechanism = """
+Irinotecan is cleared partly by CYP3A4-mediated oxidation to inactive
+metabolites, a pathway that competes with the carboxylesterase-mediated
+activation of irinotecan to its potent metabolite SN-38. Inhibiting CYP3A4
+shifts more parent drug toward that activating pathway and slows overall
+clearance, raising exposure to both irinotecan and SN-38 and increasing the
+risk of severe neutropenia and diarrhoea.
+"""
+management = """
+Avoid strong CYP3A4 inhibitors during irinotecan therapy where possible. If
+the combination cannot be avoided, consider a dose reduction and intensify
+monitoring for haematologic and gastrointestinal toxicity.
+"""
+
+[[entry]]
+entry_id = "ramelteon-cyp1a2-inhibitors"
+# Paper candidate #22. ramelteon UNII confirmed against drugref_5c4 (no salt
+# forms exist for this substance).
+
+[entry.candidate]
+subject_unii = "901AS54I69"
+subject_name = "ramelteon"
+object_medrt_code = "N0000182138"
+object_name = "Cytochrome P450 1A2 Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #22)"
+# Only one CYP1A2-inhibitor class exists in MED-RT (21 members) -- no [EPC]
+# twin.
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Ramelteon is cleared predominantly through CYP1A2. Strong CYP1A2 inhibition
+sharply reduces its clearance, producing markedly elevated plasma
+concentrations and prolonging sedative effect well beyond the intended
+hypnotic window.
+"""
+management = """
+Avoid concurrent use with strong CYP1A2 inhibitors. If the interacting drug
+cannot be stopped, avoid ramelteon and select an alternative sleep aid whose
+clearance does not depend on CYP1A2.
+"""
+
+[[entry]]
+entry_id = "tizanidine-cyp1a2-inhibitors"
+# Paper candidate #28. tizanidine UNII confirmed against drugref_5c4 (salt
+# form tizanidine hydrochloride, UNII B53E3NMY5C, is expanded automatically
+# by the orchestrator, not listed here).
+
+[entry.candidate]
+subject_unii = "6AI06C00GW"
+subject_name = "tizanidine"
+object_medrt_code = "N0000182138"
+object_name = "Cytochrome P450 1A2 Inhibitors [MoA]"
+axis = "CI_MoA"
+citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #28)"
+
+[entry.judgement]
+applies = true
+severity = "contraindicated"
+evidence_grade = "established"
+mechanism = """
+Tizanidine undergoes extensive first-pass metabolism by CYP1A2. Strong
+CYP1A2 inhibition can raise tizanidine exposure many-fold, producing
+profound hypotension, bradycardia and sedation.
+"""
+management = """
+Avoid concurrent use with strong CYP1A2 inhibitors. If the interacting drug
+is essential, do not use tizanidine and select an alternative muscle
+relaxant.
+"""
