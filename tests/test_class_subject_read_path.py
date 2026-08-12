@@ -326,3 +326,75 @@ def test_a_deny_policy_blocks_object_side_descent_but_not_the_direct_member(
     _deny(conn, f["expanding_class"], "Object Parent [MoA]")
     pairs = _rows_for_rule(conn, f["subject_class"], f["object_class"])
     assert pairs == {(f["fixed"], f["direct"])}
+
+
+# ============================================================================
+# ci_class_subtree / ci_class_pair_subtree stay TWO walks, not one (db/034, Task
+# 11B -- the moiety-grain hot-path recovery)
+# ============================================================================
+# WHY THIS SECTION EXISTS. db/033 widened `ci_class_subtree`'s roots to also cover
+# `class_pair_contraindication` (the class grain's own candidate tier), so a
+# class-grain SUBJECT could expand through the ONE view the object side already
+# used. Task 11 MEASURED what that widening cost: Postgres's row-estimate for the
+# shared recursive CTE inflated roughly 5x, which tipped its join plan from a cheap
+# Hash Join to a slower Merge Join -- a tax paid by EVERY reader of
+# `ci_class_subtree` (ddi_candidate_pair and both gap views), not only class-grain
+# queries. Measured at ~3.6x baseline even with an EMPTY class-grain overlay.
+#
+# db/034 (this task) reverts the widening and gives the class grain a SEPARATE
+# view, `ci_class_pair_subtree`, seeded only from `class_pair_contraindication`'s
+# own classes. The eight tests above already prove the class grain still works
+# end to end through whichever view backs it -- they do not care which one. These
+# two tests pin the SEPARATION itself: that a class named only by one candidate
+# table does not leak into the other table's walk. Without this, a well-meaning
+# "these two views look identical, merge them" edit later would silently
+# reintroduce exactly the regression Task 11B exists to remove, and nothing above
+# would notice -- both walks would still produce correct RESULTS, just slower ones.
+
+def test_ci_class_subtree_does_not_widen_for_the_class_grain(conn, ingest_run_id):
+    """A class named ONLY by a class x class rule (class_pair_contraindication,
+    db/032) must not appear as its own root in `ci_class_subtree` -- that view is
+    restored to db/012's original seed, `class_contraindication.object_class_uuid`
+    alone. If this regressed back to db/033's widened form, every moiety-grain
+    query would pay the ~3.6x structural tax Task 11 measured, again."""
+    subject_class, object_class, _, _ = _a_graded_class_rule(
+        conn, ingest_run_id,
+        subject_code="N0000000308", object_code="N0000000309",
+        subject_members=[("TESTUNII22", "class-only-subject")],
+        object_members=[("TESTUNII23", "class-only-object")],
+    )
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ci_class_subtree "
+        "WHERE root_uuid IN (%s, %s)", (subject_class, object_class)
+    ).fetchone()[0] == 0
+
+
+def test_ci_class_pair_subtree_is_the_class_grains_own_separate_walk(
+        conn, ingest_run_id):
+    """`ci_class_pair_subtree` (db/034) descends the DAG below a
+    class_pair_contraindication root exactly as `ci_class_subtree` does below its
+    own roots -- but it is a DIFFERENT walk over a DIFFERENT root set: a class
+    named only by a moiety x class rule (class_contraindication, db/004) must not
+    appear in it. Both halves of this test matter -- descent proves the new view
+    actually walks the DAG rather than returning only direct roots, and the
+    absence proves it is not secretly reading the other table too."""
+    root = _a_class(conn, ingest_run_id, code="N0000000310", name="Pair Root [MoA]")
+    child = _a_class(conn, ingest_run_id, code="N0000000311", name="Pair Child [MoA]")
+    classes.add_parent_edge(conn, child, root, ingest_run_id)
+    other = _a_class(conn, ingest_run_id, code="N0000000312", name="Pair Other [MoA]")
+    interactions.add_class_pair_contraindication(
+        conn, root, other, "CI_MoA", "MED-RT", ingest_run_id)
+
+    moiety_only_root = _a_class(conn, ingest_run_id, code="N0000000313",
+                                 name="Moiety-Only Root [MoA]")
+    subject = _a_moiety(conn, ingest_run_id, "TESTUNII24", "subject-drug")
+    interactions.add_contraindication(
+        conn, subject, moiety_only_root, "CI_MoA", "MED-RT", ingest_run_id)
+
+    reached = {r[0] for r in conn.execute(
+        "SELECT class_uuid FROM drugref.ci_class_pair_subtree WHERE root_uuid = %s",
+        (root,)).fetchall()}
+    assert reached == {root, child}
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ci_class_pair_subtree WHERE root_uuid = %s",
+        (moiety_only_root,)).fetchone()[0] == 0

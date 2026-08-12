@@ -235,6 +235,17 @@ def test_apply_migrations_is_idempotent(conn):
         # natural key by EQUALITY and NULL = NULL is never true -- a polymorphic
         # subject would silently stop guarding.
         "class_pair_contraindication", "curated_class_interaction",
+        # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.
+        # db/033 briefly widened ci_class_subtree's roots to also cover
+        # class_pair_contraindication, which measurably inflated Postgres's
+        # row-estimate for that shared recursive CTE and taxed every
+        # moiety-grain query (ddi_candidate_pair and both gap views) for
+        # class-grain content most callers do not have -- ~3.6x even with an
+        # EMPTY class-grain overlay. ci_class_subtree returns to db/012's
+        # original, narrow seed; this new VIEW gives the class grain its own,
+        # separately-estimated walk instead. Named explicitly for the same
+        # information_schema.tables reason as every other view above.
+        "ci_class_pair_subtree",
     }
 
 
