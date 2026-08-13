@@ -686,9 +686,10 @@ were reachable by test at all.
 **POST-MERGE RE-MEASUREMENT (2026-08-08, `drugref_5c1m`) — because every figure above was measured on a schema
 that the review rounds then edited twice, and the MERGED `db/029` had never been run end to end.** The next
 session found `drugref_5c1`'s ledger recording the pre-merge checksum where the merged file hashes to something
-else — the drift the paragraph above predicted, sitting in the database § Repo facts pointed readers at. **Both
-checksums are quoted in full, once, in § Repo facts** (at the twelve hex characters `db.apply_migrations` itself
-prints, so the documented value can be compared to its error text as a string rather than eyeballed). Rebuilt
+else — the drift the paragraph above predicted, sitting in the database the Dev DSN bullet pointed readers at.
+**Both checksums are quoted in full, once, in § "How to run / test"** (at the twelve hex characters
+`db.apply_migrations` itself prints, so the documented value can be compared to its error text as a string
+rather than eyeballed). Rebuilt
 from scratch on the merged file: chain wall-clock **144 s**, against the **127.5 s** above.
 
 **That +13% is NOT explained here.** Same five releases, same order, same machine — and no control was taken: no
@@ -846,7 +847,7 @@ stops being ignored; `docs-site/site` is the one that would bite (bypassing giti
 the false cause is what a later contributor would act on.
 
 Also corrected there: the dump is **one** artefact, not two — 321,487,817 bytes gzip → ~2.05 GB, exactly as
-§ "Repo facts" states it. An earlier draft read that as "a 2.05 GB dump and a 321 MB gzip".
+§ "How to run / test" states it. An earlier draft read that as "a 2.05 GB dump and a 321 MB gzip".
 
 **TWO TRAPS THIS ROUND WALKED INTO, both worth the next reader's attention:**
 
@@ -1055,7 +1056,8 @@ column** — which is what lets a row be signed at any later time and lets a sec
 projection and no gap kind, so none of them had licence to move; every ingest summary also reproduced 5c.1's.
 **ALL FIVE WERE TAKEN BEFORE THE END-TO-END SIGNING EXERCISE**, which afterwards left two curated rows in that
 database — so `drugref_5c4` READS 593 for `gap_uncurated_interaction_rule` TODAY, not 595, and the qualifier
-belongs here at the claim rather than only in § "Repo facts" 300 lines below. Re-measure on a fresh build.
+belongs here at the claim rather than only in § "How to run / test"'s Dev DSN bullet. Re-measure on a fresh
+build. (No line distance is given: the two earlier drafts of this pointer both stated one, and both rotted.)
 
 **Chain wall-clock 132.96 s, and this is [#81](https://github.com/cairn-ehr/drugref/issues/81)'s per-leg
 breakdown** — the thing that issue has been waiting for, against 127.5 s (5c.1) and 144 s (post-merge):
@@ -1283,7 +1285,8 @@ every existing consumer on every query, for content most of them do not have. `d
 | populated class grain | **2.87–3.28 ms** |
 
 The reviewer verified the moiety-grain half's plan is now **byte-identical** to the pre-`db/033` plan
-(`cost=14.94..3886.97 rows=37414`, actual 1233) against `drugref_5c4` itself, and confirmed **no planner GUCs or
+(`cost=14.94..3886.97 rows=37414`, actual 1233 — **1235 on `drugref_db034`, and the +2 is attributed in § "The
+reference-database rebuild"**) against `drugref_5c4` itself, and confirmed **no planner GUCs or
 statistics tricks** — the gain is structural. A residual ~2.2× floor is disclosed rather than hidden: `UNION
 ALL` still evaluates the class arm before filtering, now proportional to the class grain's own content.
 
@@ -1291,7 +1294,9 @@ ALL` still evaluates the class arm before filtering, now proportional to the cla
 
 **ONCHIGH candidates 8** (4 entries × salt-form expansion) · **pairs 213** — atazanavir-PPI 12, irinotecan-CYP3A4
 138, ramelteon-CYP1A2 21, tizanidine-CYP1A2 42 · **unresolved endpoints 0** ·
-`gap_uncurated_interaction_rule` **593 → 591** · `open_question` **21,842 → 21,848**, reconciled at row level ·
+`gap_uncurated_interaction_rule` **593 → 591** (**on a `drugref_5c4` copy whose baseline was already 593; from a
+clean baseline the same measurement is 595 → 593, same net −2 — § "The reference-database rebuild" derives the
+mechanism**) · `open_question` **21,842 → 21,848**, reconciled at row level ·
 hot path **1.551–1.679 ms**. **The two counts that must not move did not: `ddi_candidate_pair` MED-RT 21,664 and
 `substance_moiety` 19,438.**
 
@@ -1431,7 +1436,9 @@ schema cannot express** — measured at 0 pairs. All four shipped entries are sa
 · [#91](https://github.com/cairn-ehr/drugref/issues/91) **`drugref_5c4`'s ledger checksum for `030_signing.sql`
 is stale**, so the reference DB and every `TEMPLATE` copy refuse `drugref migrate` (db/030 was edited after being
 applied there, during the five-reviewer round; the test suite never sees it because it drops the schema each
-session) · [#92](https://github.com/cairn-ehr/drugref/issues/92) mixed-kind class-pair rules ·
+session) — **RESOLVED 2026-08-13 by rebuilding onto `drugref_db034`, § "The reference-database rebuild";
+`drugref_5c4` keeps its stale ledger deliberately, as a kept control** ·
+[#92](https://github.com/cairn-ehr/drugref/issues/92) mixed-kind class-pair rules ·
 [#93](https://github.com/cairn-ehr/drugref/issues/93) no QT class ·
 [#94](https://github.com/cairn-ehr/drugref/issues/94) the seven deferred entries.
 
@@ -1487,11 +1494,15 @@ tizanidine hydrochloride, 21 pairs each), the same fact from the other side. **O
 drugref judgement, however many upstream authorities asserted it** — now visible as arithmetic.
 
 **Hot path re-measured, and the subject is named this time.** `EXPLAIN ANALYZE SELECT * FROM
-drugref.curated_ddi_pair WHERE subject_moiety = '825bbad7-3253-548c-8324-ccfae8ae3d68'` (**irinotecan** — the
-largest curated subject, 46 pairs), five runs: 2.748 → 2.291 → 1.881 → 1.595 → **1.550 ms**, so the warm band
-sits inside `db/034`'s recorded **1.50–1.68 ms**. The moiety grain's recursive union is
-**`cost=14.94..3886.97 rows=37414`** — byte-identical to the signature the 5c.2 reviewer recorded against
-`drugref_5c4`. Its **actual** rows are **1235** where that reviewer saw 1233, and the +2 is fully attributed
+drugref.curated_ddi_pair WHERE subject_moiety = '825bbad7-3253-548c-8324-ccfae8ae3d68'` (**irinotecan** — one of
+the three joint-largest curated subjects at 46 pairs each; irinotecan hydrochloride and irinotecan sucrosofate
+tie with it, which is the salt-form expansion working as designed), five runs: 2.748 → 2.291 → 1.881 → 1.595 →
+**1.550 ms**, so the warm band sits inside the **1.50–1.68 ms** recorded in § "Slice 5c.2"'s table above — **not
+in `db/034`, which records the coarser `~1.4 ms` baseline**; the band has only ever had one home and it is this
+file. The moiety grain's recursive union is **`cost=14.94..3886.97 rows=37414`** — byte-identical to the
+signature the 5c.2 reviewer recorded against `drugref_5c4`. Its **actual** rows are **1235** where that reviewer
+recorded 1233 (`db/034`'s own frozen `COMMENT ON VIEW` states the actual as a band, **1,233–1,238**, of which
+1,233 is the narrow-seed end — so 1235 is inside it, not a contradiction of it), and the +2 is fully attributed
 rather than shrugged at: of ONCHIGH's three object classes, exactly one — **`Proton Pump Inhibitor [EPC]`** — is
 not already a MED-RT contraindication object, so it joins `ci_class_subtree`'s seed and contributes itself plus
 one descendant. Both verified by query. **Which moiety was measured had never been written down**; a plan whose
@@ -1523,7 +1534,10 @@ by citation (Tanaka et al., *Med* 2025, PMID 40179876). Latest code release **v3
 - **Measured over all 6,928,666 rows** (streamed from the release zip): sections `AR` 5,283,772 · `WP` 1,196,843
   · `BW` 59,644 · `NA` 388,407. **Exactly ONE interaction-flavoured term exists in the whole MedDRA vocabulary
   OnSIDES ships** — `10022527 "Interaction with alcohol"` (LLT) — used by **13 rows**. There is no
-  `Drug interaction` PT at all.
+  `Drug interaction` PT at all. **The predicate is stated so the claim can be refuted rather than trusted:** of
+  the **6,423** rows in `vocab_meddra_adverse_effect.csv`, exactly **one** contains the case-insensitive
+  substring **`interact`** in any column. A weaker predicate than a curated concept list, deliberately — a
+  substring this broad *over-*matches, so finding one hit is the strong form of the result.
 - **The hope recorded in 5c.2 was that Warnings and Precautions is "where interaction warnings live". WP is
   parsed — 1.2M rows of it — and it yields adverse-effect terms, because that is what the model extracts.** The
   section is right; the extraction target is not. Getting a partner drug out of it is a different task (drug NER
@@ -1549,12 +1563,27 @@ inhibitors are contraindicated, **moderate or weak** ones are "avoid concomitant
 a defect to file**: the label's grain is (drug × inhibitor class × *potency band*), and a schema that cannot
 carry the band will either over-warn or drop the qualifier silently.
 
-**Scale, roughly measured — and the first attempt to measure it was wrong, which is the point.** DailyMed holds
-**158,508** SPLs. A first 25-label sample said 3 carried section 7; it had landed on a run of OTC sunscreens.
-Re-sampled across five pages and **classified by the label's own document-type code**, 50 labels give: **14 of
-23 HUMAN PRESCRIPTION DRUG LABELs carry `34073-7`**, **0 of 17 OTC labels** do. Small sample, indicative only —
-but it says the material is on prescription labels specifically, and a 5c.3 that samples DailyMed without
-filtering by document type will mis-measure its own corpus exactly as this did.
+**Scale, roughly measured — and it took THREE attempts, each wrong in a different way, which is the point.**
+DailyMed holds **158,508** SPLs (`/services/v2/spls.json` → `metadata.total_elements`, re-checked 2026-08-13).
+
+1. A first **25**-label sample said 3 carried section 7. It had landed on a run of OTC sunscreens — **sampled
+   without classifying at all.**
+2. A **50**-label re-sample, classified, was recorded here as *"14 of 23 prescription, 0 of 17 OTC"*. **That
+   tally accounts for only 40 of its 50 labels and is superseded** — the missing 10 were never written down, so
+   the sample could not be checked, only believed.
+3. Re-measured 2026-08-13, and this one **closes**: five pages × 10, each label classified by its **document-type
+   code** — `34391-3` prescription, `34390-5` OTC — with `34073-7` looked up among the label's own LOINC codes.
+   **14 of 16 HUMAN PRESCRIPTION labels carry `34073-7`; 0 of 30 HUMAN OTC do**; the remaining 4 are neither
+   (2 × `50577-6`, 2 × `81203-2`, both animal/bulk). **16 + 30 + 4 = 50.**
+
+**The classification step has its own trap, found while fixing the arithmetic: do NOT key on `displayName`.** It
+carries case variants in the same 50-label draw (`HUMAN OTC DRUG LABEL` *and* `Human OTC Drug Label`), and the
+first LOINC-coded element in a document is not reliably the document type — one label in the 50 opened on
+`RECENT MAJOR CHANGES SECTION`. Key on the code.
+
+Still a small sample, indicative only — **re-measure, never re-quote.** What it supports is not a rate but a
+requirement: the material is on prescription labels specifically, and **a 5c.3 that samples DailyMed without
+filtering by document type will mis-measure its own corpus exactly as attempts 1 and 2 did.**
 
 ### DrugCentral DOES carry a real DDI table, and it is worth a slice
 
@@ -1571,6 +1600,13 @@ registration, one 1.4 GB gzipped `pg_dump`. Bundle-OK *because* drugref's data l
   guessed. Of **970 distinct endpoint names**: **860 match a `substance_moiety.display_name`** exactly
   (case-insensitive), **8 match a MED-RT class name**, **102 match neither**. **7,000 of 7,621 pairs (91.9%)
   have both endpoints keyable today**, 6,973 of them moiety × moiety.
+  **⇒ FOUR DENOMINATORS LIVE IN THIS SECTION AND THEY ARE NOT INTERCHANGEABLE — read this before re-quoting any
+  of them.** *Keyable* (**7,000**) counts moiety-**or**-class matches; *moiety × moiety* (**6,973**) is the
+  subset with two moiety endpoints, and the **27**-row difference is the rows with exactly one class endpoint.
+  *Unresolvable* (**648**, below) is `7,621 − 6,973` — it is the complement of the **moiety** figure, not of the
+  keyable one, which is why `7,621 − 7,000 = 621` does **not** equal it. Finally those 6,973 **rows** collapse to
+  **6,941 distinct unordered pairs**, and it is the 6,941 the overlap arithmetic runs on. Rows, pairs and
+  distinct-pairs are three different units; quote **6,941** downstream and none of the others.
 - **The 102 unmatched split into two different jobs, and conflating them would under-cost the slice.** **87** are
   INN spellings against drugref's UNII-derived (USAN) names — `ciclosporin` (100 uses), `dicoumarol` (65),
   `ethinylestradiol` (47), `acetylsalicylic acid`, `amfetamine`, `methylthioninium chloride`, `suxamethonium`:
@@ -1583,9 +1619,12 @@ registration, one 1.4 GB gzipped `pg_dump`. Bundle-OK *because* drugref's data l
 - **The grain is overwhelmingly the one drugref's moiety rule already handles.** Despite the table's name, only
   8 endpoint names are classes at all, so this is not a second class-grain problem.
 - **It does NOT close the QT gap (issue 93).** Three rows in 7,621 mention QT or torsades, and two of them are
-  the `Moderate/High Risk QT Prolonging Agents` self-pair — **class names with no member list**: `pharma_class`
+  a high-/moderate-risk `... QT Prolonging Agents` self-pair — **class names with no member list**: `pharma_class`
   (25,687 rows) contains the string `QT` **zero** times, so the dump names those populations and never defines
-  them. Issue 93 restated, not solved. **The remaining routes to a QT list are unchanged: re-derive from SPL, or
+  them. Issue 93 restated, not solved. **The exact class strings were NOT recorded verbatim** — this file and
+  ROADMAP quoted them with the risk words in opposite order (`High/Moderate` vs `Moderate/High`), which is proof
+  that neither was transcribed rather than paraphrased, and the dump is not retained locally to settle it.
+  **Re-read them off the dump before quoting either.** **The remaining routes to a QT list are unchanged: re-derive from SPL, or
   use the owner's Holbrook-group archive — which needs WRITTEN permission first, to the standard issues 6 and 25
   are held to.** (Recorded here because it had lived only in HANDOVER, whose history is disposable.)
 - **Staleness is the real cost:** the only published dump is **`drugcentral.dump.11012023.sql.gz`**, `dbversion`
@@ -1619,7 +1658,30 @@ compare unordered pairs against `ddi_candidate_pair` (MED-RT, **20,238** distinc
   carries NDF-RT's **drug-level** interaction assertions. Neither is a superset of the other.
 - **This is the number that justifies a slice.** A second candidate source that is 91% new, public-domain,
   moiety-grained and 92%-resolvable is worth `source = 'DRUGCENTRAL'`; one that merely restated MED-RT would
-  not have been.
+  not have been. **Admitting that source is NOT a one-line change** — it needs two CHECKs widened
+  (`ingest_run_source`, `class_contraindication_source`) *and* an explicit `ids._SOURCE_CANONICAL` entry, in
+  the same migration; `ids.py` warns by name against leaning on the upper-case fall-through. Detail and the
+  silent-rebuild failure mode it prevents: [#101](https://github.com/cairn-ehr/drugref/issues/101).
+
+### Which of these figures can be RE-DERIVED, and which must be taken on trust
+
+Stated because a future session is told to act on them, and the two halves are not equally checkable. **Nothing
+in this section is backed by a committed script** — the repo has no home for one, so the method is written out
+above instead, which is what makes the first two groups re-runnable at all.
+
+- **Re-derivable from this checkout, and were re-derived during PR #103's review:** every drugref-side count
+  (rebuild the chain at the pinned releases, then one `SELECT count(*)`); the hot path, because the subject
+  moiety's UUID is written down — that is the whole reason for writing it down.
+- **Re-derivable only while the local artefact survives:** the OnSIDES figures. `downloads/eval/onsides-v3.1.1.zip`
+  (84,862,297 bytes) is **gitignored** — machine-local, not repo state. Every OnSIDES number above was
+  re-derived from it independently and matched exactly, including the 6,928,666 total, all four section counts
+  and the single `interact` vocabulary hit.
+- **NOT re-derivable here at all — treat as measured-once and re-measure before acting:** every DrugCentral
+  figure. The 1.4 GB dump is not retained on this machine and is not in the repo, so 7,621 / 970 / 860 / 102 /
+  7,000 / 6,941 / 604 / 6,337 and the three-reference table rest on a single unrepeated run. The rule-6
+  determination is the load-bearing one; **re-read the `reference` table before bundling anything.**
+- **Re-measured 2026-08-13 and now closing:** the DailyMed document-type sample (above). Its predecessor did
+  not close, which is why it is the one figure in this section that was redone rather than restated.
 
 ## Verify before the first production load
 
@@ -1680,7 +1742,8 @@ signatures are DETACHED ROWS, not a column, so any row can be signed at any late
 non-commercial, so not AGPL-3.0-compatible. ROADMAP's old "DDInter *if its licence confirms*" predated the check. It may
 attach only as a node-local, separately-licensed plug-in. The surviving ladder is ONC high-priority floor → SPL/DailyMed
 (ONSIDES-*method*, **never its data** — § "The 5c.3 source evaluation" measured that its data holds no
-interactions at all) → **DrugCentral, pending one rule-6 answer** → drugref's own curation.
+interactions at all) → **DrugCentral's `ddi_ref_id = 2` subset, rule 6 ANSWERED** (its other two references are a
+copyrighted book and a commercial compendium and are out — same section) → drugref's own curation.
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
 subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 
@@ -1688,9 +1751,11 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1395 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
-# and then 1260 while it was at 1297, both times because the round that added the tests
-# updated its OWN section and not this line -- verified green on 2026-08-12 at 1395
+# 1409 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# then 1260 while it was at 1297, and then 1395 while it was at 1409, every time because
+# the round that added the tests updated its OWN section and not this line. THE THIRD
+# OCCURRENCE IS WHY THIS COMMENT IS NOT ENOUGH ON ITS OWN: a slice section may record a
+# suite delta, but it must ALSO land here -- verified green on 2026-08-13 at 1409
 # passed in 38 s;
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
@@ -1791,11 +1856,20 @@ ran in CI and `ruff` was not even a project dependency.
   `drugref_db034`** — built 2026-08-13 from the real releases against the merged migrations, with a **clean
   ledger** (34 rows, no drift), because `drugref_5c4`'s could no longer take a migration (issue 91). Named for
   its migration head so the claim is checkable: `SELECT max(filename) FROM drugref.schema_migration` → `034`.
-  It reproduced **every** count and ingest summary in § "Slice 5c.1" and every projection figure in § "Slice
-  5c.2", and it **still holds** them: chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
+  It reproduced **every** count and ingest summary in § "Slice 5c.1" **at the end of the chain**, and every
+  projection figure in § "Slice 5c.2": chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
   keys, no signatures, no published release, no exercise rows, which is also why it re-verifies **nothing from
   the signing layer**. Its state and every figure: § "The reference-database rebuild". The `TEMPLATE` +
   `drugref migrate` workflow was re-tested on it and works.
+
+  **What it STILL HOLDS today is the post-curate state, NOT § "Slice 5c.1"'s chain-end figures — three of that
+  section's five must-not-move counts have legitimately moved here, and reading them off this database without
+  the qualifier is the mistake this bullet exists to prevent.** `substance_moiety` **19,438** and
+  `gap_uncurated_condition_contradiction` **168** hold unqualified. The other three are post-`onchigh`:
+  `ddi_candidate_pair` is **21,877** table-wide (5c.1's **21,664** is now the **MED-RT-scoped** count — write the
+  scope, as § "Slice 5c.2" already learned to), `open_question` **21,848** (was 21,842), and
+  `gap_uncurated_interaction_rule` **593** (was 595). The ladder table in § "The reference-database rebuild"
+  gives each stage's value; quote from there, not from § "Slice 5c.1", for anything downstream of the chain.
 
   **`drugref_5c4` is now a KEPT CONTROL, not the database to read** (built 2026-08-10, migrated through
   `db/030`). It reproduced every count and ingest summary in § "Slice 5c.1" and § "Slice 5c.4" when its chain

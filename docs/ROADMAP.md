@@ -444,7 +444,8 @@ therapeutic classes are taxonomy, not clinical populations — `Opioid Agonist [
 opioid-action amplification and includes loperamide; `Central Nervous System Stimulant [EPC]` includes caffeine —
 deferred to [#94](https://github.com/cairn-ehr/drugref/issues/94). Four more are unencodable
 ([#92](https://github.com/cairn-ehr/drugref/issues/92), [#93](https://github.com/cairn-ehr/drugref/issues/93)).
-Measured: **8 ONCHIGH candidates, 213 pairs, 0 unresolved endpoints**, `gap_uncurated_interaction_rule` 593 → 591,
+Measured: **8 ONCHIGH candidates, 213 pairs, 0 unresolved endpoints**, `gap_uncurated_interaction_rule` 593 → 591
+(595 → 593 from a clean baseline — same net −2; PROJECT-NOTES § "The reference-database rebuild"),
 and **MED-RT's `ddi_candidate_pair` 21,664 and `substance_moiety` 19,438 both unmoved.**
 
 **The review round's one lesson, which shapes the next migration: the class grain got the WRITE path and none of
@@ -500,9 +501,12 @@ before that round starts** — full account and every number: PROJECT-NOTES § "
   604 (8.7%) via MED-RT and 6,337 are NEW.** Same authority, different extraction — drugref reads MED-RT's
   class-level rules, DrugCentral carries NDF-RT's drug-level assertions. **That 91%-new figure is what justifies
   a slice.** Two costs stand: the only published dump is dated **2023-11-01** (a floor that does not refresh),
-  and it does **not** close the QT gap ([#93](https://github.com/cairn-ehr/drugref/issues/93)) — it names
-  `High/Moderate Risk QT Prolonging Agents` in 2 rows and defines them nowhere (`pharma_class` contains `QT`
-  zero times).
+  and it does **not** close the QT gap ([issue 93](https://github.com/cairn-ehr/drugref/issues/93) — number
+  written without a `#` here, per the standing hygiene rule, because it sits next to "close") — it names
+  high- and moderate-risk `... QT Prolonging Agents` classes in 2 rows and defines them nowhere (`pharma_class`
+  contains `QT` zero times). **The exact class strings were not recorded verbatim and the two files that quoted
+  them disagreed on token order; re-read them off the dump before using either — PROJECT-NOTES § "The 5c.3
+  source evaluation".**
 
 ##### 5c.4 — signing ✅ DONE
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md); published record:

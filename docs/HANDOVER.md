@@ -18,52 +18,52 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`** (ROADMAP orders them, full list there): everything through **slice 5c.2 — the ONC floor** (PR
-[#95](https://github.com/cairn-ehr/drugref/pull/95)). **`db/029`–`db/034` are FROZEN** — corrections need a `db/NNN`.
+**Merged to `main`**: through **5c.4 — signing**, PLUS **5c.2 — the ONC floor** (PR
+[#95](https://github.com/cairn-ehr/drugref/pull/95)), merged LAST despite its lower number — **ROADMAP's order is NOT the
+merge order.** **`db/029`–`db/034` FROZEN.**
 
-**⇒ JUST FINISHED — the two things the last handover ordered first, both done. No migration, no code change;
-suite 1409 green, `ruff` clean. (1) Issue 91 is fixed by rebuild: the reference database is now
-`drugref_db034`** — 2026-08-13, real releases,
-merged migrations, **clean ledger (34 rows)**, named for its migration head so the claim is checkable in one query;
-`TEMPLATE` + `drugref migrate` re-tested and works. **`drugref_5c4` is kept as a control and is no longer the one
-to read** (only it holds a signed-overlay measurement; it has no `db/031`–`034` objects). Every count § "Slice
-5c.1" quotes reproduced exactly, and 5c.2's did too. **Two recorded numbers are now explained, not merely
-re-quoted**: the worklist's `593 → 591` is `595 → 593` from a clean baseline (same net −2), and the hot path's
-`actual 1233` is **1235**, +2 for `Proton Pump Inhibitor [EPC]`, the one ONCHIGH object class MED-RT lacks.
-**PROJECT-NOTES § "The reference-database rebuild" — read it before quoting a count.**
+**⇒ JUST FINISHED — the two things the last handover ordered first, both done. No migration, no code change; suite 1409
+green, `ruff` clean. (1) Issue 91 is fixed by rebuild: the reference database is now `drugref_db034`** — 2026-08-13, real
+releases, merged migrations, **clean ledger (34 rows)**, named for its migration head so the claim is checkable in one
+query; `TEMPLATE` + `drugref migrate` re-tested and works. **`drugref_5c4` is kept as a control and is no longer the one
+to read** (only it holds a signed-overlay measurement; it has no `db/031`–`034` objects). Every count § "Slice 5c.1"
+quotes reproduced **at chain end**, and 5c.2's too — but **3 of 5 have since moved on it** (`ingest`+`curate` ran): read
+the stage ladder, never § 5c.1, for anything downstream. **Two numbers are now explained, not re-quoted**: the worklist's
+`593 → 591` is `595 → 593` from a clean baseline (net −2), and the hot path's `actual 1233` is **1235**, +2 for `Proton
+Pump Inhibitor [EPC]`, the one ONCHIGH object class MED-RT lacks. **PROJECT-NOTES § "The reference-database rebuild" —
+read it before quoting a count.**
 
-**(2) The two licence-clean sources are measured, and one hope died. OnSIDES's DATA is not a DDI source** — no
-second-drug column in any of its eight tables, **one** interaction-flavoured MedDRA term across 6,928,666 rows;
-its *method* stays the precedent 5c.3 is named for, and **the material is SPL section `34073-7`, which OnSIDES
-does not parse**. **DrugCentral carries a real DDI table and clears rule 6 for the part that matters**: 7,621
-pairs, **7,000 (91.9%) keyable against drugref today**; **7,571 come from the VHA's NDF-RT** (US federal,
-MED-RT's predecessor) — the other 50 cite **Stockley's** (a copyrighted book) and **Lexicomp**, are **OUT**, and
-are the same 50 whose endpoints do not resolve. **Nor is it a restatement of MED-RT: 6,337 of 6,941 resolvable
-pairs are NEW (8.7% overlap).** It does **not** close the QT gap. **PROJECT-NOTES § "The 5c.3 source
-evaluation"**, ROADMAP § 5c.3.
+**(2) The two licence-clean sources are measured, and one hope died. OnSIDES's DATA is not a DDI source** — no second-drug
+column in any of its eight shipped files, **one** interaction-flavoured MedDRA term across 6,928,666 rows; its *method*
+stays the precedent 5c.3 is named for, and **the material is SPL section `34073-7`, which OnSIDES does not parse**.
+**DrugCentral carries a real DDI table and clears rule 6 for the part that matters**: **7,621 rows**, of which **7,571
+come from the VHA's NDF-RT** (US federal, MED-RT's predecessor) — the other 50 cite **Stockley's** (a copyrighted book)
+and **Lexicomp**, are **OUT**, and are the same 50 whose endpoints do not resolve. **Nor is it a restatement of MED-RT:
+6,337 of 6,941 distinct resolvable PAIRS are NEW (8.7% overlap) — quote 6,941 alone**, that section carries four
+non-interchangeable denominators (rows vs pairs vs distinct). It does **not** close the QT gap. **PROJECT-NOTES § "The
+5c.3 source evaluation"**, ROADMAP § 5c.3.
 
-**⇒ THE ONE THING FROM 5c.2 THAT GOVERNS FUTURE WORK: a class-grain rule inherits its population from the source's
-class boundary, and that is only safe when the class was defined by the same mechanism the interaction runs on.**
-`CYP3A4 Inhibitors [MoA]` *is* the population an irinotecan interaction runs over; `Opioid Agonist [EPC]` is
-**not** — it includes **loperamide**, as `CNS Stimulant [EPC]` sweeps in **caffeine**. **4 of 15 shipped, 7
-withheld from an append-only table** ([#94](https://github.com/cairn-ehr/drugref/issues/94), encodings `389a560`).
+**⇒ THE ONE THING FROM 5c.2 THAT GOVERNS FUTURE WORK: a class-grain rule inherits its population from the source's class
+boundary, and that is only safe when the class was defined by the same mechanism the interaction runs on.** `CYP3A4
+Inhibitors [MoA]` *is* the population an irinotecan interaction runs over; `Opioid Agonist [EPC]` is **not** — it includes
+**loperamide**, as `CNS Stimulant [EPC]` sweeps in **caffeine**. **4 of 15 shipped, 7 withheld from an append-only table**
+([#94](https://github.com/cairn-ehr/drugref/issues/94), encodings `389a560`).
 
-**⇒ DO THESE NEXT, in this order. (1) `db/035` — the class-grain detectors, as ONE migration** (#90, #96–#99
-below): the class grain has 5c.1's write path and **none** of the moiety grain's detectors, so a class rule can
-be ingested, graded and reported successful while reaching zero patients, with `drugref status` printing health.
-Piecemeal, each reads as a reasonable follow-up — that is exactly how the group was created.
-**(2) Then the next content slice, and the evaluation says the cheap one is DrugCentral, not SPL** — 6,337 new
-public-domain moiety-grained pairs whose hard part is name resolution, against 5c.3's NLP pipeline. Either way it
-opens with its own design round; [#101](https://github.com/cairn-ehr/drugref/issues/101) holds the DrugCentral
-shape and its two rules (`ddi_ref_id = 2` only; the 2023-11-01 dump does not refresh). **`5c.3` — SPL/DailyMed
-mining** must answer two things measured this session: section 7 qualifies by **potency band**, which MED-RT's one
-undifferentiated class **cannot express** ([#102](https://github.com/cairn-ehr/drugref/issues/102)), and its
-corpus must be filtered by **document type** (14/23 prescription labels carry section 7, 0/17 OTC). **No open
-redistributable QT list exists** — not FDA, EMA, BfArM, not DrugCentral
+**⇒ DO THESE NEXT, in this order. (1) `db/035` — the class-grain detectors, as ONE migration** (#90, #96–#99 below): the
+class grain has 5c.1's write path and **none** of the moiety grain's detectors, so a class rule can be ingested, graded
+and reported successful while reaching zero patients, with `drugref status` printing health. **(2) Then the next slice:
+the evaluation says the cheap one is DrugCentral, not SPL** — 6,337 new public-domain moiety-grained pairs, hard part name
+resolution, against 5c.3's NLP pipeline. Either way it opens with its own design round;
+[#101](https://github.com/cairn-ehr/drugref/issues/101) holds the DrugCentral shape and its two rules (`ddi_ref_id = 2`
+only; the 2023-11-01 dump does not refresh). **`5c.3` — SPL/DailyMed mining** must answer two things measured this
+session: section 7 qualifies by **potency band**, which MED-RT's one undifferentiated class **cannot express**
+([#102](https://github.com/cairn-ehr/drugref/issues/102)), and its corpus must be filtered by **document type** — key on
+the CODE (`34391-3`/`34390-5`), not `displayName`; a 50-label sample gave 14/16 prescription, 0/30 OTC, **indicative only,
+re-measure**. **No open redistributable QT list exists** — not FDA, EMA, BfArM, not DrugCentral
 ([#93](https://github.com/cairn-ehr/drugref/issues/93)); routes: PROJECT-NOTES.
 
-**⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:** near
-`close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.
+**⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:**
+near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.
 
 ## Open follow-ups (all filed as GitHub issues)
 
@@ -124,6 +124,6 @@ current release, #17's `add_claim` canonicalisation check, **three** rule-6 deed
 
 - **The one home for this value.** Dev DSN (Postgres.app, PG18): `host=localhost port=5532 dbname=drugref_test user=postgres`.
   Set it as `DRUGREF_TEST_DSN` for the DB-gated tests. **Which verification database to read is stated once in
-  `PROJECT-NOTES.md`, in the "Dev DSN" bullet ending § How to run / test** — read **`drugref_db034`**, whose ledger
+  `PROJECT-NOTES.md`, in the "Dev DSN" bullet of § How to run / test** — read **`drugref_db034`**, whose ledger
   is clean, so a `TEMPLATE` copy takes `drugref migrate` normally. Not restated here: this file is compressed every
   session, so a second copy would outlive the first and disagree with it.

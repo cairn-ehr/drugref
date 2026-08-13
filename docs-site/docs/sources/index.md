@@ -44,8 +44,8 @@ contain. Both checks matter, and only the first one is about licences:
 | Candidate | Licence | Outcome |
 | --- | --- | --- |
 | **DDInter** | CC BY-NC-SA — NonCommercial | **Excluded.** Not AGPL-compatible; node-local plug-in only |
-| **OnSIDES** (data) | CC BY 4.0 — clean | **Not a fit.** Its unit is one label × one MedDRA adverse-effect term; there is no drug–drug pair anywhere in its schema. Its MIT-licensed *method* remains the model for label mining |
-| **DrugCentral** `ddi` | CC BY-SA 4.0 | **Candidate, partially.** 7,571 of its 7,621 interaction rows come from the VHA's NDF-RT (US federal, clean). The remaining 50 cite *Stockley's Drug Interactions* (a copyrighted book) and Lexicomp (commercial) and are **excluded** — a share-alike licence over a compilation is not evidence of the right to relicense a third-party compendium inside it |
+| **OnSIDES** (data) | CC BY 4.0 — clean | **Not a fit.** Its unit is one label × one MedDRA adverse-effect term; there is no drug–drug pair anywhere in its shipped data. Its MIT-licensed *method* remains the model for label mining |
+| **DrugCentral** `ddi` | CC BY-SA 4.0 | **Candidate, partially.** 7,571 of its 7,621 interaction rows (dump `11012023`, `dbversion` 54) come from the VHA's NDF-RT (US federal, clean). The remaining 50 cite *Stockley's Drug Interactions* (a copyrighted book) and Lexicomp (commercial) and are **excluded** — a share-alike licence over a compilation is not evidence of the right to relicense a third-party compendium inside it |
 | **CredibleMeds** (QT risk) | Registration-gated, not redistributable | **Excluded.** No open, redistributable QT-prolongation list is published by FDA, EMA or BfArM either |
 
 The pattern worth stating plainly: **a source can be perfectly licence-clean and still be
