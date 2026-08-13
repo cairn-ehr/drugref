@@ -53,11 +53,24 @@ This is a reader-friendly summary; the working roadmap lives in the
   `ingest chain`, `policy record|withdraw|show`), crash-visible ingest provenance,
   and a CI gate running the full test suite and lint on every change.
 
-## Next
-
 - **First curated content** — the ONC high-priority drug–drug interaction list
-  (Phansalkar 2012 / Ayvaz 2015) as the first curated rows — severity, mechanism,
-  management, evidence grading — then label mining from SPL/DailyMed.
+  (Phansalkar 2012) as drugref's first curated rows, carrying severity, mechanism,
+  management and evidence grading, and signed as they are written. The list enters as
+  a **second candidate source** beside MED-RT rather than as bare assertion, so the
+  provenance of every graded pair stays answerable.
+
+    Four of the list's fifteen entries shipped, and the reason the other eleven did not
+    is the more useful part. A class-level rule inherits its population from the
+    source's class boundary, and that is only trustworthy when the class was defined by
+    the same mechanism the interaction runs on — "CYP3A4 inhibitors" genuinely *is* the
+    population an irinotecan exposure interaction runs over. A *therapeutic* class is
+    not: "opioid agonists" conflates two different interaction mechanisms and includes
+    loperamide, whose action is largely confined to the gut. Rules built on those
+    classes were withheld pending literature review rather than published on the
+    strength of a borrowed taxonomy. **Curated content is only worth its provenance if
+    the population is right, not merely the pair.**
+
+## Next
 - **Clinical drugs** — moiety + strength + form, built on the composition tree.
 - **Public HTTP API** — the co-equal-consumer interface; any EHR / pharmacy / app on the
   same footing.

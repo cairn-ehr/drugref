@@ -416,16 +416,46 @@ four fixes above are confirmed in the live catalog — `pair_count` by `pg_get_v
 distinguish it, since the row counts are identical either way. The `EXPLAIN ANALYZE` timings were not re-run there.
 `db/029` is merged and therefore frozen — corrections need a new `db/NNN`.
 
-##### 5c.2 — the ONC high-priority DDI floor
-First content (Phansalkar 2012 / Ayvaz 2015, re-encoded from the papers under RAND's irrevocable government licence) —
-the first curated rows. **`5c.4`'s signing has landed**, so these can be signed as they are written rather than
-retrospectively (and, since signatures are detached, retrospectively remains possible either way).
-**Also owns a deferral 5c.1 named but did not resolve:**
-a `spurious` ruling (`curated_condition.ruling`) records drugref's disagreement with an upstream assertion
-*without acting on it* — the candidate stays in its projection and no view renders either as advice — and
-deciding whether, or how, to surface "drugref believes this upstream row is wrong" to a consumer needs content
-to say it about, which this is the first slice to have. See the spec (§ read path) and [curating a drug–condition
+##### 5c.2 — the ONC high-priority DDI floor ✅ DONE — `db/031`–`db/034`, measured 2026-08-12
+Spec: [slice-5c.2](superpowers/specs/2026-08-11-drugref-slice-5c2-onc-ddi-floor-design.md); plan:
+[2026-08-11](plans/2026-08-11-slice-5c2-onc-ddi-floor.md); published record: [the ONC high-priority
+floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**. **drugref's first
+clinical content.** Full account and every measurement: PROJECT-NOTES § "Slice 5c.2".
+
+**The ONC list enters as a SECOND CANDIDATE SOURCE (`source = 'ONCHIGH'`), not as curator-originated content, and
+`db/029` was not touched at all.** 5c.1 had already keyed `class_contraindication` on `(subject, object,
+relationship, SOURCE)` and written into `curated_interaction`'s own comment that its key omits `source` *"however
+many upstream authorities asserted it"* — the candidate tier was designed for multiple authorities and MED-RT was
+merely the only one. `db/031` widens two CHECK vocabularies, adds the `CI_EPC → has_EPC` axis, and adds gap kind
+fifteen with its recording table.
+
+**Retrieving the list then refuted the grain the slice was built on**, and `db/032` added a **class-subject**
+rule (`class_pair_contraindication` + `curated_class_interaction`, expanded on both sides) — two tables rather
+than a polymorphic subject column, because the single-live guard compares by equality and `NULL = NULL` is not
+true. `db/033` carries both grains in one `curated_ddi_pair` with a `rule_grain` column; **`db/034` recovered a
+measured 3.6× hot-path regression** by giving the class grain its own subtree walk (1.50–1.68 ms empty,
+2.87–3.28 ms populated, against 5c.4's 1.4 ms baseline).
+
+**Four of fifteen entries shipped, and that is the clinical review gate working.** Only rules whose object class
+is **mechanism-defined** were committed: `Cytochrome P450 3A4 Inhibitors [MoA]` genuinely *is* the population an
+irinotecan exposure interaction runs over. Seven class×class entries were drafted and **withheld** because
+therapeutic classes are taxonomy, not clinical populations — `Opioid Agonist [EPC]` conflates serotonergic with
+opioid-action amplification and includes loperamide; `Central Nervous System Stimulant [EPC]` includes caffeine —
+deferred to [#94](https://github.com/cairn-ehr/drugref/issues/94). Four more are unencodable
+([#92](https://github.com/cairn-ehr/drugref/issues/92), [#93](https://github.com/cairn-ehr/drugref/issues/93)).
+Measured: **8 ONCHIGH candidates, 213 pairs, 0 unresolved endpoints**, `gap_uncurated_interaction_rule` 593 → 591,
+and **MED-RT's `ddi_candidate_pair` 21,664 and `substance_moiety` 19,438 both unmoved.**
+
+**⇒ THE `spurious` DEFERRAL HAS MOVED OFF THIS SLICE, and a later round must not re-attach it here.** 5c.1 handed
+5c.2 the question of how "drugref believes this upstream row is wrong" reaches a consumer. But `spurious` is a
+**`curated_condition.ruling`**, and 5c.2 curates **`curated_interaction`** — the interaction half only. This slice
+therefore *cannot* discharge it, and did not. **It belongs to the first slice that curates the 168 contradicted
+drug–condition pairs** ([#51](https://github.com/cairn-ehr/drugref/issues/51)). See [curating a drug–condition
 pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) for the full argument.
+
+**Also worth re-reading against this slice:** [#73](https://github.com/cairn-ehr/drugref/issues/73) says two views
+read every source at once. For `ddi_candidate_pair` that is now *wanted* — it is how both authorities reach one
+consumer — so the issue's text should be re-read now that the behaviour is real rather than hypothetical.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own.

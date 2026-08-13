@@ -1198,6 +1198,173 @@ remove a signature. Also no enrolment protocol or trust root beyond "an operator
 it", no threshold/quorum interpretation of counter-signatures, and `upstream_releases` is a snapshot rather than a
 constraint on what a consumer loaded.
 
+## Slice 5c.2 — the ONC high-priority DDI floor (`db/031`–`db/034`, measured 2026-08-12)
+
+Spec: [slice-5c.2](superpowers/specs/2026-08-11-drugref-slice-5c2-onc-ddi-floor-design.md); plan:
+[2026-08-11](plans/2026-08-11-slice-5c2-onc-ddi-floor.md); published record: [the ONC high-priority
+floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**. **The first slice
+that writes clinical content** — and the one where every large decision was reversed at least once by a
+measurement.
+
+### ⇒ THE FINDING THAT GOVERNS EVERY FUTURE CLASS-GRAIN RULE
+
+**A class-grain rule inherits its population from the source's class boundary, and that is only safe when the
+class was defined by the same mechanism the interaction runs on.**
+
+- **Mechanism-defined classes are clinically sound populations.** `Cytochrome P450 3A4 Inhibitors [MoA]`
+  genuinely *is* the right population for an irinotecan exposure interaction: the class boundary and the
+  interaction boundary are the same fact. **All four shipped entries are of this kind.**
+- **Therapeutic and structural classes are not.** They are taxonomy. `Opioid Agonist [EPC]` conflates two
+  distinct mechanisms — serotonergic amplification (tramadol, pethidine) and opioid-action amplification — and
+  includes **loperamide**, whose dominant peripheral action makes it the exception at labelled doses.
+  `Central Nervous System Stimulant [EPC]` sweeps in **caffeine**, whose risk is dose-dependent and which the
+  rule has no way to qualify. Statins carry one severity across 18 members although simvastatin and lovastatin
+  are markedly more CYP3A4-dependent than rosuvastatin or pravastatin.
+
+**Seven drafted class×class entries were therefore withheld from an append-only table** and deferred to
+[#94](https://github.com/cairn-ehr/drugref/issues/94), with their full encodings retrievable from commit
+`389a560`. **A class-grain rule is not automatically cheaper than a moiety one** — it is only cheaper when the
+class was minted by the mechanism the interaction runs on. Drafting 11 and shipping 4 is the intended outcome
+of a clinical review gate, not a shortfall.
+
+### The shape changed twice, and both reversals were measured
+
+1. **The list was first treated as curator-ORIGINATED content** needing a `basis` column and a widened read
+   path — until the schema showed 5c.1 had already keyed `class_contraindication` on `(subject, object,
+   relationship, SOURCE)` and had written into `curated_interaction`'s own comment that its key omits `source`
+   *"however many upstream authorities asserted it"*. **The candidate tier was built for multiple authorities;
+   MED-RT was merely the only one.** So ONC enters as `source = 'ONCHIGH'` and **db/029 was not touched at
+   all**. Spec §2.3 keeps the rejected shape on record for the round that has genuinely source-less content.
+2. **Then the list was retrieved and refuted the grain.** Spec §2.1 had measured whether *MED-RT* carried these
+   pairs; it never asked what shape the *ONC list* is in. Of Phansalkar 2012's fifteen: **4 drug×class, 2
+   drug×drug, 8 class×class, 1 class self-pair.** Four of fifteen is not a floor. Flattening by inverting
+   orientation was costed at **~155 curated rows for the five MAOI facts alone** and rejected. Hence `db/032`'s
+   class-subject grain — spec §14.
+
+### The four migrations
+
+- **`db/031`** — widen `class_contraindication_source` to `('MED-RT','ONCHIGH')`, widen `ingest_run`'s source
+  and writer vocabularies, add `ci_axis` row **`CI_EPC → has_EPC`**, add `ingest_unresolved_onc_endpoint` +
+  `gap_unresolved_onc_endpoint` + **gap kind fifteen** `unresolved_onc_endpoint`. The table is needed because
+  `_GAP_SOURCES` derives every kind **from a view**, and an endpoint resolving to nothing is in no table until
+  something puts it there — db/016's exact precedent.
+- **`db/032`** — `class_pair_contraindication` (candidate) + `curated_class_interaction` (overlay). **Two
+  tables, not a polymorphic subject column**: `forbid_multiple_live_assertions` compares natural-key columns by
+  **equality**, and `NULL = NULL` is not true, so a nullable subject would have made the single-live guard
+  silently stop guarding. Slice 5b's precedent — two relations, because the endpoints are different kinds of
+  thing. A **class** self-pair is legal here while a **moiety** self-pair stays forbidden (db/014); the
+  expansion excludes identical moieties.
+- **`db/033`** — `curated_ddi_pair` `CREATE OR REPLACE`d to carry both grains, gaining `rule_grain`
+  (`moiety_rule`|`class_rule`) and `via_subject_class`. **One view, not two**: fewer rows is the harm direction
+  for a contraindication, so a consumer who forgets a filter must get *more* advice, never less.
+- **`db/034`** — the hot-path recovery, below.
+
+### THE PERFORMANCE ROUND — a 3.6× regression found, escalated, and fixed at its cause
+
+`db/033` widened `ci_class_subtree`'s seed so a class subject could expand through it. That **inflated the
+planner's row estimate for the recursive CTE ~5×** even when actual rows barely moved, tipping a Hash Join into
+a Merge Join + Sort. Measured, then **independently reproduced by the reviewer on its own `TEMPLATE
+drugref_5c4` copy**:
+
+| state | hot path |
+|---|---|
+| moiety grain only (5c.4 baseline) | 1.4–1.7 ms |
+| `db/033`, class overlay **EMPTY** | **4.7–5.4 ms (~3.6×)** |
+| `db/033`, populated (SSRIs 73 × MAOIs 31) | ~9.0–9.3 ms (~6.5×) |
+
+**The empty-overlay row is what made this a decision rather than a note**: the cost was *structural*, paid by
+every existing consumer on every query, for content most of them do not have. `db/034` restored
+`ci_class_subtree`'s original seed and gave the class grain **its own walk** (`ci_class_pair_subtree`):
+
+| state | after `db/034` |
+|---|---|
+| empty class overlay | **1.50–1.68 ms** — baseline restored |
+| populated class grain | **2.87–3.28 ms** |
+
+The reviewer verified the moiety-grain half's plan is now **byte-identical** to the pre-`db/033` plan
+(`cost=14.94..3886.97 rows=37414`, actual 1233) against `drugref_5c4` itself, and confirmed **no planner GUCs or
+statistics tricks** — the gain is structural. A residual ~2.2× floor is disclosed rather than hidden: `UNION
+ALL` still evaluates the class arm before filtering, now proportional to the class grain's own content.
+
+### Measured with the four entries loaded (scratch DB from the real releases, 2026-08-12)
+
+**ONCHIGH candidates 8** (4 entries × salt-form expansion) · **pairs 213** — atazanavir-PPI 12, irinotecan-CYP3A4
+138, ramelteon-CYP1A2 21, tizanidine-CYP1A2 42 · **unresolved endpoints 0** ·
+`gap_uncurated_interaction_rule` **593 → 591** · `open_question` **21,842 → 21,848**, reconciled at row level ·
+hot path **1.551–1.679 ms**. **The two counts that must not move did not: `ddi_candidate_pair` MED-RT 21,664 and
+`substance_moiety` 19,438.**
+
+**Why the worklist dropped by 2 and not 4, and it is the design's payoff rather than a discrepancy:**
+`curated_interaction`'s key **omits `source`**, so curating tizanidine against the CYP1A2 class also answered a
+pre-existing **MED-RT-sourced** rule on the same natural key. One clinical fact, one live drugref judgement,
+however many upstream authorities asserted it — demonstrated rather than asserted.
+
+### Salt forms are expanded on the PROJECTION side
+
+The orchestrator resolves a subject to the base moiety plus every gated-in moiety the composition tree marks as
+carrying it as an active component, writing one candidate per form. **Not at read time**, for three reasons in
+order of weight: issue 68 measured ~19% of moieties carrying a questionable GSRS `ACTIVE MOIETY` edge, and
+inheriting clinical *advice* along that population is the wrong first use of it; a rebuildable projection
+**re-derives**, so a salt form arriving later becomes a *visible ungraded candidate* rather than a silent hole;
+and it costs the hot path nothing. **Not in the curated rows either** — those are immortal.
+
+### Four ONC entries are unencodable, each for a different reason
+
+- **#6 febuxostat–azathioprine/mercaptopurine** and **#30 tranylcypromine–procarbazine** — the object must be a
+  class. `Purine Antimetabolite [EPC]` actually *excludes* mercaptopurine; the only class both share is a
+  77-member grab-bag spanning antivirals and antimalarials.
+- **#21 QT × QT** — **MED-RT carries no QT/torsades/prolongation class at all** (0 rows, verified twice). The one
+  entry `db/032`'s self-pair shape was *designed* for, failing for want of upstream data.
+  [#93](https://github.com/cairn-ehr/drugref/issues/93). Confirmed by search that **no open redistributable QT
+  list exists** — neither FDA, EMA nor BfArM maintains one, and CredibleMeds is registration-gated and
+  non-redistributable.
+- **#27 CYP3A4 inhibitors × ergot alkaloids** — CYP3A4 inhibitors exist only as `[MoA]`, ergot alkaloids only as
+  `[EPC]`. **A class-pair rule has ONE axis, so it selects ONE `class_membership.relationship`** — a mixed-kind
+  rule ingests cleanly and then expands to **zero pairs forever, with no error anywhere**. That is db/006's
+  failure mode one tier up, filed as [#92](https://github.com/cairn-ehr/drugref/issues/92).
+
+### Traps and standing notes
+
+- **`MEDRT` is not a spelling of `MED-RT`, and the difference is permanent.** An `identifier_scheme` lands
+  inside the FROZEN `gap_key` (`'ONCHIGH:' || entry_id || ':' || identifier_scheme || ':' || identifier_value`)
+  and `question_uuid = uuid5(gap_kind, gap_key)` is immortal and externally cited. Caught in review; the reason
+  is now a comment so it is not "tidied" back.
+- **The `curate` step is deliberately NOT a chain step.** `drugref ingest onchigh` writes the projection and
+  joins the chain; `drugref curate onchigh` writes the append-only overlay and never does. Folding them would
+  let a routine chain re-run write to the one tier where a mistake is permanent. Curate is idempotent **by
+  comparison** — only graded fields, never `reviewed_at`/`reviewed_by`, which would supersede the whole file
+  every run.
+- **`IngestStep.packaged_defaults`** exists because the first wiring put the packaged-data default in the
+  per-source parser only, so a chain run selecting `onchigh` aborted the **whole eight-step chain** with
+  `InputResolutionError`. Declared on the step, read by both consumers; the review reproduced the abort by
+  execution and a worktree at the pre-fix commit proved the new test fails there.
+- **`curate_onchigh` counts what it skips.** It first dropped unresolved entries with no table, no counter and
+  no log, while `rules_seen` counted them anyway — numbers that could not reconcile. `CurateSummary` now carries
+  `entries_resolved`/`entries_unresolved` and a test asserts every entry lands in exactly one bucket. Issue 71's
+  standing rule, re-learned.
+- **`onchigh_run.py` was split at 490 lines** into `onchigh_resolve.py` (410) + `onchigh_run.py` (268) on the
+  resolution/writing seam; the reviewer diffed the moved functions and confirmed a verbatim move.
+- **Two runs of the drafting task were killed by the machine sleeping and lost everything**, twice, because work
+  was composed in memory and committed at the end. The fix was incremental commits (`d669d76`, `39f2fc8`).
+  Worth remembering for any long agent-driven task.
+
+### Filed, not fixed
+
+[#90](https://github.com/cairn-ehr/drugref/issues/90) `curated_target_unresolved` does not cover the class grain
+· [#91](https://github.com/cairn-ehr/drugref/issues/91) **`drugref_5c4`'s ledger checksum for `030_signing.sql`
+is stale**, so the reference DB and every `TEMPLATE` copy refuse `drugref migrate` (db/030 was edited after being
+applied there, during the five-reviewer round; the test suite never sees it because it drops the schema each
+session) · [#92](https://github.com/cairn-ehr/drugref/issues/92) mixed-kind class-pair rules ·
+[#93](https://github.com/cairn-ehr/drugref/issues/93) no QT class ·
+[#94](https://github.com/cairn-ehr/drugref/issues/94) the seven deferred entries.
+
+**Licence-clean sources found while researching the QT gap, both worth evaluating before the next content
+slice:** **OnSIDES** — code MIT, **data CC BY 4.0** (separate `LICENSE-DATA`), 3.6M drug–ADE pairs from 47k
+DailyMed labels, and since v2.1.0 it includes the **Warnings and Precautions** section where interaction
+warnings live. **DrugCentral** — **CC BY-SA 4.0**, no registration, full SQL dump; bundle-OK *because* drugref's
+data layer is itself share-alike. **DrugCentral's actual DDI content is unverified** and must be checked before
+it is counted on.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -1264,10 +1431,10 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1297 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
-# and then 1260 while it was at 1297, both times because the five-reviewer round that
-# added the tests updated its OWN section and not this line -- verified green on
-# 2026-08-11 at 1297 passed in 48 s;
+# 1395 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# and then 1260 while it was at 1297, both times because the round that added the tests
+# updated its OWN section and not this line -- verified green on 2026-08-12 at 1395
+# passed in 38 s;
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
