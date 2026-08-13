@@ -470,7 +470,39 @@ read every source at once. For `ddi_candidate_pair` that is now *wanted* — it 
 consumer — so the issue's text should be re-read now that the behaviour is real rather than hypothetical.
 
 ##### 5c.3 — SPL/DailyMed mining
-`ONSIDES`-*method*, MIT precedent — a full ingest slice of its own.
+`ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
+brainstorm/design round.** Two candidate sources were licence-checked during 5c.2 and **measured on 2026-08-13,
+before that round starts** — full account and every number: PROJECT-NOTES § "The 5c.3 source evaluation".
+
+**The evaluation moved one source and killed the other's data:**
+
+- **OnSIDES's DATA is not a DDI source and must stop being listed as one.** Its schema has no second-drug
+  column; the unit is one label × one MedDRA term. Across all **6,928,666** rows, **one** interaction-flavoured
+  MedDRA term exists (`Interaction with alcohol`, 13 rows). Warnings and Precautions *is* parsed (1.2M rows) —
+  the section 5c.2 hoped for — but what the model extracts from it is adverse effects, because that is what it
+  was trained to extract. **The METHOD is still the precedent this slice is named for** (MIT, reusable: label
+  fetch, LOINC section split, annotate/train/threshold, RxNorm bridge).
+- **The material is SPL section `34073-7` DRUG INTERACTIONS, which OnSIDES does not read** — its US pipeline
+  enumerates seven section codes and 34073-7 is not among them. Verified on a live DailyMed label: tizanidine's
+  section 7 states drugref's own shipped ONC entry in 690 characters, **and qualifies it by potency band**
+  (*strong* CYP1A2 inhibitors contraindicated, *moderate or weak* "avoid"). MED-RT's
+  `Cytochrome P450 1A2 Inhibitors [MoA]` is one undifferentiated class, so **the design round must decide what
+  the schema does with a potency band** — carry it, or drop it and accept over-warning. It cannot ignore it.
+- **DrugCentral is a genuine candidate second source (`source = 'DRUGCENTRAL'`, the shape 5c.2 built for a
+  second authority), and its rule-6 question is ANSWERED.** Measured: **7,621** pairs, **7,000 (91.9%) with both
+  endpoints keyable against drugref's registry today**, 6,973 moiety × moiety — the grain the moiety rule
+  already handles. **Every row cites one of three references, and they were read rather than inferred from
+  DrugCentral's own CC BY-SA: 7,571 come from the VHA's NDF-RT (US federal, clean, and MED-RT's predecessor);
+  13 from Stockley's Drug Interactions (a copyrighted book) and 37 from Lexicomp (commercial) — both OUT.
+  Bundle `ddi_ref_id = 2` only**, which costs nothing measurable because those same 50 rows are the ones whose
+  class-named endpoints do not resolve anyway.
+- **And it is not a restatement of what drugref already has: of 6,941 resolvable moiety pairs, drugref holds
+  604 (8.7%) via MED-RT and 6,337 are NEW.** Same authority, different extraction — drugref reads MED-RT's
+  class-level rules, DrugCentral carries NDF-RT's drug-level assertions. **That 91%-new figure is what justifies
+  a slice.** Two costs stand: the only published dump is dated **2023-11-01** (a floor that does not refresh),
+  and it does **not** close the QT gap ([#93](https://github.com/cairn-ehr/drugref/issues/93)) — it names
+  `High/Moderate Risk QT Prolonging Agents` in 2 rows and defines them nowhere (`pharma_class` contains `QT`
+  zero times).
 
 ##### 5c.4 — signing ✅ DONE
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md); published record:

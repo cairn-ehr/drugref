@@ -1435,12 +1435,191 @@ session) · [#92](https://github.com/cairn-ehr/drugref/issues/92) mixed-kind cla
 [#93](https://github.com/cairn-ehr/drugref/issues/93) no QT class ·
 [#94](https://github.com/cairn-ehr/drugref/issues/94) the seven deferred entries.
 
-**Licence-clean sources found while researching the QT gap, both worth evaluating before the next content
-slice:** **OnSIDES** — code MIT, **data CC BY 4.0** (separate `LICENSE-DATA`), 3.6M drug–ADE pairs from 47k
-DailyMed labels, and since v2.1.0 it includes the **Warnings and Precautions** section where interaction
-warnings live. **DrugCentral** — **CC BY-SA 4.0**, no registration, full SQL dump; bundle-OK *because* drugref's
-data layer is itself share-alike. **DrugCentral's actual DDI content is unverified** and must be checked before
-it is counted on.
+**Licence-clean sources found while researching the QT gap** — OnSIDES and DrugCentral — were recorded here as
+"worth evaluating"; they have since been **measured**, and one of the two hopes recorded in this paragraph was
+wrong. See § "The 5c.3 source evaluation" below.
+
+## The reference-database rebuild (issue 91, 2026-08-13) — `drugref_db034`
+
+Issue 91: `drugref_5c4`'s ledger recorded `ef136553cc52` for `030_signing.sql` where the merged file hashes to
+`914b6d0049ac`, so `apply_migrations` refused there **and on every `TEMPLATE` copy** — the documented way to
+measure a slice. Option 1 of the issue was taken: **rebuild from the real releases against the merged
+migrations**, which also re-verifies every count the docs quote. Nothing was patched; `drugref_5c4` is kept
+as-is, exactly as the "never patch a verification database" rule says.
+
+**The name states the checkable fact.** `drugref_db034` is named for its migration head, not its slice, because
+a reader can verify the claim in one query — `SELECT max(filename) FROM drugref.schema_migration` → `034` — and
+the slice names had already gone out of order (5c.4 was built before 5c.2). This file naming a database
+authoritatively is an assertion; make it one the database can answer.
+
+**What it holds** — a clean ledger (34 rows, no drift), the full chain, **and** slice 5c.2's shipped clinical
+floor, in that order. `reviewed_by` on its eight curated rows is the marker `reference-rebuild (issue 91)`, not
+a clinician: the *content* is the committed, clinically-reviewed `onc_high_priority.toml`, but the act of
+running `curate` here was a rebuild, and an append-only row that names a physician who did not run it would be
+a small lie in an immortal table. A production load passes the real curator.
+
+**The measurement ladder, all on this one database.** Recording the intermediate states is the point — 5c.1's
+figures and 5c.2's are now readable off one build, and each stage's delta is attributable:
+
+| after | key counts |
+|---|---|
+| **chain** (unii 26Feb2026 → medrt 2026.07.06 → mesh 2026 → mesh-relations 2026.07.06 → gsrs 2026-02-26; **148.6 s**) | `substance_moiety` **19,438** · `ddi_candidate_pair` **21,664** · `condition_contraindication_expanded` **192,161** · `gap_uncurated_condition_contradiction` **168** · `gap_uncurated_interaction_rule` **595** · `open_question` **21,842** · `class_contraindication` (MED-RT) **635** · every curated view **0** |
+| **`ingest onchigh --release ONCHigh-2015`** | ONCHIGH candidates **8**, pairs **213**, unresolved endpoints **0**; worklist **595 → 601**, `open_question` **21,842 → 21,848**; MED-RT's 21,664 and `substance_moiety` 19,438 **unmoved** |
+| **`curate onchigh`** | `curated_interaction` **8** · `curated_ddi_pair` **255** · worklist **601 → 593** · `open_question` unchanged |
+
+**Every count and ingest summary § "Slice 5c.1" records reproduced exactly**, from a clean ledger, which is the
+second thing the rebuild was for — including the summaries themselves (`UniiSummary(moieties=19438,
+gated_out=148608)`, MED-RT `contraindications=635`, `also_contraindicated_pairs=168`, GSRS `rows_written=8671`).
+**What it does NOT reproduce, and the claim is deliberately narrow: nothing from the signing layer.** No key was
+registered, no row signed, no release published here, so 5c.4's signing-specific measurements are *not*
+re-verified by this build and stay readable only on `drugref_5c4`. Chain wall-clock **148.6 s** against 5c.4's
+132.96 s and 5c.1's 127.5 s — and **uncontrolled**, since a 1.4 GB download was streaming on the same machine;
+that is issue 81's variance, not a regression to chase.
+
+**The two numbers that look different from § "Slice 5c.2" are the same measurement from a clean baseline, and
+this is worth reading before re-quoting either.** 5c.2 recorded the worklist as **593 → 591**; here it is **595
+→ 593**. Both are a net **−2**. 5c.2 measured on a `TEMPLATE drugref_5c4` copy, whose baseline was already 593
+because 5c.4's end-to-end exercise had left two curated rows there. The pristine ladder also makes the
+*mechanism* legible, which the net figure hides: the ONCHIGH projection adds **8** rules but only **+6** to the
+worklist, because 2 of the 8 share a natural key with rules MED-RT already asserted; curating then closes **8**
+— the 6 new plus those 2 — for a net −2. `curated_ddi_pair` **255 = 213 ONCHIGH + 42 MED-RT** (tizanidine and
+tizanidine hydrochloride, 21 pairs each), the same fact from the other side. **One clinical fact, one live
+drugref judgement, however many upstream authorities asserted it** — now visible as arithmetic.
+
+**Hot path re-measured, and the subject is named this time.** `EXPLAIN ANALYZE SELECT * FROM
+drugref.curated_ddi_pair WHERE subject_moiety = '825bbad7-3253-548c-8324-ccfae8ae3d68'` (**irinotecan** — the
+largest curated subject, 46 pairs), five runs: 2.748 → 2.291 → 1.881 → 1.595 → **1.550 ms**, so the warm band
+sits inside `db/034`'s recorded **1.50–1.68 ms**. The moiety grain's recursive union is
+**`cost=14.94..3886.97 rows=37414`** — byte-identical to the signature the 5c.2 reviewer recorded against
+`drugref_5c4`. Its **actual** rows are **1235** where that reviewer saw 1233, and the +2 is fully attributed
+rather than shrugged at: of ONCHIGH's three object classes, exactly one — **`Proton Pump Inhibitor [EPC]`** — is
+not already a MED-RT contraindication object, so it joins `ci_class_subtree`'s seed and contributes itself plus
+one descendant. Both verified by query. **Which moiety was measured had never been written down**; a plan whose
+subject is unknown cannot be re-run, so it is written down now.
+
+**The broken workflow was re-tested, not assumed fixed:** `CREATE DATABASE drugref_tmpl_check TEMPLATE
+drugref_db034` → `drugref migrate` → `migrations applied`, ledger still 34 rows, database dropped. That is the
+exact sequence issue 91 reported broken.
+
+## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
+
+Both sources were licence-checked during 5c.2 and recorded as "worth evaluating". They have now been retrieved
+and measured, before any commitment to `5c.3`'s shape. **The headline: the paragraph above was right about
+DrugCentral and wrong about OnSIDES, in the specific way a licence check cannot catch — a source can be
+perfectly clean and simply not contain the data you want.**
+
+### OnSIDES carries NO interaction content, and cannot be made to
+
+Licence re-confirmed at the source: code **MIT**, data **CC BY 4.0** in a separate `LICENSE-DATA`, attribution
+by citation (Tanaka et al., *Med* 2025, PMID 40179876). Latest code release **v3.2.1** (2026-07-20); latest
+**data** release **v3.1.1** (2026-04-22), one 84.9 MB zip. So the clearance stands — and is irrelevant, because:
+
+- **The schema has nowhere to put a second drug.** All eight shipped CSVs (seven of them tables in
+  `schema/postgres.sql`; `high_confidence` ships without one): `product_label`, `product_adverse_effect`
+  **(product_label_id, label_section, effect_meddra_id, match_method, pred0, pred1)**,
+  `vocab_meddra_adverse_effect`, `vocab_rxnorm_{ingredient,product}`, `product_to_rxnorm`,
+  `vocab_rxnorm_ingredient_to_product`, `high_confidence`. The unit is one label × one MedDRA term. **A pair has
+  no representation.**
+- **Measured over all 6,928,666 rows** (streamed from the release zip): sections `AR` 5,283,772 · `WP` 1,196,843
+  · `BW` 59,644 · `NA` 388,407. **Exactly ONE interaction-flavoured term exists in the whole MedDRA vocabulary
+  OnSIDES ships** — `10022527 "Interaction with alcohol"` (LLT) — used by **13 rows**. There is no
+  `Drug interaction` PT at all.
+- **The hope recorded in 5c.2 was that Warnings and Precautions is "where interaction warnings live". WP is
+  parsed — 1.2M rows of it — and it yields adverse-effect terms, because that is what the model extracts.** The
+  section is right; the extraction target is not. Getting a partner drug out of it is a different task (drug NER
+  + relation extraction), not a threshold change.
+- **OnSIDES does not read the section that does carry interactions.** Its US pipeline
+  (`snakemake/us/parse/Snakefile`) enumerates seven LOINC section codes — AR `34084-4`, BW `34066-1`, WP
+  `43685-7`, WA `34071-1`, PR `42232-9`, SP `43684-0`, OV `34088-5` — and **`34073-7` DRUG INTERACTIONS is not
+  among them.**
+
+**What OnSIDES is still good for is exactly what ROADMAP already said: the *method*, MIT-licensed.** The label
+fetch, the section split by LOINC code, the annotation/train/threshold loop, the RxNorm bridge — all reusable.
+The *data* release is not a DDI source and must stop being listed as a candidate one.
+
+### SPL section 7 is the real material, and it is public and rich
+
+Verified against a live DailyMed label rather than from the spec: prescription SPLs carry
+**`34073-7` DRUG INTERACTIONS SECTION** alongside the 27 other sections. Tizanidine
+(`8d0b2b22-e1df-4ad5-92e6-f9a369108e4b`) states, in 690 characters, exactly the ONC floor entry drugref already
+ships — *"Concomitant use of tizanidine with strong cytochrome P450 1A2 (CYP1A2) inhibitors (e.g., fluvoxamine,
+ciprofloxacin) is contraindicated"* — plus a distinction **drugref currently cannot express**: strong CYP1A2
+inhibitors are contraindicated, **moderate or weak** ones are "avoid concomitant use". MED-RT's
+`Cytochrome P450 1A2 Inhibitors [MoA]` is one undifferentiated class. **That is a finding for 5c.3's design, not
+a defect to file**: the label's grain is (drug × inhibitor class × *potency band*), and a schema that cannot
+carry the band will either over-warn or drop the qualifier silently.
+
+**Scale, roughly measured — and the first attempt to measure it was wrong, which is the point.** DailyMed holds
+**158,508** SPLs. A first 25-label sample said 3 carried section 7; it had landed on a run of OTC sunscreens.
+Re-sampled across five pages and **classified by the label's own document-type code**, 50 labels give: **14 of
+23 HUMAN PRESCRIPTION DRUG LABELs carry `34073-7`**, **0 of 17 OTC labels** do. Small sample, indicative only —
+but it says the material is on prescription labels specifically, and a 5c.3 that samples DailyMed without
+filtering by document type will mis-measure its own corpus exactly as this did.
+
+### DrugCentral DOES carry a real DDI table, and it is worth a slice
+
+Licence re-confirmed at the source: **CC BY-SA 4.0** (`drugcentral.org/privacy` links the legalcode), no
+registration, one 1.4 GB gzipped `pg_dump`. Bundle-OK *because* drugref's data layer is itself share-alike.
+**Its DDI content is no longer unverified** — measured by streaming the dump and extracting the `ddi` COPY block:
+
+- **7,621 rows**, shape `(drug_class1, drug_class2, ddi_ref_id, ddi_risk, description, source_id)`, table
+  comment *"Drug-Drug and Drug class - Drug class interaction table"*. Severity vocabulary is small and
+  reference-scoped: `Significant` 5,264 · `Critical` 2,307 · `Potentially significant` 26 · `Avoid combination`
+  15 · `Contraindicated` 9. Every row carries a `description` (none empty).
+- **Both endpoints are free text in a `varchar(500)`, mixing drugs and classes with no code at all** — the
+  integration cost is a resolution problem, and it was measured against this project's own registry rather than
+  guessed. Of **970 distinct endpoint names**: **860 match a `substance_moiety.display_name`** exactly
+  (case-insensitive), **8 match a MED-RT class name**, **102 match neither**. **7,000 of 7,621 pairs (91.9%)
+  have both endpoints keyable today**, 6,973 of them moiety × moiety.
+- **The 102 unmatched split into two different jobs, and conflating them would under-cost the slice.** **87** are
+  INN spellings against drugref's UNII-derived (USAN) names — `ciclosporin` (100 uses), `dicoumarol` (65),
+  `ethinylestradiol` (47), `acetylsalicylic acid`, `amfetamine`, `methylthioninium chloride`, `suxamethonium`:
+  a synonym bridge, not new data. The other **15 are base names whose *forms* drugref carries but whose base it
+  does not** — `azithromycin` (40 uses) exists only as `azithromycin dihydrate` / `anhydrous` / `monohydrate`,
+  `heparin` only as `heparin sodium`, `norepinephrine` only as `norepinephrine bitartrate`. That is the
+  composition tree's job (slice 3), not a synonym list. **The 15 is a prefix heuristic and reads slightly high**
+  — `glycerol` "matches" `glycerol 1,3-dimethacrylate`, a different substance — so treat it as the shape of the
+  problem, not a count to quote.
+- **The grain is overwhelmingly the one drugref's moiety rule already handles.** Despite the table's name, only
+  8 endpoint names are classes at all, so this is not a second class-grain problem.
+- **It does NOT close the QT gap (issue 93).** Three rows in 7,621 mention QT or torsades, and two of them are
+  the `Moderate/High Risk QT Prolonging Agents` self-pair — **class names with no member list**: `pharma_class`
+  (25,687 rows) contains the string `QT` **zero** times, so the dump names those populations and never defines
+  them. Issue 93 restated, not solved. **The remaining routes to a QT list are unchanged: re-derive from SPL, or
+  use the owner's Holbrook-group archive — which needs WRITTEN permission first, to the standard issues 6 and 25
+  are held to.** (Recorded here because it had lived only in HANDOVER, whose history is disposable.)
+- **Staleness is the real cost:** the only published dump is **`drugcentral.dump.11012023.sql.gz`**, `dbversion`
+  **54**, dated **2023-11-01** — approaching three years old, and the download page has offered no newer one.
+  A rebuildable projection pinned to a 2023 release is honest (provenance is recorded per `ingest_run`), but it
+  is a floor that does not refresh.
+
+**⇒ THE RULE-6 QUESTION WAS THE WHOLE EVALUATION, AND IT ANSWERS CLEANLY — but only because the answer was read
+rather than inferred from DrugCentral's own CC BY-SA.** Every `ddi` row cites one of **three** references, and
+the `reference` table names them:
+
+| `ddi_ref_id` | rows | what it actually is | rule 6 |
+|---|---|---|---|
+| **2** | **7,571** | **VHA National Drug File – Reference Terminology (NDF-RT)** | **clean** — US federal work, and **MED-RT's own predecessor** |
+| 1 | 13 | *Stockley's Drug Interactions*, Karen Baxter, 2010, **ISBN 0853699143** | **copyrighted book** — out |
+| 3 | 37 | **Lexicomp Online**, Wolters Kluwer Health | **commercial compendium** — out |
+
+**Bundle `ddi_ref_id = 2` only.** A CC BY-SA licence over a compilation is not evidence of the right to
+relicense a third-party compendium inside it, and two of the three references are exactly that. **The exclusion
+costs nothing measurable, which is the nice part: all 50 non-NDF-RT rows are also the rows whose endpoints do
+not resolve** (they are class-named — `MAOIs or RIMAs`, `Strong CYP3A4 Inhibitors`), verified by the resolution
+run — 648 unresolvable rows over the whole table, 598 over the NDF-RT subset, a difference of exactly 50.
+
+**⇒ AND THE FOLLOW-UP QUESTION THAT ONLY BECAME ASKABLE ONCE REFERENCE 2 WAS READ: if it is NDF-RT, and drugref
+already ingests MED-RT, is any of it NEW?** Measured, not assumed — resolve both endpoints to moieties and
+compare unordered pairs against `ddi_candidate_pair` (MED-RT, **20,238** distinct unordered pairs):
+
+- **6,941** distinct moiety pairs resolve · **604 (8.7%) drugref already holds** · **6,337 are NEW.**
+- **Same authority, different extraction, and that is why the overlap is small**: drugref reads MED-RT's
+  **class-level contraindication rules** (635 rules inheriting to 21,664 pairs), while DrugCentral's `ddi`
+  carries NDF-RT's **drug-level** interaction assertions. Neither is a superset of the other.
+- **This is the number that justifies a slice.** A second candidate source that is 91% new, public-domain,
+  moiety-grained and 92%-resolvable is worth `source = 'DRUGCENTRAL'`; one that merely restated MED-RT would
+  not have been.
 
 ## Verify before the first production load
 
@@ -1500,7 +1679,8 @@ signatures are DETACHED ROWS, not a column, so any row can be signed at any late
 **Rule-6 determination, made in the same round: DDInter is CC BY-NC-SA and is OUT of the bundled ladder permanently** —
 non-commercial, so not AGPL-3.0-compatible. ROADMAP's old "DDInter *if its licence confirms*" predated the check. It may
 attach only as a node-local, separately-licensed plug-in. The surviving ladder is ONC high-priority floor → SPL/DailyMed
-(ONSIDES-*method*) → drugref's own curation.
+(ONSIDES-*method*, **never its data** — § "The 5c.3 source evaluation" measured that its data holds no
+interactions at all) → **DrugCentral, pending one rule-6 answer** → drugref's own curation.
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
 subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
 
@@ -1607,16 +1787,28 @@ ran in CI and `ruff` was not even a project dependency.
   surface (#61), split out of `cli.py` to hold CLAUDE.md's ~500-line rule; like `cli.py` it writes no SQL of its own.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
-  same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS `drugref_5c4`**
-  (built 2026-08-10 from the real releases, migrated through `db/030`): it **REPRODUCED** every COUNT and INGEST
-  SUMMARY in § "Slice 5c.1" *and* § "Slice 5c.4" when the chain finished, and it is where the only hot-path
-  `EXPLAIN ANALYZE` against a **populated, signed** overlay was taken. **It does not still HOLD all of them** —
-  two sentences claiming both stood here until the final review — and the distinction decides whether a figure may
-  be read off it today: the 5c.4 end-to-end exercise afterwards left **two** curated interaction rows, three
-  registered keys (one `compromised`, one `rotated`), two row signatures and one published release in it, all
-  deliberately. The five must-not-move counts were taken **before** any of that and are unaffected (this slice
-  added no projection); the two curated rows have since moved `gap_uncurated_interaction_rule` from **595** to
-  **593** there. Re-measure on a fresh build before quoting a gap count.
+  same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
+  `drugref_db034`** — built 2026-08-13 from the real releases against the merged migrations, with a **clean
+  ledger** (34 rows, no drift), because `drugref_5c4`'s could no longer take a migration (issue 91). Named for
+  its migration head so the claim is checkable: `SELECT max(filename) FROM drugref.schema_migration` → `034`.
+  It reproduced **every** count and ingest summary in § "Slice 5c.1" and every projection figure in § "Slice
+  5c.2", and it **still holds** them: chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
+  keys, no signatures, no published release, no exercise rows, which is also why it re-verifies **nothing from
+  the signing layer**. Its state and every figure: § "The reference-database rebuild". The `TEMPLATE` +
+  `drugref migrate` workflow was re-tested on it and works.
+
+  **`drugref_5c4` is now a KEPT CONTROL, not the database to read** (built 2026-08-10, migrated through
+  `db/030`). It reproduced every count and ingest summary in § "Slice 5c.1" and § "Slice 5c.4" when its chain
+  finished, and it is where the only hot-path `EXPLAIN ANALYZE` against a **populated, signed** overlay was
+  taken — the one measurement `drugref_db034` cannot supply, which is why it is kept. **It does not still HOLD
+  all of them** — two sentences claiming both stood here until the final review — and the distinction decides
+  whether a figure may be read off it today: the 5c.4 end-to-end exercise afterwards left **two** curated
+  interaction rows, three registered keys (one `compromised`, one `rotated`), two row signatures and one
+  published release in it, all deliberately. The five must-not-move counts were taken **before** any of that and
+  are unaffected (that slice added no projection); the two curated rows have since moved
+  `gap_uncurated_interaction_rule` from **595** to **593** there. It also carries **no** `db/031`–`db/034`
+  objects — 5c.2's `psql -f` workaround went into `TEMPLATE` copies that were dropped — so it cannot answer a
+  two-grain question at all. Re-measure on a fresh build before quoting a gap count.
 
   **CORRECTED 2026-08-10 — `drugref_5c1m` IS EMPTY, and this file said otherwise for two rounds.** It used to read
   "`drugref_5c1m` holds the real releases with the MERGED `db/029` … the current measurement database and the one to
