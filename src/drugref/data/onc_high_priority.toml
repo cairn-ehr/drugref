@@ -13,12 +13,17 @@
 # `management` string below is drugref's own prose, drafted from general
 # pharmacology knowledge, not a quotation or paraphrase of the source.
 #
-# THIS CONTENT IS NOT CLINICALLY REVIEWED. It is a drafting agent's best
-# attempt at fifteen well-known drug class interactions, awaiting a
-# physician's sign-off before `drugref curate onchigh` ever writes it to the
-# append-only overlay. See task-12a-report.md (same slice's sdd directory)
-# for the full resolution trail, every member-count measurement, and a list
-# of judgement calls a reviewing clinician should check first.
+# CLINICAL REVIEW STATUS (task-12b): the project owner, a physician, has
+# reviewed the drafting agent's original eleven-entry draft and ruled that
+# only the FOUR entries below (GRAIN 1) ship -- their object class is
+# mechanism-defined, so the class boundary and the interaction boundary are
+# the same fact. The other seven, all class x class, borrowed a therapeutic
+# taxonomy as if it were a clinical population and are DEFERRED to issue 94
+# (see the GRAIN 2 comment block below for the reasoning and where the full
+# drafted content still lives). `drugref curate onchigh` writes only what
+# this file contains, so reducing the file IS the review gate taking effect.
+# See task-12a-report.md (same slice's sdd directory) for the full original
+# resolution trail and every member-count measurement.
 #
 # GRAIN (design spec section 14): each entry carries EXACTLY ONE of
 # `subject_unii` (a single drug, moiety-subject grain, Tasks 1-8) or
@@ -188,287 +193,65 @@ relaxant.
 """
 
 # ============================================================================
-# GRAIN 2: class x class -- Task 10's addition (db/032, design spec section
-# 14). Five of the eight class x class paper entries share MAOIs as the
-# object; all five use the SAME MAOI class for consistency -- see the note
-# on entry one of this group for why it is the [EPC] class, not [MoA].
-# ============================================================================
-
-[[entry]]
-entry_id = "amphetamines-maoi"
-# Paper candidate #3.
+# GRAIN 2: class x class -- DEFERRED TO ISSUE 94, NOT SHIPPED (task-12b).
 #
-# THE MAOI OBJECT CLASS, EXPLAINED ONCE FOR ALL FIVE ENTRIES IN THIS GROUP:
-# "Monoamine Oxidase Inhibitor [EPC]" (N0000175744, 5 members: isocarboxazid,
-# phenelzine, rasagiline, selegiline, tranylcypromine) is used rather than
-# "Monoamine Oxidase Inhibitors [MoA]" (N0000000184, 31 members) for two
-# reasons: (1) the MoA class also tags amphetamine, dextroamphetamine,
-# methamphetamine, benzphetamine, diethylpropion, phendimetrazine and
-# phentermine as "MAO inhibitors" -- a MED-RT classification quirk, and
-# self-referential against THIS very entry's subject class; (2) the same-kind
-# constraint documented at the top of this file means an [EPC] subject class
-# (as every subject below is) can only be paired with an [EPC] object class,
-# or the object side expands to zero members at read time. The EPC class
-# excludes furazolidone, which does carry incidental MAO-inhibiting activity
-# -- flagged in task-12a-report.md as a judgement call worth clinician review.
-
-[entry.candidate]
-subject_medrt_code = "N0000175739"
-subject_name = "Central Nervous System Stimulant [EPC]"
-object_medrt_code = "N0000175744"
-object_name = "Monoamine Oxidase Inhibitor [EPC]"
-axis = "CI_EPC"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #3)"
-# Subject class (7 members: amphetamine, caffeine, dexmethylphenidate,
-# dextroamphetamine, lisdexamfetamine, methamphetamine, methylphenidate) is
-# the closest MED-RT population to "amphetamine derivatives": no MED-RT class
-# is scoped to amphetamines alone without ALSO losing amphetamine and
-# dextroamphetamine themselves (the narrower "Sympathomimetic Amine
-# Anorectic [EPC]" holds only benzphetamine, diethylpropion, phendimetrazine,
-# phentermine). Caffeine's inclusion is a materially weaker interaction than
-# the others in this class -- flagged in task-12a-report.md.
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "established"
-mechanism = """
-Amphetamine-type stimulants promote release of stored catecholamines from
-presynaptic neurons. When monoamine oxidase is inhibited, those catecholamines
-are not broken down and accumulate, and the combination can precipitate a
-hypertensive crisis.
-"""
-management = """
-Avoid the combination. If a stimulant is clinically necessary, discontinue
-the MAOI and observe the required washout interval before starting the
-stimulant, and vice versa.
-"""
-
-[[entry]]
-entry_id = "ssri-maoi"
-# Paper candidate #8.
-
-[entry.candidate]
-subject_medrt_code = "N0000175696"
-subject_name = "Serotonin Reuptake Inhibitor [EPC]"
-object_medrt_code = "N0000175744"
-object_name = "Monoamine Oxidase Inhibitor [EPC]"
-axis = "CI_EPC"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #8)"
-# Subject class (8 members: citalopram, escitalopram, fluoxetine,
-# fluvoxamine, nefazodone, paroxetine, sertraline, trazodone) is MED-RT's FDA
-# EPC grouping and is broader than "SSRI" in the strict sense -- it also
-# carries nefazodone and trazodone (serotonin antagonist/reuptake
-# inhibitors). Both genuinely carry serotonin-syndrome risk with an MAOI, so
-# their inclusion is not considered a defect, but is noted for the record.
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "established"
-mechanism = """
-Both drug classes raise synaptic serotonin -- one by blocking its reuptake,
-the other by blocking its enzymatic breakdown. Combined, they can produce a
-dangerous serotonergic excess (serotonin syndrome), with autonomic
-instability, neuromuscular hyperactivity and altered mental status.
-"""
-management = """
-Avoid concurrent use. Observe an adequate washout period when switching
-between an MAOI and a serotonin reuptake inhibitor in either direction
-(longer for agents with active metabolites, e.g. fluoxetine).
-"""
-
-[[entry]]
-entry_id = "narcotic-analgesics-maoi"
-# Paper candidate #16.
-
-[entry.candidate]
-subject_medrt_code = "N0000175690"
-subject_name = "Opioid Agonist [EPC]"
-object_medrt_code = "N0000175744"
-object_name = "Monoamine Oxidase Inhibitor [EPC]"
-axis = "CI_EPC"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #16)"
-# Subject class, 18 members: alfentanil, codeine anhydrous, dihydrocodeine,
-# fentanyl, hydrocodone, hydromorphone, levorphanol, loperamide, methadone,
-# morphine, oxycodone, oxymorphone, pethidine, propoxyphene, remifentanil,
-# sufentanil, tapentadol, tramadol. loperamide is an OTC antidiarrheal with
-# minimal CNS penetration at labelled doses and is unlikely to produce a
-# clinically meaningful MAOI interaction -- flagged in task-12a-report.md as
-# a judgement call worth clinician review; the other 17 members are all
-# genuine analgesics.
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "established"
-mechanism = """
-Certain opioids (classically pethidine, and to varying degrees tramadol,
-methadone and fentanyl) add serotonergic activity to MAO inhibition, risking
-serotonin syndrome; others contribute additive CNS and respiratory
-depression.
-"""
-management = """
-Avoid the combination, particularly pethidine and tramadol. Where opioid
-analgesia is required, select an agent with minimal serotonergic activity,
-use the lowest effective dose, and monitor closely for agitation,
-hyperthermia and respiratory depression.
-"""
-
-[[entry]]
-entry_id = "tca-maoi"
-# Paper candidate #20.
-
-[entry.candidate]
-subject_medrt_code = "N0000175752"
-subject_name = "Tricyclic Antidepressant [EPC]"
-object_medrt_code = "N0000175744"
-object_name = "Monoamine Oxidase Inhibitor [EPC]"
-axis = "CI_EPC"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #20)"
-# Subject class, 9 members: amitriptyline, amoxapine, clomipramine,
-# desipramine, doxepin, imipramine, nortriptyline, protriptyline,
-# trimipramine. Clean match, no contamination found.
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "established"
-mechanism = """
-Tricyclic antidepressants inhibit norepinephrine and serotonin reuptake;
-combined with MAO inhibition, the resulting monoamine excess can cause
-hyperthermia, hypertensive crisis, seizures and serotonin syndrome.
-"""
-management = """
-Avoid concurrent use. Observe an adequate washout period (generally at least
-two weeks) when switching between a tricyclic antidepressant and an MAOI in
-either direction.
-"""
-
-[[entry]]
-entry_id = "triptans-maoi"
-# Paper candidate #31.
-
-[entry.candidate]
-subject_medrt_code = "N0000175765"
-subject_name = "Serotonin-1b and Serotonin-1d Receptor Agonist [EPC]"
-object_medrt_code = "N0000175744"
-object_name = "Monoamine Oxidase Inhibitor [EPC]"
-axis = "CI_EPC"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #31)"
-# Subject class, 7 members: almotriptan, eletriptan, frovatriptan,
-# naratriptan, rizatriptan, sumatriptan, zolmitriptan -- an exact match for
-# "triptans" (no MED-RT class is literally named "triptan", but this class's
-# full membership IS the triptan class).
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "probable"
-# evidence_grade drafted as "probable" rather than "established": the
-# FDA-label caution for triptan+MAOI combinations is well known, but the
-# underlying evidence for serotonin syndrome from this specific combination
-# is thinner in the literature than for SSRI-MAOI or TCA-MAOI (regulatory
-# caution plus isolated case reports rather than a large case series) --
-# flagged in task-12a-report.md for clinician confirmation or upgrade.
-mechanism = """
-Triptans are partly cleared by monoamine oxidase (notably the MAO-A isoform).
-Inhibiting that enzyme both raises triptan exposure and adds to overall
-serotonergic tone, with a theoretical and case-report-supported risk of
-serotonin syndrome or exaggerated vasoconstriction.
-"""
-management = """
-Avoid the combination. When an MAOI cannot be stopped, avoid triptans
-metabolised primarily by MAO-A (e.g. sumatriptan, rizatriptan, zolmitriptan)
-and discuss non-triptan abortive options with the prescriber.
-"""
-
-[[entry]]
-entry_id = "statins-cyp3a4-inhibitors"
-# Paper candidate #25.
-
-[entry.candidate]
-subject_medrt_code = "N0000000121"
-subject_name = "Hydroxymethylglutaryl-CoA Reductase Inhibitors [MoA]"
-object_medrt_code = "N0000182141"
-object_name = "Cytochrome P450 3A4 Inhibitors [MoA]"
-axis = "CI_MoA"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #25)"
-# Subject class chosen as [MoA] (18 members: atorvastatin, cerivastatin,
-# fluvastatin, lovastatin, pitavastatin, pravastatin, rosuvastatin,
-# simvastatin, plus salt forms) over "HMG-CoA Reductase Inhibitor [EPC]"
-# (N0000175589, 7 members -- the same statins without salts and without
-# cerivastatin), both for completeness and because CYP3A4 Inhibitors exists
-# in MED-RT only as [MoA] -- the same-kind constraint (file header) requires
-# a [MoA] subject to pair with it. cerivastatin was withdrawn from the
-# market in 2001 for rhabdomyolysis risk; its inclusion here is harmless
-# (a withdrawn drug generates no real prescriptions to flag) and is kept
-# rather than hand-pruned, since the class membership is MED-RT's own data.
-
-[entry.judgement]
-applies = true
-severity = "major"
-evidence_grade = "established"
-# severity applies uniformly across all 18 members of this class, but
-# CYP3A4 dependence varies sharply by statin -- simvastatin and lovastatin
-# are markedly CYP3A4-dependent (the classic myopathy/rhabdomyolysis risk);
-# rosuvastatin, pravastatin and pitavastatin are only weakly affected. The
-# class-pair grain cannot express a per-member severity; flagged in
-# task-12a-report.md as a known limitation of the shape, not an oversight.
-mechanism = """
-Several HMG-CoA reductase inhibitors (particularly simvastatin and
-lovastatin) are cleared mainly by CYP3A4. Strong inhibition of that enzyme
-raises statin plasma concentrations substantially, increasing the risk of
-dose-dependent myopathy and, rarely, rhabdomyolysis. Statins with little
-CYP3A4 dependence are far less affected by this specific mechanism.
-"""
-management = """
-For CYP3A4-dependent statins, avoid strong CYP3A4 inhibitors or use the
-lowest effective statin dose with close monitoring for muscle symptoms and
-creatine kinase. Where the interacting drug is essential, switch to a statin
-with minimal CYP3A4 dependence (e.g. rosuvastatin, pravastatin,
-pitavastatin).
-"""
-
-[[entry]]
-entry_id = "cyp3a4-inducers-protease-inhibitors"
-# Paper candidate #23.
-
-[entry.candidate]
-subject_medrt_code = "N0000185506"
-subject_name = "Cytochrome P450 3A4 Inducers [MoA]"
-object_medrt_code = "N0000000246"
-object_name = "HIV Protease Inhibitors [MoA]"
-axis = "CI_MoA"
-citation = "Phansalkar et al 2012, JAMIA 19(5):735-43, Table 2 (candidate #23)"
-# Object class chosen deliberately: "HIV Protease Inhibitors [MoA]"
-# (N0000000246, 17 members) over the broader "Protease Inhibitors [MoA]"
-# (N0000000076, includes non-HIV proteases such as hepatitis C NS3/4A
-# inhibitors -- the wrong population) and over "Human Immunodeficiency Virus
-# Protease Inhibitor [EPC]" (N0000175520), which has ZERO members in
-# drugref_5c4 and is unusable regardless of kind-matching.
-
-[entry.judgement]
-applies = true
-severity = "contraindicated"
-evidence_grade = "established"
-mechanism = """
-HIV protease inhibitors are cleared largely through CYP3A4. Strong CYP3A4
-induction accelerates their metabolism, lowering plasma concentrations below
-the threshold needed for durable viral suppression and raising the risk of
-virologic failure and resistance.
-"""
-management = """
-Avoid strong CYP3A4 inducers during protease-inhibitor-based antiretroviral
-therapy. Where the inducer cannot be avoided, select an antiretroviral
-regimen not dependent on CYP3A4 and consult an HIV pharmacotherapy
-specialist.
-"""
+# Task 10 (db/032) built the class-subject shape and Task 12A drafted seven
+# class x class entries against it. The project owner -- a physician --
+# reviewed that draft and ruled that NONE of the seven ship in this slice.
+#
+# THE REASON, so a future reader does not have to reconstruct it: a
+# class-SUBJECT rule inherits its population from the source's class
+# boundary. That is only safe when the class was defined by the SAME
+# mechanism the interaction itself runs on -- e.g. Task 12B's surviving
+# "Cytochrome P450 3A4 Inhibitors [MoA]" IS the right population for an
+# irinotecan exposure interaction, because the class boundary and the
+# interaction boundary are the same fact (CYP3A4 inhibition). All seven
+# entries below instead borrow a MED-RT *therapeutic* taxonomy ([EPC]/[MoA]
+# groupings built for prescribing categories, not for this interaction's
+# mechanism) and use it AS IF it were the clinical population at risk. The
+# clearest case: "Opioid Agonist [EPC]" (used by narcotic-analgesics-maoi
+# below) conflates two distinct MAOI-interaction mechanisms -- serotonergic
+# amplification (tramadol, pethidine) and opioid-action amplification (the
+# rest of the class) -- and includes loperamide, an OTC antidiarrheal whose
+# peripheral-only action makes it the exception the class-wide rule would
+# misstate. The other six share the same defect in weaker or stronger form
+# (see each entry's own comment, retrievable below).
+#
+# The full drafted content -- candidate identifiers, member counts measured
+# against drugref_5c4, mechanism/management prose, and every judgement call
+# flagged for clinician review -- is NOT deleted, only removed from this
+# file. It remains retrievable at commit 389a560 ("feat(data): the ONC
+# high-priority DDI floor, drafted and awaiting clinical review"):
+#
+#   git show 389a560:src/drugref/data/onc_high_priority.toml
+#
+# A future contributor picking up issue 94 should start from that commit
+# rather than re-drafting from the source paper. The seven deferred entries,
+# by entry_id (all present verbatim at that commit):
+#
+#   - amphetamines-maoi              (paper candidate #3)
+#   - ssri-maoi                      (paper candidate #8)
+#   - narcotic-analgesics-maoi       (paper candidate #16)
+#   - tca-maoi                       (paper candidate #20)
+#   - triptans-maoi                  (paper candidate #31)
+#   - statins-cyp3a4-inhibitors      (paper candidate #25)
+#   - cyp3a4-inducers-protease-inhibitors (paper candidate #23)
+#
+# See issue 94 for the literature-research task these entries are deferred
+# to: establishing, per entry, whether a mechanism-coherent subset of the
+# borrowed therapeutic class can be carved out (e.g. splitting the opioid
+# class by serotonergic vs non-serotonergic mechanism) rather than shipping
+# the class boundary as-is.
+# ============================================================================
 
 # ============================================================================
-# OMITTED ENTRIES -- four of the paper's fifteen, deliberately not encoded.
-# Full reasoning in task-12a-report.md (same slice's sdd directory); summary
-# kept here so a reader of this file alone sees why the count is 11, not 15.
+# OMITTED ENTRIES (distinct from the DEFERRED entries above) -- four of the
+# paper's fifteen that were never encodable at all, regardless of clinical
+# review: no genuinely-matching MED-RT class exists for them. Full reasoning
+# in task-12a-report.md (same slice's sdd directory); summary kept here so a
+# reader of this file alone sees why the count is 4, not 15: 4 shipped
+# (GRAIN 1, above) + 7 deferred to issue 94 (GRAIN 2, above) + 4 omitted
+# below = 15.
 #
 # #6  Febuxostat - Azathioprine/mercaptopurine. Object must be a class (a
 #     drug x drug shape). No MED-RT class fits: "Purine Antimetabolite [EPC]"
