@@ -22,45 +22,43 @@
 [#84](https://github.com/cairn-ehr/drugref/pull/84)). **`db/029` and `db/030` are MERGED and FROZEN** — corrections need a new
 `db/NNN`.
 
-**⇒ JUST FINISHED — SLICE `5c.2`, THE ONC FLOOR (`db/031`–`db/034`), on branch `feat/slice-5c2-onc-floor`. Suite 1297 → 1395,
-green; `ruff check .` clean.** drugref's **first clinical content**. The ONC list enters as a **second candidate source**
-(`source='ONCHIGH'`) rather than curator-originated content — 5c.1 had already keyed the candidate tier on `source` for exactly
-this — so **`db/029` was never touched**. Retrieving the list then refuted the grain, and `db/032` added a **class-subject**
-rule; `db/033` carries both grains in one `curated_ddi_pair`; `db/034` recovered a measured hot-path regression. Full account,
-every figure and every trap: **PROJECT-NOTES § "Slice 5c.2"**, which leads with the finding below.
+**⇒ JUST FINISHED — SLICE `5c.2`, THE ONC FLOOR (`db/031`–`db/034`), branch `feat/slice-5c2-onc-floor`. Suite 1297 → 1395
+green, `ruff` clean.** drugref's **first clinical content**. Measured: 8 ONCHIGH candidates · 213 pairs · 0 unresolved · hot
+path 1.55–1.68 ms · **`ddi_candidate_pair` MED-RT 21,664 and `substance_moiety` 19,438 both unmoved**. **Every figure, every
+trap and the two reversals that produced them: PROJECT-NOTES § "Slice 5c.2" — read it before touching this area.**
 
-**⇒ THE FINDING THAT GOVERNS EVERY FUTURE CLASS-GRAIN RULE. A class-grain rule inherits its population from the source's class
-boundary, and that is only safe when the class was defined by the same mechanism the interaction runs on.**
-`Cytochrome P450 3A4 Inhibitors [MoA]` *is* the right population for an irinotecan exposure interaction. `Opioid Agonist [EPC]`
-is **not** the right population for an MAOI interaction — it conflates serotonergic with opioid-action amplification and
-includes **loperamide**; `Central Nervous System Stimulant [EPC]` sweeps in **caffeine** at a dose-dependent risk the rule
-cannot qualify. **So 4 of 15 entries shipped and 7 were withheld from an append-only table** ([#94](https://github.com/cairn-ehr/drugref/issues/94),
-encodings retrievable from commit `389a560`). **That is the clinical review gate working, not a shortfall** — and a class-grain
-rule is not automatically cheaper than a moiety one.
+**⇒ THE ONE THING FROM 5c.2 THAT GOVERNS FUTURE WORK, and the reason it is repeated here rather than left in PROJECT-NOTES: a
+class-grain rule inherits its population from the source's class boundary, and that is only safe when the class was defined by
+the same mechanism the interaction runs on.** `Cytochrome P450 3A4 Inhibitors [MoA]` *is* the population an irinotecan exposure
+interaction runs over. `Opioid Agonist [EPC]` is **not** the population an MAOI interaction runs over — it conflates
+serotonergic with opioid-action amplification and includes **loperamide**; `CNS Stimulant [EPC]` sweeps in **caffeine**. **4 of
+15 entries shipped; 7 were withheld from an append-only table** ([#94](https://github.com/cairn-ehr/drugref/issues/94),
+encodings in commit `389a560`). **A class-grain rule is not automatically cheaper than a moiety one.**
 
-**⇒ MEASURED with the four loaded** (scratch DB from the real releases, 2026-08-12): **8 ONCHIGH candidates · 213 pairs · 0
-unresolved endpoints** · `gap_uncurated_interaction_rule` **593 → 591** · `open_question` **21,842 → 21,848** · hot path
-**1.551–1.679 ms**. **Both counts that must not move held: `ddi_candidate_pair` MED-RT 21,664 and `substance_moiety` 19,438.**
-**The worklist dropped by 2, not 4, and that is the payoff**: `curated_interaction`'s key omits `source`, so curating tizanidine
-also answered a pre-existing MED-RT rule on the same key.
+**⇒ THIS BRANCH IS DONE — PR [#95](https://github.com/cairn-ehr/drugref/pull/95) is open and awaiting review.** Highest-value
+reads: `db/034`, `cli_curate.py`, spec §14.
 
-**⇒ A 3.6× REGRESSION WAS FOUND, ESCALATED AND FIXED AT ITS CAUSE.** `db/033` widened `ci_class_subtree`'s seed, inflating the
-recursive CTE's row estimate ~5× and tipping a Hash Join into a Merge Join — **4.7–5.4 ms even with an EMPTY class overlay**,
-i.e. structural, paid by every consumer. `db/034` gave the class grain its **own** walk: **1.50–1.68 ms empty, 2.87–3.28 ms
-populated**, with the moiety-grain plan verified byte-identical to the pre-`db/033` one and **no planner GUCs**. Residual ~2.2×
-floor disclosed, not hidden.
+**⇒ DO THESE TWO FIRST NEXT SESSION, BEFORE ANY NEW SLICE.**
 
-**⇒ REMAINING FOR THIS BRANCH: nothing but the PR.** Docs are current. If reviewing it, the highest-value reads are
-`db/034` (why the class grain needs its own walk), `cli_curate.py` (idempotence by comparison over graded fields only), and
-spec §14 (why the grain changed mid-slice).
+**(1) Fix issue 91 — the reference database cannot be migrated.** `drugref_5c4` is the DB PROJECT-NOTES § Repo facts tells
+every round to read, and its ledger records a checksum for `030_signing.sql` that the file no longer hashes to (db/030 was
+legitimately edited during 5c.4's review while unmerged). `drugref migrate` therefore refuses on it **and on every `TEMPLATE`
+copy**, so the documented measure-a-new-slice workflow is broken; 5c.2 had to work around it with `psql -f` four times.
+**The suite never sees this** — it drops the schema each session — which is why it went unnoticed for two slices. Preferred
+fix is a rebuild from the real releases, which also re-verifies the counts every doc quotes.
 
-**⇒ NEXT SLICE: `5c.3` — SPL/DailyMed mining**, or a **sourcing round** first. Two licence-clean sources were confirmed while
-researching the QT gap: **OnSIDES** (code MIT, **data CC BY 4.0**, and since v2.1.0 it carries the *Warnings and Precautions*
-section where interaction warnings live) and **DrugCentral** (**CC BY-SA 4.0**, no registration, bundle-OK because drugref's
-data layer is share-alike). **DrugCentral's actual DDI content is UNVERIFIED** — check before counting on it. **No open
-redistributable QT list exists**: neither FDA, EMA nor BfArM maintains one and CredibleMeds is registration-gated
-([#93](https://github.com/cairn-ehr/drugref/issues/93)); the owner has an archive from the Holbrook group but it is
-copyright-restricted and would need **written** permission first, to the standard issues 6 and 25 are held to.
+**(2) Evaluate the two licence-clean sources, before committing to `5c.3`'s shape.** Both were confirmed by licence check
+during 5c.2, neither is yet in the repo. **OnSIDES** — code MIT, **data CC BY 4.0** (separate `LICENSE-DATA`), attribution
+only so no ShareAlike friction, 3.6M drug–ADE pairs from 47k DailyMed labels, and since v2.1.0 it carries the **Warnings and
+Precautions** section, which is where interaction warnings actually live. **DrugCentral** — **CC BY-SA 4.0**, no registration,
+full SQL dump, bundle-OK *because* drugref's data layer is share-alike. **DrugCentral's actual DDI content is UNVERIFIED —
+check what it holds before counting on it.** The open question is whether either supplies *clinically relevant* interactions
+or only label-derived associations; issue 94 is what needs the answer.
+
+**Then: `5c.3` — SPL/DailyMed mining.** Note **no open redistributable QT list exists** — neither FDA, EMA nor BfArM maintains
+one, CredibleMeds is registration-gated ([#93](https://github.com/cairn-ehr/drugref/issues/93)) — so QT risk must be re-derived
+from SPL, or the owner's Holbrook-group archive used, which needs **written** permission first, to the standard issues 6 and 25
+are held to.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:** near
 `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.
