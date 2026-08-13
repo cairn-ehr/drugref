@@ -419,8 +419,9 @@ distinguish it, since the row counts are identical either way. The `EXPLAIN ANAL
 ##### 5c.2 — the ONC high-priority DDI floor ✅ DONE — `db/031`–`db/034`, measured 2026-08-12
 Spec: [slice-5c.2](superpowers/specs/2026-08-11-drugref-slice-5c2-onc-ddi-floor-design.md); plan:
 [2026-08-11](plans/2026-08-11-slice-5c2-onc-ddi-floor.md); published record: [the ONC high-priority
-floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**. **drugref's first
-clinical content.** Full account and every measurement: PROJECT-NOTES § "Slice 5c.2".
+floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**, then **1409** after
+the PR-review round. **drugref's first clinical content.** Full account and every measurement: PROJECT-NOTES §
+"Slice 5c.2".
 
 **The ONC list enters as a SECOND CANDIDATE SOURCE (`source = 'ONCHIGH'`), not as curator-originated content, and
 `db/029` was not touched at all.** 5c.1 had already keyed `class_contraindication` on `(subject, object,
@@ -445,6 +446,17 @@ deferred to [#94](https://github.com/cairn-ehr/drugref/issues/94). Four more are
 ([#92](https://github.com/cairn-ehr/drugref/issues/92), [#93](https://github.com/cairn-ehr/drugref/issues/93)).
 Measured: **8 ONCHIGH candidates, 213 pairs, 0 unresolved endpoints**, `gap_uncurated_interaction_rule` 593 → 591,
 and **MED-RT's `ddi_candidate_pair` 21,664 and `substance_moiety` 19,438 both unmoved.**
+
+**The review round's one lesson, which shapes the next migration: the class grain got the WRITE path and none of
+the moiety grain's DETECTORS.** Two defects were fixed here (the `unresolved_onc_endpoint` `gap_key` omitted
+`endpoint_role`, folding a class self-pair's two independently-failing endpoints onto one immortal
+`question_uuid`; and `register_from_gaps`' retention guard never learned `curated_class_interaction`, whose
+cascade into an append-only table turns a closed gap into a permanently aborted ingest for every source). The
+rest are filed as **[#96](https://github.com/cairn-ehr/drugref/issues/96)–[#99](https://github.com/cairn-ehr/drugref/issues/99)**
+— no worklist gap kind, no cross-grain precedence, no place in a signed release, no expansion-policy review —
+plus [#100](https://github.com/cairn-ehr/drugref/issues/100). **They should be taken as one `db/035`, not
+piecemeal:** each alone reads as a reasonable follow-up, and together they are why a class rule can be ingested,
+graded and reported successful while reaching zero patients.
 
 **⇒ THE `spurious` DEFERRAL HAS MOVED OFF THIS SLICE, and a later round must not re-attach it here.** 5c.1 handed
 5c.2 the question of how "drugref believes this upstream row is wrong" reaches a consumer. But `spurious` is a

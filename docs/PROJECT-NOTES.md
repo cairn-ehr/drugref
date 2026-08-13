@@ -1202,7 +1202,8 @@ constraint on what a consumer loaded.
 
 Spec: [slice-5c.2](superpowers/specs/2026-08-11-drugref-slice-5c2-onc-ddi-floor-design.md); plan:
 [2026-08-11](plans/2026-08-11-slice-5c2-onc-ddi-floor.md); published record: [the ONC high-priority
-floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**. **The first slice
+floor](https://docs.drugref.org/decisions/the-onc-high-priority-floor/). Suite **1297 → 1395**, then **1409**
+after the PR-review round below. **The first slice
 that writes clinical content** — and the one where every large decision was reversed at least once by a
 measurement.
 
@@ -1348,7 +1349,83 @@ and it costs the hot path nothing. **Not in the curated rows either** — those 
   was composed in memory and committed at the end. The fix was incremental commits (`d669d76`, `39f2fc8`).
   Worth remembering for any long agent-driven task.
 
+### The PR review round (PR #95), and the one pattern behind it
+
+Six review passes over the finished branch. **The findings had a single root cause, and it is the thing to carry
+forward: the class grain inherited 5c.1's WRITE path and none of its DETECTORS.** The moiety grain has a gap view
+for every way a rule can fail — ungraded, unpopulated, orphaned, unreviewed-root — and `db/032`–`db/034` added a
+second grain that has none of them. Individually each omission reads as a reasonable follow-up; together they
+mean a class-grain contraindication can be **ingested, graded, committed and reported successful while reaching
+zero patients, with `drugref status` printing health**. That is why #96–#99 are filed as one group below.
+
+**Two defects were fixed in this round, both about a frozen or cascading identifier:**
+
+- **The `unresolved_onc_endpoint` `gap_key` omitted `endpoint_role`.** `db/031`'s own COMMENT states the rule
+  the key broke — the view's grain is `(source, entry_id, endpoint_role)` and "the grain a gap_key built from
+  this view must also use". It was invisible while every entry had a moiety subject, because the two roles then
+  carry *different* schemes (`UNII` vs `MED-RT`) and so differ anyway. A **class** subject records
+  `OBJECT_SCHEME` on both roles, so a class **self-pair** — the shape `db/032`'s DECISION 2 deliberately permits
+  for the ONC list's real QT×QT entry, and the one issue 93 says cannot resolve — folded two independently
+  failing endpoints onto **one immortal `question_uuid`**, silently overwrote one role's text with the other's,
+  and let closing either role retire the question for both. `counts` over-reported at the same time.
+  **`identifier_value` is now canonicalised at the same moment** (`UnresolvedEndpoint.__post_init__`), because
+  the raw file spelling was also reaching the frozen key — `qzu4h47a3s` and `QZU4H47A3S` minted two different
+  permanent questions for one unknown identifier. **Both changed together on purpose: one break of a frozen key,
+  not two.** Existing test `test_unresolved_endpoint_table_is_keyed_per_run_and_role` already used colliding
+  data and stopped one step short of registration, which is how it survived four review rounds.
+- **`register_from_gaps`' retention guard never learned `curated_class_interaction`.** Every curated table is
+  `ON DELETE CASCADE` from `open_question` *and* carries an append-only trigger that refuses `DELETE`, so a
+  citing table missing from the guard does not lose data quietly — the cascade hits `forbid_overlay_rewrite`,
+  which RAISEs, which **aborts the whole ingest transaction, for every source, permanently**. Reachable through
+  a public keyword argument on `curation.record_class_interaction_judgement`; latent only because `cli_curate`
+  never passes it, which is precisely the state `curated_condition`'s own guard was added in. **Standing rule
+  now written at the call site: whenever a table gains a `question_uuid` FK, it belongs in that list.** Fixing
+  this also made `db/032`'s justification for the `curated_class_interaction_by_question` index TRUE — it
+  claimed `register_from_gaps` probes the table, which until now it did not, leaving the index dead.
+
+**Also fixed:** `_optional_str` treated a present-but-wrong-typed value as absent, so `management = ["…", "…"]`
+(an easy slip when every real value is a `"""` block) silently dropped the prescriber-facing instruction — and
+nothing downstream requires `mechanism`/`management`, unlike severity/evidence_grade, so it exited 0 · the chain
+now **logs at WARNING when it falls back to a packaged default** (`glob` is non-recursive while the rest of the
+download tree is nested, so an operator's corrected list one directory deeper was silently replaced by ours) ·
+`curate_onchigh` **refuses two entries that resolve to one natural key** (`CollidingRuleError`) — unguarded, the
+second superseded the first *within one run*, counted as a routine regrade, and never converged · `OncSummary`
+gained `class_rules_attempted` so the class grain reconciles like the moiety grain's
+`salt_forms_expanded`/`rules_written` · the ingest half now names an unresolved entry at WARNING, as
+`curate onchigh` already did.
+
+**Tests added for behaviour that was correct but unpinned** — the `ingest_onchigh` rollback path (only
+`resolve_entry` had been tested, never the orchestrator around it, so dropping the re-raise would have returned
+a normal-looking summary having cleared ONCHIGH and written nothing), idempotence against a **differing**
+`reviewed_by` (both existing tests passed `"Dr X"` twice, so a comparison that wrongly included it would still
+have reported `unchanged`), the class half's `superseded_by`/`applies` predicates, `ci_class_pair_subtree` past
+one level including a diamond, and the shipped `onc_high_priority.toml` itself — which no test had ever parsed,
+only referenced by path, leaving the four-entry clinical floor unasserted after `66321f3` cut it from eleven.
+Suite **1395 → 1409**.
+
+**One reported finding was investigated and rejected:** the gap view folds `identifier_scheme`/`identifier_value`
+through independent `max()`, which can in principle emit a scheme/value pair no release ever asserted. It is not
+reachable — `onchigh_run` clears the worklist per source before re-recording, so every view group has exactly
+one row and `max()` is an identity. It was reproduced only by inserting rows directly, bypassing the orchestrator
+that the architecture makes the sole writer. Worth knowing the guard is the clear step, not the view.
+
 ### Filed, not fixed
+
+**#90 and #96–#99 are one group — the missing class-grain detectors described above.**
+[#96](https://github.com/cairn-ehr/drugref/issues/96) **no worklist gap kind**, so an ungraded
+`class_pair_contraindication` asks nobody to grade it — the grain's *primary* question, while `db/031` added a
+kind for the lesser one · [#97](https://github.com/cairn-ehr/drugref/issues/97) **both grains can grade one pair
+with different severities** and `curated_ddi_pair` states no precedence; `via_subject_class` being NULL on every
+moiety row defeats the obvious consumer-side tie-break, which is where `db/032`'s NULL-comparison hazard
+resurfaces — not in a trigger, but in every consumer query · [#98](https://github.com/cairn-ehr/drugref/issues/98)
+**a signed release silently omits the whole class grain** (`curated_class_interaction` is not a
+`signature_target_kind`, so `verify_release` PASSES on an incomplete set — worse than failing) ·
+[#99](https://github.com/cairn-ehr/drugref/issues/99) **class-grain roots are outside
+`gap_unreviewed_expansion_root`**, so the `allow`-by-default expansion policy is honoured but never reviewed.
+Also [#100](https://github.com/cairn-ehr/drugref/issues/100) replaying `db/033` alone reinstates the 3.6×
+regression, and a note on [#92](https://github.com/cairn-ehr/drugref/issues/92): **`db/032`'s own preamble cites
+`statins × CYP3A4 inhibitors` as the worked example motivating the grain, and that is a `[EPC]`×`[MoA]` pair the
+schema cannot express** — measured at 0 pairs. All four shipped entries are same-kind, so nothing in tree trips it.
 
 [#90](https://github.com/cairn-ehr/drugref/issues/90) `curated_target_unresolved` does not cover the class grain
 · [#91](https://github.com/cairn-ehr/drugref/issues/91) **`drugref_5c4`'s ledger checksum for `030_signing.sql`
