@@ -66,3 +66,8 @@ history is never lost — it remains in the git log and in the dated design spec
   non-repudiation and release integrity), why curator-held keys are the only ones that prove
   anything, why a compromised key invalidates blanket while a rotated one does not, why a
   signature is never an admission gate — and, plainly, what signing does **not** fix.
+- [The ONC high-priority floor is facts, not text](the-onc-high-priority-floor.md) — why the
+  ONC high-priority drug–drug interaction list clears rule 6 on the facts-are-not-copyrightable
+  argument (Feist) rather than on its public-funding history alone, and the re-encoding
+  discipline — no verbatim paper text, every `mechanism`/`management` string drugref's own —
+  that keeps the argument true.

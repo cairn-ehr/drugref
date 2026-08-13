@@ -141,10 +141,16 @@ def test_ci_predicates_expand_descendants_unless_told_otherwise(conn):
     """The per-predicate switch db/010 adds to ci_axis. Slice 5b lands predicates
     over a MeSH disease vocabulary whose tree has a very different shape, so WHETHER
     a predicate expands is declared beside WHAT it expands over -- the same
-    one-place-to-declare-it discipline db/006 established."""
+    one-place-to-declare-it discipline db/006 established.
+
+    CI_EPC (db/031, slice 5c.2) is included below: it is a third axis over the
+    EPC vocabulary, expanding for the same reason CI_MoA/CI_PE do -- 65 of the
+    811 [EPC] classes have children, so direct-only expansion would lose real
+    pairs the same way it would on MoA/PE."""
     assert conn.execute(
         "SELECT relationship, expands_descendants FROM drugref.ci_axis "
-        "ORDER BY relationship").fetchall() == [("CI_MoA", True), ("CI_PE", True)]
+        "ORDER BY relationship").fetchall() == [
+            ("CI_EPC", True), ("CI_MoA", True), ("CI_PE", True)]
 
 
 def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, conn):

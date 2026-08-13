@@ -145,6 +145,123 @@ def record_condition_ruling(
     return new_id
 
 
+_GRADED_COLUMNS = ("applies", "severity", "mechanism", "management", "evidence_grade")
+
+
+def live_interaction_judgement(
+        conn: psycopg.Connection,
+        subject_moiety_uuid: uuid.UUID,
+        object_class_uuid: uuid.UUID,
+        relationship: str) -> dict | None:
+    """The live row's GRADED fields for one (subject, class, relationship) natural
+    key, or None if nothing has been curated yet.
+
+    THIS IS WHAT MAKES `drugref curate` IDEMPOTENT BY COMPARISON RATHER THAN BY LUCK.
+    curated_interaction is append-only, so a caller re-running the same file must be
+    able to tell "nothing changed" from "this needs a new row" BEFORE writing --
+    inserting unconditionally would leave a permanent duplicate that the deferred
+    single-live trigger only reports at COMMIT, long after the write happened.
+
+    RETURNS ONLY THE FIVE GRADED FIELDS -- `applies`, `severity`, `mechanism`,
+    `management`, `evidence_grade` -- and deliberately NOT `reviewed_at` or
+    `reviewed_by`. Those two describe WHO ran this comparison and WHEN, not WHAT was
+    judged: `reviewed_at` moves on every invocation and `reviewed_by` is whatever the
+    operator typed on this run, so a caller comparing them against a fresh judgement
+    would supersede the entire file every time it ran -- which is the opposite of the
+    append-only discipline this function exists to protect.
+    """
+    row = conn.execute(
+        f"SELECT {', '.join(_GRADED_COLUMNS)} FROM drugref.curated_interaction "
+        "WHERE subject_moiety_uuid = %s AND object_class_uuid = %s "
+        "AND relationship = %s AND superseded_by IS NULL",
+        (subject_moiety_uuid, object_class_uuid, relationship)).fetchone()
+    if row is None:
+        return None
+    return dict(zip(_GRADED_COLUMNS, row, strict=True))
+
+
+# ---- Task 10: the class-subject grain (db/032, design spec section 14) --------
+#
+# curated_class_interaction is curated_interaction's SIBLING, not its
+# replacement: it grades a rule whose SUBJECT is a class ("SSRIs are
+# contraindicated with MAOIs") rather than a single moiety, over the
+# `class_pair_contraindication` candidate tier interactions.py writes. Same
+# append-then-point sequence, same reason for existing as a function rather
+# than a paragraph telling every caller to get the ordering right, and the
+# same "no vocabulary restated in Python" discipline -- db/032's own CHECKs
+# and ci_axis FK are the one place severity/evidence_grade/relationship live.
+
+
+def record_class_interaction_judgement(
+        conn: psycopg.Connection,
+        subject_class_uuid: uuid.UUID,
+        object_class_uuid: uuid.UUID,
+        relationship: str,
+        applies: bool,
+        *,
+        severity: str | None = None,
+        mechanism: str | None = None,
+        management: str | None = None,
+        evidence_grade: str | None = None,
+        question_uuid: uuid.UUID | None = None,
+        source: str = "DRUGREF",
+        reviewed_by: str,
+        reviewed_against: str) -> int:
+    """Record (or revise) drugref's judgement on one CLASS x CLASS rule.
+
+    Returns the new `curated_class_interaction_id`. Mirrors
+    record_interaction_judgement exactly, one grain over -- see that
+    function's own docstring for the full reasoning (append-then-point,
+    `applies=False` as retirement rather than deletion, `question_uuid`
+    optional and meaningfully so). The one difference is the natural key:
+    (subject_class_uuid, object_class_uuid, relationship) instead of
+    (subject_moiety_uuid, object_class_uuid, relationship), because THE RULE
+    ITSELF is about a class, not a single drug (design spec section 14) --
+    one call grades every pair the rule expands to on BOTH sides once the
+    read path (Task 11) builds the both-sides expansion.
+    """
+    new_id = conn.execute(
+        "INSERT INTO drugref.curated_class_interaction "
+        "(subject_class_uuid, object_class_uuid, relationship, applies, severity, "
+        " mechanism, management, evidence_grade, question_uuid, source, reviewed_by, "
+        " reviewed_against) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "RETURNING curated_class_interaction_id",
+        (subject_class_uuid, object_class_uuid, relationship, applies, severity,
+         mechanism, management, evidence_grade, question_uuid, source, reviewed_by,
+         reviewed_against)).fetchone()[0]
+    overlay.supersede(
+        conn, "curated_class_interaction", "curated_class_interaction_id", new_id,
+        ("subject_class_uuid", "object_class_uuid", "relationship"),
+        (subject_class_uuid, object_class_uuid, relationship))
+    return new_id
+
+
+def live_class_interaction_judgement(
+        conn: psycopg.Connection,
+        subject_class_uuid: uuid.UUID,
+        object_class_uuid: uuid.UUID,
+        relationship: str) -> dict | None:
+    """The live row's GRADED fields for one (subject class, object class,
+    relationship) natural key, or None if nothing has been curated yet.
+
+    Mirrors live_interaction_judgement exactly, one grain over -- the same
+    idempotent-by-comparison contract `curate_onchigh`'s class-subject path
+    (Task 10) relies on, reusing the SAME `_GRADED_COLUMNS` tuple: the five
+    graded fields have the same names and the same meaning on both grains, so
+    a second, identically-spelled tuple here would be a second thing to
+    disagree with the first the moment one of them is widened.
+    """
+    row = conn.execute(
+        f"SELECT {', '.join(_GRADED_COLUMNS)} FROM drugref.curated_class_interaction "
+        "WHERE subject_class_uuid = %s AND object_class_uuid = %s "
+        "AND relationship = %s AND superseded_by IS NULL",
+        (subject_class_uuid, object_class_uuid, relationship)).fetchone()
+    if row is None:
+        return None
+    return dict(zip(_GRADED_COLUMNS, row, strict=True))
+
+
 @dataclass(frozen=True)
 class UnresolvedTarget:
     """One live curated row whose candidate is no longer projected.

@@ -5,6 +5,7 @@ The parser and the step table are PURE -- no database, no filesystem -- so most 
 this module runs anywhere. Only the end-to-end test is DB-gated.
 """
 import ast
+import logging
 import pathlib
 
 import pytest
@@ -19,7 +20,7 @@ def test_every_orchestrator_has_a_subcommand():
     uses. Driving this off cli.STEPS would pass whatever cli.STEPS said; the point is
     that an orchestrator added without a subcommand fails here."""
     assert tuple(s.name for s in cli.STEPS) == (
-        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs", "gsrs")
+        "unii", "chebi", "medrt", "mesh", "mesh-relations", "pbs", "gsrs", "onchigh")
 
 
 def test_unii_runs_before_every_feed_that_joins_to_what_it_registers():
@@ -157,6 +158,117 @@ def test_the_gsrs_glob_matches_the_real_release_name(tmp_path):
     step = next(s for s in cli.STEPS if s.name == "gsrs")
     resolved = cli.resolve_inputs(downloads, step)
     assert resolved["dump"].name == "dump-public-2026-02-26.gsrs"
+
+
+def test_onchigh_is_the_last_chain_step():
+    """It needs moieties (UNII), MED-RT classes, and the composition tree (GSRS) for
+    salt expansion, so it cannot run before any of them."""
+    names = [s.name for s in cli.STEPS]
+    assert names[-1] == "onchigh"
+    assert names.index("gsrs") < names.index("onchigh")
+
+
+def test_onchigh_declares_its_input():
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    assert step.inputs == (("onc", "onc_high_priority.toml"),)
+
+
+def test_onchigh_onc_flag_defaults_to_the_packaged_file():
+    """Like CROSSWALK and ALLOWLIST above it, the ONC list is drugref's own committed
+    data rather than an upstream download, so the per-source subcommand must not force
+    an operator to supply a path for a file this repository already carries."""
+    args = cli.build_parser().parse_args(["ingest", "onchigh", "--release", "2026"])
+    assert args.onc == cli.ONC
+
+
+def test_the_chain_resolves_onchigh_via_its_packaged_default(tmp_path):
+    """FIX ROUND 1 regression test -- the reviewer traced this concretely:
+
+        selected steps: ['onchigh']
+        InputResolutionError: onchigh: expected exactly one file matching
+        'onc_high_priority.toml' under <downloads>, found 0 files
+
+    `_handle_chain` resolves every selected step's inputs via `resolve_inputs`
+    BEFORE running any of them (see its own docstring), and `resolve_inputs` globbed
+    the declared pattern literally against `--downloads` with no knowledge of ONC --
+    the per-source subcommand's argparse `default=` never protected this path, because
+    `_handle_chain` never goes through argparse defaults, only `resolve_inputs`. So
+    `drugref ingest chain --onchigh-release Y` aborted the WHOLE chain before touching
+    the database, even with every other input present and even though the file is
+    drugref's own packaged data, never a download.
+
+    `downloads` here is EMPTY on purpose: the point is that no copy of the file needs
+    to exist under `--downloads` at all for a chain that selects onchigh to resolve.
+    Driven through `build_parser` + `selected_steps`, the same path `_handle_chain`
+    itself uses, so this exercises the actual chain resolution path rather than only
+    `IngestStep`'s declared shape (which is all the three tests above this one check --
+    they all passed while this bug was live).
+    """
+    args = cli.build_parser().parse_args(
+        ["ingest", "chain", "--downloads", str(tmp_path), "--onchigh-release", "2026"])
+    step, _release = cli.selected_steps(args, cli.STEPS)[0]
+    assert cli.resolve_inputs(tmp_path, step) == {"onc": cli.ONC}
+
+
+def test_an_override_under_downloads_still_wins_over_the_packaged_default(tmp_path):
+    """A packaged default is a FALLBACK, not a fixed answer: an operator who deliberately
+    drops a file matching the declared pattern under --downloads (to test a modified
+    ONC list through the real chain, say) must not have it silently ignored in favour
+    of the file drugref ships. Only an ABSENT match falls back; a present one still
+    wins, exactly as it would for any other step."""
+    (tmp_path / "onc_high_priority.toml").write_text("# override")
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    resolved = cli.resolve_inputs(tmp_path, step)
+    assert resolved == {"onc": tmp_path / "onc_high_priority.toml"}
+
+
+def test_falling_back_to_the_packaged_default_is_announced(tmp_path, caplog):
+    """A silent fallback substitutes drugref's own clinical content for the
+    operator's, with nothing in the log saying so.
+
+    `downloads.glob(pattern)` is NON-RECURSIVE, but the rest of the download
+    tree is nested (`tables_as_csv/items.csv`, `GSRS/dump-public-*.gsrs`). So an
+    operator who curates a corrected ONC list and drops it at
+    `downloads/onc/onc_high_priority.toml` -- one directory deeper, which is how
+    every other input is laid out -- matches nothing, silently gets the packaged
+    four-entry file, and their new contraindications are simply not in the
+    database. Exit 0, no warning, and the only record of which file was actually
+    read is a checksum in `ingest_run` that nobody queries to answer "did my
+    edit land?".
+
+    WARNING, not INFO: the whole point is that it must survive an operator
+    skimming a chain run's output for things that went wrong.
+    """
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    with caplog.at_level(logging.WARNING):
+        assert cli.resolve_inputs(tmp_path, step) == {"onc": cli.ONC}
+    assert any(r.levelno >= logging.WARNING for r in caplog.records), \
+        "falling back to a packaged default must be logged at WARNING"
+    logged = caplog.text
+    assert "onc_high_priority.toml" in logged and str(tmp_path) in logged
+
+
+def test_packaged_defaults_must_name_an_input_the_step_declares():
+    """The same typo-guard `secondary` already has (test_secondary_must_name_an_
+    input_the_step_declares), for the same reason: a name-based special case (checking
+    `step.name == "onchigh"` inside resolve_inputs or build_parser) is the second list
+    that drifts from `inputs`, which is exactly what packaged_defaults exists to avoid
+    by living ON the step declaration instead."""
+    with pytest.raises(ValueError) as exc:
+        cli.IngestStep("broken", (("onc", "onc_high_priority.toml"),), lambda *a: None,
+                       packaged_defaults=(("wrong", pathlib.Path("x")),))
+    assert "wrong" in str(exc.value)
+
+
+def test_onchigh_is_the_only_step_with_a_packaged_default():
+    """Restated independently, mirroring test_mesh_relations_is_the_only_step_with_a_
+    secondary_input: a step that gains this exemption without anyone deciding to grant
+    it fails here. CROSSWALK/ALLOWLIST are packaged the same way but are NOT declared
+    IngestStep inputs at all (unlike ONC, they carry no per-invocation override flag,
+    so there is nothing for packaged_defaults to attach to) -- see the comment beside
+    them in cli.py for why that stays true."""
+    assert {s.name: s.packaged_defaults for s in cli.STEPS if s.packaged_defaults} == {
+        "onchigh": (("onc", cli.ONC),)}
 
 
 def test_two_gsrs_releases_in_one_directory_are_refused(tmp_path):

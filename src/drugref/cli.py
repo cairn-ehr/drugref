@@ -59,17 +59,30 @@ from collections.abc import Sequence
 import psycopg
 
 import drugref
-from drugref import cli_policy, cli_signing, curation, db, interactions, signatures
+from drugref import (cli_curate, cli_policy, cli_signing, curation, db, interactions,
+                     signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
-                            pbs_run, run)
+                            onchigh_run, pbs_run, run)
 
-# The two closed seed files ship INSIDE the package (they are drugref's own curated
+# The closed seed files ship INSIDE the package (they are drugref's own curated
 # data, not a download), so they are defaults rather than required arguments.
 _DATA = pathlib.Path(drugref.__file__).resolve().parent / "data"
 CROSSWALK = _DATA / "usan_inn_crosswalk.tsv"
 ALLOWLIST = _DATA / "legacy_allowlist.tsv"
+# CROSSWALK/ALLOWLIST stay bare constants, never IngestStep inputs, and that is a
+# decision to keep re-checking rather than an oversight: _run_unii passes them to
+# ingest_unii directly, with NO per-invocation override -- no `--crosswalk` flag has
+# ever existed, on the per-source subcommand or the chain. There is nothing for a
+# packaged default to attach to, because there is no declared input to attach it to.
+# ONC differs precisely because it DOES need one: the per-source subcommand exposes
+# `--onc` so an operator can point it at a different candidate list, and that same
+# input is what the chain resolves by glob under `--downloads`. Give CROSSWALK or
+# ALLOWLIST a real override flag some day and this same treatment (declare the input,
+# attach an IngestStep.packaged_defaults entry) is what to reach for -- not a new
+# special case.
+ONC = _DATA / "onc_high_priority.toml"
 
 log = logging.getLogger("drugref")
 
@@ -107,6 +120,10 @@ def _run_pbs(conn, paths, release):
 def _run_gsrs(conn, paths, release):
     return gsrs_run.ingest_gsrs(conn, dump_path=paths["dump"],
                                 upstream_release=release)
+
+
+def _run_onchigh(conn, paths, release):
+    return onchigh_run.ingest_onchigh(conn, path=paths["onc"], upstream_release=release)
 
 
 # ORDER IS A CONSTANT, NOT AN ARGUMENT, and ONE POSITION IN IT IS A DATA DEPENDENCY:
@@ -151,6 +168,24 @@ STEPS = (
                secondary=("desc", "supp")),
     IngestStep("pbs", (("items", "tables_as_csv/items.csv"),), _run_pbs),
     IngestStep("gsrs", (("dump", "GSRS/dump-public-*.gsrs"),), _run_gsrs),
+    # `onchigh` MUST run LAST, and this one position IS a data dependency (unlike the
+    # rest of the order below unii, which is convention): resolve_entry looks up
+    # UNII-registered moieties and MED-RT classes, and subject_forms expands each
+    # resolved subject to every salt form via the composition tree GSRS builds. Run it
+    # before unii, medrt or gsrs and every entry in the file resolves to nothing.
+    #
+    # The glob has no wildcard, unlike every other step's: this file carries no release
+    # version in its name (it is drugref's own committed data, not an upstream
+    # download), so "onc_high_priority.toml" is the whole pattern.
+    #
+    # packaged_defaults=(("onc", ONC),) is what makes that default reachable from BOTH
+    # places that read `inputs` (fix round 1): build_parser uses it for the per-source
+    # `--onc` flag's default, and resolve_inputs falls back to it when the glob above
+    # matches nothing under --downloads -- which it never will, since this file simply
+    # is not there. Without this, a chain that selected onchigh aborted before running
+    # ANY step, even with every other input present.
+    IngestStep("onchigh", (("onc", "onc_high_priority.toml"),), _run_onchigh,
+              packaged_defaults=(("onc", ONC),)),
 )
 
 
@@ -327,9 +362,21 @@ def build_parser() -> argparse.ArgumentParser:
         sub = sources.add_parser(step.name, help=f"ingest one {step.name} release")
         sub.add_argument("--release", required=True,
                          help="the upstream release tag, recorded as provenance")
+        defaults = dict(step.packaged_defaults)
         for name, glob in step.inputs:
-            sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
-                             help=f"path to the {name} file (chain glob: {glob})")
+            default = defaults.get(name)
+            if default is not None:
+                # Ships inside the package (declared via IngestStep.packaged_defaults
+                # -- see the comment beside ONC above), not a download, so this is the
+                # one flag shape in this loop that is not required. Read from the step
+                # declaration rather than checked by name, so a future packaged input
+                # needs no edit here.
+                sub.add_argument(f"--{name}", type=pathlib.Path, default=default,
+                                 help=f"path to the {name} file "
+                                      f"(default: packaged {default.name})")
+            else:
+                sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
+                                 help=f"path to the {name} file (chain glob: {glob})")
         sub.set_defaults(handler=_handle_ingest, step=step)
 
     chain = sources.add_parser(
@@ -344,6 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     cli_policy.register(commands)
     cli_signing.register(commands)
+    cli_curate.register(commands)
 
     return parser
 

@@ -111,12 +111,14 @@ def _a_second_graded_rule(conn, ingest_run_id, subject):
 
 # ---- CREATE OR REPLACE VIEW can only APPEND -- pin the column shape first ---------
 
-def test_curated_ddi_pair_columns_are_unchanged_with_signature_status_last(conn):
+def test_curated_ddi_pair_columns_are_unchanged_with_the_new_trailing_columns_last(
+        conn):
     """`CREATE OR REPLACE VIEW` cannot reorder or rename an existing column -- only
-    append one. This pins BOTH halves: every pre-existing column (db/029 section 3)
-    survives in its EXISTING order and name, and `signature_status` is strictly LAST.
-    A row-count comparison could not tell a reordered view from an untouched one; this
-    can."""
+    append one. This pins ALL THREE layers now: every pre-db/030 column (db/029
+    section 3) survives in its EXISTING order and name, `signature_status` (db/030)
+    is exactly where db/030 put it, and `rule_grain`/`via_subject_class` (db/033,
+    Task 11 -- the two-grain read path) are strictly LAST. A row-count comparison
+    could not tell a reordered view from an untouched one; this can."""
     columns = [row[0] for row in conn.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = 'drugref' AND table_name = 'curated_ddi_pair' "
@@ -126,7 +128,7 @@ def test_curated_ddi_pair_columns_are_unchanged_with_signature_status_last(conn)
         "member_class", "is_direct", "severity", "mechanism", "management",
         "evidence_grade", "question_uuid", "curated_source", "reviewed_by",
         "reviewed_against", "reviewed_at", "upstream_release", "candidate_source",
-        "signature_status"]
+        "signature_status", "rule_grain", "via_subject_class"]
 
 
 def test_curated_condition_ruling_columns_are_unchanged_with_signature_status_last(

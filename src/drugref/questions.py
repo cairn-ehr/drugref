@@ -303,6 +303,44 @@ _GAP_SOURCES = {
             "The release asserts the contraindication and grades nothing. ' || "
             "pair_count || ' drug pair(s) inherit the answer.'"),
     },
+    # Slice 5c.2, db/031. The ONC high-priority list's own worklist: a pair
+    # endpoint (subject OR object) naming a well-formed identifier drugref does
+    # not hold at all -- one pipeline stage EARLIER than the two kinds above,
+    # which ask about a rule drugref already holds but has not graded. This
+    # one asks "should drugref hold this identity at all?", a coverage
+    # question in unmatched_ingredient's / unresolved_ci_object's family, not
+    # a curation one.
+    #
+    # THE gap_key FORMAT BELOW IS FROZEN -- question_uuid is uuid5(gap_kind,
+    # gap_key), immortal and externally citable, and onchigh_run.OBJECT_SCHEME
+    # already lost one round to this exact key (spelling MED-RT's scheme
+    # 'MEDRT' would have baked the wrong spelling in forever). A later
+    # reformat orphans every question already registered under the old key.
+    #
+    # THE KEY CARRIES endpoint_role BECAUSE THE VIEW'S GRAIN DOES. db/031's own
+    # COMMENT on gap_unresolved_onc_endpoint states the rule: the view is
+    # grouped on (source, entry_id, endpoint_role) and that is "the grain a
+    # gap_key built from this view must also use (db/017's lesson: a coarser
+    # grouping folds two independently-failing endpoints into one question)".
+    # Omitting the role was invisible while every entry had a moiety subject --
+    # the two roles then carry different schemes ('UNII' vs 'MED-RT') and so
+    # differ anyway -- but a CLASS subject records OBJECT_SCHEME on BOTH roles
+    # (onchigh_resolve.OBJECT_SCHEME's comment), so a class SELF-PAIR, which
+    # db/032's DECISION 2 deliberately permits for the ONC list's real
+    # QT-prolonging x QT-prolonging entry, made both roles collide onto one
+    # question_uuid. The upsert below then silently overwrote one role's text
+    # with the other's, and closing either role retired the question for both.
+    "unresolved_onc_endpoint": {
+        "view": "gap_unresolved_onc_endpoint",
+        "key_sql": ("'ONCHIGH:' || entry_id || ':' || endpoint_role || ':' || "
+                    "identifier_scheme || ':' || identifier_value"),
+        "text_sql": (
+            "'Does drugref hold ' || coalesce(endpoint_name, identifier_value) || "
+            "' (' || identifier_scheme || ' ' || identifier_value || ')? The ONC "
+            "high-priority list names it as the ' || endpoint_role || ' of entry ' || "
+            "entry_id || ', and no drugref identity resolves it, so that "
+            "interaction cannot be projected at all.'"),
+    },
 }
 
 
@@ -336,11 +374,12 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     invisible on the worklist, still citable by the external tool that already holds the
     UUID, and restored to current under that same UUID if the gap reopens. Only
     untouched questions are deleted, and those have nothing to cascade to. The guard now
-    covers FIVE tables, not three: db/029 (slice 5c.1) added curated_interaction and
+    covers SIX tables, not three: db/029 (slice 5c.1) added curated_interaction and
     curated_condition to question_state's, question_source_check's and
     question_evidence's original three, because curating a pair is exactly what CLOSES
     its gap -- the very row that answers a question is what would otherwise make the
-    next ingest try to delete it.
+    next ingest try to delete it. db/032 (slice 5c.2) added curated_class_interaction,
+    the class grain's own overlay, for exactly the same reason.
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -393,6 +432,15 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             "AND NOT EXISTS (SELECT 1 FROM drugref.curated_interaction x "
             "                WHERE x.question_uuid = q.question_uuid) "
             "AND NOT EXISTS (SELECT 1 FROM drugref.curated_condition x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/032 (slice 5c.2), the class grain. Added with the same hazard shape
+            # as the two above -- ON DELETE CASCADE plus an append-only trigger that
+            # refuses DELETE -- and so needs the same guard. WHENEVER A TABLE GAINS A
+            # question_uuid FK, IT BELONGS IN THIS LIST: the cascade is what makes the
+            # omission an aborted ingest rather than a silent data loss, which means
+            # it is discovered by every source's ingest failing at once, long after
+            # the curated row that caused it was written.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_class_interaction x "
             "                WHERE x.question_uuid = q.question_uuid)",
             (gap_kind, live_keys))
         conn.execute(
