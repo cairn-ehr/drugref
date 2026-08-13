@@ -81,9 +81,8 @@ taxonomy.
 **no append-only floor**, so one `UPDATE` disarms every compromise verdict; **floor that one ALONE** —
 `signature_target_kind` is *designed* to move to a `/v2` · [#86](https://github.com/cairn-ehr/drugref/issues/86) ·
 [#87](https://github.com/cairn-ehr/drugref/issues/87) · [#88](https://github.com/cairn-ehr/drugref/issues/88) ·
-[#89](https://github.com/cairn-ehr/drugref/issues/89) `signing.py` (582) and `release_verification.py` (532) breach rule 4.
-Still carried, unfiled: `tests/test_cli_signing*.py` **cannot commit for real** — other modules assert blanket unfiltered
-counts on shared tables, a test-isolation problem shaped like [#2](https://github.com/cairn-ehr/drugref/issues/2).
+[#89](https://github.com/cairn-ehr/drugref/issues/89) rule-4 breach. Unfiled: `tests/test_cli_signing*.py` **cannot commit for
+real** — a test-isolation problem shaped like [#2](https://github.com/cairn-ehr/drugref/issues/2).
 
 **Filed by earlier rounds** — [#79](https://github.com/cairn-ehr/drugref/issues/79) **`tests/` is exempt from E501** (its
 title's 324 has drifted — re-measure, never quote; **debt, not policy**) · [#81](https://github.com/cairn-ehr/drugref/issues/81)
