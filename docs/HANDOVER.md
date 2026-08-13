@@ -74,8 +74,7 @@ copyright-restricted and would need **written** permission first, to the standar
 session — use `psql -f`) · [#92](https://github.com/cairn-ehr/drugref/issues/92) **a mixed-kind class-pair rule expands to ZERO
 pairs silently** (one axis selects one membership relationship — db/006's failure mode one tier up) ·
 [#93](https://github.com/cairn-ehr/drugref/issues/93) **MED-RT carries no QT class at all** ·
-[#94](https://github.com/cairn-ehr/drugref/issues/94) **the seven withheld entries** need literature research, not borrowed
-taxonomy.
+[#94](https://github.com/cairn-ehr/drugref/issues/94) **the seven withheld entries** need literature research.
 
 **Filed by slice 5c.4 and its review** — [#85](https://github.com/cairn-ehr/drugref/issues/85) `signing_key_status_kind` has
 **no append-only floor**, so one `UPDATE` disarms every compromise verdict; **floor that one ALONE** —
