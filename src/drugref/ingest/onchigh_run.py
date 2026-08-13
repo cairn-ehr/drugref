@@ -107,10 +107,22 @@ class OncSummary:
     already removed every row from any earlier run before this run writes a
     single one. `class_rules_written` is the equivalent count for the
     class-subject grain, via `interactions.add_class_pair_contraindication`.
+
+    BOTH GRAINS CARRY AN ATTEMPTED COUNT AS WELL AS A WRITTEN ONE, so both can
+    be reconciled the same way. On the moiety grain that pair has always been
+    `salt_forms_expanded` (attempted) against `rules_written`; the gap between
+    them IS the number of rows that folded together on one key. The class grain
+    shipped with only `class_rules_written`, which stays un-incremented when
+    add_class_pair_contraindication hits ON CONFLICT DO NOTHING -- so nine class
+    entries producing seven rows looked exactly like seven class entries, and
+    nothing in the summary could tell an operator which had happened.
+    `class_rules_attempted` closes that: attempted - written is the collision
+    count, on either grain, read the same way.
     """
     entries_read: int
     rules_written: int
     salt_forms_expanded: int
+    class_rules_attempted: int
     class_rules_written: int
     endpoints_unresolved: int
 
@@ -221,7 +233,7 @@ def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
         db.clear_source_tables(conn, UNRESOLVED_ENDPOINT_TABLES, SOURCE)
 
         rules_written = salt_forms_expanded = endpoints_unresolved = 0
-        class_rules_written = 0
+        class_rules_attempted = class_rules_written = 0
         unresolved_batch: list[UnresolvedEndpoint] = []
 
         for entry in entries:
@@ -234,11 +246,23 @@ def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
                             result.axis, SOURCE, run_id):
                         rules_written += 1
             elif isinstance(result, ResolvedClassEndpoint):
+                class_rules_attempted += 1
                 if interactions.add_class_pair_contraindication(
                         conn, result.subject_class_uuid, result.object_class_uuid,
                         result.axis, SOURCE, run_id):
                     class_rules_written += 1
             else:
+                # WARNED, not merely counted -- parity with `curate onchigh`,
+                # which already names the entry. This is the half that owns the
+                # durable worklist and the half where fewer rows is the harm
+                # direction, so an operator scanning a chain run for WARNINGs
+                # must not see a clean run while entries failed to bridge. The
+                # closing log.info's total says how many; this says WHICH.
+                log.warning(
+                    "onchigh: entry %r has %d unresolved endpoint(s) (%s) -- "
+                    "it cannot be projected and is on the worklist instead",
+                    entry.entry_id, len(result),
+                    ", ".join(e.endpoint_role for e in result))
                 endpoints_unresolved += len(result)
                 unresolved_batch.extend(result)
 
@@ -262,6 +286,7 @@ def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
 
     summary = OncSummary(entries_read=len(entries), rules_written=rules_written,
                          salt_forms_expanded=salt_forms_expanded,
+                         class_rules_attempted=class_rules_attempted,
                          class_rules_written=class_rules_written,
                          endpoints_unresolved=endpoints_unresolved)
     log.info("ONC high-priority ingest %s complete: %s", upstream_release, summary)

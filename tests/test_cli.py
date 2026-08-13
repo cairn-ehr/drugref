@@ -5,6 +5,7 @@ The parser and the step table are PURE -- no database, no filesystem -- so most 
 this module runs anywhere. Only the end-to-end test is DB-gated.
 """
 import ast
+import logging
 import pathlib
 
 import pytest
@@ -219,6 +220,32 @@ def test_an_override_under_downloads_still_wins_over_the_packaged_default(tmp_pa
     step = next(s for s in cli.STEPS if s.name == "onchigh")
     resolved = cli.resolve_inputs(tmp_path, step)
     assert resolved == {"onc": tmp_path / "onc_high_priority.toml"}
+
+
+def test_falling_back_to_the_packaged_default_is_announced(tmp_path, caplog):
+    """A silent fallback substitutes drugref's own clinical content for the
+    operator's, with nothing in the log saying so.
+
+    `downloads.glob(pattern)` is NON-RECURSIVE, but the rest of the download
+    tree is nested (`tables_as_csv/items.csv`, `GSRS/dump-public-*.gsrs`). So an
+    operator who curates a corrected ONC list and drops it at
+    `downloads/onc/onc_high_priority.toml` -- one directory deeper, which is how
+    every other input is laid out -- matches nothing, silently gets the packaged
+    four-entry file, and their new contraindications are simply not in the
+    database. Exit 0, no warning, and the only record of which file was actually
+    read is a checksum in `ingest_run` that nobody queries to answer "did my
+    edit land?".
+
+    WARNING, not INFO: the whole point is that it must survive an operator
+    skimming a chain run's output for things that went wrong.
+    """
+    step = next(s for s in cli.STEPS if s.name == "onchigh")
+    with caplog.at_level(logging.WARNING):
+        assert cli.resolve_inputs(tmp_path, step) == {"onc": cli.ONC}
+    assert any(r.levelno >= logging.WARNING for r in caplog.records), \
+        "falling back to a packaged default must be logged at WARNING"
+    logged = caplog.text
+    assert "onc_high_priority.toml" in logged and str(tmp_path) in logged
 
 
 def test_packaged_defaults_must_name_an_input_the_step_declares():

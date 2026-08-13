@@ -13,6 +13,7 @@ before it runs -- escapes the `conn` fixture's rollback-based isolation. The
 `_clean` autouse fixture below is this module's own explicit cleanup, the
 same trap and the same fix as test_gsrs_run.py's `_clean`.
 """
+import logging
 import pathlib
 import uuid
 from dataclasses import dataclass
@@ -530,6 +531,237 @@ def test_a_resolved_rule_reaches_the_worklist(conn, seeded):
     onchigh_run.ingest_onchigh(conn, path=FIXTURE, upstream_release="test")
     assert conn.execute(
         "SELECT count(*) FROM drugref.gap_uncurated_interaction_rule").fetchone()[0] > 0
+
+
+@pytest.fixture
+def FIXTURE_MISMATCHED_SECOND_ENTRY(tmp_path) -> pathlib.Path:
+    """Entry 1 resolves cleanly; entry 2's review aid disagrees with what its
+    identifier actually resolves to, which `_check_name_match` refuses.
+
+    The mismatch is on the SECOND entry deliberately: entry 1 has already
+    written its rows by then, so this is the shape that proves the abort takes
+    the whole run with it rather than leaving a half-ingested file behind.
+    """
+    path = tmp_path / "onc_mismatched.toml"
+    entry = (
+        '[[entry]]\n'
+        'entry_id = "{eid}"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_unii = "5Q7ZVV76EI"\n'
+        'subject_name = "{name}"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_EPC"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
+    path.write_text(entry.format(eid="good-entry", name="warfarin")
+                    + "\n"
+                    + entry.format(eid="mismatched-entry",
+                                   name="definitely not warfarin"))
+    return path
+
+
+def test_an_aborted_ingest_leaves_the_previous_run_intact(
+        conn, seeded, FIXTURE_MISMATCHED_SECOND_ENTRY):
+    """The rollback path, which nothing exercised end-to-end.
+
+    `ingest_onchigh` CLEARS this source's rows before it writes any, so an
+    exception between the clear and the commit is the one moment ONCHIGH's
+    whole contraindication set exists nowhere. The handler rolls back, logs and
+    RE-RAISES -- and it is the re-raise that matters: drop it (a plausible
+    "don't crash the chain" edit) and the function returns a normally-shaped
+    summary built from partially-filled counters, having committed nothing,
+    while the caller prints success. Only `EndpointMismatchError` raised from
+    `resolve_entry` was tested before, never the orchestrator around it.
+    """
+    onchigh_run.ingest_onchigh(conn, path=FIXTURE, upstream_release="good")
+    assert _count(conn, "ONCHIGH") == _expected_onchigh_rows
+
+    with pytest.raises(onchigh_run.EndpointMismatchError):
+        onchigh_run.ingest_onchigh(
+            conn, path=FIXTURE_MISMATCHED_SECOND_ENTRY, upstream_release="bad")
+
+    # The clear, and entry 1's writes, are both undone: the good release still
+    # answers. A run that had committed its clear would leave this at 0.
+    assert _count(conn, "ONCHIGH") == _expected_onchigh_rows
+
+
+@pytest.fixture
+def CLASS_FIXTURE_COLLIDING(tmp_path) -> pathlib.Path:
+    """Two class entries claiming ONE (subject, object, relationship) key."""
+    path = tmp_path / "onc_class_colliding.toml"
+    entry = (
+        '[[entry]]\n'
+        'entry_id = "{eid}"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N0000175724"\n'
+        'subject_name = "Monoamine Oxidase Inhibitors [MoA]"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
+    path.write_text(entry.format(eid="maoi-nsaid")
+                    + "\n" + entry.format(eid="maoi-nsaid-again"))
+    return path
+
+
+def test_the_class_grain_reconciles_attempted_against_written(
+        conn, seeded, class_seeded, CLASS_FIXTURE_COLLIDING):
+    """The class grain needs BOTH numbers, exactly as the moiety grain does.
+
+    `salt_forms_expanded` vs `rules_written` is what makes a moiety-grain
+    collision visible: the gap between them IS the count of rows that folded
+    together. The class grain shipped with only `class_rules_written`, which
+    `add_class_pair_contraindication` leaves un-incremented on ON CONFLICT DO
+    NOTHING -- so nine class entries yielding seven rows was indistinguishable
+    from seven class entries, and the summary could not be reconciled against
+    the file at all.
+    """
+    summary = onchigh_run.ingest_onchigh(
+        conn, path=CLASS_FIXTURE_COLLIDING, upstream_release="test")
+    assert summary.entries_read == 2
+    assert summary.class_rules_attempted == 2      # the file asked for two...
+    assert summary.class_rules_written == 1        # ...and they were one rule
+    assert _class_pair_count(conn, "ONCHIGH") == 1
+
+
+def test_an_unresolved_endpoint_is_warned_about_by_name(
+        conn, seeded, FIXTURE_WITH_UNKNOWN, caplog):
+    """Parity with `curate onchigh`, which already warns per entry.
+
+    The ingest half owns the DURABLE worklist and is the half where "fewer
+    rows" is the harm direction, yet it folded every unresolved endpoint into
+    a single closing `log.info` -- so an operator scanning a chain run for
+    WARNINGs saw a clean run while entries failed to bridge. The count alone
+    does not say WHICH entry, which is the thing a curator needs.
+    """
+    with caplog.at_level(logging.WARNING):
+        onchigh_run.ingest_onchigh(
+            conn, path=FIXTURE_WITH_UNKNOWN, upstream_release="test")
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings, "an unresolved endpoint must be logged at WARNING"
+    assert any("warfarin-unknown-class" in r.getMessage() for r in warnings)
+
+
+# ---- the gap_key's grain (review finding) ------------------------------------
+#
+# db/031's own COMMENT on gap_unresolved_onc_endpoint states the rule these two
+# tests enforce: the view's grain is (source, entry_id, endpoint_role), and "the
+# grain a gap_key built from this view MUST ALSO USE (db/017's lesson: a coarser
+# grouping folds two independently-failing endpoints into one question, a finer
+# one mints two questions for the same fact)". The key shipped one field short of
+# that grain, and one field too RAW -- both fixed together, deliberately, because
+# question_uuid = uuid5(gap_kind, gap_key) is frozen and every change to the
+# format re-mints every question registered under the old one. One break, not two.
+
+
+@pytest.fixture
+def SELF_PAIR_FIXTURE_UNRESOLVED(tmp_path) -> pathlib.Path:
+    """A class SELF-PAIR whose class resolves to nothing -- so BOTH endpoint
+    roles fail, on the same identifier.
+
+    This is not a contrived shape. db/032 deliberately carries NO self-pair
+    CHECK (its DECISION 2) so that the ONC list's real "QT-prolonging agents x
+    QT-prolonging agents" entry can be expressed, and issue 93 records that
+    MED-RT carries no QT class -- so the one entry the schema was widened to
+    permit is also the one that cannot resolve. Both roles then record
+    identifier_scheme = 'MED-RT' (onchigh_resolve.OBJECT_SCHEME, on both sides
+    when the endpoint is a class) and the SAME identifier_value.
+    """
+    path = tmp_path / "onc_self_pair_unknown.toml"
+    path.write_text(
+        '[[entry]]\n'
+        'entry_id = "qt-qt"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_medrt_code = "N9999999999"\n'
+        'subject_name = "QT Prolonging Agents [MoA]"\n'
+        'object_medrt_code = "N9999999999"\n'
+        'object_name = "QT Prolonging Agents [MoA]"\n'
+        'axis = "CI_MoA"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = false\n')
+    return path
+
+
+def test_both_roles_of_a_self_pair_get_their_own_question(
+        conn, seeded, SELF_PAIR_FIXTURE_UNRESOLVED):
+    """Two independently-resolvable facts must be two questions.
+
+    The subject and the object of a self-pair fail SEPARATELY -- a curator can
+    close one without closing the other, which is the whole reason
+    ingest_unresolved_onc_endpoint is keyed per role (db/031's own header). With
+    endpoint_role absent from the gap_key both rows minted the same
+    question_uuid, the second silently overwrote the first's question_text via
+    `ON CONFLICT (question_uuid) DO UPDATE`, and resolving one role retired the
+    question for both.
+    """
+    summary = onchigh_run.ingest_onchigh(
+        conn, path=SELF_PAIR_FIXTURE_UNRESOLVED, upstream_release="test")
+    # Two rows on the durable worklist -- this half already worked.
+    assert summary.endpoints_unresolved == 2
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ingest_unresolved_onc_endpoint").fetchone()[0] == 2
+    # ...and two QUESTIONS, which is the half that did not.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_onc_endpoint' AND is_current").fetchone()[0] == 2
+    # Both roles named, so a curator can tell which side to go and fix.
+    assert {row[0] for row in conn.execute(
+        "SELECT gap_key FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_onc_endpoint'").fetchall()} == {
+        "ONCHIGH:qt-qt:subject:MED-RT:N9999999999",
+        "ONCHIGH:qt-qt:object:MED-RT:N9999999999"}
+
+
+def test_an_unresolved_identifier_is_recorded_canonicalised(conn, seeded, tmp_path):
+    """The same unknown UNII, spelled two ways, is ONE question -- not two.
+
+    `_resolve_subject` looks the subject up through ids.canonical_claim_value,
+    so case never affects whether an endpoint RESOLVES. It did affect what got
+    recorded when it failed: the raw file spelling went into
+    identifier_value and from there into the frozen gap_key, so 'qzu4h47a3s'
+    and 'QZU4H47A3S' minted two different immortal question_uuids for one
+    unknown identifier. This is the exact spelling-drift hazard
+    onchigh_resolve.OBJECT_SCHEME's own comment block spends 25 lines warning
+    about, left open on the value instead of the scheme.
+    """
+    def _file(name: str, unii: str) -> pathlib.Path:
+        path = tmp_path / name
+        path.write_text(
+            '[[entry]]\n'
+            'entry_id = "unknown-subject"\n'
+            '\n'
+            '[entry.candidate]\n'
+            f'subject_unii = "{unii}"\n'
+            'subject_name = "not a real drug"\n'
+            'object_medrt_code = "N0000175722"\n'
+            'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+            'axis = "CI_EPC"\n'
+            'citation = "test fixture only -- not a real citation"\n'
+            '\n'
+            '[entry.judgement]\n'
+            'applies = false\n')
+        return path
+
+    onchigh_run.ingest_onchigh(
+        conn, path=_file("upper.toml", "QZU4H47A3S"), upstream_release="a")
+    upper = _question_uuids(conn)
+    onchigh_run.ingest_onchigh(
+        conn, path=_file("lower.toml", "qzu4h47a3s"), upstream_release="b")
+    assert _question_uuids(conn) == upper
+    assert conn.execute(
+        "SELECT identifier_value FROM drugref.ingest_unresolved_onc_endpoint "
+        "WHERE endpoint_role = 'subject'").fetchone() == ("QZU4H47A3S",)
 
 
 def test_onchigh_is_a_declared_writer_and_source():

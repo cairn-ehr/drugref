@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from drugref import ids, interactions, questions
+from drugref import curation, ids, interactions, questions
 
 
 @pytest.fixture(autouse=True)
@@ -210,6 +210,56 @@ def test_curator_state_survives_a_rebuild(conn):
     assert questions.current_state(conn, qu) == "withdrawn"
     assert qu not in [r[0] for r in
                       conn.execute("SELECT question_uuid FROM drugref.question_worklist")]
+
+
+def _a_class(conn, run_id, code, name="Some Class [PE]"):
+    """One substance_class row, for the class-grain curated judgement below."""
+    cu = ids.mint_class_uuid("MED-RT", code)
+    conn.execute("INSERT INTO drugref.substance_class (class_uuid, source, source_code, "
+                 "published_code, class_name, concept_type, first_seen_ingest) "
+                 "VALUES (%s, 'MED-RT', %s, %s, %s, 'PE', %s)",
+                 (cu, code, code, name, run_id))
+    return cu
+
+
+def test_a_closed_gap_carrying_a_CLASS_grain_judgement_is_RETAINED_not_deleted(conn):
+    """db/032's curated_class_interaction is the SIXTH table that cites a question.
+
+    Every curated table is `ON DELETE CASCADE` from open_question AND carries an
+    append-only trigger that refuses DELETE outright. So a citing table missing
+    from the retention guard below does not lose data quietly -- it makes the
+    cascade hit `forbid_overlay_rewrite`, which RAISEs, which aborts THE WHOLE
+    INGEST TRANSACTION. Every subsequent ingest of every source then fails
+    identically until someone hand-edits the database.
+
+    This is verbatim the failure register_from_gaps' own docstring records
+    db/029 being written to prevent ("the very row that answers a question is
+    what would otherwise make the next ingest try to delete it"), and it was
+    reachable the moment anything passed `question_uuid` to
+    curation.record_class_interaction_judgement -- a public keyword argument.
+    """
+    run_id = _run(conn)
+    m = _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+
+    curation.record_class_interaction_judgement(
+        conn,
+        _a_class(conn, run_id, "N0000000101", "Subject Class [PE]"),
+        _a_class(conn, run_id, "N0000000102", "Object Class [PE]"),
+        "CI_PE", False, question_uuid=qu,
+        reviewed_by="Dr X", reviewed_against="test")
+
+    _classify(conn, run_id, m)                       # the gap closes
+    questions.register_from_gaps(conn, run_id)       # must NOT abort
+
+    assert conn.execute(
+        "SELECT is_current FROM drugref.open_question "
+        "WHERE question_uuid = %s", (qu,)).fetchall() == [(False,)]
+    # the curator's judgement survived, which is the whole point
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_class_interaction "
+        "WHERE question_uuid = %s", (qu,)).fetchone()[0] == 1
 
 
 def test_a_question_with_no_state_row_is_open(conn):

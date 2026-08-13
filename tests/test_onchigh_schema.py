@@ -102,11 +102,21 @@ def test_open_question_admits_the_new_gap_kind(conn, an_ingest_run):
     # INSERT into open_question (tests/test_schema_question_registry.py) supplies
     # both, so this follows that convention rather than a snippet that cannot
     # insert regardless of which gap_kind vocabulary is in force.
+    # The gap_key spelled the way questions._GAP_SOURCES actually builds it --
+    # entry_id, ROLE, scheme, value -- so this row documents the real format
+    # rather than a placeholder that would still insert if the format changed.
+    question_uuid = uuid.uuid4()
     conn.execute(
         "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
         "question_text, first_derived_ingest, last_derived_ingest) "
-        "VALUES (%s, 'unresolved_onc_endpoint', 'ONCHIGH:x:UNII:Y', 'why?', %s, %s)",
-        (uuid.uuid4(), an_ingest_run, an_ingest_run))
+        "VALUES (%s, 'unresolved_onc_endpoint', 'ONCHIGH:x:subject:UNII:Y', "
+        "'why?', %s, %s)",
+        (question_uuid, an_ingest_run, an_ingest_run))
+    # Asserted, not merely executed: without this the row could land under the
+    # wrong gap_kind and the test would still pass on the INSERT alone.
+    assert conn.execute(
+        "SELECT gap_kind FROM drugref.open_question WHERE question_uuid = %s",
+        (question_uuid,)).fetchone() == ("unresolved_onc_endpoint",)
 
 
 def test_open_question_still_refuses_an_invented_gap_kind(conn, an_ingest_run):

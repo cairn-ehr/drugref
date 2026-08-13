@@ -398,3 +398,98 @@ def test_ci_class_pair_subtree_is_the_class_grains_own_separate_walk(
     assert conn.execute(
         "SELECT count(*) FROM drugref.ci_class_pair_subtree WHERE root_uuid = %s",
         (moiety_only_root,)).fetchone()[0] == 0
+
+
+# ---- the class half's own WHERE clause, and the walk's depth (review findings) ----
+#
+# db/034's class half is gated on `cci.superseded_by IS NULL AND cci.applies`, and
+# expands through a recursive walk whose comment claims cycle-safety and linearity
+# under a multi-parent DAG. Neither predicate nor either claim was exercised: the
+# whole file tested the SHAPE of expansion, never the conditions under which a rule
+# stops expanding at all.
+
+
+def test_a_superseded_class_grade_stops_reaching_pairs(conn, ingest_run_id):
+    """A corrected rule must emit its NEW grade only, never both.
+
+    `curated_class_interaction` is append-only, so a regrade leaves the old row
+    in place forever with `superseded_by` set. Drop the view's
+    `superseded_by IS NULL` and every corrected rule renders each of its pairs
+    TWICE, under two different severities -- which is worse than either grade
+    alone, because a consumer taking the first row gets an arbitrary answer.
+    """
+    subject_class, object_class, _subjects, _partners = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000000401", object_code="N0000000402",
+        subject_members=[("TESTUNII40", "subject-a")],
+        object_members=[("TESTUNII41", "partner-a")],
+        severity="major")
+    assert len(_rows_for_rule(conn, subject_class, object_class)) == 1
+
+    # The correction: same natural key, a different severity.
+    curation.record_class_interaction_judgement(
+        conn, subject_class, object_class, "CI_MoA", True,
+        severity="contraindicated", evidence_grade="established",
+        reviewed_by="test", reviewed_against="Phansalkar 2012")
+
+    severities = [r[0] for r in conn.execute(
+        "SELECT severity FROM drugref.curated_ddi_pair "
+        "WHERE via_subject_class = %s AND via_class = %s",
+        (subject_class, object_class)).fetchall()]
+    assert severities == ["contraindicated"]
+
+
+def test_a_retired_class_rule_reaches_no_pairs(conn, ingest_run_id):
+    """`applies = false` is a RULING -- "reviewed, and this is not a real
+    interaction" -- and it is how a curator retires a class rule without
+    deleting anything from an append-only table. The schema already accepted
+    the value; nothing checked that the read path honoured it, so a regression
+    would have kept firing alerts across every pair the rule expands to for a
+    rule a curator had explicitly ruled out."""
+    subject_class, object_class, _s, _p = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000000403", object_code="N0000000404",
+        subject_members=[("TESTUNII42", "subject-b")],
+        object_members=[("TESTUNII43", "partner-b")],
+        severity="major")
+    assert len(_rows_for_rule(conn, subject_class, object_class)) == 1
+
+    curation.record_class_interaction_judgement(
+        conn, subject_class, object_class, "CI_MoA", False,
+        severity=None, evidence_grade=None,
+        reviewed_by="test", reviewed_against="Phansalkar 2012")
+
+    assert _rows_for_rule(conn, subject_class, object_class) == set()
+
+
+def test_ci_class_pair_subtree_handles_depth_and_a_diamond(conn, ingest_run_id):
+    """The walk's own claims, tested past one level.
+
+    db/034 states this view is deduped on (root, class) rather than on paths
+    "so it terminates under a cycle and stays linear in a multi-parent DAG",
+    and it deliberately rewrote the base term's shape rather than copying
+    ci_class_subtree's. Existing coverage stopped at a single parent edge,
+    which cannot tell a correct recursive walk from one that only ever returns
+    its direct children.
+
+    The diamond is the case that distinguishes dedup-on-(root,class) from
+    dedup-on-paths: `grandchild` is reachable by TWO routes, and must appear
+    exactly once.
+    """
+    root = _a_class(conn, ingest_run_id, code="N0000000410", name="Root [MoA]")
+    left = _a_class(conn, ingest_run_id, code="N0000000411", name="Left [MoA]")
+    right = _a_class(conn, ingest_run_id, code="N0000000412", name="Right [MoA]")
+    grandchild = _a_class(conn, ingest_run_id, code="N0000000413", name="Grand [MoA]")
+    for child in (left, right):
+        classes.add_parent_edge(conn, child, root, ingest_run_id)
+        classes.add_parent_edge(conn, grandchild, child, ingest_run_id)
+
+    other = _a_class(conn, ingest_run_id, code="N0000000414", name="Other [MoA]")
+    interactions.add_class_pair_contraindication(
+        conn, root, other, "CI_MoA", "MED-RT", ingest_run_id)
+
+    rows = conn.execute(
+        "SELECT class_uuid FROM drugref.ci_class_pair_subtree WHERE root_uuid = %s",
+        (root,)).fetchall()
+    # Two levels down, both branches, root included in its own subtree...
+    assert {r[0] for r in rows} == {root, left, right, grandchild}
+    # ...and the diamond's shared descendant exactly ONCE, not once per path.
+    assert len(rows) == 4

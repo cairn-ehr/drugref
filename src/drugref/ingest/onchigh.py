@@ -89,8 +89,12 @@ class OncCandidate:
     THE SUBJECT IS ONE OF TWO MUTUALLY EXCLUSIVE FORMS (design spec section
     14, the class-subject round). `subject_unii` names a MOIETY -- Tasks 1-8's
     own shape. `subject_medrt_code` names a drug CLASS -- Task 10's addition,
-    for the 8 of 15 ONC entries whose subject is a class (SSRIs, MAOIs,
-    statins, ...), not a single drug. Exactly one is ever set, enforced by
+    built for the 8 of the paper's 15 entries that are class x class (SSRIs,
+    MAOIs, statins, ...), not a single drug. NONE OF THOSE 8 CURRENTLY SHIP:
+    clinical review withheld them (issue 94 -- a therapeutic or structural
+    class is not automatically a clinical interaction population), so the
+    shipped list is four moiety-subject entries and this form has no
+    production data behind it yet. Exactly one is ever set, enforced by
     _parse_candidate below rather than by this dataclass's own construction
     (a frozen dataclass has no natural place to raise without a
     __post_init__ that would only restate the parser's check a second time).
@@ -183,8 +187,8 @@ def _parse_candidate(entry: dict, entry_id: str) -> OncCandidate:
     block = _require_block(entry, "candidate", entry_id)
     values = {key: _require_str(block, key, "candidate", entry_id)
                for key in _CANDIDATE_FIELDS}
-    subject_unii = _optional_str(block, "subject_unii")
-    subject_medrt_code = _optional_str(block, "subject_medrt_code")
+    subject_unii = _optional_str(block, "subject_unii", entry_id)
+    subject_medrt_code = _optional_str(block, "subject_medrt_code", entry_id)
     if (subject_unii is None) == (subject_medrt_code is None):
         _fail(entry_id,
               "[entry.candidate] must carry EXACTLY ONE of 'subject_unii' "
@@ -200,19 +204,32 @@ def _parse_candidate(entry: dict, entry_id: str) -> OncCandidate:
                         subject_medrt_code=subject_medrt_code, **values)
 
 
-def _optional_str(block: dict, key: str) -> str | None:
+def _optional_str(block: dict, key: str, entry_id: str | None = None) -> str | None:
     """Fetch block[key] as a string, or None if it is absent/blank.
 
     Unlike _require_str, absence is not an error here -- mechanism,
     management, severity and evidence_grade are all legitimately unset on a
     non-asserting entry (see _parse_judgement's completeness check).
+
+    BUT "ABSENT" AND "PRESENT WITH THE WRONG TYPE" ARE DIFFERENT FACTS, and
+    this used to collapse them. A TOML array -- `management = ["avoid", ...]`,
+    an easy slip given every real value in the shipped list is a `\"\"\"` block
+    -- read as "absent", so the field silently vanished. That is invisible for
+    `mechanism` and `management` specifically: nothing downstream requires
+    them (no CHECK, no completeness rule, unlike severity/evidence_grade), so
+    the entry parsed, the judgement was written, and `curate onchigh` exited 0
+    having dropped the instruction a prescriber actually acts on. This module
+    exists to refuse malformed shapes, and a wrong type is a malformed shape.
     """
     value = block.get(key)
     if value is None:
         return None
-    if not isinstance(value, str) or not value.strip():
-        return None
-    return value
+    if not isinstance(value, str):
+        _fail(entry_id, f"'{key}' must be a string, not {type(value).__name__}")
+    # A blank or whitespace-only string IS treated as absence, deliberately:
+    # `key = ""` is how a hand-editor clears a field, and the completeness
+    # CHECK is what catches it when the field was in fact required.
+    return value if value.strip() else None
 
 
 def _parse_judgement(entry: dict, entry_id: str) -> OncJudgement:
@@ -225,8 +242,8 @@ def _parse_judgement(entry: dict, entry_id: str) -> OncJudgement:
     if not isinstance(applies, bool):
         _fail(entry_id, "[entry.judgement] is missing required boolean "
                          "field 'applies'")
-    severity = _optional_str(block, "severity")
-    evidence_grade = _optional_str(block, "evidence_grade")
+    severity = _optional_str(block, "severity", entry_id)
+    evidence_grade = _optional_str(block, "evidence_grade", entry_id)
     if applies and (severity is None or evidence_grade is None):
         _fail(entry_id,
               "applies = true but severity/evidence_grade is missing -- "
@@ -241,8 +258,8 @@ def _parse_judgement(entry: dict, entry_id: str) -> OncJudgement:
         applies=applies,
         severity=severity,
         evidence_grade=evidence_grade,
-        mechanism=_optional_str(block, "mechanism"),
-        management=_optional_str(block, "management"),
+        mechanism=_optional_str(block, "mechanism", entry_id),
+        management=_optional_str(block, "management", entry_id),
     )
 
 

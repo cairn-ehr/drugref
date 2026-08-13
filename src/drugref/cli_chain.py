@@ -21,9 +21,12 @@ DETERMINISTIC BUT NOT FILESYSTEM-FREE: `resolve_inputs` globs the downloads tree
 its tests want a tmp_path and nothing more.
 """
 import argparse
+import logging
 import pathlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,16 @@ def resolve_inputs(downloads: pathlib.Path,
     for name, pattern in step.inputs:
         matches = sorted(downloads.glob(pattern))
         if len(matches) == 0 and name in defaults:
+            # ANNOUNCED, not silent. `glob` is non-recursive while the rest of the
+            # download tree is nested (tables_as_csv/items.csv, GSRS/dump-*.gsrs), so
+            # an operator who drops a corrected list one directory deeper matches
+            # nothing here and gets drugref's packaged file instead -- substituting
+            # our clinical content for theirs, with exit 0 and no record anyone reads.
+            # (`ingest_run` does store the checksum, but nobody queries a checksum to
+            # answer "did my edit land?".) WARNING so it survives a skim of the log.
+            log.warning(
+                "%s: no file matches '%s' under %s -- using the packaged default %s",
+                step.name, pattern, downloads, defaults[name])
             resolved[name] = defaults[name]
             continue
         if len(matches) != 1:

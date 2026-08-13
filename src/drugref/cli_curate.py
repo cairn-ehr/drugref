@@ -88,6 +88,34 @@ class _BlankArgumentError(ValueError):
     """
 
 
+class CollidingRuleError(ValueError):
+    """Two entries in one file resolve to the SAME curated natural key.
+
+    `onchigh.parse` already refuses a duplicate `entry_id`, but that is not the
+    key a curated row is written under -- (subject, object, relationship) is,
+    and reaching it needs resolution, which needs a database, which the pure
+    parser must never touch. So two entries naming the same subject and object
+    parse cleanly and collide only here.
+
+    WHY THIS IS A RAISE AND NOT A "LAST ONE WINS". Ungarded, entry A writes its
+    judgement and entry B reads A's row as `live`, sees a different grade, and
+    SUPERSEDES it -- within a single run. Two clinical claims collapse to
+    whichever the file happened to list last, counted into
+    `judgements_superseded`, which is the same counter an ordinary regrade
+    increments, so the summary reads as routine. And it never settles: every
+    later invocation writes two more permanent rows into an append-only table,
+    with the deferred single-live trigger silent throughout because exactly one
+    row IS live at commit.
+
+    The file is hand-authored, so this is a defect IN THE FILE -- the same
+    judgement `onchigh_resolve.EndpointMismatchError` makes one stage earlier
+    when the file's own review aid disagrees with what its identifier resolves
+    to. Raising leaves the caller's transaction uncommitted, so neither claim
+    lands and the curator fixes the file rather than discovering later that
+    half of it was overwritten.
+    """
+
+
 def _reject_blank(args, *dests: str) -> None:
     """Refuse a flag the operator passed with a blank (or whitespace-only) value,
     before any write. See `_BlankArgumentError` above for the hazard this guards."""
@@ -263,12 +291,32 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
 
     entries_resolved = entries_unresolved = 0
     outcomes = {"written": 0, "superseded": 0, "unchanged": 0}
+    # Every curated natural key this run has already claimed -> the entry_id that
+    # claimed it. See CollidingRuleError: without this, the SECOND entry on a key
+    # reads the FIRST's freshly-written row as `live` and supersedes it, so the
+    # file's two claims collapse silently into one and the run never converges.
+    # Keyed by grain as well as by UUIDs, because a moiety subject and a class
+    # subject write to different tables and so cannot collide with one another.
+    claimed: dict[tuple, str] = {}
+
+    def _claim(key: tuple, entry_id: str) -> None:
+        """Record that `entry_id` owns `key`, or raise if something else does."""
+        if key in claimed:
+            raise CollidingRuleError(
+                f"entries {claimed[key]!r} and {entry_id!r} resolve to the same "
+                f"curated rule (subject, object, relationship) -- one clinical "
+                f"fact stated twice, with two gradings. Reconcile them in the "
+                f"file; neither has been written.")
+        claimed[key] = entry_id
+
     for entry in entries:
         resolved = onchigh_run.resolve_entry(conn, entry)
         judgement = entry.judgement
 
         if isinstance(resolved, onchigh_run.ResolvedClassEndpoint):
             entries_resolved += 1
+            _claim(("class", resolved.subject_class_uuid,
+                    resolved.object_class_uuid, resolved.axis), entry.entry_id)
             live = curation.live_class_interaction_judgement(
                 conn, resolved.subject_class_uuid, resolved.object_class_uuid,
                 resolved.axis)
@@ -286,6 +334,13 @@ def curate_onchigh(conn, *, path: pathlib.Path, reviewed_by: str,
         elif isinstance(resolved, onchigh_run.ResolvedEndpoint):
             entries_resolved += 1
             for subject_moiety_uuid in resolved.subject_moiety_uuids:
+                # Per SALT FORM, not per entry: two entries naming different
+                # UNIIs of one drug (warfarin and warfarin sodium) expand onto
+                # a shared form, so the collision appears here rather than at
+                # the entry's own subject.
+                _claim(("moiety", subject_moiety_uuid,
+                        resolved.object_class_uuid, resolved.axis),
+                       entry.entry_id)
                 live = curation.live_interaction_judgement(
                     conn, subject_moiety_uuid, resolved.object_class_uuid,
                     resolved.axis)

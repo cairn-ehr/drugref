@@ -352,6 +352,67 @@ def test_every_entry_is_accounted_for_in_exactly_one_bucket(conn, seeded, ingest
     assert summary.entries_unresolved == 1
 
 
+@pytest.fixture
+def FIXTURE_COLLIDING(tmp_path) -> pathlib.Path:
+    """Two DIFFERENT entries that resolve to the SAME curated natural key.
+
+    `onchigh.parse` refuses a duplicate `entry_id`, but the natural key a
+    curated row is written under is (subject_moiety, object_class, axis) --
+    which the parser cannot know, because resolving it needs a database. Two
+    entries naming the same subject and object under different entry_ids
+    therefore parse cleanly and collide only at write time.
+    """
+    path = tmp_path / "onc_colliding.toml"
+    entry = (
+        '[[entry]]\n'
+        'entry_id = "{eid}"\n'
+        '\n'
+        '[entry.candidate]\n'
+        'subject_unii = "5Q7ZVV76EI"\n'
+        'subject_name = "warfarin"\n'
+        'object_medrt_code = "N0000175722"\n'
+        'object_name = "Nonsteroidal Anti-inflammatory Drug [EPC]"\n'
+        'axis = "CI_EPC"\n'
+        'citation = "test fixture only -- not a real citation"\n'
+        '\n'
+        '[entry.judgement]\n'
+        'applies = true\n'
+        'severity = "{sev}"\n'
+        'evidence_grade = "established"\n')
+    path.write_text(entry.format(eid="warfarin-nsaid", sev="major")
+                    + "\n"
+                    + entry.format(eid="warfarin-nsaid-duplicate",
+                                   sev="contraindicated"))
+    return path
+
+
+def test_two_entries_resolving_to_one_rule_are_refused(conn, seeded,
+                                                       FIXTURE_COLLIDING):
+    """A file stating one rule twice, with two grades, must not write either.
+
+    Left unguarded this is silent AND unbounded. Entry A writes; entry B reads
+    A's row as `live`, finds the grade differs, and SUPERSEDES it -- inside a
+    single run. The file's two clinical claims collapse to whichever happens to
+    come last, and because the collision increments `judgements_superseded` --
+    the same counter a legitimate regrade increments -- the summary reads as a
+    routine re-run. Worse, it never converges: every subsequent invocation
+    writes two more permanent rows into an append-only table, forever, while
+    the deferred single-live trigger stays quiet because exactly one row IS
+    live at commit.
+
+    RAISE, not "last one wins" and not a warning: the file is hand-authored, so
+    two entries claiming one rule is a defect in the file, and this is the same
+    reasoning `EndpointMismatchError` already applies one stage earlier -- the
+    reviewer approved something other than what would land.
+    """
+    with pytest.raises(cli_curate.CollidingRuleError) as exc:
+        cli_curate.curate_onchigh(conn, path=FIXTURE_COLLIDING,
+                                  reviewed_by="Dr X", reviewed_against="test")
+    # Both entry_ids named, so the curator knows which two lines to reconcile.
+    assert "warfarin-nsaid" in str(exc.value)
+    assert "warfarin-nsaid-duplicate" in str(exc.value)
+
+
 def test_a_second_run_against_an_unedited_file_writes_nothing(conn, seeded, ingested):
     """Idempotent by COMPARISON, not by luck. The table is append-only, so a
     re-run that blindly inserted would write a permanent duplicate on every
@@ -364,6 +425,40 @@ def test_a_second_run_against_an_unedited_file_writes_nothing(conn, seeded, inge
                                        reviewed_against="ONCHigh-2015")
     assert second.judgements_written == 0
     assert second.unchanged == _expected_forms
+
+
+def test_a_second_run_by_a_DIFFERENT_curator_still_writes_nothing(
+        conn, seeded, ingested):
+    """The comparison must span the GRADED fields only -- proven, not assumed.
+
+    Both existing idempotence tests pass `reviewed_by="Dr X"` on both runs, so
+    a comparison that wrongly included `reviewed_by` (or `reviewed_against`,
+    or `reviewed_at`) would still report `unchanged` and both would pass. This
+    one varies exactly those fields and nothing else.
+
+    The failure it guards is not cosmetic: `curated_interaction` is
+    append-only, so a second curator running the same unedited file would
+    supersede EVERY rule in it, permanently, and there is no undo.
+    """
+    cli_curate.curate_onchigh(conn, path=FIXTURE, reviewed_by="Dr X",
+                              reviewed_against="ONCHigh-2015")
+    conn.commit()
+    before = conn.execute(
+        "SELECT count(*), max(reviewed_at) FROM drugref.curated_interaction").fetchone()
+
+    second = cli_curate.curate_onchigh(conn, path=FIXTURE, reviewed_by="Dr Y",
+                                       reviewed_against="ONCHigh-2015-reprint")
+    conn.commit()
+
+    assert second.judgements_written == 0
+    assert second.judgements_superseded == 0
+    assert second.unchanged == _expected_forms
+    # Observed, not merely self-reported: the table itself is untouched, and
+    # reviewed_at has not moved -- the field whose drift the exclusion exists
+    # to prevent.
+    assert conn.execute(
+        "SELECT count(*), max(reviewed_at) FROM drugref.curated_interaction"
+    ).fetchone() == before
 
 
 def test_an_edited_grade_supersedes_rather_than_mutates(

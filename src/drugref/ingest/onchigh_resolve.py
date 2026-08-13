@@ -172,6 +172,33 @@ class UnresolvedEndpoint:
     identifier_value: str
     endpoint_name: str
 
+    def __post_init__(self):
+        """Store `identifier_value` under its ONE canonical spelling.
+
+        THE VALUE IS PART OF A FROZEN IDENTIFIER, so this is not cosmetic.
+        `questions._GAP_SOURCES` builds this endpoint's `gap_key` from
+        `identifier_value`, and `question_uuid = uuid5(gap_kind, gap_key)` is
+        immortal and externally citable. Resolution itself is already
+        case-insensitive -- `_resolve_subject` and `_resolve_class` both look
+        up through `ids.canonical_claim_value` -- so a UNII written
+        'qzu4h47a3s' resolves exactly as 'QZU4H47A3S' does. Recording the RAW
+        file spelling when it FAILS therefore minted two different permanent
+        questions for one unknown identifier, depending only on how the file
+        happened to be typed. Canonicalising here, at the single construction
+        point every resolution path already funnels through, is the same
+        "applied once, so no caller has to remember" discipline
+        ids.canonical_claim_value itself documents.
+
+        object.__setattr__ is the standard frozen-dataclass idiom -- the
+        alternative is canonicalising at all four call sites, which is the
+        two-lists-that-drift shape OBJECT_SCHEME's own comment block exists to
+        prevent.
+        """
+        object.__setattr__(
+            self, "identifier_value",
+            ids.canonical_claim_value(self.identifier_scheme,
+                                      self.identifier_value))
+
 
 def _resolve_subject(conn: psycopg.Connection,
                      unii: str) -> tuple[uuid.UUID, str] | None:

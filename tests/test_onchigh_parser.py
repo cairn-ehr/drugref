@@ -9,6 +9,7 @@ import pathlib
 
 import pytest
 
+from drugref import cli_curate
 from drugref.ingest import onchigh
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "onc_fixture.toml"
@@ -112,6 +113,48 @@ def test_a_missing_citation_raises(tmp_path):
     bad.write_text(_entry_with(citation=None))
     with pytest.raises(onchigh.OncFormatError, match="citation"):
         onchigh.parse(bad)
+
+
+def test_a_wrong_typed_optional_field_raises_rather_than_vanishing(tmp_path):
+    """"Absent" and "present but not a string" are different facts.
+
+    `mechanism` and `management` are the fields a PRESCRIBER reads, and unlike
+    severity/evidence_grade nothing downstream requires them -- no CHECK, no
+    completeness rule. So a TOML array (an easy mistake, since every real value
+    in onc_high_priority.toml is a `\"\"\"` block) used to be read as "field
+    absent", the management instruction silently disappeared from the curated
+    row, and `curate onchigh` reported a written judgement and exited 0.
+
+    Fewer rows is the harm direction here, and so is less text: an alert that
+    says "avoid" without saying what to do instead is a worse alert.
+    """
+    bad = tmp_path / "bad.toml"
+    bad.write_text(_entry_with() .rstrip("\n")
+                   + '\nmanagement = ["avoid the combination", "monitor INR"]\n')
+    with pytest.raises(onchigh.OncFormatError, match="management"):
+        onchigh.parse(bad)
+
+
+def test_the_shipped_list_parses_and_carries_its_clinically_reviewed_floor():
+    """The committed clinical data file, parsed -- not just referenced by path.
+
+    Every other parser test here runs against tests/fixtures/onc_fixture.toml,
+    so the file drugref actually SHIPS was exercised by nothing: it is named in
+    tests/test_cli.py only as a path constant. Commit 66321f3 cut it from
+    eleven entries to the four the project owner clinically reviewed, and
+    nothing asserted that floor -- so a merge, a bad rebase or an over-eager
+    edit could drop a contraindication and no test would notice.
+
+    Asserted as `>= 4`, not `== 4`: issue 94's withheld entries are expected to
+    return once researched, and a test that fails when the list GROWS would
+    train people to edit the assertion rather than read it.
+    """
+    entries = onchigh.parse(cli_curate.ONC)
+    assert len(entries) >= 4
+    # Rule 6 is a blocker, not a cleanup item: every shipped claim names where
+    # it came from. The parser enforces this per entry; this pins it for the
+    # real file rather than only for fixtures.
+    assert all(e.candidate.citation for e in entries)
 
 
 # ---- Task 10: the class-subject shape (design spec section 14) --------------

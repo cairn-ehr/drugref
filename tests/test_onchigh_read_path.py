@@ -211,6 +211,10 @@ def test_a_graded_onc_rule_reaches_curated_ddi_pair(conn, seeded, ingested, cura
         "SELECT candidate_source, severity FROM drugref.curated_ddi_pair "
         "WHERE candidate_source = 'ONCHIGH'").fetchall()
     assert rows and all(r[0] == "ONCHIGH" for r in rows)
+    # THE GRADE ITSELF, not just the row's existence: `severity` was selected
+    # and never asserted, so a NULL or a wrong grade reaching the view passed.
+    # It is also the only column here a consumer actually acts on.
+    assert all(r[1] == "major" for r in rows)
 
 
 def test_an_ungraded_onc_rule_reaches_it_never(conn, seeded, ingested):
