@@ -551,7 +551,40 @@ now **`drugref_db036`** (ledger 36), `drugref_db034` still kept as the control.
 [#110](https://github.com/cairn-ehr/drugref/issues/110) ship the #97 precedence as a view (nothing in `src/`
 reads `severity_rank`) · [#111](https://github.com/cairn-ehr/drugref/issues/111) the status block's zeros need a
 denominator · [#112](https://github.com/cairn-ehr/drugref/issues/112) measure the disagreement self-join before
-class-grain content ships.
+class-grain content ships. **Four of the five are closed by the debt round below; 112 stays open by design.**
+
+##### 5c.2c — the low-hanging-debt round ✅ DONE — `db/037`, `curated_read.py`, 2026-08-14
+A sweep of all 47 open issues for work that is small, self-contained and needs no design decision. **Eight
+cleared** — 79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement. Suite **1465 → 1511**,
+`ruff` clean. Full account, every measurement and the list of what was deliberately NOT taken: PROJECT-NOTES §
+"The low-hanging-debt round".
+
+**`db/037` is three view corrections and one new view**, and **every published count is byte-identical between
+`drugref_db036` and `drugref_db037`** — the class grain holds zero rows (#94 withheld its seven entries), which
+is exactly what makes this the cheap moment to fix its arithmetic. **#108**: `max_pair_count` now subtracts a
+published `shared_effective_member_count`, so reach is `|S|·|O| − |S ∩ O|` — the self-pair rule is the special
+case, not the fix, and the *same wrong number* had the worklist queueing a rule no answer could change while
+`status` hid it. **#109**: `curated_grain_disagreement` normalises orientation with `LEAST`/`GREATEST` (an
+equi-join, where the obvious `OR` of two arm pairs is not) — these rows are directional per db/006 and the two
+tiers come from different upstreams, so a moiety rule on `(a,b)` and a class rule on `(b,a)` were one clinical
+pair nothing brought together. **#110**: the precedence is now a view, `curated_ddi_pair_effective`, with
+**`NULLS FIRST`** — Postgres's default sorted an unrankable severity *below* `minor`, inverting the harm
+direction in the one path db/035 called safe. **It is not a no-op today: 255 rows collapse to 213**, all 42
+doubled pairs explained by `candidate_source` alone.
+
+**`curated_read.py` is the seventh module split out to hold rule 4**, and it exists because a view with no
+caller is half a feature — nothing in `src/` read `severity_rank`, so no test could regress the precedence.
+**#79** closes the other way the same principle bites: `tests/` was blanket-exempt from E501, so it had no
+column bound at all (415 lines over 88 by now, against a ceiling that has been **119** at every measurement).
+It is bounded at 120 in `tests/ruff.toml`, with `tests/test_lint_bounds.py` driving ruff at a path in each tree.
+**#100** pins `ci_class_subtree`'s narrow definition from `pg_depend`, so a stray `db/033` replay fails the
+suite rather than a latency graph. **#87** merges two registry queries into one `keys.for_verification`, making
+`holder is None ⟺ UNKNOWN_KEY` true by construction. **#111** gives the class-grain status block a denominator.
+
+**Reference database is now `drugref_db037`** (ledger 37); **`drugref_db036` is kept as `db/037`'s before/after
+control** and `drugref_db034` stays as the pre-`db/035` one — two controls answering different questions.
+**Issue 86's direction is DECIDED and deliberately not built**: add `signed_by_unknown_key` as a fourth
+`signature_status` value, a published-vocabulary widening that is a round of its own.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
@@ -697,7 +730,9 @@ tree's salt/clinical-drug levels underneath the bridge, and the same shape appli
   confirmed safe at 0.18 s (because ruff honours `.gitignore` — **not** because of `extend-exclude`, which is
   belt-and-braces; the "used to hang on `downloads/`" claim does not reproduce) and `tests/`' **334** long lines
   carved out as [#79](https://github.com/cairn-ehr/drugref/issues/79). The issue's "~88 every file is written to"
-  holds for `src/` only. **76**: `curated_target_unresolved` shipped with no consumer — the second time (db/010's was
+  holds for `src/` only. **79 is CLOSED by the debt round (§ 5c.2c)**: the carve-out was a blanket exemption, so
+  `tests/` had no bound at all and the exempted count reached **415**; it is now bounded at **120** in a nested
+  `tests/ruff.toml`, which is the second of the two ways that issue offered to close. **76**: `curated_target_unresolved` shipped with no consumer — the second time (db/010's was
   the first) — now read by `curation.unresolved_targets` and printed as `drugref status`'s third block.
   **Its own review then found three gates THIS round added that also did not fire** — an orphan test whose empty
   result was over-determined, a CI step whose `tee` pipeline swallowed pytest's exit code, and a source-text grep

@@ -16,7 +16,7 @@ list has DERIVED scalars (`entry_count`, `upstream_count`) and two GROUPS built 
 `release_manifest_entry`/`upstream_releases`, none of which is a column on
 `release_manifest` at all. `_verify_manifest_signature` instead rebuilds the payload
 the way `publish` built it, through `manifest_payload`, and applies the identical spec
-7.1 precedence via `signing.verify`/`signing.verdict`/`keys.live`/`keys.key_status`.
+7.1 precedence via `signing.verify`/`signing.verdict`/`keys.for_verification`.
 
 THE CONTENT HALF pairs `release_manifest_entry` against `enumerate_live`'s current
 answer by `(target_kind, natural_key)`, never `target_id` -- db/030's own comment on
@@ -201,17 +201,20 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
     `UnsupportedAlgorithmError` rather than being silently checked against the wrong
     scheme.
 
-    `keys.live`/`keys.key_status` ARE LOOKED UP PER SIGNATURE, UNCACHED, and the reason
-    is loop LENGTH, not differing keys -- an earlier version of this line said "since
-    two signatures over one manifest could legitimately name different keys (a
-    rotation)", which does not support the choice at all: `signatures.verify_target`
-    caches these two lookups keyed BY fingerprint precisely so differing keys ARE
-    handled and
-    repeated ones are not re-fetched. The honest reason is that this loop runs over the
+    `keys.for_verification` IS LOOKED UP PER SIGNATURE, UNCACHED, and the reason is loop
+    LENGTH, not differing keys -- an earlier version of this line said "since two
+    signatures over one manifest could legitimately name different keys (a rotation)",
+    which does not support the choice at all: `signatures.verify_target` caches the
+    lookup keyed BY fingerprint precisely so differing keys ARE handled and repeated
+    ones are not re-fetched. The honest reason is that this loop runs over the
     signatures on ONE manifest -- one at publication, two if somebody counter-signs --
     where a cache is machinery for a repetition that does not happen. `verify_target`
-    caches because it is called once per curated row across the whole overlay, which is
-    a different loop with a different cost.
+    caches because it is called once per curated row across the whole overlay, a
+    different loop with a different cost.
+
+    Issue 87 halved the lookup itself rather than caching it here:
+    `keys.live` and `keys.key_status` were two queries about one key and are now one, so
+    the uncached choice costs one round trip per signature instead of two.
     """
     published_by, published_at, upstream_releases = conn.execute(
         "SELECT published_by, published_at, upstream_releases "
@@ -258,8 +261,13 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
                 f"assertion_signature {signature_id} was signed with {algorithm!r}, "
                 "which this module cannot verify -- signing.verify only implements "
                 f"{signing.ED25519}.")
-        key = keys.live(conn, key_fingerprint)
-        status = keys.key_status(conn, key_fingerprint)
+        # ONE REGISTRY READ (issue 87), all-or-nothing: `keys.live` and
+        # `keys.key_status` were asked separately here, and `verify_target` one layer
+        # down had the same pair. See `keys.RegisteredKey` for why the halves must
+        # arrive together.
+        registered = keys.for_verification(conn, key_fingerprint)
+        key = registered.record if registered else None
+        status = registered.status if registered else None
         # THE SAME PLANTED-CONTEXT GUARD verify_target applies one layer down (review
         # C3). `assertion_signature.payload_context` is unconstrained beyond its regex
         # here too, and `manifest_payload` subscripts `signing.FIELD_LISTS` with it --

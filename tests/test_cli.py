@@ -116,8 +116,13 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     # informative answer for a grain whose whole failure mode is looking healthy: an
     # operator needs to see that the detector ran and found nothing, and "0" says that
     # where a bare "none" reads the same whether the grain is empty or unexamined.
-    assert "ungraded class rules: 0" in out
-    assert "class rules reaching no pair: 0" in out
+    #
+    # LED BY THE DENOMINATOR since issue 111: the two fault counts report only on rules
+    # that EXIST, so an emptied tier silenced both and rendered identically to a healthy
+    # registry. Note this stub answers `(0,)` to every scalar read, so the denominator it
+    # produces here is 0 -- which is the correct reading for the empty database this test
+    # is about, and tests/test_class_grain_detectors.py drives the case where it is not.
+    assert "class rules: 0 (ungraded 0, reaching no pair 0)" in out
     assert "cross-grain disagreements: 0" in out
 
 

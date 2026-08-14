@@ -101,27 +101,20 @@ extend-exclude = ["downloads", "docs-site/site"]
 # `\d+` instead of `\\d+`.
 select = ["E", "F", "W"]
 
-[tool.ruff.lint.per-file-ignores]
-# tests/ is NOT written to 88 and never has been: 334 lines exceed it, against 0 now in
-# src/. That is not drift, it is a different (unstated) convention -- the measured
-# ceiling across tests/ is 119 characters, and the long lines are overwhelmingly the
-# explanatory docstrings this project requires, plus inline SQL that reads worse when
-# wrapped.
+# THERE IS NO per-file-ignores BLOCK ANY MORE, and its absence is the fix for issue 79.
 #
-# THAT COUNT IS A MEASUREMENT WITH A DATE, not a constant: it was 324 when the carve-out
-# was written and 334 by the end of the same branch, because new test files land under
-# the exemption. Re-measure it rather than trusting it --
-#   uv run ruff check tests --config 'lint.select=["E501"]' \
-#                           --config 'lint.per-file-ignores={}' --statistics
-# -- and treat a drifted figure here as expected, not as a finding.
+# What stood here was `"tests/**" = ["E501"]` -- a BLANKET exemption granted by issue 66,
+# recorded as a debt rather than left implicit, and duly filed as 79. Under it tests/ had
+# no column bound at all, and the exempted count grew every round new test files landed
+# (324 -> 334 -> 415) precisely because nothing was watching.
 #
-# Reflowing 334 lines in one pass would bury this change's actual content in mechanical
-# noise and make `git log -p` useless on the suite, which is the same trade #63 already
-# rejected for PROJECT-NOTES and ROADMAP. So tests/ is exempted from E501 EXPLICITLY
-# and temporarily, with the decision recorded rather than left implicit, and the
-# follow-up filed as issue 79.
+# tests/ IS NOW BOUNDED AT 120, in `tests/ruff.toml`, which is the one home for that
+# number and carries the measurement that chose it. Ruff resolves configuration
+# hierarchically, so a nested file is how a second bound is expressed -- there is no way
+# to say it from here, and per-file-ignores can only ever SUPPRESS a rule, never re-aim
+# it. Do not add a `line-length` for tests/ to this file: it would have no effect, and
+# this repo has lost four rounds to one rule kept in two places.
 #
-# The exemption is E501 ONLY -- F, W and the rest of E still apply to tests/, verified
-# with a probe file that duly failed on F401 and E402 while its 115-character line
-# passed. This exemption is a debt, not a policy. Delete this block when 79 is closed.
-"tests/**" = ["E501"]
+# The bound above (88) is therefore src/'s alone, and tests/test_lint_bounds.py drives
+# ruff at a path in each tree to pin both -- including the case that distinguishes them,
+# an 89-character line, which must fail in src/ and pass in tests/.

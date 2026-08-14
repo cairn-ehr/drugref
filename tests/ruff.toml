@@ -1,0 +1,43 @@
+# The column bound for tests/ -- issue 79, the debt issue 66 deliberately left standing.
+#
+# WHAT THIS REPLACES. Until this file existed, pyproject.toml carried
+# `[tool.ruff.lint.per-file-ignores] "tests/**" = ["E501"]` -- a BLANKET exemption, so
+# tests/ had no column bound of any kind. Issue 79 offered two ways to close: reflow every
+# over-88 line, or "make the different convention explicit and enforced (e.g. a second
+# bound for tests/) rather than an unbounded exemption". This is the second.
+#
+# WHY 120, MEASURED. Across tests/ (test modules and tests/fixtures/ alike) the longest
+# line is 119 characters, and it has been 119 at every measurement issue 79 records --
+# while the count of lines over 88 went 324 (when the carve-out was written) -> 334 (by
+# the end of that branch) -> 415 (here). A count that grows while the CEILING stands still
+# is what a real-but-unstated convention looks like from the outside; drift would move
+# both. So 120 is not an aspiration and not a round number picked for comfort: it is one
+# character above what the suite has actually held to, the same way 88 was chosen for src/
+# because that is what src/ already WAS.
+#
+# WHY THE LONG LINES ARE NOT DRIFT: they are overwhelmingly the explanatory docstrings
+# CLAUDE.md rule 3 makes mandatory, plus inline SQL that reads worse wrapped. Reflowing
+# 415 of them would bury this round's actual content in mechanical noise and make
+# `git log -p` useless across the suite -- the trade #63 already rejected for
+# PROJECT-NOTES and ROADMAP, and the reason the carve-out was granted in the first place.
+#
+# HOW TO RE-MEASURE (do this rather than trusting the numbers above; a drifted figure here
+# is expected, a drifted CEILING is a finding):
+#   uv run ruff check tests --config 'lint.select=["E501"]' --statistics
+#   awk 'length > m { m = length; f = FILENAME; l = FNR } END { print m, f":"l }' \
+#       tests/*.py tests/fixtures/*.py
+#
+# `extend` IS LOAD-BEARING AND ITS ABSENCE HAS NO SYMPTOM. Ruff resolves configuration
+# hierarchically -- this file governs everything below tests/ -- and a nested config
+# REPLACES the root's settings rather than layering onto them. Without the line below,
+# `select = ["E", "F", "W"]` would not reach tests/ at all: the suite would silently fall
+# back to ruff's default ["E4", "E7", "E9", "F"], dropping W (including W605, invalid
+# escape sequence) and most of E, while the column bound this file exists to set carried
+# on working perfectly. Lint would look configured and be checking less than before --
+# exactly the shape of issue 66's original defect, one directory down.
+# tests/test_lint_bounds.py drives ruff at both paths and pins all of it, W291 included,
+# because that rule is absent from ruff's default set and is therefore the one probe whose
+# verdict can only be explained by this `extend` having worked.
+extend = "../pyproject.toml"
+
+line-length = 120

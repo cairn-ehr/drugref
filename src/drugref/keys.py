@@ -90,6 +90,32 @@ def _record(row) -> KeyRecord:
 
 _SELECT = f"SELECT {', '.join(_COLUMNS)} FROM drugref.signing_key "
 
+# `for_verification`'s one query (issue 87), assembled from _COLUMNS rather than from
+# a second hand-written column list, so `_record` keeps unpacking positionally and a
+# column added to _COLUMNS reaches this read for free. The four status columns are
+# appended AFTER the record's, which is what lets the caller split the row on
+# `len(_COLUMNS)`.
+#
+# THE LATERAL IS `key_status`'s QUERY, unchanged in every clause that matters --
+# history-wide (`superseded_by IS NULL OR invalidates_all_signatures`), blanket-first,
+# earliest-compromise on the tiebreak -- correlated to the live row's fingerprint
+# instead of taking its own parameter. See `for_verification` for why it must not be
+# flattened into the outer row read, and why CROSS rather than LEFT is right here.
+_FOR_VERIFICATION = (
+    f"SELECT {', '.join('live.' + c for c in _COLUMNS)}, "
+    "st.status, st.is_revocation, st.invalidates_all_signatures, st.status_from "
+    "FROM drugref.signing_key live "
+    "CROSS JOIN LATERAL ("
+    "  SELECT k.status, t.is_revocation, t.invalidates_all_signatures, k.status_from "
+    "  FROM drugref.signing_key k "
+    "  JOIN drugref.signing_key_status_kind t ON t.status = k.status "
+    "  WHERE k.key_fingerprint = live.key_fingerprint "
+    "    AND (k.superseded_by IS NULL OR t.invalidates_all_signatures) "
+    "  ORDER BY t.invalidates_all_signatures DESC, k.signing_key_id "
+    "  LIMIT 1"
+    ") st "
+    "WHERE live.key_fingerprint = %s AND live.superseded_by IS NULL")
+
 
 def register(conn: psycopg.Connection, *, public_key: bytes, holder: str,
              registered_by: str, algorithm: str = signing.ED25519,
@@ -212,6 +238,82 @@ def key_status(conn: psycopg.Connection,
     return signing.KeyStatus(status, is_revocation=is_revocation,
                              invalidates_all_signatures=invalidates,
                              status_from=status_from)
+
+
+@dataclass(frozen=True)
+class RegisteredKey:
+    """Everything a verifier needs about one fingerprint, read in ONE query (issue 87).
+
+    NEITHER FIELD IS OPTIONAL, and that is the whole point. `signatures.
+    SignatureVerdict` documents that `holder is None` EXACTLY when the verdict is
+    `signing.UNKNOWN_KEY` -- but that held only because `live` and `key_status` happened
+    to run compatible predicates against the same table. Nothing enforced it: an edit to
+    either predicate could have produced a holder with no status rule, or a status rule
+    with no holder, and the verifier would have reported a verdict assembled from half a
+    key. Here there is ONE `None` to test -- this record or nothing -- so the two halves
+    cannot disagree about whether the key exists.
+
+    THE TWO FIELDS ANSWER DIFFERENT QUESTIONS OVER DIFFERENT ROW SETS, which is why this
+    is a record rather than a widened `KeyRecord`:
+
+      * `record` is the key's LIVE row -- the material to check the signature against,
+        and the holder to name in the verdict.
+      * `status` is the rule that governs the key, taken over its WHOLE HISTORY,
+        because a blanket revocation is PERMANENT: no later row can take it back.
+
+    Collapsing them onto the live row would reinstate the defect `key_status` was
+    written to fix, and would do so silently: `drugref keys revoke --status active` on
+    a compromised key -- one supported command, no raw SQL -- would return every
+    signature that key ever made to `valid`, the thief's included.
+    """
+    record: KeyRecord
+    status: signing.KeyStatus
+
+
+def for_verification(conn: psycopg.Connection,
+                     key_fingerprint: str) -> RegisteredKey | None:
+    """The key material AND the status rule, in one round trip. None if unregistered.
+
+    WHY ONE QUERY (issue 87). `signatures.verify_target` and
+    `release_verification._verify_manifest_signature` each asked the registry the same
+    question twice about one fingerprint. `verify_target` is called once per curated
+    row across the whole overlay by the release verifier -- its docstring already
+    records hoisting the catalog lookup and the target-row read out of the
+    per-signature loop for exactly this reason -- so the pair left behind was the last
+    per-key duplication in the hot loop. `tests/test_keys_writer.py` counts the
+    queries, with the old pair measured beside it as the control.
+
+    HOW THE TWO HALVES STAY DIFFERENT. The outer query is `live`'s: the single row
+    with `superseded_by IS NULL`, which the deferred single-live trigger guarantees is
+    one row or none. The LATERAL is `key_status`'s, verbatim -- history-wide,
+    blanket-first, earliest-compromise on the tiebreak -- correlated to that
+    fingerprint. Merging them into one flat row read would take BOTH from the live row
+    and undo the permanence of a compromise; the equivalence tests drive every history
+    shape either function is documented to care about, and the material/status split
+    has a test of its own.
+
+    CROSS JOIN, NOT LEFT JOIN, and it cannot drop the row: the live row always
+    satisfies the LATERAL's own `superseded_by IS NULL` arm, and `signing_key.status`
+    is a FOREIGN KEY into `signing_key_status_kind`, so its join to the vocabulary
+    table always finds a match. A LEFT JOIN here would be defensive against a state
+    the schema forbids, and would hand back a `RegisteredKey` with a NULL status --
+    reintroducing the half-a-key shape this function exists to make unrepresentable.
+
+    `live` AND `key_status` REMAIN, deliberately. `revoke` and `cli_signing_release`
+    need the live row alone, and a caller wanting only the status rule should not have
+    to take the key material with it. This is a third read for the one caller that
+    needs both, not a replacement for two that work.
+    """
+    row = conn.execute(_FOR_VERIFICATION, (key_fingerprint,)).fetchone()
+    if row is None:
+        return None
+    record = _record(row[:len(_COLUMNS)])
+    status, is_revocation, invalidates, status_from = row[len(_COLUMNS):]
+    return RegisteredKey(
+        record=record,
+        status=signing.KeyStatus(status, is_revocation=is_revocation,
+                                 invalidates_all_signatures=invalidates,
+                                 status_from=status_from))
 
 
 def all_live(conn: psycopg.Connection) -> list[KeyRecord]:

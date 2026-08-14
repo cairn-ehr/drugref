@@ -328,10 +328,12 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
     nothing can check);
     this version pays the catalog lookup once total and the row read once per DISTINCT
     `payload_context` seen (once, in the common case where nothing has moved to a `/v2`
-    yet). `keys.live` and `keys.key_status` are cached by `key_fingerprint` for the same
-    reason: two signatures by the same key -- one curator re-signing, or the
-    KEY_EXPIRED pair -- do not repeat the same registry lookup. This matters now because
-    Task 8's release verifier runs this across the whole overlay.
+    yet). `keys.for_verification` is cached by `key_fingerprint` for the same reason:
+    two signatures by the same key -- one curator re-signing, or the KEY_EXPIRED pair --
+    do not repeat the same registry lookup. This matters now because Task 8's release
+    verifier runs this across the whole overlay. Issue 87 then halved what an uncached
+    fingerprint costs: `keys.live` and `keys.key_status` were two queries about one key,
+    and are now one.
     """
     table, pk_column, _ = _target_kind_catalog(conn, target_kind)
     rows = conn.execute(
@@ -369,9 +371,15 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
                 f"{signing.ED25519}. A second algorithm needs a second verify path "
                 "before any row naming it can be checked, not an assumption here.")
         if key_fingerprint not in key_cache:
-            key_cache[key_fingerprint] = (keys.live(conn, key_fingerprint),
-                                          keys.key_status(conn, key_fingerprint))
-        key, status = key_cache[key_fingerprint]
+            key_cache[key_fingerprint] = keys.for_verification(conn, key_fingerprint)
+        # ONE REGISTRY READ, ONE `None` (issue 87). `keys.live` and `keys.key_status`
+        # used to be asked separately here, and the docstring's claim that `holder is
+        # None` exactly when the verdict is UNKNOWN_KEY held only because those two
+        # queries happened to agree about which keys exist. `RegisteredKey` is
+        # all-or-nothing, so the two halves below cannot come from different answers.
+        registered = key_cache[key_fingerprint]
+        key = registered.record if registered else None
+        status = registered.status if registered else None
         # AN UNUSABLE payload_context IS A VERDICT, NEVER A RAISE (review C3). This
         # column carries only a regex CHECK and no FK, so `bogus/v9` or another kind's
         # context is one INSERT away -- and rebuilding under it raised `KeyError` or
