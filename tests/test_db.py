@@ -246,6 +246,17 @@ def test_apply_migrations_is_idempotent(conn):
         # separately-estimated walk instead. Named explicitly for the same
         # information_schema.tables reason as every other view above.
         "ci_class_pair_subtree",
+        # db/035: the class grain's DETECTORS, and the ordered severity vocabulary
+        # they needed. db/032-db/034 gave the class grain the WRITE path and none of
+        # the moiety grain's detectors, so a class rule could be ingested, graded and
+        # reported successful while reaching zero patients. `severity_kind` is the
+        # only TABLE here (it replaced five identical CHECK constraints and adds the
+        # ORDER #97's precedence rule needs); the other three are views, named
+        # explicitly for the same information_schema.tables reason as every view
+        # above -- this query returns views too, which is what makes this list an
+        # inventory of the whole schema rather than of its tables.
+        "severity_kind", "class_pair_rule_reach",
+        "gap_uncurated_class_interaction_rule", "curated_grain_disagreement",
     }
 
 

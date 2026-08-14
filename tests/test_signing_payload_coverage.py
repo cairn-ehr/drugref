@@ -18,6 +18,11 @@ from tests.test_live_key_index_guard import _single_live_tables
 CURATED = [
     ("curated_interaction/v1", "curated_interaction", "curated_interaction_id"),
     ("curated_condition/v1", "curated_condition", "curated_condition_id"),
+    # db/035 (issue #98). The class grain was a curated table that could not be signed
+    # and, worse, could not enter a release manifest at all -- so a signed release
+    # omitted it silently and `verify_release` still passed.
+    ("curated_class_interaction/v1", "curated_class_interaction",
+     "curated_class_interaction_id"),
 ]
 
 
@@ -108,8 +113,10 @@ def test_every_curated_context_has_a_frozen_natural_key():
     above would never notice, because they iterate CURATED -- a list in this file.
     `releases._CURATED_KINDS` is the real scope, so it is what gets checked."""
     from drugref import releases
-    assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition"}
-    for context in ("curated_interaction/v1", "curated_condition/v1"):
+    assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition",
+                                            "curated_class_interaction"}
+    for context in ("curated_interaction/v1", "curated_condition/v1",
+                    "curated_class_interaction/v1"):
         assert context in signing.NATURAL_KEY_COLUMNS
     # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of
@@ -165,3 +172,44 @@ def test_every_frozen_context_names_its_own_target_kind(conn):
         assert signing.context_target_kind(context) == target_kind, (
             f"{target_kind} signs under {context}, whose prefix names a different kind "
             "-- signing.context_is_usable_for would reject every signature it makes")
+
+
+def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
+    """ORDER IS THE FORMAT, and until this test nothing said so twice.
+
+    `canonical_payload` builds the signed bytes by walking a frozen tuple in order, so
+    two orderings of the same names are two different payloads over the same row. Every
+    other property of these lists has an alarm; ORDER had none:
+
+      * the coverage test above compares SETS, so it cannot see a permutation;
+      * the committed vectors carry their `fields` as literal lists INSIDE the fixture
+        and never consult `signing.FIELD_LISTS`, so they pin bytes against a list that
+        is only conventionally the frozen one (`make_signing_vectors.py` says as much);
+      * `signatures.py` builds the publish payload and the verify payload from the SAME
+        tuple, so a permutation is SELF-CONSISTENT -- it breaks only signatures recorded
+        BEFORE it, in production, as BAD_SIGNATURE, with nothing naming the cause.
+
+    Measured in this round's review: swapping the first two entries of
+    `CURATED_CLASS_INTERACTION_V1` passed all 249 signing, release and class-grain
+    tests. That tuple is the likeliest victim precisely because it is documented as
+    "the same columns as CURATED_INTERACTION_V1 with one string different", which
+    invites the tidying -- alphabetise, derive from its sibling -- that a set-based
+    test waves through.
+
+    THE FIXTURE IS THE PAST RECORDING, which is why it is the right thing to check the
+    present list against: it was generated when each context was frozen, and a
+    permutation since is exactly what must not have happened.
+    """
+    import json
+    import pathlib
+
+    vectors = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "signing_vectors.json"
+         ).read_text())
+    for case in vectors["cases"]:
+        assert [name for name, _value in case["fields"]] == \
+            list(signing.FIELD_LISTS[case["context"]]), (
+            f"{case['name']}: {case['context']}'s frozen field ORDER has changed since "
+            "the vectors were committed. Every signature already recorded under this "
+            "context was made over the OLD order and will now report BAD_SIGNATURE. "
+            "If the change is deliberate it is a new /v2 context, never an edit here.")

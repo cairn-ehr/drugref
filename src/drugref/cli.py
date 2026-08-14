@@ -59,8 +59,8 @@ from collections.abc import Sequence
 import psycopg
 
 import drugref
-from drugref import (cli_curate, cli_policy, cli_signing, curation, db, interactions,
-                     signatures)
+from drugref import (cli_curate, cli_policy, cli_signing, cli_status, curation, db,
+                     interactions, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -216,17 +216,24 @@ def _handle_migrate(conn, args) -> int:
 
 
 def _handle_status(conn, args) -> int:
-    """What is loaded, what died trying, and what a rebuild orphaned. THREE blocks,
-    one command: an operator asking "is this current?" needs all of them, and reading
-    only the first would report a stale release as healthy.
+    """What is loaded, what died trying, what a rebuild orphaned, what was signed late,
+    and what the class grain is doing. FIVE blocks, one command: an operator asking "is
+    this current?" needs all of them, and reading only the first would report a stale
+    release as healthy. (It said THREE until db/035 added the fifth and left this
+    sentence behind -- cli_status.py's block calls itself the fifth in its own
+    first line, so the two disagreed by two.)
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
     while this one reads the CURATED overlay, which belongs to curation.py. See the
-    module docstring for what that placement does and does not buy."""
-    # All three blocks say "none" when empty, and the symmetry is the point: a fresh
-    # database printed a bare "loaded releases:" header, which reads as output that
-    # got cut off rather than as an answer. Nothing loaded IS the answer there.
+    module docstring for what that placement does and does not buy. The fifth block
+    (db/035) reads the overlay too and goes through `curation.class_grain_counts` for
+    the same reason."""
+    # THE FIRST FOUR BLOCKS say "none" when empty, and the symmetry is the point: a
+    # fresh database printed a bare "loaded releases:" header, which reads as output
+    # that got cut off rather than as an answer. Nothing loaded IS the answer there.
+    # The fifth prints "0" deliberately: its lines are COUNTS of rules that should not
+    # exist, not lists that happen to be empty, and "0" is what an operator diffs.
     loaded = conn.execute(
         "SELECT source, writer, upstream_release, finished_at "
         "FROM drugref.loaded_release").fetchall()
@@ -251,13 +258,21 @@ def _handle_status(conn, args) -> int:
     # the fix. `main` renders RuntimeError without a traceback, so re-raise as one. The
     # catch is around this call alone, deliberately: widening it would swallow the
     # UndefinedTable that a genuinely mis-shaped view should still raise.
+    #
+    # UndefinedColumn IS CAUGHT TOO because db/035 widened the SELECT with
+    # `subject_class`: a database that HAS the view but predates db/035 then fails one
+    # COLUMN short, and UndefinedColumn is a sibling of UndefinedTable under
+    # ProgrammingError, not a subclass -- so the guard missed it and every deployment
+    # yet to run `drugref migrate` got the traceback this guard exists to replace. THE
+    # STANDING RULE: a migration widening a view a guarded block reads must widen the
+    # guard in the same commit.
     try:
         orphans = curation.unresolved_targets(conn)
-    except psycopg.errors.UndefinedTable as exc:
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
         raise RuntimeError(
-            "drugref.curated_target_unresolved is missing: this database predates "
-            "db/029, so orphaned curator judgement cannot be reported. Run "
-            "`drugref migrate` and re-run status.") from exc
+            "drugref.curated_target_unresolved is missing or predates db/035, so "
+            "orphaned curator judgement cannot be reported. Run `drugref migrate` "
+            "and re-run status.") from exc
     if orphans:
         print(f"\nunresolved curated targets: {len(orphans)}"
               "  ** a rebuild left curator judgement pointing at nothing **")
@@ -265,8 +280,14 @@ def _handle_status(conn, args) -> int:
             # `is not None`, not a falsy test: an empty relationship is not the same
             # thing as a condition ruling's absent one, and only the latter should
             # render without the bracket.
-            print("  {:<20} {} -> {}{} reviewed by {} against {}".format(
-                o.target_table, o.subject_moiety, o.object_uuid,
+            #
+            # `o.subject`, NOT `o.subject_moiety`: the class-grain arm leaves that
+            # column NULL on every row, so reading it alone printed the literal "None"
+            # where the rule's identity belongs, and two class rules sharing an object
+            # and an axis rendered identically. The fallback lives on the record, so a
+            # fourth arm needs no change here. {:<25} fits `curated_class_interaction`.
+            print("  {:<25} {} -> {}{} reviewed by {} against {}".format(
+                o.target_table, o.subject, o.object_uuid,
                 f" [{o.relationship}]" if o.relationship is not None else "",
                 o.reviewed_by, o.reviewed_against))
     else:
@@ -303,6 +324,8 @@ def _handle_status(conn, args) -> int:
                   f"recorded {b.recorded_at} (lag {b.lag})")
     else:
         print("\nbackdated signatures: none")
+
+    cli_status.print_class_grain_block(conn)
     return 0
 
 

@@ -470,6 +470,89 @@ pair](https://docs.drugref.org/decisions/curating-a-drug-condition-pair/) for th
 read every source at once. For `ddi_candidate_pair` that is now *wanted* — it is how both authorities reach one
 consumer — so the issue's text should be re-read now that the behaviour is real rather than hypothetical.
 
+##### 5c.2a — the class grain's detectors ✅ DONE — `db/035`, measured 2026-08-14
+The migration the paragraph above asked for, taken as one. Closes
+[#90](https://github.com/cairn-ehr/drugref/issues/90), [#96](https://github.com/cairn-ehr/drugref/issues/96),
+[#97](https://github.com/cairn-ehr/drugref/issues/97), [#98](https://github.com/cairn-ehr/drugref/issues/98) and
+[#99](https://github.com/cairn-ehr/drugref/issues/99). Suite **1409 → 1451**. Full account and every measurement:
+PROJECT-NOTES § "The class-grain detector round".
+
+**No new clinical content and no behaviour change on real data** — every count on the reference database is
+byte-identical before and after (`ddi_candidate_pair` MED-RT 21,664 · `substance_moiety` 19,438 ·
+`curated_ddi_pair` 255 · `gap_uncurated_interaction_rule` 593 · `curated_target_unresolved` 0), and all four new
+class-grain objects read **0**, because #94 withheld the seven class×class entries and nothing else writes the
+grain. **That is the point: the round adds detectors, and a detector's correct reading on today's data is zero.**
+
+**Seven pieces, one shape.** `severity_kind` makes the four grades **ordered data** (five identical CHECK
+constraints became five foreign keys — db/006's finding for the fifth time), because #97's answer has to be
+writable in SQL and `ORDER BY severity` sorts `minor` above `moderate`. `class_pair_rule_reach` is
+`ci_rule_partner_reach` one grain over, and a **product** rather than a count since a class×class rule expands on
+both sides; `gap_uncurated_class_interaction_rule` (gap kind **sixteen**) is the grain's primary question, which it
+shipped without. `gap_unreviewed_expansion_root` was **widened in place, not copied** — one class, one policy row,
+one immortal `question_uuid`. `curated_target_unresolved` gained a third arm and one trailing column.
+`curated_ddi_pair` gained `severity_rank` and a **stated precedence**; `curated_grain_disagreement` is the
+worklist that keeps it honest. `curated_class_interaction` became a `signature_target_kind`.
+
+**⇒ THE PRECEDENCE, decided this round and now the read path's contract:
+`ORDER BY severity_rank, (rule_grain = 'moiety_rule') DESC` — most severe first, moiety grain breaking ties.**
+Severity-first because under-warning is the harm direction on this path, as with every other choice here (a
+signature never gates a read; a missing expansion policy expands). **It is an ORDER, not a filter** — both rows
+still appear. What makes it defensible rather than merely loud is `curated_grain_disagreement`: over-warning has a
+real cost (click-through fatigue is why prescribers stop reading alerts), so a broad class rule out-ranking a
+curator's specific milder grade must be **finite work somebody reconciles**, not permanent noise.
+
+**Hot path unmoved, measured interleaved against a `db/034` control to control for machine noise** (issue #81's
+discipline): db/034 mean **1.626 ms**, db/035 mean **1.662 ms** over 12 alternating runs each — a 2% difference
+inside the control's own 0.34 ms spread — and the moiety grain's recursive union is **byte-identical**
+(`cost=14.94..3886.97 rows=37414`, actual 1235). The `severity_kind` join is two hash joins against a four-row
+table. **`TEMPLATE drugref_db034` → `drugref migrate` was re-tested** and works; the reference database is now
+**`drugref_db035`** (ledger 35 rows) with `drugref_db034` kept as the control.
+
+**Three findings filed rather than fixed** — [#104](https://github.com/cairn-ehr/drugref/issues/104) **`curate`
+leaves the question registry stale until the next ingest** (601 stored vs 593 derived on the reference database:
+the 8 rules ONCHIGH curation answered still sit on the worklist, because `curate` is deliberately not a chain step
+and only ingest re-derives — **pre-existing, verified identical on db/034**) ·
+[#105](https://github.com/cairn-ehr/drugref/issues/105) promote `curated_grain_disagreement` to a gap kind once
+class-grain content ships (a `gap_key` is frozen forever and zero class-grain rows exist to choose its grain
+against) · [#106](https://github.com/cairn-ehr/drugref/issues/106) two **moiety**-grain rules on different axes can
+also grade one pair differently, which the cross-grain detector deliberately does not compare.
+
+##### 5c.2b — the PR #107 review round ✅ DONE — `db/036`, `cli_status.py`, 2026-08-14
+Five specialist reviewers over the round above. **The migration held; the Python that reads it did not.** Suite
+**1451 → 1465**. Full account and every measurement: PROJECT-NOTES § "The PR #107 review round".
+
+**⇒ THE SHIP-BLOCKER, reproduced on the `drugref_db034` control: `drugref status` crashed with a raw psycopg
+traceback on every database that had not yet run `drugref migrate`.** `db/035` widened
+`curated_target_unresolved` with `subject_class`, so a stale database fails with `UndefinedColumn` — a *sibling*
+of `UndefinedTable`, not a subclass — and the guard written for exactly that moment did not fire. **The standing
+rule this bought: a migration widening a view a guarded block reads must widen that block's exception tuple in
+the same commit.** Exit 1 + traceback → exit 2 + one sentence.
+
+**Three more of the same shape.** `drugref status` printed the literal `None` where every class-grain orphan's
+subject belongs, so #90's detector said *that* a judgement was orphaned and never *which* — fixed with an
+`UnresolvedTarget.subject` property, arm-label-free. The class-grain block had **no guard at all**, on reasoning
+that did not follow (db/029 does not imply db/035). And **permuting a frozen signing field list passed all 249
+signing tests** — the coverage test compares sets and the committed vectors never consult `FIELD_LISTS`, so a
+reorder would have broken only signatures recorded *before* it, in production, as `BAD_SIGNATURE`. Now pinned,
+and `curated_class_interaction/v1` has the vector case it shipped without.
+
+**`cli.py` hit rule 4's 500-line cap and the answer was a module, not a diet** — shaving comments to fit sets
+rule 4 against rule 3. Read → `curation.class_grain_counts`, voice → **`cli_status.py`** (the sixth `cli_*`
+module). `cli.py` 483 → **450**.
+
+**`db/036` is three `COMMENT ON` statements and no schema change**, because `db/035` is applied and immutable and
+these ship in `pg_description` — what `\d+` prints. The frozen `gap_key` was documented as `AXIS:` where the
+value is **`CI_AXIS:`**; `max_pair_count` claimed to be "exact about zero" when a one-member self-pair rule reads
+1 and reaches 0; `curated_grain_disagreement` named one deliberate omission and has two. Reference database is
+now **`drugref_db036`** (ledger 36), `drugref_db034` still kept as the control.
+
+**Five findings filed rather than fixed** — [#108](https://github.com/cairn-ehr/drugref/issues/108) make
+`max_pair_count` exact · [#109](https://github.com/cairn-ehr/drugref/issues/109) mirror-oriented rule pairs ·
+[#110](https://github.com/cairn-ehr/drugref/issues/110) ship the #97 precedence as a view (nothing in `src/`
+reads `severity_rank`) · [#111](https://github.com/cairn-ehr/drugref/issues/111) the status block's zeros need a
+denominator · [#112](https://github.com/cairn-ehr/drugref/issues/112) measure the disagreement self-join before
+class-grain content ships.
+
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
 brainstorm/design round.** Two candidate sources were licence-checked during 5c.2 and **measured on 2026-08-13,

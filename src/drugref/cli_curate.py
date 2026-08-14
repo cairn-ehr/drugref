@@ -45,13 +45,16 @@ protect. See `curation.live_interaction_judgement`'s own docstring for the same 
 stated from the read side.
 
 NO VOCABULARY IS RESTATED IN PYTHON. `severity`, `evidence_grade` and `relationship`
-(the CI axis) are `db/029` CHECK constraints and a foreign key into `ci_axis` --
-exactly the shape `onchigh.py`'s own docstring already refuses to duplicate for the
-candidate tier, for db/006's reason: a Python allow-list and a database constraint are
-two lists that drift the moment one of them is widened. An illegal value reaches
-`curation.record_interaction_judgement`'s INSERT and raises `psycopg.errors.
-CheckViolation` there, unmodified and uncaught -- see `_handle_curate_onchigh` below
-for why the CLI layer does not catch it either.
+(the CI axis) are database constraints -- since db/035, `severity` is a foreign key
+into `drugref.severity_kind` and `relationship` one into `ci_axis`, with
+`evidence_grade` still a db/029 CHECK -- exactly the shape `onchigh.py`'s own docstring
+already refuses to duplicate for the candidate tier, for db/006's reason: a Python
+allow-list and a database constraint are two lists that drift the moment one of them is
+widened. An illegal value reaches `curation.record_interaction_judgement`'s INSERT and
+raises there, unmodified and uncaught -- `ForeignKeyViolation` for the two keyed
+columns, `CheckViolation` for `evidence_grade`. WHICH class it is does not change the
+handling anywhere, which is the point: see `_handle_curate_onchigh` below for why the
+CLI layer catches neither.
 """
 import logging
 import pathlib
@@ -393,7 +396,13 @@ def _handle_curate_onchigh(conn, args) -> int:
     operator typed on this command line -- so a violation means the packaged data (or
     a curator's hand-edit of it) carries a value db/029 forbids, which is a defect for
     a traceback to surface loudly, not an operator typo for a clean exit-2 line to
-    absorb. `--reviewed-by`/`--reviewed-against` ARE operator-typed, which is exactly
+    absorb. SINCE db/035 AN ILLEGAL `severity` RAISES ForeignKeyViolation RATHER THAN
+    CheckViolation (the four levels became drugref.severity_kind, so #97's precedence
+    could order them) -- "a different exception class naming the identical hazard",
+    cli_signing.py's phrase for the same substitution one column over. Nothing catches
+    either class on this path, so the operator-visible behaviour is unchanged; the
+    reasoning above holds for both and the absent catch stays absent.
+    `--reviewed-by`/`--reviewed-against` ARE operator-typed, which is exactly
     why they get the blank guard below and the file's own values do not get a second
     one.
     """

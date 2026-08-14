@@ -207,16 +207,33 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **five of the seven orchestrators**. **TWELVE** gap kinds since Slice 3 (eleven since Plan C):
-unclassified_moiety **16,089** · unruled_composition_activity **2,245** · unmatched_ingredient **2,150** ·
-uncurated_additive_effect **381** · unresolved_ci_object **103** · condition_without_indication **97** ·
-unpopulated_contraindication **13** · dead_by_expansion_policy **1** · the other four **0** (three need curation). All
-twelve are now **pipeline-measured: 21,079 questions** (2026-08-05, the Slice-3 chain end to end). The previous
-**EXPECTED 2,226 / 21,060** hedging is settled and removed — the assembled registry gives **2,245**, 19 more than the
-raw-extract query predicted, and the pre-Slice-3 base is unmoved at exactly **18,834**. The 19 are the composites whose
-only activity ruling sits on a mirror record the orchestrator does not read a ruling from (Slice 3 erratum below).
-`unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components but no activity
-ruling at all, populated from day one like the coverage kinds, not curation-dependent like Plan C's four.
+before commit by **five of the seven orchestrators**. **SIXTEEN** gap kinds — twelve by Slice 3, then `db/029`'s two
+(5c.1), `db/031`'s `unresolved_onc_endpoint` (5c.2) and `db/035`'s `uncurated_class_interaction_rule`. **This line
+said TWELVE for four rounds after it stopped being true**, because each round updated its own section; the count
+belongs here, so **change it here.** Re-derived end to end on `drugref_db035` (2026-08-14, `register_from_gaps` in
+4.1 s, rolled back), **21,840 live**:
+
+| kind | live | | kind | live |
+|---|---|---|---|---|
+| unclassified_moiety | 16,089 | | unpopulated_contraindication | 13 |
+| unruled_composition_activity | 2,245 | | dead_by_expansion_policy | 1 |
+| unmatched_ingredient | 2,150 | | unreviewed_expansion_root | 0 |
+| uncurated_interaction_rule | 593 | | uncurated_threshold | 0 |
+| uncurated_additive_effect | 381 | | ineffective_contribution | 0 |
+| uncurated_condition_contradiction | 168 | | ungraded_contribution | 0 |
+| unresolved_ci_object | 103 | | unresolved_onc_endpoint | 0 |
+| condition_without_indication | 97 | | **uncurated_class_interaction_rule** | **0** |
+
+**21,840 DERIVED vs 21,848 STORED, and the 8-row gap is a real finding, not rounding**
+([#104](https://github.com/cairn-ehr/drugref/issues/104)): `drugref curate` is deliberately not a chain step, so
+the 8 questions ONCHIGH curation answered stay on the worklist until the next ingest re-derives. **Verified
+identical on `drugref_db034`, so it predates `db/035`.** The views are right (`gap_uncurated_interaction_rule`
+returns 593); only the stored projection lags. The earlier **EXPECTED 2,226 / 21,060** hedging was settled at Slice
+3 — the assembled registry gave **2,245**, 19 more than the raw-extract query predicted, the 19 being composites
+whose only activity ruling sits on a mirror record the orchestrator does not read a ruling from (Slice 3 erratum
+below). `unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components
+but no activity ruling at all, populated from day one like the coverage kinds, not curation-dependent like Plan
+C's four.
 
 **Slice 5c.4 — signing, the overlay's authenticity layer** (`db/030`). Six tables and no projection: `signing_key`
 (on the overlay floor — revocation is a correction, never a column edit), the seeded `signing_key_status_kind`
@@ -1512,6 +1529,212 @@ subject is unknown cannot be re-run, so it is written down now.
 drugref_db034` → `drugref migrate` → `migrations applied`, ledger still 34 rows, database dropped. That is the
 exact sequence issue 91 reported broken.
 
+## The class-grain detector round (2026-08-14) — `db/035`, issues 90, 96, 97, 98, 99
+
+ROADMAP § 5c.2a. Suite **1409 → 1451**, `ruff` clean. **One migration, because the five issues are one defect
+reported five times**: `db/032`–`db/034` gave the class × class grain slice 5c.1's WRITE path and none of the
+moiety grain's DETECTORS, so a class-grain contraindication could be ingested, graded, committed and reported
+successful **while reaching zero patients, with `drugref status` printing health**.
+
+### Nothing on real data moved, and that is the expected result
+
+Measured on `drugref_db035` against `drugref_db034` as control — **every count byte-identical**:
+`ddi_candidate_pair` MED-RT **21,664** · `substance_moiety` **19,438** · `curated_ddi_pair` **255** ·
+`gap_uncurated_interaction_rule` **593** · `gap_unreviewed_expansion_root` **0** · `curated_target_unresolved`
+**0** · `open_question` **21,848**. All four new class-grain objects read **0**, because `class_pair_contraindication`
+is empty: #94 withheld the seven class × class entries and nothing else writes the grain. **A detector's correct
+reading on today's data is zero, and a round that changed a count would have been the surprise.**
+
+### The hot path was measured INTERLEAVED, because the alternative is how #81 happened
+
+A first, naive pass read ~1.5 ms before and ~1.72 ms after and looked like a **13% regression**. It was warm-up.
+Re-measured by alternating the same query between a `db/034` control and the `db/035` database, 12 runs each, both
+pre-warmed:
+
+| database | mean | spread |
+|---|---|---|
+| `drugref_db034` (control) | **1.626 ms** | 1.518–1.857 |
+| `drugref_db035` | **1.662 ms** | 1.523–1.767 |
+
+**2.2% apart, with the control's own spread (0.34 ms) wider than the difference, and the control's slowest run
+slower than anything the new schema produced.** The moiety grain's recursive union is **byte-identical** —
+`cost=14.94..3886.97 rows=37414`, actual **1235** — so the plan did not move at all; the `severity_kind` join is
+two hash joins against a four-row table. Query: `EXPLAIN ANALYZE SELECT * FROM drugref.curated_ddi_pair WHERE
+subject_moiety = '825bbad7-3253-548c-8324-ccfae8ae3d68'` (irinotecan), the subject § "The reference-database
+rebuild" wrote down for exactly this reason. **The sequential before/after is the shape that produced #81's
+unexplained +13%; an interleaved control is what it costs to not repeat it.**
+
+### The seven pieces, and the decision inside each
+
+- **`severity_kind`** — the four grades become **ordered data**, and the five identical `CHECK (severity IN (...))`
+  constraints (`db/020` ×2, `db/029` ×2, `db/032`) become five foreign keys into it. Needed because #97's answer
+  must be **writable in SQL** and `severity` is text: `ORDER BY severity` sorts `'contraindicated' < 'major' <
+  'minor' < 'moderate'`, putting **minor above moderate** — not merely useless but inverted. **Rank 1 is the most
+  severe**, so `ORDER BY severity_rank` is most-severe-first with no `DESC` to forget. db/006's finding for the
+  fifth time. **An illegal severity now raises `ForeignKeyViolation`, not `CheckViolation`** — "a different
+  exception class naming the identical hazard", `cli_signing.py`'s own phrase for the same substitution; nothing
+  catches either on any path, so operator-visible behaviour is unchanged.
+- **`class_pair_rule_reach`** — `ci_rule_partner_reach` one grain over, and a **product** rather than a count,
+  because a class × class rule expands on both sides: 4×0 and 0×4 are both dead and are fixed in different places.
+  Carries subtree, direct AND **effective** counts (subtree or direct per today's `class_expansion_policy`, using
+  `db/034`'s predicate verbatim) — without the effective pair, the worklist would queue a rule whose root is
+  DENIED and which therefore reaches nobody, which is #36's measured mistake one grain over. `max_pair_count` is an
+  **upper bound** (the read path excludes a drug pairing with itself) and is **exact about zero**, which is the only
+  threshold anything tests. Walks `ci_class_pair_subtree`, never `ci_class_subtree` — re-merging them is #100.
+- **`gap_uncurated_class_interaction_rule`, gap kind sixteen** — the grain's PRIMARY question, which it shipped
+  without while `db/031` added a kind for the lesser one. **Grouped on the three natural-key columns WITHOUT
+  `source`**: the candidate PK includes source and the overlay's key omits it, so ungrouped, one rule asserted by
+  two authorities would raise two rows on one `gap_key` and `register_from_gaps` would upsert them onto **one
+  immortal `question_uuid`**, silently overwriting one text with the other — the 5c.2 review's own defect, avoided
+  rather than re-learned. Key `CLASS:{subject}/CLASS:{object}/CI_AXIS:{relationship}`, `CI_AXIS:` matching
+  `uncurated_interaction_rule`'s existing spelling rather than inventing a second convention.
+- **`gap_unreviewed_expansion_root` WIDENED IN PLACE, not copied** — the design decision of the round. The question
+  is "may this class expand?", the answer is **one** `class_expansion_policy` row, and `question_uuid =
+  uuid5(gap_kind, 'CLASS:' || class_uuid)` is immortal. A second gap kind over the same class would mint a **second
+  permanent question one decision answers**, and a curator answering it would retire one and not the other, for
+  ever. So the class arm joins under the same kind and the same key: **not one existing `question_uuid` moves**.
+  `ci_rule_count` now counts expanding rules of **either** grain, which is what "ride on the answer" always meant.
+  The class arm contributes **both** classes (`db/034` expands both sides), with a `DISTINCT` inside the lateral so
+  a legal class **self-pair** (`db/032` DECISION 2) counts once rather than twice.
+- **`curated_target_unresolved`** — third arm, plus **one trailing column** `subject_class`. Not a rename:
+  `subject_moiety` cannot carry a class UUID under a name that says moiety, and `CREATE OR REPLACE VIEW` cannot
+  rename or reorder anyway. `db/030`'s precedent. `target_table` was always the discriminator and still is —
+  filtering on either nullable subject column silently drops the other arms.
+- **`curated_ddi_pair`** — fifth `CREATE OR REPLACE`, one trailing `severity_rank`, and the precedence **stated in
+  the view's own COMMENT** (below). The `severity_kind` join is **LEFT in both halves**, which looks pedantic
+  against a four-row table and is not: `INNER` would let an unrankable severity **delete a row of clinical
+  advice**, and fewer rows is the harm direction. The FK makes a miss unreachable; the LEFT makes it harmless if it
+  ever became reachable again.
+- **`curated_grain_disagreement`** — rule-PAIR grain, not drug-pair: two rules can overlap on thousands of pairs
+  (SSRIs × MAOIs alone is ~2,263) and one curator decision must not be reported thousands of times. Counts
+  `DISTINCT` partners, not join rows, because `ddi_candidate_pair`'s `DISTINCT ON` includes `source` and a
+  two-authority rule yields two rows per pair. **An operator view, deliberately NOT a gap kind yet**
+  ([#105](https://github.com/cairn-ehr/drugref/issues/105)): a `gap_key` is frozen for ever, this project has
+  broken one twice and caught it in review both times, and **zero class-grain rows ship**, so the key's grain would
+  be chosen against no real instance. The detector lands now; the immortal identifier waits for content.
+- **`signature_target_kind` += `curated_class_interaction`** — with `signing.CURATED_CLASS_INTERACTION_V1` and its
+  key tuple. **The SQL is only half the fix and the SQL is the half that fires the alarm**: the existing
+  `test_every_curated_catalog_kind_is_covered_by_a_release` derives its expectation from the CATALOG, so the
+  `INSERT` failed the suite until `releases._CURATED_KINDS` was widened. That is #98's actual severity — a kind
+  absent from that tuple is absent from the manifest **and** from the live side of the comparison, so its rows are
+  never even reported as `added` and `verify_release` calls an incomplete release intact.
+
+### ⇒ THE PRECEDENCE, and why most-severe-wins needs the disagreement view to be defensible
+
+**`ORDER BY severity_rank, (rule_grain = 'moiety_rule') DESC`** — most severe first, moiety grain breaking ties
+(the rule naming an actual drug carries better mechanism/management text than one naming its whole class). Chosen
+by the human partner from three options. Severity-first because **under-warning is the harm direction** on this
+path, the same reason a signature never gates a read and a missing expansion policy expands. **It is an ORDER, not
+a filter** — both rows still appear, because dropping one would make the view state less than it knows.
+
+**The half that is easy to get wrong: over-warning is not free.** Click-through fatigue is a leading reason
+prescribers stop reading alerts at all, and refusing to flood them with clinically irrelevant warnings is part of
+why drugref exists (docs/essays/why_drugref.md). Most-severe-wins is defensible **only because
+`curated_grain_disagreement` turns every such case into finite work somebody reconciles** — a class rule
+out-ranking a curator's specific milder grade is a row that gets answered once, not permanent noise. The order and
+the detector are one decision, not two.
+
+### Traps and standing notes
+
+- **`drugref status` gained a FIFTH block, and it is the one a gap kind could not carry.** A class rule reaching
+  **zero** drug pairs is not a curator question (grading it changes nothing — #36), yet it is exactly the state
+  this round is named for. A curator cannot be told; an operator must be. `_print_class_grain_block` is split out
+  of `_handle_status` because it is the only block a test can drive alone — the four above it need a whole status
+  run, which is why three shipped untested and two of those shipped unreached (issues 74, 76, review I7). Its
+  dead-rule count is `DISTINCT` on the three natural-key columns, or a two-authority rule would print twice while
+  the gap view beside it printed once.
+- **Two stub connections in the test suite needed a `fetchone`.** The new block reads scalar counts;
+  `tests/test_cli.py`'s `_EmptyConn` and `tests/test_curation_orphans.py`'s `_Conn` only had `fetchall`. Both now
+  return `(0,)` — deliberately not real rows, since the class grain's own output is tested against a real database
+  in `tests/test_class_grain_detectors.py` and those two files exist to pin *rendering*.
+- **Two of the 39 new tests were written, observed PASSING, and kept anyway — and two others were rewritten
+  because they passed for the wrong reason.** `test_an_unknown_severity_is_still_refused` and
+  `test_both_rows_still_appear` are characterisation guards over behaviour the round must NOT change, and say so.
+  But `test_one_class_named_by_both_grains_raises_ONE_question` and `test_a_ruled_class_grain_root_leaves_the_gate`
+  originally asserted only "one row" and "zero rows" — **both true before the widening existed**, so neither could
+  fail. Fixed by asserting `ci_rule_count = 2` (only the widened view counts both grains) and by asserting the row
+  is PRESENT before the policy decision retires it. That is issues 74/66/76's shape caught inside one round rather
+  than four rounds later.
+- **`_UNRESOLVED_COLUMNS` being ONE list is what made #90's Python a one-line change.** The tuple drives both the
+  `SELECT` and the `UnresolvedTarget` construction, so adding `subject_class` there was the whole edit. Its
+  `ORDER BY` gained the column too: on the class arm `subject_moiety` is NULL for **every** row, so the first sort
+  key stops discriminating there and two class rules sharing an object and an axis would tie on all four original
+  columns — the same flake that ORDER BY was widened once before to prevent.
+- **`UnresolvedTarget`'s docstring predicted this exact migration** ("a third UNION arm in a later migration would
+  then make `drugref status` refuse a legitimate row") and is why nothing had to change beyond a field: the
+  discrimination was deliberately never enforced in a `__post_init__`.
+- **Editing `db/035` after applying it to `drugref_db035` invalidated that database's ledger checksum** — issue
+  91's exact failure, reached deliberately, on an UNMERGED branch where editing is the documented exception. The
+  fix is the documented one and it is cheap: drop and re-create from `TEMPLATE drugref_db034`, then `drugref
+  migrate`. **Do that after the last edit to a migration file, never before.**
+
+## The PR #107 review round (2026-08-14) — `db/036`, `cli_status.py`, suite 1451 → 1465
+
+Five specialist reviewers over `db/035`'s diff. The migration's factual density held up — every measured
+figure, every prior-migration attribution and the whole `severity_kind` / `ForeignKeyViolation` chain verified
+clean — and the defects clustered in the layer the migration was *not* about: the Python that reads it.
+
+**⇒ THE STANDING RULE THIS ROUND BOUGHT, and it is the one to carry forward: A MIGRATION THAT WIDENS A VIEW A
+GUARDED BLOCK READS MUST WIDEN THAT BLOCK'S EXCEPTION TUPLE IN THE SAME COMMIT.** `db/035` added
+`subject_class` to `curated_target_unresolved`, and `curation.unresolved_targets` selects it by name — so on a
+database that HAS the view but predates `db/035` the failure is **`UndefinedColumn`, not `UndefinedTable`**, and
+those are *siblings* under `ProgrammingError`, not subclasses (`issubclass(...)` is `False`). The guard written
+for exactly this moment did not fire. **Reproduced on `drugref_db034`:** `drugref status` — the first command an
+operator runs after pulling — exited 1 with a raw psycopg traceback *after two blocks of real answers*, which is
+verbatim the failure mode `cli.py:249`'s own comment exists to prevent. Now exit **2** with one sentence.
+
+**The other four, and what each cost:**
+
+- **`drugref status` printed `None` for every class-grain orphan.** `subject_moiety` is NULL on that arm by
+  construction, and the renderer read only that column — so issue #90's detector reported *that* a judgement was
+  orphaned without saying *which*, and two class rules sharing an object and an axis rendered identically. Fixed
+  with an `UnresolvedTarget.subject` property (no arm labels, so a fourth arm needs no change) rather than a
+  branch at the call site. **The dataclass docstring's "nothing here had to change except a field" is what made
+  it invisible** — the open-to-extension argument is sound for the *discriminator* and was silently extended to
+  cover a structural XOR that does not need arm labels to state.
+- **The class-grain block had no guard at all**, justified by "any database this code can reach has migrated to
+  at least db/029". True premise, invalid conclusion — db/029 does not imply db/035. Fixing only the block above
+  would have moved the traceback thirty lines down.
+- **Frozen signing field-list ORDER was unpinned.** `test_signing_payload_coverage` compares **sets**, and the
+  committed vectors carry their `fields` as literals that never consult `signing.FIELD_LISTS`. **Measured:
+  permuting `CURATED_CLASS_INTERACTION_V1`'s first two entries — which changes the signed bytes for every
+  class-grain row — passed all 249 signing/release/class-grain tests.** Publish and verify read the same tuple,
+  so a permutation is self-consistent and breaks only signatures recorded BEFORE it, in production, as
+  `BAD_SIGNATURE`, with nothing naming the cause. Now pinned against the fixture, and
+  `curated_class_interaction/v1` finally has a vector case (it was the only registered context without one).
+- **Three docstrings still said `CheckViolation` after the five CHECKs became foreign keys** — including
+  `cli_curate.py`'s module docstring, which pointed the reader at the handler docstring *this same PR* had
+  updated to say the opposite. One file, two homes, disagreeing.
+
+**`cli.py` breached CLAUDE.md rule 4 (500 lines) and the fix was a module, not a diet.** Shaving comments to fit
+sets rule 4 against rule 3, and the comments that would go are the ones recording why the guard exists — the
+knowledge this round already lost once. The read moved to `curation.class_grain_counts` (curated SQL belongs
+where the `pg_rewrite` sweep can see it) and the voice to **`cli_status.py`**, the sixth `cli_*` module.
+`cli.py` 483 → **450**. `cli_status` joins `test_the_cli_embeds_no_sql_against_a_curated_table` from its first
+commit rather than from the round somebody notices, which is how `cli_curate` came to be added late.
+
+**`db/036` is three `COMMENT ON` statements and no schema change.** Catalog comments ship in `pg_description` —
+they are what `\d+` prints, so they are the authoritative answer for a DBA on a running node with no checkout,
+and `db/035` is applied and immutable. Corrected: the frozen `gap_key` was documented as `AXIS:` when the value
+is **`CI_AXIS:`** (anyone reconstructing `question_uuid = uuid5(gap_kind, gap_key)` from `\d+` computed a
+different, silently unmatched uuid); `max_pair_count` claimed to be "exact about ZERO" when the read path's
+self-pair exclusion makes a one-member self-pair rule read **1** and reach **0**; and
+`curated_grain_disagreement` enumerated one deliberate omission when it has two.
+
+**Five issues filed rather than fixed** — [#108](https://github.com/cairn-ehr/drugref/issues/108) make
+`max_pair_count` exact (it currently both queues a pointless curator question *and* hides the dead rule from the
+operator — #36's mistake and db/035's own target failure, at once) ·
+[#109](https://github.com/cairn-ehr/drugref/issues/109) `curated_grain_disagreement` misses mirror-oriented rule
+pairs (these rows are directional per db/006; the read path stays safe, the worklist under-reports) ·
+[#110](https://github.com/cairn-ehr/drugref/issues/110) the #97 precedence is stated in prose and applied by no
+view — nothing in `src/` reads `severity_rank`, so no test can regress it — plus `ORDER BY ... ASC` sorting
+NULLs last, which inverts the harm direction in the one path documented as safe ·
+[#111](https://github.com/cairn-ehr/drugref/issues/111) the block's bare zeros carry no denominator, so
+"healthy" and "a rebuild emptied the tier" render identically ·
+[#112](https://github.com/cairn-ehr/drugref/issues/112) measure the disagreement self-join before class-grain
+content ships (db/024's 59 s → 465 ms precedent: "a synthetic probe looked fine because its fixture had no
+edges").
+
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
 Both sources were licence-checked during 5c.2 and recorded as "worth evaluating". They have now been retrieved
@@ -1751,12 +1974,12 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1409 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1451 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, and then 1395 while it was at 1409, every time because
 # the round that added the tests updated its OWN section and not this line. THE THIRD
 # OCCURRENCE IS WHY THIS COMMENT IS NOT ENOUGH ON ITS OWN: a slice section may record a
-# suite delta, but it must ALSO land here -- verified green on 2026-08-13 at 1409
-# passed in 38 s;
+# suite delta, but it must ALSO land here -- verified green on 2026-08-14 at 1451
+# passed in 39 s (db/035, the class-grain detector round: 1409 + 42);
 # because it was updated by whoever remembered rather than by whoever changed it; if you
 # add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
@@ -1816,10 +2039,22 @@ ran in CI and `ruff` was not even a project dependency.
   kinds 8–11; `023` the review round; `024` the hoisted DAG walk) · **`025` `ingest_run.writer` + `loaded_release` +
   `ingest_run_incomplete`** · **`026` the fourth `reason` (`contraindication_class`) + `gap_unmatched_ingredient`'s explicit
   tie-break** · **`027` the expansion policy on the overlay floor** (surrogate `policy_id`, `withdrawn`,
-  `class_expansion_policy_current` and its four readers re-issued). **Read the LATEST file that touches an object for its
+  `class_expansion_policy_current` and its four readers re-issued) · **`028` the composition tree** (Slice 3, +
+  gap kind 12) · **`029` the curated overlay** (5c.1: `curated_interaction`, `curated_condition`,
+  `curated_ddi_pair`, `curated_condition_ruling`, two gap views + `curated_target_unresolved`, gap kinds 13–14) ·
+  **`030` signing** (5c.4: six tables, `curated_signature_status`, `signature_backdated`, and
+  `signature_status` appended to both 5c.1 read views) · **`031`–`034` the ONC floor** (5c.2: the `ONCHIGH` source
+  and `CI_EPC` axis + gap kind 15; the class × class candidate and overlay tables; both grains in one
+  `curated_ddi_pair`; then the hot-path recovery that gave the class grain its own `ci_class_pair_subtree`) ·
+  **`035` the class grain's detectors** (`severity_kind` + five CHECK→FK conversions, `class_pair_rule_reach`,
+  `gap_uncurated_class_interaction_rule` + gap kind 16, `gap_unreviewed_expansion_root` widened to both grains,
+  `curated_target_unresolved`'s third arm, `curated_ddi_pair.severity_rank`, `curated_grain_disagreement`,
+  `curated_class_interaction` as a `signature_target_kind`). **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
-  `gap_unmatched_ingredient` by 018's, and 018's by 026's.
+  `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
+  035's, 029's `curated_target_unresolved` by 035's, and 012's/027's `gap_unreviewed_expansion_root` by 035's; the
+  five severity CHECKs in 020/029/032 are 035's foreign keys.
 - **Migrations are immutable once applied — and immutability starts at MERGE.** `apply_migrations` records each file's
   checksum and raises if an applied file changed, so altering a MERGED migration (*including* re-issuing a `COMMENT ON`) means
   a new `db/NNN_*.sql`. One still on an unmerged branch may be edited — the ledger binds a *database*, not the repo — as
@@ -1853,9 +2088,17 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
-  `drugref_db034`** — built 2026-08-13 from the real releases against the merged migrations, with a **clean
-  ledger** (34 rows, no drift), because `drugref_5c4`'s could no longer take a migration (issue 91). Named for
-  its migration head so the claim is checkable: `SELECT max(filename) FROM drugref.schema_migration` → `034`.
+  `drugref_db036`** — `drugref_db035` plus `db/036` (the PR #107 review round's catalog-comment corrections,
+  three `COMMENT ON` statements and no schema change) applied through the documented
+  `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which is that workflow re-tested rather than assumed
+  for the third round running. `drugref_db035` was itself `drugref_db034` (built 2026-08-13 from the real
+  releases against the merged migrations, clean ledger, issue 91's answer) plus `db/035`. **`drugref_db034` is
+  KEPT, as the before/after control** the db/035 hot-path measurement was taken against — the same discipline
+  that keeps `drugref_5c4`, and the database that reproduced the db/035 `status` regression (§ "The PR #107
+  review round"). Named for its migration head so the claim is checkable:
+  `SELECT max(filename) FROM drugref.schema_migration` → `036`, ledger **36 rows**. **Every count below is
+  unchanged from `drugref_db034`** — `db/035` adds detectors and no content, `db/036` adds no SQL object at
+  all, and all four of db/035's new class-grain objects read 0 (§ "The class-grain detector round").
   It reproduced **every** count and ingest summary in § "Slice 5c.1" **at the end of the chain**, and every
   projection figure in § "Slice 5c.2": chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
   keys, no signatures, no published release, no exercise rows, which is also why it re-verifies **nothing from

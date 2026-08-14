@@ -312,11 +312,20 @@ def test_applies_has_no_default(conn, ingest_run_id):
 
 
 def test_the_severity_vocabulary_lives_in_the_database(conn, ingest_run_id):
-    """A severity outside Plan C's four levels must be refused by the CHECK, not
-    by a Python list nobody keeps in step with it."""
+    """A severity outside Plan C's four levels must be refused by the DATABASE, not
+    by a Python list nobody keeps in step with it.
+
+    A FOREIGN KEY SINCE db/035, not a CHECK, and the exception class is the whole
+    observable difference -- exactly as the `relationship` test below already argues
+    one column over. The four levels were five identical CHECKs (db/020 x2, db/029 x2,
+    db/032); #97 needed an ORDER over them as well as a vocabulary, an order has to
+    live in a table, and a vocabulary in a table plus a CHECK restating it is db/006's
+    finding for the fifth time. Asserting ForeignKeyViolation is what proves the key is
+    live rather than a stale CHECK still doing the work.
+    """
     subject, obj = _two_classes(conn, ingest_run_id)
     with pytest.raises(
-        psycopg.errors.CheckViolation, match="curated_class_interaction_severity"
+        psycopg.errors.ForeignKeyViolation, match="curated_class_interaction_severity"
     ):
         _assert_class_interaction(conn, subject, obj, severity="catastrophic")
 

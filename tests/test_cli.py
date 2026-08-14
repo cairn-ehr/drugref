@@ -101,6 +101,10 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
         def fetchall(self):
             return []
 
+        def fetchone(self):
+            # db/035's class-grain block reads scalar counts rather than row lists.
+            return (0,)
+
     assert cli._handle_status(_EmptyConn(), None) == 0
     out = capsys.readouterr().out
     assert "loaded releases: none" in out
@@ -108,6 +112,13 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     # The fourth block (review I7) says "none" in the same voice as the other three --
     # a bare header would read as truncated output on a fresh database.
     assert "backdated signatures: none" in out
+    # The fifth block (db/035) reports COUNTS rather than "none", because zero is the
+    # informative answer for a grain whose whole failure mode is looking healthy: an
+    # operator needs to see that the detector ran and found nothing, and "0" says that
+    # where a bare "none" reads the same whether the grain is empty or unexamined.
+    assert "ungraded class rules: 0" in out
+    assert "class rules reaching no pair: 0" in out
+    assert "cross-grain disagreements: 0" in out
 
 
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):

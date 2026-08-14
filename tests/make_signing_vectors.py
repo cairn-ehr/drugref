@@ -99,6 +99,35 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-08-10T02:16:41.500000Z"],
     ]
+    class_interaction_fields = [
+        # THE CLASS-GRAIN case (db/035). `curated_class_interaction/v1` was registered,
+        # given a frozen field list and a natural key, and published NO vector -- so the
+        # newest context was the one with no byte-level reference and, until the order
+        # test beside this file, no order pin either. Its list is documented as
+        # "CURATED_INTERACTION_V1 with the subject one grain up", which is exactly the
+        # description that invites deriving one from the other; a permutation of its
+        # first two fields was measured to pass the entire signing suite.
+        #
+        # DELIBERATELY A DIFFERENT SHAPE FROM CASE 1, so it is a vector rather than a
+        # transcription: `applies` is true with a populated question_uuid (case 1 has
+        # NULL there), and the subject is a CLASS uuid, which is the one structural
+        # difference between the two contexts.
+        ["subject_class_uuid", "5d8b3e11-4a72-5c96-8f03-1b7e9d2a6c48"],
+        ["object_class_uuid", "e2f60947-8c15-5b3a-9d74-6a0c3e8b1f52"],
+        ["relationship", "CI_MoA"],
+        ["applies", "true"],
+        ["severity", "contraindicated"],
+        ["mechanism", "serotonin syndrome risk across both classes"],
+        ["management", "do not co-prescribe; observe a 14-day washout"],
+        ["evidence_grade", "established"],
+        ["question_uuid", "7b1d5f93-2e48-5a06-8c31-9f4b7d0e2a65"],
+        ["source", "DRUGREF"],
+        ["reviewed_by", "a class-grain curator"],
+        ["reviewed_against", "ONCHigh-2015"],
+        ["reviewed_at", "2026-08-14T01:20:33.750000Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-08-14T01:21:04.250000Z"],
+    ]
     # THE MANIFEST-ENTRY case: the SAME judgement as the first, rebuilt the way an
     # ENTRY's digest is
     # -- the two attestation fields replaced by the entry sentinel pair. An entry attests
@@ -142,6 +171,11 @@ def _cases(fp: str) -> list[dict]:
             "name": "a retiring condition ruling, ungraded",
             "context": "curated_condition/v1",
             "fields": condition_fields,
+        },
+        {
+            "name": "an applying CLASS x CLASS judgement",
+            "context": "curated_class_interaction/v1",
+            "fields": class_interaction_fields,
         },
         {
             "name": "a manifest ENTRY digest over case 1's judgement",

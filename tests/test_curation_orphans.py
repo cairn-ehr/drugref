@@ -22,6 +22,7 @@ the curated overlay. So the read is a function in the module that owns the curat
 write path, exactly as `unresolved_expansion_policy` sits in `interactions.py`, and the
 handler calls it.
 """
+import psycopg
 import pytest
 
 from drugref import curation
@@ -49,11 +50,18 @@ def test_an_orphaned_interaction_judgement_is_returned(conn, a_graded_rule):
         reviewed_against="2026.07.06")
     conn.execute("DELETE FROM drugref.class_contraindication")
 
-    # ALL SIX FIELDS, because UnresolvedTarget is built positionally from the SELECT
-    # (`UnresolvedTarget(*row)`) and the stub-driven CLI tests below cannot see a
+    # ALL SEVEN FIELDS, because the stub-driven CLI tests below cannot see a
     # column-order mistake -- they supply a tuple already in the assumed order. Swapping
     # object_uuid with relationship, or reviewed_by with reviewed_against, would leave
     # every other assertion in this file passing.
+    #
+    # THE RATIONALE USED TO SAY "built positionally from the SELECT
+    # (`UnresolvedTarget(*row)`)". It is not, and has not been since the record started
+    # binding by NAME through `_UNRESOLVED_COLUMNS` -- which is what makes a transposed
+    # SELECT structurally impossible rather than merely tested-for. The assertion still
+    # earns its place (it pins the VALUES, and the view's arms are hand-written SQL
+    # that can still put the wrong column in the right slot); only the reason was
+    # stale, and it was stale in a comment db/035 edited without re-reading.
     assert curation.unresolved_targets(conn) == [
         curation.UnresolvedTarget(
             target_table="curated_interaction",
@@ -61,7 +69,10 @@ def test_an_orphaned_interaction_judgement_is_returned(conn, a_graded_rule):
             object_uuid=a_graded_rule["class"],
             relationship="CI_MoA",
             reviewed_by="test",
-            reviewed_against="2026.07.06")]
+            reviewed_against="2026.07.06",
+            # NULL on this arm: db/035's third arm carries the CLASS grain's subject
+            # here and leaves subject_moiety NULL, and the two must not be confused.
+            subject_class=None)]
 
 
 def test_a_rekeyed_candidate_orphans_the_judgement(conn, a_graded_rule):
@@ -104,7 +115,8 @@ def test_an_orphaned_condition_ruling_is_returned(conn, a_contradicted_pair):
         "one surviving candidate table still resolves the ruling")
 
     conn.execute("DELETE FROM drugref.moiety_condition_indication")
-    # ALL SIX FIELDS on THIS arm too, for the reason given on the interaction test
+    # ALL SEVEN FIELDS on THIS arm too, for the reason given on the interaction test
+    # above (including what that comment says about its own stale rationale).
     # above. The two arms of a UNION ALL are two independent column lists, and pinning
     # only one leaves the other free to transpose: swapping reviewed_by with
     # reviewed_against in the second arm alone survived the whole suite while the first
@@ -116,7 +128,8 @@ def test_an_orphaned_condition_ruling_is_returned(conn, a_contradicted_pair):
             object_uuid=a_contradicted_pair["condition"],
             relationship=None,
             reviewed_by="test",
-            reviewed_against="2026.07.06")], (
+            reviewed_against="2026.07.06",
+            subject_class=None)], (
         "a condition ruling is keyed on the PAIR and carries no relationship")
 
 
@@ -164,17 +177,37 @@ class _Conn:
     thin enough that a stub is a truer test of its OUTPUT than a live database would be.
     """
 
-    def __init__(self, orphans=()):
+    def __init__(self, orphans=(), raises=None):
         self._orphans = list(orphans)
+        # {sql fragment: exception} -- an UNDER-MIGRATED database, which is the one
+        # state a stub models better than a real one. Building a db/034 database to
+        # test a db/035 guard would mean a second migration ledger in the fixtures;
+        # the guard's whole job is turning one psycopg class into one sentence, and
+        # that is exactly what a raising stub exercises.
+        self._raises = dict(raises or {})
 
     def execute(self, sql, params=None):
         self._last = sql
+        for fragment, exc in self._raises.items():
+            if fragment in sql:
+                raise exc
         return self
 
     def fetchall(self):
         if "curated_target_unresolved" in self._last:
             return self._orphans
         return []
+
+    def fetchone(self):
+        """Zero, for every scalar count `_handle_status` asks for.
+
+        db/035's class-grain block reads three counts this way. A stub that returned
+        rows here would be asserting the class grain's OWN output, which
+        tests/test_class_grain_detectors.py does against a real database -- these
+        tests exist to pin the ORPHAN block's rendering, and a stub is a truer test of
+        that than a live database only while it stays a stub.
+        """
+        return (0,)
 
 
 def test_status_reports_no_orphans_on_a_healthy_database(capsys):
@@ -202,7 +235,8 @@ def test_status_reports_an_orphan_loudly(capsys):
     from drugref import cli
 
     row = ("curated_interaction", "11111111-1111-5111-8111-111111111111",
-           "22222222-2222-5222-8222-222222222222", "CI_MoA", "ahoward", "2026.07.06")
+           "22222222-2222-5222-8222-222222222222", "CI_MoA", "ahoward", "2026.07.06",
+           None)
     assert cli._handle_status(_Conn([row]), None) == 0
     out = capsys.readouterr().out
     assert "unresolved curated targets: 1" in out
@@ -226,7 +260,8 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
     from drugref import cli
 
     row = ("curated_condition", "11111111-1111-5111-8111-111111111111",
-           "33333333-3333-5333-8333-333333333333", None, "ahoward", "2026.07.06")
+           "33333333-3333-5333-8333-333333333333", None, "ahoward", "2026.07.06",
+           None)
     assert cli._handle_status(_Conn([row]), None) == 0
     out = capsys.readouterr().out
     assert ("curated_condition 11111111-1111-5111-8111-111111111111 -> "
@@ -235,9 +270,95 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
     assert "None" not in out and "[]" not in out
 
 
+def test_status_renders_a_class_grain_orphans_OWN_subject(capsys):
+    """THE THIRD ARM'S DETAIL LINE, and the half of issue #90 that db/035 left open.
+
+    `subject_moiety` is NULL for EVERY row of the class-grain arm (db/035's third arm
+    hardcodes the literal), so a renderer reading only that column prints the string
+    "None" where the rule's subject belongs -- and since two class rules can share an
+    object and an axis, three DISTINCT orphaned rules render as three identical lines.
+    The operator is told a judgement is orphaned and not which one, which is the same
+    "reported to nobody" the whole migration is named for, one layer further out.
+
+    THE TWO SIBLING TESTS ABOVE COULD NOT CATCH THIS: both pass `subject_class=None`,
+    so the fallback branch never executed. `test_the_status_reader_carries_the_class
+    _subject` (tests/test_class_grain_detectors.py) asserts the READER carries the
+    column and stops there -- its own docstring, "a third arm the reader does not
+    project is a detector that still reports nothing", applies one layer past where it
+    checks.
+
+    ASSERTS THE ABSENCE OF "None" AS WELL AS THE PRESENCE OF THE UUID, because
+    printing both columns would satisfy a presence-only assertion while still putting
+    a literal "None" in an operator's face.
+    """
+    from drugref import cli
+
+    row = ("curated_class_interaction", None,
+           "22222222-2222-5222-8222-222222222222", "CI_MoA", "ahoward", "2026.07.06",
+           "44444444-4444-5444-8444-444444444444")
+    assert cli._handle_status(_Conn([row]), None) == 0
+    out = capsys.readouterr().out
+    assert ("curated_class_interaction 44444444-4444-5444-8444-444444444444 -> "
+            "22222222-2222-5222-8222-222222222222 [CI_MoA] reviewed by ahoward "
+            "against 2026.07.06") in " ".join(out.split())
+    assert "None" not in out
+
+
+def test_a_database_predating_db035_names_the_migration_rather_than_tracebacking(
+        capsys):
+    """THE GUARD'S SIBLING FAILURE, and db/035 walked straight into it.
+
+    The guard beside this catches `UndefinedTable` -- correct for db/029, when the
+    whole VIEW was what a stale database lacked. db/035 widened the SELECT with
+    `subject_class`, so a database that HAS the view but predates db/035 fails with
+    `UndefinedColumn` instead, which is a sibling of `UndefinedTable` under
+    `ProgrammingError` and NOT a subclass: the guard does not fire, and `main` catches
+    only RuntimeError/ChainError/NoLiveDecisionError, so psycopg's traceback reaches
+    the operator after two blocks of real answers.
+
+    That state is not exotic -- it is EVERY existing deployment between pulling this
+    code and running `drugref migrate`, and `drugref status` is the command an operator
+    runs first. THE STANDING RULE THIS TEST WRITES DOWN: a migration that widens a view
+    a guarded block reads must widen that block's exception tuple in the same commit.
+    """
+    from drugref import cli
+
+    conn = _Conn(raises={"curated_target_unresolved": psycopg.errors.UndefinedColumn(
+        'column "subject_class" does not exist')})
+    with pytest.raises(RuntimeError, match="drugref migrate"):
+        cli._handle_status(conn, None)
+
+
+def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsys):
+    """THE FIFTH BLOCK NEEDS THE GUARD ITS OWN DOCSTRING DECLINED.
+
+    That docstring argued no guard was needed because "any database this code can
+    reach at all has run migrations to at least db/029, so a missing db/035 view here
+    would be a genuinely mis-shaped schema". Reaching db/029 does not imply reaching
+    db/035: a database at db/029-db/034 clears both guards above and then finds none of
+    this block's three views. That is not a mis-shaped schema, it is the ordinary
+    upgrade path -- so the reasoning that earned blocks three and four their guards
+    applies here unchanged, and fixing only the block above would move the traceback
+    thirty lines down rather than removing it.
+    """
+    from drugref import cli
+
+    conn = _Conn(raises={
+        "gap_uncurated_class_interaction_rule": psycopg.errors.UndefinedTable(
+            'relation "drugref.gap_uncurated_class_interaction_rule" does not exist')})
+    with pytest.raises(RuntimeError, match="drugref migrate"):
+        cli._handle_status(conn, None)
+
+
 @pytest.mark.parametrize(
     "module",
-    ["cli", "cli_policy", "cli_signing", "cli_signing_release", "cli_curate"])
+    # `cli_status` joins the list the round it is created (db/035's class-grain block,
+    # split out of cli.py for rule 4). It is the newest module whose whole job is
+    # REPORTING on the curated overlay, which is precisely the shape that tempts an
+    # embedded SELECT -- so it is covered from its first commit rather than from the
+    # round somebody notices, which is how cli_curate came to be added late.
+    ["cli", "cli_policy", "cli_signing", "cli_signing_release", "cli_curate",
+     "cli_status"])
 @pytest.mark.parametrize("table", [
     "curated_interaction", "curated_condition",
     # THE FOUR SLICE-5C.4 TABLES, added the round cli_signing.py/

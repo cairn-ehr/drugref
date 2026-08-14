@@ -371,9 +371,25 @@ RELEASE_MANIFEST_V1 = (
     "release_tag", "published_by", "published_at", "entry_count", "upstream_count",
     *ATTESTATION_FIELDS)
 
+# db/035 (issue #98), the class x class grain. SAME COLUMNS AS CURATED_INTERACTION_V1
+# with the subject one grain up -- `subject_class_uuid` where that one has
+# `subject_moiety_uuid` -- because db/032 mirrored curated_interaction column for
+# column, deliberately, and the only structural difference is what the subject IS.
+#
+# NOT AN ALIAS OF CURATED_INTERACTION_V1, though the tuples differ by one string. Each
+# context's list is frozen INDEPENDENTLY: sharing the object would mean a future /v2 on
+# one table silently re-keying the other's payloads, and these are two tables whose
+# schemas are free to diverge.
+CURATED_CLASS_INTERACTION_V1 = (
+    "subject_class_uuid", "object_class_uuid", "relationship", "applies",
+    "severity", "mechanism", "management", "evidence_grade", "question_uuid",
+    "source", "reviewed_by", "reviewed_against", "reviewed_at",
+    *ATTESTATION_FIELDS)
+
 FIELD_LISTS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1,
     "curated_condition/v1": CURATED_CONDITION_V1,
+    "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1,
     "release_manifest/v1": RELEASE_MANIFEST_V1,
 }
 
@@ -413,9 +429,16 @@ CURATED_INTERACTION_V1_KEY = (
 
 CURATED_CONDITION_V1_KEY = ("subject_moiety_uuid", "object_condition_uuid")
 
+# db/035. THE SAME THREE-COLUMN SHAPE as CURATED_INTERACTION_V1_KEY, one grain up, and
+# it must render all three: two of the three would fold every AXIS of one class pair
+# onto a single manifest entry, and `natural_key` is what verification PAIRS on.
+CURATED_CLASS_INTERACTION_V1_KEY = (
+    "subject_class_uuid", "object_class_uuid", "relationship")
+
 NATURAL_KEY_COLUMNS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1_KEY,
     "curated_condition/v1": CURATED_CONDITION_V1_KEY,
+    "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1_KEY,
 }
 
 

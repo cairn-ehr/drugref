@@ -30,8 +30,10 @@ illegal value reach the orchestrator's INSERT, where the real constraint lives.
 THE ONE DELIBERATE EXCEPTION IS `axis`. Unlike severity/evidence_grade, an
 axis selects which downstream table gets written and how it is joined
 (ci_axis maps CI_MoA -> has_MoA, CI_PE -> has_PE, CI_EPC -> has_EPC; db/031
-section 3). A bad severity fails one row's CHECK constraint inside the
-orchestrator's transaction and rolls back cleanly. A bad axis, left
+section 3). A bad severity fails one row's own constraint inside the
+orchestrator's transaction and rolls back cleanly -- a CHECK before db/035, a
+foreign key into `drugref.severity_kind` since, and the argument here never
+depended on which. A bad axis, left
 unchecked, would let onchigh_run.py successfully write every EARLIER entry in
 the file, then fail on the constraint for THIS entry midway through the
 run -- an ingest that is neither fully applied nor fully absent, with no
@@ -216,7 +218,8 @@ def _optional_str(block: dict, key: str, entry_id: str | None = None) -> str | N
     an easy slip given every real value in the shipped list is a `\"\"\"` block
     -- read as "absent", so the field silently vanished. That is invisible for
     `mechanism` and `management` specifically: nothing downstream requires
-    them (no CHECK, no completeness rule, unlike severity/evidence_grade), so
+    them (no constraint of their own, no completeness rule, unlike
+    severity/evidence_grade), so
     the entry parsed, the judgement was written, and `curate onchigh` exited 0
     having dropped the instruction a prescriber actually acts on. This module
     exists to refuse malformed shapes, and a wrong type is a malformed shape.
