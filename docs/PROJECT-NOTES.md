@@ -1668,6 +1668,73 @@ the detector are one decision, not two.
   fix is the documented one and it is cheap: drop and re-create from `TEMPLATE drugref_db034`, then `drugref
   migrate`. **Do that after the last edit to a migration file, never before.**
 
+## The PR #107 review round (2026-08-14) — `db/036`, `cli_status.py`, suite 1451 → 1465
+
+Five specialist reviewers over `db/035`'s diff. The migration's factual density held up — every measured
+figure, every prior-migration attribution and the whole `severity_kind` / `ForeignKeyViolation` chain verified
+clean — and the defects clustered in the layer the migration was *not* about: the Python that reads it.
+
+**⇒ THE STANDING RULE THIS ROUND BOUGHT, and it is the one to carry forward: A MIGRATION THAT WIDENS A VIEW A
+GUARDED BLOCK READS MUST WIDEN THAT BLOCK'S EXCEPTION TUPLE IN THE SAME COMMIT.** `db/035` added
+`subject_class` to `curated_target_unresolved`, and `curation.unresolved_targets` selects it by name — so on a
+database that HAS the view but predates `db/035` the failure is **`UndefinedColumn`, not `UndefinedTable`**, and
+those are *siblings* under `ProgrammingError`, not subclasses (`issubclass(...)` is `False`). The guard written
+for exactly this moment did not fire. **Reproduced on `drugref_db034`:** `drugref status` — the first command an
+operator runs after pulling — exited 1 with a raw psycopg traceback *after two blocks of real answers*, which is
+verbatim the failure mode `cli.py:249`'s own comment exists to prevent. Now exit **2** with one sentence.
+
+**The other four, and what each cost:**
+
+- **`drugref status` printed `None` for every class-grain orphan.** `subject_moiety` is NULL on that arm by
+  construction, and the renderer read only that column — so issue #90's detector reported *that* a judgement was
+  orphaned without saying *which*, and two class rules sharing an object and an axis rendered identically. Fixed
+  with an `UnresolvedTarget.subject` property (no arm labels, so a fourth arm needs no change) rather than a
+  branch at the call site. **The dataclass docstring's "nothing here had to change except a field" is what made
+  it invisible** — the open-to-extension argument is sound for the *discriminator* and was silently extended to
+  cover a structural XOR that does not need arm labels to state.
+- **The class-grain block had no guard at all**, justified by "any database this code can reach has migrated to
+  at least db/029". True premise, invalid conclusion — db/029 does not imply db/035. Fixing only the block above
+  would have moved the traceback thirty lines down.
+- **Frozen signing field-list ORDER was unpinned.** `test_signing_payload_coverage` compares **sets**, and the
+  committed vectors carry their `fields` as literals that never consult `signing.FIELD_LISTS`. **Measured:
+  permuting `CURATED_CLASS_INTERACTION_V1`'s first two entries — which changes the signed bytes for every
+  class-grain row — passed all 249 signing/release/class-grain tests.** Publish and verify read the same tuple,
+  so a permutation is self-consistent and breaks only signatures recorded BEFORE it, in production, as
+  `BAD_SIGNATURE`, with nothing naming the cause. Now pinned against the fixture, and
+  `curated_class_interaction/v1` finally has a vector case (it was the only registered context without one).
+- **Three docstrings still said `CheckViolation` after the five CHECKs became foreign keys** — including
+  `cli_curate.py`'s module docstring, which pointed the reader at the handler docstring *this same PR* had
+  updated to say the opposite. One file, two homes, disagreeing.
+
+**`cli.py` breached CLAUDE.md rule 4 (500 lines) and the fix was a module, not a diet.** Shaving comments to fit
+sets rule 4 against rule 3, and the comments that would go are the ones recording why the guard exists — the
+knowledge this round already lost once. The read moved to `curation.class_grain_counts` (curated SQL belongs
+where the `pg_rewrite` sweep can see it) and the voice to **`cli_status.py`**, the sixth `cli_*` module.
+`cli.py` 483 → **450**. `cli_status` joins `test_the_cli_embeds_no_sql_against_a_curated_table` from its first
+commit rather than from the round somebody notices, which is how `cli_curate` came to be added late.
+
+**`db/036` is three `COMMENT ON` statements and no schema change.** Catalog comments ship in `pg_description` —
+they are what `\d+` prints, so they are the authoritative answer for a DBA on a running node with no checkout,
+and `db/035` is applied and immutable. Corrected: the frozen `gap_key` was documented as `AXIS:` when the value
+is **`CI_AXIS:`** (anyone reconstructing `question_uuid = uuid5(gap_kind, gap_key)` from `\d+` computed a
+different, silently unmatched uuid); `max_pair_count` claimed to be "exact about ZERO" when the read path's
+self-pair exclusion makes a one-member self-pair rule read **1** and reach **0**; and
+`curated_grain_disagreement` enumerated one deliberate omission when it has two.
+
+**Five issues filed rather than fixed** — [#108](https://github.com/cairn-ehr/drugref/issues/108) make
+`max_pair_count` exact (it currently both queues a pointless curator question *and* hides the dead rule from the
+operator — #36's mistake and db/035's own target failure, at once) ·
+[#109](https://github.com/cairn-ehr/drugref/issues/109) `curated_grain_disagreement` misses mirror-oriented rule
+pairs (these rows are directional per db/006; the read path stays safe, the worklist under-reports) ·
+[#110](https://github.com/cairn-ehr/drugref/issues/110) the #97 precedence is stated in prose and applied by no
+view — nothing in `src/` reads `severity_rank`, so no test can regress it — plus `ORDER BY ... ASC` sorting
+NULLs last, which inverts the harm direction in the one path documented as safe ·
+[#111](https://github.com/cairn-ehr/drugref/issues/111) the block's bare zeros carry no denominator, so
+"healthy" and "a rebuild emptied the tier" render identically ·
+[#112](https://github.com/cairn-ehr/drugref/issues/112) measure the disagreement self-join before class-grain
+content ships (db/024's 59 s → 465 ms precedent: "a synthetic probe looked fine because its fixture had no
+edges").
+
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
 Both sources were licence-checked during 5c.2 and recorded as "worth evaluating". They have now been retrieved
@@ -2021,14 +2088,17 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
-  `drugref_db035`** — `drugref_db034` (built 2026-08-13 from the real releases against the merged migrations,
-  clean ledger, issue 91's answer) plus `db/035` applied through the documented `CREATE DATABASE ... TEMPLATE` +
-  `drugref migrate` path, which is that workflow re-tested rather than assumed. **`drugref_db034` is KEPT, as the
-  before/after control** the db/035 hot-path measurement was taken against — the same discipline that keeps
-  `drugref_5c4`. Named for its migration head so the claim is checkable:
-  `SELECT max(filename) FROM drugref.schema_migration` → `035`, ledger **35 rows**. **Every count below is
-  unchanged from `drugref_db034`** — `db/035` adds detectors and no content, and all four of its new class-grain
-  objects read 0 (§ "The class-grain detector round").
+  `drugref_db036`** — `drugref_db035` plus `db/036` (the PR #107 review round's catalog-comment corrections,
+  three `COMMENT ON` statements and no schema change) applied through the documented
+  `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which is that workflow re-tested rather than assumed
+  for the third round running. `drugref_db035` was itself `drugref_db034` (built 2026-08-13 from the real
+  releases against the merged migrations, clean ledger, issue 91's answer) plus `db/035`. **`drugref_db034` is
+  KEPT, as the before/after control** the db/035 hot-path measurement was taken against — the same discipline
+  that keeps `drugref_5c4`, and the database that reproduced the db/035 `status` regression (§ "The PR #107
+  review round"). Named for its migration head so the claim is checkable:
+  `SELECT max(filename) FROM drugref.schema_migration` → `036`, ledger **36 rows**. **Every count below is
+  unchanged from `drugref_db034`** — `db/035` adds detectors and no content, `db/036` adds no SQL object at
+  all, and all four of db/035's new class-grain objects read 0 (§ "The class-grain detector round").
   It reproduced **every** count and ingest summary in § "Slice 5c.1" **at the end of the chain**, and every
   projection figure in § "Slice 5c.2": chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
   keys, no signatures, no published release, no exercise rows, which is also why it re-verifies **nothing from

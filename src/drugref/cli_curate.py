@@ -45,13 +45,16 @@ protect. See `curation.live_interaction_judgement`'s own docstring for the same 
 stated from the read side.
 
 NO VOCABULARY IS RESTATED IN PYTHON. `severity`, `evidence_grade` and `relationship`
-(the CI axis) are `db/029` CHECK constraints and a foreign key into `ci_axis` --
-exactly the shape `onchigh.py`'s own docstring already refuses to duplicate for the
-candidate tier, for db/006's reason: a Python allow-list and a database constraint are
-two lists that drift the moment one of them is widened. An illegal value reaches
-`curation.record_interaction_judgement`'s INSERT and raises `psycopg.errors.
-CheckViolation` there, unmodified and uncaught -- see `_handle_curate_onchigh` below
-for why the CLI layer does not catch it either.
+(the CI axis) are database constraints -- since db/035, `severity` is a foreign key
+into `drugref.severity_kind` and `relationship` one into `ci_axis`, with
+`evidence_grade` still a db/029 CHECK -- exactly the shape `onchigh.py`'s own docstring
+already refuses to duplicate for the candidate tier, for db/006's reason: a Python
+allow-list and a database constraint are two lists that drift the moment one of them is
+widened. An illegal value reaches `curation.record_interaction_judgement`'s INSERT and
+raises there, unmodified and uncaught -- `ForeignKeyViolation` for the two keyed
+columns, `CheckViolation` for `evidence_grade`. WHICH class it is does not change the
+handling anywhere, which is the point: see `_handle_curate_onchigh` below for why the
+CLI layer catches neither.
 """
 import logging
 import pathlib

@@ -655,12 +655,12 @@ def test_status_reports_the_class_grain(conn, ingest_run_id, capsys):
     """Every view above is half a feature. The other half is a consumer -- this
     project has now shipped three detectors with none (`expansion_policy_unresolved`,
     `curated_target_unresolved`, and the class grain's whole set)."""
-    from drugref import cli
+    from drugref import cli_status
 
     _an_ungraded_class_rule(conn, ingest_run_id, subject_members=2, object_members=3)
     _an_ungraded_class_rule(conn, ingest_run_id, subject_code="N0000004000",
                             object_code="N0000004100", object_axis="has_PE")
-    cli._print_class_grain_block(conn)
+    cli_status.print_class_grain_block(conn)
     out = capsys.readouterr().out
     assert "ungraded class rules: 1" in out
     assert "class rules reaching no pair: 1" in out
@@ -675,3 +675,153 @@ def test_an_unknown_uuid_is_not_a_class_grain_row(conn):
         "SELECT count(*) FROM drugref.class_pair_rule_reach "
         "WHERE subject_class_uuid = %s", (uuid.UUID(int=0),)).fetchone() == (0,)
     assert ids.mint_class_uuid("MED-RT", "N0000000401") is not None
+
+
+# ============================================================================
+# 10. the gaps a review round found -- three shapes no test reached
+# ============================================================================
+
+
+def test_a_superseded_CLASS_judgement_is_not_an_orphan(conn, ingest_run_id):
+    """THE THIRD ARM'S LIVENESS FILTER, which shipped with no test at all.
+
+    `test_a_superseded_judgement_is_not_an_orphan` pins this for db/029's two arms and
+    its docstring records why it had to: deleting `WHERE c.superseded_by IS NULL` from
+    both of them "survived the entire suite". db/035 added a third arm with the same
+    clause and no equivalent test -- and deleting the clause from THAT arm survived the
+    suite too, measured by mutation in this round's review.
+
+    The consequence is not cosmetic. The overlay is append-only, so a curator CORRECTING
+    a class ruling leaves its predecessor behind forever; without the filter every
+    correction would raise a permanent phantom orphan, and `drugref status` would report
+    a curator doing their job as a rebuild having broken something.
+
+    THE CANDIDATE IS DELETED FOR THE REASON THE MOIETY TEST GIVES: with it still
+    projected both rows resolve, the empty result is over-determined, and the assertion
+    would hold whether or not the view filtered on anything.
+    """
+    subject_class, object_class, _s, _o = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000005000", object_code="N0000005100",
+        subject_members=[("SUPUNII01", "s")], object_members=[("SUPUNII02", "o")],
+        reviewed_against="2026.07.06")
+    conn.execute("SET CONSTRAINTS ALL DEFERRED")
+    curation.record_class_interaction_judgement(
+        conn, subject_class, object_class, "CI_MoA", True, severity="minor",
+        evidence_grade="probable", reviewed_by="test",
+        reviewed_against="2026.08.01")
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (subject_class,))
+
+    # THE GUARD THAT MAKES THE ASSERTION BELOW DISCRIMINATING, and without it this test
+    # would pass on a fixture that never superseded anything. TWO rows must name the
+    # vanished candidate for "exactly one is live" to be a claim about the filter rather
+    # than about the row count. The schema is rebuilt from the migrations each session,
+    # so the alternative -- mutating the view to watch this fail -- would mean editing
+    # an applied migration, which the ledger forbids; stating the precondition in the
+    # test is how this file gets the same evidence without that.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_class_interaction "
+        "WHERE subject_class_uuid = %s", (subject_class,)).fetchone() == (2,), (
+        "the correction must have SUPERSEDED rather than replaced the predecessor")
+
+    orphans = [o for o in curation.unresolved_targets(conn)
+               if o.subject_class == subject_class]
+    assert len(orphans) == 1, (
+        "both rows name the vanished candidate, but only the LIVE one is an orphan -- "
+        "reporting the superseded predecessor as well would make every correction look "
+        "like breakage")
+    assert orphans[0].reviewed_against == "2026.08.01", (
+        "the row reported must be the CORRECTION, not the predecessor it replaced")
+
+
+def test_one_class_rule_asserted_by_TWO_authorities_counts_once(conn, ingest_run_id):
+    """THE MULTI-SOURCE GRAIN, and nothing in this file reached it.
+
+    `class_pair_contraindication`'s primary key includes `source` and its CHECK admits
+    both MED-RT and ONCHIGH, so one clinical rule asserted by two authorities is TWO
+    candidate rows TODAY -- not hypothetically. Every other fixture here passes a single
+    source, which makes `count(*)` and `count(DISTINCT ...)` coincide and hides three
+    separate defects at once. All three were measured to survive a green suite in this
+    round's review:
+
+      * dropping `source` from the gap view's GROUP BY -- which the migration calls
+        "load-bearing rather than tidy", because two rows on ONE gap_key mint one
+        immortal question_uuid and the second silently overwrites the first's text;
+      * `count(DISTINCT m.partner_moiety)` -> `count(*)` in curated_grain_disagreement;
+      * the `SELECT DISTINCT` in the status block's dead-rule count.
+
+    THIS TEST PINS THE FIRST AND THE THIRD; the second needs a graded pair and is
+    covered by the disagreement tests above. Asserting BOTH the candidate count (2) and
+    the question count (1) is what makes it non-vacuous -- asserting 1 alone would pass
+    on a fixture that never wrote the second source at all.
+    """
+    subject_class, object_class = _an_ungraded_class_rule(
+        conn, ingest_run_id, subject_code="N0000005200", object_code="N0000005300")
+    interactions.add_class_pair_contraindication(
+        conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
+
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_pair_contraindication "
+        "WHERE subject_class_uuid = %s", (subject_class,)).fetchone() == (2,), (
+        "the fixture must actually write two sources, or everything below is vacuous")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule "
+        "WHERE subject_class = %s", (subject_class,)).fetchone() == (1,), (
+        "one clinical rule is ONE question however many authorities assert it -- a "
+        "per-source grain would mint one question_uuid and overwrite its own text")
+
+
+def test_the_status_block_counts_a_two_source_dead_rule_once(conn, ingest_run_id,
+                                                             capsys):
+    """The operator half of the test above, and the reason the status block carries a
+    `SELECT DISTINCT` its own comment has to justify.
+
+    `class_pair_rule_reach` is keyed per source, so a dead rule asserted by two
+    authorities is two rows there. A bare `count(*)` would tell the operator two rules
+    reach nobody when one does -- and the line beside it (`ungraded class rules`) reads
+    off a view that DOES group, so the two numbers would silently disagree about what a
+    rule is.
+    """
+    from drugref import cli_status
+
+    subject_class, object_class = _an_ungraded_class_rule(
+        conn, ingest_run_id, subject_code="N0000005400", object_code="N0000005500",
+        object_axis="has_PE")
+    interactions.add_class_pair_contraindication(
+        conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
+
+    counts = curation.class_grain_counts(conn)
+    assert counts.dead == 1, (
+        f"one dead rule asserted twice is ONE dead rule, got {counts.dead}")
+    cli_status.print_class_grain_block(conn)
+    assert "class rules reaching no pair: 1" in capsys.readouterr().out
+
+
+def test_the_status_block_reports_a_cross_grain_disagreement(conn, ingest_run_id,
+                                                             capsys):
+    """THE THIRD LINE OF THE BLOCK, never once driven non-zero.
+
+    `test_status_reports_the_class_grain` asserts the other two lines and the stub-driven
+    CLI test asserts the zero text, so both the live `curated_grain_disagreement` query
+    and its `**` warning branch were unexercised -- hardcoding `disagreements = 0`
+    survived the whole suite, measured in this round's review.
+
+    THE BANNER IS ASSERTED, not just the count, for the reason the orphan block's own
+    test gives: "loudly" is the requirement, and an earlier version of that test passed
+    with the loudness removed. The wording matters here specifically because it is what
+    tells an operator that consumers take the MORE SEVERE grade -- a disagreement left
+    standing is a broad class rule over-warning where a curator graded one drug milder.
+    """
+    from drugref import cli_status
+
+    _a_pair_graded_by_both_grains(conn, ingest_run_id, moiety_severity="moderate",
+                                  class_severity="contraindicated")
+    counts = curation.class_grain_counts(conn)
+    assert counts.disagreements == 1
+
+    cli_status.print_class_grain_block(conn)
+    out = capsys.readouterr().out
+    assert "cross-grain disagreements: 1" in out
+    assert "MORE SEVERE" in out, (
+        "the count alone does not tell an operator which grade a consumer will take")

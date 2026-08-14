@@ -140,6 +140,75 @@
       "signature": "ac383ba6294a69c915cbac40370d9f7fd4e38c25e1bdd1380b32381ae607824ea1de1d2bc6e84333e3f60232475284445d0c7408d17b8838b646a84cb080f903"
     },
     {
+      "name": "an applying CLASS x CLASS judgement",
+      "context": "curated_class_interaction/v1",
+      "fields": [
+        [
+          "subject_class_uuid",
+          "5d8b3e11-4a72-5c96-8f03-1b7e9d2a6c48"
+        ],
+        [
+          "object_class_uuid",
+          "e2f60947-8c15-5b3a-9d74-6a0c3e8b1f52"
+        ],
+        [
+          "relationship",
+          "CI_MoA"
+        ],
+        [
+          "applies",
+          "true"
+        ],
+        [
+          "severity",
+          "contraindicated"
+        ],
+        [
+          "mechanism",
+          "serotonin syndrome risk across both classes"
+        ],
+        [
+          "management",
+          "do not co-prescribe; observe a 14-day washout"
+        ],
+        [
+          "evidence_grade",
+          "established"
+        ],
+        [
+          "question_uuid",
+          "7b1d5f93-2e48-5a06-8c31-9f4b7d0e2a65"
+        ],
+        [
+          "source",
+          "DRUGREF"
+        ],
+        [
+          "reviewed_by",
+          "a class-grain curator"
+        ],
+        [
+          "reviewed_against",
+          "ONCHigh-2015"
+        ],
+        [
+          "reviewed_at",
+          "2026-08-14T01:20:33.750000Z"
+        ],
+        [
+          "signer_key_fingerprint",
+          "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c"
+        ],
+        [
+          "signed_at",
+          "2026-08-14T01:21:04.250000Z"
+        ]
+      ],
+      "payload": "drugref-sig-v1\ncurated_class_interaction/v1\n15\n18:subject_class_uuid:S:36:5d8b3e11-4a72-5c96-8f03-1b7e9d2a6c48\n17:object_class_uuid:S:36:e2f60947-8c15-5b3a-9d74-6a0c3e8b1f52\n12:relationship:S:6:CI_MoA\n7:applies:S:4:true\n8:severity:S:15:contraindicated\n9:mechanism:S:43:serotonin syndrome risk across both classes\n10:management:S:45:do not co-prescribe; observe a 14-day washout\n14:evidence_grade:S:11:established\n13:question_uuid:S:36:7b1d5f93-2e48-5a06-8c31-9f4b7d0e2a65\n6:source:S:7:DRUGREF\n11:reviewed_by:S:21:a class-grain curator\n16:reviewed_against:S:12:ONCHigh-2015\n11:reviewed_at:S:27:2026-08-14T01:20:33.750000Z\n22:signer_key_fingerprint:S:64:56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\n9:signed_at:S:27:2026-08-14T01:21:04.250000Z\n",
+      "digest": "5dfbbf0bac4d395ceae4c8b2f3e7958ac56f1a941e346062a41a7c2aa7b63c64",
+      "signature": "dbf0cded6f47ee9b0a11f1ef7013f3f0474b7abdd482d4b05f7c1b47a03204d80b479089bc72199f061280b938750a65aa5fac7dbed856ba64726b633ac02b04"
+    },
+    {
       "name": "a manifest ENTRY digest over case 1's judgement",
       "context": "curated_interaction/v1",
       "fields": [

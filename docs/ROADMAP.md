@@ -517,6 +517,42 @@ class-grain content ships (a `gap_key` is frozen forever and zero class-grain ro
 against) · [#106](https://github.com/cairn-ehr/drugref/issues/106) two **moiety**-grain rules on different axes can
 also grade one pair differently, which the cross-grain detector deliberately does not compare.
 
+##### 5c.2b — the PR #107 review round ✅ DONE — `db/036`, `cli_status.py`, 2026-08-14
+Five specialist reviewers over the round above. **The migration held; the Python that reads it did not.** Suite
+**1451 → 1465**. Full account and every measurement: PROJECT-NOTES § "The PR #107 review round".
+
+**⇒ THE SHIP-BLOCKER, reproduced on the `drugref_db034` control: `drugref status` crashed with a raw psycopg
+traceback on every database that had not yet run `drugref migrate`.** `db/035` widened
+`curated_target_unresolved` with `subject_class`, so a stale database fails with `UndefinedColumn` — a *sibling*
+of `UndefinedTable`, not a subclass — and the guard written for exactly that moment did not fire. **The standing
+rule this bought: a migration widening a view a guarded block reads must widen that block's exception tuple in
+the same commit.** Exit 1 + traceback → exit 2 + one sentence.
+
+**Three more of the same shape.** `drugref status` printed the literal `None` where every class-grain orphan's
+subject belongs, so #90's detector said *that* a judgement was orphaned and never *which* — fixed with an
+`UnresolvedTarget.subject` property, arm-label-free. The class-grain block had **no guard at all**, on reasoning
+that did not follow (db/029 does not imply db/035). And **permuting a frozen signing field list passed all 249
+signing tests** — the coverage test compares sets and the committed vectors never consult `FIELD_LISTS`, so a
+reorder would have broken only signatures recorded *before* it, in production, as `BAD_SIGNATURE`. Now pinned,
+and `curated_class_interaction/v1` has the vector case it shipped without.
+
+**`cli.py` hit rule 4's 500-line cap and the answer was a module, not a diet** — shaving comments to fit sets
+rule 4 against rule 3. Read → `curation.class_grain_counts`, voice → **`cli_status.py`** (the sixth `cli_*`
+module). `cli.py` 483 → **450**.
+
+**`db/036` is three `COMMENT ON` statements and no schema change**, because `db/035` is applied and immutable and
+these ship in `pg_description` — what `\d+` prints. The frozen `gap_key` was documented as `AXIS:` where the
+value is **`CI_AXIS:`**; `max_pair_count` claimed to be "exact about zero" when a one-member self-pair rule reads
+1 and reaches 0; `curated_grain_disagreement` named one deliberate omission and has two. Reference database is
+now **`drugref_db036`** (ledger 36), `drugref_db034` still kept as the control.
+
+**Five findings filed rather than fixed** — [#108](https://github.com/cairn-ehr/drugref/issues/108) make
+`max_pair_count` exact · [#109](https://github.com/cairn-ehr/drugref/issues/109) mirror-oriented rule pairs ·
+[#110](https://github.com/cairn-ehr/drugref/issues/110) ship the #97 precedence as a view (nothing in `src/`
+reads `severity_rank`) · [#111](https://github.com/cairn-ehr/drugref/issues/111) the status block's zeros need a
+denominator · [#112](https://github.com/cairn-ehr/drugref/issues/112) measure the disagreement self-join before
+class-grain content ships.
+
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
 brainstorm/design round.** Two candidate sources were licence-checked during 5c.2 and **measured on 2026-08-13,

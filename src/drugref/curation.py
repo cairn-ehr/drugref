@@ -20,10 +20,13 @@ and the single-live check is DEFERRED -- so a mistake surfaces at the caller's C
 not here.
 
 NO VOCABULARY IS RESTATED IN PYTHON. `severity`, `evidence_grade`, `relationship` and
-`ruling` live in db/029's CHECK constraints, which is the one place they can live
-without a second list to drift from the first (db/006's lesson, learned when a CASE in
-a view and a CHECK in a table disagreed silently). An unrecognised value raises
-CheckViolation from the database, and that is the intended behaviour rather than a gap.
+`ruling` live in the database, which is the one place they can live without a second
+list to drift from the first (db/006's lesson, learned when a CASE in a view and a
+CHECK in a table disagreed silently). An unrecognised value raises from the database,
+and that is the intended behaviour rather than a gap. SINCE db/035 THE CLASS DIFFERS BY
+COLUMN and nothing here depends on which: `severity` is a foreign key into
+`drugref.severity_kind` (so `ForeignKeyViolation`), `relationship` one into `ci_axis`,
+while `evidence_grade` and `ruling` are still db/029 CHECKs (so `CheckViolation`).
 """
 import uuid
 from dataclasses import dataclass
@@ -271,7 +274,9 @@ class UnresolvedTarget:
     ruling -- which is meaning, not missing data: `curated_condition` is keyed on the
     (drug, condition) PAIR and deliberately carries no predicate.
 
-    `target_table` DISCRIMINATES the other fields, and Python cannot say so here:
+    `target_table` DISCRIMINATES the two subject fields, `object_uuid` and
+    `relationship` -- not `reviewed_by`/`reviewed_against`, which mean the same thing on
+    every arm. Python cannot say so here:
     on a `curated_interaction` row `object_uuid` is a substance_class UUID and
     `relationship` is present; on a `curated_condition` row it is a condition UUID and
     `relationship` is None. Two disjoint namespaces in one uuid field. Deliberately NOT
@@ -295,15 +300,45 @@ class UnresolvedTarget:
     reviewed_against: str
     subject_class: uuid.UUID | None
 
+    @property
+    def subject(self) -> uuid.UUID | None:
+        """THE SUBJECT, whichever column this arm files it in.
+
+        `target_table` says which SHAPE a row is; this says what the row is ABOUT,
+        without a caller having to know the arm labels to find out. Added because the
+        view's only consumer (`drugref status`) read `subject_moiety` unconditionally
+        and so printed "None" for every class-grain orphan -- the detector reported
+        that a judgement was orphaned without saying which one.
+
+        DELIBERATELY NO ARM LABELS HERE, which is what keeps the class docstring's
+        open-to-extension argument true: a fourth UNION arm filing its subject in
+        either existing column is served by this property unchanged. That argument is
+        sound for the DISCRIMINATOR; it is not a reason to leave every consumer
+        re-deriving the subject, which is how the "None" reached an operator.
+
+        Returns None only if some future arm files a subject in NEITHER column -- no
+        curated judgement in this schema can, since each of the three arms hardcodes a
+        literal NULL in exactly the column it does not use. A caller seeing None is
+        looking at a view whose shape changed, and an empty render is the right
+        operator signal for that: this module does not abort a status run over one row
+        (see `unresolved_targets`).
+        """
+        return (self.subject_moiety if self.subject_moiety is not None
+                else self.subject_class)
+
 
 # THE ONE COLUMN LIST, and it is one on purpose. It was two -- this tuple's contents
 # spelled out in the SELECT below, and UnresolvedTarget's field list above -- kept in
-# step by nothing but sitting a few lines apart. POSITIONALLY, `subject_moiety` and
-# `object_uuid` are both uuid and `reviewed_by`/`reviewed_against` are both text, so
-# four text columns and two uuid ones admit 48 type-compatible orderings, of which one
-# is right; transposing either pair builds a WELL-TYPED WRONG record that no annotation
-# and no arity check can see. Binding by NAME removes the failure mode rather than
-# testing for it, and `strict=True` catches a column the view gained or lost.
+# step by nothing but sitting a few lines apart. POSITIONALLY, `subject_moiety`,
+# `object_uuid` and (since db/035) `subject_class` are all uuid, and `target_table`,
+# `relationship`, `reviewed_by`/`reviewed_against` are all text, so four text columns
+# and three uuid ones admit 4! x 3! = 144 type-compatible orderings, of which one is
+# right; transposing any two of a kind builds a WELL-TYPED WRONG record that no
+# annotation and no arity check can see. The count grew with the arm, which is the
+# argument getting STRONGER rather than the comment going stale: db/035 added a third
+# uuid column and tripled the ways to be wrong. Binding by NAME removes the failure
+# mode rather than testing for it, and `strict=True` catches a column the view gained
+# or lost.
 _UNRESOLVED_COLUMNS = ("target_table", "subject_moiety", "object_uuid",
                        "relationship", "reviewed_by", "reviewed_against",
                        # db/035's trailing add, and the reason this list being ONE
@@ -341,17 +376,19 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
 
     NOT SCOPED BY SOURCE, unlike its expansion-policy sibling, because
     `curated_target_unresolved` has no source column to scope by: it compares curated
-    rows against three projections at once (`class_contraindication`, and both
-    `moiety_condition_*` tables), and `db/029` is merged and therefore frozen, so adding
-    one would mean a new migration. That makes this a whole-database question rather
-    than a per-run one, which is why `drugref status` is its consumer rather than an
-    ingest summary.
+    rows against FOUR projections at once (`class_contraindication`, both
+    `moiety_condition_*` tables, and since db/035 `class_pair_contraindication`), and
+    adding a source column would mean yet another migration -- db/035 re-issued this
+    view and deliberately did not, because the answer is unchanged: a source column
+    here would have to name FOUR sources per row. That makes this a whole-database
+    question rather than a per-run one, which is why `drugref status` is its consumer
+    rather than an ingest summary.
 
     LIVE ROWS ONLY -- the view's own `superseded_by IS NULL`. A corrected judgement's
     predecessor still names the old candidate, and reporting it would make every
     correction look like breakage.
 
-    ORDERED TOTALLY, on all four key columns rather than the first two. The expected
+    ORDERED TOTALLY, on all FIVE key columns rather than the first two. The expected
     shape of a rebuild orphan is SEVERAL rows sharing a subject -- a re-key drops every
     `class_contraindication` row for that moiety at once -- and those tie on
     (target_table, subject_moiety), which left Postgres free to return them in any
@@ -363,9 +400,55 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
                 f"SELECT {', '.join(_UNRESOLVED_COLUMNS)} "
                 "FROM drugref.curated_target_unresolved "
                 # subject_class LAST, and it is not decoration: on the class-grain arm
-                # (db/035) `subject_moiety` is NULL for EVERY row, so the first sort
-                # key stops discriminating there entirely and two class rules sharing
-                # an object and an axis would tie on all four original columns. Same
-                # flake this ORDER BY was widened once before to prevent.
+                # (db/035) `subject_moiety` is NULL for EVERY row, so within that arm
+                # -- where `target_table` is constant and therefore sorts nothing --
+                # the first EFFECTIVE key stops discriminating entirely, and two class
+                # rules sharing an object and an axis would tie on all four original
+                # columns. Same flake this ORDER BY was widened once before to prevent.
                 "ORDER BY target_table, subject_moiety, object_uuid, "
                 "relationship, subject_class").fetchall()]
+
+
+@dataclass(frozen=True)
+class ClassGrainCounts:
+    """The three numbers `drugref status`'s fifth block prints (db/035).
+
+    ONE RECORD RATHER THAN THREE RETURN VALUES, so a caller cannot silently transpose
+    two ints -- the same reason `UnresolvedTarget` above binds by name. All three are
+    counts of things that should be ZERO on a healthy database, but they are three
+    DIFFERENT failures and the block says so in three different voices.
+    """
+    ungraded: int
+    dead: int
+    disagreements: int
+
+
+def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
+    """Read the class grain's three detectors (db/035).
+
+    IN THIS MODULE RATHER THAN IN `cli.py`, for the rule cli.py's own module docstring
+    states and `unresolved_targets` above already obeys: a handler must not embed SQL
+    against curated, append-only tables, because the sweep that finds readers works
+    through `pg_rewrite` and cannot see a query living in a Python string. Two of these
+    three views are derived from `curated_class_interaction`, so the read belongs here.
+    It also keeps cli.py under CLAUDE.md rule 4's size cap, which it had just breached.
+
+    RAISES psycopg's UndefinedTable UNCAUGHT on a database predating db/035. Converting
+    that into an operator sentence is the CALLER's job, exactly as it is for
+    `unresolved_targets` -- this module owns the read, cli.py owns the voice.
+    """
+    ungraded = conn.execute(
+        "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule"
+    ).fetchone()[0]
+    # DISTINCT ON THE THREE NATURAL-KEY COLUMNS, not count(*): the candidate tier's
+    # primary key includes `source`, so one clinical rule asserted by two authorities
+    # is two rows and count(*) would report it twice. The gap view above already groups
+    # for this reason; this half has to as well or the two lines disagree.
+    dead = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, object_class_uuid, "
+        "relationship FROM drugref.class_pair_rule_reach WHERE max_pair_count = 0) z"
+    ).fetchone()[0]
+    disagreements = conn.execute(
+        "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0]
+    return ClassGrainCounts(ungraded=ungraded, dead=dead,
+                            disagreements=disagreements)
