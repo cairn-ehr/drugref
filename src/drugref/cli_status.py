@@ -50,17 +50,29 @@ def print_class_grain_block(conn) -> None:
     of these three views, which is not a mis-shaped schema but every deployment between
     pulling this code and running `drugref migrate`.
 
-    ONE GUARD FOR ALL THREE COUNTS, unlike the single-call guards in cli.py, because the
+    ONE GUARD FOR ALL FOUR COUNTS, unlike the single-call guards in cli.py, because the
     three views ship in ONE migration: a database has all of them or none of them, so
     three guards would be three copies of one sentence with three chances to disagree.
+    (Three views, four counts since issue 111 added the denominator -- this line said
+    "three counts" for a round after that stopped being true.)
+
+    IT GUARDS db/037 AS WELL AS db/035, which took a review to notice. db/037 corrects
+    `class_pair_rule_reach`'s arithmetic without changing any name this block reads, so
+    the guard did not fire on a db/035-or-036 database and the block printed numbers
+    computed from the OLD, OVERSTATED `max_pair_count` -- `dead` under-reporting exactly
+    the rule db/037 exists to surface. `curation._RULE_COUNT` now names a db/037 column
+    so the UndefinedColumn arm below reaches that case too; see its comment for why the
+    added column cannot move the count.
     """
     try:
         counts = curation.class_grain_counts(conn)
     except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
         raise RuntimeError(
-            "the class-grain detector views are missing: this database predates "
-            "db/035, so ungraded, unreachable and cross-grain-disagreeing class rules "
-            "cannot be reported. Run `drugref migrate` and re-run status.") from exc
+            "the class-grain detector views are missing or predate db/037: this "
+            "database is behind on migrations, so ungraded, unreachable and "
+            "cross-grain-disagreeing class rules cannot be reported -- and a rule "
+            "reaching no pair would be under-reported even where they exist. Run "
+            "`drugref migrate` and re-run status.") from exc
 
     # THE DENOMINATOR LEADS (issue 111), and the two numerators hang off it in
     # parentheses rather than standing on their own lines.

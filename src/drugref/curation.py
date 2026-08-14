@@ -445,8 +445,23 @@ class ClassGrainCounts:
 # the same query over the same population differing only by a WHERE, and writing them
 # out twice is how they would drift apart. `{where}` is interpolated from the two
 # literals below and never from anything reaching this module from outside.
+#
+# `shared_effective_member_count` IS NAMED TO WIDEN THE GUARD, not because the count
+# needs it (PR #113 review). cli.py's rule -- "a migration widening a view a guarded
+# block reads must widen the guard in the same commit" -- did not reach db/037, which
+# corrects this view's ARITHMETIC while every name read here still resolves under
+# db/035. So the guard stayed quiet on a db/035-or-036 database and the block printed
+# counts from the old, overstated `max_pair_count`, under-reporting `dead` exactly
+# where db/037 section 1 exists to help. Naming a db/037 column makes the existing
+# UndefinedColumn arm cover that case.
+#
+# IT CANNOT CHANGE THE COUNT: every input to this view's arithmetic is a function of
+# (subject_class_uuid, object_class_uuid, relationship) alone -- `cpc.source` and
+# `cpc.ingest_run` feed none of it -- so the two rows one rule asserted by two
+# authorities produces carry identical values here. Tested rather than argued, both
+# halves, in tests/test_class_grain_detectors.py.
 _RULE_COUNT = ("SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, "
-               "object_class_uuid, relationship "
+               "object_class_uuid, relationship, shared_effective_member_count "
                "FROM drugref.class_pair_rule_reach{where}) z")
 
 

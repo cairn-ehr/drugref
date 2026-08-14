@@ -554,10 +554,12 @@ denominator · [#112](https://github.com/cairn-ehr/drugref/issues/112) measure t
 class-grain content ships. **Four of the five are closed by the debt round below; 112 stays open by design.**
 
 ##### 5c.2c — the low-hanging-debt round ✅ DONE — `db/037`, `curated_read.py`, 2026-08-14
-A sweep of all **51** open issues for work that is small, self-contained and needs no design decision. **Eight
-cleared** — 79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement. Suite **1465 → 1511**,
-`ruff` clean. Full account, every measurement and the list of what was deliberately NOT taken: PROJECT-NOTES §
-"The low-hanging-debt round".
+A sweep of all **51** open issues for work that is small, self-contained and needs no design decision. **Seven
+FIXED** — 79, 87, 100, 108, 109, 110, 111 — **plus 19 and 106 answered by measurement**, so nine touched. (This
+said "Eight cleared" over a list of nine numbers here, in PROJECT-NOTES, in HANDOVER and in the commit message
+at once — a total beside the list it counts, disagreeing in four homes.) Suite **1465 → 1516** including the
+review round below, `ruff` clean. Full account, every measurement and the list of what was deliberately NOT
+taken: PROJECT-NOTES § "The low-hanging-debt round".
 
 **`db/037` is three view corrections and one new view**, and **every published count is byte-identical between
 `drugref_db036` and `drugref_db037`** — the class grain holds zero rows (#94 withheld its seven entries), which
@@ -575,7 +577,8 @@ doubled pairs explained by `candidate_source` alone.
 **`curated_read.py` is the seventh module split out to hold rule 4**, and it exists because a view with no
 caller is half a feature — nothing in `src/` read `severity_rank`, so no test could regress the precedence.
 **#79** closes the other way the same principle bites: `tests/` was blanket-exempt from E501, so it had no
-column bound at all (415 lines over 88 by now, against a ceiling that has been **119** at every measurement).
+column bound at all (**497** lines over 88 as of the review round — 415 when the carve-out was removed, and that
+figure was stale on the day it shipped — against a ceiling that has been **119** at every measurement).
 It is bounded at 120 in `tests/ruff.toml`, with `tests/test_lint_bounds.py` driving ruff at a path in each tree.
 **#100** pins `ci_class_subtree`'s narrow definition from `pg_depend`, so a stray `db/033` replay fails the
 suite rather than a latency graph. **#87** merges two registry queries into one `keys.for_verification`, making
@@ -585,6 +588,28 @@ suite rather than a latency graph. **#87** merges two registry queries into one 
 control** and `drugref_db034` stays as the pre-`db/035` one — two controls answering different questions.
 **Issue 86's direction is DECIDED and deliberately not built**: add `signed_by_unknown_key` as a fourth
 `signature_status` value, a published-vocabulary widening that is a round of its own.
+
+##### 5c.2d — the PR #113 review round ✅ DONE — no new migration, 2026-08-15
+Six review agents over 5c.2c's own diff. **Three silent defects, all mutation-verified**, and four findings
+filed rather than fixed (114–117). Suite **1511 → 1516**, `ruff` clean. Full account: PROJECT-NOTES § "The PR
+#113 review round".
+
+**Two were wrong data reaching a consumer, and neither failed a test.** `GradedPair` was built by positional
+splat from a hand-written SELECT — swapping `mechanism` and `management` left the WHOLE SUITE GREEN while
+drugref labelled management advice as mechanism; one `_COLUMNS` list now generates the SELECT and binds by
+keyword, making the swap **unrepresentable**. And `curated_ddi_pair_effective`'s determinism tail was missing
+`via_subject_class`, so two class rules over one pair tied on every key and `DISTINCT ON` followed **heap
+order** — which mechanism text a prescribing client read depended on physical row position, flippable by a
+rebuild or dump/restore. **The third was the guard**: db/037 corrects `class_pair_rule_reach`'s arithmetic
+without changing a name, so a db/035-or-036 database printed the OLD, OVERSTATED numbers with nothing raised.
+
+**TWO TESTS PASSED FOR THE WRONG REASON**, which is the finding worth carrying forward: over-determined
+fixtures whose docstrings claimed the opposite. Deleting `(rule_grain = 'moiety_rule') DESC` from db/037
+outright left the suite green, because the fixture's sources ordered the same way the grain key did.
+
+**`db/037` was EDITED rather than superseded** — it is unmerged, and PROJECT-NOTES § repo facts records that the
+ledger binds a *database*, not the repo. The reference DB was rebuilt from `TEMPLATE drugref_db036` and every
+published count re-verified byte-identical; the pre-edit copy is kept as **`drugref_db037_pre_review`**.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own

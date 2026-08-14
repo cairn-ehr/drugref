@@ -229,7 +229,14 @@ def test_history_is_oldest_first_and_totally_ordered(conn, a_key):
 
 
 class _CountingConn:
-    """A connection that counts `execute` calls and delegates everything else.
+    """A connection that counts `execute` calls and proxies THAT ONE METHOD.
+
+    Deliberately not a general delegate -- there is no `__getattr__` here, so any other
+    attribute access raises AttributeError rather than silently reaching the real
+    connection. That is the safer default for a counter: a function that reached the
+    database by some route other than `.execute()` would fail loudly instead of being
+    reported as costing zero queries. (An earlier version of this line said "delegates
+    everything else", which described a class this is not.)
 
     The round-trip claim in issue 87 is the kind that is easy to assert in prose and
     never check, so it is checked. Deliberately NOT a mock: every query runs against the

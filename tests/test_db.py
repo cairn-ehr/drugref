@@ -262,8 +262,11 @@ def test_apply_migrations_is_idempotent(conn):
         # `class_pair_rule_reach` and `curated_grain_disagreement` above, which is
         # invisible to an inventory and is why both have behavioural tests instead.
         # A view rather than a column because db/035's severity_rank column left every
-        # client to retype `ORDER BY severity_rank NULLS FIRST, (rule_grain =
-        # 'moiety_rule') DESC` correctly from a comment, and none did.
+        # client to retype `ORDER BY severity_rank, (rule_grain = 'moiety_rule') DESC`
+        # correctly from a comment, and none did. NOTE THE ABSENT `NULLS FIRST`: that is
+        # db/037's own correction (issue 110's second half), not part of what db/035
+        # asked clients to copy -- a client that copied db/035 faithfully got the
+        # under-warning defect, which is rather the point.
         "curated_ddi_pair_effective",
     }
 

@@ -60,7 +60,11 @@
 -- from the other would put one quantity in two shapes.
 --
 -- COST: unmeasured, and honestly so. The arrays and the LATERAL are read once per
--- candidate rule, over a table holding ZERO rows today and ~9 when #94's entries land.
+-- candidate rule, over a table holding ZERO rows today and SEVEN when #94's entries land
+-- (this line said ~9 in the first draft, contradicting line 10 of this same file fifty-
+-- odd lines above it; seven is #94's own figure and onc_high_priority.toml's. The 9 came
+-- from #96's failure-scenario prose by way of db/035:235, and that older figure was never
+-- reconciled with #94 -- issue #117).
 -- There is nothing to measure yet; #112 owns the measurement of this grain's queries
 -- against real content, and this column's consumers (`status`, one gap view) are not on
 -- any hot path.
@@ -358,13 +362,41 @@ COMMENT ON VIEW drugref.curated_grain_disagreement IS
 -- authorities is the ordinary way that happens, since curated_ddi_pair carries
 -- candidate_source -- would resolve arbitrarily, which is the flake curation.
 -- unresolved_targets and keys.all_live each had to fix once already.
+--
+-- THE TAIL MUST CLOSE **BOTH** GRAINS, and the first draft of this migration closed only
+-- one. PR #113's review measured the hole: a class-grain row is identified by
+-- (via_subject_class, via_class, relationship) -- curated_class_interaction's live-unique
+-- natural key -- plus candidate_source for the class_pair_contraindication fan-out, and
+-- `via_subject_class` was the one component missing. The moiety half was already total
+-- (ddi_candidate_pair's own DISTINCT ON keys on subject_moiety, via_class, relationship,
+-- source, partner_moiety, and via_class + candidate_source are both here), which is what
+-- made the class-grain hole easy to miss.
+--
+-- IT IS REACHABLE THE ORDINARY WAY, not exotically. Two class rules (X1, Y, R) and
+-- (X2, Y, R) where one moiety is filed under both X1 and X2 -- and section 1 above argues
+-- at length that shared membership is ordinary rather than exotic, since MED-RT files one
+-- drug under many classes. `member_class` is then identical (same object class), and
+-- `reviewed_at` is identical because curated_class_interaction.reviewed_at defaults to
+-- now(), which is the TRANSACTION timestamp: one `drugref curate` run stamps every ruling
+-- it writes with the same instant. Measured on a scratch database, the two rows tied on
+-- every key in the old tail and DISTINCT ON followed HEAP ORDER -- writing X1 first
+-- yielded X1's mechanism, writing X2 first yielded X2's -- so which mechanism, management
+-- and via_subject_class a prescribing client reads was decided by physical row order, and
+-- a per-source rebuild, a VACUUM FULL or a dump/restore could flip it. Silent, too:
+-- severity is unchanged, so no detector fires and curated_grain_disagreement never sees
+-- it, both rows being class_rule.
+--
+-- `via_subject_class` IS NULL ON EVERY MOIETY ROW, which costs nothing here: the grain key
+-- above has already separated the two grains by the time this key is read, so no moiety
+-- row is ever compared against a class row on it and NULL placement cannot matter.
 CREATE OR REPLACE VIEW drugref.curated_ddi_pair_effective AS
 SELECT DISTINCT ON (subject_moiety, partner_moiety, relationship) *
 FROM   drugref.curated_ddi_pair
 ORDER  BY subject_moiety, partner_moiety, relationship,
           severity_rank NULLS FIRST,
           (rule_grain = 'moiety_rule') DESC,
-          candidate_source, via_class, member_class, reviewed_at, reviewed_by;
+          candidate_source, via_subject_class, via_class, member_class,
+          reviewed_at, reviewed_by;
 
 COMMENT ON VIEW drugref.curated_ddi_pair_effective IS
     'ONE ROW PER (subject_moiety, partner_moiety, relationship) -- curated_ddi_pair '
@@ -380,7 +412,13 @@ COMMENT ON VIEW drugref.curated_ddi_pair_effective IS
     'LIMIT 1 client would never see it -- under-warning is the harm direction here. '
     'Anything after those two keys is a determinism tie-break, NOT a clinical '
     'preference: one rule asserted by two authorities is two rows agreeing on both '
-    'precedence keys, and DISTINCT ON must pick the same one every time. STILL '
+    'precedence keys, and DISTINCT ON must pick the same one every time. THE TAIL '
+    'CLOSES BOTH GRAINS -- candidate_source, then via_subject_class AND via_class, '
+    'because a class-grain row is identified by both of its ends and by its source; '
+    'with via_subject_class missing, two class rules over one pair (two subject classes '
+    'the same drug is filed under, one object class) tied on every key and DISTINCT ON '
+    'followed heap order, so a rebuild or a dump/restore could silently change which '
+    'mechanism and management text a client read. STILL '
     'DIRECTIONAL (db/006): a consumer asking "do X and Y interact" queries BOTH '
     'directions here too. Read curated_ddi_pair itself to see what was outranked, and '
     'curated_grain_disagreement for the rule pairs a curator should reconcile -- '

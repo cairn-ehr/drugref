@@ -420,7 +420,7 @@ def test_the_status_reader_carries_the_class_subject(conn, ingest_run_id):
 
 
 def _a_pair_graded_by_both_grains(conn, ingest_run_id, *, moiety_severity,
-                                  class_severity):
+                                  class_severity, class_source="ONCHIGH"):
     """ONE drug pair reachable by BOTH grains, graded differently -- #97's
     reproduction, in miniature.
 
@@ -429,12 +429,29 @@ def _a_pair_graded_by_both_grains(conn, ingest_run_id, *, moiety_severity,
     (the rows live in different tables, one live row each), so nothing in the floor
     catches it -- which is exactly why a precedence rule is needed rather than a
     constraint.
+
+    `class_source` EXISTS TO DEFEAT AN OVER-DETERMINED EXPECTATION, and the default is
+    the ordinary pairing rather than the useful one. The moiety grain's row is 'MED-RT'
+    and the class grain defaults to 'ONCHIGH' -- but 'MED-RT' < 'ONCHIGH', and
+    `candidate_source` is the FIRST determinism tie-break after the two precedence keys.
+    So a caller asserting that the MOIETY row wins on a severity tie was getting that
+    answer from the grain key AND from `candidate_source`, and PR #113's review measured
+    the consequence: deleting `(rule_grain = 'moiety_rule') DESC` from db/037 outright
+    left the whole suite green.
+
+    Passing 'MED-RT' here TIES `candidate_source`, which hands the decision to the next
+    key -- `via_subject_class`, non-NULL on the class row and NULL on the moiety row, so
+    ASC (NULLs last) puts the CLASS row first. The moiety row can then only win by the
+    grain key itself. 'MED-RT' rather than an invented string because
+    `class_pair_contraindication_source` (db/032) admits exactly 'MED-RT' and 'ONCHIGH':
+    one upstream legitimately feeds both grains, so this is a real shape and not a
+    contrivance.
     """
     subject_class, object_class, subjects, objects = _a_graded_class_rule(
         conn, ingest_run_id, subject_code="N0000002000", object_code="N0000002100",
         subject_members=[("TESTUNII61", "subject-drug")],
         object_members=[("TESTUNII62", "partner-drug")],
-        severity=class_severity)
+        source=class_source, severity=class_severity)
     conn.execute(
         "INSERT INTO drugref.class_contraindication (subject_moiety_uuid, "
         "object_class_uuid, relationship, source, ingest_run) "
@@ -726,9 +743,16 @@ def test_the_denominator_counts_a_rule_once_however_many_authorities_assert_it(
     `class_pair_rule_reach` is keyed per source, so one clinical rule asserted by two
     authorities is two rows -- which is why `dead` already groups on the three
     natural-key columns (see the test below it). A denominator taken as a bare
-    `count(*)` would read 2 while `ungraded`/`reaching no pair` read 1, and the operator
-    diffing them would see a rule appear and disappear on a re-ingest that changed
-    nothing but which authority happened to file it.
+    `count(*)` would read 2 where the grouped one reads 1, and the operator diffing two
+    runs would see a rule appear and disappear on a re-ingest that changed nothing but
+    which authority happened to file it.
+
+    (An earlier version of this paragraph said the two numerators would read 1 against a
+    bare denominator of 2. They would not, in THIS fixture: `_an_ungraded_class_rule`
+    puts one member on each side of two distinct classes, so `max_pair_count` is
+    1*1 - 0 = 1 and `reaching no pair` reads 0, as the assertion below says. Only
+    `ungraded` reads 1. The grain argument is unaffected -- the illustration was wrong,
+    not the reasoning.)
 
     This is db/018's own lesson ("one quantity stated twice is a quantity that will
     disagree") reaching the operator surface rather than the schema.
@@ -742,6 +766,38 @@ def test_the_denominator_counts_a_rule_once_however_many_authorities_assert_it(
     assert counts.total == 1, (
         f"one rule asserted by two authorities is ONE rule, got {counts.total}")
     assert counts.ungraded == 1
+
+
+def test_a_database_predating_db037_trips_the_guard_rather_than_printing_old_numbers(
+        conn):
+    """THE GUARD HAS TO COVER db/037, NOT JUST db/035 -- PR #113's review finding.
+
+    cli.py states the standing rule: "a migration that widens a view a guarded block
+    reads must widen that block's exception tuple in the same commit." db/037 is the
+    awkward case that rule was not written for, because it widens nothing this block
+    NAMES: it replaces `class_pair_rule_reach`'s body so `max_pair_count` becomes exact,
+    and appends a column nobody read. Every name `class_grain_counts` used still resolved
+    on a db/035-or-036 database, so the guard stayed quiet, nothing raised, and the block
+    printed counts computed from the OLD, OVERSTATED arithmetic -- `dead` under-reporting
+    exactly the self-pair-over-a-one-member-class rule db/037 section 1 exists to surface,
+    and `drugref status` still exiting 0.
+
+    So the read now NAMES a db/037 column, and this is what makes that load-bearing.
+    `ALTER VIEW ... RENAME COLUMN` reaches the pre-db/037 shape on controlled input
+    inside the rolled-back fixture transaction -- this project's rule for a state the
+    release cannot otherwise exercise -- without rebuilding db/035's whole view body.
+    Nothing else reads the renamed column, so no dependent view breaks.
+
+    THE MESSAGE IS ASSERTED, not just the type: an operator who is told to run `drugref
+    migrate` can act, and a bare `UndefinedColumn` traceback after two blocks of real
+    answers is what the sibling guard in test_curation_orphans.py was written to stop.
+    """
+    from drugref import cli_status
+
+    conn.execute("ALTER VIEW drugref.class_pair_rule_reach "
+                 "RENAME COLUMN shared_effective_member_count TO before_db037")
+    with pytest.raises(RuntimeError, match="drugref migrate"):
+        cli_status.print_class_grain_block(conn)
 
 
 def test_an_unknown_uuid_is_not_a_class_grain_row(conn):
@@ -958,9 +1014,13 @@ def test_a_self_pair_rule_over_a_one_member_class_reaches_nobody(conn, ingest_ru
     class with N effective members the true reach is N*(N-1), so at N=1 the product says
     one pair and the expansion yields none.
 
-    db/035's preamble defended the wrong direction -- "the exclusion cannot change 0 into
-    non-zero, which is the only threshold anything downstream tests". True, and harmless.
-    The hazardous direction is non-zero into zero, and it is this row.
+    db/035 defended the wrong direction -- "the exclusion cannot change 0 into non-zero,
+    which is the only threshold anything downstream tests". True, and harmless. The
+    hazardous direction is non-zero into zero, and it is this row. (That sentence is an
+    INLINE comment sitting immediately above db/035's `max_pair_count` expression, not
+    its section preamble; db/035's preamble and view COMMENT state the bound differently
+    again -- "it is exact about ZERO, which is the threshold that matters". Naming the
+    right one matters because a reader following this docstring has to find it.)
     """
     klass = _an_ungraded_self_pair_rule(
         conn, ingest_run_id, code="N0000008200", members=[("TESTUNIIG1", "only-drug")])

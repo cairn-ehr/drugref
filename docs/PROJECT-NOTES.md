@@ -1758,9 +1758,12 @@ edges").
 
 ## The low-hanging-debt round (2026-08-14) — `db/037`, `curated_read.py`, suite 1465 → 1511
 
-A sweep of the **51** open issues for work that is small, self-contained and needs no design decision. **Eight
-cleared** (79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement), one migration, no
-behaviour change on any published count. Everything deliberately NOT taken is listed at the end, with why —
+A sweep of the **51** open issues for work that is small, self-contained and needs no design decision. **Seven
+FIXED** (79, 87, 100, 108, 109, 110, 111) **plus 19 and 106 answered by measurement** — nine touched. (This
+read "Eight cleared" over a list of nine numbers, in this file, ROADMAP, HANDOVER and the commit message at
+once. A count beside the list it counts is the same defect as one quantity in two places, and it disagreed in
+four homes; the fix is to state the seven and the two and never a total.) One migration, no behaviour change on
+any published count. Everything deliberately NOT taken is listed at the end, with why —
 the point of a debt round is as much to record what is not fruit as to eat what is.
 
 **`db/037` is three view corrections and one new view**, all in the class grain, all provably content-neutral
@@ -1842,6 +1845,84 @@ that issue needs re-reading, not re-deriving) · **88** (a type checker is a rea
 back deliberately) · **86** — **DECIDED BUT NOT BUILT: add `signed_by_unknown_key` as a fourth
 `signature_status` value.** That is a published-vocabulary widening with spec and consumer consequences, so it
 is a round of its own; the decision is recorded on the issue so the next round does not re-litigate it.
+
+## The PR #113 review round (2026-08-15) — suite 1511 → 1516, no new migration
+
+Six review agents over the debt round's own diff. **Three real defects, every one SILENT** — no test failed, no
+count moved, nothing raised — and all three now mutation-verified: revert any one and a named test goes red.
+Four further findings were filed rather than fixed (114–117). The pattern behind all three is the one this repo
+keeps paying for: **a claim stated in prose beside code that does not enforce it.**
+
+- **`GradedPair` was built by positional splat, and five of its nine fields were asserted nowhere.**
+  `curated_read.py` spelled the nine column names twice — once as dataclass fields, once in the SELECT — and
+  bound them with `GradedPair(*row)`. Seven of the nine are text or nullable text, so a transposition builds a
+  WELL-TYPED WRONG record: **the review swapped `mechanism` and `management` and the entire suite stayed
+  green**, while drugref handed clinical management advice to a client under the label "mechanism". Fixed the
+  way `keys._COLUMNS` and `curation._UNRESOLVED_COLUMNS` each already fix it — ONE list generating the SELECT
+  and binding by keyword — which makes the swap **unrepresentable rather than tested**: re-running that same
+  mutation against the fixed module changes nothing observable, because both halves come from one list. What
+  remains testable is a *wrong column name*, and that now fails loudly (`TypeError`, plus the new
+  field-by-field test).
+- **`curated_ddi_pair_effective`'s determinism tail closed the moiety grain and not the class grain.** A
+  class-grain row is identified by `(via_subject_class, via_class, relationship)` — `curated_class_interaction`'s
+  live-unique natural key — plus `candidate_source`; `via_subject_class` was missing. Two class rules over one
+  pair (one drug filed under two subject classes, which db/037's own §1 argues is ORDINARY since MED-RT files
+  one drug under many classes) then tied on **every** key: `member_class` identical (same object class),
+  `reviewed_at` identical because it defaults to `now()`, the TRANSACTION timestamp, so one `drugref curate` run
+  stamps every ruling alike. `DISTINCT ON` fell through to **heap order** — writing X1 first yielded X1's
+  mechanism, X2 first yielded X2's. Which mechanism and management text a prescribing client read was decided
+  by physical row position, flippable by a per-source rebuild, a `VACUUM FULL` or a dump/restore, and **silent**:
+  severity is equal, so no detector fires and `curated_grain_disagreement` never sees it (both rows are
+  `class_rule`).
+- **The class-grain guard did not cover `db/037`.** `cli.py` states the standing rule — *"a migration widening a
+  view a guarded block reads must widen the guard in the same commit"* — and db/037 is the case it was not
+  written for: it corrects `class_pair_rule_reach`'s ARITHMETIC and appends a column nobody read, while every
+  name `class_grain_counts` reads still resolved under db/035. So on a db/035-or-036 database the guard stayed
+  quiet, nothing raised, and the block printed counts from the OLD, OVERSTATED `max_pair_count` — `dead`
+  under-reporting exactly the self-pair-over-a-one-member-class rule db/037 exists to surface, across precisely
+  the window the guard's own docstring invokes ("every deployment between pulling this code and running
+  `drugref migrate`"). `_RULE_COUNT` now names `shared_effective_member_count`; it cannot move the count,
+  because every input to this view's arithmetic is a function of the three natural-key columns alone.
+  **Verified on the real reference databases: `drugref_db036` raises the operator sentence, `drugref_db037`
+  prints.** The previous round recorded `status` exiting 0 on db036 as evidence the new denominator was safe —
+  it was evidence the guard was blind, and HANDOVER now says so.
+
+**TWO TESTS PASSED FOR THE WRONG REASON, which is worth more than the fixes.** Both were over-determined
+fixtures, and both had docstrings claiming the opposite:
+
+- `test_the_moiety_grain_breaks_a_tie` said *"a view that dropped it would return an arbitrary row here and
+  flake rather than fail."* It did not flake — **deleting `(rule_grain = 'moiety_rule') DESC` from db/037
+  outright left the whole suite green**, because the fixture sourced the moiety rule from `MED-RT` and the class
+  rule from `ONCHIGH`, and `'MED-RT' < 'ONCHIGH'` meant `candidate_source` — a LATER key — already picked the
+  expected row. Fixed by sourcing both grains from `MED-RT` (legal: `class_pair_contraindication_source` admits
+  exactly those two), which ties `candidate_source` and hands the decision to `via_subject_class`, non-NULL on
+  the class row and NULL on the moiety row, so it favours the CLASS row and only the grain key can produce the
+  expected answer.
+- The caller's own `NULLS FIRST` was pinned by nothing: the unrankable-severity test drives the VIEW, never
+  `effective_grades_for`, so removing `NULLS FIRST` from `curated_read`'s ORDER BY left fifteen tests green.
+  The view would have sorted the unrankable row first and the Python caller re-buried it one layer up — the
+  whole harm-direction argument defeated on the last hop.
+
+**FACTUAL CORRECTIONS — comment rot shipped on day one, in a round whose own subject was comment rot.** The
+`keys.py` line saying `_record` "keeps unpacking positionally" (it binds by keyword, and the block 50 lines
+above argues at length that positional binding is the failure mode keyword binding removes) · **"415 lines over
+88" was stale when committed** — 490 at that commit, **497** now — and it appeared in five places across two
+files plus this one, in a passage arguing that a count which grows while the ceiling stands still is the
+signature of an unstated convention. The ceiling is still **119** · `tests/ruff.toml`'s documented re-measure
+command **produced no output at all**, because ruff resolves that very file's `line-length = 120` for a path
+under `tests/`; it needs `--config 'line-length=88'`, which is the replacement for the
+`--config 'lint.per-file-ignores={}'` the previous version passed for the same reason · db/037 said "~9" on
+line 63 and "seven" on line 10 (issue 117) · six further errors in the new test files' own comments, including
+a 378-line migration described as 200 lines, and a "cheap on this data, ~640 rules" that quoted the REFERENCE
+database's figure for a test schema holding **zero** rows — which makes that test vacuous for both parametrised
+views, now said plainly rather than papered over.
+
+**Standing lesson, and it is not "write fewer comments".** Every one of these files documents its reasoning at
+length and that is what let the review find the defects at all — a claim you can check is worth more than
+silence. The lesson is narrower: **a comment that states a MEASUREMENT must name how to re-take it, and the
+recipe must be run before it ships.** `tests/ruff.toml` now carries a working recipe, an instruction to APPEND
+to the series rather than overwrite it, and an explicit warning that the override is load-bearing and its
+absence has no symptom.
 
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
@@ -2013,6 +2094,64 @@ above instead, which is what makes the first two groups re-runnable at all.
   determination is the load-bearing one; **re-read the `reference` table before bundling anything.**
 - **Re-measured 2026-08-13 and now closing:** the DailyMed document-type sample (above). Its predecessor did
   not close, which is why it is the one figure in this section that was redone rather than restated.
+
+## The standing open-issue ledger
+
+**Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
+for four rounds while HANDOVER's own header said *"put anything whose history is worth reading there, not
+here"* — and the duplication had already cost: **#52's "422 broadened assertions" existed in the HANDOVER copy
+and nowhere else**, so the bounded, deliberately-disposable file was the sole record of a figure a future slice
+needs. HANDOVER now carries only what gates the NEXT session and points here.
+
+**Examined by the debt round and deliberately NOT taken** — **#65** the issue itself says do not act until
+curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
+**#112/#105** blocked on class-grain content existing · **#89 `signing.py` is now 605 lines against the filed
+582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87) — **re-read that issue's
+figures, do not re-derive them**; `curation.py` is now **500** and has no headroom left · **#88** a type checker
+is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
+**#6, #25, #5** licence deeds need the owner's sign-off.
+
+**Answered by measurement, still open** — **#19: the "41 vs 13" puzzle RESOLVES.** 41-of-739 was the TERMINOLOGY
+grain; drugref holds **643** rules and the authoritative figure is **39 dead rules across 13 classes** — the
+view's extra one is `Urease Inhibitors [MoA]`, whose only member is the rule's own subject (db/018 subtracts
+it). **Two of its three asks already shipped.** · **#106: 46 of 21,370 pairs (0.22%) are reachable on two axes
+and NONE is graded** — the shape is not live, and the 46 bounds the widening it proposes.
+
+**Left open by 5c.2** — **#92 a mixed-kind class-pair rule expands to ZERO pairs silently** (the real fix is
+schema-level: a rule naming two axes) · **#93 MED-RT carries no QT class** · **#94 the seven withheld entries**
+need research. **#100 is CLOSED**: `ci_class_subtree`'s narrow definition is pinned from `pg_depend`,
+mutation-verified against db/033's wide seed.
+
+**Filed by 5c.4 and its review** — **#85 `signing_key_status_kind` has no append-only floor**, so one `UPDATE`
+disarms every compromise verdict; **floor that one ALONE** — `signature_target_kind` is *designed* to move to a
+`/v2` · #86 (decided, not built: `signed_by_unknown_key` as a fourth `signature_status`) · #88 · #89. Unfiled:
+`tests/test_cli_signing*.py` **cannot commit for real** — test isolation, shaped like #2.
+
+**Filed by the PR #113 review** — **#114** `effective_grades_for` has no consumer in `src/` · **#115**
+`ClassGrainCounts.total` reads as a denominator for `disagreements`, which counts PAIRS · **#116 `NULLS FIRST`
+inside `DISTINCT ON` publishes `severity_rank = NULL` to a thresholding client** · **#117** db/035 says nine
+class rules where #94 and the data say seven.
+
+**Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
+#82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
+were actually measuring · #65.
+
+**Owned by 5c** — **#51 the 168 contradicted pairs**, which now also own the `spurious` deferral 5c.1 wrongly
+handed to 5c.2 (ROADMAP § 5c.2) · **#52 the 422 broadened assertions** (no `concept_ui` on the row) · #55 ·
+**#67 salt↔base strength equivalence has no source** · **#73 both views read every source at once** — for
+`ddi_candidate_pair` that is now *wanted*, so **re-read it against 5c.2**; it is also why #19's third ask has a
+scoping question · #20 n-ary interactions.
+
+**From the slice-3 design** — **#68 3,631 moieties carry a GSRS `ACTIVE MOIETY` edge to something else** (~19%;
+why 5c.2 expands salt forms on the projection side, not at read time) · #69 · **#70 354 all-false composites
+reachable by nothing** · **#71 8,163 edges dropped, transiently counted**.
+
+**Interaction model and identity** — #8 class-level `has_*` unused · **#36 discovery counts descendant classes,
+not reachable members** · **#37 the DAG is expanded unprunably on every query** — restricting the *root set* is
+safe, restricting the *walk* deletes the coagulation case · #48 · **#2 floor hardening** (`TRUNCATE` +
+owner-role bypass; **13** `TRUNCATE`-ing modules depend on it — re-grep before quoting) · #3 UNII-change
+immortality · #33 MeSH CAS keys name specific forms (behind #68) · #5 INN from UNII's `Display Name` ·
+**#7/#29 row-at-a-time ingest** — the two MeSH legs are 75.7% of a 133 s chain.
 
 ## Verify before the first production load
 

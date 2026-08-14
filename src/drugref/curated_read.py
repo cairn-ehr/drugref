@@ -55,9 +55,23 @@ class GradedPair:
     signature_status: str
 
 
-_EFFECTIVE_FOR_SUBJECT = """
-SELECT partner_moiety, relationship, severity, severity_rank, evidence_grade,
-       mechanism, management, rule_grain, signature_status
+# THE ONE COLUMN LIST, generating the SELECT and binding the record BY KEYWORD --
+# keys._COLUMNS' shape and curation._UNRESOLVED_COLUMNS' reason, and this is the third
+# module to need it. The first draft of this file spelled the nine names twice, in the
+# field list above and in the SELECT below, and bound them with `GradedPair(*row)`.
+# SEVEN OF THE NINE ARE text OR nullable text, so a transposition builds a WELL-TYPED
+# WRONG record that no annotation and no arity check can see: PR #113's review swapped
+# `mechanism` and `management` here and the ENTIRE SUITE STAYED GREEN, while drugref
+# handed clinical management advice to a client under the label "mechanism".
+# `relationship`/`evidence_grade` and `rule_grain`/`signature_status` are the same
+# shape. Binding by name removes the failure mode instead of testing for it;
+# strict=True catches a column this view gains or loses.
+_COLUMNS = ("partner_moiety", "relationship", "severity", "severity_rank",
+            "evidence_grade", "mechanism", "management", "rule_grain",
+            "signature_status")
+
+_EFFECTIVE_FOR_SUBJECT = f"""
+SELECT {', '.join(_COLUMNS)}
 FROM   drugref.curated_ddi_pair_effective
 WHERE  subject_moiety = %s
 ORDER  BY severity_rank NULLS FIRST, partner_moiety, relationship
@@ -93,5 +107,5 @@ def effective_grades_for(conn: psycopg.Connection,
     moiety nobody has heard of. A caller needing that distinction asks
     `substance_moiety`; this view's population is grades, not drugs.
     """
-    return [GradedPair(*row) for row in
+    return [GradedPair(**dict(zip(_COLUMNS, row, strict=True))) for row in
             conn.execute(_EFFECTIVE_FOR_SUBJECT, (subject_moiety,)).fetchall()]

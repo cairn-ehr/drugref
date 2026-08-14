@@ -19,107 +19,101 @@
 **Merged to `main`**: through **5c.4 — signing**, PLUS **5c.2 — the ONC floor**, merged LAST despite its lower number — **ROADMAP's order is NOT the merge order.** **`db/029`–`db/036` FROZEN.**
 
 **⇒ JUST FINISHED — the LOW-HANGING-DEBT ROUND: `db/037` + `curated_read.py` + `tests/ruff.toml`**, a sweep of
-all **51** open issues for work that is small, self-contained and needs no design decision. **Eight cleared —
-79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement.** Suite **1465 → 1511**, `ruff` clean.
-Full account, every measurement, and **the list of what was deliberately NOT taken and why**: PROJECT-NOTES §
-"The low-hanging-debt round"; ROADMAP § 5c.2c.
+all **51** open issues for work that is small, self-contained and needs no design decision. **SEVEN FIXED — 79,
+87, 100, 108, 109, 110, 111 — plus 19 and 106 answered by measurement**, so nine touched. (This line said
+"Eight cleared" over a list of nine numbers for a round; the count and the list disagreed, in three files at
+once. Fixed the way this repo fixes that: state the seven, then the two, and never a total.) Suite **1465 →
+1516**, `ruff` clean. Full account, every measurement, and **the list of what was deliberately NOT taken and
+why**: PROJECT-NOTES § "The low-hanging-debt round"; ROADMAP § 5c.2c.
 
-**⇒ EVERY PUBLISHED COUNT IS BYTE-IDENTICAL BETWEEN `drugref_db036` AND `drugref_db037`** — `ddi_candidate_pair`
-21,877 · `curated_ddi_pair` 255 · `open_question` 21,848 · `gap_unpopulated_contraindication` 13 ·
-`condition_contraindication_expanded` 192,161 · `class_expansion_policy` 14 · `loaded_release` 6.
-`class_pair_contraindication` is **EMPTY on every database in existence** (#94 withheld its seven entries), which
-is precisely what made this the cheap moment to correct the class grain's arithmetic.
+**⇒ THEN THE PR #113 REVIEW ROUND, APPLIED — THREE silent defects, all three mutation-verified, full account in
+PROJECT-NOTES § "The PR #113 review round".** (1) **`GradedPair` was built by positional splat**, five of nine
+fields asserted nowhere — swapping `mechanism`/`management` in the SELECT left the WHOLE SUITE GREEN while
+drugref labelled management advice as mechanism. One `_COLUMNS` list now generates the SELECT *and* binds by
+keyword (`keys._COLUMNS`' shape, third module to need it), making the transposition **unrepresentable**.
+(2) **`curated_ddi_pair_effective`'s tie-break was not total** — `via_subject_class` missing, so two class rules
+over one pair (one drug under two subject classes, MED-RT's ordinary shape) tied on every key and `DISTINCT ON`
+followed **heap order**: which mechanism/management a prescribing client read was decided by physical row
+position, flippable by a rebuild or dump/restore, silent because severity is equal. (3) **The class-grain guard
+did not cover db/037** — it corrects `class_pair_rule_reach`'s ARITHMETIC while every name read still resolved
+under db/035, so on db/035-or-036 the block printed the OLD, OVERSTATED numbers. `_RULE_COUNT` now names a
+db/037 column; **`drugref_db036` raises, `drugref_db037` prints**. **This REVERSES last round's line that
+"status on db036 exits 0" — that was the defect recorded as a feature.**
+
+**⇒ FOUR ISSUES FILED, NOT FIXED** — **[#114](https://github.com/cairn-ehr/drugref/issues/114)**
+`effective_grades_for` has no consumer in `src/` ("half a feature", one layer up) ·
+**[#115](https://github.com/cairn-ehr/drugref/issues/115)** `ClassGrainCounts.total` reads as a denominator for
+`disagreements`, which counts PAIRS (~2,263 against a `total` of 9) ·
+**[#116](https://github.com/cairn-ehr/drugref/issues/116) `NULLS FIRST` inside `DISTINCT ON` makes an unrankable
+severity WIN**, so the client gets `severity_rank = NULL` and every threshold form drops it — db/037 fixed the
+sort, not the payload · **[#117](https://github.com/cairn-ehr/drugref/issues/117)** db/035 says NINE class rules
+where #94 and the data say SEVEN.
+
+**⇒ EVERY PUBLISHED COUNT IS BYTE-IDENTICAL `db036` → `db037`, and again across the review round's rebuild** —
+`ddi_candidate_pair` 21,877 · `curated_ddi_pair` 255 · `open_question` 21,848 ·
+`gap_unpopulated_contraindication` 13 · `condition_contraindication_expanded` 192,161 · `class_expansion_policy`
+14 · `loaded_release` 6. `class_pair_contraindication` is **EMPTY on every database in existence** (#94 withheld
+its **seven** entries — db/035 and #96 say nine, which is #117), and that is what made this the cheap moment to
+correct the class grain's arithmetic.
 
 **⇒ THE ONE SURPRISE, and it changes what a consumer sees today: `curated_ddi_pair_effective` is NOT a no-op.**
 With zero class-grain content it still collapses **255 rows to 213** — 42 doubled pairs, **all 42 explained by
 `candidate_source` alone** (a rule both MED-RT and ONCHIGH assert is one grade and two rows), zero differing in
 severity, `via_class` or `rule_grain`. Every client reading `curated_ddi_pair` was seeing that duplication.
 
-**⇒ WHAT `db/037` ACTUALLY CHANGES.** **#108** — `max_pair_count` subtracts a new published
-`shared_effective_member_count`, so reach is `|S|·|O| − |S ∩ O|`; **the self-pair rule is the special case, not
-the fix** (two classes sharing members overstate identically, and MED-RT files one drug under many classes), and
-the *same wrong number* had the worklist queueing a rule no answer could change while `status` hid it. **#109** —
-`curated_grain_disagreement` normalises orientation with `LEAST`/`GREATEST`, **an equi-join where the obvious
-`OR` of two arm pairs is not**, on a view `status` reads unfiltered every invocation. **#110** — the precedence
-is a view at last, with **`NULLS FIRST`**: Postgres's default sorted an unrankable severity *below* `minor`,
-inverting the harm direction in the one path db/035 called safe.
-
-**⇒ THE MEASUREMENT THAT IS HONESTLY NOT EVIDENCE — read this before quoting it.** Interleaved against
-`drugref_db036` (#81's method, 6 alternating runs each): `SELECT count(*) FROM curated_grain_disagreement`
-**2777.9 → 2750.2 ms**, filtered `curated_ddi_pair` **2759.6 → 2735.2 ms** — both −1%, noise. **But the
-class-grain half of `curated_ddi_pair` is EMPTY, so the LEAST/GREATEST join had nothing to join**, and both
-probes are dominated by `ddi_candidate_pair`'s ~2.7 s unfiltered scan (#75) inherited whole. It is a fair A/B
-and it says nothing about the new arm's cost. **[#112](https://github.com/cairn-ehr/drugref/issues/112) still
-owns that measurement** — db/024's 59 s → 465 ms precedent is "a synthetic probe looked fine because its fixture
-had no edges".
+**⇒ WHAT `db/037` CHANGES, AND WHAT IT IS STILL NOT MEASURED ON.** #108 exact reach `|S|·|O| − |S ∩ O|` (the
+self-pair rule is the special case, not the fix) · #109 orientation-blind disagreement join via `LEAST`/
+`GREATEST`, **an equi-join where the obvious `OR` of two arm pairs is not** · #110 the precedence becomes a view,
+with `NULLS FIRST`. Full account and the arithmetic: PROJECT-NOTES § "The low-hanging-debt round".
+**The timings there are honestly NOT evidence** — interleaved against `drugref_db036` both probes moved −1%
+(noise), but **the class-grain half is EMPTY so the new join had nothing to join**, and both are dominated by
+`ddi_candidate_pair`'s ~2.7 s scan (#75). **[#112](https://github.com/cairn-ehr/drugref/issues/112) still owns
+that measurement** — db/024's 59 s → 465 ms precedent is "a synthetic probe looked fine because its fixture had
+no edges".
 
 **⇒ THE REFERENCE DATABASE IS NOW `drugref_db037`** (ledger 37), from `TEMPLATE drugref_db036` + `drugref
-migrate` — that workflow re-tested for the FOURTH round running. **TWO CONTROLS ARE KEPT and they answer
-different questions**: `drugref_db036` is `db/037`'s before/after (what the timings above were taken against),
-and **`drugref_db034` is the pre-`db/035` control** — the only one that still exercises the class-grain block's
-missing-view guard, verified again this round (exit **2**, one sentence, no traceback). `drugref status` was
-also re-run on `drugref_db036` **with the new code** and exits 0: last round's `UndefinedColumn` shape does not
-recur, because the new denominator reads only pre-`db/037` columns.
+migrate` — that workflow re-tested for the FIFTH round running, and **rebuilt again after the review round
+edited `db/037`**: an unmerged migration may be edited (PROJECT-NOTES § repo facts — the ledger binds a
+*database*, not the repo), but every database that already applied it holds the old checksum, so it must be
+rebuilt or it will refuse to migrate. The pre-review copy is kept as **`drugref_db037_pre_review`** rather than
+dropped. **Every published count is byte-identical across the rebuild** — verified after the edit, same eight
+figures as below, plus `curated_ddi_pair_effective` **213**.
+**TWO CONTROLS ARE KEPT and they answer different questions**: `drugref_db036` is `db/037`'s before/after (what
+the timings above were taken against), and **`drugref_db034` is the pre-`db/035` control** — the only one that
+still exercises the class-grain block's missing-view guard, verified again this round (exit **2**, one sentence,
+no traceback). **`drugref status` on `drugref_db036` with the new code now RAISES the operator sentence, and
+that is the fix, not a regression** — see the guard paragraph above. The previous round recorded its exiting 0
+as evidence the denominator was safe; it was evidence the guard was blind.
 
 **⇒ DO THIS NEXT — the next slice, and the evaluation says the cheap one is DrugCentral, not SPL**: 6,337 new
-public-domain moiety-grained pairs, hard part name resolution. Either way it opens with its own design round;
-[#101](https://github.com/cairn-ehr/drugref/issues/101) holds the DrugCentral shape and its two rules
-(`ddi_ref_id = 2` only; the 2023-11-01 dump does not refresh). **`5c.3` — SPL/DailyMed mining** must answer two
-things: section 7 qualifies by **potency band**, which MED-RT's one undifferentiated class **cannot express**
-([#102](https://github.com/cairn-ehr/drugref/issues/102)), and its corpus must be filtered by **document type** — key
-on the CODE (`34391-3`/`34390-5`), not `displayName` (a 50-label sample gave 14/16 prescription, 0/30 OTC —
-**indicative only, re-measure**). **Whichever lands is the first slice that can POPULATE the class grain**, so
-`db/035`'s detectors and `db/037`'s arithmetic get their first real exercise then — and #105, #106 and #112 all
-become answerable against content rather than against nothing.
+public-domain moiety-grained pairs, hard part name resolution. Either way it opens with its own design round.
+**Both slices' shapes, rules and open questions are in ROADMAP § 5c.3 and PROJECT-NOTES — read them there, not
+here** ([#101](https://github.com/cairn-ehr/drugref/issues/101) DrugCentral,
+[#102](https://github.com/cairn-ehr/drugref/issues/102) SPL potency bands and the document-type filter).
+**Whichever lands is the first slice that can POPULATE the class grain**, so `db/035`'s detectors and `db/037`'s
+arithmetic get their first real exercise then — and #105, #106, #112 and now **#116** all become answerable
+against content rather than against nothing.
 
 **⇒ ONE DECISION IS TAKEN AND NOT BUILT — do not re-litigate it.**
 [#86](https://github.com/cairn-ehr/drugref/issues/86): **add `signed_by_unknown_key` as a fourth
-`signature_status` value.** It is a published-vocabulary widening with spec and consumer consequences, so it is a
-round of its own; the decision is recorded on the issue.
+`signature_status` value** — a published-vocabulary widening, so a round of its own; decision on the issue.
 
 **⇒ Issue-tracker hygiene — sweep-closed-but-unfixed has happened FOUR times** (#31, #35, #40, #61). **Standing rule:** near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#` ("issue 65"). Full account: PROJECT-NOTES.
 
 ## Open follow-ups (all filed as GitHub issues)
 
-**Examined by the debt round and deliberately NOT taken** — **#65** the issue itself says do not act until
-curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
-**#112/#105** blocked on class-grain content existing · **#89 `signing.py` is now 605 lines against the filed
-582, and `release_verification.py` went 532 → 540 in THIS round** (rule-3 documentation for #87) — **re-read
-that issue's figures, do not re-derive them** · **#88** a type checker is a real ongoing cost and a decision ·
-**#82/#104** both change the operator surface, held back deliberately · **#6, #25, #5** licence deeds need the
-owner's sign-off.
-**Answered by measurement this round, still open** — **#19: the "41 vs 13" puzzle RESOLVES.** 41-of-739 was the
-TERMINOLOGY grain; drugref holds **643** rules and the authoritative figure is **39 dead rules across 13
-classes** — the view's extra one is `Urease Inhibitors [MoA]`, whose only member is the rule's own subject
-(db/018 subtracts it). **Two of its three asks already shipped.** · **#106: 46 of 21,370 pairs (0.22%) are
-reachable on two axes and NONE is graded** — the shape is not live, and the 46 bounds the widening it proposes.
-**Left open by 5c.2** — **#92 a mixed-kind class-pair rule expands to ZERO pairs silently** (the real fix is
-schema-level: a rule naming two axes) · **#93 MED-RT carries no QT class** · **#94 the seven withheld entries**
-need research. **#100 is CLOSED**: `ci_class_subtree`'s narrow definition is pinned from `pg_depend`,
-mutation-verified against db/033's wide seed.
-**Filed by 5c.4 and its review** — **[#85](https://github.com/cairn-ehr/drugref/issues/85)
-`signing_key_status_kind` has no append-only floor**, so one `UPDATE` disarms every compromise verdict; **floor
-that one ALONE** — `signature_target_kind` is *designed* to move to a `/v2` · #86 (decided, above) · #88 · #89.
-Unfiled: `tests/test_cli_signing*.py` **cannot commit for real** — test isolation, shaped like #2.
-**Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what this round used**) · #82 ·
-**#75 `gap_uncurated_interaction_rule` costs ~2.7 s**, re-confirmed incidentally — it is what both hot-path
-probes above are actually measuring · #65.
-**Owned by 5c** — **#51 the 168 contradicted pairs**, which now also own the `spurious` deferral 5c.1 wrongly
-handed to 5c.2 (ROADMAP § 5c.2) · **#52 the 422 broadened assertions** (no `concept_ui` on the row) · #55 ·
-**#67 salt↔base strength equivalence has no source** · **#73 both views read every source at once** — for
-`ddi_candidate_pair` that is now *wanted*, so **re-read it against 5c.2**; it is also why #19's third ask has a
-scoping question · #20 n-ary interactions.
-**From the slice-3 design** — **#68 3,631 moieties carry a GSRS `ACTIVE MOIETY` edge to something else** (~19%;
-why 5c.2 expands salt forms on the projection side, not at read time) · #69 · **#70 354 all-false composites
-reachable by nothing** · **#71 8,163 edges dropped, transiently counted**.
-**Interaction model and identity** — #8 class-level `has_*` unused · **#36 discovery counts descendant classes,
-not reachable members** · **#37 the DAG is expanded unprunably on every query** — restricting the *root set* is
-safe, restricting the *walk* deletes the coagulation case · #48 · **#2 floor hardening** (`TRUNCATE` + owner-role
-bypass; **13** `TRUNCATE`-ing modules depend on it — re-grep before quoting) · #3 UNII-change immortality ·
-#33 MeSH CAS keys name specific forms (behind #68) · #5 INN from UNII's `Display Name` · **#7/#29 row-at-a-time
-ingest** — the two MeSH legs are 75.7% of a 133 s chain. **Before the first production load**: every parser
-re-run against a current release, #17's `add_claim` canonicalisation check, **three** rule-6 deeds (#6, #25,
-GSRS) — PROJECT-NOTES § "Verify".
+**THE FULL LEDGER MOVED TO [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md)** — every
+category, every figure, verbatim. It was duplicated here for four rounds against this file's own header rule,
+and the duplication had already cost: **#52's "422 broadened assertions" existed ONLY in the HANDOVER copy**, so
+the bounded, deliberately-disposable file was the sole record of a figure a future slice needs. Read it there.
+
+**What gates the NEXT session, and only that** — **#112/#105/#116** all wait on class-grain CONTENT, so the next
+slice unblocks four issues at once · **#89** `signing.py` **605** lines, `release_verification.py` **540**, and
+`curation.py` is now **500** with no headroom — **re-read that issue's figures, do not re-derive them** ·
+**#100 is CLOSED** (`ci_class_subtree` pinned from `pg_depend`, mutation-verified against db/033's wide seed) ·
+**#94's seven withheld entries** still need research, and **#117** says db/035 miscounts them as nine.
+**Before the first production load**: every parser re-run against a current release, #17's `add_claim`
+canonicalisation check, **three** rule-6 deeds (#6, #25, GSRS) — PROJECT-NOTES § "Verify".
 
 ## Current DSN
 

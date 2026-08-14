@@ -108,7 +108,7 @@ def test_class_pair_rule_reach_walks_the_class_grains_view_too(conn):
 
 # db/033 section 1's body, verbatim in shape -- the definition a stray replay reinstates.
 # Kept here as CONTROLLED INPUT, the way this project pins any branch the release itself
-# cannot exercise: the real db/033 cannot be replayed inside a test (it is a 200-line file
+# cannot exercise: the real db/033 cannot be replayed inside a test (it is a 378-line file
 # that also rewrites curated_ddi_pair), and the widening is the part that matters.
 _DB033_WIDE_SEED = """
 CREATE OR REPLACE VIEW drugref.ci_class_subtree AS
@@ -158,10 +158,20 @@ def test_both_walks_still_return_rows(conn, view):
     """A view whose body was replaced by something that reads nothing would satisfy every
     catalogue assertion above by naming the right relations and returning nothing at all.
 
-    Cheap on this data (`class_contraindication` seeds ~640 rules; `class_pair_contraindication`
-    is EMPTY on a fresh test schema, so its walk is legitimately zero rows) -- hence the
-    assertion is on the query SUCCEEDING and the root column being non-null where present,
-    not on a count nobody could justify.
+    BOTH WALKS ARE LEGITIMATELY EMPTY HERE, and an earlier version of this docstring said
+    otherwise -- it quoted `class_contraindication`'s ~640 rules, which is the REFERENCE
+    database's figure (643: 635 MED-RT + 8 ONCHIGH) and not this one's. The `conn` fixture
+    runs against a schema conftest.py drops and rebuilds from migrations alone, and no
+    migration inserts into either candidate tier, so both tables hold zero rows and both
+    walks return nothing.
+
+    So this test is a SMOKE CHECK, not a population check: it pins that each view still
+    PARSES and can be selected from after the catalogue assertions above have said what it
+    reads. `all()` over an empty list is vacuously true and that is accepted here rather
+    than papered over -- the alternative is seeding both tiers in a test whose subject is
+    the catalogue, and issue 100's question is which relations the view NAMES. What would
+    make this stronger is a row-carrying fixture; it is not worth the setup for a
+    parse-and-select probe, and saying so is better than a count nobody could justify.
     """
     rows = conn.execute(
         f"SELECT root_uuid, class_uuid FROM drugref.{view} LIMIT 5").fetchall()

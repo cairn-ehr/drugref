@@ -2,14 +2,20 @@
 reading pyproject.toml.
 
 Issue 79. Until this round `tests/**` carried a blanket `["E501"]` per-file-ignore, so
-tests/ had no column bound at all -- 415 lines over 88 by the time it was re-measured
-here, against 0 in src/. That was never drift: the ceiling across the whole suite is
-**119 characters**, exactly what it was when the carve-out was written and when the issue
-was filed, while the count over 88 went 324 -> 334 -> 415. A number that grows while the
-ceiling stands still is the signature of a real convention nobody wrote down. This round
-writes it down (120) and enforces it -- the second of the two ways issue 79 offered to
-close, chosen over reflowing 415 lines because that trade (#63) has already been rejected
-twice for the same reason: it buries the change's content and makes `git log -p` useless.
+tests/ had no column bound at all -- 497 lines over 88 by the time it was
+re-measured here, against 0 in src/. That was never drift: the ceiling across the whole
+suite is **119 characters**, exactly what it was when the carve-out was written and when
+the issue was filed, while the count over 88 went 324 -> 334 -> 415 -> 497. A
+number that grows while the ceiling stands still is the signature of a real convention
+nobody wrote down. This round writes it down (120) and enforces it -- the second of the
+two ways issue 79 offered to close, chosen over reflowing every one of those lines because
+that trade (#63) has already been rejected twice for the same reason: it buries the
+change's content and makes `git log -p` useless.
+
+(The 415 in that series was itself stale on the day it shipped -- the branch that measured
+it kept adding test files. `tests/ruff.toml` carries the re-measurement recipe and the
+warning; the numbers live there, and this docstring quotes the series rather than owning
+it.)
 
 WHY THIS IS A TEST AND NOT A COMMENT. Two standing rules meet here.
 

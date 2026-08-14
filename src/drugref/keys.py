@@ -91,10 +91,18 @@ def _record(row) -> KeyRecord:
 _SELECT = f"SELECT {', '.join(_COLUMNS)} FROM drugref.signing_key "
 
 # `for_verification`'s one query (issue 87), assembled from _COLUMNS rather than from
-# a second hand-written column list, so `_record` keeps unpacking positionally and a
-# column added to _COLUMNS reaches this read for free. The four status columns are
-# appended AFTER the record's, which is what lets the caller split the row on
-# `len(_COLUMNS)`.
+# a second hand-written column list, so `_record` still receives the row in _COLUMNS
+# order and a column added to _COLUMNS reaches this read for free. The four status
+# columns are appended AFTER the record's, which is what lets the caller split the row
+# on `len(_COLUMNS)`.
+#
+# `_record` BINDS BY KEYWORD, not positionally -- an earlier draft of this comment said
+# the opposite, which is worse than saying nothing: the block above is a sustained
+# argument that positional binding is the failure mode keyword binding removes, and a
+# junior reader taking this line at its word would put it back. Note also what the
+# split costs: `_record`'s `strict=True` cannot fire on THIS path, because
+# `row[:len(_COLUMNS)]` slices to exactly the right arity by construction. It is the
+# SPLIT POINT that has to stay correct here, not the zip.
 #
 # THE LATERAL IS `key_status`'s QUERY, unchanged in every clause that matters --
 # history-wide (`superseded_by IS NULL OR invalidates_all_signatures`), blanket-first,

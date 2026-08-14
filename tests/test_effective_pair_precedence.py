@@ -20,9 +20,11 @@ import uuid
 
 import pytest
 
-from drugref import curated_read, interactions
+from drugref import curated_read, curation, interactions
 from tests.test_class_grain_detectors import _a_pair_graded_by_both_grains
-from tests.test_class_subject_read_path import _a_graded_class_rule
+from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
+                                                _file_member)
+from tests.test_curated_overlay import _a_class
 
 
 def _effective(conn, subject, partner):
@@ -85,11 +87,23 @@ def test_the_moiety_grain_breaks_a_tie(conn, ingest_run_id):
     mechanism and management text than one naming the drug's whole class.
 
     This is the assertion that makes the two ORDER BY keys distinguishable from one:
-    with severity equal, only the tie-break can decide, so a view that dropped it would
-    return an arbitrary row here and flake rather than fail.
+    with severity equal, only the tie-break can decide.
+
+    `class_source='MED-RT'` IS WHAT MAKES THAT TRUE, and without it this test was
+    over-determined -- PR #113's review measured it. The fixture's ordinary pairing is
+    'MED-RT' on the moiety grain and 'ONCHIGH' on the class grain, and 'MED-RT' <
+    'ONCHIGH'; `candidate_source` is the FIRST determinism tie-break AFTER the grain key,
+    so the moiety row was winning twice over. Deleting `(rule_grain = 'moiety_rule')
+    DESC` from db/037 entirely left this test -- and the whole suite -- green, which is
+    the opposite of what the paragraph above claimed. Sourcing BOTH grains from 'MED-RT'
+    ties `candidate_source` and hands the decision to `via_subject_class`, which is
+    non-NULL on the class row and NULL on the moiety row and therefore favours the CLASS
+    row under ASC. The moiety row now wins ONLY by the grain key, and deleting that key
+    makes this test fail -- which is the point of it.
     """
     subject, partner, _sc, _oc = _a_pair_graded_by_both_grains(
-        conn, ingest_run_id, moiety_severity="major", class_severity="major")
+        conn, ingest_run_id, moiety_severity="major", class_severity="major",
+        class_source="MED-RT")
     assert _effective(conn, subject, partner) == [("major", "moiety_rule")]
 
 
@@ -290,10 +304,16 @@ def test_the_caller_reads_the_view_that_applies_the_precedence(conn):
     in two homes, SQL and Python free to drift, and nothing saying which is
     authoritative.
 
-    `pg_prepare`-free and grep-free: the module's SQL is executed and `pg_depend` is
-    asked which relation the resulting plan touched -- rather than matching a string
-    against the source, which the module's own DOCSTRING would satisfy, since it quotes
-    the precedence rule as prose in order to explain it.
+    TWO DIFFERENT INSTRUMENTS, and the docstring used to describe a third that is not
+    here. The catalogue half asks `pg_rewrite`/`pg_depend` what the VIEW's rule
+    references -- a dependency question, not a plan question, and `pg_depend` could not
+    answer a plan question if asked. The two assertions after it ARE substring checks
+    against the module's SQL constant, which is the honest way to say that the caller
+    selects from the view and does not re-apply the precedence itself; they are narrow
+    enough to be safe (the constant is assembled from `_COLUMNS`, so neither depends on
+    hand-written column text) and they are not disclaimed here any more. An earlier
+    version of this paragraph claimed the module's SQL was executed and a plan inspected,
+    and called itself grep-free twelve lines above two greps.
     """
     reads = {r[0] for r in conn.execute(
         "SELECT DISTINCT c.relname FROM pg_depend d "
@@ -308,3 +328,199 @@ def test_the_caller_reads_the_view_that_applies_the_precedence(conn):
         "the effective view is a thin wrapper over curated_ddi_pair and nothing else")
     assert "curated_ddi_pair_effective" in curated_read._EFFECTIVE_FOR_SUBJECT
     assert "rule_grain = 'moiety_rule'" not in curated_read._EFFECTIVE_FOR_SUBJECT
+
+
+def test_every_field_of_a_graded_pair_carries_its_own_column(conn, ingest_run_id):
+    """ALL NINE FIELDS, against nine distinguishable values -- PR #113's review finding.
+
+    `GradedPair` was built by positional splat from a hand-written SELECT, and only four
+    of its nine fields were asserted anywhere. Seven of the nine are text or nullable
+    text, so a transposition builds a WELL-TYPED WRONG record: the review swapped
+    `mechanism` and `management` in the SELECT and the ENTIRE SUITE STAYED GREEN, while
+    drugref handed clinical management advice to a client labelled "mechanism".
+    `relationship`/`evidence_grade` and `rule_grain`/`signature_status` are the same
+    shape.
+
+    `curated_read._COLUMNS` now binds by keyword, which removes the failure mode rather
+    than testing for it -- but the column list still has to name the RIGHT columns, and
+    that is what this pins. EVERY VALUE IS DELIBERATELY DISTINCT, including the two the
+    fixture would otherwise default to the same word, so no assertion here can pass by
+    coincidence.
+    """
+    _sc, _oc, subjects, objects = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000008100", object_code="N0000008200",
+        subject_members=[("TESTUNIIG1", "subject-drug")],
+        object_members=[("TESTUNIIG2", "partner-drug")],
+        severity="major", evidence_grade="theoretical",
+        mechanism="additive QT prolongation",
+        management="avoid; if unavoidable, ECG before and 4h after the second dose")
+
+    grades = curated_read.effective_grades_for(conn, subjects[0])
+    assert len(grades) == 1
+    got = grades[0]
+    assert got.partner_moiety == objects[0]
+    assert got.relationship == "CI_MoA"
+    assert got.severity == "major"
+    assert got.severity_rank == 2
+    assert got.evidence_grade == "theoretical"
+    assert got.mechanism == "additive QT prolongation"
+    assert got.management == (
+        "avoid; if unavoidable, ECG before and 4h after the second dose")
+    assert got.rule_grain == "class_rule"
+    assert got.signature_status == "unsigned"
+
+
+def test_the_callers_own_order_by_puts_an_unrankable_severity_first(conn,
+                                                                    ingest_run_id):
+    """`NULLS FIRST` ON THE CALLER'S LIST, not just inside the view -- and they are two
+    different ORDER BYs that both mention `severity_rank`.
+
+    Section 2 above drives the VIEW's precedence, which chooses between two rows about
+    ONE pair. This drives `effective_grades_for`'s own ordering, which ranks DIFFERENT
+    pairs against each other so a client taking the head of the list sees the most
+    concerning partner first. PR #113's review measured that the second one was pinned
+    by nothing: removing `NULLS FIRST` from `curated_read._EFFECTIVE_FOR_SUBJECT` left
+    fifteen tests green. The view would have sorted the unrankable row first and the
+    Python caller would have re-buried it one layer up, which is the whole harm
+    direction argument defeated by the last hop.
+
+    Same mutation as section 2, for the same reason -- both halves of `curated_ddi_pair`
+    filter `AND applies`, the completeness CHECK forces `applies => severity IS NOT
+    NULL`, and `severity` is a FOREIGN KEY into `severity_kind` -- so the state is
+    reached by dropping that one constraint inside the rolled-back fixture transaction.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    _sc, _oc, subjects, objects = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000008300", object_code="N0000008400",
+        subject_members=[("TESTUNIIG3", "subject-drug")],
+        object_members=[("TESTUNIIG4", "unrankable-partner")],
+        severity="unrankable")
+    # A genuinely rank-1 partner on a second rule, so the list has something for the
+    # unrankable row to outrank. Without it the assertion is satisfied by a one-element
+    # list and pins nothing at all.
+    _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000008300", object_code="N0000008500",
+        subject_members=[("TESTUNIIG3", "subject-drug")],
+        object_members=[("TESTUNIIG5", "worst-partner")],
+        severity="contraindicated")
+
+    grades = curated_read.effective_grades_for(conn, subjects[0])
+    assert [(g.severity, g.severity_rank) for g in grades] == [
+        ("unrankable", None), ("contraindicated", 1)], (
+        "an unrankable severity must head the caller's list too -- under Postgres's "
+        "default NULLS LAST it sorts below every real grade and a client reading the "
+        "head never sees it")
+    assert grades[0].partner_moiety == objects[0]
+
+
+# ============================================================================
+# 4. the determinism tail -- it has to close BOTH grains (PR #113 review)
+# ============================================================================
+
+
+def _one_pair_graded_by_two_class_rules(conn, ingest_run_id):
+    """ONE drug pair reached by TWO class-grain rules differing only in subject class.
+
+    The shape the old tail could not resolve: one subject drug filed under two subject
+    classes (MED-RT files one drug under many classes, which section 1 of db/037 argues
+    at length is ordinary), both rules naming the SAME object class on the SAME axis
+    with the SAME severity and the SAME source, curated in ONE transaction so
+    `reviewed_at` -- which defaults to now(), the TRANSACTION timestamp -- is identical
+    too. Every key in the tail ties except `via_subject_class`.
+
+    WRITTEN LARGER-UUID-FIRST ON PURPOSE. `via_subject_class` orders ASC, so the
+    expected winner is the SMALLER class uuid -- and inserting it second means heap
+    order disagrees with the answer. A view that dropped the key would have to beat
+    physical row order to pass.
+
+    Returns (subject_moiety, partner_moiety, smaller_class, larger_class).
+    """
+    first = _a_class(conn, ingest_run_id, code="N0000008600", name="Class A [MoA]")
+    second = _a_class(conn, ingest_run_id, code="N0000008700", name="Class B [MoA]")
+    smaller, larger = sorted([first, second], key=str)
+    object_class = _a_class(conn, ingest_run_id, code="N0000008800",
+                            name="Object class [MoA]")
+
+    subject = _a_moiety(conn, ingest_run_id, "TESTUNIIG6", "the shared subject drug")
+    partner = _a_moiety(conn, ingest_run_id, "TESTUNIIG7", "the partner drug")
+    _file_member(conn, subject, smaller, ingest_run_id)
+    _file_member(conn, subject, larger, ingest_run_id)
+    _file_member(conn, partner, object_class, ingest_run_id)
+
+    for subject_class in (larger, smaller):
+        interactions.add_class_pair_contraindication(
+            conn, subject_class, object_class, "CI_MoA", "ONCHIGH", ingest_run_id)
+        curation.record_class_interaction_judgement(
+            conn, subject_class, object_class, "CI_MoA", True, severity="major",
+            evidence_grade="established",
+            mechanism=f"mechanism via {subject_class}", reviewed_by="test",
+            reviewed_against="Phansalkar 2012")
+    return subject, partner, smaller, larger
+
+
+def test_two_class_rules_over_one_pair_resolve_by_subject_class(conn, ingest_run_id):
+    """THE HOLE PR #113's REVIEW MEASURED: the tail closed the moiety grain and not the
+    class grain.
+
+    A class-grain row is identified by `(via_subject_class, via_class, relationship)` --
+    `curated_class_interaction`'s live-unique natural key -- plus `candidate_source` for
+    the `class_pair_contraindication` fan-out, and `via_subject_class` was the one
+    component the first draft of db/037 left out. Two such rules tied on every key that
+    was there, so `DISTINCT ON` followed heap order: which `mechanism` and `management`
+    a prescribing client read was decided by physical row order, and a per-source
+    rebuild, a `VACUUM FULL` or a dump/restore could flip it. Silent, too -- severity is
+    equal, so no detector fires and `curated_grain_disagreement` never sees it, both
+    rows being `class_rule`.
+    """
+    subject, partner, smaller, _larger = _one_pair_graded_by_two_class_rules(
+        conn, ingest_run_id)
+
+    both = conn.execute(
+        "SELECT count(*) FROM drugref.curated_ddi_pair "
+        "WHERE subject_moiety = %s AND partner_moiety = %s",
+        (subject, partner)).fetchone()[0]
+    assert both == 2, "the premise: two class rules reach one pair, tied on every "\
+                      "published precedence key"
+
+    rows = conn.execute(
+        "SELECT via_subject_class, mechanism FROM drugref.curated_ddi_pair_effective "
+        "WHERE subject_moiety = %s AND partner_moiety = %s",
+        (subject, partner)).fetchall()
+    assert rows == [(smaller, f"mechanism via {smaller}")]
+
+
+def test_the_subject_class_key_is_what_selects_it(conn, ingest_run_id):
+    """MUTATION: flip that ONE key to DESC and the answer must flip with it.
+
+    The assertion above is compatible with a view that happens to return the smaller
+    class for some other reason -- heap order, or a planner choice on this data. Flipping
+    `via_subject_class` alone, leaving every other key exactly as shipped, is what
+    demonstrates the answer is produced BY that key. An unmutated pin is a claim, not
+    evidence, and this project has shipped two of those.
+
+    Safe to run: DDL is transactional in Postgres and the `conn` fixture rolls back.
+    """
+    subject, partner, smaller, larger = _one_pair_graded_by_two_class_rules(
+        conn, ingest_run_id)
+    assert conn.execute(
+        "SELECT via_subject_class FROM drugref.curated_ddi_pair_effective "
+        "WHERE subject_moiety = %s AND partner_moiety = %s",
+        (subject, partner)).fetchone()[0] == smaller
+
+    conn.execute("""
+        CREATE OR REPLACE VIEW drugref.curated_ddi_pair_effective AS
+        SELECT DISTINCT ON (subject_moiety, partner_moiety, relationship) *
+        FROM   drugref.curated_ddi_pair
+        ORDER  BY subject_moiety, partner_moiety, relationship,
+                  severity_rank NULLS FIRST,
+                  (rule_grain = 'moiety_rule') DESC,
+                  candidate_source, via_subject_class DESC, via_class, member_class,
+                  reviewed_at, reviewed_by
+    """)
+    assert conn.execute(
+        "SELECT via_subject_class FROM drugref.curated_ddi_pair_effective "
+        "WHERE subject_moiety = %s AND partner_moiety = %s",
+        (subject, partner)).fetchone()[0] == larger, (
+        "the shipped view's answer is not produced by via_subject_class, so this pin "
+        "is not a pin")
