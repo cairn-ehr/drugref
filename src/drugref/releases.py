@@ -46,7 +46,20 @@ from drugref import signatures, signing
 # place that mapping lives (`signatures._target_kind_catalog` is the one function that
 # reads it, and this module calls it), and 'release_manifest' itself is deliberately
 # absent from this tuple -- a release cannot enumerate itself.
-_CURATED_KINDS = ("curated_interaction", "curated_condition")
+#
+# THREE SINCE db/035 (issue #98). `curated_class_interaction` was registered in
+# `signature_target_kind` and NOT here, which is the worse half of that issue: a kind
+# absent from this tuple is absent from the manifest AND from the live side of
+# `verify_release`'s comparison, so its rows are never even reported as `added` -- the
+# release verifies INTACT while omitting an entire grain, potentially thousands of
+# pairs. A signature attesting to a set that does not contain what the operator
+# believes it does is worse than a failed one.
+# tests/test_signing_payload_coverage.py's
+# `test_every_curated_catalog_kind_is_covered_by_a_release` derives its expectation
+# from the CATALOG, so a fourth kind registered in SQL and forgotten here fails loudly
+# rather than silently narrowing every future release.
+_CURATED_KINDS = ("curated_interaction", "curated_condition",
+                  "curated_class_interaction")
 
 # THE SENTINEL A MANIFEST ENTRY'S DIGEST IS BUILT UNDER. See `enumerate_live`'s
 # docstring for why this must be the identical value every time an entry digest is

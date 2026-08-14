@@ -368,10 +368,17 @@ def test_threshold_major_may_be_zero(conn):
 
 
 def test_severity_vocabulary_is_constrained(conn):
-    """CHECK-constrained rather than free text so it cannot drift per curator."""
+    """Database-constrained rather than free text, so it cannot drift per curator.
+
+    A FOREIGN KEY into drugref.severity_kind since db/035 -- Plan C's two severity
+    columns were CHECKed independently of the curated overlay's three, which is one
+    vocabulary in five places and four ways to widen it inconsistently. The magnitude
+    test below is still a CHECK, deliberately: two values with no order to state have
+    nothing to gain from a table.
+    """
     run_id = _run(conn)
     cls = _class(conn, run_id, "T004")
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
         _effect(conn, run_id, cls, severity="quite bad")
 
 

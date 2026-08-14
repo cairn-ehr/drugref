@@ -393,7 +393,13 @@ def _handle_curate_onchigh(conn, args) -> int:
     operator typed on this command line -- so a violation means the packaged data (or
     a curator's hand-edit of it) carries a value db/029 forbids, which is a defect for
     a traceback to surface loudly, not an operator typo for a clean exit-2 line to
-    absorb. `--reviewed-by`/`--reviewed-against` ARE operator-typed, which is exactly
+    absorb. SINCE db/035 AN ILLEGAL `severity` RAISES ForeignKeyViolation RATHER THAN
+    CheckViolation (the four levels became drugref.severity_kind, so #97's precedence
+    could order them) -- "a different exception class naming the identical hazard",
+    cli_signing.py's phrase for the same substitution one column over. Nothing catches
+    either class on this path, so the operator-visible behaviour is unchanged; the
+    reasoning above holds for both and the absent catch stays absent.
+    `--reviewed-by`/`--reviewed-against` ARE operator-typed, which is exactly
     why they get the blank guard below and the file's own values do not get a second
     one.
     """

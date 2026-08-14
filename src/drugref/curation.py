@@ -271,20 +271,29 @@ class UnresolvedTarget:
     ruling -- which is meaning, not missing data: `curated_condition` is keyed on the
     (drug, condition) PAIR and deliberately carries no predicate.
 
-    `target_table` DISCRIMINATES the other two fields, and Python cannot say so here:
+    `target_table` DISCRIMINATES the other fields, and Python cannot say so here:
     on a `curated_interaction` row `object_uuid` is a substance_class UUID and
     `relationship` is present; on a `curated_condition` row it is a condition UUID and
     `relationship` is None. Two disjoint namespaces in one uuid field. Deliberately NOT
     enforced in a __post_init__, for this module's opening rule -- such a check would
     restate the view's arm labels in Python, and a third UNION arm in a later migration
     would then make `drugref status` refuse a legitimate row.
+
+    THE THIRD ARM ARRIVED (db/035, issue #90) AND THAT PARAGRAPH'S LAST SENTENCE IS WHY
+    NOTHING HERE HAD TO CHANGE except a field: `curated_class_interaction`'s subject is
+    a CLASS, so it lands in `subject_class` while `subject_moiety` is None -- and the
+    reverse for the two older arms. Both subject fields are therefore OPTIONAL, and
+    `target_table` remains the only field that always says which shape a row is. A
+    consumer filtering on either subject column silently drops the other arms: filter
+    on `target_table`.
     """
     target_table: str
-    subject_moiety: uuid.UUID
+    subject_moiety: uuid.UUID | None
     object_uuid: uuid.UUID
     relationship: str | None
     reviewed_by: str
     reviewed_against: str
+    subject_class: uuid.UUID | None
 
 
 # THE ONE COLUMN LIST, and it is one on purpose. It was two -- this tuple's contents
@@ -296,7 +305,12 @@ class UnresolvedTarget:
 # and no arity check can see. Binding by NAME removes the failure mode rather than
 # testing for it, and `strict=True` catches a column the view gained or lost.
 _UNRESOLVED_COLUMNS = ("target_table", "subject_moiety", "object_uuid",
-                       "relationship", "reviewed_by", "reviewed_against")
+                       "relationship", "reviewed_by", "reviewed_against",
+                       # db/035's trailing add, and the reason this list being ONE
+                       # list paid off: adding the class grain's subject here is the
+                       # whole Python change, because the SELECT and the record are
+                       # both built from it.
+                       "subject_class")
 
 
 def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
@@ -348,5 +362,10 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
             for row in conn.execute(
                 f"SELECT {', '.join(_UNRESOLVED_COLUMNS)} "
                 "FROM drugref.curated_target_unresolved "
+                # subject_class LAST, and it is not decoration: on the class-grain arm
+                # (db/035) `subject_moiety` is NULL for EVERY row, so the first sort
+                # key stops discriminating there entirely and two class rules sharing
+                # an object and an axis would tie on all four original columns. Same
+                # flake this ORDER BY was widened once before to prevent.
                 "ORDER BY target_table, subject_moiety, object_uuid, "
-                "relationship").fetchall()]
+                "relationship, subject_class").fetchall()]

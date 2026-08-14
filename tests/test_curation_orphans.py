@@ -49,7 +49,7 @@ def test_an_orphaned_interaction_judgement_is_returned(conn, a_graded_rule):
         reviewed_against="2026.07.06")
     conn.execute("DELETE FROM drugref.class_contraindication")
 
-    # ALL SIX FIELDS, because UnresolvedTarget is built positionally from the SELECT
+    # ALL SEVEN FIELDS, because UnresolvedTarget is built positionally from the SELECT
     # (`UnresolvedTarget(*row)`) and the stub-driven CLI tests below cannot see a
     # column-order mistake -- they supply a tuple already in the assumed order. Swapping
     # object_uuid with relationship, or reviewed_by with reviewed_against, would leave
@@ -61,7 +61,10 @@ def test_an_orphaned_interaction_judgement_is_returned(conn, a_graded_rule):
             object_uuid=a_graded_rule["class"],
             relationship="CI_MoA",
             reviewed_by="test",
-            reviewed_against="2026.07.06")]
+            reviewed_against="2026.07.06",
+            # NULL on this arm: db/035's third arm carries the CLASS grain's subject
+            # here and leaves subject_moiety NULL, and the two must not be confused.
+            subject_class=None)]
 
 
 def test_a_rekeyed_candidate_orphans_the_judgement(conn, a_graded_rule):
@@ -104,7 +107,7 @@ def test_an_orphaned_condition_ruling_is_returned(conn, a_contradicted_pair):
         "one surviving candidate table still resolves the ruling")
 
     conn.execute("DELETE FROM drugref.moiety_condition_indication")
-    # ALL SIX FIELDS on THIS arm too, for the reason given on the interaction test
+    # ALL SEVEN FIELDS on THIS arm too, for the reason given on the interaction test
     # above. The two arms of a UNION ALL are two independent column lists, and pinning
     # only one leaves the other free to transpose: swapping reviewed_by with
     # reviewed_against in the second arm alone survived the whole suite while the first
@@ -116,7 +119,8 @@ def test_an_orphaned_condition_ruling_is_returned(conn, a_contradicted_pair):
             object_uuid=a_contradicted_pair["condition"],
             relationship=None,
             reviewed_by="test",
-            reviewed_against="2026.07.06")], (
+            reviewed_against="2026.07.06",
+            subject_class=None)], (
         "a condition ruling is keyed on the PAIR and carries no relationship")
 
 
@@ -176,6 +180,17 @@ class _Conn:
             return self._orphans
         return []
 
+    def fetchone(self):
+        """Zero, for every scalar count `_handle_status` asks for.
+
+        db/035's class-grain block reads three counts this way. A stub that returned
+        rows here would be asserting the class grain's OWN output, which
+        tests/test_class_grain_detectors.py does against a real database -- these
+        tests exist to pin the ORPHAN block's rendering, and a stub is a truer test of
+        that than a live database only while it stays a stub.
+        """
+        return (0,)
+
 
 def test_status_reports_no_orphans_on_a_healthy_database(capsys):
     """`none` rather than a bare header, matching the two blocks already there: a
@@ -202,7 +217,8 @@ def test_status_reports_an_orphan_loudly(capsys):
     from drugref import cli
 
     row = ("curated_interaction", "11111111-1111-5111-8111-111111111111",
-           "22222222-2222-5222-8222-222222222222", "CI_MoA", "ahoward", "2026.07.06")
+           "22222222-2222-5222-8222-222222222222", "CI_MoA", "ahoward", "2026.07.06",
+           None)
     assert cli._handle_status(_Conn([row]), None) == 0
     out = capsys.readouterr().out
     assert "unresolved curated targets: 1" in out
@@ -226,7 +242,8 @@ def test_status_renders_a_condition_orphan_without_a_relationship(capsys):
     from drugref import cli
 
     row = ("curated_condition", "11111111-1111-5111-8111-111111111111",
-           "33333333-3333-5333-8333-333333333333", None, "ahoward", "2026.07.06")
+           "33333333-3333-5333-8333-333333333333", None, "ahoward", "2026.07.06",
+           None)
     assert cli._handle_status(_Conn([row]), None) == 0
     out = capsys.readouterr().out
     assert ("curated_condition 11111111-1111-5111-8111-111111111111 -> "

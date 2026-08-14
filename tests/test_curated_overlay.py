@@ -139,11 +139,20 @@ def test_applies_has_no_default(conn, a_moiety, ingest_run_id):
 
 
 def test_the_vocabulary_lives_in_the_database(conn, a_moiety, ingest_run_id):
-    """A severity outside Plan C's four levels must be refused by the CHECK, not by a
-    Python list nobody keeps in step with it."""
+    """A severity outside Plan C's four levels must be refused by the DATABASE, not by
+    a Python list nobody keeps in step with it.
+
+    A FOREIGN KEY into drugref.severity_kind since db/035, on the identical reasoning
+    the `relationship` test below sets out: db/006's finding 1, applied to the fifth
+    vocabulary this schema had written in five places. Issue #97 needed the four levels
+    ORDERED (a consumer must be able to take the more severe of two disagreeing
+    grades), an order cannot live in a CHECK, and a table plus five CHECKs restating it
+    is six homes for one vocabulary. ForeignKeyViolation rather than CheckViolation is
+    the only way to observe that the key -- not a stale CHECK -- is doing the work.
+    """
     klass = _a_class(conn, ingest_run_id)
     with pytest.raises(
-        psycopg.errors.CheckViolation, match="curated_interaction_severity"
+        psycopg.errors.ForeignKeyViolation, match="curated_interaction_severity"
     ):
         _assert_interaction(conn, a_moiety, klass, severity="catastrophic")
 

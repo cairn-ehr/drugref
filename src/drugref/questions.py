@@ -341,6 +341,41 @@ _GAP_SOURCES = {
             "entry_id || ', and no drugref identity resolves it, so that "
             "interaction cannot be projected at all.'"),
     },
+    # db/035, gap kind 16. THE CLASS GRAIN'S PRIMARY QUESTION, and the grain shipped
+    # without it: db/032-db/034 built the class x class write path and db/031 gave it a
+    # kind for the LESSER failure (an endpoint resolving to nothing), while "these
+    # class x class rules are ungraded" reached nobody. An operator could see
+    # `class_rules_written=9`, never run the deliberately-separate `drugref curate`,
+    # and leave nine ONC high-priority rules permanently uncurated with
+    # question_worklist showing nothing to do.
+    #
+    # THE gap_key FORMAT IS FROZEN, like every other here, and carries the rule's WHOLE
+    # natural key -- both classes AND the axis. Omitting the axis would fold two rules
+    # over one class pair onto ONE immortal question_uuid, which is precisely the
+    # defect the 5c.2 review found in unresolved_onc_endpoint's own key (it omitted
+    # endpoint_role) and the one db/017 was re-issued for. `CI_AXIS:` rather than
+    # `AXIS:` because uncurated_interaction_rule above already spells it that way: one
+    # convention, not two that differ by one word.
+    #
+    # The view is GROUPED WITHOUT `source` so this key's grain matches it -- see
+    # db/035 section 3, which explains why a per-source grain would upsert two rows
+    # onto one question_uuid and silently overwrite one text with the other.
+    "uncurated_class_interaction_rule": {
+        "view": "gap_uncurated_class_interaction_rule",
+        "key_sql": ("'CLASS:' || subject_class || '/CLASS:' || object_class || "
+                    "'/CI_AXIS:' || relationship"),
+        # Names the fan-out, as its moiety-grain sibling does, because the answer is a
+        # judgement whose cost is the number of pairs that inherit it -- and says "up
+        # to", since max_pair_count is an upper bound (the read path excludes a drug
+        # pairing with itself, which the product cannot see).
+        "text_sql": (
+            "'How severe is co-administering a drug of ' || subject_class_name || "
+            "' with a drug of ' || object_class_name || ', by what mechanism, and "
+            "what should a prescriber do? The rule is ingested and graded by nobody, "
+            "and up to ' || max_pair_count || ' drug pair(s) inherit the answer. "
+            "Grading it `applies = false` is a real answer and retires this "
+            "question.'"),
+    },
 }
 
 

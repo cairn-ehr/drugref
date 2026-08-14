@@ -486,8 +486,14 @@ def test_an_edited_grade_supersedes_rather_than_mutates(
 def test_an_illegal_severity_reaches_the_database_check(
         conn, seeded, ingested, FIXTURE_BAD_SEVERITY):
     """No Python list of legal severities. db/006's lesson: two vocabularies
-    kept in step by a comment drift the moment one is widened."""
-    with pytest.raises(psycopg.errors.CheckViolation):
+    kept in step by a comment drift the moment one is widened.
+
+    ForeignKeyViolation since db/035, where the four levels became
+    drugref.severity_kind -- "a different exception class naming the identical
+    hazard", exactly as cli_signing.py's docstring already records for `keys revoke`.
+    Nothing catches either class on this path, so what the operator SEES is unchanged.
+    """
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
         cli_curate.curate_onchigh(conn, path=FIXTURE_BAD_SEVERITY,
                                   reviewed_by="Dr X", reviewed_against="x")
 

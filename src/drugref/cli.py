@@ -303,7 +303,63 @@ def _handle_status(conn, args) -> int:
                   f"recorded {b.recorded_at} (lag {b.lag})")
     else:
         print("\nbackdated signatures: none")
+
+    _print_class_grain_block(conn)
     return 0
+
+
+def _print_class_grain_block(conn) -> None:
+    """THE FIFTH BLOCK (db/035): what the class x class grain is doing, if anything.
+
+    WHY THE GRAIN NEEDS A BLOCK OF ITS OWN AND THE MOIETY GRAIN DOES NOT. The moiety
+    grain's failures all reach a human already -- its ungraded rules are a gap kind, so
+    they land in `question_worklist`; its orphans are the block above. The class grain
+    had neither until this migration, and one of its two failures still cannot be a gap
+    kind: a rule that expands to ZERO drug pairs is not a question a curator can answer
+    (grading it changes nothing -- #36's measured lesson), yet it is exactly the state
+    the PR #95 review named as the whole point of this round -- "ingested, graded,
+    committed and reported successful while reaching zero patients". A curator cannot
+    be told; an operator must be.
+
+    SPLIT OUT OF `_handle_status` rather than inlined, because it is the one block a
+    test can drive on its own. The four blocks above it need a whole status run to
+    reach, which is why three of them shipped untested and two of those shipped
+    unreached (issues 74, 76, review I7).
+
+    NO UndefinedTable GUARD, unlike the two blocks above, and the asymmetry is
+    deliberate: those guard views that predate a migration an EXISTING database may not
+    have applied, and the message tells the operator to run `drugref migrate`. Any
+    database this code can reach at all has run migrations to at least db/029 (the
+    block above would have raised first), so a missing db/035 view here would be a
+    genuinely mis-shaped schema, and the standing rule is that those still raise.
+    """
+    ungraded = conn.execute(
+        "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule"
+    ).fetchone()[0]
+    # DISTINCT ON THE THREE NATURAL-KEY COLUMNS, not count(*): the candidate tier's
+    # primary key includes `source`, so one clinical rule asserted by two authorities
+    # is two rows and count(*) would report it twice. The gap view above already
+    # groups for this reason; this half has to as well or the two lines disagree.
+    dead = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, object_class_uuid, "
+        "relationship FROM drugref.class_pair_rule_reach WHERE max_pair_count = 0) z"
+    ).fetchone()[0]
+    disagreements = conn.execute(
+        "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0]
+
+    print(f"\nungraded class rules: {ungraded}")
+    if dead:
+        print(f"class rules reaching no pair: {dead}"
+              "  ** ingested and graded, reaching zero patients -- check the axis "
+              "against both classes' membership (issue #92) **")
+    else:
+        print("class rules reaching no pair: 0")
+    if disagreements:
+        print(f"cross-grain disagreements: {disagreements}"
+              "  ** one drug pair graded differently by both grains; consumers take "
+              "the MORE SEVERE, so reconcile or the broader rule stands **")
+    else:
+        print("cross-grain disagreements: 0")
 
 
 def _handle_ingest(conn, args) -> int:

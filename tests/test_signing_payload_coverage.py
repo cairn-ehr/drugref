@@ -18,6 +18,11 @@ from tests.test_live_key_index_guard import _single_live_tables
 CURATED = [
     ("curated_interaction/v1", "curated_interaction", "curated_interaction_id"),
     ("curated_condition/v1", "curated_condition", "curated_condition_id"),
+    # db/035 (issue #98). The class grain was a curated table that could not be signed
+    # and, worse, could not enter a release manifest at all -- so a signed release
+    # omitted it silently and `verify_release` still passed.
+    ("curated_class_interaction/v1", "curated_class_interaction",
+     "curated_class_interaction_id"),
 ]
 
 
@@ -108,8 +113,10 @@ def test_every_curated_context_has_a_frozen_natural_key():
     above would never notice, because they iterate CURATED -- a list in this file.
     `releases._CURATED_KINDS` is the real scope, so it is what gets checked."""
     from drugref import releases
-    assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition"}
-    for context in ("curated_interaction/v1", "curated_condition/v1"):
+    assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition",
+                                            "curated_class_interaction"}
+    for context in ("curated_interaction/v1", "curated_condition/v1",
+                    "curated_class_interaction/v1"):
         assert context in signing.NATURAL_KEY_COLUMNS
     # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of
