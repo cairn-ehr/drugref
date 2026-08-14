@@ -19,7 +19,7 @@
 **Merged to `main`**: through **5c.4 — signing**, PLUS **5c.2 — the ONC floor**, merged LAST despite its lower number — **ROADMAP's order is NOT the merge order.** **`db/029`–`db/036` FROZEN.**
 
 **⇒ JUST FINISHED — the LOW-HANGING-DEBT ROUND: `db/037` + `curated_read.py` + `tests/ruff.toml`**, a sweep of
-all 47 open issues for work that is small, self-contained and needs no design decision. **Eight cleared —
+all **51** open issues for work that is small, self-contained and needs no design decision. **Eight cleared —
 79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement.** Suite **1465 → 1511**, `ruff` clean.
 Full account, every measurement, and **the list of what was deliberately NOT taken and why**: PROJECT-NOTES §
 "The low-hanging-debt round"; ROADMAP § 5c.2c.

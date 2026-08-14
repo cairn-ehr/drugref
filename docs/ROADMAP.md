@@ -554,7 +554,7 @@ denominator · [#112](https://github.com/cairn-ehr/drugref/issues/112) measure t
 class-grain content ships. **Four of the five are closed by the debt round below; 112 stays open by design.**
 
 ##### 5c.2c — the low-hanging-debt round ✅ DONE — `db/037`, `curated_read.py`, 2026-08-14
-A sweep of all 47 open issues for work that is small, self-contained and needs no design decision. **Eight
+A sweep of all **51** open issues for work that is small, self-contained and needs no design decision. **Eight
 cleared** — 79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement. Suite **1465 → 1511**,
 `ruff` clean. Full account, every measurement and the list of what was deliberately NOT taken: PROJECT-NOTES §
 "The low-hanging-debt round".

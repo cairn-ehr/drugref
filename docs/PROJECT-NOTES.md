@@ -1758,7 +1758,7 @@ edges").
 
 ## The low-hanging-debt round (2026-08-14) — `db/037`, `curated_read.py`, suite 1465 → 1511
 
-A sweep of the 47 open issues for work that is small, self-contained and needs no design decision. **Eight
+A sweep of the **51** open issues for work that is small, self-contained and needs no design decision. **Eight
 cleared** (79, 87, 100, 108, 109, 110, 111, plus 19 and 106 answered by measurement), one migration, no
 behaviour change on any published count. Everything deliberately NOT taken is listed at the end, with why —
 the point of a debt round is as much to record what is not fruit as to eat what is.
