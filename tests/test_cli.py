@@ -124,6 +124,12 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     # is about, and tests/test_class_grain_detectors.py drives the case where it is not.
     assert "class rules: 0 (ungraded 0, reaching no pair 0)" in out
     assert "cross-grain disagreements: 0" in out
+    # The SIXTH block (db/038, issue 116) is back in the "none" voice of the four above
+    # rather than the fifth's counts, and the difference is what the number means: a
+    # curated ruling whose severity is absent from `severity_kind` is a SCHEMA fault that
+    # should not exist at all, so there is no healthy non-zero reading for an operator to
+    # diff. This stub returns [] from fetchall(), which is the intact-vocabulary case.
+    assert "unrankable severities (DDI grain): none" in out
 
 
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):

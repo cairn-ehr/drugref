@@ -114,16 +114,23 @@ def _a_second_graded_rule(conn, ingest_run_id, subject):
 def test_curated_ddi_pair_columns_are_unchanged_with_the_new_trailing_columns_last(
         conn):
     """`CREATE OR REPLACE VIEW` cannot reorder or rename an existing column -- only
-    append one. This pins ALL FOUR layers now: every pre-db/030 column (db/029
+    append one. This pins ALL FIVE layers now: every pre-db/030 column (db/029
     section 3) survives in its EXISTING order and name, `signature_status` (db/030)
     is exactly where db/030 put it, `rule_grain`/`via_subject_class` (db/033, Task 11
-    -- the two-grain read path) follow, and `severity_rank` (db/035, issue #97) is
-    strictly LAST. A row-count comparison could not tell a reordered view from an
-    untouched one; this can.
+    -- the two-grain read path) follow, `severity_rank` (db/035, issue #97) after them,
+    and `effective_rank` (db/038, issue 116) is strictly LAST. A row-count comparison
+    could not tell a reordered view from an untouched one; this can.
 
     `severity_rank` is what makes the view's stated precedence writable by a consumer
-    -- `ORDER BY severity_rank, (rule_grain = 'moiety_rule') DESC` -- since `severity`
-    is text and sorts 'minor' above 'moderate'."""
+    -- since `severity` is text and sorts 'minor' above 'moderate'.
+
+    `effective_rank` IS `COALESCE(severity_rank, 0)` AND IS THE ONE TO THRESHOLD ON.
+    db/037 made an unrankable severity sort FIRST, which is right -- under-warning is
+    the harm direction -- but inside a `DISTINCT ON` that makes it WIN and discards the
+    rankable competitor, so the client received `severity_rank = NULL` with no second
+    row behind it, and every `<= n` threshold silently dropped the pair. Both columns
+    are published because they answer different questions: `severity_rank` stays
+    NULLABLE so the schema fault remains visible, `effective_rank` never is."""
     columns = [row[0] for row in conn.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = 'drugref' AND table_name = 'curated_ddi_pair' "
@@ -133,7 +140,8 @@ def test_curated_ddi_pair_columns_are_unchanged_with_the_new_trailing_columns_la
         "member_class", "is_direct", "severity", "mechanism", "management",
         "evidence_grade", "question_uuid", "curated_source", "reviewed_by",
         "reviewed_against", "reviewed_at", "upstream_release", "candidate_source",
-        "signature_status", "rule_grain", "via_subject_class", "severity_rank"]
+        "signature_status", "rule_grain", "via_subject_class", "severity_rank",
+        "effective_rank"]
 
 
 def test_curated_condition_ruling_columns_are_unchanged_with_signature_status_last(
