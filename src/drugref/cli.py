@@ -59,8 +59,8 @@ from collections.abc import Sequence
 import psycopg
 
 import drugref
-from drugref import (cli_curate, cli_policy, cli_signing, cli_status, curation, db,
-                     interactions, signatures)
+from drugref import (cli_curate, cli_interactions, cli_policy, cli_signing, cli_status,
+                     curation, db, interactions, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -217,11 +217,12 @@ def _handle_migrate(conn, args) -> int:
 
 def _handle_status(conn, args) -> int:
     """What is loaded, what died trying, what a rebuild orphaned, what was signed late,
-    and what the class grain is doing. FIVE blocks, one command: an operator asking "is
-    this current?" needs all of them, and reading only the first would report a stale
-    release as healthy. (It said THREE until db/035 added the fifth and left this
-    sentence behind -- cli_status.py's block calls itself the fifth in its own
-    first line, so the two disagreed by two.)
+    what the class grain is doing, and what drugref cannot rank. SIX blocks, one
+    command: an operator asking "is this current?" needs all of them, and reading only
+    the first would report a stale release as healthy. (It said THREE until db/035 added
+    the fifth and left this sentence behind -- cli_status.py's block calls itself the
+    fifth in its own first line, so the two disagreed by two. db/038's sixth is counted
+    here in the same commit that adds it, which is the whole lesson of that drift.)
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
@@ -326,6 +327,16 @@ def _handle_status(conn, args) -> int:
         print("\nbackdated signatures: none")
 
     cli_status.print_class_grain_block(conn)
+    # THE SIXTH BLOCK (db/038, issue 116). LAST because it is the rarest: it reports a
+    # SCHEMA fault -- a live curated ruling whose severity is absent from severity_kind,
+    # which a foreign key on both curated tables makes unreachable -- so on every
+    # healthy database it is one line of `none`, and the blocks an operator actually
+    # reads should not have to be scrolled past to reach it.
+    #
+    # STILL EXITS 0 when it finds something, like the backdated-signature block and
+    # unlike a raised guard. `status` REPORTS; it is not a health check with a contract
+    # on its exit code, and three of these blocks would already have claims on it.
+    cli_status.print_unrankable_severity_block(conn)
     return 0
 
 
@@ -415,6 +426,11 @@ def build_parser() -> argparse.ArgumentParser:
     cli_policy.register(commands)
     cli_signing.register(commands)
     cli_curate.register(commands)
+    # Issue 114: `curated_read.effective_grades_for` had no consumer in src/, which is
+    # the very "half a feature" its own module docstring argues against. This is that
+    # consumer, and building it is what turned the DIRECTIONAL contract from a docstring
+    # paragraph into a user-visible choice -- see cli_interactions.py.
+    cli_interactions.register(commands)
 
     return parser
 

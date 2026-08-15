@@ -133,6 +133,27 @@ worth keeping does not belong in the file whose history is deliberately disposab
   record has a format/version/algorithm field, the verifier reads that field; if it never reads it, the field is
   decoration and the guard is missing.** The same instinct is why `signing.FIELD_LISTS` is frozen rather than
   derived — the one place in this repo where deriving from the catalog is the wrong answer.
+- **A PROSE RULE THAT HAS FAILED FIVE TIMES IS NOT A RULE, IT IS A WISH** (#114, the db/038 round). The
+  sweep-closed-but-unfixed pattern has now happened **five** times — #31, #35, #40, #61, #114 — and the fifth is
+  the one that settles the argument: `ed1ab5e`'s body reads *"Filed rather than fixed: #114 …"*, which is the
+  **identical sentence template** that closed #61 via `92baaea`, in a repo where the paragraph below § "The
+  policy-surface debt round" already documents that exact trap, names the token-adjacency mechanism, and warns
+  that *"a colon in between does not save you"*. Writing the trap down, in full, with the mechanism explained,
+  did not stop the next round walking into it — and only #114 closed, because no keyword sits next to #115,
+  #116 or #117 in the same sentence. **The rule stands (near `close`/`fix`/`resolve` in any inflection, write
+  the number WITHOUT a `#`), and the standing conclusion is that it needs a MECHANICAL guard, not a sixth
+  restatement** — filed as [#118](https://github.com/cairn-ehr/drugref/issues/118). Until that lands, the cheap
+  habit that actually works is to write *"Filed rather than fixed: issue 114, issue 115, …"* — no `#`, nothing
+  for the linker to match.
+- **A FIGURE QUOTED FROM AN ISSUE'S PROSE INTO A `COMMENT ON` OUTLIVES THE ISSUE** (#117, the db/038 round).
+  `db/035` quoted issue 96's failure-scenario prose faithfully — `class_rules_written=9` — and that number was
+  never reconciled against issue 94, which **withheld SEVEN** class×class ONC entries. The 9 then landed in the
+  catalog, where it is shipped data rather than a draft, and `db/037`'s first draft re-imported it: **one file
+  carrying "seven" on line 10 and "~9" on line 63**, because its author read db/035 for one and the issue for
+  the other. Corrected in the catalog by `db/038` § 3 (a `COMMENT ON` re-issue, db/027's precedent — db/035 is
+  merged and immutable, so its `--` file prose CANNOT be corrected and this note is the only record of that
+  half). **The rule: a figure copied out of an issue into a migration is a MEASUREMENT as soon as it merges —
+  re-derive it from the data before writing it down, and never from the issue that motivated the work.**
 
 ## Merged rounds, compressed — the traps only
 
@@ -1924,6 +1945,140 @@ recipe must be run before it ships.** `tests/ruff.toml` now carries a working re
 to the series rather than overwrite it, and an explicit warning that the override is load-bearing and its
 absence has no symptom.
 
+## The db/038 round (2026-08-15) — closing PR #113's four filed issues, suite 1516 → 1540
+
+The four issues PR #113's review **filed rather than fixed** (114–117), taken as one round because three of
+them touch the same read path and the fourth needed the migration the first one was already writing. One new
+migration, **one new command**, one rename, one correction to a merged migration's prose. Suite **1516 → 1540**,
+`ruff` clean, docs build clean.
+
+### ⇒ ISSUE 114 WAS NOT OPEN WHEN THIS ROUND STARTED, AND IT SHOULD HAVE BEEN
+
+`ed1ab5e`'s commit body reads *"Filed rather than fixed: #114 effective_grades_for has no consumer in src/,"* —
+and GitHub's linker matched the literal substring **`fixed: #114`** as a closing keyword and closed it. The
+sentence *declaring the issue unfixed* is what closed it. #115, #116 and #117 sit in the same sentence and
+survived, because no keyword is adjacent to them: that asymmetry is what pins the mechanism rather than
+inferring it.
+
+**Fifth occurrence** (#31, #35, #40, #61, #114) — and the second using the **identical sentence template**, after
+`92baaea` did it to #61 and this file documented the trap in full, named token adjacency as the mechanism, and
+warned that "a colon in between does not save you". A prose rule that has failed five times is not a rule; see
+the standing rule added above, and **[#118](https://github.com/cairn-ehr/drugref/issues/118)** for the
+mechanical guard, which is the only intervention not yet tried.
+
+### Issue 116 — `NULLS FIRST` fixed the sort and left the payload
+
+**What db/037 got right and this round keeps:** an unrankable severity must sort ABOVE `contraindicated`, not
+below `minor`, because under-warning is the harm direction. **What it left open:** inside a `DISTINCT ON` the
+sort key does not merely SHOW that row, it makes it **WIN**, and the rankable competitor is discarded from the
+view outright. The client then gets `severity_rank = NULL` with **no second row behind it**, and every form of
+the threshold `GradedPair`'s own docstring tells clients to write drops it — SQL `<= 2` is UNKNOWN, Python
+`<= 2` raises, `x and x <= 2` is silently False.
+
+| competitor | NULLS LAST (pre-db/037) | NULLS FIRST (db/037) |
+|---|---|---|
+| `minor` (rank 4) | client sees `minor` | client sees the unrankable word — improved |
+| `contraindicated` (rank 1) | client sees rank 1 | **threshold drops the pair entirely** |
+
+**So db/037 traded one under-warning for a worse one, visible only in the case its test did not drive** — the
+existing test grades the competitor `minor`, which is precisely why the suite could not see it.
+
+**`db/038` § 1: a second column, never a changed one.** `effective_rank = COALESCE(severity_rank, 0)::smallint`
+appended to both halves of `curated_ddi_pair` (CREATE OR REPLACE admits new columns only at the END, and
+`curated_ddi_pair_effective` depends on it), and the effective view's ORDER BY now reads `effective_rank`
+instead of `severity_rank NULLS FIRST` — the **same order**, 0 preceding 1 exactly as NULLS FIRST placed the
+NULL, but ONE spelling of one rule. Two spellings is how this issue happened.
+
+**COALESCEing `severity_rank` itself would have been the worse bug**, and the tests are written so it cannot
+pass: a broken row would become indistinguishable from a genuine rank 0, destroying the only evidence the
+schema is wrong. `severity_rank` stays NULLABLE; **both columns are asserted together** in every new test.
+
+**`db/038` § 2: the fault reaches an operator.** A mitigation that hides its own trigger is how issues 74 and 76
+happened, so `curated_unrankable_severity` (both curated tables, live rulings only) is read by
+`curated_read.unrankable_severities` and printed as `drugref status`'s **sixth** block. **It counts RULES, not
+expanded pairs** — one class rule expands to ~2,263 (db/035) and an operator fixes the rule — which also keeps
+`ddi_candidate_pair`'s ~2.7 s scan (#75) out of every status run.
+
+**`AND applies` IS LOAD-BEARING HERE FOR A NON-OBVIOUS REASON, and it is the one case reachable on a HEALTHY
+database.** db/029's completeness CHECK is `(NOT applies AND severity IS NULL …)`, so a **withdrawn** ruling
+carries no severity — and `NULL = anything` is NULL, so the LEFT JOIN finds nothing and `sk.severity IS NULL`
+is TRUE. Without the filter the view would report **every withdrawn ruling in the overlay** as a schema fault,
+a false positive growing with every correction a curator ever makes. Mutation-verified: delete that one
+predicate and the withdrawn ruling appears.
+
+### Issue 115 — a denominator that denominated three numbers, one of which was not in its population
+
+`total` → **`rules_total`**, renamed and not aliased (a test asserts the old name is gone). `ungraded` and `dead`
+are filters over the same `class_pair_rule_reach` tier, so they are bounded by it; **`disagreements` counts
+PAIRS** — rows in `curated_grain_disagreement`, whose grain is the rule pair over the two-grain expansion — and
+never was. Once class-grain content ships, `ClassGrainCounts(rules_total=9, …, disagreements=2263)` is the
+EXPECTED shape, so `{disagreements} of {total}` would have been wrong by two orders of magnitude on the
+operator surface. The three invariants are now **asserted**, not just described, and the disjointness of
+`ungraded`/`dead` (via `HAVING max(max_pair_count) > 0`, #36) is stated so nobody reconstructs it as overlapping.
+
+**COST, RECORDED RATHER THAN HIDDEN: `curation.py` went 500 → 520 lines**, past rule 4. That is rule 3 against
+rule 4, which this repo has ruled on twice (`cli_status.py`'s docstring): **move code, never shave comments.**
+Measured onto [#89](https://github.com/cairn-ehr/drugref/issues/89) with the natural seam named
+(`ClassGrainCounts` + `class_grain_counts` + `_RULE_COUNT`, ~90 lines, one consumer) rather than split inside a
+correctness diff — db/030's own precedent for exactly this.
+
+### Issue 117 — BOTH options, because they cover different halves
+
+The `9` traces to issue 96's prose, quoted faithfully by db/035, never reconciled against #94's **seven**.
+`db/038` § 3 re-issues the `COMMENT ON` with seven (db/027's precedent; only the figure changes, so a diff shows
+one word). db/035's **plain `--` comments cannot be corrected by anything** — stripped at load, and the file is
+merged and immutable — so that half is the standing rule added above. Verified on `drugref_db038`: the live
+comment no longer matches `%nine ingested%`, and does match `%seven ingested%`.
+
+### Issue 114 — the consumer, and what building it actually taught
+
+`drugref interactions <moiety> [--with <other>]`, in a new `cli_interactions.py` (the pattern `cli_policy`,
+`cli_signing`, `cli_curate` and three more already follow; cli.py was 461 lines). No SQL in the handler.
+
+**The issue's judgement that option 1 "would actually test the design" was correct.** The two questions a user
+asks are not the same shape, and only building the command makes that concrete:
+
+- `interactions X` is ONE lookup and can only ever return rules stated with X as SUBJECT — a genuinely partial
+  answer, so it prints a note saying so. An unqualified empty list here reads as "these do not interact", which
+  **drugref has not asserted**.
+- `interactions X --with Y` does **TWO** lookups, which is exactly what `effective_grades_for`'s docstring
+  prescribes — done in the caller, visibly, rather than folded into the library where it would hide that two
+  lookups happened.
+
+**Measured on the real ONC atazanavir/PPI entry**: `interactions <ppi> --with <atazanavir>` finds the rule
+though it is stated the other way round, while `interactions <ppi>` alone correctly finds nothing and says why.
+That asymmetry was a docstring paragraph until there was a command to feel it. Neither form ever says "safe" —
+an absent rule is not evidence of absence — and a test screens the output for the specific verdicts drugref
+must not make.
+
+### An over-determined pin, found by mutation while changing what it pins
+
+`test_the_callers_own_order_by_puts_an_unrankable_severity_first` — added by PR #113's review — put the
+unrankable partner on the **smaller** uuid (`TESTUNIIG4` → `505e7055…`, `TESTUNIIG5` → `f06c401d…`), so
+`partner_moiety` alone produced the expected order and **deleting the rank key from the caller's `ORDER BY` left
+it green**. The severities are swapped now, so only the rank can produce the answer; the same mutation makes it
+red. This is the third time `_a_pair_graded_by_both_grains`'s own lesson has applied — **a test whose expected
+result is over-determined cannot fail** — and the only reason it was caught is that the round mutated a pin it
+was editing rather than trusting it.
+
+### Measured on `drugref_db038` (from `TEMPLATE drugref_db037` + `drugref migrate`, the SIXTH round running)
+
+**Every published count byte-identical to `drugref_db037`** — `ddi_candidate_pair` 21,877 · `curated_ddi_pair`
+255 · `curated_ddi_pair_effective` 213 · `open_question` 21,848 · `gap_unpopulated_contraindication` 13 ·
+`condition_contraindication_expanded` 192,161 · `class_expansion_policy` 14 · `loaded_release` 6.
+
+**And the new surfaces read correctly on real data**, which is what makes the migration content-neutral rather
+than merely believed so: `effective_rank` differs from `severity_rank` in **0** of 255 rows and is NULL in **0**
+(the COALESCE never fires on a healthy database, exactly as intended), and `curated_unrankable_severity` is
+**empty**. `drugref status` prints `unrankable severities: none` as its sixth block.
+
+**NO TIMING WAS TAKEN, and that is deliberate rather than an omission.** § 1 adds one `COALESCE` over a column
+already selected and swaps one ORDER BY key for an equivalent one; § 2's view is a new read nothing else
+depends on. [#112](https://github.com/cairn-ehr/drugref/issues/112) still owns the class-grain measurement, and
+its precondition is unchanged — `class_pair_contraindication` is empty on every database in existence, so a
+probe here would measure a join with nothing to join, which is precisely the mistake db/024's 59 s → 465 ms
+precedent records.
+
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
 Both sources were licence-checked during 5c.2 and recorded as "worth evaluating". They have now been retrieved
@@ -2107,7 +2262,8 @@ needs. HANDOVER now carries only what gates the NEXT session and points here.
 curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
 **#112/#105** blocked on class-grain content existing · **#89 `signing.py` is now 605 lines against the filed
 582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87) — **re-read that issue's
-figures, do not re-derive them**; `curation.py` is now **500** and has no headroom left · **#88** a type checker
+figures, do not re-derive them**; `curation.py` **has since crossed the cap at 520** (the db/038 round, issue
+115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -2127,10 +2283,18 @@ disarms every compromise verdict; **floor that one ALONE** — `signature_target
 `/v2` · #86 (decided, not built: `signed_by_unknown_key` as a fourth `signature_status`) · #88 · #89. Unfiled:
 `tests/test_cli_signing*.py` **cannot commit for real** — test isolation, shaped like #2.
 
-**Filed by the PR #113 review** — **#114** `effective_grades_for` has no consumer in `src/` · **#115**
-`ClassGrainCounts.total` reads as a denominator for `disagreements`, which counts PAIRS · **#116 `NULLS FIRST`
-inside `DISTINCT ON` publishes `severity_rank = NULL` to a thresholding client** · **#117** db/035 says nine
-class rules where #94 and the data say seven.
+**Filed by the PR #113 review, ALL FOUR NOW CLOSED by the db/038 round** — #114 (`effective_grades_for` had no
+consumer → `drugref interactions`) · #115 (`total` → `rules_total`) · #116 (`effective_rank`, plus the
+unrankable-severity detector) · #117 (`COMMENT ON` re-issued with seven). Full account: § "The db/038 round".
+**#114 had to be REOPENED first** — it was auto-closed by `ed1ab5e`'s own "Filed rather than fixed: #114"
+sentence, the fifth occurrence of that pattern and the second with that exact template.
+
+**Filed by the db/038 round** — **[#118](https://github.com/cairn-ehr/drugref/issues/118) the
+sweep-closed-but-unfixed pattern needs a MECHANICAL guard** (a `commit-msg` hook): five occurrences, and the
+prose rule was written down in full — mechanism included — between occurrences four and five without stopping
+it. **#89 was re-measured, not re-filed**: `signing.py` **605**, `release_verification.py` **540**, and
+`curation.py` has now CROSSED the cap at **520** (issue 115's docstring), with the natural seam recorded on the
+issue.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -2309,6 +2473,9 @@ ran in CI and `ruff` was not even a project dependency.
 - **Code:** `src/drugref/{ids,claims,classes,conditions,db,interactions,local,questions}.py` +
   `src/drugref/{indications,accumulation,provenance,cli,cli_chain,cli_policy,overlay,curation}.py` +
   the 5c.4 signing stack `src/drugref/{signing,keys,signatures,releases,release_verification,cli_signing,cli_signing_release}.py`
+  + the curated READ surface `src/drugref/{curated_read,cli_status,cli_interactions}.py` — `curated_read` owns
+  both reads of the graded overlay (`effective_grades_for`, `unrankable_severities`), `cli_status` owns the two
+  later `drugref status` blocks, and `cli_interactions` is `drugref interactions` (db/038, issue 114)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
@@ -2343,20 +2510,22 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
-  `drugref_db037`** — `drugref_db036` plus `db/037` (the low-hanging-debt round's three view corrections and
-  one new view) applied through the documented `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which
-  is that workflow re-tested rather than assumed for the **fourth** round running. `drugref_db036` was
+  `drugref_db038`** — `drugref_db037` plus `db/038` (the db/038 round: `effective_rank`, the
+  unrankable-severity detector, and issue 117's `COMMENT ON` correction) applied through the documented
+  `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which is that workflow re-tested rather than assumed
+  for the **fifth** round running. `drugref_db037` was `drugref_db036` plus `db/037`, `drugref_db036` was
   `drugref_db035` plus `db/036`, and `drugref_db035` was `drugref_db034` (built 2026-08-13 from the real
-  releases against the merged migrations, clean ledger, issue 91's answer) plus `db/035`. **TWO CONTROLS ARE
-  KEPT, and they answer different questions**: `drugref_db036` is `db/037`'s immediate before/after — the one
-  the interleaved hot-path measurement was taken against, and the one to reproduce a `db/037` claim on — while
-  **`drugref_db034` is the pre-`db/035` control**, the database that reproduced the `db/035` `status`
+  releases against the merged migrations, clean ledger, issue 91's answer) plus `db/035`. **THREE CONTROLS ARE
+  KEPT, and they answer different questions**: `drugref_db037` is `db/038`'s immediate before/after (the one to
+  reproduce a `db/038` claim on), `drugref_db036` is `db/037`'s and holds the interleaved hot-path measurement,
+  and **`drugref_db034` is the pre-`db/035` control** — the database that reproduced the `db/035` `status`
   regression (§ "The PR #107 review round") and the only one that still exercises the class-grain block's
   missing-view guard. Same discipline that keeps `drugref_5c4`. Named for its migration head so the claim is
-  checkable: `SELECT max(filename) FROM drugref.schema_migration` → `037`, ledger **37 rows**. **Every count
+  checkable: `SELECT max(filename) FROM drugref.schema_migration` → `038`, ledger **38 rows**. **Every count
   below is unchanged from `drugref_db034`** — `db/035` adds detectors and no content, `db/036` adds no SQL
-  object at all, and `db/037` corrects arithmetic in a grain that holds zero rows (§§ "The class-grain detector
-  round", "The low-hanging-debt round").
+  object at all, `db/037` corrects arithmetic in a grain that holds zero rows, and `db/038` adds one derived
+  column that equals its source on every one of the 255 live rows plus a detector that is empty on a healthy
+  database (§§ "The class-grain detector round", "The low-hanging-debt round", "The db/038 round").
   It reproduced **every** count and ingest summary in § "Slice 5c.1" **at the end of the chain**, and every
   projection figure in § "Slice 5c.2": chain + `ingest onchigh` + `curate onchigh`, and **nothing else** — no
   keys, no signatures, no published release, no exercise rows, which is also why it re-verifies **nothing from

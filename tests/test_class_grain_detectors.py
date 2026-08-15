@@ -763,8 +763,8 @@ def test_the_denominator_counts_a_rule_once_however_many_authorities_assert_it(
         conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
 
     counts = curation.class_grain_counts(conn)
-    assert counts.total == 1, (
-        f"one rule asserted by two authorities is ONE rule, got {counts.total}")
+    assert counts.rules_total == 1, (
+        f"one rule asserted by two authorities is ONE rule, got {counts.rules_total}")
     assert counts.ungraded == 1
 
 
@@ -1225,3 +1225,44 @@ def test_agreeing_grades_are_not_a_disagreement_in_either_orientation(conn,
         conn, ingest_run_id, moiety_severity="major", class_severity="major")
     assert conn.execute(
         "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0] == 0
+
+
+def test_the_denominator_is_named_for_the_population_it_denominates(conn,
+                                                                    ingest_run_id):
+    """ISSUE 115: `total` read as a denominator for all four numbers, and one of them
+    is not in its population.
+
+    THE FAILURE IT INVITED. `total`, `ungraded` and `dead` share a population --
+    `class_pair_rule_reach`, the RULE tier -- so `ungraded <= total` and `dead <= total`
+    hold by construction. `disagreements` counts rows in `curated_grain_disagreement`,
+    whose grain is the rule PAIR over `curated_ddi_pair`'s two-grain expansion. It is
+    not bounded by the rule count and never was.
+
+    A maintainer adding the obvious symmetry with the line above it --
+    `f"cross-grain disagreements: {counts.disagreements} of {counts.total}"` -- gets
+    something well-typed, plausible and wrong by two orders of magnitude: db/035 records
+    that one class rule can expand to ~2,263 pairs, so `ClassGrainCounts(rules_total=9,
+    ..., disagreements=2263)` is the EXPECTED shape once class-grain content ships.
+
+    `rules_total` MAKES THAT DIVISION READ WRONG AT A GLANCE, which is the whole fix:
+    the knowledge lived in a comment in `cli_status.py`, a different module from the
+    type, and `curation.py`'s own docstring says that is not where such knowledge goes.
+
+    THE INVARIANTS ARE ASSERTED, NOT JUST THE NAME, so this test fails if a future
+    filter breaks the containment the name now advertises.
+    """
+    subject_class, object_class = _an_ungraded_class_rule(
+        conn, ingest_run_id, subject_code="N0000009600", object_code="N0000009700")
+
+    counts = curation.class_grain_counts(conn)
+    assert not hasattr(counts, "total"), (
+        "the old name is gone, not aliased -- an alias would keep the misreading "
+        "available and this rename buys nothing")
+    assert counts.ungraded <= counts.rules_total
+    assert counts.dead <= counts.rules_total
+    # DISJOINT, and the reason is not obvious from the field names: a rule reaching no
+    # pair is omitted from the gap view by `HAVING max(max_pair_count) > 0` (#36 -- a
+    # review gate must only ask what an answer could change), so a dead rule can never
+    # also be counted ungraded. A reader reconstructing this as overlapping would draw
+    # the wrong conclusion from a status block.
+    assert counts.ungraded + counts.dead <= counts.rules_total

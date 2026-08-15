@@ -411,23 +411,43 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
 
 @dataclass(frozen=True)
 class ClassGrainCounts:
-    """The numbers `drugref status`'s fifth block prints (db/035, `total` added by 111).
+    """The numbers `drugref status`'s fifth block prints (db/035; 111 added the
+    denominator, 115 named it).
 
     ONE RECORD RATHER THAN FOUR RETURN VALUES, so a caller cannot silently transpose
     two ints -- the same reason `UnresolvedTarget` above binds by name. Three of the
     four are counts of things that should be ZERO on a healthy database, and they are
     three DIFFERENT failures, so the block says them in three different voices.
 
-    `total` IS THE ONE THAT IS NOT A FAULT COUNT, and it is here because the others
-    are useless without it (issue 111). They report only on rules that EXIST, so an
-    ONCHIGH re-ingest whose parser yields nothing -- upstream format change, truncated
-    download, resolver regression -- empties the tier and silences all three at once.
-    The block then renders byte-identically to a healthy, fully-curated registry,
-    while `loaded_release` still shows ONCHIGH loaded and the command still exits 0.
-    A count with a denominator distinguishes "healthy" from "the detector can see
-    nothing"; a bare zero cannot.
+    `rules_total` IS THE ONE THAT IS NOT A FAULT COUNT, and it is here because the
+    others are useless without it (issue 111). They report only on rules that EXIST, so
+    an ONCHIGH re-ingest whose parser yields nothing -- upstream format change,
+    truncated download, resolver regression -- empties the tier and silences all three
+    at once. The block then renders byte-identically to a healthy, fully-curated
+    registry, while `loaded_release` still shows ONCHIGH loaded and the command still
+    exits 0. A count with a denominator distinguishes "healthy" from "the detector can
+    see nothing"; a bare zero cannot.
+
+    IT DENOMINATES `ungraded` AND `dead`, AND NOTHING ELSE (issue 115, which is why it
+    is no longer called `total`). Those two are filters over `class_pair_rule_reach`,
+    the same RULE tier `rules_total` counts, so `ungraded <= rules_total` and
+    `dead <= rules_total` hold by construction. **`disagreements` counts PAIRS, not
+    rules** -- rows in `curated_grain_disagreement`, whose grain is the rule pair over
+    `curated_ddi_pair`'s two-grain expansion -- so it is not bounded by `rules_total`
+    and never was. One class rule can expand to ~2,263 pairs (db/035), so
+    `ClassGrainCounts(rules_total=9, ..., disagreements=2263)` is the EXPECTED shape
+    once class-grain content ships, and the obvious `{disagreements} of {total}` line a
+    maintainer would write next to the one above it would be wrong by two orders of
+    magnitude. The old name made that division read natural; this one makes it read
+    wrong, which is the entire point of the rename.
+
+    `ungraded` AND `dead` ARE DISJOINT, which the field names do not say and a reader
+    should not have to reconstruct: `gap_uncurated_class_interaction_rule` omits a rule
+    reaching no pair via `HAVING max(max_pair_count) > 0` (#36 -- a review gate must
+    only ask what an answer could change), so a dead rule is never also counted
+    ungraded.
     """
-    total: int
+    rules_total: int
     ungraded: int
     dead: int
     disagreements: int
@@ -488,7 +508,7 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
     that into an operator sentence is the CALLER's job, exactly as it is for
     `unresolved_targets` -- this module owns the read, cli.py owns the voice.
     """
-    total = conn.execute(_RULE_COUNT.format(where="")).fetchone()[0]
+    rules_total = conn.execute(_RULE_COUNT.format(where="")).fetchone()[0]
     ungraded = conn.execute(
         "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule"
     ).fetchone()[0]
@@ -496,5 +516,5 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
         _RULE_COUNT.format(where=" WHERE max_pair_count = 0")).fetchone()[0]
     disagreements = conn.execute(
         "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0]
-    return ClassGrainCounts(total=total, ungraded=ungraded, dead=dead,
+    return ClassGrainCounts(rules_total=rules_total, ungraded=ungraded, dead=dead,
                             disagreements=disagreements)

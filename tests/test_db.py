@@ -268,6 +268,18 @@ def test_apply_migrations_is_idempotent(conn):
         # asked clients to copy -- a client that copied db/035 faithfully got the
         # under-warning defect, which is rather the point.
         "curated_ddi_pair_effective",
+        # db/038 (issue 116): the schema fault `effective_rank` MITIGATES, reported to
+        # an operator. Again the migration's ONLY new object -- its other change appends
+        # `effective_rank` to `curated_ddi_pair` and re-points the effective view's
+        # ORDER BY at it, which an inventory cannot see (the column pin in
+        # tests/test_signature_read_path.py is what covers that).
+        #
+        # WHY THE MITIGATION NEEDS A DETECTOR BESIDE IT. db/037 sorted an unrankable
+        # severity FIRST, which inside a DISTINCT ON makes it WIN and discards the
+        # rankable competitor; db/038 stops the surviving row being invisible to a
+        # numeric threshold, and would otherwise leave the underlying schema fault --
+        # a severity absent from severity_kind -- reported by nothing at all.
+        "curated_unrankable_severity",
     }
 
 

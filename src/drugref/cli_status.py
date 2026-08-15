@@ -1,5 +1,11 @@
 # src/drugref/cli_status.py
-"""`drugref status`'s CLASS-GRAIN BLOCK, split out of cli.py (db/035).
+"""`drugref status`'s LATER BLOCKS, split out of cli.py -- the class grain (db/035) and
+the unrankable-severity fault (db/038, issue 116).
+
+TWO BLOCKS SINCE db/038, and the file docstring said "the CLASS-GRAIN BLOCK" while it
+held one. The module name was always the general one, so the second block belongs here
+rather than in a `cli_unrankable.py` that would exist only because this sentence was
+written too narrowly.
 
 WHY A MODULE RATHER THAN ANOTHER 50 LINES OF cli.py. cli.py was 483 lines before this
 round and the class grain's block plus its guard took it past CLAUDE.md rule 4's ~500
@@ -21,7 +27,7 @@ covers the five modules above.
 """
 import psycopg
 
-from drugref import curation
+from drugref import curated_read, curation
 
 
 def print_class_grain_block(conn) -> None:
@@ -99,7 +105,7 @@ def print_class_grain_block(conn) -> None:
     # grain yet, so every healthy database reads 0 today, and a banner that fires on
     # every node until the first class-grain source lands is a banner an operator learns
     # to skip -- which would cost more than it buys on the day it means something.
-    print(f"\nclass rules: {counts.total} "
+    print(f"\nclass rules: {counts.rules_total} "
           f"(ungraded {counts.ungraded}, reaching no pair {counts.dead})")
     # The faults keep the `**` banner the orphan block established, ONLY when non-zero,
     # and on their own lines because a banner belongs beside the number it explains.
@@ -108,12 +114,66 @@ def print_class_grain_block(conn) -> None:
               "check the axis against both classes' membership (issue #92) **")
     # NO DENOMINATOR ON THIS LINE, and the omission is considered, not forgotten. Its
     # population is `curated_ddi_pair`'s two-grain expansion, not the rule tier above,
-    # so `counts.total` would be the WRONG denominator -- and the right one is a second
-    # unfiltered read of the very view issue 112 has open to be measured before
+    # so `counts.rules_total` would be the WRONG denominator -- and the right one is a
+    # second unfiltered read of the very view issue 112 has open to be measured before
     # class-grain content ships. A denominator here waits on that measurement.
+    #
+    # THE FIELD IS NOW NAMED FOR THAT (issue 115). This paragraph was the ONLY place the
+    # boundary was written down, in a different module from the type it constrains, and
+    # `curation.py`'s own docstring says that is not where such knowledge lives. The
+    # record's docstring states it too, so `{disagreements} of {rules_total}` now reads
+    # wrong at a glance instead of reading like the symmetry it is not.
     if counts.disagreements:
         print(f"cross-grain disagreements: {counts.disagreements}"
               "  ** one drug pair graded differently by both grains; consumers take "
               "the MORE SEVERE, so reconcile or the broader rule stands **")
     else:
         print("cross-grain disagreements: 0")
+
+
+def print_unrankable_severity_block(conn) -> None:
+    """THE SIXTH BLOCK (db/038, issue 116): a severity drugref cannot rank.
+
+    WHAT IT REPORTS, and it is a SCHEMA fault rather than a curator's error. A live
+    curated ruling whose `severity` is absent from `severity_kind` is unreachable while
+    the foreign key on both curated tables stands, so a non-empty reading here means a
+    dropped constraint, a deleted vocabulary row, or a restore that lost the table.
+
+    WHY IT IS WORTH A BLOCK NOW THAT `effective_rank` EXISTS. db/038 § 1 makes such a
+    row harmless to a thresholding client, which is the urgent half -- and silent. Two
+    things are still wrong underneath it: the row WINS
+    `curated_ddi_pair_effective`'s `DISTINCT ON`, so a real `contraindicated` grade for
+    that pair is DISCARDED in favour of a word drugref cannot rank; and nothing else in
+    the schema would ever mention it. A mitigation that hides its own trigger is how
+    issues 74 and 76 happened.
+
+    THE LOUDER VOICE OF THE ORPHAN BLOCK, not the class grain's counts, and the choice
+    follows what the numbers mean rather than where the code lives. The class-grain
+    block prints bare counts because an operator DIFFS them between runs and a zero is
+    an informative reading there. This is a list that should not exist at all, so it
+    says `none` like the four blocks above it and banners when it is not empty.
+
+    SAME UndefinedTable GUARD, SAME NARROW SCOPE as its three siblings: a database
+    predating db/038 has no view to read, and that must be ONE sentence rather than a
+    psycopg traceback arriving after five blocks of real answers -- which reads as a
+    partial success and names neither the cause nor the fix.
+    """
+    try:
+        unrankable = curated_read.unrankable_severities(conn)
+    except psycopg.errors.UndefinedTable as exc:
+        raise RuntimeError(
+            "drugref.curated_unrankable_severity is missing: this database predates "
+            "db/038, so a curated ruling whose severity drugref cannot rank would go "
+            "unreported -- and such a ruling outranks and DISCARDS every real grade "
+            "for its pair. Run `drugref migrate` and re-run status.") from exc
+
+    if unrankable:
+        print(f"\nunrankable severities: {len(unrankable)}"
+              "  ** a severity is missing from severity_kind, so these rulings outrank "
+              "and DISCARD every real grade for their pairs -- check the foreign key "
+              "on both curated tables and severity_kind's contents **")
+        for u in unrankable:
+            print(f"  {u.target_table:<25} #{u.target_id} severity {u.severity!r} "
+                  f"reviewed by {u.reviewed_by} at {u.reviewed_at}")
+    else:
+        print("\nunrankable severities: none")

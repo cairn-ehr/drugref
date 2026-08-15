@@ -607,9 +607,56 @@ without changing a name, so a db/035-or-036 database printed the OLD, OVERSTATED
 fixtures whose docstrings claimed the opposite. Deleting `(rule_grain = 'moiety_rule') DESC` from db/037
 outright left the suite green, because the fixture's sources ordered the same way the grain key did.
 
-**`db/037` was EDITED rather than superseded** — it is unmerged, and PROJECT-NOTES § repo facts records that the
-ledger binds a *database*, not the repo. The reference DB was rebuilt from `TEMPLATE drugref_db036` and every
-published count re-verified byte-identical; the pre-edit copy is kept as **`drugref_db037_pre_review`**.
+**`db/037` was EDITED rather than superseded** — it was *then* unmerged, and PROJECT-NOTES § repo facts records
+that the ledger binds a *database*, not the repo. The reference DB was rebuilt from `TEMPLATE drugref_db036` and
+every published count re-verified byte-identical; the pre-edit copy is kept as **`drugref_db037_pre_review`**.
+**That window has closed: PR [#113](https://github.com/cairn-ehr/drugref/pull/113) merged on 2026-08-15
+(`b449e7f`), so `db/037` is FROZEN with `db/029`–`db/036` and any correction to it needs a new `db/NNN`.**
+
+##### 5c.2d — the db/038 round: PR #113's four filed issues, closed ✅ DONE
+The four issues that review **filed rather than fixed** (114–117), taken together because three touch one read
+path and the fourth needed the migration the first was already writing. **`db/038`**, one new command, one
+rename. Suite **1516 → 1540**, `ruff` clean. Full account, every measurement, and the mutation evidence:
+PROJECT-NOTES § "The db/038 round".
+
+- **#116 — db/037 fixed the SORT and left the PAYLOAD.** `NULLS FIRST` is right (under-warning is the harm
+  direction), but inside a `DISTINCT ON` it makes an unrankable severity **WIN** and DISCARDS the rankable
+  competitor, so the client got `severity_rank = NULL` with no second row behind it — and every threshold form
+  drops a NULL. Against a `minor` competitor that was an improvement; against `contraindicated` it means a
+  numeric client sees **nothing**, which is why the existing test (competitor graded `minor`) could not see it.
+  `db/038` § 1 publishes **`effective_rank = COALESCE(severity_rank, 0)`** and orders on it; `severity_rank`
+  stays NULLABLE so the schema fault remains visible. **§ 2 gives that fault a detector and a `drugref status`
+  block**, because a mitigation that hides its own trigger is how issues 74 and 76 happened.
+- **#115 — `total` → `rules_total`.** It denominates `ungraded` and `dead` only; **`disagreements` counts
+  PAIRS**, and `ClassGrainCounts(rules_total=9, …, disagreements=2263)` is the expected shape once class-grain
+  content ships. All three invariants are now asserted, not described. **Cost: `curation.py` 500 → 520 lines**,
+  measured onto [#89](https://github.com/cairn-ehr/drugref/issues/89) with the seam named rather than split
+  inside a correctness diff (db/030's precedent).
+- **#117 — BOTH options.** `db/038` § 3 re-issues the `COMMENT ON` with **seven** (db/027's precedent, one word
+  changed); db/035's plain `--` prose cannot be corrected by anything, so that half is a standing rule in
+  PROJECT-NOTES.
+- **#114 — `drugref interactions <moiety> [--with <other>]`**, in a new `cli_interactions.py`. The issue said
+  option 1 "would actually test the design" and it did: **one** lookup can only answer the SUBJECT direction
+  (so the command says so, since an empty list otherwise reads as "these do not interact"), while the pair form
+  does **two**, visibly, as `effective_grades_for`'s contract requires. Verified on the real ONC atazanavir/PPI
+  entry, both ways round.
+
+**⇒ `db/038` IS CONTENT-NEUTRAL AND THAT IS MEASURED, not assumed.** On `drugref_db038` (from `TEMPLATE
+drugref_db037` + `drugref migrate`, the **fifth** round running for that workflow) every published count is
+byte-identical to db037 — `ddi_candidate_pair` 21,877 · `curated_ddi_pair` 255 · `curated_ddi_pair_effective`
+213 · `open_question` 21,848 · `gap_unpopulated_contraindication` 13 · `condition_contraindication_expanded`
+192,161 · `class_expansion_policy` 14 · `loaded_release` 6 — **and the new column equals its source on all 255
+live rows** while `curated_unrankable_severity` is empty, which is what makes the claim checkable rather than
+merely stated.
+
+**⇒ TWO THINGS THIS ROUND FOUND THAT NOBODY FILED.** Issue 114 was **already closed** when the round started —
+`ed1ab5e`'s own *"Filed rather than fixed: #114"* sentence closed it, the **fifth** occurrence of that pattern
+and the **second** with the identical template that closed #61, in a repo that documents the trap and its
+mechanism in full. Reopened, fixed, and lodged as
+[#118](https://github.com/cairn-ehr/drugref/issues/118) for a mechanical guard. And
+`test_the_callers_own_order_by_puts_an_unrankable_severity_first` — added by the PR #113 review — was
+**over-determined**: the unrankable partner sat on the smaller uuid, so deleting the rank key from the caller's
+`ORDER BY` left it green. Swapped, and the mutation now makes it red.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own

@@ -372,8 +372,8 @@ def test_every_field_of_a_graded_pair_carries_its_own_column(conn, ingest_run_id
 
 def test_the_callers_own_order_by_puts_an_unrankable_severity_first(conn,
                                                                     ingest_run_id):
-    """`NULLS FIRST` ON THE CALLER'S LIST, not just inside the view -- and they are two
-    different ORDER BYs that both mention `severity_rank`.
+    """THE RANK KEY ON THE CALLER'S LIST, not just inside the view -- and they are two
+    different ORDER BYs that both sort on a rank.
 
     Section 2 above drives the VIEW's precedence, which chooses between two rows about
     ONE pair. This drives `effective_grades_for`'s own ordering, which ranks DIFFERENT
@@ -384,6 +384,22 @@ def test_the_callers_own_order_by_puts_an_unrankable_severity_first(conn,
     Python caller would have re-buried it one layer up, which is the whole harm
     direction argument defeated by the last hop.
 
+    THE FIXTURE PUTS THE UNRANKABLE PARTNER AT THE **LARGER** UUID, and that is
+    load-bearing rather than arbitrary -- the db/038 round measured that it had not
+    been. `TESTUNIIG4` mints `505e7055...` and `TESTUNIIG5` mints `f06c401d...`, so with
+    the unrankable grade on G4 the assertion below was ALSO satisfied by the
+    `partner_moiety` tie-break alone: deleting the rank key from the caller's ORDER BY
+    outright left this test green. Swapping the two severities means `partner_moiety`
+    now favours the CONTRAINDICATED row, so only the rank can produce the expected
+    order -- the same over-determination `_a_pair_graded_by_both_grains`'s
+    `class_source` parameter exists to defeat one layer down.
+
+    SINCE db/038 THE KEY IS `effective_rank` (issue 116) rather than `severity_rank
+    NULLS FIRST`. The ORDER is identical -- 0 precedes 1 exactly as NULLS FIRST placed
+    the NULL -- and the assertion carries both columns so the distinction is visible:
+    the unrankable row must head the list AND still report `severity_rank = None`, which
+    is what stops a future "fix" collapsing the two columns into one.
+
     Same mutation as section 2, for the same reason -- both halves of `curated_ddi_pair`
     filter `AND applies`, the completeness CHECK forces `applies => severity IS NOT
     NULL`, and `severity` is a FOREIGN KEY into `severity_kind` -- so the state is
@@ -391,27 +407,29 @@ def test_the_callers_own_order_by_puts_an_unrankable_severity_first(conn,
     """
     conn.execute("ALTER TABLE drugref.curated_class_interaction "
                  "DROP CONSTRAINT curated_class_interaction_severity")
-    _sc, _oc, subjects, objects = _a_graded_class_rule(
-        conn, ingest_run_id, subject_code="N0000008300", object_code="N0000008400",
-        subject_members=[("TESTUNIIG3", "subject-drug")],
-        object_members=[("TESTUNIIG4", "unrankable-partner")],
-        severity="unrankable")
-    # A genuinely rank-1 partner on a second rule, so the list has something for the
-    # unrankable row to outrank. Without it the assertion is satisfied by a one-element
-    # list and pins nothing at all.
+    # A genuinely rank-1 partner, so the list has something for the unrankable row to
+    # outrank. Without it the assertion is satisfied by a one-element list and pins
+    # nothing at all. On the SMALLER uuid, so `partner_moiety` favours it.
     _a_graded_class_rule(
         conn, ingest_run_id, subject_code="N0000008300", object_code="N0000008500",
         subject_members=[("TESTUNIIG3", "subject-drug")],
-        object_members=[("TESTUNIIG5", "worst-partner")],
+        object_members=[("TESTUNIIG4", "worst-partner")],
         severity="contraindicated")
+    _sc, _oc, subjects, objects = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000008300", object_code="N0000008400",
+        subject_members=[("TESTUNIIG3", "subject-drug")],
+        object_members=[("TESTUNIIG5", "unrankable-partner")],
+        severity="unrankable")
 
     grades = curated_read.effective_grades_for(conn, subjects[0])
-    assert [(g.severity, g.severity_rank) for g in grades] == [
-        ("unrankable", None), ("contraindicated", 1)], (
+    assert [(g.severity, g.severity_rank, g.effective_rank) for g in grades] == [
+        ("unrankable", None, 0), ("contraindicated", 1, 1)], (
         "an unrankable severity must head the caller's list too -- under Postgres's "
         "default NULLS LAST it sorts below every real grade and a client reading the "
         "head never sees it")
-    assert grades[0].partner_moiety == objects[0]
+    assert grades[0].partner_moiety == objects[0], (
+        "and it is the LARGER-uuid partner, so partner_moiety cannot have produced "
+        "this order on its own")
 
 
 # ============================================================================
@@ -524,3 +542,284 @@ def test_the_subject_class_key_is_what_selects_it(conn, ingest_run_id):
         (subject, partner)).fetchone()[0] == larger, (
         "the shipped view's answer is not produced by via_subject_class, so this pin "
         "is not a pin")
+
+
+# ============================================================================
+# 5. effective_rank -- NULLS FIRST makes the unrankable row WIN, and then the
+#    winner is invisible to every threshold (issue 116, db/038)
+# ============================================================================
+# WHAT db/037 FIXED AND WHAT IT DID NOT. Section 2 above pins the ORDER: an unrankable
+# severity sorts above `contraindicated` rather than below `minor`, because
+# under-warning is the harm direction. That is right and it stands.
+#
+# THE HALF IT LEFT OPEN. Inside a `DISTINCT ON`, the sort key does not merely SHOW the
+# unrankable row -- it makes that row WIN, and the rankable competitor is discarded from
+# the view entirely. The client then receives `severity_rank = NULL`, and `GradedPair`'s
+# own docstring says what clients do with that field: "a client that wants to threshold
+# ('warn at major or worse') needs the number". EVERY form of that threshold drops NULL
+# -- SQL `WHERE severity_rank <= 2` is UNKNOWN, Python `g.severity_rank <= 2` raises,
+# `g.severity_rank and g.severity_rank <= 2` is silently False.
+#
+# SO db/037 TRADED ONE UNDER-WARNING FOR ANOTHER, and the second is worse. Against a
+# `minor` competitor the client at least still saw a word; against a `contraindicated`
+# competitor it now sees a rank of NULL, and a numeric client sees NOTHING AT ALL.
+# Section 2's test grades the competitor `minor`, which is exactly why the suite could
+# not see this: the consequential case is a competitor that OUTRANKS nothing yet is
+# itself rank 1.
+#
+# THE FIX IS TO MAKE UNRANKABLE LOUD RATHER THAN ABSENT. db/038 publishes
+# `effective_rank = COALESCE(severity_rank, 0)`: 0 sorts above `contraindicated` = 1,
+# so the ordering argument is unchanged, and 0 satisfies every `<= n` threshold, so the
+# pair stops vanishing. `severity_rank` stays NULLABLE beside it, because the NULL is a
+# real schema fault and a client that wants to see the fault must still be able to.
+
+
+def test_an_unrankable_severity_discards_a_contraindicated_competitor(conn,
+                                                                      ingest_run_id):
+    """THE PREMISE, and it is the case section 2 does not drive.
+
+    Stated separately from the assertion below so a reader can see that the harm is
+    real before seeing the fix: `DISTINCT ON` keeps ONE row, the unrankable one wins on
+    `severity_rank NULLS FIRST`, and the `contraindicated` grade is GONE from the view.
+    That is not a presentation problem -- there is no second row for a client to fall
+    back to.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    subject, partner, _sc, _oc = _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="contraindicated",
+        class_severity="unrankable")
+
+    assert _effective(conn, subject, partner) == [("unrankable", "class_rule")], (
+        "the premise: the unrankable row wins and the rank-1 grade is discarded")
+
+
+def test_the_selected_row_carries_a_rank_every_threshold_can_read(conn,
+                                                                  ingest_run_id):
+    """ISSUE 116. `effective_rank` is 0 where `severity_rank` is NULL, so a client
+    thresholding "warn at major or worse" still sees the pair.
+
+    THE ASSERTION IS ON BOTH COLUMNS TOGETHER, deliberately. `severity_rank` must stay
+    NULL -- that is the honest report of a severity absent from `severity_kind`, and a
+    client wanting to see the fault reads it -- while `effective_rank` is what the
+    ordering and the thresholds use. A fix that COALESCEd `severity_rank` itself would
+    pass a one-column assertion and destroy the only evidence the schema is broken.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    subject, _partner, _sc, _oc = _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="contraindicated",
+        class_severity="unrankable")
+
+    grades = curated_read.effective_grades_for(conn, subject)
+    assert [(g.severity, g.severity_rank, g.effective_rank) for g in grades] == [
+        ("unrankable", None, 0)]
+
+
+def test_a_thresholding_client_still_sees_an_unrankable_pair(conn, ingest_run_id):
+    """THE FAILURE IN THE CLIENT'S OWN IDIOM -- `WHERE effective_rank <= 2`.
+
+    The two assertions run the SAME threshold over the two columns, which is what makes
+    this a measurement rather than a restatement: `severity_rank <= 2` evaluates to
+    UNKNOWN on a NULL and the row is filtered out, `effective_rank <= 2` keeps it. Drop
+    `effective_rank` from db/038 and the second assertion fails on the empty result,
+    which is precisely what a prescribing client would have got.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    subject, partner, _sc, _oc = _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="contraindicated",
+        class_severity="unrankable")
+
+    def threshold(column):
+        return conn.execute(
+            f"SELECT severity FROM drugref.curated_ddi_pair_effective "
+            f"WHERE subject_moiety = %s AND partner_moiety = %s AND {column} <= 2",
+            (subject, partner)).fetchall()
+
+    assert threshold("severity_rank") == [], (
+        "the defect, in the client's own idiom: the pair drugref decided was the more "
+        "concerning of the two is the one a numeric threshold cannot see")
+    assert threshold("effective_rank") == [("unrankable",)], (
+        "effective_rank must satisfy every `<= n` threshold, because 0 is above rank 1")
+
+
+def test_effective_rank_equals_severity_rank_on_a_healthy_row(conn, ingest_run_id):
+    """THE ANTI-VACUITY CONTROL, and it is the reading that matters in production.
+
+    Every assertion above runs against a mutated schema. On a healthy database the FK
+    into `severity_kind` stands, so `effective_rank` must be the ordinary rank and
+    nothing about the published numbers moves -- a COALESCE that quietly changed a real
+    rank would be a far worse defect than the one being fixed.
+    """
+    subject, _partner, _sc, _oc = _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="major", class_severity="minor")
+
+    grades = curated_read.effective_grades_for(conn, subject)
+    assert [(g.severity, g.severity_rank, g.effective_rank) for g in grades] == [
+        ("major", 2, 2)]
+
+
+# ============================================================================
+# 6. the fault reaches an OPERATOR too (issue 116, db/038 § 2)
+# ============================================================================
+# WHY THE MITIGATION IS NOT THE WHOLE FIX. `effective_rank` makes an unrankable severity
+# harmless to a thresholding client, which is the urgent half -- and it also makes it
+# SILENT. The client now gets a usable number and nothing says the database is
+# mis-shaped. A severity absent from `severity_kind` is a SCHEMA fault (a dropped
+# foreign key, a deleted vocabulary row, a restore that lost the table), and the
+# standing lesson of issues 74, 76 and review I7 is that a detector nothing reads is not
+# a detector. So db/038 ships the view AND its consumer in the same round.
+
+
+def test_a_healthy_database_has_no_unrankable_severity(conn, ingest_run_id):
+    """THE CONTROL, and on a healthy database it is the only reading there is.
+
+    Asserted against a database carrying REAL curated rulings, not an empty one: a view
+    with a mistaken join could return zero rows for every input and pass an
+    empty-database check while reporting nothing on the day it mattered.
+    """
+    _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="major", class_severity="minor")
+    assert curated_read.unrankable_severities(conn) == []
+
+
+def test_an_unrankable_severity_is_reported_with_the_ruling_that_carries_it(
+        conn, ingest_run_id):
+    """ISSUE 116's second half: the operator is told WHICH curated row to fix.
+
+    A bare count would say a fault exists and leave an operator grepping two
+    append-only tables for it. `target_table` plus `target_id` is what
+    `unresolved_targets` already hands the same operator for the same reason.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="major", class_severity="unrankable")
+
+    found = curated_read.unrankable_severities(conn)
+    assert [(u.target_table, u.severity) for u in found] == [
+        ("curated_class_interaction", "unrankable")]
+    assert found[0].reviewed_by == "test"
+
+
+def test_it_counts_rules_not_the_pairs_they_expand_to(conn, ingest_run_id):
+    """THE GRAIN, and it is the same confusion issue 115 records one tier up.
+
+    ONE bad class rule expands to every (subject member x object member) pair -- db/035
+    records ~2,263 for a real one. An operator fixes the RULE, so reporting the pair
+    count would be a number nobody can act on. The fixture's rule reaches several pairs
+    and must still be reported ONCE.
+    """
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    _sc, _oc, subjects, _objects = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000009100", object_code="N0000009200",
+        subject_members=[("TESTUNIIH1", "subject-drug")],
+        object_members=[("TESTUNIIH2", "partner-one"), ("TESTUNIIH3", "partner-two")],
+        severity="unrankable")
+
+    pairs = conn.execute(
+        "SELECT count(*) FROM drugref.curated_ddi_pair WHERE subject_moiety = %s",
+        (subjects[0],)).fetchone()[0]
+    assert pairs == 2, "the premise: one rule, more than one expanded pair"
+    assert len(curated_read.unrankable_severities(conn)) == 1
+
+
+def test_a_withdrawn_ruling_is_not_an_unrankable_one(conn, ingest_run_id):
+    """`AND applies` IS LOAD-BEARING HERE, and not for the reason it is elsewhere.
+
+    THE SCHEMA MAKES THIS THE DANGEROUS CASE. db/029's completeness CHECK is
+    `(NOT applies AND severity IS NULL ...)` -- a WITHDRAWN ruling carries no severity at
+    all, which is why this test cannot even be written the obvious way (grading it
+    `unrankable` and setting `applies = false` violates the CHECK outright).
+
+    SO A WITHDRAWN RULING HAS `severity IS NULL`, AND `NULL = anything` IS NULL: the
+    LEFT JOIN to `severity_kind` finds nothing and `sk.severity IS NULL` is TRUE. Without
+    `AND applies` this view would report EVERY withdrawn ruling in the overlay as a
+    schema fault -- a standing false positive on a database that did exactly the right
+    thing, and one that would grow with every correction a curator ever makes.
+
+    NO CONSTRAINT IS DROPPED IN THIS TEST, which is what makes it the one case here that
+    is reachable on a HEALTHY database -- and therefore the one that would actually have
+    fired in production.
+    """
+    subject_class = _a_class(conn, ingest_run_id, code="N0000009300",
+                             name="Withdrawn subject [MoA]")
+    object_class = _a_class(conn, ingest_run_id, code="N0000009400",
+                            name="Withdrawn object [MoA]")
+    interactions.add_class_pair_contraindication(
+        conn, subject_class, object_class, "CI_MoA", "ONCHIGH", ingest_run_id)
+    curation.record_class_interaction_judgement(
+        conn, subject_class, object_class, "CI_MoA", False, reviewed_by="test",
+        reviewed_against="Phansalkar 2012")
+
+    assert conn.execute(
+        "SELECT severity FROM drugref.curated_class_interaction "
+        "WHERE subject_class_uuid = %s", (subject_class,)).fetchone() == (None,), (
+        "the premise: a withdrawn ruling carries NO severity, so it matches the same "
+        "`sk.severity IS NULL` test an unrankable one does")
+    assert curated_read.unrankable_severities(conn) == []
+
+    # MUTATION: drop `AND applies` from the class-grain arm and the withdrawn ruling
+    # must appear. Without this the assertion above is satisfied by a view that returns
+    # nothing for any input, and an unmutated pin is a claim rather than evidence --
+    # this project has shipped two of those. DDL is transactional in Postgres and the
+    # `conn` fixture rolls back, so the schema is unchanged after this test.
+    conn.execute("""
+        CREATE OR REPLACE VIEW drugref.curated_unrankable_severity AS
+        SELECT 'curated_class_interaction'::text AS target_table,
+               cci.curated_class_interaction_id  AS target_id,
+               cci.severity, cci.reviewed_by, cci.reviewed_at
+        FROM   drugref.curated_class_interaction cci
+        LEFT   JOIN drugref.severity_kind sk ON sk.severity = cci.severity
+        WHERE  cci.superseded_by IS NULL
+        AND    sk.severity IS NULL
+    """)
+    assert [u.severity for u in curated_read.unrankable_severities(conn)] == [None], (
+        "`AND applies` is what excludes it, so removing that ONE predicate must let a "
+        "withdrawn ruling through -- otherwise the shipped view's answer is not "
+        "produced by the filter this test claims to pin")
+
+
+def test_status_reports_an_unrankable_severity(conn, ingest_run_id, capsys):
+    """THE CONSUMER. A view with no consumer is half a feature, and this project has
+    now shipped that three times over -- so the detector and its block land together."""
+    from drugref import cli_status
+
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DROP CONSTRAINT curated_class_interaction_severity")
+    _a_pair_graded_by_both_grains(
+        conn, ingest_run_id, moiety_severity="major", class_severity="unrankable")
+
+    cli_status.print_unrankable_severity_block(conn)
+    out = capsys.readouterr().out
+    assert "unrankable severities: 1" in out
+    assert "curated_class_interaction" in out
+    assert "unrankable" in out
+
+
+def test_status_says_none_when_the_vocabulary_is_intact(conn, capsys):
+    """THE EMPTY VOICE, matching the four blocks above it rather than the class-grain
+    block's counts: this is a LIST that happens to be empty, not a number an operator
+    diffs between runs."""
+    from drugref import cli_status
+
+    cli_status.print_unrankable_severity_block(conn)
+    assert "unrankable severities: none" in capsys.readouterr().out
+
+
+def test_a_database_predating_db038_is_told_to_migrate(conn):
+    """THE GUARD, and the standing rule that produced it: a block reading a view a
+    migration added must say so in one sentence rather than raise psycopg's
+    `UndefinedTable` after four blocks of real answers, which reads as a partial
+    success and names neither the cause nor the fix.
+
+    THE MESSAGE IS ASSERTED, not just the type -- an operator told to run `drugref
+    migrate` can act on it.
+    """
+    from drugref import cli_status
+
+    conn.execute("DROP VIEW drugref.curated_unrankable_severity")
+    with pytest.raises(RuntimeError, match="drugref migrate"):
+        cli_status.print_unrankable_severity_block(conn)
