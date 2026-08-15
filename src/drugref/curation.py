@@ -411,44 +411,90 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
 
 @dataclass(frozen=True)
 class ClassGrainCounts:
-    """The three numbers `drugref status`'s fifth block prints (db/035).
+    """The numbers `drugref status`'s fifth block prints (db/035, `total` added by 111).
 
-    ONE RECORD RATHER THAN THREE RETURN VALUES, so a caller cannot silently transpose
-    two ints -- the same reason `UnresolvedTarget` above binds by name. All three are
-    counts of things that should be ZERO on a healthy database, but they are three
-    DIFFERENT failures and the block says so in three different voices.
+    ONE RECORD RATHER THAN FOUR RETURN VALUES, so a caller cannot silently transpose
+    two ints -- the same reason `UnresolvedTarget` above binds by name. Three of the
+    four are counts of things that should be ZERO on a healthy database, and they are
+    three DIFFERENT failures, so the block says them in three different voices.
+
+    `total` IS THE ONE THAT IS NOT A FAULT COUNT, and it is here because the others
+    are useless without it (issue 111). They report only on rules that EXIST, so an
+    ONCHIGH re-ingest whose parser yields nothing -- upstream format change, truncated
+    download, resolver regression -- empties the tier and silences all three at once.
+    The block then renders byte-identically to a healthy, fully-curated registry,
+    while `loaded_release` still shows ONCHIGH loaded and the command still exits 0.
+    A count with a denominator distinguishes "healthy" from "the detector can see
+    nothing"; a bare zero cannot.
     """
+    total: int
     ungraded: int
     dead: int
     disagreements: int
 
 
+# DISTINCT ON THE THREE NATURAL-KEY COLUMNS, not count(*): `class_pair_rule_reach`
+# inherits the candidate tier's primary key, which includes `source`, so one clinical
+# rule asserted by two authorities is two rows there and count(*) would report it twice.
+# `gap_uncurated_class_interaction_rule` already groups for this reason, so the other
+# two numbers have to as well or the block's own lines disagree about what a rule is --
+# db/018's "one quantity stated twice is a quantity that will disagree", on the operator
+# surface instead of in the schema.
+#
+# ONE FORMAT STRING, TWO CALLERS. The denominator (issue 111) and the dead count are
+# the same query over the same population differing only by a WHERE, and writing them
+# out twice is how they would drift apart. `{where}` is interpolated from the two
+# literals below and never from anything reaching this module from outside.
+#
+# `shared_effective_member_count` IS NAMED TO WIDEN THE GUARD, not because the count
+# needs it (PR #113 review). cli.py's rule -- "a migration widening a view a guarded
+# block reads must widen the guard in the same commit" -- did not reach db/037, which
+# corrects this view's ARITHMETIC while every name read here still resolves under
+# db/035. So the guard stayed quiet on a db/035-or-036 database and the block printed
+# counts from the old, overstated `max_pair_count`, under-reporting `dead` exactly
+# where db/037 section 1 exists to help. Naming a db/037 column makes the existing
+# UndefinedColumn arm cover that case.
+#
+# IT CANNOT CHANGE THE COUNT: every input to this view's arithmetic is a function of
+# (subject_class_uuid, object_class_uuid, relationship) alone -- `cpc.source` and
+# `cpc.ingest_run` feed none of it -- so the two rows one rule asserted by two
+# authorities produces carry identical values here. Tested rather than argued, both
+# halves, in tests/test_class_grain_detectors.py.
+_RULE_COUNT = ("SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, "
+               "object_class_uuid, relationship, shared_effective_member_count "
+               "FROM drugref.class_pair_rule_reach{where}) z")
+
+
 def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
-    """Read the class grain's three detectors (db/035).
+    """Read the class grain's detectors and the denominator they need (db/035, 111).
 
     IN THIS MODULE RATHER THAN IN `cli.py`, for the rule cli.py's own module docstring
     states and `unresolved_targets` above already obeys: a handler must not embed SQL
     against curated, append-only tables, because the sweep that finds readers works
     through `pg_rewrite` and cannot see a query living in a Python string. Two of these
-    three views are derived from `curated_class_interaction`, so the read belongs here.
+    views are derived from `curated_class_interaction`, so the read belongs here.
     It also keeps cli.py under CLAUDE.md rule 4's size cap, which it had just breached.
+
+    THE DENOMINATOR IS TAKEN FROM `class_pair_rule_reach`, NOT from
+    `class_pair_contraindication`, even though the tier is what it counts. The view
+    reaches the tier through INNER joins to `ci_axis` and `substance_class` only, both
+    of which the tier's own foreign keys guarantee, and every count it adds is a LEFT
+    join -- so it drops nothing and is 1:1 with the tier by construction. Reading the
+    tier directly would be a second, differently-written statement of one population,
+    and it is the NUMERATORS' population that matters here: a denominator that could
+    disagree with the numbers beside it is worse than no denominator at all.
 
     RAISES psycopg's UndefinedTable UNCAUGHT on a database predating db/035. Converting
     that into an operator sentence is the CALLER's job, exactly as it is for
     `unresolved_targets` -- this module owns the read, cli.py owns the voice.
     """
+    total = conn.execute(_RULE_COUNT.format(where="")).fetchone()[0]
     ungraded = conn.execute(
         "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule"
     ).fetchone()[0]
-    # DISTINCT ON THE THREE NATURAL-KEY COLUMNS, not count(*): the candidate tier's
-    # primary key includes `source`, so one clinical rule asserted by two authorities
-    # is two rows and count(*) would report it twice. The gap view above already groups
-    # for this reason; this half has to as well or the two lines disagree.
     dead = conn.execute(
-        "SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, object_class_uuid, "
-        "relationship FROM drugref.class_pair_rule_reach WHERE max_pair_count = 0) z"
-    ).fetchone()[0]
+        _RULE_COUNT.format(where=" WHERE max_pair_count = 0")).fetchone()[0]
     disagreements = conn.execute(
         "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0]
-    return ClassGrainCounts(ungraded=ungraded, dead=dead,
+    return ClassGrainCounts(total=total, ungraded=ungraded, dead=dead,
                             disagreements=disagreements)

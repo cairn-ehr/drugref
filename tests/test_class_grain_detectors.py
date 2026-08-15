@@ -420,7 +420,7 @@ def test_the_status_reader_carries_the_class_subject(conn, ingest_run_id):
 
 
 def _a_pair_graded_by_both_grains(conn, ingest_run_id, *, moiety_severity,
-                                  class_severity):
+                                  class_severity, class_source="ONCHIGH"):
     """ONE drug pair reachable by BOTH grains, graded differently -- #97's
     reproduction, in miniature.
 
@@ -429,12 +429,29 @@ def _a_pair_graded_by_both_grains(conn, ingest_run_id, *, moiety_severity,
     (the rows live in different tables, one live row each), so nothing in the floor
     catches it -- which is exactly why a precedence rule is needed rather than a
     constraint.
+
+    `class_source` EXISTS TO DEFEAT AN OVER-DETERMINED EXPECTATION, and the default is
+    the ordinary pairing rather than the useful one. The moiety grain's row is 'MED-RT'
+    and the class grain defaults to 'ONCHIGH' -- but 'MED-RT' < 'ONCHIGH', and
+    `candidate_source` is the FIRST determinism tie-break after the two precedence keys.
+    So a caller asserting that the MOIETY row wins on a severity tie was getting that
+    answer from the grain key AND from `candidate_source`, and PR #113's review measured
+    the consequence: deleting `(rule_grain = 'moiety_rule') DESC` from db/037 outright
+    left the whole suite green.
+
+    Passing 'MED-RT' here TIES `candidate_source`, which hands the decision to the next
+    key -- `via_subject_class`, non-NULL on the class row and NULL on the moiety row, so
+    ASC (NULLs last) puts the CLASS row first. The moiety row can then only win by the
+    grain key itself. 'MED-RT' rather than an invented string because
+    `class_pair_contraindication_source` (db/032) admits exactly 'MED-RT' and 'ONCHIGH':
+    one upstream legitimately feeds both grains, so this is a real shape and not a
+    contrivance.
     """
     subject_class, object_class, subjects, objects = _a_graded_class_rule(
         conn, ingest_run_id, subject_code="N0000002000", object_code="N0000002100",
         subject_members=[("TESTUNII61", "subject-drug")],
         object_members=[("TESTUNII62", "partner-drug")],
-        severity=class_severity)
+        source=class_source, severity=class_severity)
     conn.execute(
         "INSERT INTO drugref.class_contraindication (subject_moiety_uuid, "
         "object_class_uuid, relationship, source, ingest_run) "
@@ -662,8 +679,125 @@ def test_status_reports_the_class_grain(conn, ingest_run_id, capsys):
                             object_code="N0000004100", object_axis="has_PE")
     cli_status.print_class_grain_block(conn)
     out = capsys.readouterr().out
-    assert "ungraded class rules: 1" in out
-    assert "class rules reaching no pair: 1" in out
+    assert "ungraded 1" in out
+    assert "reaching no pair 1" in out
+
+
+def test_an_emptied_tier_does_not_render_like_a_healthy_one(conn, ingest_run_id,
+                                                            capsys):
+    """ISSUE 111: the block's zeros need a DENOMINATOR, or they say nothing.
+
+    THE SCENARIO. Per-source rebuilds are delete-and-rebuild (CLAUDE.md architecture
+    invariants). An ONCHIGH re-ingest whose parser yields nothing -- upstream format
+    change, truncated download, resolver regression -- empties the class tier.
+    `loaded_release` still shows ONCHIGH loaded, `drugref status` exits 0, and before
+    this round the class-grain block printed three zeros: BYTE-IDENTICAL to a healthy,
+    fully-curated registry. The block reported only on rules that EXIST, so wiping every
+    rule out silenced every detector at once and the silence read as health.
+
+    The `class_rules_written` signal exists only in the ingest summary, at ingest time.
+    `status` is the DURABLE check -- the one an operator runs afterwards, or tomorrow --
+    and it had no equivalent.
+
+    WHY `!=` IS THE ASSERTION and not a substring. The defect was literally that two
+    states rendered the same, so the requirement is literally that they render
+    differently; a substring check on the new wording would pass just as well if the two
+    outputs had been made identical in some NEW way. The three `== 0` assertions above it
+    are what stop that being trivially satisfiable: they establish that both states are
+    all-zero on every detector, which is the premise that made the old output ambiguous.
+    Without them a future change could satisfy `!=` by moving a detector off zero, which
+    would be a different block, not a fixed one.
+
+    THE COMPENSATING CONTROL DOES NOT COVER THIS: `curated_target_unresolved` fires on an
+    emptied tier, but only if curated rows already exist. With none -- today's state, and
+    the state of any node that has not begun curating -- an emptied tier is invisible.
+    """
+    from drugref import cli_status
+
+    before = curation.class_grain_counts(conn)
+    assert (before.ungraded, before.dead, before.disagreements) == (0, 0, 0)
+    cli_status.print_class_grain_block(conn)
+    emptied = capsys.readouterr().out
+
+    _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000006400", object_code="N0000006500",
+        subject_members=[("TESTUNIID1", "s")], object_members=[("TESTUNIID2", "o")])
+
+    after = curation.class_grain_counts(conn)
+    assert (after.ungraded, after.dead, after.disagreements) == (0, 0, 0), (
+        "the premise: a graded rule reaching a pair trips no detector, so both states "
+        "are all-zero and only a denominator can tell them apart")
+    cli_status.print_class_grain_block(conn)
+    healthy = capsys.readouterr().out
+
+    assert emptied != healthy, (
+        "an emptied tier still renders identically to a healthy one")
+    assert "class rules: 0" in emptied
+    assert "class rules: 1" in healthy
+
+
+def test_the_denominator_counts_a_rule_once_however_many_authorities_assert_it(
+        conn, ingest_run_id):
+    """The denominator has to be counted at the SAME grain as the numerators beside it.
+
+    `class_pair_rule_reach` is keyed per source, so one clinical rule asserted by two
+    authorities is two rows -- which is why `dead` already groups on the three
+    natural-key columns (see the test below it). A denominator taken as a bare
+    `count(*)` would read 2 where the grouped one reads 1, and the operator diffing two
+    runs would see a rule appear and disappear on a re-ingest that changed nothing but
+    which authority happened to file it.
+
+    (An earlier version of this paragraph said the two numerators would read 1 against a
+    bare denominator of 2. They would not, in THIS fixture: `_an_ungraded_class_rule`
+    puts one member on each side of two distinct classes, so `max_pair_count` is
+    1*1 - 0 = 1 and `reaching no pair` reads 0, as the assertion below says. Only
+    `ungraded` reads 1. The grain argument is unaffected -- the illustration was wrong,
+    not the reasoning.)
+
+    This is db/018's own lesson ("one quantity stated twice is a quantity that will
+    disagree") reaching the operator surface rather than the schema.
+    """
+    subject_class, object_class = _an_ungraded_class_rule(
+        conn, ingest_run_id, subject_code="N0000006600", object_code="N0000006700")
+    interactions.add_class_pair_contraindication(
+        conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
+
+    counts = curation.class_grain_counts(conn)
+    assert counts.total == 1, (
+        f"one rule asserted by two authorities is ONE rule, got {counts.total}")
+    assert counts.ungraded == 1
+
+
+def test_a_database_predating_db037_trips_the_guard_rather_than_printing_old_numbers(
+        conn):
+    """THE GUARD HAS TO COVER db/037, NOT JUST db/035 -- PR #113's review finding.
+
+    cli.py states the standing rule: "a migration that widens a view a guarded block
+    reads must widen that block's exception tuple in the same commit." db/037 is the
+    awkward case that rule was not written for, because it widens nothing this block
+    NAMES: it replaces `class_pair_rule_reach`'s body so `max_pair_count` becomes exact,
+    and appends a column nobody read. Every name `class_grain_counts` used still resolved
+    on a db/035-or-036 database, so the guard stayed quiet, nothing raised, and the block
+    printed counts computed from the OLD, OVERSTATED arithmetic -- `dead` under-reporting
+    exactly the self-pair-over-a-one-member-class rule db/037 section 1 exists to surface,
+    and `drugref status` still exiting 0.
+
+    So the read now NAMES a db/037 column, and this is what makes that load-bearing.
+    `ALTER VIEW ... RENAME COLUMN` reaches the pre-db/037 shape on controlled input
+    inside the rolled-back fixture transaction -- this project's rule for a state the
+    release cannot otherwise exercise -- without rebuilding db/035's whole view body.
+    Nothing else reads the renamed column, so no dependent view breaks.
+
+    THE MESSAGE IS ASSERTED, not just the type: an operator who is told to run `drugref
+    migrate` can act, and a bare `UndefinedColumn` traceback after two blocks of real
+    answers is what the sibling guard in test_curation_orphans.py was written to stop.
+    """
+    from drugref import cli_status
+
+    conn.execute("ALTER VIEW drugref.class_pair_rule_reach "
+                 "RENAME COLUMN shared_effective_member_count TO before_db037")
+    with pytest.raises(RuntimeError, match="drugref migrate"):
+        cli_status.print_class_grain_block(conn)
 
 
 def test_an_unknown_uuid_is_not_a_class_grain_row(conn):
@@ -795,7 +929,18 @@ def test_the_status_block_counts_a_two_source_dead_rule_once(conn, ingest_run_id
     assert counts.dead == 1, (
         f"one dead rule asserted twice is ONE dead rule, got {counts.dead}")
     cli_status.print_class_grain_block(conn)
-    assert "class rules reaching no pair: 1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # The denominator (issue 111) is counted the SAME way, so it too reads 1: a rule
+    # asserted by two authorities is one rule on every number in the block.
+    #
+    # AND `ungraded` READS 0 ON THE SAME RULE, which is not a contradiction and is worth
+    # spelling out because the reading looks wrong at a glance. This rule reaches no pair,
+    # and `gap_uncurated_class_interaction_rule` deliberately withholds such a rule from
+    # the worklist -- grading it could change nothing, which is #36's measured lesson
+    # about a review gate asking a question no answer can change. So a dead rule counts
+    # in the denominator and in `reaching no pair`, and NOT in `ungraded`. Before the
+    # denominator existed there was nothing in the block to reconcile those two against.
+    assert "class rules: 1 (ungraded 0, reaching no pair 1)" in out
 
 
 def test_the_status_block_reports_a_cross_grain_disagreement(conn, ingest_run_id,
@@ -825,3 +970,258 @@ def test_the_status_block_reports_a_cross_grain_disagreement(conn, ingest_run_id
     assert "cross-grain disagreements: 1" in out
     assert "MORE SEVERE" in out, (
         "the count alone does not tell an operator which grade a consumer will take")
+
+
+# ============================================================================
+# 11. db/037 -- the arithmetic and the orientation the review round found
+# ============================================================================
+
+
+def _an_ungraded_self_pair_rule(conn, run_id, *, code, members):
+    """A class x class rule whose two sides are the SAME class, ungraded.
+
+    db/032 DECISION 2 deliberately permits this: QT-prolonging x QT-prolonging is a real
+    ONC entry, and the class legitimately equals itself as a rule subject. Only the
+    read-path expansion excludes the resulting identical-moiety pairs, which is exactly
+    the exclusion `max_pair_count` could not see before db/037.
+
+    `_a_graded_class_rule` can build the shape but always grades it, and the worklist's
+    whole subject is the row nobody has graded yet.
+    """
+    klass = _a_class(conn, run_id, code=code, name=f"{code} [MoA]")
+    for member_code, name in members:
+        moiety = _a_moiety(conn, run_id, member_code, name)
+        _file_member(conn, moiety, klass, run_id, relationship="has_MoA")
+    interactions.add_class_pair_contraindication(
+        conn, klass, klass, "CI_MoA", "ONCHIGH", run_id)
+    return klass
+
+
+def _reach(conn, subject_class, object_class):
+    """(max_pair_count, shared_effective_member_count) for one rule."""
+    return conn.execute(
+        "SELECT max_pair_count, shared_effective_member_count "
+        "FROM drugref.class_pair_rule_reach "
+        "WHERE subject_class_uuid = %s AND object_class_uuid = %s",
+        (subject_class, object_class)).fetchone()
+
+
+def test_a_self_pair_rule_over_a_one_member_class_reaches_nobody(conn, ingest_run_id):
+    """ISSUE 108, THE HEADLINE CASE: max_pair_count read 1 and the read path yields 0.
+
+    `max_pair_count` was `subject_effective * object_effective`, while `curated_ddi_pair`
+    additionally requires `subject_moiety <> partner_moiety`. For a self-pair rule over a
+    class with N effective members the true reach is N*(N-1), so at N=1 the product says
+    one pair and the expansion yields none.
+
+    db/035 defended the wrong direction -- "the exclusion cannot change 0 into non-zero,
+    which is the only threshold anything downstream tests". True, and harmless. The
+    hazardous direction is non-zero into zero, and it is this row. (That sentence is an
+    INLINE comment sitting immediately above db/035's `max_pair_count` expression, not
+    its section preamble; db/035's preamble and view COMMENT state the bound differently
+    again -- "it is exact about ZERO, which is the threshold that matters". Naming the
+    right one matters because a reader following this docstring has to find it.)
+    """
+    klass = _an_ungraded_self_pair_rule(
+        conn, ingest_run_id, code="N0000008200", members=[("TESTUNIIG1", "only-drug")])
+    assert _reach(conn, klass, klass) == (0, 1), (
+        "one member on both sides is one self-pair and no reachable pair")
+
+
+def test_both_detectors_inverted_on_that_row_and_now_agree(conn, ingest_run_id):
+    """The reason issue 108 is a migration and not a caveat: the SAME wrong number made
+    the two detectors disagree with each other, each in its own harmful direction.
+
+    * `gap_uncurated_class_interaction_rule` filters `HAVING max(max_pair_count) > 0`, so
+      it ADMITTED this rule to the curator worklist and minted it an immortal
+      `question_uuid` asking about "up to 1 drug pair(s)" -- #36's measured mistake, a
+      review gate asking what no answer could change.
+    * `drugref status` filters `WHERE max_pair_count = 0`, so it OMITTED the same rule --
+      leaving it "ingested, graded, committed and reported successful while reaching zero
+      patients", the exact failure db/035 is named for, reproduced by the detector built
+      to catch it.
+
+    Both are filters over the one column, which is why correcting the column corrects
+    both and why db/035 called this view "THE ONE PLACE the class grain states a rule's
+    reach". Asserted together so the pair cannot drift apart again.
+    """
+    klass = _an_ungraded_self_pair_rule(
+        conn, ingest_run_id, code="N0000008300", members=[("TESTUNIIG2", "only-drug")])
+
+    queued = conn.execute(
+        "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule "
+        "WHERE subject_class = %s", (klass,)).fetchone()[0]
+    assert queued == 0, "a rule no answer can change must not reach a curator"
+
+    counts = curation.class_grain_counts(conn)
+    assert counts.dead == 1, "and it must reach the operator, who can act on it"
+    assert counts.ungraded == 0
+
+
+@pytest.mark.parametrize("subject_code,object_code,subject_members,object_members,"
+                         "expected_pairs,expected_shared", [
+    # Disjoint classes: the product is already right, and this is the case that stops
+    # the fix being a blanket subtraction.
+    ("N0000008400", "N0000008500", [("TESTUNIIG3", "s1"), ("TESTUNIIG4", "s2")],
+     [("TESTUNIIG5", "o1"), ("TESTUNIIG6", "o2"), ("TESTUNIIG7", "o3")], 6, 0),
+    # Self-pair, N=3: 3*3 - 3 = 6, the shape db/032 DECISION 2 permits.
+    ("N0000008600", "N0000008600",
+     [("TESTUNIIG8", "a"), ("TESTUNIIG9", "b"), ("TESTUNIIH1", "c")], [], 6, 3),
+    # Self-pair, N=1: the headline. 1*1 - 1 = 0.
+    ("N0000008700", "N0000008700", [("TESTUNIIH2", "only")], [], 0, 1),
+    # TWO DIFFERENT classes sharing one member -- 2*2 - 1 = 3. The general case the
+    # self-pair is a special case OF, and not exotic: MED-RT files one drug under many
+    # classes, so two related classes overlapping is ordinary.
+    ("N0000008800", "N0000008900", [("TESTUNIIH3", "shared"), ("TESTUNIIH4", "s-only")],
+     [("TESTUNIIH3", "shared"), ("TESTUNIIH5", "o-only")], 3, 1),
+])
+def test_max_pair_count_equals_what_the_read_path_actually_yields(
+        conn, ingest_run_id, subject_code, object_code, subject_members,
+        object_members, expected_pairs, expected_shared):
+    """THE EQUIVALENCE, driven against the read path rather than against a restated
+    formula -- which is the only way this can be evidence rather than a second copy.
+
+    `class_pair_rule_reach` and `curated_ddi_pair` compute reach from opposite ends: one
+    from membership cardinalities, the other by actually expanding both sides and
+    excluding self-pairs. Asserting the column against a literal would pin arithmetic;
+    asserting it against the expansion pins the CLAIM, which is that the number tells an
+    operator how many drug pairs the rule reaches.
+
+    The four cases are chosen so no single wrong implementation passes all of them: a
+    bare product fails cases 2-4, a blanket `N*(N-1)` fails case 1, and subtracting only
+    when the two classes are IDENTICAL -- the tempting special-case fix -- fails case 4.
+    """
+    subject_class, object_class, _s, _o = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code=subject_code, object_code=object_code,
+        subject_members=subject_members, object_members=object_members)
+
+    yielded = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT subject_moiety, partner_moiety "
+        "FROM drugref.curated_ddi_pair WHERE via_subject_class = %s AND via_class = %s "
+        "AND relationship = 'CI_MoA') z", (subject_class, object_class)).fetchone()[0]
+
+    assert yielded == expected_pairs, "the read path is the authority on reach"
+    assert _reach(conn, subject_class, object_class) == (yielded, expected_shared)
+
+
+def test_the_uncorrected_product_is_what_this_replaces(conn, ingest_run_id):
+    """MUTATION, stated as arithmetic rather than by rewriting the view.
+
+    Every assertion above is compatible with a view that computed the right answer by
+    some other route, so this names the OLD number explicitly and requires it to differ.
+    Without it, the four equivalence cases would still pass if a later change quietly
+    reverted to the product for some inputs -- the shape db/034's regression took, where
+    results stayed correct and only a plan changed.
+    """
+    klass = _an_ungraded_self_pair_rule(
+        conn, ingest_run_id, code="N0000009100",
+        members=[("TESTUNIIH6", "a"), ("TESTUNIIH7", "b")])
+    row = conn.execute(
+        "SELECT subject_effective_member_count, object_effective_member_count, "
+        "max_pair_count, shared_effective_member_count "
+        "FROM drugref.class_pair_rule_reach WHERE subject_class_uuid = %s",
+        (klass,)).fetchone()
+    subject_n, object_n, reach, shared = row
+    assert (subject_n, object_n) == (2, 2)
+    assert subject_n * object_n == 4, "db/035's number"
+    assert (reach, shared) == (2, 2), "db/037's: 2*2 - 2, i.e. N*(N-1)"
+
+
+def _a_pair_graded_in_opposite_orientations(conn, run_id, *, moiety_severity,
+                                            class_severity):
+    """ONE clinical drug pair, graded by both grains, stated the OPPOSITE way round.
+
+    The class rule names (class-of-B, class-of-A) and expands to `(b, a)`; the moiety
+    rule names (a, class-of-B) and expands to `(a, b)`. Same axis, same two drugs, two
+    grades, two orientations -- and before db/037 the disagreement detector's join on
+    (subject_moiety, partner_moiety) returned nothing for them.
+
+    Nothing normalises orientation between the two candidate tiers and they come from
+    DIFFERENT upstreams (MED-RT vs ONCHigh), so agreement was coincidence rather than
+    invariant. That is what makes this an under-report rather than a stated limit.
+    """
+    subject_class, object_class, subjects, objects = _a_graded_class_rule(
+        conn, run_id, subject_code="N0000009200", object_code="N0000009300",
+        subject_members=[("TESTUNIIH8", "b-drug")],
+        object_members=[("TESTUNIIH9", "a-drug")],
+        severity=class_severity)
+    b_drug, a_drug = subjects[0], objects[0]
+    # The moiety rule points the other way: drug A against the class holding drug B.
+    conn.execute(
+        "INSERT INTO drugref.class_contraindication (subject_moiety_uuid, "
+        "object_class_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, 'CI_MoA', 'MED-RT', %s)",
+        (a_drug, subject_class, run_id))
+    curation.record_interaction_judgement(
+        conn, a_drug, subject_class, "CI_MoA", True, severity=moiety_severity,
+        evidence_grade="established", reviewed_by="test",
+        reviewed_against="2026.07.06")
+    return a_drug, b_drug, subject_class, object_class
+
+
+def test_a_mirror_oriented_disagreement_is_reported(conn, ingest_run_id):
+    """ISSUE 109. These rows are DIRECTIONAL -- db/006's own COMMENT on
+    `ddi_candidate_pair` says so: *"A consumer asking 'do X and Y interact' MUST query
+    both directions."* So a moiety rule on (a,b) and a class rule on (b,a) are ONE
+    clinical pair on ONE axis with two grades, and the old join found nothing.
+
+    THE READ PATH WAS NEVER AT RISK, which is why this is a worklist defect rather than
+    a safety one: a consumer unioning both directions still gets most-severe-first. What
+    under-reported is the reconciliation queue -- and db/035's own comment calls that
+    queue "what keeps most-severe-wins from becoming permanent over-warning", so a
+    disagreement nobody is ever asked to reconcile is the failure the view exists to
+    prevent, arriving through the view itself.
+    """
+    a_drug, _b_drug, _sc, _oc = _a_pair_graded_in_opposite_orientations(
+        conn, ingest_run_id, moiety_severity="minor",
+        class_severity="contraindicated")
+
+    rows = conn.execute(
+        "SELECT moiety_severity, class_severity, overlapping_pair_count "
+        "FROM drugref.curated_grain_disagreement WHERE moiety_rule_subject = %s",
+        (a_drug,)).fetchall()
+    assert rows == [("minor", "contraindicated", 1)]
+
+
+def test_the_mirrored_case_is_invisible_to_the_old_join(conn, ingest_run_id):
+    """THE ANTI-VACUITY CONTROL for the test above, and it is not optional.
+
+    A row in `curated_grain_disagreement` is evidence of the new arm only if the OLD arm
+    could not have produced it. Here the old join -- subject to subject, partner to
+    partner -- is written out and required to return NOTHING for the same fixture, so
+    the reported disagreement can only have come from the orientation normalisation.
+
+    This project has shipped a negative assertion satisfiable two ways before (the
+    superseded-orphan test, which held whether or not the view filtered), and the rule it
+    bought is: before trusting a result, name every reason it could occur.
+    """
+    _a_pair_graded_in_opposite_orientations(
+        conn, ingest_run_id, moiety_severity="minor",
+        class_severity="contraindicated")
+
+    same_orientation = conn.execute(
+        "SELECT count(*) FROM drugref.curated_ddi_pair m "
+        "JOIN drugref.curated_ddi_pair c "
+        "  ON c.subject_moiety = m.subject_moiety "
+        " AND c.partner_moiety = m.partner_moiety "
+        " AND c.relationship = m.relationship "
+        "WHERE m.rule_grain = 'moiety_rule' AND c.rule_grain = 'class_rule'"
+    ).fetchone()[0]
+    assert same_orientation == 0, (
+        "db/035's join must find nothing here, or the test above proves nothing")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0] == 1
+
+
+def test_agreeing_grades_are_not_a_disagreement_in_either_orientation(conn,
+                                                                      ingest_run_id):
+    """The normalisation must not turn the view into "every pair both grains touch".
+
+    `curated_grain_disagreement` is EXPECTED EMPTY on a healthy registry, so a widening
+    that made it report agreement as well would flood the worklist it exists to keep
+    actionable -- and the flood would look like the feature working.
+    """
+    _a_pair_graded_in_opposite_orientations(
+        conn, ingest_run_id, moiety_severity="major", class_severity="major")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0] == 0

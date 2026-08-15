@@ -221,3 +221,138 @@ def test_history_is_oldest_first_and_totally_ordered(conn, a_key):
     conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
     ids = [r.signing_key_id for r in keys.history(conn, fp)]
     assert ids == sorted(ids)
+
+
+# ============================================================================
+# for_verification -- the two reads a verifier needs, taken together (issue 87)
+# ============================================================================
+
+
+class _CountingConn:
+    """A connection that counts `execute` calls and proxies THAT ONE METHOD.
+
+    Deliberately not a general delegate -- there is no `__getattr__` here, so any other
+    attribute access raises AttributeError rather than silently reaching the real
+    connection. That is the safer default for a counter: a function that reached the
+    database by some route other than `.execute()` would fail loudly instead of being
+    reported as costing zero queries. (An earlier version of this line said "delegates
+    everything else", which described a class this is not.)
+
+    The round-trip claim in issue 87 is the kind that is easy to assert in prose and
+    never check, so it is checked. Deliberately NOT a mock: every query runs against the
+    real database, so this can only ever measure the real code path.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self.queries = 0
+
+    def execute(self, *args, **kwargs):
+        self.queries += 1
+        return self._conn.execute(*args, **kwargs)
+
+
+def test_for_verification_reads_the_registry_once(conn, a_key):
+    """ISSUE 87: one query where there were two.
+
+    `verify_target` is called once per curated row across the WHOLE overlay by the
+    release verifier, and its own docstring already records hoisting the catalog lookup
+    and the target-row read out of the per-signature loop for exactly this reason. The
+    two registry reads were the pair left behind.
+
+    THE CONTROL IS THE OLD PAIR, measured in the same test rather than quoted from the
+    issue: two calls cost two queries, so `1` here is a halving that is observed rather
+    than asserted. Without the control this test would pass just as well if `execute`
+    had stopped being the way this module reaches the database.
+    """
+    fp = signing.fingerprint(a_key)
+
+    old = _CountingConn(conn)
+    keys.live(old, fp)
+    keys.key_status(old, fp)
+    assert old.queries == 2
+
+    new = _CountingConn(conn)
+    assert keys.for_verification(new, fp) is not None
+    assert new.queries == 1
+
+
+def test_for_verification_is_all_or_nothing(conn, a_key):
+    """The two halves are present together or absent together, and that is the point.
+
+    `SignatureVerdict`'s docstring states that `holder is None` EXACTLY when the verdict
+    is `UNKNOWN_KEY`. Before this that held only because two separately-issued queries
+    happened to run compatible predicates -- nothing enforced it, and a future edit to
+    either predicate could have produced a verdict with a holder and no status, or a
+    status and no holder, with no test anywhere to notice.
+
+    One row returning both makes the invariant structural: there is a single `None` to
+    check, so the two halves cannot disagree about whether the key exists.
+    """
+    assert keys.for_verification(conn, "0" * 64) is None
+
+    registered = keys.for_verification(conn, signing.fingerprint(a_key))
+    assert registered is not None
+    assert registered.record.holder == "a curator"
+    assert registered.status.status == "active"
+
+
+def test_for_verification_takes_MATERIAL_from_the_live_row_and_STATUS_from_history(
+        conn, a_key):
+    """THE DIFFERENCE THE MERGE HAD TO PRESERVE, and the one way it could go wrong.
+
+    The two queries this replaces are not the same query twice. `live` reads the LIVE
+    row; `key_status` reads the key's WHOLE HISTORY, because a blanket revocation is
+    PERMANENT -- `revoke` writes whatever status it is handed, so `--status active` on a
+    compromised key is one ordinary command, and reading the live row for the status
+    would silently return every signature that key ever made to `valid`, the attacker's
+    included. Issue 87 names this explicitly as the thing any merge must not flatten.
+
+    A merge written as one plain row read would take BOTH halves from the live row and
+    pass every other test in this file, because every other test asks the two functions
+    separately. This is the case that fails.
+    """
+    fp = signing.fingerprint(a_key)
+    keys.revoke(conn, key_fingerprint=fp, status="compromised",
+                revoked_by="an operator", status_from=LATER)
+    keys.revoke(conn, key_fingerprint=fp, status="active",
+                revoked_by="an attacker", status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    registered = keys.for_verification(conn, fp)
+    assert registered.record.status == "active"           # material: the LIVE row
+    assert registered.status.status == "compromised"      # verdict: the HISTORY
+    assert registered.status.invalidates_all_signatures is True
+
+
+@pytest.mark.parametrize("revocations", [
+    [],
+    [("compromised", "an operator")],
+    [("compromised", "an operator"), ("active", "an attacker")],
+    [("rotated", "an operator"), ("active", "an operator")],
+    [("retired", "an operator")],
+])
+def test_for_verification_agrees_with_the_two_reads_it_replaces(conn, a_key,
+                                                                revocations):
+    """EQUIVALENCE, over every history shape the tests above establish as meaningful.
+
+    A simplification's only real obligation is that it changed nothing, and this project
+    has twice shipped a consolidation whose survivor was pinned by nothing -- a verdict
+    precedence that could be REVERSED with 177 tests green, and a collapsing function
+    replaceable by `verdicts[0]`. So the new read is driven against BOTH old reads on the
+    same connection, across the reinstated compromise, the reversible rotation and the
+    ordinary cases either side of them.
+
+    `keys.live` and `keys.key_status` are deliberately kept rather than deleted: `revoke`
+    and `cli_signing_release` both need the live row alone, and a caller wanting only the
+    status rule should not have to take the key material with it.
+    """
+    fp = signing.fingerprint(a_key)
+    for status, by in revocations:
+        keys.revoke(conn, key_fingerprint=fp, status=status, revoked_by=by,
+                    status_from=LATER)
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+    registered = keys.for_verification(conn, fp)
+    assert registered.record == keys.live(conn, fp)
+    assert registered.status == keys.key_status(conn, fp)
