@@ -515,3 +515,57 @@ def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
         f"{module}.py embeds SQL naming the curated table {table}: {offenders}. "
         f"Curated reads and writes belong in curation.py, where pg_rewrite's sweep "
         f"over views can still see them.")
+
+
+# ============================================================================
+# the fourth block's guard, which had no test at all (issue 122, review round)
+# ============================================================================
+
+
+def test_the_backdated_signature_guard_names_db030_rather_than_tracebacking():
+    """⇒ THE ONE GUARDED CALL SITE THE SUITE HAD NEVER EXECUTED.
+
+    Nothing referenced `signatures.BACKDATED_VIEW` or reached this `except`: the stub
+    above never raised for `signature_backdated`, and the signature read-path tests
+    drive only the happy path. So its relation name, its migration number and its
+    rollback were all free -- a guard that probed the wrong view, or named db/038 where
+    it meant db/030, would have shipped green and told an operator to look at the wrong
+    thing.
+
+    THE VALUE ASSERTED IS db/030, not "drugref migrate", because that phrase appears in
+    every one of `guard_message`'s branches and so pins nothing. The wrong migration
+    number is precisely the mistake a copy-pasted guard makes.
+    """
+    from drugref import cli
+
+    conn = _Conn(raises={"signature_backdated": psycopg.errors.UndefinedTable(
+        'relation "drugref.signature_backdated" does not exist')},
+        absent=("drugref.signature_backdated",), applied=False)
+
+    with pytest.raises(RuntimeError, match="predates db/030") as raised:
+        cli._handle_status(conn, None)
+    assert "drugref.signature_backdated" in str(raised.value)
+    assert "backdated signatures cannot be reported" in str(raised.value), (
+        "the operator needs the second half: what goes unreported meanwhile")
+
+
+def test_the_backdated_signature_guard_catches_undefined_column_too():
+    """THE SITE THAT CAUGHT `UndefinedTable` ALONE, and the branch that made unreachable.
+
+    `signature_backdated`'s SELECT names seven columns explicitly, which is the same
+    widening-prone shape that has already cost db/035 and db/038 a guard each. Catching
+    only `UndefinedTable` here meant `guard_message`'s "relations exist but the migration
+    is not applied" branch could never be reached from this block -- so the next
+    migration to widen this view would have dropped a raw psycopg traceback on an
+    operator, after three blocks of real answers.
+
+    The standing rule was written in prose and this site was one of two that lost it.
+    `migration_guard.WRONG_SHAPE` is one tuple, so it cannot differ between sites again.
+    """
+    from drugref import cli
+
+    conn = _Conn(raises={"signature_backdated": psycopg.errors.UndefinedColumn(
+        'column "lag" does not exist')}, absent=(), applied=False)
+
+    with pytest.raises(RuntimeError, match="an older shape than this code reads"):
+        cli._handle_status(conn, None)

@@ -3,22 +3,39 @@
 # accident. Installed with `git config core.hooksPath .githooks` -- see
 # docs/PROJECT-NOTES.md § "How to run / test".
 #
-# WHY THE HOOK IS THREE LINES AND THE RULE IS IN PYTHON: the check is pinned by
-# `tests/test_commit_lint.py`, against the two commit bodies that actually closed an
-# issue nobody meant to close. A rule written in `sh` here would be a second copy with
-# nothing testing it.
+# WHY THE RULE IS IN PYTHON AND ONLY THE DISPATCH IS HERE: the check is pinned by
+# `tests/test_commit_lint.py`, against the commit bodies that actually closed an issue
+# nobody meant to close. A rule written in `sh` would be a second copy with nothing
+# testing it.
 #
-# `exec` SO THE EXIT CODE IS THE HOOK'S OWN, with no shell layer left to swallow it: a
-# commit-msg hook exiting 0 aborts nothing, and a guard that never fires is the failure
-# mode this project has already met three times (issues 74, 66, 76).
+# TWO INTERPRETERS, AND THE ORDER MATTERS. `uv run` gets the project's own environment;
+# a bare `python3` is the fallback for a checkout where uv is not on the hook's PATH,
+# which is the ordinary case for GUI git clients (VS Code, Tower, GitHub Desktop) and
+# many CI images. `drugref.commit_lint` imports only the standard library and carries
+# `from __future__ import annotations` so that fallback runs on the Python the OS ships.
 #
-# FALLS BACK TO A BARE `python3` when uv is absent, so a checkout without uv on PATH
-# still gets the guard rather than silently getting none. PYTHONPATH reaches src/
-# without requiring an editable install; $0 is this script, so the path is resolved
-# relative to the hook rather than to the cwd git happens to run it from.
-set -e
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# ⇒ EXIT STATUS IS TRIAGED, NOT FORWARDED BLINDLY, and this is the part that keeps the
+# guard installable. `commit_lint` answers 0 (allow) or 1 (reject) and nothing else, so
+# any OTHER status is uv failing for an environment reason -- an unsynced project, a
+# stale lock, no network -- which has nothing to do with the commit message. Forwarding
+# it would reject a perfectly good commit and teach the author to reach for
+# `--no-verify`, which is how a guard gets uninstalled. Those statuses fall through to
+# the fallback interpreter instead, and say so.
+#
+# NO `set -e`: every failure here needs its status inspected rather than acted on, and
+# `set -e` would exit on the very command whose non-zero status is the thing to triage.
+# $0 is this script, so the path is resolved relative to the hook rather than to the cwd
+# git happens to run it from.
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) || exit 1
+
 if command -v uv >/dev/null 2>&1; then
-    exec uv run --quiet --project "$root" python -m drugref.commit_lint "$1"
+    uv run --quiet --project "$root" python -m drugref.commit_lint "$1"
+    status=$?
+    if [ "$status" -le 1 ]; then
+        exit "$status"
+    fi
+    echo "drugref: uv could not run the commit guard (exit $status); falling back to" \
+         "python3 so the guard still runs" >&2
 fi
+
 PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m drugref.commit_lint "$1"

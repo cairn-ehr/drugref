@@ -60,3 +60,48 @@ def test_asking_about_nothing_returns_nothing(conn):
     direction issue 120 is about.
     """
     assert registry_read.known_moieties(conn) == set()
+
+
+def test_registry_is_empty_on_a_migrated_but_uningested_database(conn):
+    """The fact that stops #120's banner blaming the operator's typing.
+
+    A migrated database with no ingest holds no moieties, so EVERY uuid is unknown and
+    none of the banner's three causes -- a class_uuid, a uuid from another node, a
+    transposed digit -- applies to any of them. Without this read the command asserted a
+    cause it had not confirmed, which is the defect issue 122 is about, in the message
+    issue 120 added.
+    """
+    assert registry_read.registry_is_empty(conn) is True
+
+
+def test_a_registry_with_one_moiety_is_not_empty(conn, ingest_run_id):
+    """The acceptance half: one row is enough, and the answer must flip.
+
+    A function that returned True unconditionally would satisfy the test above, and the
+    banner would then tell an operator with a fully loaded registry that drugref holds
+    nothing -- the same under-informing failure, pointed the other way.
+    """
+    _a_moiety(conn, ingest_run_id, "TESTUNIIR1", "a registered drug")
+    assert registry_read.registry_is_empty(conn) is False
+
+
+def test_known_moieties_collapses_a_repeated_identifier(conn, ingest_run_id):
+    """The duplicate-collapsing claim in the docstring, which nothing exercised.
+
+    The CLI dedupes before calling, so this property is the function's own rather than
+    something the caller relies on -- and a rewrite returning a list would break it
+    silently, double-counting the self-pair form.
+    """
+    known = _a_moiety(conn, ingest_run_id, "TESTUNIIR2", "a registered drug")
+    assert registry_read.known_moieties(conn, known, known) == {known}
+
+
+def test_the_moiety_table_constant_names_the_relation_the_reads_use(conn):
+    """One home per relation name (issue 122): the guard probes what the SELECT reads.
+
+    A guard carrying its own copy of the name would survive a rename and then report a
+    healthy database's spine permanently absent. `to_regclass` is what the guard itself
+    uses, so this is the same question asked the same way.
+    """
+    assert conn.execute("SELECT to_regclass(%s)",
+                        (registry_read.MOIETY_TABLE,)).fetchone()[0] is not None

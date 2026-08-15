@@ -6,10 +6,9 @@ WHAT WAS WRONG WITH THE FOUR GUARDS THIS REPLACES. Each caught psycopg's
     "drugref.curated_unrankable_severity is missing: this database predates db/038 ...
      Run `drugref migrate` and re-run status."
 
-42P01 has more causes than a pending migration -- a wrong `search_path`, a role without
-USAGE on schema `drugref`, a view dropped by a manual repair, or a BASE TABLE of the
-view being gone -- and the guard asserted the one it imagined rather than the one it
-could confirm.
+42P01 has more causes than a pending migration -- a view dropped by a manual repair, a
+partial restore, or a `DROP ... CASCADE` that took the view with its base table -- and
+the guard asserted the one it imagined rather than the one it could confirm.
 
 ⇒ THE WORST CASE IS SELF-REFERENTIAL, and it is why this module exists rather than a
 one-line message tweak. "A restore that lost the vocabulary table" is one of the three
@@ -26,19 +25,47 @@ really is absent, so "absent" still reads as "behind on migrations". THE LEDGER 
 DISCRIMINATOR: absent *while its migration is recorded applied* means DROPPED, and
 nothing else in the schema says so.
 
+⇒ AND THE PROBES THEMSELVES MAY NOT OUTRANK THE ERROR THEY DIAGNOSE. Both of them read
+the database, so both can fail -- most reachably `drugref.schema_migration`, which
+`db.apply_migrations` creates with `CREATE TABLE IF NOT EXISTS` rather than any
+`db/*.sql`, so a database bootstrapped by replaying the SQL by hand has every view and
+no ledger. An unguarded probe then raises from inside the guard and the surviving
+traceback names `schema_migration` -- not the relation the operator was actually reading
+-- while `cli.main` catches only `RuntimeError` and so never renders it as a sentence at
+all. `raise_missing` therefore treats a failed probe as a FIFTH state: it says the
+diagnosis could not be completed and hands back what Postgres said about the ORIGINAL
+failure, which is strictly the thing the operator came for.
+
 THE WORDING LIVES HERE, ONCE, FOR ALL FIVE CALLERS. Two `cli.py` blocks, two in
 `cli_status.py` and the clinician path in `cli_interactions.py` differ only in which
-relation they read, which migration ships it, and what an operator loses meanwhile. Four
-states x five call sites written out by hand would be twenty sentences with twenty
-chances to disagree -- the shape this project has already paid for repeatedly (db/006's
-vocabulary, db/037's ordering rule written twice, and issue 116 when the two drifted).
+relation they read, which migration ships it, and what an operator loses meanwhile. Five
+states x five call sites written out by hand would be twenty-five sentences with
+twenty-five chances to disagree -- the shape this project has already paid for many
+times (db/006's vocabulary, db/037's ordering rule written twice, and issue 116 when the
+two drifted). `guarded` owns the exception tuple for the same reason: which psycopg
+errors mean "this database is the wrong shape" is one fact, and it was already written
+five times with two of them disagreeing.
 """
+import contextlib
 from dataclasses import dataclass
 from typing import NoReturn
 
 import psycopg
 
 from drugref import db
+
+# WHAT "THE DATABASE IS THE WRONG SHAPE" LOOKS LIKE TO PSYCOPG, in one place. db/035
+# wrote the standing rule the hard way: a migration widening a view a guarded block
+# reads must widen that block's exception tuple in the same commit. That rule was prose,
+# and prose lost -- of the five call sites this module replaced, THREE caught both
+# classes and TWO caught only `UndefinedTable`, so the "relations exist but the
+# migration is not applied" branch below was unreachable from those two. A tuple written
+# once cannot disagree with itself.
+#
+# `UndefinedColumn` is a SIBLING of `UndefinedTable` under `ProgrammingError`, not a
+# subclass, so catching the latter alone misses every database holding the view in an
+# older shape -- which is every deployment between pulling this code and migrating.
+WRONG_SHAPE = (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn)
 
 
 @dataclass(frozen=True)
@@ -67,13 +94,45 @@ class Diagnosis:
     detail: str
 
 
+def _said(exc: psycopg.Error) -> str:
+    """What Postgres actually said, as ONE line fit to splice into a sentence.
+
+    `message_primary` FIRST, and it is the half of issue 122 that reached nobody:
+    `relation "drugref.severity_kind" does not exist` named the real missing relation
+    all along, but `raise ... from exc` only sets `__cause__` and `cli.main` prints the
+    outer message alone. `str(exc)` is the fallback for a client-side error, which
+    carries no `diag` fields.
+
+    WHITESPACE IS COLLAPSED because that fallback is multi-line: psycopg renders an
+    error as its primary message plus `LINE 1: ...` and a caret row, and splicing three
+    lines into the middle of a paragraph breaks the sentence around it. Collapsing keeps
+    every word and costs only the alignment of a caret nobody can use here anyway.
+    """
+    return " ".join((exc.diag.message_primary or str(exc)).split())
+
+
+def _opening(consequence: str) -> str:
+    """`consequence` with its first letter raised, and NOTHING ELSE TOUCHED.
+
+    NOT `str.capitalize()`, which lower-cases the whole remainder. Callers write in this
+    project's house voice, where the load-bearing word is shouted -- `cli_status` warns
+    that an unrankable ruling "outranks and DISCARDS every real grade for its pair", and
+    `cli_interactions` that a severity "would reach a client as a NULL rank". Three of
+    the four branches used to render those as "discards" and "null rank", flattening the
+    emphasis in exactly the sentences an operator most needs to read carefully.
+    """
+    return consequence[:1].upper() + consequence[1:]
+
+
 def guard_message(diagnosis: Diagnosis, *, migration: str, consequence: str) -> str:
     """The operator's sentence for one unreadable relation. PURE -- no connection.
 
     `migration` is the numeric prefix as written in `db/` ("038"), not a filename: the
     descriptive half of `038_effective_rank_and_the_class_rule_count.sql` is prose that
     a later round may reword, and a guard that quoted it in full would be a second copy
-    of a name with no test holding the two together.
+    of a name with no test holding the two together. `db.migration_applied` REJECTS
+    anything that is not three digits, because "38" for "038" matches no ledger row and
+    so restores the exact closed loop this module exists to break.
 
     `consequence` is what the OPERATOR loses while this block cannot run, supplied by
     the caller because only the caller knows. It is deliberately not derived from the
@@ -85,41 +144,77 @@ def guard_message(diagnosis: Diagnosis, *, migration: str, consequence: str) -> 
             # THE GUARD'S OWN ASSUMPTION, REFUTED. Everything it would have said is now
             # known to be false, so it says that and gets out of the way: whatever is
             # broken, `detail` names it and this module does not know what it is.
+            #
+            # ⇒ AND IT NAMES NO CAUSES, which is a correction rather than an omission.
+            # An earlier version listed three -- a wrong `search_path`, a role without
+            # USAGE on schema drugref, a base table dropped from under a live view --
+            # and NONE of them can produce the state this branch describes. Every
+            # guarded read is schema-qualified, so `search_path` cannot resolve it
+            # wrongly; a missing USAGE raises 42501, which `WRONG_SHAPE` does not catch;
+            # and Postgres refuses to drop a base table while a view depends on it, so
+            # `CASCADE` takes the view too and lands in the ABSENT branch instead. The
+            # branch that advertises humility was asserting causes it had not confirmed
+            # -- this module's founding defect, relocated. What is left is the truth:
+            # the assumption is refuted, and Postgres's own sentence is the lead.
             return (
                 f"a read failed although db/{migration} is recorded applied AND every "
                 f"relation it reads exists, so this is NOT a missing migration -- "
-                f"`drugref migrate` would do nothing. Look at a wrong search_path, a "
-                f"role without USAGE on schema drugref, or a base table dropped from "
-                f"under a view that still stands. {consequence.capitalize()} until it "
-                f"is fixed. Postgres said: {diagnosis.detail}")
+                f"`drugref migrate` would do nothing. drugref cannot narrow it further "
+                f"from here; Postgres's own message below is the diagnosis. "
+                f"{_opening(consequence)} until it is fixed. Postgres said: "
+                f"{diagnosis.detail}")
         # THE `UndefinedColumn` SHAPE: the view is there, one migration short of the
-        # columns the reader selects. db/035 widened a view with `subject_class` and
-        # db/038 added `effective_rank`; such a database fails one COLUMN short, not one
+        # columns the reader selects. db/035 widened `curated_target_unresolved` with
+        # `subject_class` and db/038 added `effective_rank` to
+        # `curated_ddi_pair_effective`; such a database fails one COLUMN short, not one
         # relation short, so the relation probe finds everything present and only the
         # ledger explains the failure.
         return (
             f"the relations exist but db/{migration} is NOT recorded applied, so they "
             f"are an older shape than this code reads -- a column it selects is "
-            f"missing. {consequence.capitalize()} meanwhile. Run `drugref migrate` "
+            f"missing. {_opening(consequence)} meanwhile. Run `drugref migrate` "
             f"and re-run. "
             f"Postgres said: {diagnosis.detail}")
 
     names = ", ".join(diagnosis.absent)
+    # PLURAL AGREEMENT, because `relations` is a tuple and the class-grain site passes
+    # THREE names: "A, B, C is missing" is the sentence a reader stops trusting.
+    is_are = "is" if len(diagnosis.absent) == 1 else "are"
     if diagnosis.migration_applied:
         # THE CLOSED LOOP, BROKEN. Naming the no-op is the entire point: an operator
         # told "run drugref migrate" runs it, sees "migrations applied", re-runs it, and
         # reads this same sentence -- which is how a diagnosis becomes a loop.
         return (
-            f"{names} is DROPPED, not pending: db/{migration} IS recorded applied in "
-            f"drugref.schema_migration and the relation is gone anyway, so `drugref "
+            f"{names} {is_are} DROPPED, not pending: db/{migration} IS recorded "
+            f"applied in drugref.schema_migration and it is gone anyway, so `drugref "
             f"migrate` is a NO-OP here and re-running it will print this again. "
             f"Something dropped it after the migration ran -- a manual repair, a "
             f"partial restore, or a `DROP ... CASCADE` on a base table that took the "
-            f"view with it. {consequence.capitalize()} until it is restored. Postgres "
+            f"view with it. {_opening(consequence)} until it is restored. Postgres "
             f"said: {diagnosis.detail}")
     return (
-        f"{names} is missing: this database predates db/{migration}, so {consequence}. "
-        f"Run `drugref migrate` and re-run. Postgres said: {diagnosis.detail}")
+        f"{names} {is_are} missing: this database predates db/{migration}, so "
+        f"{consequence}. Run `drugref migrate` and re-run. Postgres said: "
+        f"{diagnosis.detail}")
+
+
+def undiagnosed_message(*, detail: str, probe_detail: str, consequence: str) -> str:
+    """When the PROBES failed too: say so, and lead with the original failure.
+
+    THE ONE RULE THIS BRANCH EXISTS TO KEEP: a probe may never outrank the error it was
+    called to explain. Without it, a database whose `drugref.schema_migration` is absent
+    -- a hand-replayed bootstrap, or a selective restore -- turned a diagnosable read
+    failure into a chained psycopg traceback whose SURVIVING exception named the ledger,
+    whereupon `cli.main`, which catches only `RuntimeError`, printed no sentence at all.
+    The operator was pointed at the one relation that was not their problem.
+    """
+    return (
+        f"a read failed and drugref could not diagnose it: probing the schema failed "
+        f"too ({probe_detail}), which usually means drugref.schema_migration is absent "
+        f"-- a database built by replaying db/*.sql by hand, or a partial restore, has "
+        f"the relations and no ledger. Run `drugref migrate` to create the ledger and "
+        f"re-run; if that does not help, the original failure is the one to act on. "
+        f"{_opening(consequence)} meanwhile. Postgres said: {detail}")
 
 
 def raise_missing(conn: psycopg.Connection, exc: psycopg.Error, *,
@@ -135,10 +230,52 @@ def raise_missing(conn: psycopg.Connection, exc: psycopg.Error, *,
 
     `NoReturn`, so a caller writing `raise_missing(...)` and a caller writing `raise
     raise_missing(...)` cannot disagree about whether this returns.
+
+    EMPTY `relations` IS REFUSED RATHER THAN ANSWERED. `db.missing_relations(conn)`
+    returns `()`, which `guard_message` would read as "every relation it reads exists"
+    and report to the operator -- a fact nobody checked, asserted as confirmed, which is
+    this module's own founding defect one level up. A caller with nothing to probe has a
+    bug, and it should be loud in the suite rather than eloquent in production.
     """
-    absent = db.missing_relations(conn, *relations)
-    applied = db.migration_applied(conn, migration)
+    if isinstance(relations, str):
+        # A MISSING TRAILING COMMA, WHICH IS SILENT AND ABSURD. Four call sites pass a
+        # singleton tuple, and `relations=(X)` without the comma is just `X`; the splat
+        # below then probes it CHARACTER BY CHARACTER, each one absent, and the operator
+        # reads "d, r, u, g, r, e, f, ., s, ... are DROPPED, not pending". There is no
+        # type checker in this project (issue 88), so this is the check that exists.
+        raise TypeError(
+            f"relations must be a tuple, not the string {relations!r} -- a singleton "
+            f"needs its trailing comma, or it is probed one character at a time")
+    if not relations:
+        raise ValueError(
+            "raise_missing needs at least one relation to probe: with none, the "
+            "diagnosis would report that every relation exists without having looked")
+    detail = _said(exc)
+    try:
+        absent = db.missing_relations(conn, *relations)
+        applied = db.migration_applied(conn, migration)
+    except psycopg.Error as probe_exc:
+        raise RuntimeError(undiagnosed_message(
+            detail=detail, probe_detail=_said(probe_exc),
+            consequence=consequence)) from exc
     raise RuntimeError(guard_message(
-        Diagnosis(absent=absent, migration_applied=applied,
-                  detail=(exc.diag.message_primary or str(exc)).strip()),
+        Diagnosis(absent=absent, migration_applied=applied, detail=detail),
         migration=migration, consequence=consequence)) from exc
+
+
+@contextlib.contextmanager
+def guarded(conn: psycopg.Connection, *, relations: tuple[str, ...], migration: str,
+            consequence: str):
+    """Run a read; turn "this database is the wrong shape" into the operator's sentence.
+
+    THE `try` BODY HOLDS EXACTLY ONE CALL at every site, deliberately, and this wrapper
+    keeps it that way: widening it would swallow an `UndefinedTable` that a genuinely
+    mis-shaped view should still raise. What moves in here is only WHICH exceptions mean
+    "wrong shape" -- see `WRONG_SHAPE` for why that had to stop being written five
+    times.
+    """
+    try:
+        yield
+    except WRONG_SHAPE as exc:
+        raise_missing(conn, exc, relations=relations, migration=migration,
+                      consequence=consequence)

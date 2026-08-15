@@ -698,16 +698,25 @@ round". `db/038` was still unmerged, so the SQL fixes went into the file and `dr
 
 **No migration at all**, the first such round since 5c.1: `db/038` merged with PR
 [#119](https://github.com/cairn-ehr/drugref/pull/119) and is FROZEN, and all three defects were fixable in
-Python. **Suite 1564 → 1598**, `ruff` clean, **ten mutations run against the new branches and all ten fail**.
-Three new modules (`commit_lint.py`, `registry_read.py`, `migration_guard.py`) and one shipped git hook. Full
-account: PROJECT-NOTES § "The guard round".
+Python. **Suite 1564 → 1644 across the round and its own review**, `ruff` clean, **thirteen mutations run
+against the fixed branches and all thirteen fail**. Three new modules (`commit_lint.py`, `registry_read.py`,
+`migration_guard.py`) and one shipped git hook. Full account: PROJECT-NOTES § "The guard round" and § "The
+guard round's own review".
 
-- **⇒ THE HEADLINE — THE COMMIT GUARD FOUND A SIXTH OCCURRENCE ON ITS FIRST RUN.** Issue 118 was filed against
-  five commits that closed an issue nobody meant to close; running the finished check over **all 363 commits**
-  flagged 14 (**6 accidental, 8 deliberate**) and turned up **#108**, closed by `293758c`'s *"Filed rather than
-  fixed: #108 …"* one round BEFORE #114, with #109–#112 in the same sentence left open. **Every document in
-  this repo said five.** The failure is silent by construction, so every hand count undercounted — and the
-  count was the evidence the prose rule was failing.
+- **⇒ THE HEADLINE — THE COMMIT GUARD FOUND A SIXTH ISSUE ON ITS FIRST RUN.** Issue 118 was filed against five
+  commits that closed an issue nobody meant to close; running the finished check over the whole history
+  flagged 14 and turned up **#108**, closed by `293758c`'s *"Filed rather than fixed: #108 …"* one round
+  BEFORE #114, with #109–#112 in the same sentence left open. **Every document in this repo said five.** The
+  failure is silent by construction, so every hand count undercounted — and the count was the evidence the
+  prose rule was failing. **The split was ALSO miscounted**: 10 accidental and 4 deliberate, not 6/8, because
+  four commits re-closed a known issue by QUOTING the offending sentence while documenting the rule. Six
+  ISSUES, ten COMMITS.
+- **⇒ AND THE ROUND'S OWN REVIEW FOUND TWO OF THE THREE GUARDS BROKEN.** The hook's `python3` fallback aborted
+  **every** commit (a PEP 604 annotation evaluated at import time, under the 3.9 the OS ships), and the hook
+  was blind to `git commit -m`, where git keeps `#` lines rather than stripping them. A third finding is the
+  sharper one: `test_a_database_predating_db038_is_told_to_migrate` **asserted the inverse of its own name**,
+  green, because the guard's own rollback restored the view the test had dropped and `match="drugref migrate"`
+  is a substring of all four messages. Details: PROJECT-NOTES § "The guard round's own review".
 - **THE HOOK SHIPS AS `.githooks/commit-msg` + a pure `drugref.commit_lint`**, installed with
   `git config core.hooksPath .githooks`, escape `--no-verify`. The proposed `Closes-intentionally:` trailer is
   **deliberately not shipped**: that spelling would not close anything on GitHub, so it would have been a

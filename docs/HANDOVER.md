@@ -22,20 +22,37 @@ when PR [#119](https://github.com/cairn-ehr/drugref/pull/119) merged (`20c4701`,
 handover said `db/038` was "UNMERGED and therefore still editable" — **that licence is spent; a correction now
 needs `db/039`.**
 
-**⇒ JUST FINISHED — THE GUARD ROUND: issues 118, 120, 122 closed, and NO MIGRATION AT ALL** — the first such
-round since 5c.1, because all three were fixable in Python. Suite **1564 → 1598**, `ruff` clean, **ten
-mutations run against the new branches and all ten fail**. Three new modules (`commit_lint.py` 175,
-`registry_read.py` 64, `migration_guard.py` 144) and one shipped git hook. Full account: PROJECT-NOTES § "The
-guard round"; ROADMAP § 5c.2f.
+**⇒ JUST FINISHED — THE GUARD ROUND AND ITS OWN SIX-AGENT REVIEW: issues 118, 120, 122 closed, and NO
+MIGRATION AT ALL** — the first such round since 5c.1, because all three were fixable in Python. Suite
+**1564 → 1644**, `ruff` clean, **thirteen mutations run against the fixed branches and all thirteen fail**.
+Three new modules (`commit_lint.py`, `registry_read.py`, `migration_guard.py`) and one shipped git hook. Full
+account: PROJECT-NOTES § "The guard round"; ROADMAP § 5c.2f.
 
-**⇒ THE HEADLINE — THE COMMIT GUARD FOUND A SIXTH OCCURRENCE ON ITS FIRST RUN, AND IT HAD GONE UNCOUNTED FOR A
-ROUND.** #118 was filed against **five** commits that closed an issue nobody meant to close. Running the
-finished check over **all 363 commits** flagged 14 — **6 accidental, 8 deliberate** — and turned up **#108**,
-closed by `293758c`'s *"Filed rather than fixed: #108 …"* **one round BEFORE #114**, with #109–#112 in the same
-sentence left open (`gh api .../issues/108/timeline` names the commit). **Every document in this repo said
-five.** The failure is silent by construction, so every hand count undercounted — **and the count was the
-evidence the prose rule was failing**, so the undercount understated the case for fixing it. #108 was fixed
-later by db/037 anyway, so no work was lost; **that is luck, not a mitigation.**
+**⇒ THE REVIEW FOUND THAT TWO OF THE THREE GUARDS SHIPPED BROKEN, AND ONE TEST ASSERTED ITS OWN INVERSE.**
+Read that section of PROJECT-NOTES before trusting any guard in this repo:
+
+1. **The hook's `python3` fallback aborted EVERY commit.** `commit_lint` used a PEP 604 annotation evaluated
+   at import time, so under the Python the OS ships (3.9.6) the module raised `TypeError` before reading a
+   byte — and exit 1 rejects the commit. The branch whose whole justification is *"still gets the guard rather
+   than silently getting none"* gave a hard block plus a traceback. Fixed with `from __future__ import
+   annotations`; the fallback now has both halves tested (rejects the bad message, **accepts the good one** —
+   only the second assertion can tell a working guard from a crashing one).
+2. **The hook was blind to `git commit -m`.** It dropped every line starting with `#`, on the premise that git
+   strips them — true of an EDITOR commit, **false for `-m`/`-F`**, where cleanup is `whitespace` and `#`
+   lines are stored verbatim. A body pasted from ROADMAP markdown (`## Done`, `# fixes #999`) closed the issue
+   silently. It now truncates at git's own trailing block and **scans everything else**.
+3. **`test_a_database_predating_db038_is_told_to_migrate` asserted the opposite of its name, green.**
+   `missing_relations` rolls back before probing — it must — and the `conn` fixture is rollback-isolated, so
+   **the rollback puts the dropped view back**; the guard then answers *"NOT a missing migration"*. The old
+   assertion, `match="drugref migrate"`, is a substring of **all four** messages, so it discriminated nothing.
+
+**⇒ THE ORIGINAL HEADLINE, CORRECTED: six ISSUES, ten COMMITS.** #118 was filed against **five** commits; the
+finished check turned up **#108**, closed by `293758c` **one round BEFORE #114** with #109–#112 in the same
+sentence left open. The review found the split also wrong: of the 14 flagged, **10 are accidental and 4
+deliberate**, not 6/8, because **four commits re-closed a known issue by QUOTING the offending sentence while
+documenting the rule** (`e3d8322`, `8709d98`, `180d613`, `5353bbb`). **Writing about this bug re-arms it** —
+the strongest argument for the guard, and the part left out. **No commit-scan count is written here**: it is
+stale at the next merge, and this repo has lost four rounds to one fact kept in two places.
 
 **⇒ INSTALL THE HOOK IN EVERY CLONE — `git config core.hooksPath .githooks`.** It is LOCAL git config, not a
 committed file, so a fresh checkout has none, and **a guard nobody installed is issues 74/66/76's "gate that
@@ -61,19 +78,22 @@ module of its own — `curated_read` is scoped to the overlay, and that scope is
 answer), a banner naming each unknown uuid, **no grade block at all**, **exit 2**, and existence checked
 BEFORE the self-pair branch. **The old test asserted the DEFECT as the contract** (`== 0`, `"no curated
 grade" in out`) and was replaced — the fourth test in this project found pinning the wrong thing.
+**The review then found #120's own banner repeating #122's defect**: its three offered causes all blame the
+operator's typing, and on a migrated-but-never-ingested database every uuid lands there and none applies —
+so `registry_read.registry_is_empty` now separates *"you typed something drugref does not hold"* from
+*"drugref holds nothing at all"*.
 
-**⇒ TWO STALE FIGURES WERE FOUND AND CORRECTED, both of the "one home" kind this repo keeps paying for.**
-PROJECT-NOTES' suite-count line said **1451 while the suite was 1564** — its own comment calls itself THE ONE
-HOME for that number, and this is the **fourth** occurrence, which ran five rounds (1465→1564) before anyone
-noticed. And **`questions.py` is 568 lines, over the cap and never on
-[#89](https://github.com/cairn-ehr/drugref/issues/89)'s list** — measured at `HEAD`, so pre-existing.
-**#89's figures are now: `signing.py` 605, `questions.py` 568, `release_verification.py` 540, `curation.py` 534
-(523 + this round's two exported view-name constants). Read them off the issue, do not re-derive.**
+**⇒ STALE FIGURES KEEP BEING FOUND, all of the "one home" kind this repo keeps paying for.** PROJECT-NOTES'
+suite-count line said **1451 while the suite was 1564** — its own comment calls itself THE ONE HOME for that
+number, and this is the **fourth** occurrence, which ran five rounds (1465→1564) before anyone noticed.
+**`questions.py` is 568 and was never on [#89](https://github.com/cairn-ehr/drugref/issues/89)'s list** — that
+list was assembled by hand from files a review happened to notice, so it has been incomplete since it was
+written. **#89 now carries all four measured figures; read them off the issue, do not re-derive.**
 
-**⇒ A TRAP THIS ROUND WALKED INTO AND RECORDED: DO NOT SCRIPT A COMMENT RE-WRAP.** Two crude passes at
-reflowing over-long lines merged `@dataclass` field declarations into one line and split an f-string
-mid-literal — in `db.py` it damaged `referenced_vocabulary`, which this round never touched. `ruff check` caught
-all of it as `invalid-syntax`, and `git checkout` + re-apply was the fix. **Reflow prose by hand.**
+**⇒ A TRAP THIS ROUND WALKED INTO TWICE: DO NOT SCRIPT A COMMENT RE-WRAP.** Crude reflow passes merged
+`@dataclass` fields into one line and split an f-string mid-literal, damaging `db.py`'s
+`referenced_vocabulary`, which that round never touched. `ruff` caught it as `invalid-syntax`.
+**Reflow prose by hand** — the review round's ten over-long lines were fixed one `Edit` at a time.
 
 **⇒ DO THIS NEXT — the next content slice; the evaluation says the cheap one is DrugCentral, not SPL**: 6,337
 new public-domain moiety-grained pairs, rule 6 clear for `ddi_ref_id = 2` ONLY, hard part is name resolution.

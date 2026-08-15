@@ -25,8 +25,6 @@ Python string. This module is a VOICE, not a reader --
 `test_the_cli_embeds_no_sql_against_a_curated_table` covers it for the same reason it
 covers the five modules above.
 """
-import psycopg
-
 from drugref import curated_read, curation, migration_guard
 
 
@@ -66,27 +64,23 @@ def print_class_grain_block(conn) -> None:
     `class_pair_rule_reach`'s arithmetic without changing any name this block reads, so
     the guard did not fire on a db/035-or-036 database and the block printed numbers
     computed from the OLD, OVERSTATED `max_pair_count` -- `dead` under-reporting exactly
-    the rule db/037 exists to surface. `curation._RULE_COUNT` now names a db/037 column
-    so the UndefinedColumn arm below reaches that case too; see its comment for why the
-    added column cannot move the count.
+    the rule db/037 exists to surface. `curation._rule_count_sql` now names a db/037
+    column so the UndefinedColumn arm below reaches that case too; see its comment for
+    why the added column cannot move the count.
     """
-    try:
-        counts = curation.class_grain_counts(conn)
-    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
-        # ISSUE 122. ALL THREE VIEWS ARE NAMED, not just the one that raised: they ship
-        # in one migration, so an operator seeing two present and one absent is looking
-        # at a manual repair rather than an upgrade -- a distinction the single-name
-        # message could not draw. db/037 is the migration asked about because
-        # `_RULE_COUNT` reads a column it added, so a db/035 database has every view
-        # present and still fails; the "relations exist but the migration is not
-        # applied" branch is written for exactly that state.
-        migration_guard.raise_missing(
-            conn, exc,
-            relations=curation.CLASS_GRAIN_VIEWS,
-            migration="037",
+    # ISSUE 122. ALL THREE VIEWS ARE NAMED, not just the one that raised: they ship in
+    # one migration (db/035), so an operator seeing two present and one absent is
+    # looking at a manual repair rather than an upgrade -- a distinction the single-name
+    # message could not draw. db/037 is the migration ASKED ABOUT because
+    # `_rule_count_sql` reads `shared_effective_member_count`, a db/037 column, so a
+    # db/035-db/036 database has every view present and still fails; the "relations
+    # exist but the migration is not applied" branch is written for exactly that state.
+    with migration_guard.guarded(
+            conn, relations=curation.CLASS_GRAIN_VIEWS, migration="037",
             consequence=("ungraded, unreachable and cross-grain-disagreeing class "
                          "rules cannot be reported, and a rule reaching no pair would "
-                         "be under-reported even where they exist"))
+                         "be under-reported even where they exist")):
+        counts = curation.class_grain_counts(conn)
 
     # THE DENOMINATOR LEADS (issue 111), and the two numerators hang off it in
     # parentheses rather than standing on their own lines.
@@ -167,22 +161,23 @@ def print_unrankable_severity_block(conn) -> None:
     psycopg traceback arriving after five blocks of real answers -- which reads as a
     partial success and names neither the cause nor the fix.
     """
-    try:
-        unrankable = curated_read.unrankable_severities(conn)
-    except psycopg.errors.UndefinedTable as exc:
-        # ⇒ ISSUE 122'S SELF-REFERENTIAL CASE, AND THIS IS THE BLOCK IT IS ABOUT. "A
-        # restore that lost the vocabulary table" is one of the three faults this very
-        # view was written to REPORT: drop `severity_kind` and the view goes with it
-        # (CASCADE, or a partial restore), so the old guard answered "this database
-        # predates db/038, run `drugref migrate`" -- a no-op, since db/038 is recorded
-        # applied -- and status repeated it forever. The detector misdiagnosed the exact
-        # fault it exists to diagnose. The ledger check is what breaks that loop.
-        migration_guard.raise_missing(
-            conn, exc, relations=(curated_read.UNRANKABLE_VIEW,),
-            migration="038",
+    # ⇒ ISSUE 122'S SELF-REFERENTIAL CASE, AND THIS IS THE BLOCK IT IS ABOUT. "A restore
+    # that lost the vocabulary table" is one of the three faults this very view was
+    # written to REPORT: drop `severity_kind` and the view goes with it (CASCADE, or a
+    # partial restore), so the old guard answered "this database predates db/038, run
+    # `drugref migrate`" -- a no-op, since db/038 is recorded applied -- and status
+    # repeated it forever. The detector misdiagnosed the exact fault it exists to
+    # diagnose. The ledger check is what breaks that loop.
+    #
+    # THE SECOND SITE THAT CAUGHT `UndefinedTable` ALONE, now covered by `WRONG_SHAPE`
+    # like the other four: `_UNRANKABLE_COLUMNS` is the same widening-prone shape as the
+    # views that have already gained a column twice.
+    with migration_guard.guarded(
+            conn, relations=(curated_read.UNRANKABLE_VIEW,), migration="038",
             consequence=("a curated ruling whose severity drugref cannot rank goes "
                          "unreported, and such a ruling outranks and DISCARDS every "
-                         "real grade for its pair"))
+                         "real grade for its pair")):
+        unrankable = curated_read.unrankable_severities(conn)
 
     # NAMED FOR THE GRAIN IT SWEEPS, not for the vocabulary as a whole. db/035 put the
     # `severity_kind` foreign key on FIVE tables and this detector reads the two the DDI

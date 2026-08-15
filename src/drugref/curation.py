@@ -487,17 +487,38 @@ class ClassGrainCounts:
 # `cpc.ingest_run` feed none of it -- so the two rows one rule asserted by two
 # authorities produces carry identical values here. Tested rather than argued, both
 # halves, in tests/test_class_grain_detectors.py.
-# THE VIEW NAMES, EXPORTED, so the migration guards in `cli.py` and `cli_status.py`
-# probe the relations these reads actually name rather than a hand-copied second
-# spelling of them (issue 122). One home per name: a rename that missed the guard would
-# leave it reporting a healthy database's view permanently absent.
-CLASS_GRAIN_VIEWS = ("drugref.class_pair_rule_reach",
-                     "drugref.gap_uncurated_class_interaction_rule",
-                     "drugref.curated_grain_disagreement")
+# THE VIEW NAMES, EXPORTED, so the migration guard in `cli_status.py` probes the
+# relations these reads actually name rather than a hand-copied second spelling of them
+# (issue 122). One home per name: a rename that missed the guard would leave it
+# reporting a healthy database's view permanently absent.
+#
+# NAMED SINGLY AND THEN COLLECTED, rather than indexed out of the tuple. An earlier
+# draft read `CLASS_GRAIN_VIEWS[0]/[1]/[2]`, which gave one tuple two incompatible jobs:
+# an UNORDERED set for the guard to probe, and an ORDERED record binding three views to
+# three reads. Nothing pinned index to meaning, and `[1]` and `[2]` are both consumed as
+# `SELECT count(*) FROM <view>` -- so swapping them raises nothing and silently reports
+# the disagreement count as ungraded, in the status block whose entire purpose is those
+# numbers. Alphabetising the literal would have been enough to do it. Derived this way
+# the tuple's order stops mattering to anything and each read names what it reads.
+RULE_REACH_VIEW = "drugref.class_pair_rule_reach"
+UNGRADED_RULE_VIEW = "drugref.gap_uncurated_class_interaction_rule"
+GRAIN_DISAGREEMENT_VIEW = "drugref.curated_grain_disagreement"
 
-_RULE_COUNT = ("SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, "
-               "object_class_uuid, relationship, shared_effective_member_count "
-               f"FROM {CLASS_GRAIN_VIEWS[0]}" "{where}) z")
+CLASS_GRAIN_VIEWS = (RULE_REACH_VIEW, UNGRADED_RULE_VIEW, GRAIN_DISAGREEMENT_VIEW)
+
+
+def _rule_count_sql(where: str) -> str:
+    """The DISTINCT-rule count, with an optional WHERE. `where` is never external input.
+
+    A FUNCTION RATHER THAN A TEMPLATE CONSTANT, because the constant had to be built as
+    an f-string adjacent to a plain string -- `f"... FROM {view}" "{where}) z"` -- so
+    that `{where}` survived for a later `.format()`. That is correct and unreadable, and
+    a tidying pass unifying the two prefixes would have broken it. Here the guarantee is
+    the signature: module-private, two literal call sites below, nothing from outside.
+    """
+    return ("SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, "
+            "object_class_uuid, relationship, shared_effective_member_count "
+            f"FROM {RULE_REACH_VIEW}{where}) z")
 
 
 def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
@@ -523,12 +544,12 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
     that into an operator sentence is the CALLER's job, exactly as it is for
     `unresolved_targets` -- this module owns the read, cli.py owns the voice.
     """
-    rules_total = conn.execute(_RULE_COUNT.format(where="")).fetchone()[0]
+    rules_total = conn.execute(_rule_count_sql("")).fetchone()[0]
     ungraded = conn.execute(
-        f"SELECT count(*) FROM {CLASS_GRAIN_VIEWS[1]}").fetchone()[0]
+        f"SELECT count(*) FROM {UNGRADED_RULE_VIEW}").fetchone()[0]
     dead = conn.execute(
-        _RULE_COUNT.format(where=" WHERE max_pair_count = 0")).fetchone()[0]
+        _rule_count_sql(" WHERE max_pair_count = 0")).fetchone()[0]
     disagreements = conn.execute(
-        f"SELECT count(*) FROM {CLASS_GRAIN_VIEWS[2]}").fetchone()[0]
+        f"SELECT count(*) FROM {GRAIN_DISAGREEMENT_VIEW}").fetchone()[0]
     return ClassGrainCounts(rules_total=rules_total, ungraded=ungraded, dead=dead,
                             disagreements=disagreements)

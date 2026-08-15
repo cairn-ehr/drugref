@@ -267,8 +267,25 @@ def migration_applied(conn: psycopg.Connection, number: str) -> bool:
     reword -- but a bare `number in filename` test would also match `1500_` for "500",
     and match the number inside someone's description. That error runs in the harmful
     direction: it reports a migration applied when it is not, so the guard tells an
-    operator NOT to run the migration that would fix them.
+    operator NOT to run the migration that would fix them. The `\\_` escape is what
+    makes the underscore literal rather than LIKE's single-character wildcard, which
+    would let
+    `500\\_%` match `5001_*.sql` -- the same harmful direction.
+
+    ⇒ THREE DIGITS, VALIDATED, AND THE TYPO IT REFUSES IS THE WHOLE POINT. `"38"` for
+    `"038"` builds `38\\_%`, which matches no row in a ledger whose filenames are
+    zero-padded, so every caller is told its migration is NOT applied -- which reads as
+    "this database predates db/38, run `drugref migrate`", a no-op, and the operator is
+    back in exactly the closed loop `migration_guard` exists to break. `""` fails the
+    same way and `"%"` fails the other way, reporting EVERY migration applied. All three
+    are silent, so the check is loud instead: a guard passing a bad prefix fails the
+    suite rather than misleading an operator.
     """
+    if not (len(number) == 3 and number.isdigit()):
+        raise ValueError(
+            f"migration number must be the three-digit prefix as written in db/ "
+            f"(e.g. '038'), not {number!r}: anything else matches no ledger row and "
+            f"would report every migration unapplied")
     return conn.execute(
         "SELECT EXISTS (SELECT 1 FROM drugref.schema_migration "
         "WHERE filename LIKE %s)", (f"{number}\\_%",)).fetchone()[0]

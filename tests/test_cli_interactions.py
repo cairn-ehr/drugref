@@ -245,6 +245,70 @@ def test_an_unknown_uuid_is_diagnosed_before_the_self_pair_check(conn, capsys):
     assert "same drug" not in capsys.readouterr().out.lower()
 
 
+def test_both_unknown_uuids_are_named_in_the_order_they_were_given(conn, capsys):
+    """THE PLURAL BRANCH, which no test reached: `len(unknown) > 1` never ran.
+
+    Two DIFFERENT unknown uuids is the only shape that gets there -- the self-pair case
+    above collapses to one. A report naming only the first sends the operator to fix one
+    identifier, re-run, and be rejected again for the second; under-warning, which is
+    the direction #120 exists to close.
+
+    AND IT PINS THE ORDER, which is the whole reason `_handle_interactions` dedupes with
+    `dict.fromkeys` rather than `set()`. Order is only observable with two or more
+    unknowns, so that justification had nothing holding it either: a `set` would be free
+    to name the `--with` partner first, and an operator reading the pair back in the
+    wrong order checks the wrong identifier.
+    """
+    other = uuid.UUID("00000000-0000-5000-8000-000000000001")
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY, other)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out and str(other) in out
+    assert out.index(str(_NOT_IN_THE_REGISTRY)) < out.index(str(other)), (
+        "the subject was asked about first and must be named first")
+    assert "these uuids" in out, "two unknowns is a plural sentence"
+
+
+def test_an_unknown_subject_with_a_known_partner_is_reported(conn, ingest_run_id,
+                                                             capsys):
+    """THE REVERSE OF THE PAIR TEST ABOVE, and it proves the check is not one-sided.
+
+    Every existing #120 test puts the unknown identifier in the same position or in
+    both. A check accidentally scoped to `args.against` -- or to `args.moiety` -- passes
+    all of them and fails exactly one of the two real orders.
+    """
+    known = _a_moiety(conn, ingest_run_id, "TESTUNIIQ2", "a registered drug")
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY, known)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out
+    assert str(known) not in out, "the known endpoint is not the operator's problem"
+
+
+def test_an_empty_registry_is_not_blamed_on_the_operators_typing(conn, capsys):
+    """⇒ #120'S OWN BANNER REPEATING #122'S DEFECT, in the round that fixed both.
+
+    The banner offers three causes -- a class_uuid, a uuid from another node, a
+    transposed digit -- and all three point at what the operator typed. On a
+    migrated-but-never-ingested database EVERY uuid lands here and NONE of the three
+    applies: drugref holds no moieties at all, so nothing about the identifier is in
+    question. A guard asserting the cause it imagined rather than the one it could
+    confirm is the whole of issue 122, and this message was doing it.
+
+    THE `conn` FIXTURE IS THE EMPTY CASE, which is why this test needs no setup: the
+    session schema is migrated and this test ingests nothing.
+    """
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY)) == 2
+    out = capsys.readouterr().out
+    assert "REGISTRY IS EMPTY" in out
+    assert "transposed digit" not in out, (
+        "on an empty registry the operator's typing is not the cause, and offering it "
+        "as one sends them to re-check an identifier that was never the problem")
+
+
 # ============================================================================
 # 2. directionality -- the contract a CLI is the first place to feel (issue 114)
 # ============================================================================

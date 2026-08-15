@@ -2244,8 +2244,15 @@ of this section, because "an over-determined test cannot fail" has now cost this
 ### ⇒ THE HEADLINE: THE COMMIT GUARD FOUND A SIXTH OCCURRENCE ON ITS FIRST RUN, AND IT HAD GONE UNCOUNTED
 
 Issue 118 was filed against **five** commits that closed an issue nobody meant to close — #31, #35, #40, #61,
-#114. Running the finished check over **all 363 commits in the history** flagged 14, of which **6 are
-accidental and 8 deliberate**, and the sixth was **#108**:
+#114. Running the finished check over the **whole history** flagged 14, and the sixth issue was **#108**:
+
+> **CORRECTED BY THIS ROUND'S OWN REVIEW.** The split was first recorded here as *"6 accidental and 8
+> deliberate"*. It is **10 accidental and 4 deliberate**: four of the fourteen re-closed an
+> **already-known** issue by QUOTING the offending sentence while documenting the rule — `e3d8322`,
+> `8709d98`, `180d613` (all `fixed: #61`) and `5353bbb` (`fixed: #114`). **Writing about this bug re-arms
+> it**, which is the strongest single argument for the guard and was the part the first count filed under
+> "deliberate". Six ISSUES, ten COMMITS. A commit count is also why `_REPORT` can say #114 was closed
+> "twice" while the issue list says six — both are true, of different things.
 
 ```
 293758c  Filed rather than fixed: #108 (make max_pair_count exact), #109 (mirror-oriented rule
@@ -2265,18 +2272,30 @@ unnoticed.
 
 ### What ships for 118, and the one thing that deliberately does NOT
 
-`.githooks/commit-msg` (24 lines of `sh`) + `drugref.commit_lint` (pure), installed with
+`.githooks/commit-msg` (a short `sh` dispatch — **the line count is deliberately not written down here**; the
+file said "three lines" in its own header while being six, and this section said 24, which is the two-homes
+failure this repo keeps paying for) + `drugref.commit_lint` (pure), installed with
 **`git config core.hooksPath .githooks`** — recorded in § "How to run / test", and **already installed in this
 checkout**, so the round's own commit was the guard's first live exercise.
 
 - **The predicate is TOKEN ADJACENCY, matched per LINE.** `[^\S\n]*` for the gap rather than `\s*`, because
   `\s` spans the newline: a body ending "... and this is fixed." above a line opening "#115 is next" would
   otherwise be rejected for a pairing GitHub never makes.
-- **Both spellings**, because the URL form is the one this project actually writes: every issue in `docs/` is
-  linked `[#120](https://github.com/cairn-ehr/...)`, so a body composed from HANDOVER prose carries URLs.
-- **Git's own comment lines are stripped first**, matching git's cleanup. A branch named `fix/closes-118` puts
-  a keyword and a number on the `# On branch` line through no fault of the author, and a guard that fired on
-  text git is about to delete is a guard that gets uninstalled.
+- **Both spellings.** Bare `#N` is the commoner form in this repo's prose (about 3:1 across `docs/` — an
+  earlier version of this bullet claimed "every issue in `docs/`" uses the URL form, which is backwards), but
+  the markdown link `[#120](https://github.com/cairn-ehr/...)` is used throughout ROADMAP and PROJECT-NOTES,
+  so a body pasted from either carries URLs and GitHub closes on those too. Missing either is a false
+  negative, which is the direction this module refuses.
+- **⇒ ONLY GIT'S OWN TRAILING BLOCK IS STRIPPED, AND THE FIRST VERSION GOT THIS BADLY WRONG.** It dropped
+  *every* line starting with `#`, justified by "git strips them before the commit exists". **That is true of
+  an EDITOR commit and false for `git commit -m` and `-F`**, where cleanup is `whitespace`, not `strip`, and
+  `#` lines are stored verbatim — measured with real git, `-m $'feat: x\n\n## Done\n# fixes #999'` stores the
+  line and GitHub closes 999, with the guard silent. **A silent close produced by the guard's own blind
+  spot.** Not a contrived shape either: this project pastes bodies out of HANDOVER and ROADMAP markdown, whose
+  headings begin with `#`, and the history already holds sixteen such body lines. It now truncates at git's
+  own block marker (`# Please enter…`, `# On branch `, or the scissors line) and **scans everything else** —
+  so a branch named `fix/closes-118` is still safe, and `core.commentChar` set to something else now makes
+  `#` lines scannable rather than invisible, which is the correct direction.
 - **The escape is `--no-verify` alone. The `Closes-intentionally:` trailer the issue proposed is NOT shipped,
   and the reason is worth keeping**: that exact spelling would not close anything on GitHub — `-intentionally:`
   sits between keyword and reference, so the linker never matches — so it would have been a **second vocabulary
@@ -2384,6 +2403,99 @@ lines · `registry_read` reporting an absent moiety as known.
 - **`questions.py` is 568 lines and was never on issue 89's list** — measured at `HEAD`, so pre-existing.
   `curation.py` moved 523 → 534 here (the two exported constants). Both recorded on
   [#89](https://github.com/cairn-ehr/drugref/issues/89).
+
+## The guard round's own review (2026-08-16) — suite 1598 → 1644, still no migration
+
+Six specialist agents over the round above, on its own diff. **Two of the three guards it shipped did not
+work, and one test asserted the inverse of its name while green.** Every finding below was reproduced before
+it was fixed, and **thirteen mutations were run against the fixes — all thirteen fail**. The theme is uniform
+and worth naming, because it is the round's own thesis turned back on it: *a guard may not assert a cause it
+has not confirmed* — and the round asserted, without confirming, that its hook ran, that its fallback ran,
+and that its tests could fail.
+
+### ⇒ 1. The hook's `python3` fallback aborted every commit
+
+`commit_lint.main` was annotated `argv: Sequence[str] | None`, a PEP 604 union **evaluated at import time**.
+The fallback runs whatever `python3` the OS ships — 3.9.6 on current macOS — where that raises
+`TypeError: unsupported operand type(s) for |`. Exit 1 rejects the commit, so on that path **no commit could
+be made at all**, clean ones included. The branch whose entire justification is *"still gets the guard rather
+than silently getting none"* delivered a hard block plus a traceback.
+
+Reachable wherever `uv` is off the hook's `PATH`: GUI git clients (VS Code, Tower, GitHub Desktop) and many
+CI images. **The existing subprocess test ran with the ambient `PATH`, so line 24 had never executed.**
+
+Fixed with `from __future__ import annotations`, and `commit_lint` now imports stdlib only, deliberately, so
+the fallback stays version-portable. **Two new tests, and the second is the one that matters**: a test that
+only asserts the bad message is rejected passes on a module that cannot be imported, because a crash also
+exits non-zero. *"Rejects the bad message"* and *"rejects everything"* are the same observation until
+something asserts the good message survives.
+
+### ⇒ 2. The hook was blind to `git commit -m` — see § "What ships for 118" above
+
+Recorded at the bullet itself rather than twice.
+
+### ⇒ 3. Two real-database guard tests were vacuous, and asserted the inverse of their names
+
+`test_a_database_predating_db038_is_told_to_migrate` and its class-grain sibling set up a fault with
+uncommitted DDL, then called a guard whose **first action is `conn.rollback()`** — which put the dropped view
+straight back. The guard then probed a healthy database and answered *"this is NOT a missing migration"*,
+the precise opposite of both test names and both docstrings. They passed because `match="drugref migrate"` is
+a **substring of all four** of `guard_message`'s messages: two prescribe it, two say it would do nothing.
+
+**The mechanism was already written down** — the bullet three items above says "dropping a view inside the
+rolled-back `conn` fixture does not work either, because `missing_relations`' own rollback undoes it" — and
+the two tests it applies to were left alone anyway. Knowing a trap and checking for it are different acts.
+
+Both now assert a **branch-unique** string (`"predates db/NNN"`, `"is DROPPED"`, `"NOT a missing migration"`,
+`"an older shape"`) and say in their docstrings which branch a rolled-back fixture can actually reach. **This
+is not a production defect**: nothing restores a dropped view in the field.
+
+### The rest, in one list
+
+- **`db.migration_applied` read `drugref.schema_migration` unguarded, from inside the guard.** The ledger is
+  created by `db.apply_migrations`, not by any `db/*.sql`, so a hand-replayed or selectively-restored database
+  has every view and no ledger — and the surviving traceback then named `schema_migration`, *not* the relation
+  the operator was reading, while `cli.main` (which catches only `RuntimeError`) rendered no sentence at all.
+  **Both probes are now wrapped**, and a failed probe is a **fifth state** that leads with the original error.
+- **`migration="38"` for `"038"` silently restored the closed loop.** The pattern `38\_%` matches no
+  zero-padded row, so every caller was told its migration was unapplied. `"%"` fails the other way, reporting
+  every migration applied. `db.migration_applied` now **rejects anything that is not three digits**, and a
+  test checks all five call-site literals against the files in `db/`.
+- **The `\_` escape had nothing holding it.** Both rows in its test failed to match with *or* without the
+  backslash. `5001_a_migration_one_digit_longer.sql` is the row that makes it load-bearing.
+- **Two of five call sites caught `UndefinedTable` alone**, making `guard_message`'s `UndefinedColumn` branch
+  unreachable from both — the standing rule db/035 wrote in prose, lost twice in the round that quoted it.
+  `migration_guard.WRONG_SHAPE` is now one tuple and `migration_guard.guarded` the one context manager;
+  `import psycopg` fell out of all three CLI modules as a result.
+- **`consequence.capitalize()` lower-cased the remainder**, rendering `DISCARDS` as "discards" and `NULL rank`
+  as "null rank" in three of four branches — untestable by construction, since the only test asserting the
+  consequence sat on the fourth. **The refuted branch also named three causes that cannot produce the state it
+  describes** (schema-qualified reads make `search_path` irrelevant; missing `USAGE` raises 42501, uncaught;
+  Postgres refuses to drop a base table under a live view). Both fixed; the branch now says it cannot narrow
+  further and hands over Postgres's own message.
+- **#120's banner repeated #122's defect in its own voice**: its three causes all blame the operator's typing,
+  and on a migrated-but-never-ingested database every uuid lands there and none applies.
+  `registry_read.registry_is_empty` now separates the two. The registry read itself — **the first relation
+  `interactions` touches, added by #120** — was also the only unguarded one, and now uses `guarded` too.
+- **`CLASS_GRAIN_VIEWS[0]/[1]/[2]`** gave one tuple two incompatible jobs; `[1]` and `[2]` are interchangeable
+  at the SQL level, so swapping them silently reported the disagreement count as ungraded. Three named
+  constants now, with the tuple **derived** from them, so its order stops mattering.
+- **The report counted matches, not issues** — "would CLOSE 2 issues" for one issue named twice, and a
+  suggestion reading "issue 114, issue 114". Deduped on `int`, displayed as written.
+- **Smaller**: `errors="replace"` so an undecodable message reports instead of tracebacking; plural agreement
+  (`A, B, C are missing`); `_said` collapses psycopg's `LINE 1:`/caret block so it cannot break the sentence
+  it is spliced into; `raise_missing` rejects an empty `relations` **and a bare string** (a missing trailing
+  comma probed the name one character at a time); the hook now triages `uv`'s exit status instead of
+  forwarding it, so a stale lock no longer rejects a good commit.
+- **Test coverage that did not exist**: the `signature_backdated` guard had **none** — that call site had never
+  executed. Nor had `exc.diag.message_primary`: every guard test hand-builds its exception, where
+  `message_primary` is `None`, so all of them were validating the `str(exc)` fallback. Nor seven of the nine
+  closing keywords, the plural unknown-uuid branch, or the `\b` word boundary.
+- **Comment accuracy**: the test constants were **paraphrases** of the offending commit bodies while claiming
+  to be verbatim — in a file whose own comment says "a paraphrase of a token-adjacency bug is a different
+  input". They are now copied byte for byte, and `ed1ab5e`'s real four-line block is a better input than the
+  paraphrase was: it names five issues, closes one, and puts `#115` at the start of the line after one ending
+  in a comma, which is the cross-line case the gap class exists for.
 
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
@@ -2704,14 +2816,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1598 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1644 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-15 at 1598
-# passed in 54 s (the guard round, issues 118/120/122: 1564 + 34). If you add tests,
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-16 at 1644
+# passed in 46 s (the guard round's own review: 1598 + 46). If you add tests,
 # change it HERE.) The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a

@@ -3,11 +3,12 @@
 WHY A MODULE OF ITS OWN, and the two candidates it is deliberately not part of. This
 project splits reads from writes by tier, and this read is in neither existing tier:
 
-  * `curated_read.py` opens by scoping itself to "the curated overlay", and that scope
-    is load-bearing rather than decorative -- its whole argument is that a view whose
-    population is GRADES cannot answer a question about DRUGS. `substance_moiety` is
-    slice 1's append-only identity spine, a tier below the overlay, and a module that
-    spanned both would erase exactly the boundary issue 120 is about.
+  * `curated_read.py` scopes itself to the curated overlay, and that scope is
+    load-bearing rather than decorative: `effective_grades_for`'s own docstring is where
+    this project wrote down that a view whose population is GRADES cannot answer a
+    question about DRUGS. `substance_moiety` is slice 1's append-only identity spine, a
+    tier below the overlay, and a module that spanned both would erase exactly the
+    boundary issue 120 is about.
   * `classes.py` declares itself "the ONLY module that writes the classification
     tables". A registry-existence check is neither a write nor classification.
 
@@ -27,15 +28,25 @@ import uuid
 
 import psycopg
 
+# THE TABLE NAME, EXPORTED, so `cli_interactions`' migration guard probes the relation
+# these reads actually name rather than a hand-copied second spelling (issue 122). One
+# home per name: a rename that missed the guard would leave it reporting a healthy
+# database's spine permanently absent.
+MOIETY_TABLE = "drugref.substance_moiety"
+
 # `= ANY(%s)` RATHER THAN AN `IN (...)` BUILT BY STRING JOIN, which is the shape that
 # invites a uuid into the SQL text. psycopg adapts a Python list to a Postgres array, so
 # the whole variadic call is ONE round trip with ONE parameter, and the query text is
 # constant no matter how many identifiers are asked about.
-_KNOWN = """
+_KNOWN = f"""
 SELECT moiety_uuid
-FROM   drugref.substance_moiety
+FROM   {MOIETY_TABLE}
 WHERE  moiety_uuid = ANY(%s)
 """
+
+# `EXISTS` RATHER THAN `count(*)`: the question is "any at all", and on a spine holding
+# millions of rows a count would read every one of them to answer it.
+_ANY_MOIETY = f"SELECT EXISTS (SELECT 1 FROM {MOIETY_TABLE})"
 
 
 def known_moieties(conn: psycopg.Connection,
@@ -47,9 +58,11 @@ def known_moieties(conn: psycopg.Connection,
     from a positive fact drugref actually holds rather than from this function's opinion
     about what is missing.
 
-    A SET, not a list: callers ask "is this one in it", order carries no meaning, and
-    duplicates in the argument list -- `interactions X --with X` reaches here before the
-    self-pair check -- collapse instead of double-counting.
+    A SET, not a list: callers ask "is this one in it", order carries no meaning, and a
+    duplicate in the argument list collapses rather than double-counting. The CLI's only
+    call site dedupes first for its own reasons (it reports the identifiers back in the
+    order they were given), so that collapse is a property of this function rather than
+    something the caller currently relies on.
 
     THE EMPTY CALL SHORT-CIRCUITS, and that is a correctness guard rather than an
     optimisation. `moiety_uuid = ANY('{}')` is false for every row, so the SQL would in
@@ -62,3 +75,17 @@ def known_moieties(conn: psycopg.Connection,
         return set()
     return {row[0] for row in
             conn.execute(_KNOWN, (list(moiety_uuids),)).fetchall()}
+
+
+def registry_is_empty(conn: psycopg.Connection) -> bool:
+    """Whether the spine holds NO moieties at all -- not the same as "not this one".
+
+    WHY A CALLER NEEDS THIS TO SAY THE FIRST THING HONESTLY. `known_moieties` returning
+    nothing has two causes that look identical at the call site: the identifier is not
+    one drugref holds, or drugref holds nothing yet because the ingest has not run. The
+    banner for the first blames the user's typing, and on a migrated-but-never-ingested
+    database it blames them for every uuid there is -- a guard asserting the cause it
+    imagined, which is the defect issue 122 is about, reproduced in the message #120
+    added. This is the one read that tells the two apart.
+    """
+    return not conn.execute(_ANY_MOIETY).fetchone()[0]

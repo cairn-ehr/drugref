@@ -44,8 +44,6 @@ evidence of absence, and the overlay is small and deliberately so.
 """
 import uuid
 
-import psycopg
-
 from drugref import curated_read, migration_guard, registry_read
 
 
@@ -101,22 +99,36 @@ def _grades_for(conn, subject: uuid.UUID):
     psycopg error that names a query the user never wrote".
 
     BOTH EXCEPTIONS, for the standing rule db/035 wrote down the hard way: a migration
-    widening a view a guarded block reads must widen the guard in the same commit.
-    `UndefinedColumn` is a SIBLING of `UndefinedTable` under `ProgrammingError`, not a
-    subclass, so catching the latter alone misses every database that has the view in an
-    older shape -- which is every deployment between pulling this code and migrating.
+    widening a view a guarded block reads must widen the guard in the same commit. That
+    rule now lives in `migration_guard.WRONG_SHAPE` rather than in five hand-written
+    tuples, two of which had already failed to keep it.
     """
-    try:
-        return curated_read.effective_grades_for(conn, subject)
-    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
-        migration_guard.raise_missing(
-            conn, exc, relations=(curated_read.EFFECTIVE_VIEW,),
-            migration="038",
+    with migration_guard.guarded(
+            conn, relations=(curated_read.EFFECTIVE_VIEW,), migration="038",
             consequence=("drugref cannot answer what a drug interacts with, and an "
-                         "unrankable severity would reach a client as a NULL rank"))
+                         "unrankable severity would reach a client as a NULL rank")):
+        return curated_read.effective_grades_for(conn, subject)
 
 
-def _report_unknown(unknown: list[uuid.UUID]) -> None:
+def _known_moieties(conn, asked: list[uuid.UUID]) -> set[uuid.UUID]:
+    """`known_moieties`, guarded like every other read this command makes.
+
+    THE ONE RELATION `interactions` NOW TOUCHES FIRST HAD NO GUARD, which #120's fix
+    introduced by putting an existence check in front of the graded read. A `--dsn`
+    pointed at a database with no `drugref.substance_moiety` produced precisely what
+    `_grades_for` exists to prevent -- "a psycopg error that names a query the user
+    never wrote" -- from the newest line in the file. db/001 is the migration asked
+    about because the identity spine is slice 1's, so its absence means an empty or
+    non-drugref database rather than a version skew.
+    """
+    with migration_guard.guarded(
+            conn, relations=(registry_read.MOIETY_TABLE,), migration="001",
+            consequence=("drugref cannot tell a drug it has never heard of from one it "
+                         "holds and has not graded")):
+        return registry_read.known_moieties(conn, *asked)
+
+
+def _report_unknown(unknown: list[uuid.UUID], *, registry_is_empty: bool) -> None:
     """Say that nothing was looked up -- WITHOUT borrowing the vocabulary of an absence.
 
     THE WORDING IS THE WHOLE FIX, so it is worth being precise about what it must not
@@ -124,10 +136,22 @@ def _report_unknown(unknown: list[uuid.UUID]) -> None:
     statement about the REGISTRY, and mixing the two is the defect. The banner therefore
     names the identifier, says explicitly that this is not a finding about a drug, and
     points at the table that settles it.
+
+    ⇒ AND IT MUST NOT REPEAT #122'S DEFECT IN ITS OWN VOICE. The three causes it offers
+    -- a class_uuid, a uuid from another node, a transposed digit -- all point at the
+    USER'S TYPING, and on a migrated-but-never-ingested database EVERY uuid lands here
+    while none of the three applies. `registry_is_empty` is the one fact that separates
+    "you typed something drugref does not hold" from "drugref holds nothing at all", and
+    it costs one comparison the caller has already made.
     """
     print(f"** drugref holds no moiety with "
           f"{'these uuids' if len(unknown) > 1 else 'this uuid'}: "
           f"{', '.join(str(u) for u in unknown)}")
+    if registry_is_empty:
+        print("   THE REGISTRY IS EMPTY -- drugref holds no moieties at all, so this "
+              "says nothing about the identifier you gave. Run the ingest (see "
+              "`drugref chain --help`) before reading interactions. **")
+        return
     print("   THIS IS NOT A STATEMENT ABOUT A DRUG -- nothing was looked up. Check the "
           "identifier against substance_moiety; a class_uuid, a uuid from another node "
           "or one transposed digit all parse as valid here. **")
@@ -166,9 +190,11 @@ def _handle_interactions(conn, args) -> int:
     # duplicate in the self-pair case, so the same uuid is not reported twice.
     asked = list(dict.fromkeys(
         u for u in (args.moiety, args.against) if u is not None))
-    known = registry_read.known_moieties(conn, *asked)
-    if unknown := [u for u in asked if u not in known]:
-        _report_unknown(unknown)
+    known = _known_moieties(conn, asked)
+    unknown = [u for u in asked if u not in known]
+    if unknown:
+        _report_unknown(unknown,
+                        registry_is_empty=registry_read.registry_is_empty(conn))
         return 2
 
     if args.against is None:
