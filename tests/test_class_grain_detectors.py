@@ -206,9 +206,14 @@ def test_reach_counts_members_below_the_class_too(conn, ingest_run_id):
 
 def test_an_ungraded_class_pair_rule_is_queued(conn, ingest_run_id):
     """The failure #96 was filed about: `drugref ingest chain` reports
-    `class_rules_written=9`, the operator never runs the separate `drugref curate`,
-    and nine ONC high-priority rules sit permanently ungraded while
-    `question_worklist` shows nothing to do."""
+    `class_rules_written=N`, the operator never runs the separate `drugref curate`,
+    and the ONC high-priority class rules sit permanently ungraded while
+    `question_worklist` shows nothing to do.
+
+    (Said `=9` and "nine rules" until the review of PR #119. That was issue 96's prose,
+    never reconciled against issue 94's SEVEN withheld class x class entries -- the same
+    figure db/038 § 3 corrects in the catalog. The count is not what this test drives,
+    so it is no longer stated as one.)"""
     subject_class, object_class = _an_ungraded_class_rule(
         conn, ingest_run_id, subject_members=2, object_members=3)
     rows = conn.execute(
@@ -1241,7 +1246,7 @@ def test_the_denominator_is_named_for_the_population_it_denominates(conn,
     A maintainer adding the obvious symmetry with the line above it --
     `f"cross-grain disagreements: {counts.disagreements} of {counts.total}"` -- gets
     something well-typed, plausible and wrong by two orders of magnitude: db/035 records
-    that one class rule can expand to ~2,263 pairs, so `ClassGrainCounts(rules_total=9,
+    that one class rule can expand to ~2,263 pairs, so `ClassGrainCounts(rules_total=7,
     ..., disagreements=2263)` is the EXPECTED shape once class-grain content ships.
 
     `rules_total` MAKES THAT DIVISION READ WRONG AT A GLANCE, which is the whole fix:
@@ -1250,19 +1255,40 @@ def test_the_denominator_is_named_for_the_population_it_denominates(conn,
 
     THE INVARIANTS ARE ASSERTED, NOT JUST THE NAME, so this test fails if a future
     filter breaks the containment the name now advertises.
+
+    AND THE DISJOINTNESS ARM NEEDS A DEAD RULE TO SAY ANYTHING, which the first version
+    of this test did not build. It made ONE rule, reaching pairs, so `dead` was 0 and the
+    sum assertion evaluated `1 + 0 <= 1` -- true no matter what the gap view does.
+    Deleting the `HAVING max(max_pair_count) > 0` it claims to pin left it green. Found
+    in the review of PR #119; `_an_ungraded_class_rule`'s `object_axis` already existed
+    for exactly this, and its docstring says so.
     """
     subject_class, object_class = _an_ungraded_class_rule(
         conn, ingest_run_id, subject_code="N0000009600", object_code="N0000009700")
+    # A SECOND RULE THAT REACHES NOBODY: its object members are filed on a DIFFERENT
+    # membership axis from the one the rule's relationship expands over, so the rule is
+    # real, ungraded, and expands to zero pairs -- `dead`, and the case the gap view must
+    # NOT also count as `ungraded`.
+    _an_ungraded_class_rule(
+        conn, ingest_run_id, subject_code="N0000009800", object_code="N0000009900",
+        object_axis="has_PE")
 
     counts = curation.class_grain_counts(conn)
     assert not hasattr(counts, "total"), (
         "the old name is gone, not aliased -- an alias would keep the misreading "
         "available and this rename buys nothing")
-    assert counts.ungraded <= counts.rules_total
-    assert counts.dead <= counts.rules_total
+    assert counts.rules_total == 2, "the premise: two rules in the tier"
+    assert counts.dead == 1, (
+        "the premise the first version of this test lacked -- without a rule reaching "
+        "NO pair, the disjointness assertion below is 1 + 0 <= 1 and pins nothing")
     # DISJOINT, and the reason is not obvious from the field names: a rule reaching no
     # pair is omitted from the gap view by `HAVING max(max_pair_count) > 0` (#36 -- a
     # review gate must only ask what an answer could change), so a dead rule can never
     # also be counted ungraded. A reader reconstructing this as overlapping would draw
     # the wrong conclusion from a status block.
+    assert counts.ungraded == 1, (
+        "the LIVE rule is the only one on the worklist; the dead one is reported to the "
+        "operator through class_pair_rule_reach instead")
+    assert counts.ungraded <= counts.rules_total
+    assert counts.dead <= counts.rules_total
     assert counts.ungraded + counts.dead <= counts.rules_total

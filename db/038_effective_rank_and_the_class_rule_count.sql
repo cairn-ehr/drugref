@@ -6,11 +6,18 @@
 -- changed. The licence db/037 itself exercised -- an unmerged migration may be edited,
 -- because the ledger binds a DATABASE and not the repo -- expired when it merged.
 --
--- TWO SECTIONS, ONE THEME: db/037 fixed the ORDER an unrankable severity sorts in and
--- left what the client actually RECEIVES untouched (§1), and db/035 stated a figure in
--- a COMMENT that the source data contradicts (§2). Both are corrections to text and
--- arithmetic this project already published, neither adds a table, and §1 is the only
--- one that changes a byte any consumer reads.
+-- THREE SECTIONS, ONE THEME -- text and arithmetic this project already published,
+-- corrected. §1: db/037 fixed the ORDER an unrankable severity sorts in and left what
+-- the client actually RECEIVES untouched. §2: that state reaches an OPERATOR, because a
+-- mitigation nothing reports is a mitigation that hides its own trigger. §3: db/035
+-- stated a figure in a COMMENT that the source data contradicts.
+--
+-- §1 AND §2 BOTH CHANGE WHAT A CONSUMER READS -- §1 adds a column every client should
+-- threshold on, and §2 adds a view `drugref status` reads on every run. Only §3 is
+-- purely catalog prose. (An earlier draft of this header said TWO SECTIONS and numbered
+-- the figure correction §2, which is §3; the paragraph counting the file's own sections
+-- disagreed with the file, in a round whose §3 exists because a comment disagreed with
+-- the data. Corrected in review of PR #119.)
 
 
 -- ============================================================================
@@ -65,13 +72,43 @@
 -- REACHABILITY IS UNCHANGED AND STILL ZERO on a healthy database: both halves of
 -- curated_ddi_pair filter `AND applies`, the completeness CHECKs force
 -- applies => severity IS NOT NULL, and severity is a FOREIGN KEY into severity_kind.
--- This is a mitigation for the state § 3 below reports, pinned by mutation on
+-- This is a mitigation for the state § 2 below reports, pinned by mutation on
 -- controlled input -- this project's rule for a branch the release cannot exercise.
 --
 -- APPENDED AT THE END OF BOTH HALVES, which is not a style choice: CREATE OR REPLACE
 -- VIEW admits new columns only at the END, and curated_ddi_pair_effective depends on
 -- this view. Adding it anywhere else would need a DROP CASCADE and a rebuild of every
 -- dependant.
+
+-- ---- the sentinel becomes a CONSTRAINT, not a promise -----------------------------
+-- THE PARAGRAPH ABOVE ARGUED 0 IS SAFE BECAUSE "severity_kind's ranks start at 1", and
+-- until this statement that was a COMMENT rather than a rule -- db/035 declared
+-- severity_rank `smallint NOT NULL UNIQUE` and never bounded it below. The review of
+-- PR #119 asked the question that matters: what stops a later migration adding a level
+-- ABOVE contraindicated at rank 0? Nothing did.
+--
+-- AND THE COLLISION WOULD BE SILENT, which is why it is worth a constraint rather than
+-- a sentence. A genuine rank 0 and an unrankable severity would both read
+-- effective_rank = 0 -- destroying exactly the distinction §1 exists to preserve --
+-- while curated_unrankable_severity stayed EMPTY, because that row IS in severity_kind.
+-- `drugref status` would print `unrankable severities: none` over a live ambiguity.
+--
+-- ADDITIVE AND NON-NARROWING: the four seeded ranks are 1..4, so no existing row can
+-- fail, and a fifth level added below `minor` is unaffected. The headroom this closes
+-- is the one nobody wants: the space UNDERNEATH the sentinel.
+ALTER TABLE drugref.severity_kind
+    DROP CONSTRAINT IF EXISTS severity_kind_rank_is_positive;
+ALTER TABLE drugref.severity_kind
+    ADD CONSTRAINT severity_kind_rank_is_positive CHECK (severity_rank >= 1);
+
+COMMENT ON CONSTRAINT severity_kind_rank_is_positive ON drugref.severity_kind IS
+    'RANK 0 IS RESERVED as curated_ddi_pair.effective_rank''s sentinel for a severity '
+    'this schema cannot rank (db/038, issue 116). A real severity at rank 0 would be '
+    'indistinguishable from that fault on effective_rank, and curated_unrankable_'
+    'severity would report NOTHING, since such a row is present in severity_kind. '
+    'Added in review of PR #119: db/038 first argued the sentinel was safe because '
+    '"severity_kind''s ranks start at 1", which was true and was not enforced.';
+
 CREATE OR REPLACE VIEW drugref.curated_ddi_pair AS
 WITH class_dag AS (
     SELECT * FROM drugref.ci_class_pair_subtree
@@ -216,6 +253,49 @@ COMMENT ON COLUMN drugref.curated_ddi_pair.effective_rank IS
     'DISTINCT ON, discarding the rankable competitor outright, so the NULL it published '
     'had no second row to fall back to.';
 
+-- THE VIEW'S OWN COMMENT IS RE-ISSUED TOO, and forgetting it was the near-miss in this
+-- migration's first draft. `CREATE OR REPLACE VIEW` PRESERVES comments, so db/037's text
+-- survived above untouched -- and it says `THE PRECEDENCE IS ORDER BY severity_rank
+-- NULLS FIRST`, naming the column this whole section exists to stop clients thresholding
+-- on. That sentence is what `\d+ drugref.curated_ddi_pair` prints FIRST, so the two
+-- column comments below were corrected while the most prominent statement of the rule
+-- still pointed at the wrong column: a THIRD spelling, and the drift §1 is about.
+-- Only the precedence sentence changes; every other sentence is db/037's, verbatim.
+COMMENT ON VIEW drugref.curated_ddi_pair IS
+    'Drug pairs carrying a live drugref grade, from EITHER of two rule grains -- '
+    '`rule_grain` says which (''moiety_rule'' | ''class_rule''), and `via_subject_class` '
+    'names the class-grain rule''s subject (NULL for a moiety rule). ONE PAIR CAN APPEAR '
+    'TWICE, once per grain, with different grades: both rulings are live, they sit in '
+    'different tables, and each satisfies its own single-live guard, so no constraint '
+    'can prevent it. THE PRECEDENCE IS `ORDER BY effective_rank, (rule_grain '
+    '= ''moiety_rule'') DESC` -- MOST SEVERE FIRST, moiety grain breaking ties (the rule '
+    'naming an actual drug carries better mechanism/management text than one naming its '
+    'whole class). THRESHOLD ON effective_rank, NEVER ON severity_rank (db/038, issue '
+    '116): db/037 stated this rule with `severity_rank NULLS FIRST`, which orders '
+    'correctly and then hands the client a NULL that every `<= n` test silently drops. '
+    'Severity-first because under-warning is the harm direction on this '
+    'path, the same reason a signature never gates a read and a missing expansion policy '
+    'expands. IT IS AN ORDER, NOT A FILTER: both rows still appear here, because '
+    'dropping one would make this view state less than it knows. SINCE db/037 THE ORDER '
+    'IS ALSO A VIEW -- curated_ddi_pair_effective (issue #110) applies it, so a client '
+    'no longer has to retype it correctly from a comment; this view remains the place '
+    'to see what was outranked. A disagreement is not left standing -- '
+    'curated_grain_disagreement (db/035, orientation-blind since db/037) lists them for '
+    'reconciliation, which is what keeps most-severe-wins from becoming permanent '
+    'over-warning. A moiety-grain row is expanded from the class-level rule the grade '
+    'was written against, so ONE curated row reaches every pair its rule expands to; a '
+    'class-grain row is expanded on BOTH sides, so one row can reach thousands of pairs '
+    '(SSRIs x MAOIs alone is ~2,263). INNER JOIN to the overlay throughout: an ungraded '
+    'candidate does not appear here at all, because a NULL severity beside a real pair '
+    'reads as "reviewed and harmless". ddi_candidate_pair remains the place to ask what '
+    'a moiety-grain release said; class_pair_contraindication is the class grain''s own '
+    'candidate tier. Each grain walks the class DAG through its OWN view '
+    '(ci_class_subtree / ci_class_pair_subtree, db/034) -- SEPARATED, after a merged '
+    'walk was measured to tax every moiety-grain query for class-grain content most '
+    'callers do not have. signature_status is REGISTRY-LEVEL ONLY and its join is LEFT '
+    'for both halves: an unsigned row still appears, labelled ''unsigned'', and a key '
+    'revocation relabels a row rather than removing it.';
+
 -- THE ORDER BY NOW READS `effective_rank`, and it is the SAME ORDER as db/037's
 -- `severity_rank NULLS FIRST` -- 0 precedes 1 exactly as NULLS FIRST placed the NULL.
 -- Written this way because the ordering rule and the published threshold column must be
@@ -289,6 +369,19 @@ COMMENT ON VIEW drugref.curated_ddi_pair_effective IS
 -- BOTH CURATED TABLES, because both carry a severity and both have the same FK.
 -- `superseded_by IS NULL AND applies` on each: a superseded ruling is history and a
 -- withdrawn one asserts nothing, so neither is a live fault an operator should chase.
+--
+-- THE PREDICATE IS `sk.severity_rank IS NULL`, NOT `sk.severity IS NULL`, and the review
+-- of PR #119 is why. Those two differ, and the difference is the whole point of the
+-- detector: what does the harm in §1 is a NULL RANK -- that is what COALESCE swallows,
+-- what wins the DISTINCT ON, and what discards the competing grade. A missing JOIN is
+-- merely the cause this migration first imagined. Testing the cause instead of the
+-- condition meant that dropping severity_kind.severity_rank's NOT NULL -- squarely
+-- inside the fault family the COMMENT below claims to cover, "a dropped constraint" --
+-- produced FULL harm with ZERO detection, and `drugref status` printing an affirmative
+-- `none` over it. Keying on the rank STRICTLY WIDENS the population (a join miss makes
+-- every sk column NULL, rank included), so nothing that was reported stops being
+-- reported. §1 wrote the ordering rule in one place for exactly this reason and §2
+-- then spelled the same rule a second way; this is that second spelling removed.
 CREATE OR REPLACE VIEW drugref.curated_unrankable_severity AS
 SELECT 'curated_interaction'::text AS target_table,
        c.curated_interaction_id    AS target_id,
@@ -299,7 +392,7 @@ FROM   drugref.curated_interaction c
 LEFT   JOIN drugref.severity_kind sk ON sk.severity = c.severity
 WHERE  c.superseded_by IS NULL
 AND    c.applies
-AND    sk.severity IS NULL
+AND    sk.severity_rank IS NULL
 
 UNION ALL
 
@@ -312,7 +405,7 @@ FROM   drugref.curated_class_interaction cci
 LEFT   JOIN drugref.severity_kind sk ON sk.severity = cci.severity
 WHERE  cci.superseded_by IS NULL
 AND    cci.applies
-AND    sk.severity IS NULL;
+AND    sk.severity_rank IS NULL;
 
 COMMENT ON VIEW drugref.curated_unrankable_severity IS
     'LIVE curated rulings whose severity is absent from severity_kind -- EMPTY on any '
@@ -334,6 +427,26 @@ COMMENT ON VIEW drugref.curated_unrankable_severity IS
 -- is applied and immutable, so the only way to change what the SCHEMA says is a fresh
 -- COMMENT ON in a later file.
 --
+-- THE BASE IS db/036, NOT db/035, AND THE FIRST DRAFT OF THIS SECTION GOT THAT WRONG.
+-- `COMMENT ON` OVERWRITES; it does not merge. There are THREE statements in db/ over
+-- this one view -- db/035 § 6, db/036 § 1, and this -- so the text being replaced is
+-- whichever ran LAST, and that is db/036's. Rebuilding from db/035 silently reverted
+-- db/036 § 1, which had corrected the gap_key spelling from `AXIS:` to `CI_AXIS:`, and
+-- deleted the parenthetical explaining the correction. Caught in review of PR #119.
+--
+-- WHY THAT REVERT WAS THE SERIOUS HALF OF THIS SECTION, worse than the figure it came
+-- in to fix: `question_uuid = uuid5(gap_kind, gap_key)`, and the key is FROZEN and
+-- externally citable. A reader reconstructing it from `\d+` on a running node computes
+-- a DIFFERENT uuid and gets NO ERROR -- just a uuid matching nothing, which db/036
+-- rightly calls the hardest kind of wrong answer to notice.
+--
+-- AND THE ROUND'S OWN VERIFICATION COULD NOT SEE IT, which is the transferable lesson.
+-- It grepped the catalog for `%nine ingested%` and `%seven ingested%` -- scoped to the
+-- word being changed, so it was structurally blind to what else moved in the same
+-- overwrite. A re-issued COMMENT must be diffed WHOLE against the live text, and
+-- tests/test_class_grain_comment.py now pins both halves so a db/039 cannot do this
+-- again.
+--
 -- WHERE THE 9 CAME FROM. Issue 96's failure-scenario prose said `class_rules_written=9`
 -- and db/035 quoted it faithfully into this view's COMMENT. That figure was never
 -- reconciled against issue 94, which WITHHELD the class x class entries pending
@@ -347,8 +460,11 @@ COMMENT ON VIEW drugref.curated_unrankable_severity IS
 -- author read db/035 for one and the issue for the other. Anyone reading db/035 in the
 -- database will keep re-importing it exactly the same way.
 --
--- ONLY THE FIGURE CHANGES. Every other sentence is db/035's, verbatim, so a diff of the
--- two COMMENTs shows one word and a reader can confirm nothing else moved.
+-- ONLY THE FIGURE CHANGES, MEASURED AGAINST db/036. Every other sentence below is
+-- db/036's, verbatim -- including the `CI_AXIS:` spelling and the parenthetical
+-- recording that correction, both of which this section previously dropped. A whole
+-- diff of this string against the live comment shows `nine` -> `seven` and one added
+-- parenthetical, and nothing else.
 COMMENT ON VIEW drugref.gap_uncurated_class_interaction_rule IS
     'CLASS x CLASS contraindication rules carrying no live drugref grade, ranked by '
     'max_pair_count -- the drug pairs at stake in the answer. The class grain''s '
@@ -359,9 +475,11 @@ COMMENT ON VIEW drugref.gap_uncurated_class_interaction_rule IS
     'quoting issue 96''s prose; issue 94 withheld SEVEN class x class ONC entries and '
     'the seed file agrees -- corrected by db/038, issue 117.) GROUPED WITHOUT `source` '
     'so one rule asserted by two authorities raises ONE question -- its gap_key is '
-    'CLASS:{subject}/CLASS:{object}/AXIS:{relationship} and question_uuid is a pure '
+    'CLASS:{subject}/CLASS:{object}/CI_AXIS:{relationship} and question_uuid is a pure '
     'function of it, so a per-source grain would mint one immortal question and '
-    'overwrite its own text. A rule reaching NO pair is omitted (#36: a review gate '
-    'must only ask what an answer could change) and is reported to the OPERATOR '
-    'through class_pair_rule_reach instead, since a rule reaching nobody is a data '
-    'fault rather than a clinical question.';
+    'overwrite its own text. (db/035''s comment spelled that key `AXIS:`; the value was '
+    'always `CI_AXIS:`, matching uncurated_interaction_rule one grain over, and db/036 '
+    'corrected the sentence rather than the key -- the key is frozen.) A rule reaching '
+    'NO pair is omitted (#36: a review gate must only ask what an answer could change) '
+    'and is reported to the OPERATOR through class_pair_rule_reach instead, since a '
+    'rule reaching nobody is a data fault rather than a clinical question.';

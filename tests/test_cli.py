@@ -129,7 +129,7 @@ def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     # curated ruling whose severity is absent from `severity_kind` is a SCHEMA fault that
     # should not exist at all, so there is no healthy non-zero reading for an operator to
     # diff. This stub returns [] from fetchall(), which is the intact-vocabulary case.
-    assert "unrankable severities: none" in out
+    assert "unrankable severities (DDI grain): none" in out
 
 
 def test_resolve_inputs_finds_each_file_by_its_glob(tmp_path):

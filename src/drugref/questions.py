@@ -345,9 +345,19 @@ _GAP_SOURCES = {
     # without it: db/032-db/034 built the class x class write path and db/031 gave it a
     # kind for the LESSER failure (an endpoint resolving to nothing), while "these
     # class x class rules are ungraded" reached nobody. An operator could see
-    # `class_rules_written=9`, never run the deliberately-separate `drugref curate`,
-    # and leave nine ONC high-priority rules permanently uncurated with
+    # `class_rules_written=N`, never run the deliberately-separate `drugref curate`,
+    # and leave every ONC high-priority class rule permanently uncurated with
     # question_worklist showing nothing to do.
+    #
+    # THE FIGURE IS SEVEN, AND THIS COMMENT SAID NINE until the review of PR #119.
+    # `class_rules_written=9` was issue 96's failure-scenario PROSE, restated here and
+    # in db/035's COMMENT as though it were measured. It never was: issue 94 withheld
+    # the class x class ONC entries pending literature research -- there are SEVEN
+    # (onc_high_priority.toml, an eleven-entry draft = 4 moiety + 7 class). db/038 § 3
+    # corrected the catalog; this is the Python side of the same figure. Spelled `N`
+    # rather than `7` on purpose -- the count is a property of the seed file, and
+    # nothing in this argument depends on which number it is, which is precisely the
+    # dependency that made a quoted figure outlive the issue it came from.
     #
     # THE gap_key FORMAT IS FROZEN, like every other here, and carries the rule's WHOLE
     # natural key -- both classes AND the axis. Omitting the axis would fold two rules

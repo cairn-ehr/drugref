@@ -154,6 +154,20 @@ worth keeping does not belong in the file whose history is deliberately disposab
   merged and immutable, so its `--` file prose CANNOT be corrected and this note is the only record of that
   half). **The rule: a figure copied out of an issue into a migration is a MEASUREMENT as soon as it merges —
   re-derive it from the data before writing it down, and never from the issue that motivated the work.**
+- **A RE-ISSUED `COMMENT ON` MUST BE DIFFED *WHOLE* AGAINST THE *LIVE CATALOG*, NEVER AGAINST A MIGRATION FILE**
+  (the PR #119 review). `COMMENT ON` **overwrites; it does not merge**, so the text you are replacing is
+  whichever statement ran LAST — not the one you happen to be reading. `db/038` § 3 rebuilt this same comment
+  from **db/035** while the live text was **db/036's**, and thereby reverted db/036 § 1's correction of the
+  frozen `gap_key` spelling (`AXIS:` → `CI_AXIS:`) and deleted the parenthetical recording it. Three migrations
+  now state that one comment; **count them before re-issuing** (`grep -c "COMMENT ON VIEW drugref.<name>" db/`).
+  **AND THE VERIFICATION MUST NOT BE SCOPED TO THE WORD YOU CHANGED**: db/038 grepped `%nine ingested%` /
+  `%seven ingested%`, which is structurally incapable of reporting what the overwrite DROPPED. Pin the whole
+  comment (`tests/test_class_grain_comment.py`, `tests/test_curated_interaction_comment.py`).
+- **`CREATE OR REPLACE VIEW` PRESERVES THE VIEW'S COMMENT** (same review). Re-defining a view does NOT refresh
+  its `COMMENT ON`, so a migration that corrects a rule in SQL leaves every prose statement of that rule
+  standing. `db/038` § 1 changed the precedence to `effective_rank` and left db/037's
+  `COMMENT ON VIEW curated_ddi_pair` prescribing `ORDER BY severity_rank NULLS FIRST` — the FIRST thing `\d+`
+  prints. **When a migration changes a rule, re-issue every catalog comment that states it, in the same file.**
 
 ## Merged rounds, compressed — the traps only
 
@@ -2011,12 +2025,13 @@ predicate and the withdrawn ruling appears.
 `total` → **`rules_total`**, renamed and not aliased (a test asserts the old name is gone). `ungraded` and `dead`
 are filters over the same `class_pair_rule_reach` tier, so they are bounded by it; **`disagreements` counts
 PAIRS** — rows in `curated_grain_disagreement`, whose grain is the rule pair over the two-grain expansion — and
-never was. Once class-grain content ships, `ClassGrainCounts(rules_total=9, …, disagreements=2263)` is the
+never was. Once class-grain content ships, `ClassGrainCounts(rules_total=7, …, disagreements=2263)` is the
 EXPECTED shape, so `{disagreements} of {total}` would have been wrong by two orders of magnitude on the
 operator surface. The three invariants are now **asserted**, not just described, and the disjointness of
 `ungraded`/`dead` (via `HAVING max(max_pair_count) > 0`, #36) is stated so nobody reconstructs it as overlapping.
 
-**COST, RECORDED RATHER THAN HIDDEN: `curation.py` went 500 → 520 lines**, past rule 4. That is rule 3 against
+**COST, RECORDED RATHER THAN HIDDEN: `curation.py` went 500 → 523 lines** (520 in the db/038 round; the
+PR #119 review added three), past rule 4. That is rule 3 against
 rule 4, which this repo has ruled on twice (`cli_status.py`'s docstring): **move code, never shave comments.**
 Measured onto [#89](https://github.com/cairn-ehr/drugref/issues/89) with the natural seam named
 (`ClassGrainCounts` + `class_grain_counts` + `_RULE_COUNT`, ~90 lines, one consumer) rather than split inside a
@@ -2025,10 +2040,15 @@ correctness diff — db/030's own precedent for exactly this.
 ### Issue 117 — BOTH options, because they cover different halves
 
 The `9` traces to issue 96's prose, quoted faithfully by db/035, never reconciled against #94's **seven**.
-`db/038` § 3 re-issues the `COMMENT ON` with seven (db/027's precedent; only the figure changes, so a diff shows
-one word). db/035's **plain `--` comments cannot be corrected by anything** — stripped at load, and the file is
-merged and immutable — so that half is the standing rule added above. Verified on `drugref_db038`: the live
-comment no longer matches `%nine ingested%`, and does match `%seven ingested%`.
+`db/038` § 3 re-issues the `COMMENT ON` with seven (db/027's precedent). db/035's **plain `--` comments cannot
+be corrected by anything** — stripped at load, and the file is merged and immutable — so that half is the
+standing rule added above.
+
+**⚠ THE FIRST DRAFT OF THIS SECTION SHIPPED A REGRESSION, and the sentence above is how.** It read *"only the
+figure changes, so a diff shows one word"* — measured against **db/035**. See § "The PR #119 review round"
+below: the text being replaced was **db/036's**, and rebuilding from the wrong ancestor reverted db/036 § 1's
+correction of the frozen `gap_key` spelling. The verification quoted here — `%nine ingested%` / `%seven
+ingested%` — is exactly the shape of check that could not see it.
 
 ### Issue 114 — the consumer, and what building it actually taught
 
@@ -2078,6 +2098,136 @@ depends on. [#112](https://github.com/cairn-ehr/drugref/issues/112) still owns t
 its precondition is unchanged — `class_pair_contraindication` is empty on every database in existence, so a
 probe here would measure a join with nothing to join, which is precisely the mistake db/024's 59 s → 465 ms
 precedent records.
+
+## The PR #119 review round (2026-08-15) — suite 1540 → 1564, `db/038` edited in place
+
+Five review agents plus hand verification against the live catalog. `db/038` was still unmerged, so every SQL
+fix went into the file itself and `drugref_db038` was rebuilt — the ledger binds a *database*, not the repo.
+
+### ⇒ THE HEADLINE: a `COMMENT ON` re-issue rebuilt from the wrong ancestor
+
+**`COMMENT ON` OVERWRITES; IT DOES NOT MERGE.** Three migrations state a comment over
+`gap_uncurated_class_interaction_rule` — db/035 § 6, db/036 § 1, db/038 § 3 — so the text a re-issue replaces is
+**whichever ran last**. db/038 § 3 rebuilt from db/035 and therefore silently reverted db/036 § 1, restoring the
+wrong `AXIS:` gap_key spelling and deleting the parenthetical that recorded the correction.
+
+**WHY THAT MATTERS MORE THAN THE FIGURE IT CAME IN TO FIX.** `question_uuid = uuid5(gap_kind, gap_key)`, the key
+is frozen and externally citable, and the real value is `CI_AXIS:` (`questions.py` emits `'/CI_AXIS:' ||
+relationship` twice; four tests pin it literally). A consumer reconstructing the uuid from `\d+` on a running
+node computes one that matches nothing **and gets no error** — db/036's own "hardest kind of wrong answer to
+notice".
+
+**⇒ THE TRANSFERABLE RULE, and it is new: A RE-ISSUED `COMMENT ON` MUST BE DIFFED *WHOLE* AGAINST THE *LIVE*
+CATALOG TEXT, never against the migration file you happen to be reading.** db/038's verification grepped
+`%nine ingested%` / `%seven ingested%` — scoped to the word being *changed*, and therefore structurally
+incapable of seeing what else moved in the same overwrite. A check that only looks for what you set cannot
+report what you dropped. `tests/test_class_grain_comment.py` now pins both halves of this comment and the
+`curated_ddi_pair` precedence sentence, each with a guard test driving the text that actually shipped.
+
+**A SECOND STALE CATALOG COMMENT, same theme.** `CREATE OR REPLACE VIEW` **preserves** comments, so db/037's
+`COMMENT ON VIEW drugref.curated_ddi_pair` survived db/038 untouched — still prescribing `ORDER BY severity_rank
+NULLS FIRST`, the column § 1 exists to stop clients thresholding on. That is the first thing `\d+` prints, so
+the two column comments were corrected while the most-read statement of the rule still pointed at the wrong
+column. Re-issued in § 1.
+
+### Six mutations that survived the whole suite, and now do not
+
+Verified by mutating and re-running, not by inspection:
+
+| mutation | was | now |
+|---|---|---|
+| delete the **moiety arm** of `curated_unrankable_severity` | green | 3 tests fail |
+| drop `AND c.applies` (moiety arm) | green | fails |
+| drop `superseded_by IS NULL` (either arm) | green | fails |
+| revert the **moiety half's** `COALESCE(severity_rank, 0)` | green | 2 tests fail |
+| detector predicate `sk.severity_rank IS NULL` → `sk.severity IS NULL` | green | fails |
+| delete the gap view's `HAVING max(max_pair_count) > 0` | green | fails |
+
+**THE MOIETY ARM WAS THE PRODUCTION-DOMINANT ONE.** Every unrankable test in the db/038 round dropped the
+*class* constraint and graded the *class* side; all 255 curated pairs on the reference database are
+moiety-grain. The tell was visible in the round's own code: `test_a_withdrawn_ruling_is_not_an_unrankable_one`'s
+in-test replacement view defines **only** the class arm and still passed.
+
+**THE `COALESCE` PIN IS NOW GRAIN-AGNOSTIC** — `count(*) FROM curated_ddi_pair WHERE effective_rank IS NULL`
+must be 0, with both grains graded `unrankable` so the COALESCE actually fires. A per-grain test would have to
+be remembered again for a third half; the invariant kills the mutation on any half added later.
+
+### The detector was keyed on the cause it imagined, not the condition that harms
+
+`AND sk.severity IS NULL` tests whether the **join missed**. What does the harm is a **NULL rank** — that is
+what `COALESCE` swallows, what wins the `DISTINCT ON`, and what discards the competing grade. The two coincide
+only while `severity_kind.severity_rank` is `NOT NULL`. Drop that — squarely inside the fault family the view's
+own COMMENT claims to cover, *"a dropped constraint"* — and you get **full harm, zero detection, and `drugref
+status` printing an affirmative `none`** over a live ambiguity. Now `sk.severity_rank IS NULL`, which **strictly
+widens** (a join miss makes every `sk` column NULL, rank included). § 1 wrote the ordering rule in one place for
+exactly this reason and § 2 then spelled the same rule a second way.
+
+### `rank 0` was a promise, not a rule — now a CHECK
+
+db/038 argued the sentinel was safe because *"severity_kind's ranks start at 1"*. True, and unenforced: db/035
+declared `severity_rank smallint NOT NULL UNIQUE` with no lower bound. A later migration adding a level **above**
+contraindicated at rank 0 would make a real grade indistinguishable from the fault — **silently**, because
+`curated_unrankable_severity` would stay empty (such a row *is* in `severity_kind`). Closed by
+`CHECK (severity_rank >= 1)`, with a `COMMENT ON CONSTRAINT` saying why rank 0 is reserved.
+
+### `severity_rank` had no Python reader at all
+
+The whole argument for keeping it NULLABLE is that it is *"the only evidence the schema is broken"* — and
+`grep -rn severity_rank src/drugref/*.py` returned docstrings, the field declaration and the column list, **and
+no reader**. `cli_interactions.py` printed `effective_rank` alone, so a schema fault rendered as a bland
+`rank 0` — and in every other numbering a reader has met, 0 means *least*. Here it means drugref cannot rank
+this **and this row discarded a real grade for the same pair**. The line now banners `** UNRANKABLE ... **` and
+names `drugref status`. Deferring it to the operator put the warning in front of everyone except the person
+being under-warned.
+
+### Two more over-determined pins (fourth and fifth occurrences)
+
+`ClassGrainCounts`' disjointness assertion reduced to `1 + 0 <= 1`: its fixture built one rule that reached
+pairs, so `dead` was always 0 and deleting the `HAVING` guard it claimed to pin left it green. Now builds a
+genuinely dead rule via `_an_ungraded_class_rule(object_axis=...)` — which existed for this and said so in its
+own docstring. And `test_the_command_embeds_no_sql`'s first assertion was
+`"SELECT" not in source.upper() or "curated_read" in source` — the right disjunct is **always** true, because
+`curated_read.effective_grades_for` is in that function's source. It could not fail whatever SQL the module
+embedded.
+
+**AND `cli_interactions` WAS MISSING FROM THE PROJECT-WIDE GUARD** (`test_curation_orphans.py`) whose own
+comment states the discipline — *"covered from its first commit rather than from the round somebody notices,
+which is how cli_curate came to be added late"*. Third time that paragraph has described a rule the list then
+failed to follow. Added; the local substitute is now narrowed to the one thing the general guard does not check
+(naming the view at all) and parses with `ast` rather than grepping, because this module's *docstring*
+legitimately names `curated_ddi_pair_effective` while explaining why it must not query it.
+
+### `GradedPair` now enforces its own identity
+
+`effective_rank = COALESCE(severity_rank, 0)` was documented and separately assignable — a second place one
+value can be written, which is the same drift db/038 diagnoses in db/037, one layer up. The harmful direction is
+silent: `severity_rank=1, effective_rank=4` drops out of every `<= 2`. A `__post_init__` now raises rather than
+repairs (repairing would hide a view regression). **The `UnresolvedTarget` precedent for declining one does not
+transfer** — that check would restate the view's UNION *arm labels*, which a later migration legitimately
+extended; `COALESCE(x, 0)` is a closed identity with no arms to grow. Stated in the docstring so the next reader
+does not apply the precedent by analogy.
+
+### Filed rather than fixed, because each needs a design call
+
+[#120](https://github.com/cairn-ehr/drugref/issues/120) an unknown `moiety_uuid` renders identically to an
+ungraded drug — **the one with a harm direction**; needs a registry-existence reader and `curated_read.py` is
+scoped to the overlay, `classes.py` declares itself a writer, so placement is the open question ·
+[#121](https://github.com/cairn-ehr/drugref/issues/121) an orphaned curated grade reads as "no curated grade"
+(pre-existing; `curated_target_unresolved` already detects it *for the operator*) ·
+[#122](https://github.com/cairn-ehr/drugref/issues/122) all four `UndefinedTable` guards assert one cause as
+fact, and `cli.main` prints only the outer message so `__cause__` reaches nobody — worst case is
+self-referential, since a lost `severity_kind` is one of the faults this very view reports ·
+[#123](https://github.com/cairn-ehr/drugref/issues/123) the detector sweeps 2 of the 5 tables carrying a
+`severity_kind` FK; the status line is now labelled `(DDI grain)` so a bounded check stops reading as an
+all-clear.
+
+### Re-verified after the edits
+
+`drugref_db038` rebuilt from `TEMPLATE drugref_db037` + `drugref migrate`. **Every published count still
+byte-identical** (figures unchanged from the section above). `effective_rank` differs from `severity_rank` in 0
+of 255 rows and is NULL in 0; `curated_unrankable_severity` empty; the gap comment carries `CI_AXIS:` **and**
+`seven ingested` **and** db/036's parenthetical; `curated_ddi_pair`'s comment prescribes `effective_rank` and no
+longer prescribes `severity_rank`; `CHECK (severity_rank >= 1)` present. Suite **1564 passed**, `ruff` clean.
 
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
@@ -2262,7 +2412,7 @@ needs. HANDOVER now carries only what gates the NEXT session and points here.
 curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
 **#112/#105** blocked on class-grain content existing · **#89 `signing.py` is now 605 lines against the filed
 582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87) — **re-read that issue's
-figures, do not re-derive them**; `curation.py` **has since crossed the cap at 520** (the db/038 round, issue
+figures, do not re-derive them**; `curation.py` **has since crossed the cap at 523** (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
 **#6, #25, #5** licence deeds need the owner's sign-off.
@@ -2293,7 +2443,7 @@ sentence, the fifth occurrence of that pattern and the second with that exact te
 sweep-closed-but-unfixed pattern needs a MECHANICAL guard** (a `commit-msg` hook): five occurrences, and the
 prose rule was written down in full — mechanism included — between occurrences four and five without stopping
 it. **#89 was re-measured, not re-filed**: `signing.py` **605**, `release_verification.py` **540**, and
-`curation.py` has now CROSSED the cap at **520** (issue 115's docstring), with the natural seam recorded on the
+`curation.py` has now CROSSED the cap at **523** (issue 115's docstring), with the natural seam recorded on the
 issue.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·

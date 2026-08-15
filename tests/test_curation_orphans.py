@@ -357,8 +357,15 @@ def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsy
     # REPORTING on the curated overlay, which is precisely the shape that tempts an
     # embedded SELECT -- so it is covered from its first commit rather than from the
     # round somebody notices, which is how cli_curate came to be added late.
+    #
+    # AND `cli_interactions` DID NOT JOIN IT ON ITS FIRST COMMIT (db/038, issue 114),
+    # which is the third time the paragraph above has described a discipline this list
+    # then failed to follow. Its module docstring asserts the rule ("NO SQL LIVES HERE")
+    # and shipped a local substitute whose first assertion could not fail -- so the
+    # newest reporting module over the curated overlay was the one module exempt from
+    # the guard. Added in review of PR #119; the module is clean, so it passes as-is.
     ["cli", "cli_policy", "cli_signing", "cli_signing_release", "cli_curate",
-     "cli_status"])
+     "cli_status", "cli_interactions"])
 @pytest.mark.parametrize("table", [
     "curated_interaction", "curated_condition",
     # THE FOUR SLICE-5C.4 TABLES, added the round cli_signing.py/

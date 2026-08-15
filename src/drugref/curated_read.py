@@ -1,12 +1,24 @@
-"""The consumer-facing read of drugref's GRADED drug pairs (`db/037`, issue 110).
+"""The consumer-facing read of drugref's GRADED drug pairs (`db/037`, issue 110), and
+since `db/038` of the SCHEMA FAULTS that make a grade unrankable (issue 116).
+
+TWO READS, NOT ONE, and the second is not a graded-pair read at all: `unrankable_
+severities` reports live curated rulings whose severity is absent from `severity_kind`.
+It lives here because it reads the same curated overlay through the same layering rule
+-- this module owns the read, `cli_status.py` owns the operator's voice -- and a
+`curated_fault_read.py` holding one function would be a module made out of a sentence.
 
 WHY A MODULE OF ITS OWN. `curation.py` owns the curated overlay's writes and its
 detector counts and stood at 485 lines, so adding this to it would have breached
 CLAUDE.md rule 4's ~500-line cap on the spot -- the breach that is already open as issue
-89 for two other files. `interactions.py` was the other candidate and is worse: its
-first sentence is "The ONLY module that writes the interaction tables", and a curated
-READ has no business there. `cli_status.py`, `cli_policy.py` and four siblings are the
-same split for the same reason; this is the seventh.
+89 for two other files (and `curation.py` has since crossed it, measured onto the same
+issue by db/038). `interactions.py` was the other candidate and is worse: its first
+sentence is "The ONLY module that writes the interaction tables", and a curated READ has
+no business there. `cli_status.py`, `cli_policy.py` and their siblings are the same
+split for the same reason. NOT NUMBERED HERE any more: this said "four siblings ... the
+seventh" while `cli_interactions.py` said "three more", two ordinals over one population
+that had already drifted apart by the round that added the eighth. A count kept in two
+files is the trap this project keeps paying for; `ls src/drugref/cli_*.py` is exact and
+cannot go stale.
 
 WHY IT EXISTS AT ALL, which is the more interesting half. `db/035` shipped a
 `severity_rank` column and stated drugref's two-grain precedence in a `COMMENT` --
@@ -68,6 +80,35 @@ class GradedPair:
     management: str | None
     rule_grain: str
     signature_status: str
+
+    def __post_init__(self) -> None:
+        """`effective_rank` IS NOT INDEPENDENT: it is `COALESCE(severity_rank, 0)`.
+
+        WHY A CHECK AND NOT A COMMENT. Everything above argues the two columns answer
+        different questions, which is true and leaves them separately assignable -- so a
+        hand-built record, a test double or a second reader can produce a pair that
+        disagrees, and NOTHING would say so. db/038's own diagnosis of issue 116 is
+        that db/037 wrote the ordering rule in two places and they drifted; two mutable
+        fields holding one identity is that same shape one layer up.
+
+        AND THE DRIFT IS SILENT IN THE HARMFUL DIRECTION: `severity_rank=1` with
+        `effective_rank=4` drops out of every `<= 2` a client writes, under-warning on a
+        contraindicated pair. The view computes both in one SELECT, so a disagreement
+        cannot come from the reader -- which is exactly why one that exists is worth a
+        raise rather than a repair. Repairing would hide a view regression, the defect
+        db/038 exists to end.
+
+        NOT the `UnresolvedTarget` case (curation.py), which declines a `__post_init__`
+        because its check would restate the view's UNION ARM labels and a later
+        migration would then reject a legitimate row -- and one did. `COALESCE(x, 0)`
+        is a total, closed identity with no arms to extend.
+        """
+        expected = 0 if self.severity_rank is None else self.severity_rank
+        if self.effective_rank != expected:
+            raise ValueError(
+                f"effective_rank {self.effective_rank} contradicts severity_rank "
+                f"{self.severity_rank}: effective_rank is COALESCE(severity_rank, 0) "
+                "(db/038, issue 116), so the two can only be built together")
 
 
 # THE ONE COLUMN LIST, generating the SELECT and binding the record BY KEYWORD --
@@ -197,7 +238,10 @@ def unrankable_severities(conn: psycopg.Connection) -> list[UnrankableSeverity]:
     RAISES psycopg's UndefinedTable UNCAUGHT on a database predating db/038. Converting
     that into an operator sentence is the CALLER's job, exactly as it is for
     `curation.unresolved_targets` and `curation.class_grain_counts` -- this module owns
-    the read, `cli_status.py` owns the voice.
+    the read, `cli_status.py` owns the voice. (What that caller then SAYS is only as
+    good as its diagnosis: #122 tracks that all four guards assert one cause as fact and
+    that `cli.main` drops `__cause__`, so the Postgres error naming the real missing
+    relation reaches nobody.)
     """
     return [UnrankableSeverity(**dict(zip(_UNRANKABLE_COLUMNS, row, strict=True)))
             for row in conn.execute(_UNRANKABLE).fetchall()]

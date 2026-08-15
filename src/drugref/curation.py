@@ -435,11 +435,14 @@ class ClassGrainCounts:
     rules** -- rows in `curated_grain_disagreement`, whose grain is the rule pair over
     `curated_ddi_pair`'s two-grain expansion -- so it is not bounded by `rules_total`
     and never was. One class rule can expand to ~2,263 pairs (db/035), so
-    `ClassGrainCounts(rules_total=9, ..., disagreements=2263)` is the EXPECTED shape
-    once class-grain content ships, and the obvious `{disagreements} of {total}` line a
-    maintainer would write next to the one above it would be wrong by two orders of
-    magnitude. The old name made that division read natural; this one makes it read
-    wrong, which is the entire point of the rename.
+    `ClassGrainCounts(rules_total=7, ..., disagreements=2263)` is the EXPECTED shape
+    once class-grain content ships, and the obvious `{disagreements} of {rules_total}`
+    line a maintainer would write next to the one above it would be wrong by two orders
+    of magnitude. The old name made that division read natural; this one makes it read
+    wrong, which is the entire point of the rename. (Spelled `rules_total=9` and
+    `{total}` until the review of PR #119: the illustration used the very figure db/038
+    § 3 was correcting in the same commit, and quoted the removed field name in the line
+    arguing the new one reads wrong.)
 
     `ungraded` AND `dead` ARE DISJOINT, which the field names do not say and a reader
     should not have to reconstruct: `gap_uncurated_class_interaction_rule` omits a rule

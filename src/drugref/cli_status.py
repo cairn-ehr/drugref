@@ -88,9 +88,9 @@ def print_class_grain_block(conn) -> None:
     # are delete-and-rebuild -- and silences both at once, while `loaded_release`
     # still shows ONCHIGH loaded and this command still exits 0. The old three-zero
     # block was then BYTE-IDENTICAL to a healthy, fully-curated registry.
-    # `class rules: 0` and `class rules: 9` are not, and that is the entire fix.
+    # `class rules: 0` and `class rules: 7` are not, and that is the entire fix.
     #
-    # STATED ONCE, NOT THREE TIMES. Repeating "of 9" on each numerator would put one
+    # STATED ONCE, NOT THREE TIMES. Repeating "of 7" on each numerator would put one
     # quantity in three places, the shape this project has paid for repeatedly. It
     # also reads worse: an operator diffing two status runs wants the population
     # first and the faults second, in that order.
@@ -151,7 +151,8 @@ def print_unrankable_severity_block(conn) -> None:
     follows what the numbers mean rather than where the code lives. The class-grain
     block prints bare counts because an operator DIFFS them between runs and a zero is
     an informative reading there. This is a list that should not exist at all, so it
-    says `none` like the four blocks above it and banners when it is not empty.
+    says `none` like the four `none`-voiced blocks above it (there are five blocks; the
+    class grain's is the one that counts instead) and banners when it is not empty.
 
     SAME UndefinedTable GUARD, SAME NARROW SCOPE as its three siblings: a database
     predating db/038 has no view to read, and that must be ONE sentence rather than a
@@ -167,8 +168,16 @@ def print_unrankable_severity_block(conn) -> None:
             "unreported -- and such a ruling outranks and DISCARDS every real grade "
             "for its pair. Run `drugref migrate` and re-run status.") from exc
 
+    # NAMED FOR THE GRAIN IT SWEEPS, not for the vocabulary as a whole. db/035 put the
+    # `severity_kind` foreign key on FIVE tables and this detector reads the two the DDI
+    # read path ranks (`curated_interaction`, `curated_class_interaction`); the other
+    # three -- `curated_condition`, `additive_effect`, `interaction_group_assertion` --
+    # have no consumer that ranks a severity, so there is no read-path harm to report
+    # today. But `unrankable severities: none` is a claim about the VOCABULARY, and this
+    # is a sweep of part of it: labelling the line is what keeps a bounded check from
+    # reading as an all-clear. Widening it is tracked on #123 rather than assumed.
     if unrankable:
-        print(f"\nunrankable severities: {len(unrankable)}"
+        print(f"\nunrankable severities (DDI grain): {len(unrankable)}"
               "  ** a severity is missing from severity_kind, so these rulings outrank "
               "and DISCARD every real grade for their pairs -- check the foreign key "
               "on both curated tables and severity_kind's contents **")
@@ -176,4 +185,4 @@ def print_unrankable_severity_block(conn) -> None:
             print(f"  {u.target_table:<25} #{u.target_id} severity {u.severity!r} "
                   f"reviewed by {u.reviewed_by} at {u.reviewed_at}")
     else:
-        print("\nunrankable severities: none")
+        print("\nunrankable severities (DDI grain): none")
