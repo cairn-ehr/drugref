@@ -60,7 +60,7 @@ import psycopg
 
 import drugref
 from drugref import (cli_curate, cli_interactions, cli_policy, cli_signing, cli_status,
-                     curation, db, interactions, signatures)
+                     curation, db, interactions, migration_guard, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -270,10 +270,14 @@ def _handle_status(conn, args) -> int:
     try:
         orphans = curation.unresolved_targets(conn)
     except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
-        raise RuntimeError(
-            "drugref.curated_target_unresolved is missing or predates db/035, so "
-            "orphaned curator judgement cannot be reported. Run `drugref migrate` "
-            "and re-run status.") from exc
+        # ISSUE 122: THE CAUSE IS CONFIRMED BEFORE IT IS ASSERTED. This block used to
+        # state "predates db/035" as fact for every 42P01, including the case where
+        # db/035 IS applied and something dropped the view afterwards -- where `drugref
+        # migrate` is a no-op and status prints the same sentence forever.
+        migration_guard.raise_missing(
+            conn, exc, relations=(curation.UNRESOLVED_VIEW,),
+            migration="035",
+            consequence="orphaned curator judgement cannot be reported")
     if orphans:
         print(f"\nunresolved curated targets: {len(orphans)}"
               "  ** a rebuild left curator judgement pointing at nothing **")
@@ -311,10 +315,12 @@ def _handle_status(conn, args) -> int:
     try:
         backdated = signatures.backdated(conn)
     except psycopg.errors.UndefinedTable as exc:
-        raise RuntimeError(
-            "drugref.signature_backdated is missing: this database predates db/030, so "
-            "backdated signatures cannot be reported. Run `drugref migrate` and re-run "
-            "status.") from exc
+        # ISSUE 122, same shape as the block above: the ledger is what separates "not
+        # migrated yet" from "dropped after migrating", and only one of the two has
+        # `drugref migrate` as its fix.
+        migration_guard.raise_missing(
+            conn, exc, relations=(signatures.BACKDATED_VIEW,), migration="030",
+            consequence="backdated signatures cannot be reported")
     if backdated:
         print(f"\nbackdated signatures: {len(backdated)}"
               "  ** signed_at long precedes recording -- confirm each was a late "

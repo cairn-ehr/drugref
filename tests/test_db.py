@@ -6,6 +6,7 @@ replay on an already-migrated database, mirroring Cairn's connect-and-load
 convention). These tests hold that claim to account: a second apply must not
 raise, and a fresh connection must be genuinely usable.
 """
+import psycopg
 import pytest
 from drugref import db, ids
 
@@ -545,3 +546,70 @@ def test_referenced_vocabulary_lists_the_statuses_a_signing_key_may_hold(conn):
     assert listed is not None
     for status in expected:
         assert status in listed
+
+
+# ============================================================================
+# the two probes a migration guard needs before it may assert a cause (issue 122)
+# ============================================================================
+
+
+def test_missing_relations_reports_only_the_ones_that_are_really_absent(conn):
+    """The discrimination the four guards did not make: asserted cause vs confirmed one.
+
+    A guard that assumed "missing" answered `UndefinedTable` with "run drugref migrate"
+    for causes that no migration touches -- a wrong search_path, a role without USAGE, a
+    base table dropped from under a view. This is what lets it check first.
+    """
+    assert db.missing_relations(conn, "drugref.substance_moiety") == ()
+    assert db.missing_relations(conn, "drugref.no_such_view") == ("drugref.no_such_view",)
+    assert db.missing_relations(
+        conn, "drugref.substance_moiety", "drugref.no_such_view"
+    ) == ("drugref.no_such_view",)
+
+
+def test_missing_relations_works_after_the_failed_statement_aborted_the_transaction(conn):
+    """⇒ THE ONE THAT DECIDES WHETHER THE WHOLE GUARD IS AN IMPROVEMENT.
+
+    `db.connect` uses psycopg's default (`autocommit=False`), so the `UndefinedTable`
+    the guard just caught has left the transaction ABORTED: every subsequent statement
+    raises `InFailedSqlTransaction` until someone rolls back. A probe that did not roll
+    back would raise from INSIDE the guard, replacing a wrong-but-readable sentence with
+    an unrelated psycopg traceback -- strictly worse than the defect it was fixing.
+
+    Driven through the real failure rather than a simulated one: the transaction here is
+    aborted by exactly the error the guards catch.
+    """
+    with pytest.raises(psycopg.errors.UndefinedTable):
+        conn.execute("SELECT 1 FROM drugref.no_such_view")
+
+    assert db.missing_relations(conn, "drugref.no_such_view") == ("drugref.no_such_view",)
+
+
+def test_migration_applied_reads_the_ledger_by_numeric_prefix(conn):
+    """THE ONLY THING SEPARATING "not migrated yet" FROM "dropped after migrating".
+
+    Matched on the `038` prefix rather than the whole filename: the descriptive half of
+    `038_effective_rank_and_the_class_rule_count.sql` is prose, and a guard quoting it in
+    full would be a second copy of a name with nothing holding the two together.
+    """
+    assert db.migration_applied(conn, "001") is True
+    assert db.migration_applied(conn, "999") is False
+
+
+def test_migration_applied_does_not_match_a_number_inside_another_filename(conn):
+    """`500` must be answered by `500_*.sql` ALONE -- not by `1500_`, not by the prose.
+
+    A CONTROL WITH TEETH, because the obvious implementation is a substring test and a
+    substring test is wrong in the direction that hurts: it would report a migration
+    applied when it is not, turning the guard's answer into "DROPPED, not pending" for
+    a database that is merely behind -- telling an operator NOT to run the migration
+    that would in fact fix them.
+
+    500 is used rather than a real migration number because every real one IS applied
+    here, so a genuine ledger hit could not be told from a substring hit.
+    """
+    conn.execute(
+        "INSERT INTO drugref.schema_migration (filename, checksum) VALUES "
+        "('1500_a_much_later_migration.sql', 'x'), "
+        "('900_a_migration_about_500_things.sql', 'y')")
+    assert db.migration_applied(conn, "500") is False

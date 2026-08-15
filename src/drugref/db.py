@@ -227,6 +227,53 @@ def referenced_vocabulary(conn: psycopg.Connection, table: str | None,
     return ", ".join(str(v[0]) for v in values)
 
 
+def missing_relations(conn: psycopg.Connection, *relations: str) -> tuple[str, ...]:
+    """Of `relations` (schema-qualified), the ones Postgres does not have. Issue 122.
+
+    ⇒ IT ROLLS BACK FIRST, AND THAT IS THE POINT OF THE FUNCTION rather than a detail
+    of it. Every caller reaches here inside `except UndefinedTable`, and `connect` uses
+    psycopg's default `autocommit=False`, so the failed statement has ABORTED the
+    transaction: without the rollback this probe raises `InFailedSqlTransaction` from
+    inside the guard meant to improve the diagnosis, replacing a wrong-but-readable
+    sentence with an unrelated traceback.
+
+    SAFE TO ROLL BACK HERE, and worth saying why rather than leaving it to be
+    rediscovered: every caller is a READ path (`status`, `interactions`) whose work so
+    far is SELECTs, and the transaction is already aborted anyway -- an aborted
+    transaction can commit nothing, so there is no work left to lose.
+
+    `to_regclass` RATHER THAN A `pg_class` JOIN because it returns NULL instead of
+    raising for an absent name, and it resolves through `search_path` exactly as the
+    failing query did -- so a relation that exists in some other schema the caller
+    cannot see is correctly reported missing FOR THIS ROLE, one of the causes the old
+    guards misattributed to a pending migration.
+    """
+    conn.rollback()
+    return tuple(name for name in relations
+                 if conn.execute("SELECT to_regclass(%s)", (name,)).fetchone()[0]
+                 is None)
+
+
+def migration_applied(conn: psycopg.Connection, number: str) -> bool:
+    """Whether `db/<number>_*.sql` is recorded applied in the ledger. Issue 122.
+
+    THE DISCRIMINATOR BETWEEN "NOT MIGRATED YET" AND "DROPPED AFTER MIGRATING", which
+    is the distinction `migration_guard` is built on: a relation absent while its
+    migration is recorded applied cannot be restored by `drugref migrate`, and an
+    operator told to run it anyway is in a loop.
+
+    MATCHED ON THE NUMERIC PREFIX PLUS THE UNDERSCORE, never as a substring. Every
+    filename is `NNN_description.sql`, and the description is prose a later round may
+    reword -- but a bare `number in filename` test would also match `1500_` for "500",
+    and match the number inside someone's description. That error runs in the harmful
+    direction: it reports a migration applied when it is not, so the guard tells an
+    operator NOT to run the migration that would fix them.
+    """
+    return conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM drugref.schema_migration "
+        "WHERE filename LIKE %s)", (f"{number}\\_%",)).fetchone()[0]
+
+
 def migration_dir() -> pathlib.Path:
     """The directory holding the migration SQL: packaged copy first, checkout second.
 

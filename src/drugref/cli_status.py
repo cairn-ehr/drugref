@@ -27,7 +27,7 @@ covers the five modules above.
 """
 import psycopg
 
-from drugref import curated_read, curation
+from drugref import curated_read, curation, migration_guard
 
 
 def print_class_grain_block(conn) -> None:
@@ -73,12 +73,20 @@ def print_class_grain_block(conn) -> None:
     try:
         counts = curation.class_grain_counts(conn)
     except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
-        raise RuntimeError(
-            "the class-grain detector views are missing or predate db/037: this "
-            "database is behind on migrations, so ungraded, unreachable and "
-            "cross-grain-disagreeing class rules cannot be reported -- and a rule "
-            "reaching no pair would be under-reported even where they exist. Run "
-            "`drugref migrate` and re-run status.") from exc
+        # ISSUE 122. ALL THREE VIEWS ARE NAMED, not just the one that raised: they ship
+        # in one migration, so an operator seeing two present and one absent is looking
+        # at a manual repair rather than an upgrade -- a distinction the single-name
+        # message could not draw. db/037 is the migration asked about because
+        # `_RULE_COUNT` reads a column it added, so a db/035 database has every view
+        # present and still fails; the "relations exist but the migration is not
+        # applied" branch is written for exactly that state.
+        migration_guard.raise_missing(
+            conn, exc,
+            relations=curation.CLASS_GRAIN_VIEWS,
+            migration="037",
+            consequence=("ungraded, unreachable and cross-grain-disagreeing class "
+                         "rules cannot be reported, and a rule reaching no pair would "
+                         "be under-reported even where they exist"))
 
     # THE DENOMINATOR LEADS (issue 111), and the two numerators hang off it in
     # parentheses rather than standing on their own lines.
@@ -162,11 +170,19 @@ def print_unrankable_severity_block(conn) -> None:
     try:
         unrankable = curated_read.unrankable_severities(conn)
     except psycopg.errors.UndefinedTable as exc:
-        raise RuntimeError(
-            "drugref.curated_unrankable_severity is missing: this database predates "
-            "db/038, so a curated ruling whose severity drugref cannot rank would go "
-            "unreported -- and such a ruling outranks and DISCARDS every real grade "
-            "for its pair. Run `drugref migrate` and re-run status.") from exc
+        # ⇒ ISSUE 122'S SELF-REFERENTIAL CASE, AND THIS IS THE BLOCK IT IS ABOUT. "A
+        # restore that lost the vocabulary table" is one of the three faults this very
+        # view was written to REPORT: drop `severity_kind` and the view goes with it
+        # (CASCADE, or a partial restore), so the old guard answered "this database
+        # predates db/038, run `drugref migrate`" -- a no-op, since db/038 is recorded
+        # applied -- and status repeated it forever. The detector misdiagnosed the exact
+        # fault it exists to diagnose. The ledger check is what breaks that loop.
+        migration_guard.raise_missing(
+            conn, exc, relations=(curated_read.UNRANKABLE_VIEW,),
+            migration="038",
+            consequence=("a curated ruling whose severity drugref cannot rank goes "
+                         "unreported, and such a ruling outranks and DISCARDS every "
+                         "real grade for its pair"))
 
     # NAMED FOR THE GRAIN IT SWEEPS, not for the vocabulary as a whole. db/035 put the
     # `severity_kind` foreign key on FIVE tables and this detector reads the two the DDI

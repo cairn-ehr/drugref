@@ -1,0 +1,24 @@
+#!/bin/sh
+# drugref's commit-msg hook (issue 118): refuse a message that closes an issue by
+# accident. Installed with `git config core.hooksPath .githooks` -- see
+# docs/PROJECT-NOTES.md § "How to run / test".
+#
+# WHY THE HOOK IS THREE LINES AND THE RULE IS IN PYTHON: the check is pinned by
+# `tests/test_commit_lint.py`, against the two commit bodies that actually closed an
+# issue nobody meant to close. A rule written in `sh` here would be a second copy with
+# nothing testing it.
+#
+# `exec` SO THE EXIT CODE IS THE HOOK'S OWN, with no shell layer left to swallow it: a
+# commit-msg hook exiting 0 aborts nothing, and a guard that never fires is the failure
+# mode this project has already met three times (issues 74, 66, 76).
+#
+# FALLS BACK TO A BARE `python3` when uv is absent, so a checkout without uv on PATH
+# still gets the guard rather than silently getting none. PYTHONPATH reaches src/
+# without requiring an editable install; $0 is this script, so the path is resolved
+# relative to the hook rather than to the cwd git happens to run it from.
+set -e
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --quiet --project "$root" python -m drugref.commit_lint "$1"
+fi
+PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m drugref.commit_lint "$1"

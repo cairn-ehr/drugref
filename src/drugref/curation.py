@@ -339,6 +339,10 @@ class UnresolvedTarget:
 # uuid column and tripled the ways to be wrong. Binding by NAME removes the failure
 # mode rather than testing for it, and `strict=True` catches a column the view gained
 # or lost.
+# EXPORTED for `cli.py`'s migration guard (issue 122): the guard probes the relation
+# this read names, rather than carrying a second spelling that a rename would miss.
+UNRESOLVED_VIEW = "drugref.curated_target_unresolved"
+
 _UNRESOLVED_COLUMNS = ("target_table", "subject_moiety", "object_uuid",
                        "relationship", "reviewed_by", "reviewed_against",
                        # db/035's trailing add, and the reason this list being ONE
@@ -398,7 +402,7 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
     return [UnresolvedTarget(**dict(zip(_UNRESOLVED_COLUMNS, row, strict=True)))
             for row in conn.execute(
                 f"SELECT {', '.join(_UNRESOLVED_COLUMNS)} "
-                "FROM drugref.curated_target_unresolved "
+                f"FROM {UNRESOLVED_VIEW} "
                 # subject_class LAST, and it is not decoration: on the class-grain arm
                 # (db/035) `subject_moiety` is NULL for EVERY row, so within that arm
                 # -- where `target_table` is constant and therefore sorts nothing --
@@ -483,9 +487,17 @@ class ClassGrainCounts:
 # `cpc.ingest_run` feed none of it -- so the two rows one rule asserted by two
 # authorities produces carry identical values here. Tested rather than argued, both
 # halves, in tests/test_class_grain_detectors.py.
+# THE VIEW NAMES, EXPORTED, so the migration guards in `cli.py` and `cli_status.py`
+# probe the relations these reads actually name rather than a hand-copied second
+# spelling of them (issue 122). One home per name: a rename that missed the guard would
+# leave it reporting a healthy database's view permanently absent.
+CLASS_GRAIN_VIEWS = ("drugref.class_pair_rule_reach",
+                     "drugref.gap_uncurated_class_interaction_rule",
+                     "drugref.curated_grain_disagreement")
+
 _RULE_COUNT = ("SELECT count(*) FROM (SELECT DISTINCT subject_class_uuid, "
                "object_class_uuid, relationship, shared_effective_member_count "
-               "FROM drugref.class_pair_rule_reach{where}) z")
+               f"FROM {CLASS_GRAIN_VIEWS[0]}" "{where}) z")
 
 
 def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
@@ -513,11 +525,10 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
     """
     rules_total = conn.execute(_RULE_COUNT.format(where="")).fetchone()[0]
     ungraded = conn.execute(
-        "SELECT count(*) FROM drugref.gap_uncurated_class_interaction_rule"
-    ).fetchone()[0]
+        f"SELECT count(*) FROM {CLASS_GRAIN_VIEWS[1]}").fetchone()[0]
     dead = conn.execute(
         _RULE_COUNT.format(where=" WHERE max_pair_count = 0")).fetchone()[0]
     disagreements = conn.execute(
-        "SELECT count(*) FROM drugref.curated_grain_disagreement").fetchone()[0]
+        f"SELECT count(*) FROM {CLASS_GRAIN_VIEWS[2]}").fetchone()[0]
     return ClassGrainCounts(rules_total=rules_total, ungraded=ungraded, dead=dead,
                             disagreements=disagreements)

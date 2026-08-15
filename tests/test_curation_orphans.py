@@ -177,7 +177,7 @@ class _Conn:
     thin enough that a stub is a truer test of its OUTPUT than a live database would be.
     """
 
-    def __init__(self, orphans=(), raises=None):
+    def __init__(self, orphans=(), raises=None, absent=(), applied=False):
         self._orphans = list(orphans)
         # {sql fragment: exception} -- an UNDER-MIGRATED database, which is the one
         # state a stub models better than a real one. Building a db/034 database to
@@ -185,9 +185,30 @@ class _Conn:
         # the guard's whole job is turning one psycopg class into one sentence, and
         # that is exactly what a raising stub exercises.
         self._raises = dict(raises or {})
+        # ISSUE 122'S TWO PROBES. A guard may no longer assert a cause it has not
+        # confirmed, so it now asks `to_regclass` which relations are really gone and
+        # asks the ledger whether their migration is recorded applied. `absent` and
+        # `applied` are those two answers.
+        #
+        # ⇒ AND THE INTERESTING STATE CANNOT BE BUILT ON THE REAL TEST DATABASE, which
+        # is why this stub grew rather than being replaced by a fixture. "DROPPED"
+        # means absent WHILE its migration is applied, so producing it for real means
+        # committing a DROP to the session-scoped migrated database -- breaking every
+        # test that runs after it. The pieces are each tested where they can be tested
+        # honestly: `guard_message`'s four states purely (test_migration_guard.py), the
+        # two probes against a live database (test_db.py), and the wiring here.
+        self._absent = set(absent)
+        self._applied = applied
+
+    def rollback(self):
+        """`db.missing_relations` rolls back before probing, because the failed
+        statement aborted the transaction. A stub without this raises AttributeError
+        from inside the guard -- which is precisely the class of failure issue 122 is
+        about, so it is modelled rather than ignored."""
 
     def execute(self, sql, params=None):
         self._last = sql
+        self._params = params
         for fragment, exc in self._raises.items():
             if fragment in sql:
                 raise exc
@@ -206,7 +227,17 @@ class _Conn:
         tests/test_class_grain_detectors.py does against a real database -- these
         tests exist to pin the ORPHAN block's rendering, and a stub is a truer test of
         that than a live database only while it stays a stub.
+
+        THE TWO EXCEPTIONS ARE ISSUE 122'S PROBES, which are not counts: `to_regclass`
+        answers NULL for an absent relation, and the ledger answers a boolean. A stub
+        returning 0 to both would report every relation PRESENT and every migration
+        UNAPPLIED -- a state that cannot exist, and one that would send every guard down
+        the same branch no matter what the test meant to model.
         """
+        if "to_regclass" in self._last:
+            return (None,) if self._params[0] in self._absent else ("an_oid",)
+        if "schema_migration" in self._last:
+            return (self._applied,)
         return (0,)
 
 
@@ -325,8 +356,61 @@ def test_a_database_predating_db035_names_the_migration_rather_than_tracebacking
 
     conn = _Conn(raises={"curated_target_unresolved": psycopg.errors.UndefinedColumn(
         'column "subject_class" does not exist')})
-    with pytest.raises(RuntimeError, match="drugref migrate"):
+    with pytest.raises(RuntimeError, match="drugref migrate") as raised:
         cli._handle_status(conn, None)
+    # ISSUE 122: the VIEW is present and one COLUMN short, so the guard must not claim
+    # the relation is missing -- and Postgres's own sentence, which names the column, is
+    # the whole diagnosis. `cli.main` prints only the outer message, so a `from exc` that
+    # nobody renders is the same as no cause at all.
+    assert 'column "subject_class" does not exist' in str(raised.value)
+
+
+def test_a_dropped_view_is_not_reported_as_a_pending_migration(capsys):
+    """⇒ THE CLOSED LOOP ISSUE 122 IS ABOUT, and the reason a guard must probe at all.
+
+    `curated_target_unresolved` is ABSENT while db/035 is RECORDED APPLIED. No migration
+    can bring it back -- `drugref migrate` sees the ledger, applies nothing, prints
+    "migrations applied", and the operator re-runs status and reads the same sentence.
+    The old guard asserted "this database predates db/035" as fact and sent them round
+    that loop; there is no state of the database in which that advice works.
+
+    THE HARM IS NOT MERELY A BAD SENTENCE. `curated_target_unresolved` reports curator
+    judgement left pointing at nothing, so while it is unreadable the operator loses the
+    detector AND is told the wrong thing about why.
+    """
+    from drugref import cli
+
+    conn = _Conn(
+        raises={"curated_target_unresolved": psycopg.errors.UndefinedTable(
+            'relation "drugref.curated_target_unresolved" does not exist')},
+        absent=("drugref.curated_target_unresolved",), applied=True)
+
+    with pytest.raises(RuntimeError, match="DROPPED") as raised:
+        cli._handle_status(conn, None)
+    assert "Run `drugref migrate`" not in str(raised.value), (
+        "the ledger says db/035 already ran: prescribing it again is the loop")
+
+
+def test_a_read_that_fails_with_everything_present_refuses_to_blame_a_migration(capsys):
+    """THE GUARD'S ASSUMED CAUSE, REFUTED BY ITS OWN PROBE.
+
+    The view exists and db/035 is applied, and the read failed anyway -- a wrong
+    `search_path`, a role without USAGE on schema drugref, or a base table dropped from
+    under a view that still stands. Every one of those is a cause the old guard
+    misattributed to a pending migration, and the operator's next move differs for each.
+    """
+    from drugref import cli
+
+    conn = _Conn(
+        raises={"curated_target_unresolved": psycopg.errors.UndefinedTable(
+            'relation "drugref.some_base_table" does not exist')},
+        absent=(), applied=True)
+
+    with pytest.raises(RuntimeError, match="NOT a missing migration") as raised:
+        cli._handle_status(conn, None)
+    assert "drugref.some_base_table" in str(raised.value), (
+        "the relation Postgres actually named is the one thing that resolves this, and "
+        "it reached nobody: `cli.main` renders the outer message only")
 
 
 def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsys):

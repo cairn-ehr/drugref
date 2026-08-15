@@ -133,18 +133,21 @@ worth keeping does not belong in the file whose history is deliberately disposab
   record has a format/version/algorithm field, the verifier reads that field; if it never reads it, the field is
   decoration and the guard is missing.** The same instinct is why `signing.FIELD_LISTS` is frozen rather than
   derived — the one place in this repo where deriving from the catalog is the wrong answer.
-- **A PROSE RULE THAT HAS FAILED FIVE TIMES IS NOT A RULE, IT IS A WISH** (#114, the db/038 round). The
-  sweep-closed-but-unfixed pattern has now happened **five** times — #31, #35, #40, #61, #114 — and the fifth is
-  the one that settles the argument: `ed1ab5e`'s body reads *"Filed rather than fixed: #114 …"*, which is the
-  **identical sentence template** that closed #61 via `92baaea`, in a repo where the paragraph below § "The
-  policy-surface debt round" already documents that exact trap, names the token-adjacency mechanism, and warns
-  that *"a colon in between does not save you"*. Writing the trap down, in full, with the mechanism explained,
-  did not stop the next round walking into it — and only #114 closed, because no keyword sits next to #115,
-  #116 or #117 in the same sentence. **The rule stands (near `close`/`fix`/`resolve` in any inflection, write
-  the number WITHOUT a `#`), and the standing conclusion is that it needs a MECHANICAL guard, not a sixth
-  restatement** — filed as [#118](https://github.com/cairn-ehr/drugref/issues/118). Until that lands, the cheap
-  habit that actually works is to write *"Filed rather than fixed: issue 114, issue 115, …"* — no `#`, nothing
-  for the linker to match.
+- **A PROSE RULE THAT HAS FAILED SIX TIMES IS NOT A RULE, IT IS A WISH — AND IT IS NOW A HOOK** (#114 and #118,
+  closed by the guard round). The sweep-closed-but-unfixed pattern happened **six** times — #31, #35, #40, #61,
+  **#108**, #114 — and `ed1ab5e`'s body reads *"Filed rather than fixed: #114 …"*, the **identical sentence
+  template** that closed #61 via `92baaea`, in a repo where this very file already documented the trap, named
+  the token-adjacency mechanism, and warned that *"a colon in between does not save you"*. Only #114 closed,
+  because no keyword sits next to #115, #116 or #117 in the same sentence.
+  **⇒ AND THE COUNT ITSELF WAS WRONG UNTIL A MACHINE TOOK IT.** #108 (`293758c`, the same sentence, one round
+  before #114) was found only by running the finished guard over all 363 commits, and every document here said
+  five. **A failure that is silent by construction cannot be counted by hand, and the count was the evidence the
+  prose rule was failing** — so the undercount understated the case for fixing it, for a round.
+  **The rule stands** (near `close`/`fix`/`resolve` in any inflection, write the number WITHOUT a `#`), and it
+  is now **enforced** by `.githooks/commit-msg` → `drugref.commit_lint`; install with
+  `git config core.hooksPath .githooks` (§ "How to run / test"), escape with `--no-verify`. **The hook cannot
+  see PR DESCRIPTIONS, which GitHub also parses** — [#124](https://github.com/cairn-ehr/drugref/issues/124),
+  so keep writing *"issue 114"* in a PR body.
 - **A FIGURE QUOTED FROM AN ISSUE'S PROSE INTO A `COMMENT ON` OUTLIVES THE ISSUE** (#117, the db/038 round).
   `db/035` quoted issue 96's failure-scenario prose faithfully — `class_rules_written=9` — and that number was
   never reconciled against issue 94, which **withheld SEVEN** class×class ONC entries. The 9 then landed in the
@@ -2229,6 +2232,159 @@ of 255 rows and is NULL in 0; `curated_unrankable_severity` empty; the gap comme
 `seven ingested` **and** db/036's parenthetical; `curated_ddi_pair`'s comment prescribes `effective_rank` and no
 longer prescribes `severity_rank`; `CHECK (severity_rank >= 1)` present. Suite **1564 passed**, `ruff` clean.
 
+## The guard round (2026-08-15) — issues 118, 120, 122; suite 1564 → 1598, NO migration
+
+**The first round since 5c.1 that touches no `db/*.sql` at all.** `db/038` merged with PR
+[#119](https://github.com/cairn-ehr/drugref/pull/119) (`20c4701`) and is therefore **FROZEN**; every defect
+closed here was fixable in Python, which is why they were separable from a schema round in the first place.
+Three issues, three new modules (`commit_lint.py` 175, `registry_read.py` 64, `migration_guard.py` 144), one
+shipped git hook. **Ten mutations were run against the new branches and all ten fail** — the list is at the end
+of this section, because "an over-determined test cannot fail" has now cost this project five rounds.
+
+### ⇒ THE HEADLINE: THE COMMIT GUARD FOUND A SIXTH OCCURRENCE ON ITS FIRST RUN, AND IT HAD GONE UNCOUNTED
+
+Issue 118 was filed against **five** commits that closed an issue nobody meant to close — #31, #35, #40, #61,
+#114. Running the finished check over **all 363 commits in the history** flagged 14, of which **6 are
+accidental and 8 deliberate**, and the sixth was **#108**:
+
+```
+293758c  Filed rather than fixed: #108 (make max_pair_count exact), #109 (mirror-oriented rule
+         pairs), #110 (ship the precedence as a view), #111 (...), #112 (...).
+```
+
+`gh api repos/cairn-ehr/drugref/issues/108/timeline` names it exactly: **`closed at 2026-08-14T12:16:38Z by
+commit 293758c`**, while #109–#112 in the same sentence stayed open. Same sentence as `ed1ab5e`, one round
+EARLIER, and **every document in this repo said five** — this file, ROADMAP, HANDOVER and issue 118 itself.
+
+**THE LESSON IS NOT THE ARITHMETIC, IT IS WHY THE ARITHMETIC WAS WRONG.** This failure is silent *by
+construction*: nothing announces it, so the only way to count it is to go looking, and every count taken by
+hand has undercounted. **The count was the evidence the prose rule was failing**, so an undercount understated
+the case for fixing it — for a whole round. #108 was in fact fixed later by db/037, so unlike #114 no work was
+lost; **that is luck, not a mitigation**, and it is exactly the coincidence that let the occurrence pass
+unnoticed.
+
+### What ships for 118, and the one thing that deliberately does NOT
+
+`.githooks/commit-msg` (24 lines of `sh`) + `drugref.commit_lint` (pure), installed with
+**`git config core.hooksPath .githooks`** — recorded in § "How to run / test", and **already installed in this
+checkout**, so the round's own commit was the guard's first live exercise.
+
+- **The predicate is TOKEN ADJACENCY, matched per LINE.** `[^\S\n]*` for the gap rather than `\s*`, because
+  `\s` spans the newline: a body ending "... and this is fixed." above a line opening "#115 is next" would
+  otherwise be rejected for a pairing GitHub never makes.
+- **Both spellings**, because the URL form is the one this project actually writes: every issue in `docs/` is
+  linked `[#120](https://github.com/cairn-ehr/...)`, so a body composed from HANDOVER prose carries URLs.
+- **Git's own comment lines are stripped first**, matching git's cleanup. A branch named `fix/closes-118` puts
+  a keyword and a number on the `# On branch` line through no fault of the author, and a guard that fired on
+  text git is about to delete is a guard that gets uninstalled.
+- **The escape is `--no-verify` alone. The `Closes-intentionally:` trailer the issue proposed is NOT shipped,
+  and the reason is worth keeping**: that exact spelling would not close anything on GitHub — `-intentionally:`
+  sits between keyword and reference, so the linker never matches — so it would have been a **second vocabulary
+  whose name states the opposite of its effect**, which is the defect this repo keeps paying for.
+- **The shell wrapper is exercised by a subprocess test, not just the Python.** Three pieces (pure function,
+  `__main__`, `sh` script) and the first two being green says nothing about whether the third finds an
+  interpreter or propagates an exit code. **A hook that exits 0 on every message is indistinguishable from no
+  hook**, which is issues 74/66/76's "a gate that exists and never fires" in a new place.
+- **Scope limit, and it is now its own issue**: GitHub also parses **PR descriptions**, which no commit hook
+  can see — [#124](https://github.com/cairn-ehr/drugref/issues/124). It needs no new logic, only a second
+  caller of `closing_references` and a workflow, plus an opt-out that is not itself a string GitHub parses as
+  a close. **Its count is UNKNOWN rather than zero: nothing has measured that surface.**
+
+### Issue 120 — an absence about the OVERLAY, printed as an answer about a DRUG
+
+`drugref interactions <uuid>` printed `no curated grade` both for a drug drugref knows and has not graded (the
+ordinary case — the overlay is small on purpose) and for a uuid naming **nothing in the registry**, exit 0
+either way; the pair form additionally asserted "drugref holds no curated grade for this pair in either
+direction" about a pair that may not exist. **Reachable with no typo at all**: `--with` is documented as "a
+second moiety_uuid" and a `class_uuid` parses identically.
+
+**The fix is a read of the IDENTITY SPINE, in a module of its own** — `registry_read.known_moieties`, one
+`= ANY(%s)` against `substance_moiety`. **Neither existing candidate was right, and the argument is the
+boundary itself**: `curated_read.py` opens by scoping itself to "the curated overlay", and that scope is the
+whole reason the view cannot answer this; `classes.py` declares itself "the ONLY module that writes the
+classification tables". `cli_interactions.py` stays SQL-free.
+
+- **Existence is checked BEFORE the self-pair branch**, and the ordering is pinned by a test. `interactions X
+  --with X` where X names nothing satisfies both conditions, and "the two moieties are the same drug" is a
+  confident claim about a drug that does not exist — the same shape as 122's guards.
+- **Exit 2, like the self-pair** ("nothing was asked, so nothing was answered"), so a script gets a signal
+  rather than a banner a human may scroll past — #82's objection applied here.
+- **No grade block is printed at all** beside the banner: an empty block would restate the ambiguity.
+- **The old test asserted the DEFECT as the contract** — `== 0` and `"no curated grade" in out` — so it was
+  replaced, not extended. It is the fourth test in this project found pinning the wrong thing.
+
+### Issue 122 — a guard may not assert a cause it has not confirmed
+
+Four blocks answered every `UndefinedTable` with one cause stated as fact ("this database predates db/0NN. Run
+`drugref migrate`"). 42P01 has more causes than a pending migration: a wrong `search_path`, a role without
+USAGE, a manual repair, or a **base table** of the view being gone.
+
+**⇒ AND THE WORST CASE IS SELF-REFERENTIAL.** "A restore that lost the vocabulary table" is one of the three
+faults `curated_unrankable_severity` exists to REPORT. Drop `severity_kind` and the view goes with it → the
+operator is told the database predates db/038 → **migrations are ledger-backed and db/038 is recorded applied,
+so `drugref migrate` is a NO-OP** → status prints the same sentence again. **A closed loop, authored by the
+detector whose purpose is diagnosing that exact fault.**
+
+**⇒ PROBING THE RELATION ALONE DOES NOT CLOSE IT, which is the finding worth carrying forward.** In the CASCADE
+case the view really *is* absent, so absence-alone still reads as "behind on migrations". **THE LEDGER IS THE
+ONLY DISCRIMINATOR.** Two booleans, four states, one wording (`migration_guard.guard_message`, **pure** — no
+connection, so all four are tested without constructing four broken schemas):
+
+| relation | migration in ledger | what the operator is told |
+|---|---|---|
+| absent | not applied | the original sentence: predates db/0NN, run `drugref migrate` |
+| **absent** | **applied** | **DROPPED, not pending — `drugref migrate` is a NO-OP and will print this again** |
+| present | not applied | the `UndefinedColumn` shape: right relation, older columns — run `drugref migrate` |
+| present | applied | **NOT a missing migration** — look at search_path, USAGE, a dropped base table |
+
+- **Every branch carries `exc.diag.message_primary`.** `raise ... from exc` *looks* like it preserves the
+  cause, and `cli.main` prints only `f"drugref: {exc}"` — `__cause__` is never rendered, so
+  `relation "drugref.severity_kind" does not exist`, the one string that resolves this in five seconds,
+  reached nobody.
+- **`db.missing_relations` ROLLS BACK FIRST, and that is the point of the function.** `connect` uses psycopg's
+  default `autocommit=False`, so the caught error has ABORTED the transaction; without the rollback the probe
+  raises `InFailedSqlTransaction` **from inside the guard** and replaces a wrong-but-readable sentence with an
+  unrelated traceback — strictly worse than the defect. Pinned by a test that aborts the transaction with the
+  real error first.
+- **`db.migration_applied` matches `NNN\_`, never a bare substring**, and the control has teeth: substring
+  matching errs in the harmful direction — it reports a migration applied when it is not, so the guard tells an
+  operator **not** to run the migration that would fix them.
+- **A FIFTH GUARD, on the clinician path.** `curated_read.effective_grades_for` had none, unlike all four
+  status readers: on a db/035–db/037 database the view exists without `effective_rank`, so `UndefinedColumn`
+  escaped as a raw traceback — exactly what `cli_interactions.register()`'s own comment says the `uuid.UUID`
+  typing exists to prevent, left out at the one command a clinician runs.
+- **Each guarded view name now has ONE home**, exported by the module owning its read (`curated_read.
+  EFFECTIVE_VIEW` / `UNRANKABLE_VIEW`, `curation.UNRESOLVED_VIEW` / `CLASS_GRAIN_VIEWS`,
+  `signatures.BACKDATED_VIEW`). A guard carrying its own copy would survive a rename and then probe a relation
+  that no longer exists, **reporting a healthy database's view permanently absent**. This is also what keeps
+  `test_the_command_reads_the_view_only_through_curated_read` passing unweakened — that test caught the second
+  spelling, and the right answer was to remove the copy, not to relax the test.
+
+### The ten mutations, all of which fail
+
+`db.missing_relations` without its rollback · `db.migration_applied` by bare substring · `guard_message`
+ignoring the ledger · the DROPPED branch prescribing the no-op anyway · the "predates" branch dropping the
+Postgres detail · `cli_interactions` skipping the existence check · the clinician guard dropping
+`UndefinedColumn` · `commit_lint` without the adjacency constraint · `commit_lint` scanning git's comment
+lines · `registry_read` reporting an absent moiety as known.
+
+### Traps and standing notes
+
+- **A CRUDE AUTOMATED RE-WRAP CORRUPTED PRE-EXISTING CODE, and `git checkout` was the fix.** Two scripted
+  passes at reflowing over-long comment lines merged `@dataclass` field declarations into one line and split an
+  f-string mid-literal — in `db.py` it damaged `referenced_vocabulary`, which this round never touched.
+  `ruff check` caught all of it as `invalid-syntax`. **Reflow prose by hand, or restore from git and re-apply**;
+  a regex that cannot tell a docstring paragraph from a field list will eventually meet a field list.
+- **`_Conn` (tests/test_curation_orphans.py) grew two probe answers rather than being replaced by a fixture,
+  and the reason is a real constraint**: the DROPPED state is *absent WHILE its migration is applied*, and
+  producing it against the session-scoped migrated database means **committing** a DROP — breaking every test
+  after it. Dropping a view inside the rolled-back `conn` fixture does not work either, because
+  `missing_relations`' own rollback undoes it. The pieces are each tested where they can be tested honestly:
+  the four messages purely, the two probes live, the wiring on a stub.
+- **`questions.py` is 568 lines and was never on issue 89's list** — measured at `HEAD`, so pre-existing.
+  `curation.py` moved 523 → 534 here (the two exported constants). Both recorded on
+  [#89](https://github.com/cairn-ehr/drugref/issues/89).
+
 ## The 5c.3 source evaluation (2026-08-13) — OnSIDES and DrugCentral, measured rather than assumed
 
 Both sources were licence-checked during 5c.2 and recorded as "worth evaluating". They have now been retrieved
@@ -2439,12 +2595,17 @@ unrankable-severity detector) · #117 (`COMMENT ON` re-issued with seven). Full 
 **#114 had to be REOPENED first** — it was auto-closed by `ed1ab5e`'s own "Filed rather than fixed: #114"
 sentence, the fifth occurrence of that pattern and the second with that exact template.
 
-**Filed by the db/038 round** — **[#118](https://github.com/cairn-ehr/drugref/issues/118) the
-sweep-closed-but-unfixed pattern needs a MECHANICAL guard** (a `commit-msg` hook): five occurrences, and the
-prose rule was written down in full — mechanism included — between occurrences four and five without stopping
-it. **#89 was re-measured, not re-filed**: `signing.py` **605**, `release_verification.py` **540**, and
-`curation.py` has now CROSSED the cap at **523** (issue 115's docstring), with the natural seam recorded on the
-issue.
+**Closed by the guard round (2026-08-15)** — **118** (the `commit-msg` hook, which found a **sixth**
+occurrence on its first run: #108 via `293758c`, uncounted for a round) · **120** (an unknown `moiety_uuid` now
+banners and exits 2, via `registry_read`) · **122** (all four guards confirm the cause before asserting it, a
+fifth guards the clinician path, and the LEDGER is what separates "not migrated yet" from "DROPPED"). Full
+account: § "The guard round". **The unclosed half is now [#124](https://github.com/cairn-ehr/drugref/issues/124)**: GitHub
+also parses PR DESCRIPTIONS, which no commit hook can see.
+
+**#89 was re-measured again, not re-filed**: `signing.py` **605**, **`questions.py` 568 — a FOURTH file, over
+the cap and never on the list, measured at `HEAD` so pre-existing** · `release_verification.py` **540** ·
+`curation.py` **534** (523 + the guard round's two exported view-name constants). The natural seam for
+`curation.py` is recorded on the issue.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -2535,14 +2696,23 @@ subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18.
 
 ```bash
 uv sync
-# 1451 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
-# then 1260 while it was at 1297, and then 1395 while it was at 1409, every time because
-# the round that added the tests updated its OWN section and not this line. THE THIRD
-# OCCURRENCE IS WHY THIS COMMENT IS NOT ENOUGH ON ITS OWN: a slice section may record a
-# suite delta, but it must ALSO land here -- verified green on 2026-08-14 at 1451
-# passed in 39 s (db/035, the class-grain detector round: 1409 + 42);
-# because it was updated by whoever remembered rather than by whoever changed it; if you
-# add tests, change it HERE). The DB-gated majority SKIP without this DSN, exercising
+
+# INSTALL THE COMMIT-MSG GUARD ONCE PER CLONE (issue 118). core.hooksPath is LOCAL git
+# config, not a committed file, so a fresh checkout has no hook until this runs -- and a
+# guard nobody installed is the "gate that exists and never fires" of issues 74/66/76.
+# It refuses a commit body where a GitHub closing keyword sits next to an issue
+# reference; `git commit --no-verify` is the escape for a deliberate close.
+git config core.hooksPath .githooks
+
+# 1598 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
+# was at 1564: FOUR occurrences, every one because the round that added the tests updated
+# its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
+# 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
+# three, so the comment demonstrably is NOT enough on its own: a slice section may record
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-15 at 1598
+# passed in 54 s (the guard round, issues 118/120/122: 1564 + 34). If you add tests,
+# change it HERE.) The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a
 # deselected failure is not a pass either.

@@ -44,7 +44,9 @@ evidence of absence, and the overlay is small and deliberately so.
 """
 import uuid
 
-from drugref import curated_read
+import psycopg
+
+from drugref import curated_read, migration_guard, registry_read
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -88,28 +90,91 @@ def _print_grades(grades, heading: str) -> None:
                 print(f"      {label}: {text}")
 
 
+def _grades_for(conn, subject: uuid.UUID):
+    """`effective_grades_for`, with the migration guard every status reader already had.
+
+    ISSUE 122'S "RELATED, SAME THEME", and the asymmetry is the point: all four status
+    readers were guarded and the CLINICIAN-FACING one was not. On a db/035-db/037
+    database the view exists but has no `effective_rank`, so `UndefinedColumn` escaped
+    as a raw traceback -- loud rather than silent, so not a safety defect, but it is
+    exactly what `register()` below says the `uuid.UUID` typing exists to prevent: "a
+    psycopg error that names a query the user never wrote".
+
+    BOTH EXCEPTIONS, for the standing rule db/035 wrote down the hard way: a migration
+    widening a view a guarded block reads must widen the guard in the same commit.
+    `UndefinedColumn` is a SIBLING of `UndefinedTable` under `ProgrammingError`, not a
+    subclass, so catching the latter alone misses every database that has the view in an
+    older shape -- which is every deployment between pulling this code and migrating.
+    """
+    try:
+        return curated_read.effective_grades_for(conn, subject)
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
+        migration_guard.raise_missing(
+            conn, exc, relations=(curated_read.EFFECTIVE_VIEW,),
+            migration="038",
+            consequence=("drugref cannot answer what a drug interacts with, and an "
+                         "unrankable severity would reach a client as a NULL rank"))
+
+
+def _report_unknown(unknown: list[uuid.UUID]) -> None:
+    """Say that nothing was looked up -- WITHOUT borrowing the vocabulary of an absence.
+
+    THE WORDING IS THE WHOLE FIX, so it is worth being precise about what it must not
+    say. "no curated grade" is a statement about the OVERLAY; every word here is a
+    statement about the REGISTRY, and mixing the two is the defect. The banner therefore
+    names the identifier, says explicitly that this is not a finding about a drug, and
+    points at the table that settles it.
+    """
+    print(f"** drugref holds no moiety with "
+          f"{'these uuids' if len(unknown) > 1 else 'this uuid'}: "
+          f"{', '.join(str(u) for u in unknown)}")
+    print("   THIS IS NOT A STATEMENT ABOUT A DRUG -- nothing was looked up. Check the "
+          "identifier against substance_moiety; a class_uuid, a uuid from another node "
+          "or one transposed digit all parse as valid here. **")
+
+
 def _handle_interactions(conn, args) -> int:
     """Print drugref's curated grades for one moiety, or between two.
 
     RETURNS 0 EVEN WHEN NOTHING IS FOUND, and that is not laziness about exit codes.
     Most moieties carry no curated grade -- the overlay is small on purpose -- so an
-    empty answer is the ORDINARY reading, not a failure; and this view's population is
-    GRADES, not drugs, so it cannot distinguish an ungraded moiety from one nobody has
-    heard of.
+    empty answer is the ORDINARY reading, not a failure.
 
-    THAT LAST SENTENCE IS A KNOWN DEFECT, NOT A DESIGN (#120). An earlier draft closed
-    it with "a caller needing that distinction asks `substance_moiety`", true of the
-    VIEW and no answer to the objection: a user who mistyped a uuid does not know
-    they need the distinction, which is exactly what makes it silent. Closing it needs a
-    registry-existence reader, and where that lives is a design call #120 carries rather
-    than one a correctness round should make in passing.
+    BUT ONLY FOR A DRUG DRUGREF ACTUALLY HOLDS (#120, closed here). The view's
+    population is GRADES, not drugs, so it cannot tell an ungraded moiety from one
+    nobody has heard of -- and an earlier draft of this file settled that with "a
+    caller needing the distinction asks `substance_moiety`", true of the VIEW and no
+    answer at all
+    to the objection: a user who has mistyped a uuid does not know they need the
+    distinction, which is exactly what made it silent. The distinction now comes from
+    `registry_read.known_moieties`, a read of the identity spine rather than of the
+    overlay, and the two states stop rendering alike.
 
-    THE SELF-PAIR IS ALREADY CLOSED, below, because it needed no such reader.
+    EXISTENCE IS ESTABLISHED FIRST, BEFORE THE SELF-PAIR BRANCH, and the order is load
+    bearing rather than incidental. `interactions X --with X` where X names nothing
+    satisfies both conditions, and answering "the two moieties are the same drug" would
+    be a confident claim about a drug that does not exist -- the same shape as #122's
+    guards asserting the cause they imagined instead of the one they confirmed.
+
+    EXIT 2, LIKE THE SELF-PAIR, for the reason the self-pair gives: nothing was asked,
+    so nothing was answered. A banner alone would leave the distinction human-only,
+    which is what #82 objects to elsewhere; a script piping this command gets a
+    machine-readable signal instead.
     """
+    # dict.fromkeys RATHER THAN set(): the report lists the offending identifiers, and a
+    # set would reorder them, so `X --with Y` could name Y first. It also collapses the
+    # duplicate in the self-pair case, so the same uuid is not reported twice.
+    asked = list(dict.fromkeys(
+        u for u in (args.moiety, args.against) if u is not None))
+    known = registry_read.known_moieties(conn, *asked)
+    if unknown := [u for u in asked if u not in known]:
+        _report_unknown(unknown)
+        return 2
+
     if args.against is None:
         # THE ONE-DRUG FORM: a single lookup, and the trailing sentence is what stops
         # its partial answer being read as a complete one.
-        _print_grades(curated_read.effective_grades_for(conn, args.moiety),
+        _print_grades(_grades_for(conn, args.moiety),
                       f"grades with {args.moiety} as subject")
         print("note: rules are DIRECTIONAL (db/006) -- this lists only rules drugref "
               "states with this moiety as the SUBJECT. Ask about a specific pair to "
@@ -134,7 +199,7 @@ def _handle_interactions(conn, args) -> int:
     # not a dump of everything either drug interacts with.
     found = 0
     for subject, partner in ((args.moiety, args.against), (args.against, args.moiety)):
-        grades = [g for g in curated_read.effective_grades_for(conn, subject)
+        grades = [g for g in _grades_for(conn, subject)
                   if g.partner_moiety == partner]
         found += len(grades)
         _print_grades(grades, f"{subject} -> {partner}")
