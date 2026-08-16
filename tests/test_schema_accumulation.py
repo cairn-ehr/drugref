@@ -31,7 +31,9 @@ from drugref import accumulation, ids
 # (db/025). test_the_source_trio_stays_in_lockstep below drives this from the LIVE
 # substance_class_source CHECK, so this map must cover every source that CHECK ever
 # admits -- a KeyError here means this map has fallen behind that constraint.
-_WRITER_BY_SOURCE = {"DRUGREF": "curation", "MED-RT": "medrt_run", "MeSH": "mesh_run"}
+_WRITER_BY_SOURCE = {"DRUGREF": "curation", "MED-RT": "medrt_run", "MeSH": "mesh_run",
+                     # Slice 5c.2g, db/039: FDA-CYP joins the trio.
+                     "FDA-CYP": "fda_cyp_run"}
 
 
 def _run(conn, source="DRUGREF"):
