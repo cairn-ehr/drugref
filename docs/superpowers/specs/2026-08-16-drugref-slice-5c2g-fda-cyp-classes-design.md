@@ -178,8 +178,13 @@ which is the shape `ingest_unresolved_onc_endpoint` (db/031) already established
    tuple including the withheld ones: `ingest_run`, `source` (CHECK `= 'FDA-CYP'`), `row_ordinal`,
    `raw_substance`, `resolved_moiety_uuid` (nullable), `column_heading`, `raw_cell`, `system`, `pathway`,
    `role`, `potency` (nullable — transporters have no band), `class_uuid` (nullable), `footnote_markers`
-   (nullable), `footnote_text` (nullable), `disposition`. `disposition` is a CHECK'd closed set:
-   `member` · `withheld_qualified` · `unresolved_substance` · `combination_regimen` · `non_drug_entity`.
+   (nullable), `footnote_text` (nullable), `registry_near_name` (nullable), `disposition`. `disposition` is
+   a CHECK'd closed set of **five** values: `member` · `withheld_qualified` · `unresolved_substance` ·
+   `combination_regimen` · `non_drug_entity`. **§7.1 governs that vocabulary and is the reason it is five
+   rather than nine** — only the last two name a category, because only those two are asserted by FDA rather
+   than inferred by drugref. `registry_near_name` is curator evidence and **never coverage**; its column
+   comment must say so, because a nullable text column sitting beside an unresolved row is exactly the shape
+   a future reader will be tempted to count.
 3. **`gap_fda_cyp_unadjudicated`** — grouped on `(source, raw_substance, column_heading, pathway)`, dropping
    only `ingest_run`, so one view row is one independently-answerable fact and its grain matches the
    `gap_key` a question is minted from. **db/017's lesson, restated because it has bitten twice:** a coarser
@@ -199,12 +204,59 @@ the DrugCentral evaluation recorded when it split its own 102 unmatched into two
 |---|---|---|---|
 | 9 | combination regimen | `atazanavir and ritonavir`; `paritaprevir and ritonavir and (ombitasvir and/or dasabuvir)` | FDA reports the role **for the regimen**; assigning it to a component is an inference FDA did not make |
 | 3 | non-drug entity | `grapefruit juice`, `St. John's wort`, `tobacco (smoking)` | not moieties at all |
-| 3 | enantiomer of a held racemate | `R-`/`S-venlafaxine`, `S-mephenytoin` | **`S-mephenytoin` is the classic CYP2C19 probe substrate**; mapping it to `mephenytoin` asserts a stereochemistry claim FDA did not make |
-| 3 | synonym | `rifampin`→`rifampicin`, `glyburide`→`glibenclamide`, `peginterferon alpha-2a`→`alfa-2a` | a synonym bridge is real work with its own evidence, not a string edit — and drugref's names are UNII-derived |
-| 1 | metabolite | `oseltamivir carboxylate` → drugref's `oseltamivir acid` | same |
+| 3 | enantiomer against a held racemate | `R-`/`S-venlafaxine`, `S-mephenytoin` | **`S-mephenytoin` is the classic CYP2C19 probe substrate**; treating it as `mephenytoin` asserts a stereochemistry claim FDA did not make — and §7.2 records why this one needs literature, not a rule |
+| 3 | apparent synonym | `rifampin`/`rifampicin`, `glyburide`/`glibenclamide`, `peginterferon alpha-2a`/`alfa-2a` | a synonym bridge is real work with its own evidence, not a string edit — and drugref's names are UNII-derived |
+| 1 | apparent metabolite | `oseltamivir carboxylate` beside drugref's `oseltamivir acid` | same |
 | 1 | group term | `oral contraceptives` | names a population, not a substance |
 
-**Every one is recorded as data with its category and raises a question. None is guessed.**
+### 7.1 The standing rule, and why ingest does not store the category above
+
+**Ingest what is unambiguous; set aside for clinician review what is not. Err on the side of caution.**
+
+That rule governs this slice and every source round after it. Applying it honestly costs the table above its
+place in the database, which is the part worth writing down:
+
+**The six categories are this design's reasoning, NOT a vocabulary ingest may assert.** Labelling
+`R-venlafaxine` as *"enantiomer of a held racemate"* is a chemical relationship drugref inferred **from a
+string prefix** — precisely the manufactured-cause defect [#122](https://github.com/cairn-ehr/drugref/issues/122)
+was filed for, where a detector reported a cause it had not confirmed. `rifampin`/`rifampicin` looks certain
+and `glycerol`/`glycerol 1,3-dimethacrylate` looked certain too, in the DrugCentral evaluation, and was two
+different substances.
+
+So the stored `disposition` records only what was **observed**, never what it was inferred to mean:
+
+- **`combination_regimen`** and **`non_drug_entity`** are **FDA's own assertions**, not drugref's readings —
+  the first from the regimen string FDA wrote, the second from FDA's pinned five-substance sentence. Both
+  are safe to store as categories because the source states them.
+- **Everything else is one disposition, `unresolved_substance`**, whatever this design suspects the reason
+  to be. Six shades of "drugref did not resolve this" collapse to the one fact drugref actually established.
+
+**Near-name candidates are carried as EVIDENCE, never as a resolution**: a nullable
+`registry_near_name` column holding what a stated, mechanical prefix rule found, with the rule named beside
+it. It exists so a curator does not re-derive the search, and it is **explicitly not coverage** — a row with
+a near name is exactly as unresolved as one without, and **no count may ever be quoted against it**. The
+DrugCentral evaluation's own warning applies unchanged: *"treat it as the shape of the problem, not a count
+to quote."*
+
+### 7.2 Enantiomers are deferred to literature research, not to a later rule
+
+The three enantiomer names are the clearest case for the standing rule, and the one this design explicitly
+refuses to settle. `S-mephenytoin` is the reference CYP2C19 probe substrate; `R-` and `S-venlafaxine` are
+metabolised along measurably different routes. Whether a stereoisomer-specific FDA assertion may ever be
+carried by the racemate drugref holds — and in which direction, for which pathway, and with what caveat — is
+a **pharmacological question with a literature behind it**, not a naming convention.
+
+It is therefore filed as [#128](https://github.com/cairn-ehr/drugref/issues/128) for research rather than
+answered here, and **nothing in this slice or any later one may bridge an enantiomer to a racemate until that
+research is done and recorded.** The three rows sit in `unresolved_substance` with their question, which is
+the correct resting place for a fact drugref cannot yet assert either way.
+
+**The question is not FDA-CYP's.** Any source naming stereoisomers meets it, and DrugCentral
+([#101](https://github.com/cairn-ehr/drugref/issues/101)) is likely to — which is why #128 is scoped to the
+general rule and not to this table's three rows.
+
+**Every residue row is recorded as data and raises a question. None is guessed, and none carries a cause
+drugref has not confirmed.**
 
 **A trap worth stating because it inverts the obvious assumption: `curcumin` and `diosmin` — two of FDA's
 five declared non-drugs — resolve as ordinary moieties.** Non-drug and unresolvable are independent
@@ -277,7 +329,11 @@ Named tests the design owes, each pinning a decision rather than an implementati
 - an unknown pathway token **raises**, and the transaction leaves no partial run;
 - a column/cell role disagreement **raises**;
 - `OATP1B` mints its own class and **does not** expand to `OATP1B1` + `OATP1B3`;
-- `S-mephenytoin` resolves to nothing and is recorded as `unresolved_substance` — **not** to `mephenytoin`;
+- `S-mephenytoin` resolves to nothing and is recorded as `unresolved_substance` — **not** to `mephenytoin`,
+  and **not** under any disposition naming it an enantiomer (§7.1: the disposition records what was observed,
+  never what this design suspects it means);
+- a row carrying a `registry_near_name` is counted as **unresolved**, identically to one without — the test
+  exists because the column's whole risk is being read as coverage;
 - `curcumin` resolves as a moiety **and** is still `non_drug_entity` (the independence in §7);
 - a second run at the same checksum is idempotent and rebuilds rather than duplicates.
 

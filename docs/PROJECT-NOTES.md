@@ -18,6 +18,23 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **INGEST WHAT IS UNAMBIGUOUS; SET ASIDE FOR CLINICIAN REVIEW WHAT IS NOT. ERR ON THE SIDE OF CAUTION.**
+  Stated by the project owner during the 5c.2g design round (2026-08-16) as the rule governing **every source
+  round**, and written here rather than in that slice's spec because it is not that slice's rule. Two
+  corollaries it already forced, both of which look like extra work and are not:
+  - **A disposition records what was OBSERVED, never what the round suspects it MEANS.** 5c.2g's
+    resolution residue splits into six recognisable categories — enantiomer, synonym, metabolite, group
+    term, combination, non-drug — and only the last two are stored, because only those two are asserted by
+    the SOURCE. Labelling `R-venlafaxine` an "enantiomer of a held racemate" is a chemical relationship
+    inferred **from a string prefix**, which is #122's manufactured-cause defect wearing a different hat.
+    The other four collapse to one honest `unresolved_substance`.
+  - **A near-name candidate is EVIDENCE, never coverage, and no count may be quoted against it.** The
+    DrugCentral evaluation already paid for this one: its prefix heuristic "matched" `glycerol` to
+    `glycerol 1,3-dimethacrylate`, a different substance, and its own note says *"treat it as the shape of
+    the problem, not a count to quote."*
+  The first thing this rule refused is filed as [#128](https://github.com/cairn-ehr/drugref/issues/128)
+  (stereoisomer assertions against a held racemate — pharmacology with a literature behind it, not a naming
+  convention), and it is scoped to every source, not to the three rows that raised it.
 - **THE VIEW'S GRAIN MUST BE THE `gap_key`'S GRAIN** (#41) — a gap view that groups more coarsely than its key
   folds two gaps onto one immortal `question_uuid`. Pinned per kind, Plan C's two compound-key views included.
 - **One reader, one clear, one checksum — and one supersession** (#40, #43, #59): `mesh.iter_records`,
