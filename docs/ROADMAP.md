@@ -776,6 +776,17 @@ before that round starts** — full account and every number: PROJECT-NOTES § "
   them disagreed on token order; re-read them off the dump before using either — PROJECT-NOTES § "The 5c.3
   source evaluation".**
 
+**2026-08-16 source follow-up:** the
+[FDA interaction and toxicity source spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-spike.md)
+found the potency source this design was missing. FDA's public-domain CYP/transporter
+table defines strong/moderate/weak roles and should land as `FDA-CYP` PK classes
+**before** SPL mining; it is classification membership, never a licence to manufacture
+DDI pairs. The same spike clears DICTrank, DIRIL's narrow FDA-authored projection and
+DILIrank for a later **non-firing toxicity evidence projection**, and rejects
+DrugCentral `omop_relationship` for bundling because its live rows cannot distinguish
+pre-2012 OMOP content from later label curation. This does not change the immediate
+order: DrugCentral's clean `ddi_ref_id = 2` subset remains the next cheap content slice.
+
 ##### 5c.4 — signing ✅ DONE
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md); published record:
 [signing the curated overlay](https://docs.drugref.org/decisions/signing-the-curated-overlay/). **`db/030`**: six
