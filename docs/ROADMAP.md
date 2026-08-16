@@ -694,6 +694,50 @@ round". `db/038` was still unmerged, so the SQL fixes went into the file and `dr
   and `__cause__` is dropped), [#123](https://github.com/cairn-ehr/drugref/issues/123) (detector sweeps 2 of 5
   FK tables; line now labelled `(DDI grain)`).
 
+##### 5c.2f — the guard round ✅ DONE — issues 118, 120, 122, 2026-08-15
+
+**No migration at all**, the first such round since 5c.1: `db/038` merged with PR
+[#119](https://github.com/cairn-ehr/drugref/pull/119) and is FROZEN, and all three defects were fixable in
+Python. **Suite 1564 → 1644 across the round and its own review**, `ruff` clean, **thirteen mutations run
+against the fixed branches and all thirteen fail**. Three new modules (`commit_lint.py`, `registry_read.py`,
+`migration_guard.py`) and one shipped git hook. Full account: PROJECT-NOTES § "The guard round" and § "The
+guard round's own review".
+
+- **⇒ THE HEADLINE — THE COMMIT GUARD FOUND A SIXTH ISSUE ON ITS FIRST RUN.** Issue 118 was filed against five
+  commits that closed an issue nobody meant to close; running the finished check over the whole history
+  flagged 14 and turned up **#108**, closed by `293758c`'s *"Filed rather than fixed: #108 …"* one round
+  BEFORE #114, with #109–#112 in the same sentence left open. **Every document in this repo said five.** The
+  failure is silent by construction, so every hand count undercounted — and the count was the evidence the
+  prose rule was failing. **The split was ALSO miscounted**: 10 accidental and 4 deliberate, not 6/8, because
+  four commits re-closed a known issue by QUOTING the offending sentence while documenting the rule. Six
+  ISSUES, ten COMMITS.
+- **⇒ AND THE ROUND'S OWN REVIEW FOUND TWO OF THE THREE GUARDS BROKEN.** The hook's `python3` fallback aborted
+  **every** commit (a PEP 604 annotation evaluated at import time, under the 3.9 the OS ships), and the hook
+  was blind to `git commit -m`, where git keeps `#` lines rather than stripping them. A third finding is the
+  sharper one: `test_a_database_predating_db038_is_told_to_migrate` **asserted the inverse of its own name**,
+  green, because the guard's own rollback restored the view the test had dropped and `match="drugref migrate"`
+  is a substring of all four messages. Details: PROJECT-NOTES § "The guard round's own review".
+- **THE HOOK SHIPS AS `.githooks/commit-msg` + a pure `drugref.commit_lint`**, installed with
+  `git config core.hooksPath .githooks`, escape `--no-verify`. The proposed `Closes-intentionally:` trailer is
+  **deliberately not shipped**: that spelling would not close anything on GitHub, so it would have been a
+  second vocabulary whose name states the opposite of its effect. **Its unclosed half is now
+  [#124](https://github.com/cairn-ehr/drugref/issues/124): GitHub also parses PR DESCRIPTIONS, which no commit
+  hook can see, and that surface has never been measured.**
+- **#120 — AN ABSENCE ABOUT THE OVERLAY WAS PRINTED AS AN ANSWER ABOUT A DRUG.** A uuid naming nothing rendered
+  identically to an ungraded drug, exit 0, and the pair form asserted "no curated grade for this pair in either
+  direction" about a pair that might not exist. Now a read of the IDENTITY SPINE (`registry_read`, a module of
+  its own — `curated_read` is scoped to the overlay and that scope is the whole reason the view cannot answer),
+  a banner naming each unknown uuid, **no grade block at all**, and **exit 2**. Existence is checked BEFORE the
+  self-pair branch, pinned by a test. **The old test asserted the DEFECT as the contract** and was replaced.
+- **#122 — A GUARD MAY NOT ASSERT A CAUSE IT HAS NOT CONFIRMED, AND PROBING THE RELATION IS NOT ENOUGH.** The
+  worst case is self-referential: dropping `severity_kind` takes `curated_unrankable_severity` with it, so the
+  detector written to REPORT that fault told the operator to run a migration the ledger says already ran — a
+  no-op, forever. **The LEDGER is the only discriminator**: absent + applied means DROPPED. Four states, one
+  pure wording function, `exc.diag.message_primary` carried in every branch (`cli.main` renders only the outer
+  message, so `__cause__` reached nobody). `db.missing_relations` **rolls back first** or the probe raises
+  `InFailedSqlTransaction` from inside the guard. **A FIFTH guard now covers the clinician path**, which alone
+  had none.
+
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
 brainstorm/design round.** Two candidate sources were licence-checked during 5c.2 and **measured on 2026-08-13,

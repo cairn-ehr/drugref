@@ -56,11 +56,9 @@ import pathlib
 import sys
 from collections.abc import Sequence
 
-import psycopg
-
 import drugref
 from drugref import (cli_curate, cli_interactions, cli_policy, cli_signing, cli_status,
-                     curation, db, interactions, signatures)
+                     curation, db, interactions, migration_guard, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -266,14 +264,17 @@ def _handle_status(conn, args) -> int:
     # ProgrammingError, not a subclass -- so the guard missed it and every deployment
     # yet to run `drugref migrate` got the traceback this guard exists to replace. THE
     # STANDING RULE: a migration widening a view a guarded block reads must widen the
-    # guard in the same commit.
-    try:
+    # guard in the same commit -- which is now `migration_guard.WRONG_SHAPE`, one tuple
+    # for all five sites, because the rule was prose and two sites had already lost it.
+    #
+    # ISSUE 122: THE CAUSE IS CONFIRMED BEFORE IT IS ASSERTED. This block used to state
+    # "predates db/035" as fact for every 42P01, including the case where db/035 IS
+    # applied and something dropped the view afterwards -- where `drugref migrate` is a
+    # no-op and status prints the same sentence forever.
+    with migration_guard.guarded(
+            conn, relations=(curation.UNRESOLVED_VIEW,), migration="035",
+            consequence="orphaned curator judgement cannot be reported"):
         orphans = curation.unresolved_targets(conn)
-    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn) as exc:
-        raise RuntimeError(
-            "drugref.curated_target_unresolved is missing or predates db/035, so "
-            "orphaned curator judgement cannot be reported. Run `drugref migrate` "
-            "and re-run status.") from exc
     if orphans:
         print(f"\nunresolved curated targets: {len(orphans)}"
               "  ** a rebuild left curator judgement pointing at nothing **")
@@ -305,16 +306,25 @@ def _handle_status(conn, args) -> int:
     # curator submitting a week late lands here legitimately. The wording says what to
     # check rather than asserting an attack.
     #
-    # SAME UndefinedTable GUARD, SAME NARROW SCOPE as the block above: a database
-    # predating db/030 has no view to read, and that must be one sentence rather than a
-    # traceback arriving after three blocks of real answers.
-    try:
+    # SAME GUARD, SAME NARROW SCOPE as the block above: a database predating db/030 has
+    # no view to read, and that must be one sentence rather than a traceback arriving
+    # after three blocks of real answers.
+    #
+    # ⇒ AND IT NOW CATCHES `UndefinedColumn` TOO, which it did not. This site and the
+    # unrankable-severity site in `cli_status` were the two that caught `UndefinedTable`
+    # alone, which made `guard_message`'s "the relations exist but the migration is not
+    # applied" branch unreachable from both -- so the next migration widening
+    # `signature_backdated`'s seven-column SELECT would have dropped a raw psycopg
+    # traceback on the operator, the exact failure the sibling block above was fixed for
+    # in db/035. `WRONG_SHAPE` is why that can no longer differ between two sites.
+    #
+    # ISSUE 122, same shape as the block above: the ledger is what separates "not
+    # migrated yet" from "dropped after migrating", and only one of the two has
+    # `drugref migrate` as its fix.
+    with migration_guard.guarded(
+            conn, relations=(signatures.BACKDATED_VIEW,), migration="030",
+            consequence="backdated signatures cannot be reported"):
         backdated = signatures.backdated(conn)
-    except psycopg.errors.UndefinedTable as exc:
-        raise RuntimeError(
-            "drugref.signature_backdated is missing: this database predates db/030, so "
-            "backdated signatures cannot be reported. Run `drugref migrate` and re-run "
-            "status.") from exc
     if backdated:
         print(f"\nbackdated signatures: {len(backdated)}"
               "  ** signed_at long precedes recording -- confirm each was a late "

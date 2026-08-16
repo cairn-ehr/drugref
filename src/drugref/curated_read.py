@@ -136,9 +136,16 @@ _COLUMNS = ("partner_moiety", "relationship", "severity", "severity_rank",
 # spelling of one rule: db/037 wrote the ordering here and in the view separately, and
 # issue 116 is what happened when the two drifted, the sort getting fixed while the
 # payload a client thresholds on did not.
+# THE VIEW NAME, EXPORTED, so `cli_interactions`'s migration guard can probe the same
+# relation this SELECT reads WITHOUT spelling it a second time (issue 122). A guard
+# naming its own copy of a view name is a second home for that name, and the round that
+# renames the view fixes the SQL and leaves the guard probing a relation that no longer
+# exists -- reporting it absent, forever, on a perfectly healthy database.
+EFFECTIVE_VIEW = "drugref.curated_ddi_pair_effective"
+
 _EFFECTIVE_FOR_SUBJECT = f"""
 SELECT {', '.join(_COLUMNS)}
-FROM   drugref.curated_ddi_pair_effective
+FROM   {EFFECTIVE_VIEW}
 WHERE  subject_moiety = %s
 ORDER  BY effective_rank, partner_moiety, relationship
 """
@@ -210,9 +217,12 @@ _UNRANKABLE_COLUMNS = ("target_table", "target_id", "severity", "reviewed_by",
 # ORDERED so a test cannot flake and two status runs can be diffed. `target_table` first
 # groups the two grains; `target_id` inside it is the insertion order an operator
 # working through them would naturally follow.
+# EXPORTED for `cli_status`'s migration guard, for the reason `EFFECTIVE_VIEW` states.
+UNRANKABLE_VIEW = "drugref.curated_unrankable_severity"
+
 _UNRANKABLE = f"""
 SELECT {', '.join(_UNRANKABLE_COLUMNS)}
-FROM   drugref.curated_unrankable_severity
+FROM   {UNRANKABLE_VIEW}
 ORDER  BY target_table, target_id
 """
 

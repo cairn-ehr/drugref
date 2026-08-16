@@ -17,12 +17,18 @@ interact must do both lookups and be seen to do them. Both forms are driven here
 """
 import uuid
 
+import psycopg
 import pytest
 
 from drugref import cli, cli_interactions, curation
 from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
                                                 _file_member)
 from tests.test_curated_overlay import _a_class
+
+# A WELL-FORMED UUIDv5 THAT NAMES NOTHING (issue 120) -- what a transposed digit
+# produces, and what `--with` accepts when handed a class_uuid. Literal rather than
+# random so a failure names the same value every run.
+_NOT_IN_THE_REGISTRY = uuid.UUID("00000000-0000-5000-8000-000000000000")
 
 
 def _a_graded_pair(conn, ingest_run_id, *, subject_code, object_code, severity,
@@ -129,13 +135,178 @@ def test_a_moiety_with_no_grades_is_an_ordinary_answer(conn, ingest_run_id, caps
         "claim drugref has not made -- this form searched ONE direction")
 
 
-def test_an_unknown_uuid_is_not_an_error(conn, capsys):
-    """SAME ANSWER AS AN UNGRADED DRUG, and the command says so rather than inventing a
-    distinction the view cannot support: this view's population is GRADES, not drugs, so
-    it genuinely cannot tell the two apart. A caller needing that asks
-    `substance_moiety`."""
-    assert cli_interactions._handle_interactions(conn, _args(uuid.UUID(int=0))) == 0
-    assert "no curated grade" in capsys.readouterr().out
+def test_an_unknown_uuid_says_nothing_was_looked_up(conn, capsys):
+    """ISSUE 120, AND THIS TEST ASSERTED THE OPPOSITE UNTIL IT WAS FIXED.
+
+    It read `== 0` and `"no curated grade" in out`, pinning the defect as the contract:
+    a uuid naming NOTHING rendered identically to a drug drugref knows and has not
+    graded. The old docstring's defence was that "this view's population is GRADES, not
+    drugs, so it genuinely cannot tell the two apart" -- true of the view, and the reason
+    the answer now comes from `registry_read` instead of from the view.
+
+    THE HARM IS UNDER-WARNING. The reader's takeaway was "drugref holds nothing on this
+    drug"; the truth was "drugref was never asked about a drug". `no curated grade` must
+    NOT appear -- printing an empty block beside the banner would restate the very
+    ambiguity the banner exists to remove.
+    """
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out, "the offending uuid must be named"
+    assert "no curated grade" not in out, (
+        "an empty grade block beside the banner restates the ambiguity: nothing was "
+        "looked up, so there is no absence to report")
+
+
+class _RaisingConn:
+    """A connection whose grade read fails the way an under-migrated database fails.
+
+    The registry probe must still answer, because the guard being tested runs AFTER the
+    existence check -- so `to_regclass` reports the moiety present and the ledger reports
+    db/038 applied, which is the DROPPED state.
+    """
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def rollback(self):
+        """`db.missing_relations` rolls back before probing; see its docstring."""
+
+    def execute(self, sql, params=None):
+        self._last = sql
+        if "curated_ddi_pair_effective" in sql:
+            raise self._exc
+        return self
+
+    def fetchall(self):
+        return [(_KNOWN_TO_THE_STUB,)] if "substance_moiety" in self._last else []
+
+    def fetchone(self):
+        return ("an_oid",) if "to_regclass" in self._last else (True,)
+
+
+_KNOWN_TO_THE_STUB = uuid.UUID("11111111-1111-5111-8111-111111111111")
+
+
+@pytest.mark.parametrize("exc", [
+    psycopg.errors.UndefinedTable('relation "..." does not exist'),
+    # THE ONE THAT ACTUALLY REACHES A CLINICIAN: on a db/035-db/037 database the view
+    # EXISTS and has no `effective_rank`, and `UndefinedColumn` is a SIBLING of
+    # `UndefinedTable` under `ProgrammingError`, not a subclass. A guard catching only
+    # the latter misses every deployment between pulling this code and migrating.
+    psycopg.errors.UndefinedColumn('column "effective_rank" does not exist'),
+])
+def test_the_clinician_path_names_the_migration_instead_of_tracebacking(exc):
+    """ISSUE 122'S "RELATED, SAME THEME": four status readers guarded, this one not.
+
+    `cli.main` catches RuntimeError, ChainError and NoLiveDecisionError -- not psycopg's
+    errors -- so before this guard a stale database answered a clinical question with a
+    raw traceback naming a query the user never wrote. That is exactly what
+    `register()`'s `uuid.UUID` typing exists to prevent, left out at the one command a
+    clinician runs.
+    """
+    with pytest.raises(RuntimeError) as raised:
+        cli_interactions._handle_interactions(
+            _RaisingConn(exc), _args(_KNOWN_TO_THE_STUB))
+    assert "038" in str(raised.value)
+
+
+def test_the_pair_form_names_which_of_the_two_is_unknown(conn, ingest_run_id, capsys):
+    """ONE KNOWN, ONE NOT -- and the report must distinguish them.
+
+    Reachable with no typo at all: `--with` is documented as "a second moiety_uuid" and
+    a `class_uuid` parses identically, both being UUIDv5 identities this project mints.
+    Telling an operator only that "one of these is unknown" sends them to re-check both,
+    which is the same work the command just did.
+    """
+    known = _a_moiety(conn, ingest_run_id, "TESTUNIIQ1", "a registered drug")
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(known, _NOT_IN_THE_REGISTRY)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out
+    assert "in either direction" not in out, (
+        "the pair form's absence sentence is an affirmative claim about a pair, and "
+        "this pair has an endpoint that does not exist")
+
+
+def test_an_unknown_uuid_is_diagnosed_before_the_self_pair_check(conn, capsys):
+    """THE SAME UNKNOWN UUID TWICE: both faults are true, and only one is the real one.
+
+    The self-pair branch would answer "the two moieties are the same drug ... check the
+    second uuid", which is a confident statement about a DRUG for a uuid that names no
+    drug at all. That is the same defect shape as #122 -- a guard asserting the cause it
+    imagined rather than the one it confirmed -- so registry existence is established
+    first and the ordering is pinned here rather than left to whichever branch happens
+    to be written first.
+    """
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY, _NOT_IN_THE_REGISTRY)) == 2
+    assert "same drug" not in capsys.readouterr().out.lower()
+
+
+def test_both_unknown_uuids_are_named_in_the_order_they_were_given(conn, capsys):
+    """THE PLURAL BRANCH, which no test reached: `len(unknown) > 1` never ran.
+
+    Two DIFFERENT unknown uuids is the only shape that gets there -- the self-pair case
+    above collapses to one. A report naming only the first sends the operator to fix one
+    identifier, re-run, and be rejected again for the second; under-warning, which is
+    the direction #120 exists to close.
+
+    AND IT PINS THE ORDER, which is the whole reason `_handle_interactions` dedupes with
+    `dict.fromkeys` rather than `set()`. Order is only observable with two or more
+    unknowns, so that justification had nothing holding it either: a `set` would be free
+    to name the `--with` partner first, and an operator reading the pair back in the
+    wrong order checks the wrong identifier.
+    """
+    other = uuid.UUID("00000000-0000-5000-8000-000000000001")
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY, other)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out and str(other) in out
+    assert out.index(str(_NOT_IN_THE_REGISTRY)) < out.index(str(other)), (
+        "the subject was asked about first and must be named first")
+    assert "these uuids" in out, "two unknowns is a plural sentence"
+
+
+def test_an_unknown_subject_with_a_known_partner_is_reported(conn, ingest_run_id,
+                                                             capsys):
+    """THE REVERSE OF THE PAIR TEST ABOVE, and it proves the check is not one-sided.
+
+    Every existing #120 test puts the unknown identifier in the same position or in
+    both. A check accidentally scoped to `args.against` -- or to `args.moiety` -- passes
+    all of them and fails exactly one of the two real orders.
+    """
+    known = _a_moiety(conn, ingest_run_id, "TESTUNIIQ2", "a registered drug")
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY, known)) == 2
+    out = capsys.readouterr().out
+    assert str(_NOT_IN_THE_REGISTRY) in out
+    assert str(known) not in out, "the known endpoint is not the operator's problem"
+
+
+def test_an_empty_registry_is_not_blamed_on_the_operators_typing(conn, capsys):
+    """⇒ #120'S OWN BANNER REPEATING #122'S DEFECT, in the round that fixed both.
+
+    The banner offers three causes -- a class_uuid, a uuid from another node, a
+    transposed digit -- and all three point at what the operator typed. On a
+    migrated-but-never-ingested database EVERY uuid lands here and NONE of the three
+    applies: drugref holds no moieties at all, so nothing about the identifier is in
+    question. A guard asserting the cause it imagined rather than the one it could
+    confirm is the whole of issue 122, and this message was doing it.
+
+    THE `conn` FIXTURE IS THE EMPTY CASE, which is why this test needs no setup: the
+    session schema is migrated and this test ingests nothing.
+    """
+    assert cli_interactions._handle_interactions(
+        conn, _args(_NOT_IN_THE_REGISTRY)) == 2
+    out = capsys.readouterr().out
+    assert "REGISTRY IS EMPTY" in out
+    assert "transposed digit" not in out, (
+        "on an empty registry the operator's typing is not the cause, and offering it "
+        "as one sends them to re-check an identifier that was never the problem")
 
 
 # ============================================================================

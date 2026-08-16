@@ -420,6 +420,12 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
     return verdicts
 
 
+# EXPORTED for `cli.py`'s migration guard (issue 122), for the reason
+# `curation.UNRESOLVED_VIEW` states: one home per relation name, so a guard cannot end
+# up probing a view the read no longer uses.
+BACKDATED_VIEW = "drugref.signature_backdated"
+
+
 @dataclass(frozen=True)
 class BackdatedSignature:
     """One row of `signature_backdated` -- a signature claiming a `signed_at` more
@@ -460,5 +466,5 @@ def backdated(conn: psycopg.Connection) -> list[BackdatedSignature]:
     """
     return [BackdatedSignature(*row) for row in conn.execute(
         "SELECT signature_id, target_kind, target_id, key_fingerprint, signed_at, "
-        "recorded_at, lag FROM drugref.signature_backdated "
+        f"recorded_at, lag FROM {BACKDATED_VIEW} "
         "ORDER BY signed_at, signature_id").fetchall()]

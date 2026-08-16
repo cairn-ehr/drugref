@@ -793,16 +793,28 @@ def test_a_database_predating_db037_trips_the_guard_rather_than_printing_old_num
     release cannot otherwise exercise -- without rebuilding db/035's whole view body.
     Nothing else reads the renamed column, so no dependent view breaks.
 
-    THE MESSAGE IS ASSERTED, not just the type: an operator who is told to run `drugref
-    migrate` can act, and a bare `UndefinedColumn` traceback after two blocks of real
-    answers is what the sibling guard in test_curation_orphans.py was written to stop.
+    THE MESSAGE IS ASSERTED, not just the type: a bare `UndefinedColumn` traceback after
+    two blocks of real answers is what the sibling guard in test_curation_orphans.py was
+    written to stop.
+
+    ⇒ AND THE ASSERTION HAD TO BE MADE BRANCH-SPECIFIC, because `match="drugref migrate"`
+    matched all four of `guard_message`'s messages and so discriminated nothing. Worse,
+    the branch this state actually reaches is not the one the old docstring named:
+    `db.missing_relations` rolls back before probing, which UNDOES the `ALTER VIEW`
+    above, so the guard sees three present views and db/037 applied and correctly
+    answers "this is NOT a missing migration". Asserting that is what makes this test
+    an observation rather than a hope; the "predates db/037" wording is reached purely
+    in tests/test_migration_guard.py, where no fixture can restore the fault mid-test.
     """
     from drugref import cli_status
 
     conn.execute("ALTER VIEW drugref.class_pair_rule_reach "
                  "RENAME COLUMN shared_effective_member_count TO before_db037")
-    with pytest.raises(RuntimeError, match="drugref migrate"):
+    with pytest.raises(RuntimeError, match="NOT a missing migration") as raised:
         cli_status.print_class_grain_block(conn)
+    assert "before_db037" in str(raised.value) or "shared_effective_member_count" in str(
+        raised.value), (
+        "Postgres named the column; that is the one string that resolves this quickly")
 
 
 def test_an_unknown_uuid_is_not_a_class_grain_row(conn):

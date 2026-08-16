@@ -1095,17 +1095,36 @@ def test_status_says_none_when_the_vocabulary_is_intact(conn, capsys):
     assert "unrankable severities (DDI grain): none" in capsys.readouterr().out
 
 
-def test_a_database_predating_db038_is_told_to_migrate(conn):
+def test_an_unreadable_unrankable_view_becomes_a_sentence_not_a_traceback(conn):
     """THE GUARD, and the standing rule that produced it: a block reading a view a
     migration added must say so in one sentence rather than raise psycopg's
     `UndefinedTable` after four blocks of real answers, which reads as a partial
     success and names neither the cause nor the fix.
 
-    THE MESSAGE IS ASSERTED, not just the type -- an operator told to run `drugref
-    migrate` can act on it.
+    ⇒ THIS TEST WAS NAMED `..._predating_db038_is_told_to_migrate` AND ASSERTED THE
+    OPPOSITE OF WHAT IT SAID, green throughout. `db.missing_relations` rolls back before
+    probing -- it must, since the failed statement aborted the transaction -- and the
+    `conn` fixture is rollback-isolated, so THE ROLLBACK PUTS THE DROPPED VIEW BACK. The
+    guard then probes a database where the view exists and db/038 is applied, and
+    answers "this is NOT a missing migration -- `drugref migrate` would do nothing".
+    The old assertion was `match="drugref migrate"`, a substring of all four messages,
+    so it passed while the operator was being told the reverse of the docstring's claim.
+
+    THAT IS NOT A PRODUCTION BUG: nothing restores a dropped view in the field, so the
+    ABSENT branch is reached there. It is a limit of an uncommitted fixture, and the
+    honest fix is to assert the branch this state really reaches and to test the other
+    three where they can be reached -- purely, in tests/test_migration_guard.py, and on
+    the stub in tests/test_curation_orphans.py.
+
+    WHAT IT STILL PINS, and it is the reason to keep it: the guard is WIRED to this
+    block against a real database, it catches what psycopg really raises, and the
+    probe survives an aborted transaction. Those are exactly the things a pure test
+    cannot show.
     """
     from drugref import cli_status
 
     conn.execute("DROP VIEW drugref.curated_unrankable_severity")
-    with pytest.raises(RuntimeError, match="drugref migrate"):
+    with pytest.raises(RuntimeError, match="NOT a missing migration") as raised:
         cli_status.print_unrankable_severity_block(conn)
+    assert "DISCARDS" in str(raised.value), (
+        "the caller's consequence must reach the operator with its emphasis intact")
