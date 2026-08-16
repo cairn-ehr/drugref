@@ -738,10 +738,42 @@ guard round's own review".
   `InFailedSqlTransaction` from inside the guard. **A FIFTH guard now covers the clinician path**, which alone
   had none.
 
+##### 5c.2g — FDA-CYP potency classes ⏳ IN PROGRESS (2026-08-16)
+**A prerequisite for 5c.3, taken before it**, on the FDA spike's own instruction: *"Land `FDA-CYP` before SPL
+mining; SPL already proved it needs potency-specific classes, and mining first would either drop the band or
+build a temporary vocabulary."* The spike's preferred order puts DrugCentral's DDI slice first, but that is a
+sequencing preference between two independent slices, **not a dependency** — FDA-CYP blocks 5c.3 and
+DrugCentral does not block FDA-CYP. Source decision, rule-6 determination, reproduction manifest and the shape
+below: [FDA interaction and toxicity source
+spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-spike.md) § 3; the round's own
+spec and measurements land beside it.
+
+- **What it adds is CLASSIFICATION MEMBERSHIP, not interaction advice.** `substance_class.source = 'FDA-CYP'`,
+  `concept_type = 'PK'`, deterministic `source_code` (`cyp:1a2:inhibitor:strong`, `transporter:pgp:substrate`),
+  `class_membership.relationship = 'has_PK'`, **no inferred parent edges in the first release**.
+- **It explicitly does NOT create DDI pairs by joining inhibitors to substrates.** FDA describes the table as
+  an optional, non-exhaustive interpretive guide. A pair still needs an SPL assertion or a curated clinical
+  source before it can enter `class_contraindication` or the curated overlay.
+- **Three populations the parser must report SEPARATELY rather than explode**: combination regimens
+  (`atazanavir and ritonavir` — a role reported for the regimen may not be assigned to either component), the
+  five entries FDA itself says are not drugs (St John's wort, curcumin, diosmin, tobacco smoking, grapefruit
+  juice), and unresolved substances.
+- **The open design question this round must answer: `class_membership` cannot carry a row qualifier today**,
+  and several memberships are dose-, route-, preparation-, metabolite- or genotype-dependent. Either a
+  source-evidence projection keyed to the membership, or withhold every qualified row — **silently dropping a
+  qualifier is not permitted.**
+- **A new source spelling is not a one-line change** (the lesson [#101](https://github.com/cairn-ehr/drugref/issues/101)
+  records for `DRUGCENTRAL`, and it applies unchanged here): the CHECKs and `ids._SOURCE_CANONICAL` must gain
+  `FDA-CYP` **in the same migration**, and `ids.py` warns by name against leaning on the upper-case
+  fall-through. **`db/029`–`db/038` are all FROZEN**, so this needs `db/039`.
+- **The page publishes no release identifier**, so fetch time + SHA-256 are the release identity — recorded in
+  the spike's §2 manifest, and re-fetched rather than re-quoted.
+
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own
 brainstorm/design round.** Two candidate sources were licence-checked during 5c.2 and **measured on 2026-08-13,
 before that round starts** — full account and every number: PROJECT-NOTES § "The 5c.3 source evaluation".
+**Its missing potency vocabulary is 5c.2g's job, above, and should land first.**
 
 **The evaluation moved one source and killed the other's data:**
 
@@ -821,6 +853,25 @@ beyond "an operator registered it", or interpret N-of-M counter-signatures.
 **Separately: #52** (a projection defect — the row carries no `concept_ui`), **#55** (a read-path split on the
 projection tier), **#67** (salt↔base strength equivalence: a factor per `(salt, base)` pair, a different data shape
 entirely, and blocked on there being an authoritative source at all).
+
+##### 5c.5 — pregnancy & lactation populations 🔬 SPIKED, NOT DESIGNED (2026-08-16)
+Recorded here one session late: PR [#127](https://github.com/cairn-ehr/drugref/pull/127) landed a measured
+source spike ([design](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike.md) ·
+[results](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike-results.md)) that updated
+none of these three documents. Full account: PROJECT-NOTES § "Two further source spikes".
+
+- **MED-RT is the candidate floor** and drugref already holds it: 549 direct pregnancy rules (`D011247`), 66
+  lactation (`D007774`), plus five smaller trimester/ectopic conditions.
+- **Three new sources measured and marked "design next", all NON-FIRING**: LactMed (1,940 evidence records,
+  1,702 moieties resolved, **1,679 outside the MED-RT lactation floor** — so the floor is thin, and that is
+  the case for the slice), AEMPS CIMA (20,422 authorised Spanish products, segmented SmPCs, change API), ANSM
+  BDPM (15,857 French specialties, server-rendered RCP with stable 4.3/4.6 anchors).
+- **"Design next" does NOT approve normalization or any write to `curated_condition`**, and **a clinician
+  review is a gate that has not happened** — the results doc ships a 23-row worklist asking a human to verify
+  extraction boundaries, product scope, and whether normalization would be unsafe.
+- **The sources have unlike grains** (active-substance review vs Spanish product section vs French product
+  section) **and must not be collapsed into one moiety recommendation.** The next round designs a rebuildable
+  non-firing projection plus an open-question bridge; clinician-signed promotion stays separate.
 
 **DDInter is removed from the source ladder, not deferred.** It is **CC BY-NC-SA** — non-commercial, therefore not
 AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *if its licence confirms*") predated the

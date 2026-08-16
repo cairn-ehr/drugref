@@ -2651,8 +2651,15 @@ compare unordered pairs against `ddi_candidate_pair` (MED-RT, **20,238** distinc
 ### Which of these figures can be RE-DERIVED, and which must be taken on trust
 
 Stated because a future session is told to act on them, and the two halves are not equally checkable. **Nothing
-in this section is backed by a committed script** — the repo has no home for one, so the method is written out
-above instead, which is what makes the first two groups re-runnable at all.
+in this section is backed by a committed script** — the repo had no home for one when this was written, so the
+method is written out above instead, which is what makes the first two groups re-runnable at all.
+
+**⇒ THAT EXCUSE EXPIRED ON 2026-08-16 AND THE FIGURES ABOVE DID NOT BENEFIT.** `tools/` now exists as a
+committed top-level package (PR [#127](https://github.com/cairn-ehr/drugref/pull/127)) holding exactly the
+kind of measurement script this paragraph says had nowhere to live — `tools/pregnancy_lactation_spike.py`
+re-runs its own evaluation and *writes the results file*, which is why that spike's numbers are re-derivable
+and DrugCentral's are not. **A future source evaluation puts its measurement in `tools/`**; the numbers above
+stay measured-once because the dump is gone, not because the repo still lacks a home.
 
 - **Re-derivable from this checkout, and were re-derived during PR #103's review:** every drugref-side count
   (rebuild the chain at the pinned releases, then one `SELECT count(*)`); the hot path, because the subject
@@ -2667,6 +2674,75 @@ above instead, which is what makes the first two groups re-runnable at all.
   determination is the load-bearing one; **re-read the `reference` table before bundling anything.**
 - **Re-measured 2026-08-13 and now closing:** the DailyMed document-type sample (above). Its predecessor did
   not close, which is why it is the one figure in this section that was redone rather than restated.
+
+## Two further source spikes (2026-08-16) — FDA/toxicity and pregnancy/lactation
+
+**Both landed on `main` from a DIFFERENT AGENT while the guard round's review was the newest thing every
+document described, and that is the fact to carry forward, not the sources.** PR
+[#126](https://github.com/cairn-ehr/drugref/pull/126) updated ROADMAP only; PR
+[#127](https://github.com/cairn-ehr/drugref/pull/127) — **2,147 lines, two new `src/drugref/ingest/` parsers, a
+new top-level `tools/` package, three test files, +16 tests** — updated **no document at all**. The next
+session read a HANDOVER whose suite count, ROADMAP position and code map were all one round behind, and only
+running the suite showed it. **Rule 8 is not ceremony: check `git log` against HANDOVER before trusting it.**
+
+### The FDA spike (PR #126) — the potency vocabulary 5c.3's evaluation found missing
+
+Spec: [FDA interaction and toxicity source
+spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-spike.md). Four rule-6
+determinations, all made against live sources with checksums recorded in the spec's §2 reproduction manifest:
+
+- **`FDA-CYP` — bundle.** FDA's CYP/transporter examples table, public domain. **This is the answer to the
+  question 5c.3's evaluation left open**: SPL section 7 qualifies interactions by potency band (*strong*
+  CYP1A2 inhibitors contraindicated, *moderate or weak* "avoid"), and MED-RT's single undifferentiated
+  `Cytochrome P450 1A2 Inhibitors [MoA]` cannot express it. **The page has no release identifier**, so fetch
+  time + SHA-256 *are* the release identity.
+- **`FDA-DICT` / `FDA-DILI` — bundle**; **`FDA-DIRIL` — bundle ONLY the narrow FDA-authored projection**
+  (raw name · UNII 1 · UNII 2 · `My Findings (Toxicity)` · FDA link). The workbook also carries DrugBank
+  identifiers and descriptions, ATC/DDD fields and two third-party literature classifications: **a
+  public-domain FDA publication does not turn copied third-party material into federal work.** That is the
+  sharpest rule-6 refinement this project has recorded — the unit of clearance is the COLUMN, not the file.
+- **`DRUGCENTRAL-OMOP` — do NOT bundle, and the reason is a provenance audit rather than a licence.**
+  DrugCentral's contraindication content is pre-2012 OMOP 4.4 plus later label curation, and the published row
+  carries **no source kind, date, label id, citation or curator** — so the clean subset is *not selectable*.
+  **A high row id is not evidence of creation date and must not be used as a proxy.** Separate from, and no
+  threat to, the `ddi_ref_id = 2` decision.
+
+**The spike's implementation order is 1) DrugCentral DDI, 2) FDA-CYP before SPL mining, 3) DIRIL first into a
+non-firing toxicity projection, 4) DICTrank + DILIrank as second and third writers, 5) promotion only after
+clinician review.** Its §7 verification gates are written as a checklist any source round must pass, and its
+one-line invariant is worth quoting whole: **ingest preserves evidence; curation creates clinical judgement.**
+
+**A DIRIL parser trap that will bite anyone using a generic reader:** the workbook's declared used range is
+`A1:Y1048381` although data ends at row 318, and its worksheet XML is **209 MB uncompressed**. Stream rows
+1–318, require the exact header, reject any non-empty cell after 318 — **do not infer the range from the
+workbook's own dimension.**
+
+**DICTrank qualifies issue 93 rather than closing it.** FDA *does* publish an open cardiotoxicity dataset
+carrying QT evidence (a broad `qt|torsad` scan finds 228 rows; 149 over 133 ingredients once no-concern rows
+are dropped) — but it is a **review population only**, since no-concern rows include negative phrasings like
+"QT interval is not prolonged". It is still **not** a CredibleMeds-equivalent torsades list.
+
+### The pregnancy/lactation spike (PR #127) — four sources, all still non-firing
+
+Specs: [design](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike.md) ·
+[measured results](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike-results.md),
+run against `drugref_db038`. MED-RT stays the **candidate floor** (549 direct pregnancy rules, 66 lactation);
+LactMed (1,940 evidence records, 1,702 moieties resolved, **1,679 outside the MED-RT lactation floor**), AEMPS
+CIMA (20,422 authorised products) and ANSM BDPM (15,857 specialties) are all **"design next"** — which the
+results doc is explicit does **not** approve normalization or any write to `curated_condition`.
+
+- **A clinician review is PENDING and is a gate, not a formality.** The results doc ships a 23-row worklist of
+  identifiers and asks a human to verify extraction boundaries, product scope, and whether normalization
+  would be unsafe. Nothing downstream may treat these sources as cleared until that happens.
+- **The three sources have UNLIKE GRAINS — active-substance review, Spanish product section, French product
+  section — and a production design must not collapse them into one moiety recommendation.** That is the
+  finding, and it is the same shape as 5c.2's class-grain lesson.
+- **`tools/` is now a committed top-level package**, and `tools/pregnancy_lactation_spike.py` *writes its own
+  results file*. See § "Which of these figures can be RE-DERIVED" — this is the home that section says the
+  repo lacked.
+- The two `src/drugref/ingest/` modules (`lactmed.py` 211 lines, `regulatory_population.py` 296) are **spike
+  parsers reachable from `tools/` and the tests only** — no CLI subcommand, no orchestrator, no migration, no
+  `ingest_run.source` spelling. They are pure parsers by the architecture rule, and nothing writes.
 
 ## The standing open-issue ledger
 
@@ -2816,15 +2892,19 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1644 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1660 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-16 at 1644
-# passed in 46 s (the guard round's own review: 1598 + 46). If you add tests,
-# change it HERE.) The DB-gated majority SKIP without this DSN, exercising
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-16 at 1660
+# passed in 41 s. THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
+# (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
+# section, because it had none. A round that lands via a different agent will not have
+# read this comment, so CHECK THE COUNT AT THE START OF A SESSION, not only at its end.
+# If you add tests, change it HERE.) The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a
 # deselected failure is not a pass either.

@@ -28,23 +28,13 @@ MIGRATION AT ALL** — the first such round since 5c.1, because all three were f
 Three new modules (`commit_lint.py`, `registry_read.py`, `migration_guard.py`) and one shipped git hook. Full
 account: PROJECT-NOTES § "The guard round"; ROADMAP § 5c.2f.
 
-**⇒ THE REVIEW FOUND THAT TWO OF THE THREE GUARDS SHIPPED BROKEN, AND ONE TEST ASSERTED ITS OWN INVERSE.**
-Read that section of PROJECT-NOTES before trusting any guard in this repo:
-
-1. **The hook's `python3` fallback aborted EVERY commit.** `commit_lint` used a PEP 604 annotation evaluated
-   at import time, so under the Python the OS ships (3.9.6) the module raised `TypeError` before reading a
-   byte — and exit 1 rejects the commit. The branch whose whole justification is *"still gets the guard rather
-   than silently getting none"* gave a hard block plus a traceback. Fixed with `from __future__ import
-   annotations`; the fallback now has both halves tested (rejects the bad message, **accepts the good one** —
-   only the second assertion can tell a working guard from a crashing one).
-2. **The hook was blind to `git commit -m`.** It dropped every line starting with `#`, on the premise that git
-   strips them — true of an EDITOR commit, **false for `-m`/`-F`**, where cleanup is `whitespace` and `#`
-   lines are stored verbatim. A body pasted from ROADMAP markdown (`## Done`, `# fixes #999`) closed the issue
-   silently. It now truncates at git's own trailing block and **scans everything else**.
-3. **`test_a_database_predating_db038_is_told_to_migrate` asserted the opposite of its name, green.**
-   `missing_relations` rolls back before probing — it must — and the `conn` fixture is rollback-isolated, so
-   **the rollback puts the dropped view back**; the guard then answers *"NOT a missing migration"*. The old
-   assertion, `match="drugref migrate"`, is a substring of **all four** messages, so it discriminated nothing.
+**⇒ THE REVIEW FOUND THAT TWO OF THE THREE GUARDS SHIPPED BROKEN, AND ONE TEST ASSERTED ITS OWN INVERSE** —
+the hook's `python3` fallback aborted EVERY commit (a PEP 604 annotation evaluated at import time, under the
+3.9.6 the OS ships); the hook was blind to `git commit -m` (git keeps `#` lines there, and strips them only
+for an EDITOR commit); and `test_a_database_predating_db038_is_told_to_migrate` was green while asserting the
+opposite of its name, because the guard's own necessary rollback restored the view the test had dropped and
+`match="drugref migrate"` is a substring of all four messages. **All three verbatim in PROJECT-NOTES § "The
+guard round's own review" — read it before trusting any guard in this repo.**
 
 **⇒ THE ORIGINAL HEADLINE, CORRECTED: six ISSUES, ten COMMITS.** #118 was filed against **five** commits; the
 finished check turned up **#108**, closed by `293758c` **one round BEFORE #114** with #109–#112 in the same
@@ -95,15 +85,20 @@ written. **#89 now carries all four measured figures; read them off the issue, d
 `referenced_vocabulary`, which that round never touched. `ruff` caught it as `invalid-syntax`.
 **Reflow prose by hand** — the review round's ten over-long lines were fixed one `Edit` at a time.
 
-**⇒ DO THIS NEXT — the next content slice; the evaluation says the cheap one is DrugCentral, not SPL**: 6,337
-new public-domain moiety-grained pairs, rule 6 clear for `ddi_ref_id = 2` ONLY, hard part is name resolution.
-**It opens with its own design round.** **Both slices' shapes, rules and open questions are in ROADMAP § 5c.3
-and PROJECT-NOTES § "The 5c.3 source evaluation" — read them there**
-([#101](https://github.com/cairn-ehr/drugref/issues/101) DrugCentral,
-[#102](https://github.com/cairn-ehr/drugref/issues/102) SPL). **EVERY DrugCentral FIGURE RESTS ON ONE UNREPEATED
-RUN and the 1.4 GB dump is not retained — re-measure before acting.** **Whichever lands is the first slice that
-can POPULATE the class grain**, so db/035's detectors and db/037's arithmetic get their first exercise, and
-**#105, #106 and #112 become answerable against content**.
+**⇒ TWO SOURCE SPIKES LANDED FROM ANOTHER AGENT AFTER THIS FILE WAS LAST WRITTEN, AND ONE UPDATED NO DOCUMENT
+AT ALL.** PR [#126](https://github.com/cairn-ehr/drugref/pull/126) (FDA interaction/toxicity) touched ROADMAP
+only; PR [#127](https://github.com/cairn-ehr/drugref/pull/127) (pregnancy/lactation) — 2,147 lines, two new
+`ingest/` parsers, a new top-level `tools/` package, **+16 tests, suite 1644 → 1660** — touched none. **Check
+`git log` against this file before trusting it.** Both are now recorded: PROJECT-NOTES § "Two further source
+spikes", ROADMAP § 5c.2g and § 5c.5.
+
+**⇒ DOING NOW — 5c.2g, `FDA-CYP` potency classes** (ROADMAP § 5c.2g; source decision in the FDA spike § 3).
+The potency vocabulary 5c.3's evaluation found missing: source-defined PK classes, **membership only, never a
+licence to manufacture DDI pairs**. Needs `db/039` (`db/029`–`db/038` FROZEN). **The next content slice remains
+DrugCentral** ([#101](https://github.com/cairn-ehr/drugref/issues/101)): 6,337 new public-domain moiety-grained
+pairs, rule 6 clear for `ddi_ref_id = 2` ONLY, **every figure resting on ONE UNREPEATED RUN with the 1.4 GB
+dump not retained — re-measure before acting**; it is the first slice that can POPULATE the class grain, so
+db/035's detectors and db/037's arithmetic get their first exercise and **#105, #106, #112 become answerable**.
 
 **⇒ ONE DECISION IS TAKEN AND NOT BUILT — do not re-litigate it.** [#86](https://github.com/cairn-ehr/drugref/issues/86):
 **add `signed_by_unknown_key` as a fourth `signature_status`** — a vocabulary widening, so a round of its own.
