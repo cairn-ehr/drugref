@@ -266,6 +266,14 @@ a near name is exactly as unresolved as one without, and **no count may ever be 
 DrugCentral evaluation's own warning applies unchanged: *"treat it as the shape of the problem, not a count
 to quote."*
 
+> **⇒ THE COLUMN SHIPS IN THIS SLICE AND IS ALWAYS NULL. No task populates it, and that is deliberate** —
+> filed as [#129](https://github.com/cairn-ehr/drugref/issues/129). The rule was never specified precisely
+> enough to test, and **a near-name heuristic invented mid-implementation, with no measurement of what it
+> returns, is precisely the pattern this slice spent four corrections catching.** An always-NULL column is
+> honest about a search nobody has run; a hastily-specified one would put unmeasured guesses in front of a
+> curator under a column name that says "evidence". #129 carries the questions a future round must answer
+> and the 20-name residue it would serve.
+
 ### 7.2 Enantiomers are deferred to literature research, not to a later rule
 
 The three enantiomer names are the clearest case for the standing rule, and the one this design explicitly
