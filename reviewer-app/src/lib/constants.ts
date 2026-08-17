@@ -33,6 +33,15 @@ export const QUALIFICATIONS_MAX_LENGTH = 500;
 /** Maximum biography length shared with the database constraint. */
 export const BIOGRAPHY_MAX_LENGTH = 10_000;
 
+/** Maximum working-note length shared with db/045 and the reviewer domain. */
+export const ANNOTATION_MAX_LENGTH = 20_000;
+
+/** Maximum citation identifier or URL length shared with db/045. */
+export const EVIDENCE_REFERENCE_MAX_LENGTH = 2_000;
+
+/** Maximum citation context length shared with db/045. */
+export const EVIDENCE_NOTE_MAX_LENGTH = 10_000;
+
 /** Minimum password length enforced before Argon2id hashing. */
 export const PASSWORD_MIN_LENGTH = 12;
 

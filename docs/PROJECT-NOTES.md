@@ -3091,11 +3091,13 @@ to the WebView. The endpoint validates bounded `page` / `pageSize`, kind, source
 The browser-only Vite adapter retains representative records for layout work, is labelled as a preview, and is never a native
 fallback after a service error.
 
-**One materialised SQL union owns the response snapshot.** It reads `gap_uncurated_interaction_rule` and
-`gap_uncurated_condition_contradiction`, enriches their stable natural keys from projection rows and `ingest_run`, then derives
-the current queue totals, kind/source/relationship options, filtered total and deterministic impact/name/UUID-ordered page.
-Sources, releases and condition predicates are arrays: source is deliberately absent from the curated natural key and more
-than one authority may assert the same candidate. No queue table, cache or migration was added.
+**One materialised SQL union owns the response snapshot.** Its interaction half reads the existing
+`ci_rule_partner_reach` aggregate and applies current expansion policy instead of enumerating every candidate pair merely to
+count it; the condition half retains its inexpensive gap view. It then derives current totals, filter options, filtered count
+and the deterministic impact/name/UUID-ordered page. On `drugref_reviewer_dev`, the authoritative interaction gap read took
+3.02 s and spilled a 387 MB temporary sort after producing 3.8 million intermediate rows; the equivalent reach-count
+projection took 34.7 ms and had zero row/count mismatches. Sources, releases and condition predicates remain arrays. No queue
+table, cache or migration was added.
 
 **The GUI no longer invents state the database does not have.** The fixture-only `in_review`, signature and priority fields
 are gone. A gap is **Unreviewed**, not **Unsigned**, because no curated row exists to sign. Search is debounced; filter changes
@@ -3114,9 +3116,40 @@ production frontend build; `npm audit` with 0 vulnerabilities; native no-bundle 
 made two real queue requests (default 25-row page, then five condition rows) in **11.42 s** total, including the known expensive
 interaction-gap read. No in-app or connected browser was available, so desktop/narrow visual verification is still outstanding.
 
-**Next:** append-only annotations and evidence references without manufacturing a clinical ruling. Curated revision
-transactions and local key enrolment/signing remain separate later slices. The administration tail is profile correction,
-disable/enable, password rotation, all-session revocation and signing-key enrolment UI over `db/044`.
+## Reviewer annotations and evidence references (2026-08-17) — `db/045`
+
+Canonical design: [`2026-08-17-drugref-reviewer-annotations-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-annotations-design.md).
+
+**The first clinical-adjacent write path records research, not a ruling.** Any authenticated reviewer can read a target's
+working history and append an immutable Markdown note or a citation-only DOI/PMID/PMCID/NCT/SPL/URL reference. Authorship
+comes from the native-memory bearer session, never a client-supplied reviewer field. The GUI displays attribution and history,
+while question state, evidence verdicts, grades, clinical decision fields and signing remain absent or disabled.
+
+**`db/045` adds two insert-only ledgers.** `reviewer_annotation` and `reviewer_evidence_reference` both point to the immortal
+`open_question.question_uuid` and stable `reviewer_account.reviewer_uuid`. The evidence table intentionally has no verdict,
+confidence, grade or applies column. `register_from_gaps` now retains a closed question carrying either kind of research row,
+so a later ingest cannot erase or orphan working history.
+
+**One canonical target key crosses the queue/write seam.** Queue items now expose the frozen registry shapes
+`MOIETY:{uuid}/CLASS:{uuid}/CI_AXIS:{relationship}` and `MOIETY:{uuid}/CONDITION:{uuid}`. The service resolves that key through
+the current registry row; it neither re-mints a UUID nor accepts a stale target silently. Tauri owns the three authenticated
+working-record requests, and browser preview keeps isolated in-memory history solely for interaction/layout development.
+
+**The new code stays on focused seams.** Shared working-record contracts live in `reviewer-domain/src/records.rs`, service
+persistence in `reviewer-service/src/records.rs`, and GUI lifecycle/forms in `reviewer-app/src/WorkingRecords.svelte`; the
+main domain and app files remain 490 and 349 lines respectively.
+
+**Verified:** full PostgreSQL-backed Python suite **1,787 passed**; domain **8 passed**; service **8 passed + both live
+queue and working-record integrations passed explicitly**; Tauri **1 passed**; Rust formatting and clippy with warnings denied; `ruff`;
+`npm run check` with 0 diagnostics; production frontend build (0.63 kB HTML + 20.87 kB CSS + 78.81 kB JS, 27.77 kB JS
+gzipped); `npm audit` with 0 vulnerabilities; native debug no-bundle build. Chrome desktop and 740 x 900
+interaction/visual passes covered sign-in, target switching, target-scoped annotation/reference append, history rendering
+and the disabled decision control. A 980 x 680 regression pass confirmed the page remains viewport-bound while queue and
+detail panes independently scroll to their bottoms; the narrow pass caught and verified a compact single-column breakpoint.
+
+**Next:** curated interaction and condition revision transactions. Local key enrolment/signing remains a separate later
+slice. The administration tail is profile correction, disable/enable, password rotation, all-session revocation and
+signing-key enrolment UI over `db/044`.
 
 ## The standing open-issue ledger
 
@@ -3271,14 +3304,16 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1779 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1787 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1779
-# passed in 49.79 s on 2026-08-17 (db/044 added 16: 1763 → 1779; the live-queue round added no Python tests). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1787
+# passed in 48.97 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787).
+# THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
 # section, because it had none. A round that lands via a different agent will not have
@@ -3296,7 +3331,7 @@ DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv
 # whatever is on PATH, and CI runs the same command in its own `lint` job.
 uv run ruff check .
 
-# Reviewer GUI foundation (fixture-backed and read-only in this slice).
+# Reviewer GUI, including live queue and append-only working records.
 cd reviewer-app
 npm install
 npm run check

@@ -8,6 +8,7 @@ a long-lived one, which is exactly the shape of bug that reaches production.
 """
 import uuid
 
+import psycopg
 import pytest
 
 from drugref import curation, ids, interactions, questions
@@ -155,6 +156,47 @@ def test_a_closed_gap_carrying_evidence_is_RETAINED_not_deleted(conn):
     # the finding survived, which is the whole point
     assert conn.execute("SELECT count(*) FROM drugref.question_evidence "
                         "WHERE question_uuid = %s", (qu,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("working_record", ["annotation", "reference"])
+def test_a_closed_gap_carrying_reviewer_work_is_retained(
+    conn: psycopg.Connection, working_record: str
+) -> None:
+    """db/045 research history keeps its immortal question after the gap closes."""
+    run_id = _run(conn)
+    moiety_uuid = _moiety(conn, run_id)
+    questions.register_from_gaps(conn, run_id)
+    question_uuid = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question"
+    ).fetchone()[0]
+    reviewer_uuid = uuid.uuid4()
+    conn.execute(
+        "INSERT INTO drugref.reviewer_account (reviewer_uuid, username) "
+        "VALUES (%s, 'maya.chen')",
+        (reviewer_uuid,),
+    )
+    if working_record == "annotation":
+        conn.execute(
+            "INSERT INTO drugref.reviewer_annotation "
+            "(question_uuid, reviewer_uuid, annotation_markdown) "
+            "VALUES (%s, %s, 'Working note')",
+            (question_uuid, reviewer_uuid),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO drugref.reviewer_evidence_reference "
+            "(question_uuid, reviewer_uuid, reference_scheme, reference_value) "
+            "VALUES (%s, %s, 'PMID', '12345678')",
+            (question_uuid, reviewer_uuid),
+        )
+
+    _classify(conn, run_id, moiety_uuid)
+    questions.register_from_gaps(conn, run_id)
+
+    assert conn.execute(
+        "SELECT is_current FROM drugref.open_question WHERE question_uuid = %s",
+        (question_uuid,),
+    ).fetchone() == (False,)
 
 
 def test_a_retained_question_is_off_the_worklist(conn):

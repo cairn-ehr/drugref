@@ -4,6 +4,13 @@
 //! silently disagree about account or queue semantics.
 #![deny(missing_docs)]
 
+mod records;
+
+pub use records::{
+    CreateAnnotationRequest, CreateEvidenceReferenceRequest, EvidenceReference,
+    EvidenceReferenceScheme, ReviewAnnotation, ReviewRecord, ReviewRecordQuery,
+};
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

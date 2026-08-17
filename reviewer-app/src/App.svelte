@@ -3,6 +3,7 @@
 
   import { onMount } from "svelte";
   import UserManagement from "./UserManagement.svelte";
+  import WorkingRecords from "./WorkingRecords.svelte";
   import {
     accountMode,
     bootstrapAdmin,
@@ -180,7 +181,8 @@
       );
       if (request !== queueRequest) return;
       workspace = loaded;
-      selectedId = retainedQueueSelection(loaded.items, selectedId)?.id ?? "";
+      const retained = retainedQueueSelection(loaded.items, selectedId);
+      selectedId = retained?.id ?? "";
     } catch (error) {
       if (request !== queueRequest) return;
       queueError = String(error);
@@ -234,7 +236,7 @@
     activeView = "users";
   }
 
-  /** Select a queue item for read-only inspection in the detail panel. */
+  /** Select a queue item for inspection and append-only working history. */
   function selectQueueItem(item: ReviewQueueItem): void {
     selectedId = item.id;
   }
@@ -317,7 +319,29 @@
             </div>
             <div class="queue-pagination"><button type="button" disabled={queueLoading || workspace.pagination.page <= FIRST_QUEUE_PAGE} onclick={() => changePage(PREVIOUS_PAGE_DELTA)}>← Previous</button><span>Page {workspace.pagination.page}</span><button type="button" disabled={queueLoading || workspace.pagination.page >= workspace.pagination.totalPages} onclick={() => changePage(NEXT_PAGE_DELTA)}>Next →</button></div>
           </div>
-          {#if selectedItem}<section class="detail-panel" aria-label={`Review details for ${selectedItem.subjectName}`}><div class="detail-head"><div class="detail-kicker"><span>{reviewKindLabel(selectedItem.kind)}</span><span>•</span><span>{selectedItem.relationships.join(" + ")}</span></div><h2>{selectedItem.subjectName}</h2><p class="relation-line"><span>with</span> {selectedItem.objectName}</p><div class="detail-badges"><span class="badge badge--amber">Unreviewed</span><span class="badge">{selectedItem.candidateSources.join(" + ")}</span><span class="badge">Release {selectedItem.upstreamReleases.join(" / ")}</span></div></div><div class="detail-scroll"><article class="question-card"><p class="section-label">Review question</p><p>{selectedItem.question}</p><div class="impact-callout"><strong>{selectedItem.impactCount}</strong><span>{selectedItem.kind === "interaction_rule" ? "candidate pairs inherit this one rule" : "stable pair carries contradictory projections"}</span></div></article><div class="section-heading"><div><p class="section-label">Clinical judgement</p><h3>Decision fields</h3></div><span>Write path arrives next</span></div><div class="decision-grid" aria-disabled="true"><label><span>Ruling</span><select disabled><option>Choose a ruling…</option></select></label><label><span>Severity</span><select disabled><option>Choose severity…</option></select></label><label class="wide"><span>Mechanism</span><textarea disabled placeholder="Explain the clinical mechanism"></textarea></label><label class="wide"><span>Management</span><textarea disabled placeholder="Describe practical management"></textarea></label><label><span>Evidence grade</span><select disabled><option>Choose evidence…</option></select></label><label><span>Reviewed against</span><input disabled value={selectedItem.upstreamReleases.join(" / ")} /></label></div><div class="section-heading"><div><p class="section-label">Provenance</p><h3>Why this is in the queue</h3></div></div><article class="provenance-card"><div class="provenance-line"><span>Source assertion</span><strong>{selectedItem.candidateSources.join(" + ")}</strong></div><p>{selectedItem.provenance}</p><dl><div><dt>Subject UUID</dt><dd>{selectedItem.subjectUuid}</dd></div><div><dt>Object UUID</dt><dd>{selectedItem.objectUuid}</dd></div></dl></article><div class="section-heading"><div><p class="section-label">Reviewer annotation</p><h3>Working note</h3></div></div><textarea class="annotation" disabled placeholder="Add an evidence-grounded Markdown note…"></textarea></div><footer class="detail-actions"><div><span class="key-indicator"><span></span> Signing remains disabled</span><small>{keyCountLabel(currentUser.keyCount)} enrolled</small></div><button class="secondary-button" type="button" disabled>Save annotation</button><button class="primary-button primary-button--compact" type="button" disabled>Record &amp; sign decision</button></footer></section>{:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}
+          {#if selectedItem}
+            <section class="detail-panel" aria-label={`Review details for ${selectedItem.subjectName}`}>
+              <div class="detail-head">
+                <div class="detail-kicker"><span>{reviewKindLabel(selectedItem.kind)}</span><span>•</span><span>{selectedItem.relationships.join(" + ")}</span></div>
+                <h2>{selectedItem.subjectName}</h2>
+                <p class="relation-line"><span>with</span> {selectedItem.objectName}</p>
+                <div class="detail-badges"><span class="badge badge--amber">Unreviewed</span><span class="badge">{selectedItem.candidateSources.join(" + ")}</span><span class="badge">Release {selectedItem.upstreamReleases.join(" / ")}</span></div>
+              </div>
+              <div class="detail-scroll">
+                <article class="question-card"><p class="section-label">Review question</p><p>{selectedItem.question}</p><div class="impact-callout"><strong>{selectedItem.impactCount}</strong><span>{selectedItem.kind === "interaction_rule" ? "candidate pairs inherit this one rule" : "stable pair carries contradictory projections"}</span></div></article>
+                <div class="section-heading"><div><p class="section-label">Clinical judgement</p><h3>Decision fields</h3></div><span>Write path remains disabled</span></div>
+                <div class="decision-grid" aria-disabled="true"><label><span>Ruling</span><select disabled><option>Choose a ruling…</option></select></label><label><span>Severity</span><select disabled><option>Choose severity…</option></select></label><label class="wide"><span>Mechanism</span><textarea disabled placeholder="Explain the clinical mechanism"></textarea></label><label class="wide"><span>Management</span><textarea disabled placeholder="Describe practical management"></textarea></label><label><span>Evidence grade</span><select disabled><option>Choose evidence…</option></select></label><label><span>Reviewed against</span><input disabled value={selectedItem.upstreamReleases.join(" / ")} /></label></div>
+                <div class="section-heading"><div><p class="section-label">Provenance</p><h3>Why this is in the queue</h3></div></div>
+                <article class="provenance-card"><div class="provenance-line"><span>Source assertion</span><strong>{selectedItem.candidateSources.join(" + ")}</strong></div><p>{selectedItem.provenance}</p><dl><div><dt>Subject UUID</dt><dd>{selectedItem.subjectUuid}</dd></div><div><dt>Object UUID</dt><dd>{selectedItem.objectUuid}</dd></div></dl></article>
+
+                {#key selectedItem.id}<WorkingRecords item={selectedItem} />{/key}
+              </div>
+              <footer class="detail-actions detail-actions--decision-only">
+                <div><span class="key-indicator"><span></span> Working records are append-only</span><small>Clinical decisions and signing remain disabled · {keyCountLabel(currentUser.keyCount)} enrolled</small></div>
+                <button class="primary-button primary-button--compact" type="button" disabled>Record &amp; sign decision</button>
+              </footer>
+            </section>
+          {:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}
         </section>
       {/if}
     </main>

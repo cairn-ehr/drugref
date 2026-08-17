@@ -595,12 +595,14 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     invisible on the worklist, still citable by the external tool that already holds the
     UUID, and restored to current under that same UUID if the gap reopens. Only
     untouched questions are deleted, and those have nothing to cascade to. The guard now
-    covers SIX tables, not three: db/029 (slice 5c.1) added curated_interaction and
+    covers EIGHT tables, not three: db/029 (slice 5c.1) added curated_interaction and
     curated_condition to question_state's, question_source_check's and
     question_evidence's original three, because curating a pair is exactly what CLOSES
     its gap -- the very row that answers a question is what would otherwise make the
     next ingest try to delete it. db/032 (slice 5c.2) added curated_class_interaction,
-    the class grain's own overlay, for exactly the same reason.
+    the class grain's own overlay, for exactly the same reason. db/045 adds reviewer
+    annotations and citation-only evidence references; research history must also keep
+    a closed question addressable.
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -645,6 +647,13 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             "AND NOT EXISTS (SELECT 1 FROM drugref.question_source_check x "
             "                WHERE x.question_uuid = q.question_uuid) "
             "AND NOT EXISTS (SELECT 1 FROM drugref.question_evidence x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/045. A working note or reference is not a ruling, but it is still
+            # authored history that must keep its immortal question addressable when
+            # a later ingest closes the derived gap.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.reviewer_annotation x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            "AND NOT EXISTS (SELECT 1 FROM drugref.reviewer_evidence_reference x "
             "                WHERE x.question_uuid = q.question_uuid) "
             # db/029. Curating a pair is exactly what CLOSES its gap, so without these
             # two the very first curated row would make the next ingest delete its

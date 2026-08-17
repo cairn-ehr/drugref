@@ -3,6 +3,9 @@
 /** Stable kinds of unresolved clinical records exposed by the review service. */
 export type ReviewKind = "interaction_rule" | "condition_contradiction";
 
+/** Identifier schemes admitted for citation-only working references. */
+export type EvidenceReferenceScheme = "DOI" | "PMID" | "PMCID" | "NCT" | "SPL" | "URL";
+
 /** Optional paging and filter parameters accepted by the review queue endpoint. */
 export interface ReviewQueueQuery {
   /** One-based page number. */
@@ -67,6 +70,76 @@ export interface ReviewQueueItem {
   question: string;
   /** Explanation of why the target entered the queue. */
   provenance: string;
+}
+
+/** Stable selector used to load immutable working history for one target. */
+export interface ReviewRecordQuery {
+  /** Kind of clinical question named by the target key. */
+  kind: ReviewKind;
+  /** Frozen canonical open-question gap key. */
+  targetKey: string;
+}
+
+/** Request to append one Markdown working note. */
+export interface CreateAnnotationInput extends ReviewRecordQuery {
+  /** Immutable Markdown working note. */
+  annotationMarkdown: string;
+}
+
+/** Request to append one citation-only working reference. */
+export interface CreateEvidenceReferenceInput extends ReviewRecordQuery {
+  /** Structured identifier scheme for the cited source. */
+  referenceScheme: EvidenceReferenceScheme;
+  /** Identifier or URL in the selected scheme. */
+  referenceValue: string;
+  /** Optional Markdown context for the reference. */
+  noteMarkdown: string;
+}
+
+/** Immutable reviewer-authored working note. */
+export interface ReviewAnnotation {
+  /** Stable annotation ledger identifier. */
+  annotationId: number;
+  /** Stable reviewer identity that authored the note. */
+  reviewerUuid: string;
+  /** Current compact reviewer username. */
+  username: string;
+  /** Current reviewer display name. */
+  reviewerName: string;
+  /** Immutable Markdown source. */
+  annotationMarkdown: string;
+  /** RFC 3339 time at which the note was recorded. */
+  recordedAt: string;
+}
+
+/** Immutable citation-only working reference. */
+export interface EvidenceReference {
+  /** Stable evidence-reference ledger identifier. */
+  evidenceReferenceId: number;
+  /** Stable reviewer identity that attached the reference. */
+  reviewerUuid: string;
+  /** Current compact reviewer username. */
+  username: string;
+  /** Current reviewer display name. */
+  reviewerName: string;
+  /** Structured identifier scheme for the cited source. */
+  referenceScheme: EvidenceReferenceScheme;
+  /** Identifier or URL in the selected scheme. */
+  referenceValue: string;
+  /** Optional Markdown context supplied with the reference. */
+  noteMarkdown: string;
+  /** RFC 3339 time at which the reference was recorded. */
+  recordedAt: string;
+}
+
+/** Complete immutable working history attached to one target. */
+export interface ReviewRecord {
+  /** Frozen canonical open-question gap key. */
+  targetKey: string;
+  /** Reviewer notes in insertion order. */
+  annotations: ReviewAnnotation[];
+  /** Citation-only references in insertion order. */
+  evidenceReferences: EvidenceReference[];
 }
 
 /** Page metadata returned with every queue snapshot. */

@@ -1,10 +1,10 @@
 # Drugref reviewer service
 
 Authenticated service boundary between the native reviewer application and PostgreSQL.
-Apply `db/044_reviewer_accounts.sql` through `drugref migrate`, then run:
+Apply migrations through `db/045_reviewer_annotations.sql`, then run:
 
 ```sh
-DATABASE_URL='postgresql://postgres@localhost:5532/drugref_db044' cargo run
+DATABASE_URL='postgresql://postgres@localhost:5532/drugref_reviewer_dev' cargo run
 ```
 
 Use a dedicated persistent database for the GUI service. **Do not point it at
@@ -23,12 +23,19 @@ returns a conflict and administrators create users through authenticated `/v1/us
 Any authenticated reviewer can read `GET /v1/review-queue`. It returns the current gap
 totals, database-derived source/relationship filters, stable review targets and a
 bounded page of candidates. Supported query parameters are `page`, `pageSize`, `kind`,
-`source`, `relationship` and literal substring `search`. The endpoint is read-only and
-there is no clinical mutation route in this slice.
+`source`, `relationship` and literal substring `search`.
+
+Any authenticated reviewer can also read `GET /v1/review-record` and append through
+`POST /v1/review-annotations` or `POST /v1/review-evidence-references`. These routes
+write attributed, immutable research history only. They do not update question state,
+record an evidence verdict, create a curated assertion or sign anything.
 
 Run the populated-database integration check explicitly:
 
 ```sh
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_db038' \
   cargo test live_queue_query_reads_pages_filters_and_metadata -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_working_record_round_trip -- --ignored
 ```

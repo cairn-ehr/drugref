@@ -13,19 +13,20 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-live-queue`, from merged PR #137 on `main` at `5a8eedd`.** Migrations through
-**`db/044`** are frozen; this round adds no migration.
+**Current branch: `codex/reviewer-annotations`, from merged PR #138 on `main` at `ded85b4`.** Migrations through
+**`db/045`** are frozen.
 
-**⇒ JUST FINISHED — authenticated live, paginated reviewer queue.** Canonical design:
+**PREVIOUS SLICE — authenticated live, paginated reviewer queue.** Canonical design:
 [`2026-08-17-drugref-reviewer-live-queue-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-live-queue-design.md).
 Any live reviewer session may call `GET /v1/review-queue`; Tauri attaches the bearer token from native memory and
 the WebView retains no network permission or database credential. Page size is bounded, search is a literal
 substring, and kind/source/relationship filters come from the current database queue.
 
-**ONE MATERIALISED UNION OWNS EACH RESPONSE SNAPSHOT.** The service reads the interaction-rule and condition-
-contradiction gap views, enriches stable natural-key targets from projection rows and `ingest_run`, and derives
-totals, filters, filtered count and deterministic page rows together. Sources, releases and condition predicates
-remain arrays because several assertions may support one source-neutral curated target. No queue table or cache
+**ONE MATERIALISED UNION OWNS EACH RESPONSE SNAPSHOT.** The interaction half reads the existing
+`ci_rule_partner_reach` aggregate and applies current expansion policy instead of enumerating millions of candidate-pair
+join rows merely to count them; the condition half reads its inexpensive gap view. The local plan fell from 3.02 s and
+a 387 MB temporary sort to 34.7 ms for the interaction projection, with zero row/count mismatches against the
+authoritative gap view. Sources, releases and condition predicates remain arrays. No queue table, cache or migration
 was added.
 
 **THE CLINICAL QUEUE IS LIVE AND STILL DELIBERATELY READ-ONLY.** The fixture-only `in_review`, priority and
@@ -39,18 +40,28 @@ requires complete type hints, and pure reusable logic belongs in focused modules
 centralises validation and paging constants, keeps pure queue/presentation transforms outside components, and
 enforces Rust public API documentation with `deny(missing_docs)`.
 
-**⇒ DO THIS NEXT FOR THE GUI:** append-only annotations and evidence references without manufacturing a clinical
-ruling. Then curated revision transactions and local key enrolment/signing in separate slices. The administration
-tail remains profile correction, disable/enable, password rotation, all-session revocation and signing-key
-enrolment UI over `db/044`. Do not enable a clinical decision or signing button in the annotation slice.
+**⇒ JUST FINISHED — append-only working notes and citation-only evidence references.** Canonical design:
+[`2026-08-17-drugref-reviewer-annotations-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-annotations-design.md).
+`db/045` adds two immutable reviewer-attributed ledgers against the immortal open-question UUID. Evidence references
+carry a structured DOI/PMID/PMCID/NCT/SPL/URL identifier and optional context, deliberately no verdict, confidence,
+grade, clinical ruling or signature.
 
-**Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 6 plus the populated-
-database live-queue integration; Tauri 1; `ruff`; Rust formatting and clippy with warnings denied;
-`npm run check` with 0 diagnostics; production frontend build; `npm audit` with 0 vulnerabilities; native debug
-app bundle. Frontend output is 0.63 kB HTML +
-18.10 kB CSS + 72.45 kB JS (26.04 kB gzipped). Two real reference-database queue reads took 11.34 s total,
-including the known expensive interaction-gap view. No browser surface was available, so desktop/narrow visual
-verification remains outstanding.
+**THE QUEUE/WRITE SEAM NOW USES THE REGISTRY'S FROZEN TARGET KEY.** The service resolves current canonical keys rather
+than minting a second question UUID, rejects stale targets, takes authorship only from the authenticated session, and
+returns insertion-ordered history. Tauri owns all HTTP and token access. The browser preview keeps isolated in-memory
+working history and is never a native fallback. Clinical decision fields and signing remain hard-disabled.
+
+**⇒ DO THIS NEXT FOR THE GUI:** curated interaction and condition revision transactions. Keep local key enrolment and
+signing as the following separate slice. The administration tail remains profile correction, disable/enable, password
+rotation, all-session revocation and signing-key enrolment UI over `db/044`.
+
+**Verification completed:** full Python/PostgreSQL suite 1,787 passed; domain 8; service 8 plus the live PostgreSQL
+working-record integration; Tauri 1; `ruff`; Rust formatting and clippy with warnings denied; `npm run check` with 0
+diagnostics; production frontend build; `npm audit` with 0 vulnerabilities. Frontend output is 0.63 kB HTML + 20.87 kB
+CSS + 78.81 kB JS (27.77 kB gzipped); native debug no-bundle build. Chrome desktop and 740 x 900 interaction/visual
+passes covered sign-in, target switching, target-scoped annotation/reference append, history rendering and the disabled
+decision control. A 980 x 680 pass confirms the document remains viewport-bound while the queue and detail panes scroll
+independently to their bottoms; the narrow pass also verified the compact single-column workspace breakpoint.
 
 ## Parallel project sequencing
 

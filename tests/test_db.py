@@ -301,6 +301,9 @@ def test_apply_migrations_is_idempotent(conn):
         "reviewer_role_kind", "reviewer_account", "reviewer_profile",
         "reviewer_password_credential", "reviewer_key_enrolment",
         "auth_session", "auth_session_revocation",
+        # Slice 6r, db/045: immutable research history. These rows deliberately
+        # carry no clinical ruling, grade, signature or mutable workflow state.
+        "reviewer_annotation", "reviewer_evidence_reference",
     }
 
 

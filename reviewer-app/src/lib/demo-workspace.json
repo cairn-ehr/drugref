@@ -8,7 +8,7 @@
   "items": [
     {
       "id": "interaction-d7a5eedc-5f670b0c-ci-pe",
-      "targetKey": "MOIETY:d7a5eedc-e8d4-5774-8fd4-0ff6b44b446c|CLASS:5f670b0c-ac33-5c90-90e9-ee38aaf18174|CI_PE",
+      "targetKey": "MOIETY:d7a5eedc-e8d4-5774-8fd4-0ff6b44b446c/CLASS:5f670b0c-ac33-5c90-90e9-ee38aaf18174/CI_AXIS:CI_PE",
       "kind": "interaction_rule",
       "subjectUuid": "d7a5eedc-e8d4-5774-8fd4-0ff6b44b446c",
       "objectUuid": "5f670b0c-ac33-5c90-90e9-ee38aaf18174",
@@ -21,7 +21,7 @@
     },
     {
       "id": "interaction-e36351b9-4271638a-ci-pe",
-      "targetKey": "MOIETY:e36351b9-2065-507d-84e4-70ea2827e75d|CLASS:4271638a-277f-5c1d-9e91-f745c1600529|CI_PE",
+      "targetKey": "MOIETY:e36351b9-2065-507d-84e4-70ea2827e75d/CLASS:4271638a-277f-5c1d-9e91-f745c1600529/CI_AXIS:CI_PE",
       "kind": "interaction_rule",
       "subjectUuid": "e36351b9-2065-507d-84e4-70ea2827e75d",
       "objectUuid": "4271638a-277f-5c1d-9e91-f745c1600529",
@@ -34,7 +34,7 @@
     },
     {
       "id": "interaction-13faaffc-e6a1c738-ci-pe",
-      "targetKey": "MOIETY:13faaffc-d694-5839-a206-c55af3954df7|CLASS:e6a1c738-1d00-5475-8ade-0eedeec3ab6a|CI_PE",
+      "targetKey": "MOIETY:13faaffc-d694-5839-a206-c55af3954df7/CLASS:e6a1c738-1d00-5475-8ade-0eedeec3ab6a/CI_AXIS:CI_PE",
       "kind": "interaction_rule",
       "subjectUuid": "13faaffc-d694-5839-a206-c55af3954df7",
       "objectUuid": "e6a1c738-1d00-5475-8ade-0eedeec3ab6a",
@@ -47,7 +47,7 @@
     },
     {
       "id": "condition-d432c1cd-d471611d",
-      "targetKey": "MOIETY:d432c1cd-1a49-57b9-b36e-d8fd4d07cdad|CONDITION:d471611d-51f4-5579-9a5e-f78ceed57ec3",
+      "targetKey": "MOIETY:d432c1cd-1a49-57b9-b36e-d8fd4d07cdad/CONDITION:d471611d-51f4-5579-9a5e-f78ceed57ec3",
       "kind": "condition_contradiction",
       "subjectUuid": "d432c1cd-1a49-57b9-b36e-d8fd4d07cdad",
       "objectUuid": "d471611d-51f4-5579-9a5e-f78ceed57ec3",
@@ -60,7 +60,7 @@
     },
     {
       "id": "condition-1a030b20-607d5563",
-      "targetKey": "MOIETY:1a030b20-a1a1-58d1-98d9-a9f834d0db7c|CONDITION:607d5563-e7ba-5730-9584-7869a7bbf121",
+      "targetKey": "MOIETY:1a030b20-a1a1-58d1-98d9-a9f834d0db7c/CONDITION:607d5563-e7ba-5730-9584-7869a7bbf121",
       "kind": "condition_contradiction",
       "subjectUuid": "1a030b20-a1a1-58d1-98d9-a9f834d0db7c",
       "objectUuid": "607d5563-e7ba-5730-9584-7869a7bbf121",
