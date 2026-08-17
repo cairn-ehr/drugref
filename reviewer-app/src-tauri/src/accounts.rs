@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use reqwest::{Client, Method, StatusCode};
 use reviewer_domain::{
-    ApiErrorBody, BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewerAccount,
-    SessionGrant,
+    ApiErrorBody, BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewQueuePage,
+    ReviewQueueQuery, ReviewerAccount, SessionGrant,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -51,13 +51,6 @@ impl AccountClient {
             .lock()
             .map_err(|_| "native session store is unavailable".to_string())? = None;
         Ok(())
-    }
-
-    pub fn has_session(&self) -> bool {
-        self.session_token
-            .lock()
-            .map(|token| token.is_some())
-            .unwrap_or(false)
     }
 }
 
@@ -169,6 +162,22 @@ pub async fn create_user(
     client: tauri::State<'_, AccountClient>,
 ) -> Result<ReviewerAccount, String> {
     send_json(&client, Method::POST, "/v1/users", Some(&input), true).await
+}
+
+#[tauri::command]
+pub async fn load_review_queue(
+    query: ReviewQueueQuery,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<ReviewQueuePage, String> {
+    let response = client
+        .http
+        .get(client.endpoint("/v1/review-queue")?)
+        .bearer_auth(client.token()?)
+        .query(&query)
+        .send()
+        .await
+        .map_err(|error| format!("cannot reach the review service: {error}"))?;
+    response_json(response).await
 }
 
 #[tauri::command]

@@ -937,7 +937,7 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
-### Slice 6r — Human reviewer application 🚧 FOUNDATION BUILT
+### Slice 6r — Human reviewer application 🚧 LIVE READ PATH BUILT
 
 The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
 append-only clinical revisions, and sign the exact row reviewed. Canonical design:
@@ -960,7 +960,15 @@ The 2026-08-17 account round adds [`db/044`](superpowers/specs/2026-08-17-drugre
 creates the first administrator under a PostgreSQL advisory transaction lock, keeps bearer tokens in the native core,
 and gives administrators a live list/create-user GUI. Accounts are stable; profile, password and key-enrolment corrections
 are append-only; sessions store only token digests and insert-only revocations. The clinical queue is still explicitly
-fixture-backed and read-only. Next: live paginated queue reads, then annotations, curated transactions and local signing.
+fixture-backed and read-only in that round.
+
+The subsequent [live-queue round](superpowers/specs/2026-08-17-drugref-reviewer-live-queue-design.md) replaces the native
+fixture command with authenticated `GET /v1/review-queue`: bounded pagination, literal search, database-derived kind/source/
+relationship filters, stable natural-key targets and projection provenance from `ingest_run`. One materialised union of the
+two gap views supplies page rows, current totals and filter vocabularies from one statement snapshot. The browser-only Vite
+surface retains representative data solely for visual development and is never a native failure fallback. Clinical controls
+remain disabled. Next: append-only annotations/evidence, then curated transactions and local signing; administration still
+needs profile correction, disable/enable, password rotation, all-session revocation and signing-key enrolment UI.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

@@ -1,19 +1,20 @@
 mod auth;
 mod error;
 mod limiter;
+mod queue;
 mod store;
 
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Query, State},
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
 use reviewer_domain::{
-    BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewerAccount, ReviewerRole,
-    SessionGrant,
+    BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewQueuePage, ReviewQueueQuery,
+    ReviewerAccount, ReviewerRole, SessionGrant,
 };
 use sqlx::PgPool;
 
@@ -44,6 +45,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/bootstrap/admin", post(bootstrap_admin))
         .route("/v1/sessions", post(login))
         .route("/v1/sessions/current", post(logout))
+        .route("/v1/review-queue", get(review_queue))
         .route("/v1/users", get(list_users).post(create_user))
         .with_state(state)
 }
@@ -133,6 +135,18 @@ async fn create_user(
     )
     .await?;
     Ok((StatusCode::CREATED, Json(reviewer)))
+}
+
+async fn review_queue(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReviewQueueQuery>,
+) -> Result<Json<ReviewQueuePage>, AppError> {
+    authenticate_headers(&state, &headers).await?;
+    let query = query
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    Ok(Json(queue::load(&state.pool, &query).await?))
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {

@@ -65,13 +65,17 @@ const ACCOUNT_COLUMNS: &str = r#"
 "#;
 
 pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
-    let present: Option<String> =
-        sqlx::query_scalar("SELECT to_regclass('drugref.reviewer_account')::text")
-            .fetch_one(pool)
-            .await?;
-    if present.is_none() {
+    let present: bool = sqlx::query_scalar(
+        "SELECT to_regclass('drugref.reviewer_account') IS NOT NULL \
+         AND to_regclass('drugref.gap_uncurated_interaction_rule') IS NOT NULL \
+         AND to_regclass('drugref.gap_uncurated_condition_contradiction') IS NOT NULL \
+         AND to_regclass('drugref.curated_ddi_pair') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+    if !present {
         return Err(AppError::internal(
-            "db/044 is not applied; run `drugref migrate` before starting reviewer-service",
+            "the reviewer account or clinical queue schema is missing; run `drugref migrate` before starting reviewer-service",
         ));
     }
     Ok(())

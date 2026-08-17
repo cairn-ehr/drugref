@@ -1,23 +1,27 @@
 export type ReviewKind = "interaction_rule" | "condition_contradiction";
-export type Priority = "high" | "routine";
-export type ReviewState = "unreviewed" | "in_review" | "reviewed";
-export type SignatureStatus = "unsigned" | "valid" | "invalid";
 
-export interface ReviewerProfile {
-  username: string;
-  fullName: string;
-  qualifications: string;
-  bioMarkdown: string;
-  keyFingerprint: string;
+export interface ReviewQueueQuery {
+  page?: number;
+  pageSize?: number;
+  kind?: ReviewKind;
+  source?: string;
+  relationship?: string;
+  search?: string;
 }
 
-export interface QueueSummary {
+export interface ReviewQueueSummary {
   interactionRules: number;
   conditionContradictions: number;
   reviewedPairs: number;
 }
 
-export interface ReviewItem {
+export interface ReviewQueueFilters {
+  kinds: ReviewKind[];
+  sources: string[];
+  relationships: string[];
+}
+
+export interface ReviewQueueItem {
   id: string;
   targetKey: string;
   kind: ReviewKind;
@@ -25,21 +29,25 @@ export interface ReviewItem {
   objectUuid: string;
   subjectName: string;
   objectName: string;
-  relationship: string;
-  candidateSource: string;
-  upstreamRelease: string;
+  relationships: string[];
+  candidateSources: string[];
+  upstreamReleases: string[];
   impactCount: number;
-  priority: Priority;
-  reviewState: ReviewState;
-  signatureStatus: SignatureStatus;
   question: string;
   provenance: string;
 }
 
-export interface ReviewWorkspace {
-  mode: "preview";
+export interface Pagination {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+export interface ReviewQueuePage {
   generatedAt: string;
-  reviewer: ReviewerProfile;
-  summary: QueueSummary;
-  items: ReviewItem[];
+  summary: ReviewQueueSummary;
+  filters: ReviewQueueFilters;
+  pagination: Pagination;
+  items: ReviewQueueItem[];
 }

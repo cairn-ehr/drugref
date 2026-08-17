@@ -13,35 +13,37 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-user-management`, from merged PR #136 on `main` at `511f16f`.** Migrations
-through **`db/043`** are frozen; this round adds **`db/044`**.
+**Current branch: `codex/reviewer-live-queue`, from merged PR #137 on `main` at `5a8eedd`.** Migrations through
+**`db/044`** are frozen; this round adds no migration.
 
-**⇒ JUST FINISHED — reviewer accounts, service authentication and first-run administration.** Canonical design:
-[`2026-08-17-drugref-reviewer-user-management-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-user-management-design.md).
-`reviewer-domain/` shares API types; `reviewer-service/` is the Axum/SQLx trust boundary; Tauri keeps bearer
-tokens in native memory and the WebView retains no network permission. `db/044` adds stable accounts,
-append-only profile/password/key-enrolment history, digest-only sessions and insert-only revocations.
+**⇒ JUST FINISHED — authenticated live, paginated reviewer queue.** Canonical design:
+[`2026-08-17-drugref-reviewer-live-queue-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-live-queue-design.md).
+Any live reviewer session may call `GET /v1/review-queue`; Tauri attaches the bearer token from native memory and
+the WebView retains no network permission or database credential. Page size is bounded, search is a literal
+substring, and kind/source/relationship filters come from the current database queue.
 
-**FIRST RUN BLOCKS BEFORE WORKSPACE LOAD.** With no live administrator profile, the app shows only first-admin
-registration. Bootstrap is advisory-lock serialized, rechecked inside its transaction, forces the administrator
-role, and closes permanently once an administrator exists (disablement does not reopen it). Administrators can
-list/create users in the GUI; the service checks the role independently. Login is Argon2id-backed, rate-limited
-and constant-shape for missing/wrong/disabled accounts. Login remains authorisation, never a clinical signature.
+**ONE MATERIALISED UNION OWNS EACH RESPONSE SNAPSHOT.** The service reads the interaction-rule and condition-
+contradiction gap views, enriches stable natural-key targets from projection rows and `ingest_run`, and derives
+totals, filters, filtered count and deterministic page rows together. Sources, releases and condition predicates
+remain arrays because several assertions may support one source-neutral curated target. No queue table or cache
+was added.
 
-**THE CLINICAL QUEUE IS STILL DELIBERATELY READ-ONLY AND FIXTURE-BACKED.** Authentication is live; decision,
-annotation and signing controls are not. Do not wire Tauri directly to PostgreSQL and do not enable a clinical
-button in the next read slice.
+**THE CLINICAL QUEUE IS LIVE AND STILL DELIBERATELY READ-ONLY.** The fixture-only `in_review`, priority and
+signature fields are removed; gaps say **Unreviewed**, because no curated row exists to sign. Search is debounced,
+filters reset pagination, stale responses cannot overwrite a newer request, and inline failures preserve the last
+successful page. The browser-only Vite adapter remains explicit preview data and is never a native fallback.
 
-**⇒ DO THIS NEXT FOR THE GUI:** replace the bundled queue with live, paginated read-only service endpoints and
-database-derived vocabularies/filters. Then append-only annotations/evidence, curated revision transactions, and
-local key enrolment/signing in separate slices. The administration tail is profile correction, disable/enable,
-password rotation, all-session revocation and signing-key enrolment UI over `db/044`.
+**⇒ DO THIS NEXT FOR THE GUI:** append-only annotations and evidence references without manufacturing a clinical
+ruling. Then curated revision transactions and local key enrolment/signing in separate slices. The administration
+tail remains profile correction, disable/enable, password rotation, all-session revocation and signing-key
+enrolment UI over `db/044`. Do not enable a clinical decision or signing button in the annotation slice.
 
-**Verification completed:** full Python/PostgreSQL suite 1,779 passed; Rust domain/service/Tauri suites 3 + 4 +
-3; `ruff`; `cargo fmt --check`; `npm run check` with 0 diagnostics; `npm run build`; `npm audit` with 0
-vulnerabilities; native no-bundle build; local end-to-end bootstrap → login → administrator create/list. Frontend
-output is 0.63 kB HTML + 17.54 kB CSS + 69.14 kB JS (24.75 kB gzipped). The prior desktop/narrow visual-pass
-limitation remains until a browser surface is connected.
+**Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 5 plus the populated-
+database live-queue integration; Tauri 1; `ruff`; Rust formatting; `npm run check` with 0 diagnostics; production
+frontend build; `npm audit` with 0 vulnerabilities; native no-bundle build. Frontend output is 0.63 kB HTML +
+17.97 kB CSS + 71.50 kB JS (25.66 kB gzipped). Two real reference-database queue reads took 11.42 s total,
+including the known expensive interaction-gap view. No browser surface was available, so desktop/narrow visual
+verification remains outstanding.
 
 ## Parallel project sequencing
 

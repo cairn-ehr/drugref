@@ -10,15 +10,15 @@
     type CreateAccountInput,
     type ReviewerAccount,
   } from "./lib/accounts";
-  import type { ReviewItem, ReviewKind, ReviewWorkspace } from "./lib/types";
-  import { loadReviewWorkspace } from "./lib/workspace";
+  import type { ReviewKind, ReviewQueueItem, ReviewQueuePage } from "./lib/types";
+  import { loadReviewQueue } from "./lib/workspace";
 
   type Screen = "checking" | "bootstrap" | "login" | "workspace" | "unavailable";
   type View = "queue" | "users";
 
   let screen = $state<Screen>("checking");
   let activeView = $state<View>("queue");
-  let workspace = $state<ReviewWorkspace | null>(null);
+  let workspace = $state<ReviewQueuePage | null>(null);
   let currentUser = $state<ReviewerAccount | null>(null);
   let username = $state(accountMode() === "browser-preview" ? "maya.chen" : "");
   let password = $state(accountMode() === "browser-preview" ? "preview" : "");
@@ -27,7 +27,12 @@
   let selectedId = $state("");
   let search = $state("");
   let kindFilter = $state<"all" | ReviewKind>("all");
-  let stateFilter = $state("all");
+  let sourceFilter = $state("all");
+  let relationshipFilter = $state("all");
+  let queueLoading = $state(false);
+  let queueError = $state("");
+  let queueRequest = 0;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let bootstrapInput = $state<CreateAccountInput>({
     username: "",
     fullName: "",
@@ -38,23 +43,8 @@
   });
   let bootstrapConfirmation = $state("");
 
-  let visibleItems = $derived.by(() => {
-    if (!workspace) return [];
-    const needle = search.trim().toLocaleLowerCase();
-    return workspace.items.filter((item: ReviewItem) => {
-      const matchesKind = kindFilter === "all" || item.kind === kindFilter;
-      const matchesState = stateFilter === "all" || item.reviewState === stateFilter;
-      const matchesSearch =
-        !needle ||
-        item.subjectName.toLocaleLowerCase().includes(needle) ||
-        item.objectName.toLocaleLowerCase().includes(needle) ||
-        item.relationship.toLocaleLowerCase().includes(needle);
-      return matchesKind && matchesState && matchesSearch;
-    });
-  });
-
   let selectedItem = $derived(
-    workspace?.items.find((item: ReviewItem) => item.id === selectedId) ?? visibleItems[0] ?? null,
+    workspace?.items.find((item: ReviewQueueItem) => item.id === selectedId) ?? workspace?.items[0] ?? null,
   );
 
   onMount(() => void checkStartup());
@@ -104,15 +94,53 @@
   async function openWorkspace(user: ReviewerAccount) {
     currentUser = user;
     try {
-      const loaded = await loadReviewWorkspace();
-      workspace = loaded;
-      selectedId = loaded.items[0]?.id ?? "";
+      await refreshQueue(1);
       activeView = "queue";
       screen = "workspace";
     } catch (error) {
       screen = "unavailable";
       throw new Error(`Account access succeeded, but the review workspace could not load: ${String(error)}`);
     }
+  }
+
+  async function refreshQueue(page = 1) {
+    const request = ++queueRequest;
+    queueLoading = true;
+    queueError = "";
+    try {
+      const loaded = await loadReviewQueue({
+        page,
+        pageSize: 25,
+        kind: kindFilter === "all" ? undefined : kindFilter,
+        source: sourceFilter === "all" ? undefined : sourceFilter,
+        relationship: relationshipFilter === "all" ? undefined : relationshipFilter,
+        search: search.trim() || undefined,
+      });
+      if (request !== queueRequest) return;
+      workspace = loaded;
+      selectedId = loaded.items.some((item) => item.id === selectedId)
+        ? selectedId
+        : (loaded.items[0]?.id ?? "");
+    } catch (error) {
+      if (request !== queueRequest) return;
+      queueError = String(error);
+      if (!workspace) throw error;
+    } finally {
+      if (request === queueRequest) queueLoading = false;
+    }
+  }
+
+  function applyFilters() {
+    void refreshQueue(1);
+  }
+
+  function scheduleSearch() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => void refreshQueue(1), 350);
+  }
+
+  function changePage(delta: number) {
+    if (workspace) void refreshQueue(workspace.pagination.page + delta);
   }
 
   async function signOut() {
@@ -122,6 +150,8 @@
       workspace = null;
       currentUser = null;
       selectedId = "";
+      queueRequest += 1;
+      if (searchTimer) clearTimeout(searchTimer);
       password = accountMode() === "browser-preview" ? "preview" : "";
       screen = "login";
     }
@@ -186,19 +216,34 @@
         {#if currentUser.role === "administrator"}<button class="nav-item" class:active={activeView === "users"} type="button" onclick={() => (activeView = "users")}><span class="nav-icon" aria-hidden="true">♙</span>Reviewers</button>{/if}
         <button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">◇</span>Signing keys</button>
       </nav>
-      <div class="sidebar-status"><div class="status-row"><span class="status-dot status-dot--live"></span><span>Account service connected</span></div><small>Queue snapshot {workspace.generatedAt.slice(0, 10)}</small></div>
+      <div class="sidebar-status"><div class="status-row"><span class="status-dot status-dot--live"></span><span>Review service connected</span></div><small>Queue read {workspace.generatedAt.slice(0, 10)}</small></div>
     </aside>
 
     <main class="workspace-shell">
-      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "users" ? "Administration" : "Clinical curation"}</p><h1>{activeView === "users" ? "Reviewer accounts" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span> Queue remains preview-only</span><div class="reviewer-chip"><span class="avatar">{initials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
+      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "users" ? "Administration" : "Clinical curation"}</p><h1>{activeView === "users" ? "Reviewer accounts" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live read-only queue"}</span><div class="reviewer-chip"><span class="avatar">{initials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
 
       {#if activeView === "users"}
         <UserManagement />
       {:else}
         <section class="metrics" aria-label="Review queue summary"><article><span class="metric-icon metric-icon--amber" aria-hidden="true">↔</span><div><strong>{workspace.summary.interactionRules}</strong><span>Interaction rules</span></div><small>Awaiting judgement</small></article><article><span class="metric-icon metric-icon--rose" aria-hidden="true">±</span><div><strong>{workspace.summary.conditionContradictions}</strong><span>Condition conflicts</span></div><small>Need clinical context</small></article><article><span class="metric-icon metric-icon--green" aria-hidden="true">✓</span><div><strong>{workspace.summary.reviewedPairs}</strong><span>Curated DDI pairs</span></div><small>Expanded from signed rules</small></article></section>
         <section class="review-layout">
-          <div class="queue-panel"><div class="queue-tools"><label class="search-box" aria-label="Search review queue"><span aria-hidden="true">⌕</span><input placeholder="Search drug, class, or relationship" bind:value={search} /></label><div class="filter-row"><label><span>Type</span><select bind:value={kindFilter}><option value="all">All review types</option><option value="interaction_rule">Interactions</option><option value="condition_contradiction">Condition conflicts</option></select></label><label><span>Status</span><select bind:value={stateFilter}><option value="all">All statuses</option><option value="unreviewed">Unreviewed</option><option value="in_review">In review</option></select></label></div></div><div class="queue-heading"><span>{visibleItems.length} representative records</span><span>Impact</span></div><div class="queue-list">{#each visibleItems as item (item.id)}<button class="queue-item" class:selected={selectedItem?.id === item.id} type="button" onclick={() => (selectedId = item.id)}><span class="queue-main"><span class="queue-badges"><span class:conflict={item.kind === "condition_contradiction"}>{kindLabel(item.kind)}</span>{#if item.reviewState === "in_review"}<span class="in-review">In review</span>{/if}</span><strong>{item.subjectName}</strong><span class="object-name">{item.objectName}</span><small>{item.relationship} · {item.candidateSource}</small></span><span class="impact-count" class:high={item.priority === "high"}>{item.impactCount}<small>{item.kind === "interaction_rule" ? "pairs" : "conflict"}</small></span></button>{:else}<div class="empty-state">No representative records match these filters.</div>{/each}</div></div>
-          {#if selectedItem}<section class="detail-panel" aria-label={`Review details for ${selectedItem.subjectName}`}><div class="detail-head"><div class="detail-kicker"><span>{kindLabel(selectedItem.kind)}</span><span>•</span><span>{selectedItem.relationship}</span></div><h2>{selectedItem.subjectName}</h2><p class="relation-line"><span>with</span> {selectedItem.objectName}</p><div class="detail-badges"><span class="badge badge--amber">Unsigned</span><span class="badge">{selectedItem.candidateSource}</span><span class="badge">Release {selectedItem.upstreamRelease}</span></div></div><div class="detail-scroll"><article class="question-card"><p class="section-label">Review question</p><p>{selectedItem.question}</p><div class="impact-callout"><strong>{selectedItem.impactCount}</strong><span>{selectedItem.kind === "interaction_rule" ? "candidate pairs inherit this one rule" : "stable pair carries contradictory projections"}</span></div></article><div class="section-heading"><div><p class="section-label">Clinical judgement</p><h3>Decision fields</h3></div><span>Write path arrives next</span></div><div class="decision-grid" aria-disabled="true"><label><span>Ruling</span><select disabled><option>Choose a ruling…</option></select></label><label><span>Severity</span><select disabled><option>Choose severity…</option></select></label><label class="wide"><span>Mechanism</span><textarea disabled placeholder="Explain the clinical mechanism"></textarea></label><label class="wide"><span>Management</span><textarea disabled placeholder="Describe practical management"></textarea></label><label><span>Evidence grade</span><select disabled><option>Choose evidence…</option></select></label><label><span>Reviewed against</span><input disabled value={selectedItem.upstreamRelease} /></label></div><div class="section-heading"><div><p class="section-label">Provenance</p><h3>Why this is in the queue</h3></div></div><article class="provenance-card"><div class="provenance-line"><span>Source assertion</span><strong>{selectedItem.candidateSource}</strong></div><p>{selectedItem.provenance}</p><dl><div><dt>Subject UUID</dt><dd>{selectedItem.subjectUuid}</dd></div><div><dt>Object UUID</dt><dd>{selectedItem.objectUuid}</dd></div></dl></article><div class="section-heading"><div><p class="section-label">Reviewer annotation</p><h3>Working note</h3></div></div><textarea class="annotation" disabled placeholder="Add an evidence-grounded Markdown note…"></textarea></div><footer class="detail-actions"><div><span class="key-indicator"><span></span> Signing key preview</span><small>{workspace.reviewer.keyFingerprint.slice(0, 12)}…</small></div><button class="secondary-button" type="button" disabled>Save annotation</button><button class="primary-button primary-button--compact" type="button" disabled>Record &amp; sign decision</button></footer></section>{:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}
+          <div class="queue-panel">
+            <div class="queue-tools">
+              <label class="search-box" aria-label="Search review queue"><span aria-hidden="true">⌕</span><input placeholder="Search drug, class, or relationship" bind:value={search} oninput={scheduleSearch} /></label>
+              <div class="filter-row">
+                <label><span>Type</span><select bind:value={kindFilter} onchange={applyFilters}><option value="all">All review types</option>{#each workspace.filters.kinds as kind}<option value={kind}>{kindLabel(kind)}</option>{/each}</select></label>
+                <label><span>Source</span><select bind:value={sourceFilter} onchange={applyFilters}><option value="all">All sources</option>{#each workspace.filters.sources as source}<option value={source}>{source}</option>{/each}</select></label>
+                <label><span>Relationship</span><select bind:value={relationshipFilter} onchange={applyFilters}><option value="all">All relationships</option>{#each workspace.filters.relationships as relationship}<option value={relationship}>{relationship}</option>{/each}</select></label>
+              </div>
+            </div>
+            <div class="queue-heading"><span>{workspace.pagination.totalItems} records · page {workspace.pagination.page} of {Math.max(workspace.pagination.totalPages, 1)}</span><span>{queueLoading ? "Loading…" : "Impact"}</span></div>
+            {#if queueError}<p class="queue-error" role="alert">{queueError}</p>{/if}
+            <div class="queue-list" aria-busy={queueLoading}>
+              {#each workspace.items as item (item.id)}<button class="queue-item" class:selected={selectedItem?.id === item.id} type="button" onclick={() => (selectedId = item.id)}><span class="queue-main"><span class="queue-badges"><span class:conflict={item.kind === "condition_contradiction"}>{kindLabel(item.kind)}</span></span><strong>{item.subjectName}</strong><span class="object-name">{item.objectName}</span><small>{item.relationships.join(" + ")} · {item.candidateSources.join(" + ")}</small></span><span class="impact-count">{item.impactCount}<small>{item.kind === "interaction_rule" ? "pairs" : "conflict"}</small></span></button>{:else}<div class="empty-state">No live records match these filters.</div>{/each}
+            </div>
+            <div class="queue-pagination"><button type="button" disabled={queueLoading || workspace.pagination.page <= 1} onclick={() => changePage(-1)}>← Previous</button><span>Page {workspace.pagination.page}</span><button type="button" disabled={queueLoading || workspace.pagination.page >= workspace.pagination.totalPages} onclick={() => changePage(1)}>Next →</button></div>
+          </div>
+          {#if selectedItem}<section class="detail-panel" aria-label={`Review details for ${selectedItem.subjectName}`}><div class="detail-head"><div class="detail-kicker"><span>{kindLabel(selectedItem.kind)}</span><span>•</span><span>{selectedItem.relationships.join(" + ")}</span></div><h2>{selectedItem.subjectName}</h2><p class="relation-line"><span>with</span> {selectedItem.objectName}</p><div class="detail-badges"><span class="badge badge--amber">Unreviewed</span><span class="badge">{selectedItem.candidateSources.join(" + ")}</span><span class="badge">Release {selectedItem.upstreamReleases.join(" / ")}</span></div></div><div class="detail-scroll"><article class="question-card"><p class="section-label">Review question</p><p>{selectedItem.question}</p><div class="impact-callout"><strong>{selectedItem.impactCount}</strong><span>{selectedItem.kind === "interaction_rule" ? "candidate pairs inherit this one rule" : "stable pair carries contradictory projections"}</span></div></article><div class="section-heading"><div><p class="section-label">Clinical judgement</p><h3>Decision fields</h3></div><span>Write path arrives next</span></div><div class="decision-grid" aria-disabled="true"><label><span>Ruling</span><select disabled><option>Choose a ruling…</option></select></label><label><span>Severity</span><select disabled><option>Choose severity…</option></select></label><label class="wide"><span>Mechanism</span><textarea disabled placeholder="Explain the clinical mechanism"></textarea></label><label class="wide"><span>Management</span><textarea disabled placeholder="Describe practical management"></textarea></label><label><span>Evidence grade</span><select disabled><option>Choose evidence…</option></select></label><label><span>Reviewed against</span><input disabled value={selectedItem.upstreamReleases.join(" / ")} /></label></div><div class="section-heading"><div><p class="section-label">Provenance</p><h3>Why this is in the queue</h3></div></div><article class="provenance-card"><div class="provenance-line"><span>Source assertion</span><strong>{selectedItem.candidateSources.join(" + ")}</strong></div><p>{selectedItem.provenance}</p><dl><div><dt>Subject UUID</dt><dd>{selectedItem.subjectUuid}</dd></div><div><dt>Object UUID</dt><dd>{selectedItem.objectUuid}</dd></div></dl></article><div class="section-heading"><div><p class="section-label">Reviewer annotation</p><h3>Working note</h3></div></div><textarea class="annotation" disabled placeholder="Add an evidence-grounded Markdown note…"></textarea></div><footer class="detail-actions"><div><span class="key-indicator"><span></span> Signing remains disabled</span><small>{currentUser.keyCount} enrolled {currentUser.keyCount === 1 ? "key" : "keys"}</small></div><button class="secondary-button" type="button" disabled>Save annotation</button><button class="primary-button primary-button--compact" type="button" disabled>Record &amp; sign decision</button></footer></section>{:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}
         </section>
       {/if}
     </main>
