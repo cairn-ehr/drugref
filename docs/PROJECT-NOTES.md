@@ -3007,6 +3007,40 @@ in a table that had none — **it could not fail**. Two enantiomer tests were un
 the member, ambiguity and independence cases without disturbing the counts the existing tests were measured
 against.
 
+## Reviewer GUI foundation (2026-08-17) — `reviewer-app/`, no migration
+
+Canonical design: [`2026-08-17-drugref-reviewer-gui-foundation-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-gui-foundation-design.md).
+
+**The architectural decision:** Tauri 2 with plain Svelte/TypeScript and a Rust core. The production desktop client talks to
+an authenticated review service over HTTPS; it never holds a shared PostgreSQL credential. A password session authorises an
+operation but is not a clinical signature. The private Ed25519 key remains on the reviewer device; the existing
+`signing_key` registry remains the public-key authority. One valid signature on the live assertion is the initial sign-off
+policy, with the existing detached signature shape already supporting counter-signing.
+
+**What this round actually ships:** a compact native shell, a clearly-labelled preview login/profile, queue metrics and
+filters, master-detail review records, provenance and UUID display, disabled decision/annotation/signing surfaces, a strict
+CSP, and one read-only Tauri command. Both native IPC and Vite browser preview consume the same committed JSON fixture; Rust
+validates the fingerprint and stable targets before returning it. The five representative rows came from the live
+`gap_uncurated_interaction_rule` / `gap_uncurated_condition_contradiction` views. The dated summary is 593 interaction rules,
+168 condition contradictions and 255 expanded curated DDI pairs. None is a code invariant.
+
+**A dependency defect was removed rather than waived.** The official Svelte template selected SvelteKit and resolved an old
+`cookie` with three low advisories. This app has no Node server or SSR, so SvelteKit and the static adapter were removed in
+favour of plain Svelte + Vite. `npm audit` then reported 0 advisories; output is 0.63 kB HTML, 14.51 kB CSS and 58.21 kB JS
+(21.45 kB gzipped). The npm lock contains only AGPL/permissive licences. The Cargo tree is permissive/Unicode/Zlib/MPL-2.0,
+selecting a compatible arm wherever a package is multi-licensed. The unused opener plugin and permission were also removed.
+
+**Verified:** `cargo fmt --check`; 2 Rust unit tests; `npm run check` with 0 errors and 0 warnings; `npm run build`; `npm audit`
+with 0 advisories; debug native integration and a release macOS app bundle. The measured release is **8.3 MB** with an
+**8.0 MB** executable, before code signing or installer packaging. The Codex in-app browser was unavailable (no connected
+browser surface), so automated screenshot QA did not run; do the design spec's desktop/narrow visual pass when one is
+available. This limitation does not weaken the compilation/accessibility result and is not represented as visual approval.
+
+**Next:** add the reviewer-account migration and authenticated Rust service skeleton. Likely tables are stable
+`reviewer_account`, append-only `reviewer_profile` and `reviewer_password_credential`, `reviewer_key` mapping into
+`signing_key`, revocable sessions and append-only annotations on `question_uuid`. Exact DDL is deliberately left to that
+round. The next unused migration number is **044**: `db/043` belongs to the merged FDA-CYP review round.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -3144,7 +3178,9 @@ attach only as a node-local, separately-licensed plug-in. The surviving ladder i
 interactions at all) → **DrugCentral's `ddi_ref_id = 2` subset, rule 6 ANSWERED** (its other two references are a
 copyrighted book and a commercial compendium and are out — same section) → drugref's own curation.
 Beside ROADMAP's two orthogonal structures, 5b adds a **third graph**, the MeSH condition DAG — an *object* structure, not a
-subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. Advisory tier, **integrity in the DB**.
+subject one. **Substrate**: Python 3.12 + `uv`, `psycopg` v3, PostgreSQL ≥ 18. The reviewer client adds Tauri 2, Rust and
+plain Svelte/TypeScript; its production trust boundary is an authenticated service, never direct client SQL. Advisory tier,
+**integrity in the DB**.
 
 ## How to run / test
 
@@ -3158,14 +3194,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1730 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1763 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1730
-# passed in 44 s (slice 5c.2g: 1660 + 70). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1763
+# passed in 45.16 s (slice 5c.2g implementation + review: 1660 → 1763). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
 # section, because it had none. A round that lands via a different agent will not have
@@ -3182,6 +3218,16 @@ DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv
 # ruff is pinned in the dev group, so this resolves the lockfile's version rather than
 # whatever is on PATH, and CI runs the same command in its own `lint` job.
 uv run ruff check .
+
+# Reviewer GUI foundation (fixture-backed and read-only in this slice).
+cd reviewer-app
+npm install
+npm run check
+npm run build
+npm audit
+(cd src-tauri && cargo fmt --check && cargo test)
+npm run tauri build -- --debug --no-bundle
+cd ..
 
 # Re-measure against the real releases, ~137 s WITH gsrs (~114 s without: the 2.05 GB
 # dump adds ~23 s). TWO manual steps: unzip Core_MEDRT_XML.zip into downloads/MEDRT/, and

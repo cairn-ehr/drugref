@@ -937,6 +937,25 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
+### Slice 6r — Human reviewer application 🚧 FOUNDATION BUILT
+
+The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
+append-only clinical revisions, and sign the exact row reviewed. Canonical design:
+[reviewer GUI foundation](superpowers/specs/2026-08-17-drugref-reviewer-gui-foundation-design.md).
+
+The 2026-08-17 foundation adds `reviewer-app/`: Tauri 2 + plain Svelte/TypeScript, a Rust IPC boundary, a login/profile
+presentation and a searchable master-detail queue over one fixture shared by native and browser modes. The fixture uses
+representative live gap-view rows and dated totals (**593** interaction rules, **168** condition contradictions, **255**
+expanded curated DDI pairs); these are interface evidence, not constants. Rust rejects malformed fingerprints, incomplete
+targets and duplicate stable target keys. All clinical-write, annotation and signing controls are visibly disabled. **No
+migration and no database connection shipped.** Frontend audit: 0 advisories; the measured release macOS app bundle is
+**8.3 MB** with an **8.0 MB** executable, before code signing or installer packaging.
+
+The production boundary is Tauri client → authenticated Rust review service → PostgreSQL, never a shared database credential
+inside the client. Private Ed25519 keys stay encrypted on the device; the service stores the public key in the existing
+`signing_key` registry, independently re-derives signed payloads and writes through the existing append/supersede discipline.
+Next: reviewer accounts and service skeleton, then live paginated reads, annotations, curated transactions and local signing.
+
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded
 substance, DDI advisory — **overlay enrichment, never a wire change** on the Cairn side.
