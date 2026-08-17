@@ -457,10 +457,83 @@ def test_the_question_text_states_the_actual_reason(conn):
     """Four dispositions reach this view and they are four different questions.
     A single text asserting one reason would be #122's defect again -- a message
     asserting a cause it has not confirmed.
+
+    ALL FOUR branches pinned, not two: the review of this task's first pass
+    found the CASE's `ELSE` branch (non_drug_entity) was untested by name, which
+    is exactly how it went unnoticed that `ELSE` itself contradicted this file's
+    own no-ELSE rule (see questions.py's `fda_cyp_unadjudicated` entry, and
+    unresolved_ci_object's comment above it). A wording assertion per branch is
+    what would have caught a branch silently swallowed by the wrong one.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     texts = [row[0] for row in conn.execute(
         "SELECT question_text FROM drugref.open_question "
         "WHERE gap_kind = 'fda_cyp_unadjudicated'").fetchall()]
-    assert any("footnote" in t.lower() for t in texts)
-    assert any("regimen" in t.lower() for t in texts)
+    assert any("footnote" in t.lower() for t in texts), "withheld_qualified"
+    assert any("moiety" in t.lower() for t in texts), "unresolved_substance"
+    assert any("regimen" in t.lower() for t in texts), "combination_regimen"
+    assert any("not drugs" in t.lower() for t in texts), "non_drug_entity"
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_subject_grain_collapses_repeated_cells_for_one_substance(conn):
+    """db/040. Three of the four dispositions are graded per SUBJECT (source,
+    raw_substance, disposition), not per cell -- db/039 originally grouped all
+    four the same way, and issue 41's review measured that as 71 questions
+    minted on the real page for 55 actual facts. This is the collapse, pinned
+    directly against fixture rows that already exercise it without a synthetic
+    INSERT:
+
+    * rifampin is unseeded (unresolved_substance) and appears against EIGHT
+      distinct (column_heading, pathway) cells in the fixture -- two CYP
+      Strg IND pathways, four CYP Mod IND pathways, and two TRNSP INH
+      pathways. Under the old per-cell grain that is eight questions asking
+      "which moiety is rifampin?" under eight different UUIDs; the subject
+      grain must raise exactly ONE.
+    * 'atazanavir and ritonavir' (combination_regimen) appears against TWO
+      pathways (OATP1B1, OATP1B3) of the SAME column_heading. Same collapse,
+      smaller fixture footprint.
+
+    bupropion is the CONTRAST, included so this test cannot pass by a grain
+    fix that accidentally collapses EVERYTHING: its disposition is
+    withheld_qualified, which keeps the per-CELL grain (db/040's header
+    explains why -- each footnoted cell is its own adjudication), and it
+    carries two footnoted cells (CYP Strg INH/2D6, CYP SENS SUB/2B6) that
+    must stay two separate gap rows and two separate questions.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+
+    rifampin_cells = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) = 'rifampin'").fetchone()[0]
+    assert rifampin_cells > 1, "the fixture must still exercise more than one cell"
+    rifampin_gaps = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE lower(raw_substance) = 'rifampin'").fetchone()[0]
+    assert rifampin_gaps == 1, "one substance, one question -- not one per cell"
+    rifampin_questions = conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated' "
+        "  AND gap_key LIKE 'FDACYP:rifampin|%'").fetchone()[0]
+    assert rifampin_questions == 1
+
+    regimen_cells = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion "
+        "WHERE raw_substance = 'atazanavir and ritonavir'").fetchone()[0]
+    assert regimen_cells > 1
+    regimen_gaps = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE raw_substance = 'atazanavir and ritonavir'").fetchone()[0]
+    assert regimen_gaps == 1
+
+    bupropion_cells = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) LIKE 'bupropion%' "
+        "  AND disposition = 'withheld_qualified'").fetchone()[0]
+    assert bupropion_cells > 1, "the fixture must still exercise more than one cell"
+    bupropion_gaps = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE lower(raw_substance) LIKE 'bupropion%'").fetchone()[0]
+    assert bupropion_gaps == bupropion_cells, (
+        "withheld_qualified keeps the per-CELL grain -- it must NOT collapse "
+        "the way the other three dispositions do")

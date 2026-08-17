@@ -391,31 +391,52 @@ _GAP_SOURCES = {
     # asserting one reason for all of them -- issue 122's lesson: a message may not
     # state a cause it has not confirmed.
     #
-    # THE gap_key GRAIN MATCHES gap_fda_cyp_unadjudicated's GROUP BY EXACTLY (#41):
-    # (source, raw_substance, column_heading, pathway). db/039's own comment on that
-    # view states the rule this key restates: grouping coarser folds two independent
-    # facts onto one immortal question_uuid, grouping finer mints two questions for
-    # one fact. 'FDACYP:' rather than a source-derived prefix because the source is
-    # already a fixed literal here ('FDA-CYP' is the only source this view reads),
-    # unlike unresolved_ci_object's namespace, which genuinely varies row to row.
+    # TWO GRAINS, ONE gap_kind, because db/040 corrected db/039's view into a UNION
+    # ALL of two correctly-grained halves (db/040's own header has the full measured
+    # argument: 71 gap rows minted for 55 facts under db/039's single grouping,
+    # issue 41's rule in its FINER direction -- "grouping finer mints two questions
+    # for one fact"):
+    #   * withheld_qualified is grained per CELL (source, raw_substance,
+    #     column_heading, pathway) -- each footnoted cell is its own adjudication,
+    #     so column_heading/pathway are part of the fact and belong in the key.
+    #   * the other three (unresolved_substance, combination_regimen,
+    #     non_drug_entity) are grained per SUBJECT (source, raw_substance,
+    #     disposition) -- the question is about the NAME, not the cell that
+    #     happened to mention it, so the view now projects column_heading and
+    #     pathway as NULL for these three.
     #
-    # NOTE ON A GRAIN MISMATCH THAT DOES NOT (YET) BITE: fda_cyp_assertion's own
-    # PRIMARY KEY is (ingest_run, row_ordinal, column_heading, pathway) -- keyed on
-    # the ROW FDA printed, not the substance name -- because aprepitant occupies TWO
-    # rows of FDA's table (db/039's own comment on that column). This view, and so
-    # this gap_key, group on raw_substance instead of row_ordinal. That is a
-    # DIFFERENT grain, and it would fold two assertions onto one question if FDA's
-    # table ever printed the SAME substance name against the SAME (column_heading,
-    # pathway) pair on two separate rows -- measured directly against the real page
-    # (419 tuples, task 7's report) and confirmed NOT to happen there today,
-    # including for aprepitant itself (its two rows land on three genuinely distinct
-    # (column_heading, pathway) pairs). Left as a documented risk rather than
-    # changed here: db/039 is already applied, and widening the view's grain now
-    # needs its own migration (db/040), not a quiet edit to a merged one.
+    # key_sql below COALESCEs both nullable columns to '' before concatenating.
+    # NOT COSMETIC: SQL's `||` returns NULL if any operand is NULL, so an
+    # unguarded key_sql would silently mint a NULL gap_key -- and so one shared,
+    # NULL-derived question_uuid -- for every subject-grain row. For
+    # withheld_qualified the two columns are never NULL, so COALESCE is a no-op
+    # there and every one of its gap_keys, and therefore its question_uuids, is
+    # BYTE-IDENTICAL to what db/039 minted -- only the three subject dispositions'
+    # keys change, and they change from up to sixteen keys to eight.
+    #
+    # DO NOT "FIX" THE unresolved_substance / combination_regimen TEXT TO NAME
+    # column_heading OR pathway. It would look like an omission next to
+    # withheld_qualified's, which does interpolate them -- it is not one. Those
+    # two branches never named a cell (they ask about the SUBSTANCE), and now that
+    # the view's grain agrees, naming a cell in the text would misstate what the
+    # question is actually about: one substance, not one occurrence of it.
+    #
+    # 'FDACYP:' rather than a source-derived prefix because the source is already
+    # a fixed literal here ('FDA-CYP' is the only source this view reads), unlike
+    # unresolved_ci_object's namespace, which genuinely varies row to row.
+    #
+    # THE CASE HAS NO ELSE, on unresolved_ci_object's own precedent above:
+    # open_question.question_text is NOT NULL, so a fifth live disposition value
+    # (a `member` leak, or a future sixth CHECK value) aborts the ingest loudly
+    # instead of a curator reading "one of five substances that are not drugs"
+    # about a row that is nothing of the kind -- the exact false-premise failure
+    # the CASE branching exists to avoid. An earlier draft of this entry used
+    # ELSE for non_drug_entity, which is precisely the defect this file's own
+    # unresolved_ci_object comment warns against, restated for a second gap kind.
     "fda_cyp_unadjudicated": {
         "view": "gap_fda_cyp_unadjudicated",
-        "key_sql": ("'FDACYP:' || raw_substance || '|' || column_heading || "
-                    "'|' || pathway"),
+        "key_sql": ("'FDACYP:' || raw_substance || '|' || "
+                    "COALESCE(column_heading, '') || '|' || COALESCE(pathway, '')"),
         "text_sql": (
             "CASE disposition "
             "WHEN 'withheld_qualified' THEN "
@@ -433,7 +454,7 @@ _GAP_SOURCES = {
             "  'FDA reports this role for the REGIMEN ' || raw_substance || '. "
             "Which component, if any, carries it? Drugref does not assign a "
             "regimen''s role to a component.' "
-            "ELSE "
+            "WHEN 'non_drug_entity' THEN "
             "  'FDA lists ' || raw_substance || ' as one of five substances that are "
             "not drugs. Should drugref carry it at all, and under what identity?' "
             "END"),
