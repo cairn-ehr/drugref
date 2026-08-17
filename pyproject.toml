@@ -58,6 +58,24 @@ packages = ["src/drugref"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+# REGISTERED because CI runs --strict-markers, so an unknown mark is an error
+# rather than a silent typo that deselects nothing.
+#
+# `livepage` means "this test reads a file under downloads/, which is gitignored".
+# CI deselects it (`-m "not livepage"`); it is NOT skipped, and that distinction is
+# the whole point: the workflow fails on any skip, because a test that only ever
+# skips passes vacuously. Deselection is a stated exclusion the workflow names out
+# loud; a skip is one the suite discovers at runtime and shrugs at.
+#
+# KEEP THIS SET AS SMALL AS IT IS. Exactly one test carries it today, and it earns
+# the mark because it is a PROVENANCE check -- it compares the committed fixture
+# against the actual download, so it cannot be rewritten to run without one. Any
+# test that CAN be made to run against a fixture MUST be, not marked. The three
+# that used to be skipped alongside it were fixed that way rather than marked.
+markers = [
+    "livepage: needs a real page under downloads/ (gitignored); deselected in CI",
+]
+
 # ---- lint (issue 66) --------------------------------------------------------
 #
 # There was no [tool.ruff] section at all before this, which meant ruff ran with its

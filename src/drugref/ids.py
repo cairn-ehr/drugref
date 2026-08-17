@@ -64,6 +64,11 @@ _SOURCE_CANONICAL = {
     # the luck was CHECKED rather than assumed. db/028 widens ingest_run's source
     # CHECK to match; the two are a pair.
     "GSRS": "GSRS",
+    # Slice 5c.2g. 'FDA-CYP' survives the upper-case fall-through unchanged, as
+    # 'GSRS' and 'DRUGREF' do -- and is listed for the same reason: the entry
+    # records that the luck was CHECKED rather than assumed. db/039 widens both
+    # substance_class's and ingest_run's source CHECKs to match; they are a trio.
+    "FDA-CYP": "FDA-CYP",
 }
 
 # The key prefix each canonical authority contributes to a class UUID.

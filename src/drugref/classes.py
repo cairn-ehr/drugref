@@ -36,12 +36,17 @@ class ClassConcept:
     * `code` -- the code AS PUBLISHED, which the source's own edges reference. Equal
                to `nui` for authorities (like MeSH) that key on their published UI;
                kept separate because MED-RT allows the two to differ (see the
-               code-vs-NUI note in medrt.parse()).
+               code-vs-NUI note in medrt.parse()). NULLABLE, deliberately: FDA-CYP
+               (slice 5c.2g) publishes no code for the classes it defines at all --
+               substance_class.published_code is nullable for exactly this case --
+               and passing `code=None` there is honest where inventing a string to
+               satisfy a non-optional field would be a manufactured fact in a
+               provenance column.
     * `name` / `concept_type` -- the cached display name and the axis this class
                sits on (a MED-RT CTY such as 'MoA', or MeSH's 'PA').
     """
     nui: str
-    code: str
+    code: str | None
     name: str
     concept_type: str
 

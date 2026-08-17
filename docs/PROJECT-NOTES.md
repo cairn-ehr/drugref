@@ -18,6 +18,23 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **INGEST WHAT IS UNAMBIGUOUS; SET ASIDE FOR CLINICIAN REVIEW WHAT IS NOT. ERR ON THE SIDE OF CAUTION.**
+  Stated by the project owner during the 5c.2g design round (2026-08-16) as the rule governing **every source
+  round**, and written here rather than in that slice's spec because it is not that slice's rule. Two
+  corollaries it already forced, both of which look like extra work and are not:
+  - **A disposition records what was OBSERVED, never what the round suspects it MEANS.** 5c.2g's
+    resolution residue splits into six recognisable categories — enantiomer, synonym, metabolite, group
+    term, combination, non-drug — and only the last two are stored, because only those two are asserted by
+    the SOURCE. Labelling `R-venlafaxine` an "enantiomer of a held racemate" is a chemical relationship
+    inferred **from a string prefix**, which is #122's manufactured-cause defect wearing a different hat.
+    The other four collapse to one honest `unresolved_substance`.
+  - **A near-name candidate is EVIDENCE, never coverage, and no count may be quoted against it.** The
+    DrugCentral evaluation already paid for this one: its prefix heuristic "matched" `glycerol` to
+    `glycerol 1,3-dimethacrylate`, a different substance, and its own note says *"treat it as the shape of
+    the problem, not a count to quote."*
+  The first thing this rule refused is filed as [#128](https://github.com/cairn-ehr/drugref/issues/128)
+  (stereoisomer assertions against a held racemate — pharmacology with a literature behind it, not a naming
+  convention), and it is scoped to every source, not to the three rows that raised it.
 - **THE VIEW'S GRAIN MUST BE THE `gap_key`'S GRAIN** (#41) — a gap view that groups more coarsely than its key
   folds two gaps onto one immortal `question_uuid`. Pinned per kind, Plan C's two compound-key views included.
 - **One reader, one clear, one checksum — and one supersession** (#40, #43, #59): `mesh.iter_records`,
@@ -2651,8 +2668,15 @@ compare unordered pairs against `ddi_candidate_pair` (MED-RT, **20,238** distinc
 ### Which of these figures can be RE-DERIVED, and which must be taken on trust
 
 Stated because a future session is told to act on them, and the two halves are not equally checkable. **Nothing
-in this section is backed by a committed script** — the repo has no home for one, so the method is written out
-above instead, which is what makes the first two groups re-runnable at all.
+in this section is backed by a committed script** — the repo had no home for one when this was written, so the
+method is written out above instead, which is what makes the first two groups re-runnable at all.
+
+**⇒ THAT EXCUSE EXPIRED ON 2026-08-16 AND THE FIGURES ABOVE DID NOT BENEFIT.** `tools/` now exists as a
+committed top-level package (PR [#127](https://github.com/cairn-ehr/drugref/pull/127)) holding exactly the
+kind of measurement script this paragraph says had nowhere to live — `tools/pregnancy_lactation_spike.py`
+re-runs its own evaluation and *writes the results file*, which is why that spike's numbers are re-derivable
+and DrugCentral's are not. **A future source evaluation puts its measurement in `tools/`**; the numbers above
+stay measured-once because the dump is gone, not because the repo still lacks a home.
 
 - **Re-derivable from this checkout, and were re-derived during PR #103's review:** every drugref-side count
   (rebuild the chain at the pinned releases, then one `SELECT count(*)`); the hot path, because the subject
@@ -2667,6 +2691,321 @@ above instead, which is what makes the first two groups re-runnable at all.
   determination is the load-bearing one; **re-read the `reference` table before bundling anything.**
 - **Re-measured 2026-08-13 and now closing:** the DailyMed document-type sample (above). Its predecessor did
   not close, which is why it is the one figure in this section that was redone rather than restated.
+
+## Two further source spikes (2026-08-16) — FDA/toxicity and pregnancy/lactation
+
+**Both landed on `main` from a DIFFERENT AGENT while the guard round's review was the newest thing every
+document described, and that is the fact to carry forward, not the sources.** PR
+[#126](https://github.com/cairn-ehr/drugref/pull/126) updated ROADMAP only; PR
+[#127](https://github.com/cairn-ehr/drugref/pull/127) — **2,147 lines, two new `src/drugref/ingest/` parsers, a
+new top-level `tools/` package, three test files, +16 tests** — updated **no document at all**. The next
+session read a HANDOVER whose suite count, ROADMAP position and code map were all one round behind, and only
+running the suite showed it. **Rule 8 is not ceremony: check `git log` against HANDOVER before trusting it.**
+
+### The FDA spike (PR #126) — the potency vocabulary 5c.3's evaluation found missing
+
+Spec: [FDA interaction and toxicity source
+spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-spike.md). Four rule-6
+determinations, all made against live sources with checksums recorded in the spec's §2 reproduction manifest:
+
+- **`FDA-CYP` — bundle.** FDA's CYP/transporter examples table, public domain. **This is the answer to the
+  question 5c.3's evaluation left open**: SPL section 7 qualifies interactions by potency band (*strong*
+  CYP1A2 inhibitors contraindicated, *moderate or weak* "avoid"), and MED-RT's single undifferentiated
+  `Cytochrome P450 1A2 Inhibitors [MoA]` cannot express it. **The page has no release identifier**, so fetch
+  time + SHA-256 *are* the release identity.
+- **`FDA-DICT` / `FDA-DILI` — bundle**; **`FDA-DIRIL` — bundle ONLY the narrow FDA-authored projection**
+  (raw name · UNII 1 · UNII 2 · `My Findings (Toxicity)` · FDA link). The workbook also carries DrugBank
+  identifiers and descriptions, ATC/DDD fields and two third-party literature classifications: **a
+  public-domain FDA publication does not turn copied third-party material into federal work.** That is the
+  sharpest rule-6 refinement this project has recorded — the unit of clearance is the COLUMN, not the file.
+- **`DRUGCENTRAL-OMOP` — do NOT bundle, and the reason is a provenance audit rather than a licence.**
+  DrugCentral's contraindication content is pre-2012 OMOP 4.4 plus later label curation, and the published row
+  carries **no source kind, date, label id, citation or curator** — so the clean subset is *not selectable*.
+  **A high row id is not evidence of creation date and must not be used as a proxy.** Separate from, and no
+  threat to, the `ddi_ref_id = 2` decision.
+
+**The spike's implementation order is 1) DrugCentral DDI, 2) FDA-CYP before SPL mining, 3) DIRIL first into a
+non-firing toxicity projection, 4) DICTrank + DILIrank as second and third writers, 5) promotion only after
+clinician review.** Its §7 verification gates are written as a checklist any source round must pass, and its
+one-line invariant is worth quoting whole: **ingest preserves evidence; curation creates clinical judgement.**
+
+**A DIRIL parser trap that will bite anyone using a generic reader:** the workbook's declared used range is
+`A1:Y1048381` although data ends at row 318, and its worksheet XML is **209 MB uncompressed**. Stream rows
+1–318, require the exact header, reject any non-empty cell after 318 — **do not infer the range from the
+workbook's own dimension.**
+
+**DICTrank qualifies issue 93 rather than closing it.** FDA *does* publish an open cardiotoxicity dataset
+carrying QT evidence (a broad `qt|torsad` scan finds 228 rows; 149 over 133 ingredients once no-concern rows
+are dropped) — but it is a **review population only**, since no-concern rows include negative phrasings like
+"QT interval is not prolonged". It is still **not** a CredibleMeds-equivalent torsades list.
+
+### The pregnancy/lactation spike (PR #127) — four sources, all still non-firing
+
+Specs: [design](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike.md) ·
+[measured results](superpowers/specs/2026-08-16-drugref-pregnancy-and-lactation-source-spike-results.md),
+run against `drugref_db038`. MED-RT stays the **candidate floor** (549 direct pregnancy rules, 66 lactation);
+LactMed (1,940 evidence records, 1,702 moieties resolved, **1,679 outside the MED-RT lactation floor**), AEMPS
+CIMA (20,422 authorised products) and ANSM BDPM (15,857 specialties) are all **"design next"** — which the
+results doc is explicit does **not** approve normalization or any write to `curated_condition`.
+
+- **A clinician review is PENDING and is a gate, not a formality.** The results doc ships a 23-row worklist of
+  identifiers and asks a human to verify extraction boundaries, product scope, and whether normalization
+  would be unsafe. Nothing downstream may treat these sources as cleared until that happens.
+- **The three sources have UNLIKE GRAINS — active-substance review, Spanish product section, French product
+  section — and a production design must not collapse them into one moiety recommendation.** That is the
+  finding, and it is the same shape as 5c.2's class-grain lesson.
+- **`tools/` is now a committed top-level package**, and `tools/pregnancy_lactation_spike.py` *writes its own
+  results file*. See § "Which of these figures can be RE-DERIVED" — this is the home that section says the
+  repo lacked.
+- The two `src/drugref/ingest/` modules (`lactmed.py` 211 lines, `regulatory_population.py` 296) are **spike
+  parsers reachable from `tools/` and the tests only** — no CLI subcommand, no orchestrator, no migration, no
+  `ingest_run.source` spelling. They are pure parsers by the architecture rule, and nothing writes.
+
+## Slice 5c.2g — FDA-CYP potency classes (`db/039`–`db/043`, measured 2026-08-17)
+
+Spec: [slice-5c.2g](superpowers/specs/2026-08-16-drugref-slice-5c2g-fda-cyp-classes-design.md). The potency
+vocabulary the 5c.3 evaluation found missing: SPL section 7 qualifies interactions by band (*strong* CYP1A2
+inhibitors contraindicated, *moderate or weak* "avoid") and MED-RT's single undifferentiated class cannot
+express it. **65 PK classes, `has_PK` membership, and a projection holding every parsed tuple including the
+ones deliberately not promoted.** ROADMAP § 5c.2g carries the shape; this section carries the traps.
+
+### ⇒ THE HEADLINE: SEVEN OF THE DESIGN'S OWN FIGURES WERE WRONG, AND EVERY ONE WAS FOUND BY IMPLEMENTATION
+
+Not by review, not by re-reading — by a task running the real bytes and reporting a number that disagreed.
+**They share one shape, and it is the same defect the slice exists to prevent:** something asserted a
+property it had not confirmed. **Numbers 6 and 7 were found by the FINAL review, after this table said
+five** — so the count of wrong figures was itself a wrong figure, in the paragraph about wrong figures. That
+is not an embarrassment to bury; it is the measurement of how strong the pull is. The design round's probe was a partially-working parser, and **a
+partially-working parser does not announce itself — it hands you a plausible value, and a plausible value
+gets written down as a measurement.**
+
+| # | the spec said | the truth | how the wrong value was produced |
+|---|---|---|---|
+| 1 | FDA prints `ritonavir 14, 15,` | `ritonavir 14, 15, 16` | the probe's `(\s+\d+)+$` ate the trailing ` 16` and left the comma. **That string appears nowhere on FDA's page.** |
+| 2 | 415 tuples | **419** | the probe could not parse four tuples and *rejected* them; the round recorded the survivors of its own mis-parse as the total |
+| 3 | 29 qualified cells / 22 substances | **31 / 24** | the probe saw a footnote only at a name's or cell's very END, so it missed the mid-cell markers |
+| 4 | the closed vocabulary "must **reject**" three cells | it rejects **zero** | the gate was described as a *filter*; it is a **tripwire** |
+| 5 | `ddi_candidate_pair` **21,664** must not move | `drugref_db038` holds **21,877** | the figure was measured on `drugref_policy` and `drugref_5c4`, two earlier databases, and quoted as an expectation for a third |
+| 6 | **18** footnotes, "a re-fetch can add a nineteenth" | **21** numbered, plus one lettered `b` the page defines nowhere | counted by hand off the rendered page rather than by the parser that reads the block |
+| 7 | §14: "the **8.6%** withheld could grow" | **9.2%** | §5 was corrected to 9.2% and §14 was not — **one number, two homes, inside the very document arguing against that** |
+
+**Number 3 was in the unsafe direction and is the one to remember:** the undercounted cells were ones drugref
+would have **promoted to membership while FDA had qualified them**. Number 4 is the one that changed a rule
+rather than a number — the correct statement is that **the vocabulary rejects zero tokens on a correct parse,
+and that is the passing state.** Its job is to fire when the *grammar* is wrong. **A round that sees it reject
+something should suspect its own parser first and the data second**, because that is the way this one broke.
+
+Number 5 generalises furthest: **an invariance claim must be checked as an invariance** — same query, same
+database, either side of the change — never against a constant transcribed from somewhere else. The spec now
+says so and names no absolute values.
+
+### The source, and why a regex parse of HTML is defensible here
+
+Retrieved 2026-08-16; **the fetch reproduced the source spike's SHA-256 exactly**
+(`7400dc89…7ffa73`), which makes that manifest the first source figure in this project verified by a second
+independent run rather than trusted.
+
+**Table 1 is a MATRIX, not a list of facts:** 245 data rows × 11 columns, where the first column names the
+substance and **each of the other ten IS a `(system, role, potency)` tuple**, the cell holding the pathway
+list. 337 non-empty cells → **419 tuples over 65 classes**; 244 distinct substances (`aprepitant` occupies two
+rows, which is why 245 ≠ 244).
+
+The parse is guarded on both sides, and that is what makes it safe rather than reckless: **row and cell counts
+are asserted** (exactly 11 in each of 245), **the pathway vocabulary is closed and partitioned by system**, and
+**the column heading and the cell text state the role and potency independently, so they are cross-checked**.
+A lenient parse of the same page yields **69 classes reporting zero errors**, four of them garbage minted with
+real immortal UUIDs (`cyp:1a2 20`, `transporter:oatp1b1 inhibitor`).
+
+### The cell grammar, dirty in five ways, and footnotes in two namespaces and three positions
+
+A cell is a `;`-separated list of `pathway [footnote] [role phrase]` closed by a trailing role phrase covering
+the items that state none. **Three separators for one concept** (`;`, `,`, `and`) — and rifampin's
+`1A2, 2B6; 2C8; 2C9 moderate inducer` **mixes two of them**, four pathways from one cell, the only such cell in
+the 337. Plus `CYP3A` beside bare `3A`; `OATP1B` where others say `OATP1B1`/`OATP1B3` (**its own class, never
+expanded — that would manufacture specificity FDA declined to state**); `moderately sensitive` against the
+column's `Mod SENS SUB`; and teriflunomide's `BCRP; OATP1B1 inhibitor; OAT3 inhibitor`, where **the role word
+repeats per item**.
+
+**Footnote markers are numbered AND lettered, and sit in three places:** glued to the name (`adefovir 1`, 21
+rows), **as a comma-separated list** (`ritonavir 14, 15, 16`), inside a cell at the end (conivaptan's
+`3A moderate inhibitor 5`), **attached to one pathway mid-cell** (ciprofloxacin's `1A2 20 ; 3A moderate
+inhibitor`), and as a letter (cenobamate's `inducer b`).
+
+**Order is load-bearing inside the per-item loop: peel the role phrase, THEN split footnotes, THEN match the
+pathway.** Rifampin's `OATP1B1 13 ; OATP1B3 13 inhibitor` splits into an item where the marker sits *before*
+the role phrase, so the other order silently mints `transporter:oatp1b1 13`.
+
+### ⇒ TWO FOOTNOTES NEGATE THE ROW THEY SIT ON, AND THAT IS THE WHOLE DESIGN
+
+| row | the row asserts | its own footnote |
+|---|---|---|
+| `bupropion 2` | `2B6 sensitive substrate` | *"Bupropion itself is **not** a sensitive substrate."* |
+| `rolapitant 17` | `P-gp; BCRP inhibitor` | *"**Intravenously administered** rolapitant does **not** inhibit BCRP and P-gp."* |
+
+So a footnoted cell writes **no membership** — 31 cells, 24 substances, 9.2%. It lands in `fda_cyp_assertion`
+with the footnote text and raises a question. **Ingest never decides whether the footnote negates**, because
+that is a clinical reading of prose: *ingest preserves evidence; curation creates clinical judgement.*
+
+**The footnote text is PARSED from the page (21 markers), not transcribed.** The first implementation
+hardcoded FDA's prose as a Python dict. `checksum` and `dateModified` exist to make a source change loud, and
+**that one column escaped both**: a reworded footnote would re-ingest *green* while storing the old wording in
+the column whose entire purpose is carrying FDA's words. The fixture gained the footnote block; the dict is
+gone. **All 65 classes are minted even when every member is withheld**, so a withheld row can name the class
+it would have joined, and a zero-member class is distinguishable from a band FDA never defined.
+
+### Name resolution: 224 of 244, five different jobs, and nothing bridged
+
+Exact, case-insensitive, against `substance_moiety.display_name`. **Ambiguity is unresolved, never "pick the
+first"** — pinned by a test although nothing is ambiguous today, because the registry grows.
+
+The 20-name residue splits into **five jobs, and conflating them would under-cost the next slice** (the lesson
+the DrugCentral evaluation recorded when it split its own 102): **9** combination regimens, **3** non-drug
+entities, **3** enantiomers, **3** apparent synonyms (`rifampin`/`rifampicin`, `glyburide`/`glibenclamide`,
+`peginterferon alpha-2a`/`alfa-2a`), **1** apparent metabolite, **1** group term (`oral contraceptives`).
+
+**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared
+non-drugs — RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the
+non-drug list must be FDA's own pinned five, read from its prose, never inferred from a resolution failure.**
+Disposition order is therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen`
+→ `unresolved_substance` → `withheld_qualified` → `member`, because grapefruit juice is *both* a non-drug and
+footnoted. Pinned by a test, which was mutation-tested to prove it pins the order rather than passing
+incidentally.
+
+### The stored vocabulary has FIVE values, not nine — the standing rule at work
+
+Only **`combination_regimen`** and **`non_drug_entity`** name a category, because only those two are asserted
+by **FDA** (the regimen string it wrote; its own five-substance sentence). The other four recognisable
+categories collapse to **`unresolved_substance`**, because calling `R-venlafaxine` an "enantiomer of a held
+racemate" is a chemical relationship inferred **from a string prefix** — [#122](https://github.com/cairn-ehr/drugref/issues/122)'s
+manufactured-cause defect in a new coat. See § "Standing rules": *a disposition records what was OBSERVED,
+never what the round suspects it MEANS.*
+
+### `db/040` and `db/041` — two migrations spent on the question register, and why
+
+**`db/040`: the gap view's grain was wrong in the FINER direction.** It grouped every disposition on
+`(substance, column_heading, pathway)`, so *"which drugref moiety is FDA's rifampin?"* was asked **eight
+times**, once per cell mentioning it — **71 immortal `question_uuid`s where 55 belong.** Only
+`withheld_qualified` is genuinely per-cell (each footnoted cell is its own adjudication); the other three are
+per-substance. The view became a `UNION ALL` of two grains, and **the `COALESCE` in the key was chosen so every
+`withheld_qualified` UUID stayed byte-identical** — proven by computing the old and new key sets over the same
+data and diffing them, not argued. [#41](https://github.com/cairn-ehr/drugref/issues/41)'s standing rule, in
+the direction it is usually not caught.
+
+**`db/041`: splitting the view left its own silent hole.** Two halves need two `WHERE` clauses, and those
+became an **allowlist** of the four known dispositions — so a future fifth or sixth value would be **dropped
+from the worklist entirely**, never reaching the question `CASE`, while `questions.py`'s comment claimed it
+"aborts the ingest loudly". **A gate that does not fire, with a comment saying it does** (issues 74/66/76 plus
+122). The subject half now reads `NOT IN ('member', 'withheld_qualified')`, so an unknown disposition reaches
+the `CASE`, matches no `WHEN`, yields `NULL` and trips `question_text`'s `NOT NULL`. Verified by widening the
+CHECK with a synthetic sixth value: **before, 0 gap rows; after, 1.**
+
+### Measured on `drugref_5c2g` (from `TEMPLATE drugref_db038` + `drugref migrate`, the seventh round running)
+
+Ingest wall-clock **4.5 s** (second run 4.0 s), via the CLI against the pinned page.
+
+| | |
+|---|---|
+| classes minted | **65** (5 of them with zero members — expected: FDA defines the band, drugref has adjudicated none of its members) |
+| assertions written | **419** |
+| memberships written | **348** |
+| dispositions | `member` 348 · `withheld_qualified` 33 · `combination_regimen` 17 · `unresolved_substance` 16 · `non_drug_entity` 5 |
+| questions raised | **55** — `withheld_qualified` 33 · `combination_regimen` 9 · `unresolved_substance` 8 · `non_drug_entity` 5 |
+| substances resolved | **224 / 244** |
+
+**Must not move, and did not** — read before and after on the same database, per § "THE HEADLINE" number 5:
+`substance_moiety` 19,438 → 19,438 · `ddi_candidate_pair` 21,877 → 21,877 ·
+`gap_uncurated_interaction_rule` 593 → 593 · `gap_uncurated_condition_contradiction` 168 → 168.
+`class_contraindication` holds **zero** FDA-CYP rows and no DDI pair was created. A second ingest reproduces
+every figure byte-for-byte, and MED-RT's and MeSH's class counts are untouched.
+
+**⇒ ONE FIGURE MOVED THAT LOOKED LIKE A DEFECT AND WAS SOMEBODY ELSE'S: `open_question` grew by 47, not 55.**
+55 questions were minted, and the same run **closed 8 stale ones belonging to a different gap kind entirely**.
+Cause: `questions.register_from_gaps()` runs at the end of **every** orchestrator and re-derives **all** gap
+kinds, not the one being ingested — so ingesting FDA-CYP, a classification source with no relationship to
+interaction rules, healed [#104](https://github.com/cairn-ehr/drugref/issues/104)'s 8 rows
+(`uncurated_interaction_rule` cached 601 against a live 593). **That issue is therefore still open two
+migrations later, and its title understates it: "the next ingest" means ANY source's ingest**, so whether the
+register is accurate depends on what unrelated feed happened to run last. Recorded as a comment on #104 rather
+than a new issue. **The lesson for a future measured round: do not put `open_question` on a must-not-move
+list** — it legitimately moves by other sources' arithmetic, and a round that pinned it would have failed on
+somebody else's staleness.
+
+### Traps and standing notes
+
+- **`ClassConcept.code` is now `str | None`.** FDA-CYP is the first source publishing **no code at all**, and
+  `substance_class.published_code` has been nullable since `db/003`. Inventing a string for a column reserved
+  for "the code as published" would be a manufactured fact in a provenance field.
+- **`class_name` is source-tagged** — `CYP3A strong inhibitor [FDA-CYP]`, not MED-RT's `[MoA]` shape. MED-RT's
+  bracketed suffix is *published by MED-RT*; this one is drugref's own label and says so.
+- **The release identity is the page's own `dateModified`** (`2026-05-29T14:00`, in JSON-LD and two meta
+  tags), **not fetch time** — the source spike said the page carries no release identifier and it does.
+  **Fetch time records when drugref looked; `dateModified` records when FDA changed the content**, and only
+  the second distinguishes a re-fetch of unchanged material from a revision. A page without it **fails and
+  names the field** rather than substituting fetch time, which would put a value with a different meaning in
+  the same column.
+- **`--release` on the CLI is optional, and supplying it is a CHECK, not an override**: it must match the
+  page's own stamp or the ingest fails naming both values, **before `provenance.open_run`**, so a wrong
+  `--release` leaves no history behind.
+- **A test module exercising an orchestrator needs its own autouse cleanup fixture.** `provenance.open_run`
+  commits in its own transaction, so an `ingest_run` row escapes the `conn` fixture's rollback —
+  `tests/conftest.py` says so in its own docstring, and `tests/test_gsrs_run.py:13` is the model.
+- **Seeding a `substance_class` row does NOT test per-source clearing.** Class rows *accumulate* and are never
+  deleted; only `class_membership` edges are rebuilt. A clear-scope test must seed an **edge**. Found by an
+  implementer mutation-testing its own test, which is the sharpest self-check this slice produced.
+
+### ⇒ THE REVIEW ROUND: FOUR CRITICALS, AND EVERY ONE WAS A GATE THAT WAS REASONED ABOUT AND NOT WRITTEN
+
+Six review agents ran over the finished slice. **The pattern is worth more than the findings**: this is a
+codebase whose comments argue carefully for the guards it needs, and in four places the argument was
+written and the code was not. **Three of them carried a comment asserting the guard existed** — so reading
+the module would have told you it was safe.
+
+| # | The defect | How it was found | Fix |
+|---|---|---|---|
+| 1 | **The parser's headline claim was false.** `fda_cyp.py`'s "why a regex parse is defensible" argument said *"the row and cell COUNTS are asserted (245 x 11 exactly)"*. Only the cell count ever existed. Truncating the real page to six `<tr>` gave **5 tuples instead of 419, no error** — and the projection is delete-and-rebuild, so that run deletes 240 substances and commits, exit 0. | Measured against the real page | Shrink guard in `fda_cyp_run` (below), and the docstring now says what it actually asserts |
+| 2 | **A cross-source abort.** `questions.py` concatenated `row_footnote_markers` unguarded. db/042 shipped that column nullable with no backfill, so in its own migration window every pre-existing withheld row is NULL, `\|\|` propagates NULL, and `open_question.question_text` is NOT NULL. `register_from_gaps` runs at the end of **every ingest of every source**, so the next MeSH/GSRS/PBS run died on FDA-CYP's residue, naming neither. | Reproduced on the measurement DB: 419 rows, all `substance` NULL, 33 in the window → `NotNullViolation` | `COALESCE(row_footnote_markers, footnote_markers, '(unrecorded)')` |
+| 3 | **`parse_footnotes` returned `{}` silently.** `_FOOTNOTE_ITEM` requires a bare `<p><sup>`; adding one class attribute took 21 footnotes to 0 with the `<h2>Footnotes</h2>` heading still present. Every withheld question would then read *"FDA's note: (not captured)"* with the run green — the exact inversion of that function's own "a source change made loud" argument. | Mutated the real page | Raises when the section is present but yields nothing |
+| 4 | **`parse_table` raised a bare `IndexError`** on a page with no table and on an empty table, against a module that documents `FdaCypParseError` everywhere. `_column_headings` reached the table directly and runs *first*, so `extract_rows`' own guards were unreachable through the only caller. | Ran it | One `_data_table_rows` gate both callers go through |
+
+**The grain defect, which no test could have caught.** db/042 moved the `gap_key` onto the clean `substance`
+(right: keying on FDA's footnote *numbering* meant a renumbered footnote changed the identity of every open
+question about that substance) but left **both halves of the view grouping by `raw_substance`** — a strictly
+finer grain. Two printed forms of one name (`aprepitant 3` / `aprepitant`) therefore yield **two view rows
+carrying one `gap_key`**, and `register_from_gaps` upserts `ON CONFLICT (question_uuid) DO UPDATE` over an
+**unordered** view: the second silently overwrites the first's text, non-deterministically, for an immortal
+externally-citable UUID. **Measured: it does not fire on the 2026-05-29 release**, which is exactly why it had
+to be found by reading — and why `db/043` regroups both halves onto the clean name before the FDA release that
+introduces one. Demonstrated with synthetic rows: 2 rows, 1 key, before; 1 row after.
+
+**Two figures were wrong again, in the same direction as the seven above.** The `31 of the 33 withheld gap
+rows carry a name-level marker only` claim (in `questions.py` and in db/042's header) is **30**: 31 rows
+*carry* a row-level marker, but **cenobamate carries both at once**, so the figure that sizes the two arms of
+the nested CASE is 30 name-level-only / 3 cell-level (ciprofloxacin, conivaptan, cenobamate). Re-measured
+directly off the real page against the measurement registry.
+
+**A stated precedent that never happened.** db/041's header and a test both justify the sixth-disposition
+design with *"this project has widened the CHECK on this exact column once already"*. It never has: db/039
+creates `fda_cyp_assertion_disposition` with five values, db/040 and db/041 replace views, db/042 adds
+columns. The genuine precedent — db/035 adding a gap kind mid-plan — sits in the same sentence. db/041 is
+frozen, so the correction is recorded in db/043's header and in the test.
+
+**What the fixes added.** `MIN_RETAINED_FRACTION` refuses a re-ingest that would drop more than half the
+stored projection, compared against **what is stored** rather than a pinned 245 — so no constant needs
+bumping when FDA grows the table, and a first ingest is never blocked (it destroys nothing); `--allow-shrink`
+authorises a real one. `DISPOSITIONS` is checked **before the INSERT**, not after, so a sixth value cannot be
+banked uncounted. `classes_minted` became `classes_in_release` + `classes_added` (it printed 65 on every
+re-ingest while minting nothing). `db/043` holds the closed `(system, pathway)` vocabulary as a table the
+assertion foreign-keys to — it was enforced only in Python, and `system`/`pathway` are only meaningful as a
+pair, which two independent CHECKs cannot express. FDA-CYP was also **missing from `NOTICE` and the published
+sources page**, which is a rule-6 blocker rather than a documentation nicety.
+
+**Test coverage the round exposed.** The autouse `_registry` fixture seeded only `bupropion` and `cenobamate`
+and **both are footnoted**, so no row could reach `member` in any DB test: `memberships_written` was 0
+everywhere, `add_membership` and `RELATIONSHIP` were executed by nothing, and one test counted `member` rows
+in a table that had none — **it could not fail**. Two enantiomer tests were unfalsifiable for the same reason
+(no racemate registered, so nothing to mis-map *to*). A separate opt-in `_wider_registry` fixture now seeds
+the member, ambiguity and independence cases without disturbing the counts the existing tests were measured
+against.
 
 ## The standing open-issue ledger
 
@@ -2714,10 +3053,13 @@ fifth guards the clinician path, and the LEDGER is what separates "not migrated 
 account: § "The guard round". **The unclosed half is now [#124](https://github.com/cairn-ehr/drugref/issues/124)**: GitHub
 also parses PR DESCRIPTIONS, which no commit hook can see.
 
-**#89 was re-measured again, not re-filed**: `signing.py` **605**, **`questions.py` 568 — a FOURTH file, over
-the cap and never on the list, measured at `HEAD` so pre-existing** · `release_verification.py` **540** ·
-`curation.py` **534** (523 + the guard round's two exported view-name constants). The natural seam for
-`curation.py` is recorded on the issue.
+**#89's figures live ON THE ISSUE and nowhere else — do not re-derive them and do not restate them here.**
+This paragraph used to carry the numbers, which made two homes for one set, and they had duly drifted:
+`questions.py` was recorded here as **568** while the file was **664**. Re-measured at 5c.2g's `HEAD` and
+posted to the issue, with the natural seam for `curation.py`. **`cli.py` is a separate issue
+([#130](https://github.com/cairn-ehr/drugref/issues/130)) because its failure mode differs** — it sits at
+exactly 500 against a HARD cap test, so the next line added to it breaks CI, and the cap has already begun
+dictating where functions live rather than merely measuring size.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -2816,15 +3158,19 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1644 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1730 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-16 at 1644
-# passed in 46 s (the guard round's own review: 1598 + 46). If you add tests,
-# change it HERE.) The DB-gated majority SKIP without this DSN, exercising
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1730
+# passed in 44 s (slice 5c.2g: 1660 + 70). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
+# (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
+# section, because it had none. A round that lands via a different agent will not have
+# read this comment, so CHECK THE COUNT AT THE START OF A SESSION, not only at its end.
+# If you add tests, change it HERE.) The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a
 # deselected failure is not a pass either.
@@ -2942,7 +3288,20 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
-  `drugref_db038`** — `drugref_db037` plus `db/038` (the db/038 round: `effective_rank`, the
+  `drugref_5c2g`** — `drugref_db038` plus `db/039`–`db/041` and one FDA-CYP ingest, kept as slice 5c.2g's
+  measured record. **IT SITS AT `db/041`, NOT AT HEAD**, and that is deliberate: it is a measured record, so
+  the review round verified `db/042`+`db/043` against a `TEMPLATE` copy rather than migrating it in place.
+  That copy is what proved the cross-source abort was real — 419 rows, every `substance` NULL, 33 withheld
+  rows in db/042's migration window, `register_from_gaps` raising `NotNullViolation` before the fix and
+  returning 55 questions after it. **Anything re-measured here from now on must state which migration the
+  database was on**, because the two answers differ. **`drugref_db038` is retained as its immediate before/after control** and remains the one
+  to reproduce a pre-5c.2g claim on. **Two cautions about `drugref_db038` specifically, both measured:** its
+  `ddi_candidate_pair` is **21,877**, NOT the 21,664 that several earlier sections quote from
+  `drugref_policy`/`drugref_5c4` — a figure carries the database it came from; and it holds **8 stale
+  `open_question` rows** for `uncurated_interaction_rule` (601 cached against a live 593), which is
+  [#104](https://github.com/cairn-ehr/drugref/issues/104) and which any ingest heals, so a round measuring
+  question counts on a database built from it must read them AFTER a first ingest, not before.
+  It was `drugref_db037` plus `db/038` (the db/038 round: `effective_rank`, the
   unrankable-severity detector, and issue 117's `COMMENT ON` correction) applied through the documented
   `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which is that workflow re-tested rather than assumed
   for the **fifth** round running. `drugref_db037` was `drugref_db036` plus `db/037`, `drugref_db036` was

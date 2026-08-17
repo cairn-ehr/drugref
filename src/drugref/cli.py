@@ -42,13 +42,14 @@ not filesystem-free -- `resolve_inputs` globs the downloads tree, so its tests w
 tmp_path and nothing more.
 
 THAT ARGUMENT LAYER NOW LIVES IN cli_chain.py, extracted in slice 5c.4 -- the step
-table's type, the ChainError family, `resolve_inputs`, `selected_steps` and
-`check_release_agreement`. What remains here takes a connection or builds the parser:
-the `_run_*` wrappers, the four `_handle_*` entry points, `_Parser`, `build_parser` and
-`main`. The extraction ran in that direction because cli_chain can import nothing from
-drugref, which is what makes an import cycle structurally impossible; moving the
-handlers out instead creates one, since STEPS references the runners while
-`_handle_chain` needs the planning functions.
+table's type, the ChainError family, `resolve_inputs`, `selected_steps`,
+`check_release_agreement` and `check_fda_cyp_release` (Task 8). What remains
+here takes a connection or builds the parser: the `_run_*` wrappers, the five
+`_handle_*` entry points, `_Parser`, `build_parser` and `main`. The extraction
+ran in that direction because cli_chain can import nothing from drugref, which
+is what makes an import cycle structurally impossible; moving the handlers out
+instead creates one, since STEPS references the runners while `_handle_chain`
+needs the planning functions.
 """
 import argparse
 import logging
@@ -57,8 +58,9 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_curate, cli_interactions, cli_policy, cli_signing, cli_status,
-                     curation, db, interactions, migration_guard, signatures)
+from drugref import (cli_curate, cli_fda_cyp, cli_interactions, cli_policy,
+                     cli_signing, cli_status, curation, db, interactions,
+                     migration_guard, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -422,6 +424,8 @@ def build_parser() -> argparse.ArgumentParser:
                 sub.add_argument(f"--{name}", required=True, type=pathlib.Path,
                                  help=f"path to the {name} file (chain glob: {glob})")
         sub.set_defaults(handler=_handle_ingest, step=step)
+
+    cli_fda_cyp.add_parser(sources)
 
     chain = sources.add_parser(
         "chain", help="run several feeds in dependency order from one directory")

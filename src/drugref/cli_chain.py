@@ -172,6 +172,39 @@ def resolve_inputs(downloads: pathlib.Path,
     return resolved
 
 
+def check_fda_cyp_release(page: pathlib.Path, given_release: str,
+                          page_release: str) -> None:
+    """Refuse an operator-supplied FDA-CYP release that disagrees with the
+    page's own dateModified stamp.
+
+    THE SAME FAILURE MODE check_release_agreement guards against below,
+    applied to ONE step against ITS OWN source rather than across two steps
+    that share a file: a release typed on the command line that disagrees
+    with what the page itself says means the operator believes they are
+    ingesting different bytes than they actually are, and ingest_run is
+    history -- a wrong tag cannot be corrected afterwards.
+
+    `page_release` is passed in rather than read here: this module imports
+    NOTHING FROM drugref (test_cli_chain_imports_nothing_from_drugref pins
+    it), and reading it needs fda_cyp.parse_release, which lives under
+    drugref.ingest. cli._handle_fda_cyp does that read and passes the result
+    in; this function is the pure comparison and the error message, kept
+    beside ReleaseError rather than duplicated in cli.py.
+
+    Only called when `given_release` is not None -- an operator who states
+    no release makes no claim that could disagree, which is the ordinary
+    case (design section 13): the caller skips this entirely rather than
+    comparing None against anything.
+    """
+    if given_release != page_release:
+        raise ReleaseError(
+            f"--release {given_release!r} disagrees with the page's own "
+            f"dateModified stamp {page_release!r} ({page}). The same bytes "
+            "cannot be two releases, and ingest_run is history -- it cannot "
+            "be corrected afterwards. Pass the matching release, or omit "
+            "--release to use the page's own stamp.")
+
+
 def selected_steps(args: argparse.Namespace,
                    steps: tuple[IngestStep, ...]) -> tuple[tuple[IngestStep, str], ...]:
     """The steps this chain invocation includes, in STEPS order, with their releases.

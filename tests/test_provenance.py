@@ -141,7 +141,7 @@ def test_the_writer_vocabulary_matches_the_database(conn):
     write time or invisible to the contract above. Restated here independently."""
     assert provenance.WRITERS == (
         "unii_run", "chebi", "medrt_run", "mesh_run", "mesh_rel_run", "pbs_run",
-        "curation", "unattributed", "gsrs_run", "onchigh_run")
+        "curation", "unattributed", "gsrs_run", "onchigh_run", "fda_cyp_run")
     for writer in provenance.WRITERS:
         conn.execute("INSERT INTO drugref.ingest_run "
                      "(source, upstream_release, source_checksum, writer) "

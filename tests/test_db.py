@@ -281,6 +281,19 @@ def test_apply_migrations_is_idempotent(conn):
         # numeric threshold, and would otherwise leave the underlying schema fault --
         # a severity absent from severity_kind -- reported by nothing at all.
         "curated_unrankable_severity",
+        # Slice 5c.2g, db/039: FDA's CYP/transporter examples table admitted as a
+        # CLASSIFICATION source. fda_cyp_assertion is the rebuildable projection,
+        # in ingest_unresolved_onc_endpoint's (db/031) shape: a row is a WORKLIST
+        # ENTRY, not an error and not a drop, and it holds every parsed tuple
+        # including the ones deliberately NOT promoted to class_membership.
+        # gap_fda_cyp_unadjudicated is gap kind seventeen, named explicitly for
+        # the same information_schema.tables reason as every other view above.
+        # SCHEMA ONLY -- no parser or orchestrator lands in this migration.
+        "fda_cyp_assertion", "gap_fda_cyp_unadjudicated",
+        # db/043: the closed (system, pathway) vocabulary, held in SQL rather
+        # than only in fda_cyp._PATHWAYS_BY_SYSTEM, so the assertion table can
+        # foreign-key to it and no writer can widen it by accident.
+        "fda_cyp_pathway",
     }
 
 
