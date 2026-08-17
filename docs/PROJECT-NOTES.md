@@ -3093,11 +3093,13 @@ fallback after a service error.
 
 **One materialised SQL union owns the response snapshot.** Its interaction half reads the existing
 `ci_rule_partner_reach` aggregate and applies current expansion policy instead of enumerating every candidate pair merely to
-count it; the condition half retains its inexpensive gap view. It then derives current totals, filter options, filtered count
-and the deterministic impact/name/UUID-ordered page. On `drugref_reviewer_dev`, the authoritative interaction gap read took
-3.02 s and spilled a 387 MB temporary sort after producing 3.8 million intermediate rows; the equivalent reach-count
-projection took 34.7 ms and had zero row/count mismatches. Sources, releases and condition predicates remain arrays. No queue
-table, cache or migration was added.
+count it; the condition half retains its inexpensive gap view. Its reviewed-pair summary also sums the exact moiety- and
+class-rule reach aggregates instead of expanding `curated_ddi_pair`. It then derives current totals, filter options, filtered
+count and the deterministic impact/name/UUID-ordered page. On `drugref_reviewer_dev`, the authoritative interaction gap read
+took 3.02 s and spilled a 387 MB temporary sort after producing 3.8 million intermediate rows; the equivalent reach-count
+projection took 34.7 ms. The replacement reviewed-pair count took 32.9 ms. Both fast paths had zero row/count mismatches
+against their authoritative views; the complete unfiltered 25-row queue query then ran in 87.5 ms. Sources, releases and
+condition predicates remain arrays. No queue table, cache or migration was added.
 
 **The GUI no longer invents state the database does not have.** The fixture-only `in_review`, signature and priority fields
 are gone. A gap is **Unreviewed**, not **Unsigned**, because no curated row exists to sign. Search is debounced; filter changes

@@ -24,10 +24,11 @@ substring, and kind/source/relationship filters come from the current database q
 
 **ONE MATERIALISED UNION OWNS EACH RESPONSE SNAPSHOT.** The interaction half reads the existing
 `ci_rule_partner_reach` aggregate and applies current expansion policy instead of enumerating millions of candidate-pair
-join rows merely to count them; the condition half reads its inexpensive gap view. The local plan fell from 3.02 s and
-a 387 MB temporary sort to 34.7 ms for the interaction projection, with zero row/count mismatches against the
-authoritative gap view. Sources, releases and condition predicates remain arrays. No queue table, cache or migration
-was added.
+join rows merely to count them; the condition half reads its inexpensive gap view. The reviewed-pair summary likewise
+sums the exact moiety- and class-rule reach aggregates instead of expanding `curated_ddi_pair`. The local interaction
+plan fell from 3.02 s and a 387 MB temporary sort to 34.7 ms, while the replacement pair count took 32.9 ms; both had
+zero mismatches against their authoritative views. The complete unfiltered 25-row queue query then ran in 87.5 ms.
+Sources, releases and condition predicates remain arrays. No queue table, cache or migration was added.
 
 **THE CLINICAL QUEUE IS LIVE AND STILL DELIBERATELY READ-ONLY.** The fixture-only `in_review`, priority and
 signature fields are removed; gaps say **Unreviewed**, because no curated row exists to sign. Search is debounced,

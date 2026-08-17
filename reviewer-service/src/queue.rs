@@ -92,6 +92,43 @@ condition_items AS (
     JOIN drugref.ingest_run r ON r.ingest_run_id = p.ingest_run
     GROUP BY g.subject_moiety, g.object_condition, g.display_name, g.condition_name
 ),
+reviewed_pair_count AS MATERIALIZED (
+    -- Preserve curated_ddi_pair's row count without expanding its pair-level UNION.
+    -- Both reach views count the exact effective pairs for one candidate-source rule;
+    -- joining only live, applying judgements reproduces the two read-path grains.
+    SELECT coalesce(sum(pair_count), 0)::bigint AS reviewed_pairs
+    FROM (
+        SELECT sum(CASE
+                     WHEN rr.expands_descendants
+                      AND coalesce(policy.decision, 'allow') <> 'deny'
+                     THEN rr.subtree_partner_count
+                     ELSE rr.direct_partner_count
+                   END)::bigint AS pair_count
+        FROM drugref.ci_rule_partner_reach rr
+        JOIN drugref.substance_class sc
+          ON sc.class_uuid = rr.object_class_uuid
+        LEFT JOIN drugref.class_expansion_policy_current policy
+          ON policy.source = sc.source
+         AND policy.source_code = sc.source_code
+        JOIN drugref.curated_interaction curated
+          ON curated.subject_moiety_uuid = rr.subject_moiety_uuid
+         AND curated.object_class_uuid = rr.object_class_uuid
+         AND curated.relationship = rr.relationship
+         AND curated.superseded_by IS NULL
+         AND curated.applies
+
+        UNION ALL
+
+        SELECT sum(reach.max_pair_count)::bigint AS pair_count
+        FROM drugref.class_pair_rule_reach reach
+        JOIN drugref.curated_class_interaction curated
+          ON curated.subject_class_uuid = reach.subject_class_uuid
+         AND curated.object_class_uuid = reach.object_class_uuid
+         AND curated.relationship = reach.relationship
+         AND curated.superseded_by IS NULL
+         AND curated.applies
+    ) pair_counts
+),
 base AS MATERIALIZED (
     SELECT * FROM interaction_items
     UNION ALL
@@ -112,7 +149,7 @@ metadata AS (
     SELECT transaction_timestamp() AS generated_at,
            count(*) FILTER (WHERE kind = 'interaction_rule')::bigint AS interaction_rules,
            count(*) FILTER (WHERE kind = 'condition_contradiction')::bigint AS condition_contradictions,
-           (SELECT count(*)::bigint FROM drugref.curated_ddi_pair) AS reviewed_pairs,
+           (SELECT reviewed_pairs FROM reviewed_pair_count) AS reviewed_pairs,
            coalesce(array_agg(DISTINCT kind ORDER BY kind), ARRAY[]::text[]) AS kinds,
            coalesce((
                SELECT array_agg(DISTINCT source ORDER BY source)
@@ -379,6 +416,11 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("authoritative condition gap count");
+        let authoritative_reviewed_pairs: i64 =
+            sqlx::query_scalar("SELECT count(*)::bigint FROM drugref.curated_ddi_pair")
+                .fetch_one(&pool)
+                .await
+                .expect("authoritative reviewed pair count");
 
         assert!(page.summary.interaction_rules > 0);
         assert!(page.summary.condition_contradictions > 0);
@@ -387,6 +429,7 @@ mod tests {
             page.summary.condition_contradictions,
             authoritative_conditions
         );
+        assert_eq!(page.summary.reviewed_pairs, authoritative_reviewed_pairs);
         assert_eq!(page.items.len(), DEFAULT_PAGE_SIZE);
         assert!(page.filters.sources.iter().any(|source| source == "MED-RT"));
         assert!(page.items.iter().all(|item| !item.target_key.is_empty()));
