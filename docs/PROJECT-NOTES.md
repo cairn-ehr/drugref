@@ -2895,6 +2895,37 @@ from the worklist entirely**, never reaching the question `CASE`, while `questio
 the `CASE`, matches no `WHEN`, yields `NULL` and trips `question_text`'s `NOT NULL`. Verified by widening the
 CHECK with a synthetic sixth value: **before, 0 gap rows; after, 1.**
 
+### Measured on `drugref_5c2g` (from `TEMPLATE drugref_db038` + `drugref migrate`, the seventh round running)
+
+Ingest wall-clock **4.5 s** (second run 4.0 s), via the CLI against the pinned page.
+
+| | |
+|---|---|
+| classes minted | **65** (5 of them with zero members — expected: FDA defines the band, drugref has adjudicated none of its members) |
+| assertions written | **419** |
+| memberships written | **348** |
+| dispositions | `member` 348 · `withheld_qualified` 33 · `combination_regimen` 17 · `unresolved_substance` 16 · `non_drug_entity` 5 |
+| questions raised | **55** — `withheld_qualified` 33 · `combination_regimen` 9 · `unresolved_substance` 8 · `non_drug_entity` 5 |
+| substances resolved | **224 / 244** |
+
+**Must not move, and did not** — read before and after on the same database, per § "THE HEADLINE" number 5:
+`substance_moiety` 19,438 → 19,438 · `ddi_candidate_pair` 21,877 → 21,877 ·
+`gap_uncurated_interaction_rule` 593 → 593 · `gap_uncurated_condition_contradiction` 168 → 168.
+`class_contraindication` holds **zero** FDA-CYP rows and no DDI pair was created. A second ingest reproduces
+every figure byte-for-byte, and MED-RT's and MeSH's class counts are untouched.
+
+**⇒ ONE FIGURE MOVED THAT LOOKED LIKE A DEFECT AND WAS SOMEBODY ELSE'S: `open_question` grew by 47, not 55.**
+55 questions were minted, and the same run **closed 8 stale ones belonging to a different gap kind entirely**.
+Cause: `questions.register_from_gaps()` runs at the end of **every** orchestrator and re-derives **all** gap
+kinds, not the one being ingested — so ingesting FDA-CYP, a classification source with no relationship to
+interaction rules, healed [#104](https://github.com/cairn-ehr/drugref/issues/104)'s 8 rows
+(`uncurated_interaction_rule` cached 601 against a live 593). **That issue is therefore still open two
+migrations later, and its title understates it: "the next ingest" means ANY source's ingest**, so whether the
+register is accurate depends on what unrelated feed happened to run last. Recorded as a comment on #104 rather
+than a new issue. **The lesson for a future measured round: do not put `open_question` on a must-not-move
+list** — it legitimately moves by other sources' arithmetic, and a round that pinned it would have failed on
+somebody else's staleness.
+
 ### Traps and standing notes
 
 - **`ClassConcept.code` is now `str | None`.** FDA-CYP is the first source publishing **no code at all**, and
@@ -2964,10 +2995,13 @@ fifth guards the clinician path, and the LEDGER is what separates "not migrated 
 account: § "The guard round". **The unclosed half is now [#124](https://github.com/cairn-ehr/drugref/issues/124)**: GitHub
 also parses PR DESCRIPTIONS, which no commit hook can see.
 
-**#89 was re-measured again, not re-filed**: `signing.py` **605**, **`questions.py` 568 — a FOURTH file, over
-the cap and never on the list, measured at `HEAD` so pre-existing** · `release_verification.py` **540** ·
-`curation.py` **534** (523 + the guard round's two exported view-name constants). The natural seam for
-`curation.py` is recorded on the issue.
+**#89's figures live ON THE ISSUE and nowhere else — do not re-derive them and do not restate them here.**
+This paragraph used to carry the numbers, which made two homes for one set, and they had duly drifted:
+`questions.py` was recorded here as **568** while the file was **664**. Re-measured at 5c.2g's `HEAD` and
+posted to the issue, with the natural seam for `curation.py`. **`cli.py` is a separate issue
+([#130](https://github.com/cairn-ehr/drugref/issues/130)) because its failure mode differs** — it sits at
+exactly 500 against a HARD cap test, so the next line added to it breaks CI, and the cap has already begun
+dictating where functions live rather than merely measuring size.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -3066,14 +3100,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1660 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1730 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-16 at 1660
-# passed in 41 s. THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1730
+# passed in 44 s (slice 5c.2g: 1660 + 70). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
 # section, because it had none. A round that lands via a different agent will not have
@@ -3196,7 +3230,15 @@ ran in CI and `ruff` was not even a project dependency.
 - Dev DSN: **stated once, in [`HANDOVER.md`](HANDOVER.md) § Current DSN** — it is a volatile machine detail, and CLAUDE.md
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
-  `drugref_db038`** — `drugref_db037` plus `db/038` (the db/038 round: `effective_rank`, the
+  `drugref_5c2g`** — `drugref_db038` plus `db/039`–`db/041` and one FDA-CYP ingest, kept as slice 5c.2g's
+  measured record. **`drugref_db038` is retained as its immediate before/after control** and remains the one
+  to reproduce a pre-5c.2g claim on. **Two cautions about `drugref_db038` specifically, both measured:** its
+  `ddi_candidate_pair` is **21,877**, NOT the 21,664 that several earlier sections quote from
+  `drugref_policy`/`drugref_5c4` — a figure carries the database it came from; and it holds **8 stale
+  `open_question` rows** for `uncurated_interaction_rule` (601 cached against a live 593), which is
+  [#104](https://github.com/cairn-ehr/drugref/issues/104) and which any ingest heals, so a round measuring
+  question counts on a database built from it must read them AFTER a first ingest, not before.
+  It was `drugref_db037` plus `db/038` (the db/038 round: `effective_rank`, the
   unrankable-severity detector, and issue 117's `COMMENT ON` correction) applied through the documented
   `CREATE DATABASE ... TEMPLATE` + `drugref migrate` path, which is that workflow re-tested rather than assumed
   for the **fifth** round running. `drugref_db037` was `drugref_db036` plus `db/037`, `drugref_db036` was

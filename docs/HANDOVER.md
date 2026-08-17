@@ -16,92 +16,70 @@
 
 ## ⇒ NEXT
 
-**Merged to `main`**: through **5c.4 — signing**, PLUS **5c.2 — the ONC floor**, merged LAST despite its lower
-number — **ROADMAP's order is NOT the merge order.** **`db/029`–`db/038` ARE ALL FROZEN**: `db/038` joined them
-when PR [#119](https://github.com/cairn-ehr/drugref/pull/119) merged (`20c4701`, 2026-08-15). The previous
-handover said `db/038` was "UNMERGED and therefore still editable" — **that licence is spent; a correction now
-needs `db/039`.**
+**Merged to `main`**: through **5c.2f — the guard round**, plus two source spikes
+([#126](https://github.com/cairn-ehr/drugref/pull/126) FDA, [#127](https://github.com/cairn-ehr/drugref/pull/127)
+pregnancy/lactation). **`db/029`–`db/038` ARE ALL FROZEN. `db/039`–`db/041` are 5c.2g's and are NOT yet merged**
+— on branch `slice/5c2g-fda-cyp-classes`, in a PR. Correct them in place only while that PR is open; once it
+merges they freeze too and a correction needs `db/042`.
 
-**⇒ JUST FINISHED — THE GUARD ROUND AND ITS OWN SIX-AGENT REVIEW: issues 118, 120, 122 closed, and NO
-MIGRATION AT ALL** — the first such round since 5c.1, because all three were fixable in Python. Suite
-**1564 → 1644**, `ruff` clean, **thirteen mutations run against the fixed branches and all thirteen fail**.
-Three new modules (`commit_lint.py`, `registry_read.py`, `migration_guard.py`) and one shipped git hook. Full
-account: PROJECT-NOTES § "The guard round"; ROADMAP § 5c.2f.
+**⇒ JUST FINISHED — 5c.2g, `FDA-CYP` potency classes: 65 PK classes, 348 memberships, 55 curator questions,
+three migrations, suite 1660 → 1730.** The potency vocabulary 5c.3 needs. **It creates NO DDI pair, and that
+is a refusal rather than a deferral** — joining FDA's inhibitor and substrate columns would manufacture ~800
+pairs no source asserts. Full account: PROJECT-NOTES § "Slice 5c.2g"; shape: ROADMAP § 5c.2g.
 
-**⇒ THE REVIEW FOUND THAT TWO OF THE THREE GUARDS SHIPPED BROKEN, AND ONE TEST ASSERTED ITS OWN INVERSE** —
-the hook's `python3` fallback aborted EVERY commit (a PEP 604 annotation evaluated at import time, under the
-3.9.6 the OS ships); the hook was blind to `git commit -m` (git keeps `#` lines there, and strips them only
-for an EDITOR commit); and `test_a_database_predating_db038_is_told_to_migrate` was green while asserting the
-opposite of its name, because the guard's own necessary rollback restored the view the test had dropped and
-`match="drugref migrate"` is a substring of all four messages. **All three verbatim in PROJECT-NOTES § "The
-guard round's own review" — read it before trusting any guard in this repo.**
+**⇒ READ THIS BEFORE TRUSTING ANY FIGURE THIS PROJECT WROTE DOWN. FIVE OF 5c.2g's OWN SPEC FIGURES WERE
+WRONG, AND IMPLEMENTATION FOUND EVERY ONE** — not review, not re-reading: a task ran the real bytes and
+reported a number that disagreed. They share one shape, and it is the shape the slice exists to prevent:
+**something asserted a property it had not confirmed.** The design round's probe was a partially-working
+parser, and **a partially-working parser does not announce itself — it hands you a plausible value, and a
+plausible value gets written down as a measurement.** The five, and the two that changed a RULE rather than a
+number, are tabulated in PROJECT-NOTES § "Slice 5c.2g". The two rules:
 
-**⇒ THE ORIGINAL HEADLINE, CORRECTED: six ISSUES, ten COMMITS.** #118 was filed against **five** commits; the
-finished check turned up **#108**, closed by `293758c` **one round BEFORE #114** with #109–#112 in the same
-sentence left open. The review found the split also wrong: of the 14 flagged, **10 are accidental and 4
-deliberate**, not 6/8, because **four commits re-closed a known issue by QUOTING the offending sentence while
-documenting the rule** (`e3d8322`, `8709d98`, `180d613`, `5353bbb`). **Writing about this bug re-arms it** —
-the strongest argument for the guard, and the part left out. **No commit-scan count is written here**: it is
-stale at the next merge, and this repo has lost four rounds to one fact kept in two places.
+1. **The closed vocabulary rejects ZERO tokens on a correct parse, and that is the passing state.** It is a
+   tripwire for a broken *grammar*, not a filter on data. **A round that sees it reject something should
+   suspect its own parser first and the data second.**
+2. **An invariance claim must be checked as an invariance** — same query, same database, either side of the
+   change — **never against a constant transcribed from somewhere else.** The spec had said
+   `ddi_candidate_pair` **21,664**, measured on two *earlier* databases; `drugref_db038` holds **21,877**.
 
-**⇒ INSTALL THE HOOK IN EVERY CLONE — `git config core.hooksPath .githooks`.** It is LOCAL git config, not a
-committed file, so a fresh checkout has none, and **a guard nobody installed is issues 74/66/76's "gate that
-exists and never fires"**. Escape is `--no-verify`. Recorded in PROJECT-NOTES § "How to run / test".
-**THE HOOK CANNOT SEE PR DESCRIPTIONS, WHICH GITHUB ALSO PARSES** — filed as
-[#124](https://github.com/cairn-ehr/drugref/issues/124) (a CI check reusing the same pure function; no new
-logic, only a second caller and a workflow). **Until it lands, keep writing *"issue 114"*, no `#`, in a PR
-body** — and note its count is UNKNOWN rather than zero: nothing has ever measured that surface.
+**⇒ DO NOT PUT `open_question` ON A MUST-NOT-MOVE LIST.** 5c.2g minted 55 questions and the total moved by
+**47**, because the same run closed **8 stale rows of an unrelated gap kind**: `register_from_gaps` re-derives
+**every** kind on **every** orchestrator, so ingesting FDA-CYP healed
+[#104](https://github.com/cairn-ehr/drugref/issues/104). **That issue is still open two migrations later and
+its title understates it — "the next ingest" means ANY source's ingest**, so register accuracy depends on
+which unrelated feed ran last. New datum recorded as a comment on #104.
 
-**⇒ #122's REAL FINDING: PROBING THE RELATION DOES NOT CLOSE THE LOOP — THE LEDGER DOES.** The worst case is
-self-referential: dropping `severity_kind` takes `curated_unrankable_severity` with it, so the detector written
-to REPORT that fault told the operator to run a migration the ledger says already ran — **a no-op, printing the
-same sentence forever**. Absence alone still reads as "behind on migrations"; **absent + recorded-applied means
-DROPPED**, and nothing else says so. Four states, one PURE wording function, and
-`exc.diag.message_primary` carried in **every** branch — `cli.main` prints only the outer message, so
-`raise ... from exc` had been preserving a cause nobody rendered. **`db.missing_relations` ROLLS BACK FIRST**
-or the probe raises `InFailedSqlTransaction` from inside the guard. **A FIFTH guard now covers the clinician
-path**, which alone had none.
+**⇒ THREE ISSUES FILED THIS ROUND, ALL DELIBERATELY NOT BUILT.**
+[#128](https://github.com/cairn-ehr/drugref/issues/128) stereoisomer assertions against a held racemate
+(`S-mephenytoin` is the reference CYP2C19 probe substrate; carrying it on the racemate is pharmacology with a
+literature behind it, **scoped to every source — DrugCentral will meet it too**) ·
+[#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because a near-name
+heuristic with no measured output is the exact pattern this slice spent five corrections catching ·
+[#130](https://github.com/cairn-ehr/drugref/issues/130) **`cli.py` sits at exactly 500/500 against a HARD cap
+test — the next line added to it breaks CI**, and the cap has already begun dictating where functions live.
 
-**⇒ #120 — AN ABSENCE ABOUT THE OVERLAY WAS PRINTED AS AN ANSWER ABOUT A DRUG.** A uuid naming nothing rendered
-identically to an ungraded drug, exit 0. Now `registry_read.known_moieties` (a read of the identity SPINE, in a
-module of its own — `curated_read` is scoped to the overlay, and that scope is precisely why the view cannot
-answer), a banner naming each unknown uuid, **no grade block at all**, **exit 2**, and existence checked
-BEFORE the self-pair branch. **The old test asserted the DEFECT as the contract** (`== 0`, `"no curated
-grade" in out`) and was replaced — the fourth test in this project found pinning the wrong thing.
-**The review then found #120's own banner repeating #122's defect**: its three offered causes all blame the
-operator's typing, and on a migrated-but-never-ingested database every uuid lands there and none applies —
-so `registry_read.registry_is_empty` now separates *"you typed something drugref does not hold"* from
-*"drugref holds nothing at all"*.
+**⇒ #89's FILE-SIZE FIGURES LIVE ON THE ISSUE AND NOWHERE ELSE.** PROJECT-NOTES used to restate them and they
+had drifted — `questions.py` recorded as 568 while the file was **664**. Re-measured and posted to #89; the
+paragraph now points there. **Do not re-derive them and do not copy them back.**
 
-**⇒ STALE FIGURES KEEP BEING FOUND, all of the "one home" kind this repo keeps paying for.** PROJECT-NOTES'
-suite-count line said **1451 while the suite was 1564** — its own comment calls itself THE ONE HOME for that
-number, and this is the **fourth** occurrence, which ran five rounds (1465→1564) before anyone noticed.
-**`questions.py` is 568 and was never on [#89](https://github.com/cairn-ehr/drugref/issues/89)'s list** — that
-list was assembled by hand from files a review happened to notice, so it has been incomplete since it was
-written. **#89 now carries all four measured figures; read them off the issue, do not re-derive.**
-
-**⇒ A TRAP THIS ROUND WALKED INTO TWICE: DO NOT SCRIPT A COMMENT RE-WRAP.** Crude reflow passes merged
-`@dataclass` fields into one line and split an f-string mid-literal, damaging `db.py`'s
-`referenced_vocabulary`, which that round never touched. `ruff` caught it as `invalid-syntax`.
-**Reflow prose by hand** — the review round's ten over-long lines were fixed one `Edit` at a time.
-
-**⇒ TWO SOURCE SPIKES LANDED FROM ANOTHER AGENT AFTER THIS FILE WAS LAST WRITTEN, AND ONE UPDATED NO DOCUMENT
-AT ALL.** PR [#126](https://github.com/cairn-ehr/drugref/pull/126) (FDA interaction/toxicity) touched ROADMAP
-only; PR [#127](https://github.com/cairn-ehr/drugref/pull/127) (pregnancy/lactation) — 2,147 lines, two new
-`ingest/` parsers, a new top-level `tools/` package, **+16 tests, suite 1644 → 1660** — touched none. **Check
-`git log` against this file before trusting it.** Both are now recorded: PROJECT-NOTES § "Two further source
-spikes", ROADMAP § 5c.2g and § 5c.5.
-
-**⇒ DOING NOW — 5c.2g, `FDA-CYP` potency classes** (ROADMAP § 5c.2g; source decision in the FDA spike § 3).
-The potency vocabulary 5c.3's evaluation found missing: source-defined PK classes, **membership only, never a
-licence to manufacture DDI pairs**. Needs `db/039` (`db/029`–`db/038` FROZEN). **The next content slice remains
-DrugCentral** ([#101](https://github.com/cairn-ehr/drugref/issues/101)): 6,337 new public-domain moiety-grained
-pairs, rule 6 clear for `ddi_ref_id = 2` ONLY, **every figure resting on ONE UNREPEATED RUN with the 1.4 GB
-dump not retained — re-measure before acting**; it is the first slice that can POPULATE the class grain, so
+**⇒ DO THIS NEXT — DrugCentral, the next CONTENT slice**
+([#101](https://github.com/cairn-ehr/drugref/issues/101)): 6,337 new public-domain moiety-grained pairs, rule 6
+clear for `ddi_ref_id = 2` **ONLY**. **EVERY DrugCentral FIGURE RESTS ON ONE UNREPEATED RUN and the 1.4 GB dump
+is not retained — re-measure before acting**, and after this round that warning should read as a promise
+rather than boilerplate. It opens with its own design round; shape and open questions in ROADMAP § 5c.3 and
+PROJECT-NOTES § "The 5c.3 source evaluation". **It is the first slice that can POPULATE the class grain**, so
 db/035's detectors and db/037's arithmetic get their first exercise and **#105, #106, #112 become answerable**.
+Its name-resolution residue will meet **#128** directly.
 
-**⇒ ONE DECISION IS TAKEN AND NOT BUILT — do not re-litigate it.** [#86](https://github.com/cairn-ehr/drugref/issues/86):
-**add `signed_by_unknown_key` as a fourth `signature_status`** — a vocabulary widening, so a round of its own.
+**⇒ TWO OTHER ROUNDS ARE READY AND SMALLER.** **5c.5 pregnancy/lactation** — PR #127's spike measured LactMed
+(1,679 moieties outside the MED-RT lactation floor), AEMPS CIMA and ANSM BDPM, all **non-firing**, and **a
+clinician review is a GATE that has not happened**; ROADMAP § 5c.5. And the **FDA toxicity projection**
+(DIRIL first, then DICTrank and DILIrank) — spike §4, and its DIRIL parser trap is written down there:
+the workbook declares `A1:Y1048381` while data ends at row 318.
+
+**⇒ ONE DECISION IS TAKEN AND NOT BUILT — do not re-litigate it.**
+[#86](https://github.com/cairn-ehr/drugref/issues/86): add `signed_by_unknown_key` as a fourth
+`signature_status` — a vocabulary widening, so a round of its own.
 
 ## Open follow-ups (all filed as GitHub issues)
 
@@ -110,10 +88,10 @@ category, every figure, verbatim. It was duplicated here for four rounds against
 and that cost: **#52's "422 broadened assertions" existed ONLY in the HANDOVER copy**, so the deliberately
 disposable file was the sole record of a figure a future slice needs. Read it there.
 
-**What gates the NEXT session, and only that** — **#112/#105** wait on class-grain CONTENT · **#124** is this round's own tail, and the surface it names is unmeasured · **#121 and #123
-are the two review findings this round did NOT take** (#121 an orphaned curated grade reads as "no curated
-grade" on the clinician path; #123 the detector sweeps 2 of 5 tables with a `severity_kind` FK) · **#89 now has
-FOUR files over the cap** · **#94's seven withheld entries** still need research, and db/035's catalog comment
+**What gates the NEXT session, and only that** — **#128/#129/#130** are this round's own tail · **#112/#105**
+wait on class-grain CONTENT · **#124** is the guard round's tail, and the surface it names is unmeasured ·
+**#121 and #123** are the two review findings the guard round did not take · **#104** is confirmed still open
+and now better understood · **#94's seven withheld entries** still need research, and db/035's catalog comment
 says seven (`db/038` § 3) while its stripped `--` prose still says nine and cannot be corrected.
 **Before the first production load**: every parser re-run against a current release, #17's `add_claim` check,
 **three** rule-6 deeds (#6, #25, GSRS) — PROJECT-NOTES § "Verify".
