@@ -3,15 +3,21 @@
 
 Every test here pins a DECISION from the design, not an implementation detail.
 """
+import argparse
 import pathlib
 
 import psycopg
 import pytest
 
-from drugref import ids, questions
+from drugref import cli, cli_chain, ids, questions
 from drugref.ingest import fda_cyp_run
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
+# The real, checksum-verified page (downloads/ is gitignored). Task 8's CLI
+# tests that need a genuine dateModified stamp AND a genuine table -- a full
+# end-to-end ingest through the CLI -- are skipped without it, matching the
+# idiom tests/test_fda_cyp_parser.py already uses for the same reason.
+REAL_PAGE = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html")
 
 
 @pytest.fixture(autouse=True)
@@ -607,3 +613,170 @@ def test_an_unrecognised_disposition_aborts_loudly_rather_than_vanishing(conn):
     # ingest_fda_cyp's two commits already landed the fixture's real rows, which
     # is exactly what `_clean` still needs to find and truncate.
     conn.rollback()
+
+
+# ---- Task 8: the CLI subcommand ---------------------------------------------
+#
+# `drugref ingest fda-cyp --page <path> [--release <upstream_release>]`.
+# UNLIKE every other source, --release is OPTIONAL: fda-cyp's release comes
+# from the page's own dateModified stamp (fda_cyp.parse_release) unless the
+# operator overrides it, and an override that disagrees with the page is
+# refused rather than silently preferred. cli.STEPS' generic loop makes
+# --release required for every entry (test_ingest_subcommand_requires_a_release
+# in tests/test_cli.py pins that for `unii`), which is exactly why fda-cyp is
+# NOT a STEPS entry and gets its own subparser instead -- see cli.py's
+# build_parser and _handle_fda_cyp.
+
+
+def test_the_fda_cyp_subcommand_makes_release_optional_but_requires_page():
+    """--page has no way to be derived, so it stays required like every other
+    source's input flag. --release does have a derivation (the page's own
+    stamp), so, unlike every STEPS entry, it must not be mandatory.
+    """
+    args = cli.build_parser().parse_args(
+        ["ingest", "fda-cyp", "--page", "somepage.html"])
+    assert args.release is None
+    assert args.page == pathlib.Path("somepage.html")
+
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            ["ingest", "fda-cyp", "--release", "2026-05-29T14:00"])
+
+
+def test_a_release_that_disagrees_with_the_page_is_refused_before_any_db_write(
+        tmp_path):
+    """THE POINT OF ALLOWING --release AT ALL. A release typed on the command
+    line that disagrees with the page's own stamp means the operator believes
+    they are ingesting different bytes than they actually are, and ingest_run
+    is history -- a wrong tag cannot be corrected afterwards. Reuses
+    cli_chain.ReleaseError, whose own docstring states exactly this failure
+    mode for the chain's release flags.
+
+    The stub `conn` raises if `execute` is ever called, so this test fails
+    for the right reason if a future change let the mismatch slip past
+    validation and reach the orchestrator: not just "wrong exception", but
+    "started writing before refusing".
+
+    Only a synthetic page carrying a dateModified stamp is needed -- no table,
+    no footnotes -- because the mismatch must be caught before parse_table or
+    parse_footnotes ever run.
+    """
+    page = tmp_path / "fake_fda_cyp.html"
+    page.write_text(
+        '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
+        encoding="utf-8")
+    args = argparse.Namespace(page=page, release="1999-01-01T00:00")
+
+    class _NoDBConn:
+        def execute(self, *a, **kw):
+            raise AssertionError(
+                "a release mismatch must be caught before any DB write")
+
+    with pytest.raises(cli_chain.ReleaseError) as excinfo:
+        cli._handle_fda_cyp(_NoDBConn(), args)
+    # BOTH VALUES NAMED, per the brief: an operator staring at this error needs
+    # to see what they typed AND what the page actually says, not just one.
+    assert "1999-01-01T00:00" in str(excinfo.value)
+    assert "2026-05-29T14:00" in str(excinfo.value)
+
+
+def test_a_matching_release_passes_validation_and_the_ingest_proceeds(
+        tmp_path, monkeypatch):
+    """The other half: a --release that DOES match the page's stamp must not
+    be refused. `ingest_fda_cyp` itself is stubbed out so this test is about
+    the CLI's validation and wiring alone -- the orchestrator's own behaviour
+    is already covered by every other test in this module.
+    """
+    page = tmp_path / "fake_fda_cyp.html"
+    page.write_text(
+        '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
+        encoding="utf-8")
+    args = argparse.Namespace(page=page, release="2026-05-29T14:00")
+
+    calls = []
+
+    def _stub_ingest(conn, *, page_path, upstream_release=None):
+        calls.append((page_path, upstream_release))
+        return fda_cyp_run.FdaCypSummary(
+            upstream_release="2026-05-29T14:00", classes_minted=0,
+            memberships_written=0, assertions_written=0, withheld_qualified=0,
+            unresolved_substances=0, combination_regimens=0,
+            non_drug_entities=0, questions_registered=0)
+
+    monkeypatch.setattr(cli.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
+    assert cli._handle_fda_cyp(object(), args) == 0
+    # upstream_release is None here, NOT "2026-05-29T14:00": once --release
+    # has been validated to agree with the page, the page's own stamp still
+    # governs what actually gets recorded -- there is exactly one source of
+    # truth for that value, and --release is a confirmation gate on it, never
+    # a second route to the same fact.
+    assert calls == [(page, None)]
+
+
+def test_an_omitted_release_also_proceeds_straight_to_the_orchestrator(
+        tmp_path, monkeypatch):
+    """No --release at all is the ordinary case (design section 13): the page's
+    own stamp governs with no operator involvement, and validation is skipped
+    entirely rather than comparing None against anything.
+    """
+    page = tmp_path / "fake_fda_cyp.html"
+    args = argparse.Namespace(page=page, release=None)
+
+    calls = []
+
+    def _stub_ingest(conn, *, page_path, upstream_release=None):
+        calls.append((page_path, upstream_release))
+        return fda_cyp_run.FdaCypSummary(
+            upstream_release="2026-05-29T14:00", classes_minted=0,
+            memberships_written=0, assertions_written=0, withheld_qualified=0,
+            unresolved_substances=0, combination_regimens=0,
+            non_drug_entities=0, questions_registered=0)
+
+    monkeypatch.setattr(cli.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
+    assert cli._handle_fda_cyp(object(), args) == 0
+    assert calls == [(page, None)]
+
+
+def test_a_release_mismatch_reported_through_main_names_both_values(
+        tmp_path, _migrated, monkeypatch, capsys):
+    """End to end through cli.main -- what an operator actually runs -- rather
+    than the handler directly: exit code 2, and the printed error names both
+    the value they typed and what the page actually says. No real page is
+    needed (only its dateModified stamp matters here), but a live DSN is,
+    because `main` opens a connection before dispatching to any handler.
+    """
+    monkeypatch.setenv("DRUGREF_DSN", _migrated)
+    page = tmp_path / "fake_fda_cyp.html"
+    page.write_text(
+        '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
+        encoding="utf-8")
+    assert cli.main(
+        ["ingest", "fda-cyp", "--page", str(page),
+         "--release", "1999-01-01T00:00"]) == 2
+    err = capsys.readouterr().err
+    assert "1999-01-01T00:00" in err
+    assert "2026-05-29T14:00" in err
+
+
+@pytest.mark.skipif(not REAL_PAGE.exists(), reason="live page not downloaded")
+def test_ingest_fda_cyp_via_the_cli_end_to_end_records_the_pages_own_release(
+        _migrated, monkeypatch):
+    """One real ingest through the CLI (#16's precedent for `unii`), against
+    the real pinned page, with --release omitted -- the ordinary invocation.
+    """
+    monkeypatch.setenv("DRUGREF_DSN", _migrated)
+    assert cli.main(["ingest", "fda-cyp", "--page", str(REAL_PAGE)]) == 0
+    with psycopg.connect(_migrated) as c:
+        row = c.execute(
+            "SELECT source, writer, upstream_release FROM drugref.loaded_release "
+            "WHERE source = 'FDA-CYP'").fetchone()
+    assert row == ("FDA-CYP", "fda_cyp_run", "2026-05-29T14:00")
+
+
+@pytest.mark.skipif(not REAL_PAGE.exists(), reason="live page not downloaded")
+def test_a_release_flag_matching_the_real_page_succeeds_via_the_cli(
+        _migrated, monkeypatch):
+    monkeypatch.setenv("DRUGREF_DSN", _migrated)
+    assert cli.main(
+        ["ingest", "fda-cyp", "--page", str(REAL_PAGE),
+         "--release", "2026-05-29T14:00"]) == 0
