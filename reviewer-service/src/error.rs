@@ -1,3 +1,5 @@
+//! Safe HTTP error translation for reviewer service failures.
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -5,6 +7,7 @@ use axum::{
 };
 use reviewer_domain::ApiErrorBody;
 
+/// HTTP status and client-safe message returned by reviewer service handlers.
 #[derive(Debug)]
 pub struct AppError {
     status: StatusCode,
@@ -12,22 +15,27 @@ pub struct AppError {
 }
 
 impl AppError {
+    /// Construct a client-visible validation failure.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, message)
     }
 
+    /// Construct the deliberately generic authentication failure.
     pub fn unauthorized() -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "invalid username or password")
     }
 
+    /// Construct an authorisation failure for administrator-only operations.
     pub fn forbidden() -> Self {
         Self::new(StatusCode::FORBIDDEN, "administrator access required")
     }
 
+    /// Construct a client-visible uniqueness or state conflict.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
     }
 
+    /// Construct the fixed response used when login rate limits are exhausted.
     pub fn too_many_requests() -> Self {
         Self::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -35,12 +43,14 @@ impl AppError {
         )
     }
 
+    /// Log internal detail and return a non-sensitive service failure.
     pub fn internal(message: impl Into<String>) -> Self {
         let detail = message.into();
         tracing::error!(error = %detail, "review service internal error");
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "review service error")
     }
 
+    /// Construct an error from an explicit status and safe message.
     fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,

@@ -1,3 +1,9 @@
+//! Authenticated HTTP service for Drugref reviewer accounts and clinical queues.
+//!
+//! The service owns authentication, authorisation, validation, and PostgreSQL access;
+//! the GUI receives only typed projections and never connects to the database directly.
+#![deny(missing_docs)]
+
 mod auth;
 mod error;
 mod limiter;
@@ -23,6 +29,7 @@ use limiter::LoginLimiter;
 
 pub use error::AppError;
 
+/// Shared dependencies used by every reviewer HTTP handler.
 #[derive(Clone)]
 pub struct AppState {
     pool: PgPool,
@@ -30,6 +37,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Construct service state around a migrated PostgreSQL connection pool.
     pub fn new(pool: PgPool) -> Self {
         Self {
             pool,
@@ -38,6 +46,7 @@ impl AppState {
     }
 }
 
+/// Build the complete reviewer service router for the supplied state.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -50,14 +59,17 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Fail startup unless all account and clinical queue relations are available.
 pub async fn check_schema(pool: &PgPool) -> Result<(), AppError> {
     store::ensure_schema(pool).await
 }
 
+/// Report process availability without exposing service or database details.
 async fn health() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
+/// Report whether the database still requires its first administrator.
 async fn bootstrap_status(
     State(state): State<AppState>,
 ) -> Result<Json<BootstrapStatus>, AppError> {
@@ -66,6 +78,7 @@ async fn bootstrap_status(
     }))
 }
 
+/// Create the one allowed bootstrap administrator and start its session.
 async fn bootstrap_admin(
     State(state): State<AppState>,
     Json(mut input): Json<CreateAccountRequest>,
@@ -80,6 +93,7 @@ async fn bootstrap_admin(
     ))
 }
 
+/// Verify credentials under rate limiting and start an authenticated session.
 async fn login(
     State(state): State<AppState>,
     ConnectInfo(address): ConnectInfo<SocketAddr>,
@@ -107,6 +121,7 @@ async fn login(
     ))
 }
 
+/// Return current reviewer profiles to an authenticated administrator.
 async fn list_users(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -116,6 +131,7 @@ async fn list_users(
     Ok(Json(store::list_users(&state.pool).await?))
 }
 
+/// Create a reviewer account on behalf of an authenticated administrator.
 async fn create_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -137,6 +153,7 @@ async fn create_user(
     Ok((StatusCode::CREATED, Json(reviewer)))
 }
 
+/// Return one validated, filtered queue page to an authenticated reviewer.
 async fn review_queue(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -149,6 +166,7 @@ async fn review_queue(
     Ok(Json(queue::load(&state.pool, &query).await?))
 }
 
+/// Append a revocation for the current authenticated session.
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     let authenticated = authenticate_headers(&state, &headers).await?;
     store::revoke_session(
@@ -160,6 +178,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Sta
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Authenticate the bearer token from an HTTP header against a live session.
 async fn authenticate_headers(
     state: &AppState,
     headers: &HeaderMap,
@@ -173,6 +192,7 @@ async fn authenticate_headers(
     store::authenticate(&state.pool, token).await
 }
 
+/// Reject an authenticated reviewer whose current role is not administrator.
 fn require_admin(reviewer: &ReviewerAccount) -> Result<(), AppError> {
     if reviewer.role != ReviewerRole::Administrator {
         return Err(AppError::forbidden());

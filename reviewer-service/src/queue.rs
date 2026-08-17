@@ -1,3 +1,5 @@
+//! Read-only projection of unresolved clinical gaps into paginated review targets.
+
 use chrono::{DateTime, Utc};
 use reviewer_domain::{
     Pagination, ReviewKind, ReviewQueueFilters, ReviewQueueItem, ReviewQueuePage,
@@ -8,9 +10,14 @@ use uuid::Uuid;
 
 use crate::AppError;
 
-// Both queue views are candidate projections. This query enriches them with the
-// source/release rows that produced each candidate, then materialises the union once
-// so the page, totals and available filters describe one database snapshot.
+const EMPTY_ITEM_COUNT: i64 = 0;
+const PARTIAL_PAGE_INCREMENT: i64 = 1;
+
+/// Materialised queue projection shared by totals, filters, and the requested page.
+///
+/// Both queue views are candidate projections. This query enriches them with the
+/// source/release rows that produced each candidate, then materialises the union once
+/// so the page, totals and available filters describe one database snapshot.
 const REVIEW_QUEUE_SQL: &str = r#"
 WITH interaction_items AS (
     SELECT 'interaction_rule'::text AS kind,
@@ -49,7 +56,7 @@ condition_items AS (
            array_agg(DISTINCT p.relationship ORDER BY p.relationship) AS relationships,
            array_agg(DISTINCT p.source ORDER BY p.source) AS candidate_sources,
            array_agg(DISTINCT r.upstream_release ORDER BY r.upstream_release) AS upstream_releases,
-           1::bigint AS impact_count
+           1::bigint AS impact_count -- one stable drug-condition pair
     FROM drugref.gap_uncurated_condition_contradiction g
     JOIN condition_provenance p
       ON p.subject_uuid = g.subject_moiety
@@ -107,6 +114,7 @@ ORDER BY p.impact_count DESC NULLS LAST, lower(p.subject_name), lower(p.object_n
          p.subject_uuid, p.object_uuid, p.relationships
 "#;
 
+/// One denormalised SQL result row containing snapshot metadata and an optional item.
 #[derive(Clone, FromRow)]
 struct QueueRow {
     generated_at: DateTime<Utc>,
@@ -128,6 +136,7 @@ struct QueueRow {
     impact_count: Option<i64>,
 }
 
+/// Execute the queue projection and build its typed API response.
 pub async fn load(
     pool: &PgPool,
     query: &ValidatedReviewQueueQuery,
@@ -144,6 +153,7 @@ pub async fn load(
     build_page(rows, query)
 }
 
+/// Convert denormalised SQL rows into one queue page and its snapshot metadata.
 fn build_page(
     rows: Vec<QueueRow>,
     query: &ValidatedReviewQueueQuery,
@@ -152,11 +162,7 @@ fn build_page(
         .first()
         .cloned()
         .ok_or_else(|| AppError::internal("review queue query returned no metadata row"))?;
-    let total_pages = if first.total_items == 0 {
-        0
-    } else {
-        ((first.total_items - 1) / i64::from(query.page_size) + 1) as u32
-    };
+    let total_pages = page_count(first.total_items, query.page_size);
     let filters = ReviewQueueFilters {
         kinds: first
             .kinds
@@ -190,6 +196,19 @@ fn build_page(
     })
 }
 
+/// Return the number of pages needed for a non-negative filtered record count.
+fn page_count(total_items: i64, page_size: u16) -> u32 {
+    let page_size = i64::from(page_size);
+    let complete_pages = total_items / page_size;
+    let partial_page = if total_items % page_size == EMPTY_ITEM_COUNT {
+        EMPTY_ITEM_COUNT
+    } else {
+        PARTIAL_PAGE_INCREMENT
+    };
+    (complete_pages + partial_page) as u32
+}
+
+/// Convert one complete queue row into a stable, human-readable review target.
 fn build_item(row: QueueRow) -> Result<ReviewQueueItem, AppError> {
     let kind = parse_kind(required(row.kind, "kind")?.as_str())?;
     let subject_uuid = required(row.subject_uuid, "subject UUID")?;
@@ -245,6 +264,7 @@ fn build_item(row: QueueRow) -> Result<ReviewQueueItem, AppError> {
     })
 }
 
+/// Parse the closed database vocabulary for review target kinds.
 fn parse_kind(value: &str) -> Result<ReviewKind, AppError> {
     match value {
         "interaction_rule" => Ok(ReviewKind::InteractionRule),
@@ -255,16 +275,21 @@ fn parse_kind(value: &str) -> Result<ReviewKind, AppError> {
     }
 }
 
+/// Require one field that is optional only because metadata rows use a left join.
 fn required<T>(value: Option<T>, label: &str) -> Result<T, AppError> {
     value.ok_or_else(|| AppError::internal(format!("review queue row has no {label}")))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{load, parse_kind};
+    use super::{load, page_count, parse_kind};
     use reviewer_domain::{ReviewKind, ReviewQueueQuery};
     use sqlx::postgres::PgPoolOptions;
 
+    const DEFAULT_PAGE_SIZE: usize = 25;
+    const FILTERED_PAGE_SIZE: u16 = 5;
+
+    /// Pin every review-kind spelling emitted by the database query.
     #[test]
     fn database_kind_values_are_exhaustive() {
         assert_eq!(
@@ -278,6 +303,21 @@ mod tests {
         assert!(parse_kind("future_kind").is_err());
     }
 
+    /// Verify page-count arithmetic at empty, exact, and partial page boundaries.
+    #[test]
+    fn page_count_rounds_up_only_for_partial_pages() {
+        assert_eq!(page_count(0, FILTERED_PAGE_SIZE), 0);
+        assert_eq!(
+            page_count(i64::from(FILTERED_PAGE_SIZE), FILTERED_PAGE_SIZE),
+            1
+        );
+        assert_eq!(
+            page_count(i64::from(FILTERED_PAGE_SIZE) + 1, FILTERED_PAGE_SIZE),
+            2
+        );
+    }
+
+    /// Exercise paging, filters, and metadata against an explicitly supplied live database.
     #[tokio::test]
     #[ignore = "requires a populated Drugref PostgreSQL database"]
     async fn live_queue_query_reads_pages_filters_and_metadata() {
@@ -295,12 +335,12 @@ mod tests {
 
         assert!(page.summary.interaction_rules > 0);
         assert!(page.summary.condition_contradictions > 0);
-        assert_eq!(page.items.len(), 25);
+        assert_eq!(page.items.len(), DEFAULT_PAGE_SIZE);
         assert!(page.filters.sources.iter().any(|source| source == "MED-RT"));
         assert!(page.items.iter().all(|item| !item.target_key.is_empty()));
 
         let conditions = ReviewQueueQuery {
-            page_size: Some(5),
+            page_size: Some(FILTERED_PAGE_SIZE),
             kind: Some(ReviewKind::ConditionContradiction),
             ..Default::default()
         }
@@ -309,7 +349,7 @@ mod tests {
         let page = load(&pool, &conditions)
             .await
             .expect("filtered condition queue");
-        assert_eq!(page.items.len(), 5);
+        assert_eq!(page.items.len(), usize::from(FILTERED_PAGE_SIZE));
         assert_eq!(
             page.pagination.total_items,
             page.summary.condition_contradictions

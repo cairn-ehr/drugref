@@ -1,6 +1,19 @@
 <script lang="ts">
+  /** Administrator-only reviewer account listing and creation surface. */
+
   import { onMount } from "svelte";
   import { createUser, listUsers, type ReviewerAccount, type ReviewerRole } from "./lib/accounts";
+  import {
+    BIOGRAPHY_MAX_LENGTH,
+    FULL_NAME_MAX_LENGTH,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    QUALIFICATIONS_MAX_LENGTH,
+    USERNAME_MAX_LENGTH,
+    USERNAME_MIN_LENGTH,
+    USERNAME_PATTERN,
+  } from "./lib/constants";
+  import { keyCountLabel, reviewerInitials } from "./lib/presentation";
 
   let users = $state<ReviewerAccount[]>([]);
   let loading = $state(true);
@@ -15,9 +28,15 @@
   let password = $state("");
   let passwordConfirmation = $state("");
 
-  onMount(() => void refresh());
+  onMount(startUserManagement);
 
-  async function refresh() {
+  /** Begin loading reviewer accounts without returning a promise to Svelte. */
+  function startUserManagement(): void {
+    void refresh();
+  }
+
+  /** Refresh the current reviewer account projections from the service. */
+  async function refresh(): Promise<void> {
     loading = true;
     error = "";
     try {
@@ -29,7 +48,8 @@
     }
   }
 
-  async function submit(event: SubmitEvent) {
+  /** Validate and create a reviewer account from the administrator form. */
+  async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     error = "";
     success = "";
@@ -78,10 +98,10 @@
       <div class="user-list">
         {#each users as user (user.reviewerUuid)}
           <div class="user-row">
-            <span class="avatar">{user.fullName.split(/\s+/u).map((part) => part[0]).join("").slice(0, 2)}</span>
+            <span class="avatar">{reviewerInitials(user.fullName)}</span>
             <span class="user-identity"><strong>{user.fullName}</strong><small>@{user.username} · {user.qualifications || "No qualifications recorded"}</small></span>
             <span class="role-pill" class:role-pill--admin={user.role === "administrator"}>{user.role === "administrator" ? "Administrator" : "Reviewer"}</span>
-            <span class="key-count">{user.keyCount} {user.keyCount === 1 ? "key" : "keys"}</span>
+            <span class="key-count">{keyCountLabel(user.keyCount)}</span>
           </div>
         {/each}
       </div>
@@ -92,16 +112,16 @@
     <div class="admin-card-head"><div><p class="section-label">Account administration</p><h2>Create a user</h2></div></div>
     <p class="admin-intro">Create the stable username, initial profile, role, and Argon2id-backed credential in one transaction.</p>
     <form class="admin-form" onsubmit={submit}>
-      <label><span>Username</span><input autocomplete="off" required minlength="3" maxlength="64" pattern="[a-z][a-z0-9._-]+" bind:value={username} /></label>
-      <label><span>Full name</span><input autocomplete="off" required maxlength="200" bind:value={fullName} /></label>
+      <label><span>Username</span><input autocomplete="off" required minlength={USERNAME_MIN_LENGTH} maxlength={USERNAME_MAX_LENGTH} pattern={USERNAME_PATTERN} bind:value={username} /></label>
+      <label><span>Full name</span><input autocomplete="off" required maxlength={FULL_NAME_MAX_LENGTH} bind:value={fullName} /></label>
       <div class="admin-form-row">
-        <label><span>Qualifications</span><input autocomplete="off" maxlength="500" bind:value={qualifications} /></label>
+        <label><span>Qualifications</span><input autocomplete="off" maxlength={QUALIFICATIONS_MAX_LENGTH} bind:value={qualifications} /></label>
         <label><span>Role</span><select bind:value={role}><option value="reviewer">Reviewer</option><option value="administrator">Administrator</option></select></label>
       </div>
-      <label><span>Brief biography <small>Markdown source</small></span><textarea maxlength="10000" bind:value={bioMarkdown}></textarea></label>
+      <label><span>Brief biography <small>Markdown source</small></span><textarea maxlength={BIOGRAPHY_MAX_LENGTH} bind:value={bioMarkdown}></textarea></label>
       <div class="admin-form-row">
-        <label><span>Initial password</span><input type="password" autocomplete="new-password" required minlength="12" maxlength="256" bind:value={password} /></label>
-        <label><span>Confirm password</span><input type="password" autocomplete="new-password" required minlength="12" maxlength="256" bind:value={passwordConfirmation} /></label>
+        <label><span>Initial password</span><input type="password" autocomplete="new-password" required minlength={PASSWORD_MIN_LENGTH} maxlength={PASSWORD_MAX_LENGTH} bind:value={password} /></label>
+        <label><span>Confirm password</span><input type="password" autocomplete="new-password" required minlength={PASSWORD_MIN_LENGTH} maxlength={PASSWORD_MAX_LENGTH} bind:value={passwordConfirmation} /></label>
       </div>
       {#if error}<p class="form-error" role="alert">{error}</p>{/if}
       {#if success}<p class="form-success" role="status">{success}</p>{/if}

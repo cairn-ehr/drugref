@@ -1,3 +1,5 @@
+//! Typed HTTP adapter between Tauri commands and the reviewer service.
+
 use std::sync::Mutex;
 
 use reqwest::{Client, Method, StatusCode};
@@ -7,6 +9,15 @@ use reviewer_domain::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 
+const DEFAULT_DEBUG_SERVICE_URL: &str = "http://127.0.0.1:8787";
+const BOOTSTRAP_STATUS_PATH: &str = "/v1/bootstrap/status";
+const BOOTSTRAP_ADMIN_PATH: &str = "/v1/bootstrap/admin";
+const SESSIONS_PATH: &str = "/v1/sessions";
+const CURRENT_SESSION_PATH: &str = "/v1/sessions/current";
+const USERS_PATH: &str = "/v1/users";
+const REVIEW_QUEUE_PATH: &str = "/v1/review-queue";
+
+/// Native HTTP client and process-memory session store managed by Tauri.
 pub struct AccountClient {
     http: Client,
     service_url: Result<String, String>,
@@ -14,6 +25,7 @@ pub struct AccountClient {
 }
 
 impl AccountClient {
+    /// Construct a client using the validated configured service URL.
     pub fn new() -> Self {
         Self {
             http: Client::new(),
@@ -22,6 +34,7 @@ impl AccountClient {
         }
     }
 
+    /// Join a service-relative API path to the validated base URL.
     fn endpoint(&self, path: &str) -> Result<String, String> {
         self.service_url
             .as_ref()
@@ -29,6 +42,7 @@ impl AccountClient {
             .map_err(Clone::clone)
     }
 
+    /// Return a copy of the authenticated bearer token held in native memory.
     fn token(&self) -> Result<String, String> {
         self.session_token
             .lock()
@@ -37,6 +51,7 @@ impl AccountClient {
             .ok_or_else(|| "sign in before using account administration".to_string())
     }
 
+    /// Replace the native process-memory bearer token after authentication.
     fn store_token(&self, token: String) -> Result<(), String> {
         *self
             .session_token
@@ -45,6 +60,7 @@ impl AccountClient {
         Ok(())
     }
 
+    /// Remove the bearer token from native process memory after logout.
     fn clear_token(&self) -> Result<(), String> {
         *self
             .session_token
@@ -54,10 +70,11 @@ impl AccountClient {
     }
 }
 
+/// Validate the configured service URL for the current build profile.
 fn configured_service_url() -> Result<String, String> {
     let configured = std::env::var("DRUGREF_REVIEW_SERVICE_URL").ok();
     #[cfg(debug_assertions)]
-    let url = configured.unwrap_or_else(|| "http://127.0.0.1:8787".into());
+    let url = configured.unwrap_or_else(|| DEFAULT_DEBUG_SERVICE_URL.into());
     #[cfg(not(debug_assertions))]
     let url = configured.ok_or_else(|| {
         "DRUGREF_REVIEW_SERVICE_URL must be configured for this release build".to_string()
@@ -77,6 +94,7 @@ fn configured_service_url() -> Result<String, String> {
     Ok(url)
 }
 
+/// Decode a successful JSON response or return the service's safe error message.
 async fn response_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
     if response.status().is_success() {
         return response
@@ -93,6 +111,7 @@ async fn response_json<T: DeserializeOwned>(response: reqwest::Response) -> Resu
     Err(message)
 }
 
+/// Send one typed JSON request with optional native bearer authentication.
 async fn send_json<B: Serialize, T: DeserializeOwned>(
     client: &AccountClient,
     method: Method,
@@ -114,13 +133,15 @@ async fn send_json<B: Serialize, T: DeserializeOwned>(
     response_json(response).await
 }
 
+/// Read whether the service database still requires its first administrator.
 #[tauri::command]
 pub async fn startup_state(
     client: tauri::State<'_, AccountClient>,
 ) -> Result<BootstrapStatus, String> {
-    send_json::<(), _>(&client, Method::GET, "/v1/bootstrap/status", None, false).await
+    send_json::<(), _>(&client, Method::GET, BOOTSTRAP_STATUS_PATH, None, false).await
 }
 
+/// Create the first administrator and retain its bearer token in native memory.
 #[tauri::command]
 pub async fn bootstrap_admin(
     input: CreateAccountRequest,
@@ -129,7 +150,7 @@ pub async fn bootstrap_admin(
     let grant: SessionGrant = send_json(
         &client,
         Method::POST,
-        "/v1/bootstrap/admin",
+        BOOTSTRAP_ADMIN_PATH,
         Some(&input),
         false,
     )
@@ -138,32 +159,36 @@ pub async fn bootstrap_admin(
     Ok(grant.reviewer)
 }
 
+/// Authenticate a reviewer and retain the returned bearer token in native memory.
 #[tauri::command]
 pub async fn login(
     input: LoginRequest,
     client: tauri::State<'_, AccountClient>,
 ) -> Result<ReviewerAccount, String> {
     let grant: SessionGrant =
-        send_json(&client, Method::POST, "/v1/sessions", Some(&input), false).await?;
+        send_json(&client, Method::POST, SESSIONS_PATH, Some(&input), false).await?;
     client.store_token(grant.token)?;
     Ok(grant.reviewer)
 }
 
+/// List reviewer accounts through an authenticated native service request.
 #[tauri::command]
 pub async fn list_users(
     client: tauri::State<'_, AccountClient>,
 ) -> Result<Vec<ReviewerAccount>, String> {
-    send_json::<(), _>(&client, Method::GET, "/v1/users", None, true).await
+    send_json::<(), _>(&client, Method::GET, USERS_PATH, None, true).await
 }
 
+/// Create a reviewer account through an authenticated native service request.
 #[tauri::command]
 pub async fn create_user(
     input: CreateAccountRequest,
     client: tauri::State<'_, AccountClient>,
 ) -> Result<ReviewerAccount, String> {
-    send_json(&client, Method::POST, "/v1/users", Some(&input), true).await
+    send_json(&client, Method::POST, USERS_PATH, Some(&input), true).await
 }
 
+/// Load one filtered review queue page without exposing the bearer token to the WebView.
 #[tauri::command]
 pub async fn load_review_queue(
     query: ReviewQueueQuery,
@@ -171,7 +196,7 @@ pub async fn load_review_queue(
 ) -> Result<ReviewQueuePage, String> {
     let response = client
         .http
-        .get(client.endpoint("/v1/review-queue")?)
+        .get(client.endpoint(REVIEW_QUEUE_PATH)?)
         .bearer_auth(client.token()?)
         .query(&query)
         .send()
@@ -180,12 +205,13 @@ pub async fn load_review_queue(
     response_json(response).await
 }
 
+/// Revoke the current service session and clear its token from native memory.
 #[tauri::command]
 pub async fn logout(client: tauri::State<'_, AccountClient>) -> Result<(), String> {
     let token = client.token()?;
     let response = client
         .http
-        .post(client.endpoint("/v1/sessions/current")?)
+        .post(client.endpoint(CURRENT_SESSION_PATH)?)
         .bearer_auth(token)
         .send()
         .await
@@ -198,14 +224,15 @@ pub async fn logout(client: tauri::State<'_, AccountClient>) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
-    use super::configured_service_url;
+    use super::{configured_service_url, DEFAULT_DEBUG_SERVICE_URL};
 
+    /// Keep the implicit debug service confined to the local machine.
     #[test]
     fn debug_default_is_loopback_only() {
         if cfg!(debug_assertions) && std::env::var("DRUGREF_REVIEW_SERVICE_URL").is_err() {
             assert_eq!(
                 configured_service_url().expect("debug default"),
-                "http://127.0.0.1:8787"
+                DEFAULT_DEBUG_SERVICE_URL
             );
         }
     }
