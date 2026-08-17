@@ -4,8 +4,10 @@ use std::sync::Mutex;
 
 use reqwest::{Client, Method, StatusCode};
 use reviewer_domain::{
-    ApiErrorBody, BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewQueuePage,
-    ReviewQueueQuery, ReviewerAccount, SessionGrant,
+    ApiErrorBody, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
+    CreateEvidenceReferenceRequest, EvidenceReference, LoginRequest, ReviewAnnotation,
+    ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewerAccount,
+    SessionGrant,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -16,6 +18,9 @@ const SESSIONS_PATH: &str = "/v1/sessions";
 const CURRENT_SESSION_PATH: &str = "/v1/sessions/current";
 const USERS_PATH: &str = "/v1/users";
 const REVIEW_QUEUE_PATH: &str = "/v1/review-queue";
+const REVIEW_RECORD_PATH: &str = "/v1/review-record";
+const REVIEW_ANNOTATIONS_PATH: &str = "/v1/review-annotations";
+const REVIEW_EVIDENCE_REFERENCES_PATH: &str = "/v1/review-evidence-references";
 
 /// Native HTTP client and process-memory session store managed by Tauri.
 pub struct AccountClient {
@@ -203,6 +208,55 @@ pub async fn load_review_queue(
         .await
         .map_err(|error| format!("cannot reach the review service: {error}"))?;
     response_json(response).await
+}
+
+/// Load immutable working history for one review target.
+#[tauri::command]
+pub async fn load_review_record(
+    query: ReviewRecordQuery,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<ReviewRecord, String> {
+    let response = client
+        .http
+        .get(client.endpoint(REVIEW_RECORD_PATH)?)
+        .bearer_auth(client.token()?)
+        .query(&query)
+        .send()
+        .await
+        .map_err(|error| format!("cannot reach the review service: {error}"))?;
+    response_json(response).await
+}
+
+/// Append one Markdown working note through the authenticated native boundary.
+#[tauri::command]
+pub async fn create_review_annotation(
+    input: CreateAnnotationRequest,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<ReviewAnnotation, String> {
+    send_json(
+        &client,
+        Method::POST,
+        REVIEW_ANNOTATIONS_PATH,
+        Some(&input),
+        true,
+    )
+    .await
+}
+
+/// Append one citation-only working reference through the authenticated native boundary.
+#[tauri::command]
+pub async fn create_evidence_reference(
+    input: CreateEvidenceReferenceRequest,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<EvidenceReference, String> {
+    send_json(
+        &client,
+        Method::POST,
+        REVIEW_EVIDENCE_REFERENCES_PATH,
+        Some(&input),
+        true,
+    )
+    .await
 }
 
 /// Revoke the current service session and clear its token from native memory.

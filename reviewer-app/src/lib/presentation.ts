@@ -48,6 +48,14 @@ export function queueReadDate(generatedAt: string): string {
   return generatedAt.slice(0, RFC3339_DATE_LENGTH);
 }
 
+/** Render a working-record timestamp as a compact local date and time. */
+export function workingRecordDate(recordedAt: string): string {
+  return new Date(recordedAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 /** Return the selected item when retained by a refreshed page, otherwise its first item. */
 export function retainedQueueSelection(
   items: ReviewQueueItem[],

@@ -35,6 +35,11 @@ impl AppError {
         Self::new(StatusCode::CONFLICT, message)
     }
 
+    /// Construct a client-visible missing-resource response.
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, message)
+    }
+
     /// Construct the fixed response used when login rate limits are exhausted.
     pub fn too_many_requests() -> Self {
         Self::new(

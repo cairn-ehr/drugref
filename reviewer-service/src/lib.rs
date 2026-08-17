@@ -8,6 +8,7 @@ mod auth;
 mod error;
 mod limiter;
 mod queue;
+mod records;
 mod store;
 
 use std::{net::SocketAddr, sync::Arc};
@@ -19,8 +20,9 @@ use axum::{
     Json, Router,
 };
 use reviewer_domain::{
-    BootstrapStatus, CreateAccountRequest, LoginRequest, ReviewQueuePage, ReviewQueueQuery,
-    ReviewerAccount, ReviewerRole, SessionGrant,
+    BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest, CreateEvidenceReferenceRequest,
+    EvidenceReference, LoginRequest, ReviewAnnotation, ReviewQueuePage, ReviewQueueQuery,
+    ReviewRecord, ReviewRecordQuery, ReviewerAccount, ReviewerRole, SessionGrant,
 };
 use sqlx::PgPool;
 
@@ -55,6 +57,12 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions", post(login))
         .route("/v1/sessions/current", post(logout))
         .route("/v1/review-queue", get(review_queue))
+        .route("/v1/review-record", get(review_record))
+        .route("/v1/review-annotations", post(create_annotation))
+        .route(
+            "/v1/review-evidence-references",
+            post(create_evidence_reference),
+        )
         .route("/v1/users", get(list_users).post(create_user))
         .with_state(state)
 }
@@ -164,6 +172,54 @@ async fn review_queue(
         .validate()
         .map_err(|error| AppError::bad_request(error.0))?;
     Ok(Json(queue::load(&state.pool, &query).await?))
+}
+
+/// Return immutable working history for one current review target.
+async fn review_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReviewRecordQuery>,
+) -> Result<Json<ReviewRecord>, AppError> {
+    authenticate_headers(&state, &headers).await?;
+    let query = query
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    Ok(Json(records::load(&state.pool, &query).await?))
+}
+
+/// Append one authenticated reviewer's Markdown working note.
+async fn create_annotation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateAnnotationRequest>,
+) -> Result<(StatusCode, Json<ReviewAnnotation>), AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    let input = input
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    let annotation =
+        records::create_annotation(&state.pool, &input, authenticated.reviewer.reviewer_uuid)
+            .await?;
+    Ok((StatusCode::CREATED, Json(annotation)))
+}
+
+/// Append one authenticated reviewer's citation-only working reference.
+async fn create_evidence_reference(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateEvidenceReferenceRequest>,
+) -> Result<(StatusCode, Json<EvidenceReference>), AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    let input = input
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    let reference = records::create_evidence_reference(
+        &state.pool,
+        &input,
+        authenticated.reviewer.reviewer_uuid,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(reference)))
 }
 
 /// Append a revocation for the current authenticated session.
