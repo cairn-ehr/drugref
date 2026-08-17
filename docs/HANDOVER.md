@@ -40,8 +40,8 @@ enrolment UI over `db/044`. Do not enable a clinical decision or signing button 
 
 **Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 5 plus the populated-
 database live-queue integration; Tauri 1; `ruff`; Rust formatting; `npm run check` with 0 diagnostics; production
-frontend build; `npm audit` with 0 vulnerabilities; native no-bundle build. Frontend output is 0.63 kB HTML +
-17.97 kB CSS + 71.85 kB JS (25.73 kB gzipped). Two real reference-database queue reads took 11.42 s total,
+frontend build; `npm audit` with 0 vulnerabilities; native debug app bundle. Frontend output is 0.63 kB HTML +
+18.10 kB CSS + 71.85 kB JS (25.73 kB gzipped). Two real reference-database queue reads took 11.42 s total,
 including the known expensive interaction-gap view. No browser surface was available, so desktop/narrow visual
 verification remains outstanding.
 
