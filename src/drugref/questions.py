@@ -399,11 +399,22 @@ _GAP_SOURCES = {
     #   * withheld_qualified is grained per CELL (source, raw_substance,
     #     column_heading, pathway) -- each footnoted cell is its own adjudication,
     #     so column_heading/pathway are part of the fact and belong in the key.
-    #   * the other three (unresolved_substance, combination_regimen,
-    #     non_drug_entity) are grained per SUBJECT (source, raw_substance,
+    #   * EVERY OTHER NON-MEMBER disposition (unresolved_substance,
+    #     combination_regimen, non_drug_entity today, and whatever else the CHECK
+    #     admits later) is grained per SUBJECT (source, raw_substance,
     #     disposition) -- the question is about the NAME, not the cell that
-    #     happened to mention it, so the view now projects column_heading and
-    #     pathway as NULL for these three.
+    #     happened to mention it, so the view projects column_heading and pathway
+    #     as NULL for this half.
+    #
+    # db/040 first shipped the subject half as a POSITIVE enumeration of the three
+    # known values (`IN ('unresolved_substance', 'combination_regimen',
+    # 'non_drug_entity')`), which its own review caught: a sixth disposition
+    # would match neither that list nor the cell half's `= 'withheld_qualified'`,
+    # so it produced ZERO gap-view rows -- reaching this CASE, and the loud
+    # NOT-NULL failure the next paragraph describes, NEVER. db/041 restated the
+    # predicate NEGATIVELY (`NOT IN ('member', 'withheld_qualified')`) so an
+    # unanticipated disposition still reaches the view, and so still reaches the
+    # CASE below, instead of vanishing before either can see it.
     #
     # key_sql below COALESCEs both nullable columns to '' before concatenating.
     # NOT COSMETIC: SQL's `||` returns NULL if any operand is NULL, so an
@@ -411,8 +422,20 @@ _GAP_SOURCES = {
     # NULL-derived question_uuid -- for every subject-grain row. For
     # withheld_qualified the two columns are never NULL, so COALESCE is a no-op
     # there and every one of its gap_keys, and therefore its question_uuids, is
-    # BYTE-IDENTICAL to what db/039 minted -- only the three subject dispositions'
-    # keys change, and they change from up to sixteen keys to eight.
+    # BYTE-IDENTICAL to what db/039 minted -- only the subject-grain dispositions'
+    # keys change, and on the real page they change from up to sixteen keys to
+    # eight.
+    #
+    # key_sql DELIBERATELY OMITS `disposition` even though the subject half now
+    # groups by it. That is safe only because `fda_cyp_run._classify` decides
+    # each of the subject dispositions from `raw_substance` (and, for
+    # combination_regimen, its own regex over that same string) ALONE -- never
+    # from per-cell data like footnote_markers -- so one raw_substance can never
+    # carry two different subject dispositions at once, and omitting disposition
+    # from the key cannot fold two distinct facts onto one question_uuid. That
+    # invariant is real (checked directly: zero substances straddle two subject
+    # dispositions on the real page) but lives in _classify's code, not in any
+    # schema constraint, so it is recorded here rather than assumed silently.
     #
     # DO NOT "FIX" THE unresolved_substance / combination_regimen TEXT TO NAME
     # column_heading OR pathway. It would look like an omission next to

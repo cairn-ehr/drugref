@@ -5,9 +5,10 @@ Every test here pins a DECISION from the design, not an implementation detail.
 """
 import pathlib
 
+import psycopg
 import pytest
 
-from drugref import ids
+from drugref import ids, questions
 from drugref.ingest import fda_cyp_run
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
@@ -537,3 +538,72 @@ def test_the_subject_grain_collapses_repeated_cells_for_one_substance(conn):
     assert bupropion_gaps == bupropion_cells, (
         "withheld_qualified keeps the per-CELL grain -- it must NOT collapse "
         "the way the other three dispositions do")
+
+
+@pytest.mark.usefixtures("conn")
+def test_an_unrecognised_disposition_aborts_loudly_rather_than_vanishing(conn):
+    """db/041, and the whole reason it exists.
+
+    db/040's first version of the gap view named the subject half's
+    dispositions POSITIVELY (`IN ('unresolved_substance', 'combination_regimen',
+    'non_drug_entity')`). A future sixth disposition -- foreseeable, not
+    hypothetical: this project has widened this exact CHECK once already, and
+    db/035 added a whole gap kind mid-plan -- would have matched neither that
+    list nor the cell half's `= 'withheld_qualified'`, so it would have produced
+    ZERO gap-view rows. SILENCE would have been the failure: `drugref ingest
+    fda-cyp` reporting success, the view's own "ABSENCE OF A ROW IS NOT
+    COVERAGE" comment being quietly false for that row, and questions.py's CASE
+    comment ("aborts the ingest loudly") never actually being exercised --
+    issues 74/66/76's gate-that-never-fires, beside issue 122's comment
+    asserting a property the code did not have.
+
+    db/041's negative predicate (`NOT IN ('member', 'withheld_qualified')`)
+    means an unrecognised disposition now reaches the subject half, then
+    questions.py's CASE (which has no ELSE, on unresolved_ci_object's own
+    precedent), evaluates to SQL NULL, and trips open_question.question_text's
+    NOT NULL constraint -- loud and specific, not silent.
+
+    The CHECK is dropped for this test only, inside the rollback-scoped `conn`
+    fixture's own transaction (ingest_fda_cyp's two commits happen first and
+    are cleaned up by this module's autouse `_clean` truncate, same as every
+    other test here; the DROP CONSTRAINT and the bad INSERT that follows are
+    never committed, so no other test or session ever sees a relaxed
+    constraint).
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    run_id = conn.execute(
+        "SELECT ingest_run_id FROM drugref.ingest_run "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+    a_class_uuid = conn.execute(
+        "SELECT class_uuid FROM drugref.substance_class "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+
+    # Dropped, not widened: a widen-and-reword of the CHECK would itself need
+    # verifying against the live catalog (ids.py's own lesson, and db/039's own
+    # "copied VERBATIM" discipline), which is machinery this test does not need
+    # -- it only needs ONE row the CHECK would otherwise refuse to exist,
+    # inside a transaction nothing here ever commits.
+    conn.execute(
+        "ALTER TABLE drugref.fda_cyp_assertion "
+        "DROP CONSTRAINT fda_cyp_assertion_disposition")
+    conn.execute(
+        "INSERT INTO drugref.fda_cyp_assertion "
+        "(ingest_run, source, row_ordinal, raw_substance, resolved_moiety_uuid, "
+        " column_heading, raw_cell, system, pathway, role, potency, class_uuid, "
+        " footnote_markers, footnote_text, registry_near_name, disposition) "
+        "VALUES (%s, 'FDA-CYP', 9998, 'testonly sixth disposition', NULL, "
+        " 'CYP Strg INH', '3A strong inhibitor', 'CYP', '3A', 'inhibitor', "
+        " 'strong', %s, NULL, NULL, NULL, 'testonly_sixth_disposition')",
+        (run_id, a_class_uuid))
+
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        questions.register_from_gaps(conn, run_id)
+
+    # Postgres aborts the WHOLE transaction on that error, refusing any further
+    # statement until it sees a ROLLBACK -- this module's own autouse `_clean`
+    # fixture runs a TRUNCATE in its teardown on this same connection, so without
+    # this the teardown itself would fail with InFailedSqlTransaction. Rolling
+    # back here only undoes the uncommitted DROP CONSTRAINT and INSERT above;
+    # ingest_fda_cyp's two commits already landed the fixture's real rows, which
+    # is exactly what `_clean` still needs to find and truncate.
+    conn.rollback()
