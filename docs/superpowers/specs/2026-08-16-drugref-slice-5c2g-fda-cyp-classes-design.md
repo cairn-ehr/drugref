@@ -393,10 +393,22 @@ this design has not performed, because the two exclusions overlap (grapefruit ju
 unresolvable) and guessing at the overlap is how a figure that looks measured enters the record. **Measure
 it; do not derive it here.**
 
-**Must not move, and each is checked:** `substance_moiety` **19,438** · `ddi_candidate_pair` **21,664** ·
-`gap_uncurated_interaction_rule` **595** · `gap_uncurated_condition_contradiction` **168** · every
-`curated_*` count. This slice adds no interaction content and no condition content, so **none of them has
-licence to move** — the spike's own §7 gate, and the same discipline 5c.4 used.
+**Must not move — and the check is BEFORE/AFTER ON ONE DATABASE, not against a number written here:**
+`substance_moiety` · `ddi_candidate_pair` · `gap_uncurated_interaction_rule` ·
+`gap_uncurated_condition_contradiction` · every `curated_*` count. Read each on the scratch database, run
+the ingest, read each again, assert equality. This slice adds no interaction content and no condition
+content, so **none of them has licence to move** — the spike's own §7 gate, and the same discipline 5c.4
+used.
+
+> **⇒ AN EARLIER DRAFT WROTE THE ABSOLUTE VALUES HERE, AND THREE OF THE FOUR WERE FROM THE WRONG DATABASE.**
+> It said `ddi_candidate_pair` **21,664** — a figure measured on `drugref_policy` and `drugref_5c4`, two
+> earlier databases. **`drugref_db038`, the current measurement database, holds 21,877.** Task 6's
+> implementer hit the mismatch and chased it down; it is drift between databases, not a defect this slice
+> introduced. The lesson is the one this document has now recorded four times in four different guises: a
+> figure carries its context, and lifting it out of that context makes it wrong without making it look
+> wrong. **An invariance claim must be checked as an invariance — the same query, the same database, either
+> side of the change — never against a constant transcribed from somewhere else.** Absolute values belong
+> in the measured-results record, where the database they came from is named beside them.
 
 **Per-source rebuild safety:** clearing `FDA-CYP` must delete no MED-RT or MeSH class, pinned by a test
 rather than argued. `class_membership` has no `source` column of its own, so the clear is scoped through

@@ -1822,7 +1822,7 @@ UNION ALL SELECT 'gap_uncurated_condition_contradiction', count(*) FROM drugref.
 UNION ALL SELECT 'substance_class', count(*) FROM drugref.substance_class;"
 ```
 
-Expected: 19,438 · 21,664 · 595 · 168 · (record the class count).
+Record whatever they are — **do not expect the numbers this plan or the spec once carried.** `drugref_db038` holds `ddi_candidate_pair` 21,877, not the 21,664 measured on earlier databases; spec §11 now makes this a BEFORE/AFTER equality check on one database rather than a comparison against transcribed constants.
 
 - [ ] **Step 3: Ingest and time it**
 
