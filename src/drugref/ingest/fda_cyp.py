@@ -9,7 +9,7 @@ It is a MATRIX, not a list of facts: 245 data rows x 11 columns, where the first
 column names the substance and EACH OF THE OTHER TEN IS a (system, role,
 potency) tuple. The cell holds the pathway list. So one cell such as
 'P-gp; BCRP inhibitor' in the TRNSP INH column is two facts, and the whole table
-is 337 non-empty cells expanding to 415 tuples over 65 classes.
+is 337 non-empty cells expanding to 419 tuples over 65 classes.
 
 WHY A REGEX PARSE IS DEFENSIBLE HERE, when it usually is not. Two reasons, and
 neither is "the HTML looked simple":
@@ -153,11 +153,28 @@ def extract_rows(page: str) -> list[list[str]]:
 # OATP1B is listed SEPARATELY from OATP1B1 and OATP1B3 and is never expanded into
 # them: FDA writes the coarser name on some rows, and expanding it would
 # manufacture a specificity FDA declined to state.
-PATHWAYS = frozenset({
-    "1A2", "2B6", "2C8", "2C9", "2C19", "2D6", "3A",
+#
+# PARTITIONED BY SYSTEM, not one flat set: ROLE_COLUMNS declares a 'CYP' or
+# 'transporter' system per column, and a token must belong to the RIGHT one --
+# 'OATP1B1' (a transporter) is not a valid CYP enzyme even though it is a valid
+# pathway in general, and a flat set would silently accept it under a CYP
+# column, minting a nonsense class such as 'cyp:oatp1b1:inhibitor:moderate'.
+CYP_PATHWAYS = frozenset({"1A2", "2B6", "2C8", "2C9", "2C19", "2D6", "3A"})
+TRANSPORTER_PATHWAYS = frozenset({
     "P-gp", "BCRP", "OATP1B1", "OATP1B3", "OATP1B",
     "OAT1", "OAT3", "OCT2", "MATE1", "MATE2-K",
 })
+
+# The union, kept for callers (and tests) that only need "is this pathway known
+# at all", independent of which system it belongs to.
+PATHWAYS = CYP_PATHWAYS | TRANSPORTER_PATHWAYS
+
+# ROLE_COLUMNS' own system strings ('CYP', 'transporter') index straight into
+# this -- the per-column vocabulary a token must belong to.
+_PATHWAYS_BY_SYSTEM: dict[str, frozenset[str]] = {
+    "CYP": CYP_PATHWAYS,
+    "transporter": TRANSPORTER_PATHWAYS,
+}
 
 # Case-folded lookup, so 'p-gp' and 'P-gp' are one pathway while the CANONICAL
 # spelling (which reaches source_code and class_name) stays FDA's own.
@@ -258,13 +275,29 @@ def parse_cell(raw_cell: str, column_index: int,
         raise FdaCypParseError(
             f"cell {raw_cell!r} says role {cell_role!r} but column "
             f"{column_heading!r} says {column_role!r} -- they disagree")
-    if cell_potency is not None and column_potency is not None:
+    # THE CHECK MUST BE TOTAL, not "compare if both sides happen to state one".
+    # An `is not None and is not None` guard SKIPS rather than FAILS whenever
+    # either side is missing -- and 'skipped' is exactly the silent pass spec
+    # section 8's cross-check exists to convert into a stopped ingest. Both
+    # missing-side shapes are real drift a re-fetch could introduce: a CYP
+    # column cell that stops stating its band ('3A inhibitor' under 'CYP Mod
+    # INH'), or a transporter cell that starts stating one ('P-gp strong
+    # inhibitor' under 'TRNSP INH', which has no potency vocabulary at all).
+    if column_potency is None:
+        if cell_potency is not None:
+            raise FdaCypParseError(
+                f"cell {raw_cell!r} states potency {cell_potency!r} but column "
+                f"{column_heading!r} declares no potency vocabulary -- they disagree")
+    elif cell_potency is None:
+        raise FdaCypParseError(
+            f"cell {raw_cell!r} states no potency but column {column_heading!r} "
+            f"says {column_potency!r} -- they disagree")
+    elif not column_potency.startswith(cell_potency):
         # 'moderate sensitive' is spelled 'moderately sensitive' in some cells and
         # reaches here already folded onto the column's spelling.
-        if not column_potency.startswith(cell_potency):
-            raise FdaCypParseError(
-                f"cell {raw_cell!r} says potency {cell_potency!r} but column "
-                f"{column_heading!r} says {column_potency!r} -- they disagree")
+        raise FdaCypParseError(
+            f"cell {raw_cell!r} says potency {cell_potency!r} but column "
+            f"{column_heading!r} says {column_potency!r} -- they disagree")
 
     listed = _TRAILING_NOUN.sub("", body[:match.start()]).strip().rstrip(",")
     pairs: list[tuple[str, str | None]] = []
@@ -290,6 +323,17 @@ def parse_cell(raw_cell: str, column_index: int,
                 f"(column {column_heading!r}). The closed vocabulary is "
                 f"{sorted(PATHWAYS)}. Widen it deliberately or fix the parse -- "
                 "accepting it would mint a class with an immortal UUID.")
+        # A pathway can be REAL and still be wrong HERE: 'OATP1B1' is a genuine
+        # transporter, but a CYP column naming it would mint a class under the
+        # wrong system ('cyp:oatp1b1:...'). The vocabulary a token must belong
+        # to is the COLUMN's declared system, not the flat union.
+        allowed_for_system = _PATHWAYS_BY_SYSTEM[system]
+        if canonical not in allowed_for_system:
+            raise FdaCypParseError(
+                f"pathway {canonical!r} in cell {raw_cell!r} does not belong to "
+                f"the {system!r} system column {column_heading!r} declares. The "
+                f"closed {system!r} vocabulary is {sorted(allowed_for_system)}. "
+                "Accepting it would mint a class under the wrong system.")
         # A cell-level marker qualifies EVERY item in the cell; an item-level one
         # qualifies only that item. Both are kept, joined, rather than one
         # overwriting the other.

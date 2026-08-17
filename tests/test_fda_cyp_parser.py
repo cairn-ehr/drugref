@@ -190,6 +190,39 @@ def test_a_cell_whose_role_disagrees_with_its_COLUMN_aborts():
         fda_cyp.parse_cell("2D6 strong inhibitor", 2, "CYP Mod INH")  # column says moderate
 
 
+def test_the_potency_cross_check_is_total_not_skipped_when_one_side_is_missing():
+    """`if cell_potency is not None and column_potency is not None:` reads like a
+    guard but is really a SKIP: whenever either side is missing, the comparison
+    never runs and the cell is silently accepted. Neither shape below occurs on
+    the pinned page today -- that is exactly why an optional-group check is the
+    dangerous one: it passes everything it has never been asked to reject, and a
+    re-fetch that adds either shape would sail through with the run reporting
+    success. Spec section 8's whole point is to turn ANY shape drift here into a
+    stopped ingest, not just the drift the pinned page happens to demonstrate.
+    """
+    # The column (CYP Mod INH) declares a potency band; the cell states none.
+    with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
+        fda_cyp.parse_cell("3A inhibitor", 2, "CYP Mod INH")
+    # The column (TRNSP INH) is a transporter column -- FDA publishes no potency
+    # vocabulary for transporters at all -- yet the cell states one anyway.
+    with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
+        fda_cyp.parse_cell("P-gp strong inhibitor", 9, "TRNSP INH")
+
+
+def test_a_pathway_from_the_wrong_system_aborts_even_though_it_is_a_real_pathway():
+    """PATHWAYS used to be one flat set, so a genuine transporter name slipped
+    through under a CYP column (and vice versa) as long as it was SOME known
+    pathway -- 'OATP1B1' is real, but it is not a CYP enzyme, and accepting it
+    under 'CYP Mod INH' would mint a class as nonsensical as 'cyp:oatp1b1:...'.
+    The vocabulary a token must belong to is the COLUMN's declared system, not
+    the union of every system this table has.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="system"):
+        fda_cyp.parse_cell("OATP1B1 moderate inhibitor", 2, "CYP Mod INH")
+    with pytest.raises(fda_cyp.FdaCypParseError, match="system"):
+        fda_cyp.parse_cell("3A inhibitor", 9, "TRNSP INH")
+
+
 def test_moderately_sensitive_matches_the_columns_moderate_sensitive():
     """The legend's word is not always the cell's: 'moderately sensitive
     substrate' against the column's 'Mod SENS SUB'. Not a disagreement.
