@@ -12,12 +12,15 @@ import pytest
 from drugref import cli, cli_chain, cli_fda_cyp, ids, questions
 from drugref.ingest import fda_cyp_run
 
+# The fixture carries a genuine table AND, since the review round, the page's
+# own article:modified_time line copied verbatim -- so the end-to-end CLI tests
+# below need no download and are no longer skipped. They were skipped on every
+# CI run from the slice landing until then, which meant the one path through
+# cli.main -> parse_release -> ingest_fda_cyp -> loaded_release was never
+# executed by CI at all. There is no REAL_PAGE constant here any more: the only
+# test that genuinely needs the download lives in test_fda_cyp_parser.py, is
+# marked `livepage`, and CI deselects it rather than skipping it.
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
-# The real, checksum-verified page (downloads/ is gitignored). Task 8's CLI
-# tests that need a genuine dateModified stamp AND a genuine table -- a full
-# end-to-end ingest through the CLI -- are skipped without it, matching the
-# idiom tests/test_fda_cyp_parser.py already uses for the same reason.
-REAL_PAGE = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html")
 
 
 @pytest.fixture(autouse=True)
@@ -939,14 +942,21 @@ def test_a_release_mismatch_reported_through_main_names_both_values(
     assert "2026-05-29T14:00" in err
 
 
-@pytest.mark.skipif(not REAL_PAGE.exists(), reason="live page not downloaded")
 def test_ingest_fda_cyp_via_the_cli_end_to_end_records_the_pages_own_release(
         _migrated, monkeypatch):
-    """One real ingest through the CLI (#16's precedent for `unii`), against
-    the real pinned page, with --release omitted -- the ordinary invocation.
+    """One real ingest through the CLI (#16's precedent for `unii`), with
+    --release omitted -- the ordinary invocation, where the page's own stamp
+    governs and no operator claim exists to disagree with it.
+
+    RUNS AGAINST THE FIXTURE, NOT THE GITIGNORED DOWNLOAD. It was skipped in
+    CI on every run since the slice landed, which made the one end-to-end path
+    through `cli.main` -> `parse_release` -> `ingest_fda_cyp` -> `loaded_release`
+    a path CI never executed. The fixture now carries the page's own
+    article:modified_time line (verbatim), so this asserts the same fact and
+    actually runs.
     """
     monkeypatch.setenv("DRUGREF_DSN", _migrated)
-    assert cli.main(["ingest", "fda-cyp", "--page", str(REAL_PAGE)]) == 0
+    assert cli.main(["ingest", "fda-cyp", "--page", str(FIXTURE)]) == 0
     with psycopg.connect(_migrated) as c:
         row = c.execute(
             "SELECT source, writer, upstream_release FROM drugref.loaded_release "
@@ -954,12 +964,12 @@ def test_ingest_fda_cyp_via_the_cli_end_to_end_records_the_pages_own_release(
     assert row == ("FDA-CYP", "fda_cyp_run", "2026-05-29T14:00")
 
 
-@pytest.mark.skipif(not REAL_PAGE.exists(), reason="live page not downloaded")
-def test_a_release_flag_matching_the_real_page_succeeds_via_the_cli(
+def test_a_release_flag_matching_the_page_succeeds_via_the_cli(
         _migrated, monkeypatch):
+    """The agreeing half of check_fda_cyp_release, end to end through the CLI."""
     monkeypatch.setenv("DRUGREF_DSN", _migrated)
     assert cli.main(
-        ["ingest", "fda-cyp", "--page", str(REAL_PAGE),
+        ["ingest", "fda-cyp", "--page", str(FIXTURE),
          "--release", "2026-05-29T14:00"]) == 0
 
 

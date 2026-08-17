@@ -455,6 +455,9 @@ WANTED = [
     "oseltamivir carboxylate", "oral contraceptives",   # metabolite, group term
     "glyburide", "peginterferon alpha-2a",              # apparent synonyms
     "aprepitant",                                       # the one substance on two rows
+    "atorvastatin",                                     # '3A moderate substrate': the
+                                                        # THIRD potency spelling, which
+                                                        # only startswith admits
     "abiraterone", "acyclovir", "adagrasib", "adefovir", "alprazolam",  # clean controls
 ]
 def names(row):
@@ -462,7 +465,28 @@ def names(row):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", cell)).strip()
 
 kept = [r for r in data if any(w.lower() in names(r).lower() for w in WANTED)]
-out = "<table>\n" + header + "\n" + "\n".join(kept) + "\n</table>\n"
+
+# THREE PARTS, ALL VERBATIM FROM `src`, AND A REBUILD MUST EMIT ALL THREE.
+# This snippet originally wrote only the table; the Footnotes block was appended
+# by hand afterwards, and the review round added the release stamp -- so a
+# re-run of the old version silently produced a fixture MISSING both, which does
+# not fail any test. It does something worse: parse_release then finds no stamp,
+# and the three tests that exercise cli.main end-to-end go back to being
+# runnable only against the gitignored download, i.e. skipped in CI forever.
+stamp = re.findall(
+    r'<meta property="article:modified_time" content="[^"]*"\s*/?>', src)[0]
+# Bounded to the next heading, then to the last </p> inside it -- the same
+# bounding fda_cyp.parse_footnotes uses, and for the same reason: the page
+# carries unrelated <p> markup (a Qualtrics snippet) after the footnote list,
+# and a naive slice to the last </p> in the file drags it into the fixture.
+start = src.index("<h2>Footnotes</h2>")
+tail = src[start + len("<h2>Footnotes</h2>"):]
+nxt = re.search(r"<h[12]\b", tail, re.I)
+seg = tail[:nxt.start()] if nxt else tail
+footnotes = "<h2>Footnotes</h2>" + seg[:seg.rindex("</p>") + 4]
+
+out = (stamp + "\n<table>\n" + header + "\n" + "\n".join(kept) + "\n</table>\n\n"
+       + footnotes.strip() + "\n")
 pathlib.Path("tests/fixtures").mkdir(parents=True, exist_ok=True)
 pathlib.Path("tests/fixtures/fda_cyp_table.html").write_text(out, encoding="utf-8")
 print(f"fixture rows: {len(kept)}")

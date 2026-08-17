@@ -5,6 +5,18 @@ THE FIXTURE IS EXTRACTED VERBATIM from the live page and carries every trap the
 design was derived from, because a fixture of clean rows would pass a parser
 that mints four garbage classes. Do not hand-edit it; rebuild it with the
 snippet in the plan's Task 2 if the page is re-fetched.
+
+IT NOW CARRIES THREE PARTS, ALL VERBATIM, AND A REBUILD MUST KEEP ALL THREE:
+the trap rows, the appended `<h2>Footnotes</h2>` block, and -- added by the
+review round -- the page's own `<meta property="article:modified_time" ...>`
+line. That last one is not decoration. Without it the fixture states no
+release, so the end-to-end CLI tests and the release test could only run
+against the gitignored download, and CI skipped all three on every run from
+the slice landing onward: the one path through `cli.main` -> `parse_release`
+-> `ingest_fda_cyp` -> `loaded_release` was never executed by CI at all. Drop
+the stamp in a rebuild and those tests do not fail -- they go back to being
+unrunnable, which is worse, and the workflow's "fail on any skip" gate is what
+would catch it.
 """
 import pathlib
 
@@ -393,12 +405,17 @@ def test_a_present_but_unparseable_stamp_names_ITSELF_not_absence():
         fda_cyp.parse_release('<script>{"dateModified": "not-a-real-timestamp"}</script>')
 
 
-@pytest.mark.skipif(
-    not pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").exists(),
-    reason="live page not downloaded")
-def test_the_real_page_reports_the_expected_release():
-    page = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
-    assert fda_cyp.parse_release(page) == "2026-05-29T14:00"
+def test_the_fixture_reports_the_release_its_source_page_states(fixture_html):
+    """Runs EVERYWHERE, because it no longer needs the gitignored download.
+
+    The fixture carries the page's own article:modified_time line, copied
+    verbatim exactly as its Footnotes block was -- so this pins the same fact
+    the old downloads/-gated version did (the release parses to
+    '2026-05-29T14:00') without being a test CI could never execute. A test
+    that only ever skips is a test that passes vacuously, which is the whole
+    reason the CI workflow fails on any skip at all.
+    """
+    assert fda_cyp.parse_release(fixture_html) == "2026-05-29T14:00"
 
 
 def test_the_bupropion_footnote_is_read_verbatim_from_the_page(fixture_html):
@@ -441,6 +458,7 @@ def test_a_missing_footnotes_section_raises():
         fda_cyp.parse_footnotes("<table><tr><td>x</td></tr></table>")
 
 
+@pytest.mark.livepage
 @pytest.mark.skipif(
     not pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").exists(),
     reason="live page not downloaded")
@@ -448,6 +466,15 @@ def test_the_real_page_and_the_fixture_agree_on_every_footnote(fixture_html):
     """The fixture's appended Footnotes block is a verbatim excerpt of the real
     page (never hand-written, per the fixture rule at the top of this file),
     so parsing both must produce byte-identical text for all 21 markers.
+
+    MARKED `livepage`, AND THAT IS WHY IT IS NOT A SKIP IN CI. This is a
+    PROVENANCE check on the fixture: its whole value is comparing the extract
+    against the actual download, so it cannot be rewritten to run without one,
+    and committing the 108 KB page to make it run would turn it into a
+    comparison of two committed files -- it could then only fail if somebody
+    edited one, which is not the thing it exists to catch. CI DESELECTS it
+    (`-m "not livepage"`) rather than skipping it, so the workflow's "fail on
+    any skip" gate keeps its full force for every other test.
     """
     real = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
     assert fda_cyp.parse_footnotes(real) == fda_cyp.parse_footnotes(fixture_html)
