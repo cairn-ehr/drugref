@@ -3041,6 +3041,44 @@ available. This limitation does not weaken the compilation/accessibility result 
 `signing_key`, revocable sessions and append-only annotations on `question_uuid`. Exact DDL is deliberately left to that
 round. The next unused migration number is **044**: `db/043` belongs to the merged FDA-CYP review round.
 
+## Reviewer accounts and first-run administration (2026-08-17) — `db/044`
+
+Canonical design: [`2026-08-17-drugref-reviewer-user-management-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-user-management-design.md).
+
+**The GUI now has real account writes without moving the database trust boundary into the desktop app.** `reviewer-service/`
+is the Axum/SQLx service; `reviewer-domain/` owns shared request/response types and validation; the Tauri core uses an HTTPS
+client and retains bearer tokens in native memory. The WebView invokes narrow commands and still has no network capability.
+Debug accepts loopback HTTP; release configuration requires HTTPS. The clinical queue remains the same read-only fixture.
+
+**First run is a database state, not a preference.** No account is seeded. Before loading the workspace, the app calls the
+bootstrap-status endpoint. With no live administrator profile it renders first-admin registration and nothing beyond it.
+The write takes a PostgreSQL advisory transaction lock, rechecks under the lock, forces `administrator` regardless of the
+request body, and inserts account + profile + Argon2id credential + digest-only session in one transaction. Once any live
+administrator profile exists, bootstrap returns conflict — including when that administrator is disabled, because disablement
+must never reopen an unauthenticated privilege grant.
+
+**`db/044` has seven objects and no seed:** stable/immutable `reviewer_account`; append-only, single-live `reviewer_profile`;
+append-only, single-live `reviewer_password_credential`; append-only `reviewer_key_enrolment` corrections linked into the
+existing signing registry; insert-only `auth_session` with a 32-byte SHA-256 token digest; insert-only
+`auth_session_revocation`; and the insert-only role vocabulary. Creating a user is one service transaction. The GUI exposes
+list/create to administrators; hiding the navigation item is only presentation, and the service checks the live role again.
+
+**Authentication details:** Argon2id PHC hashes, the same external failure for missing user / wrong password / disabled user,
+a real Argon2 sentinel verification on the missing-user path, 12-hour random sessions, per-address process-local login
+limiting, and logout as an auditable revocation insert. An edge limiter is still required in production. The next admin work is
+profile correction, disable/enable, password rotation, all-session revocation and signing-key enrolment UI over the schema
+already landed here.
+
+**Verification:** 16 db/044 schema tests; full Python/PostgreSQL suite **1,779 passed**; shared-domain, service and
+Tauri unit suites **3 + 4 + 3 passed**; `ruff`, `cargo fmt --check`, `npm run check` (0 diagnostics), `npm run build`, and
+`npm audit` (0 vulnerabilities). A local end-to-end service run observed bootstrap true → first administrator (request role
+overridden) → second bootstrap HTTP 409 → password login → authenticated reviewer create/list. Native no-bundle build also
+passed. Frontend output is 0.63 kB HTML + 17.54 kB CSS + 69.14 kB JS (24.75 kB gzipped). No in-app or connected browser was
+available, so the new bootstrap/admin layouts still need the same desktop/narrow visual pass the foundation was missing.
+
+**Next:** replace the bundled queue with live, paginated read-only service endpoints and database-derived filter vocabularies.
+Do not enable clinical write controls as part of that read slice.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER

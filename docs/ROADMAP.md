@@ -954,7 +954,13 @@ migration and no database connection shipped.** Frontend audit: 0 advisories; th
 The production boundary is Tauri client → authenticated Rust review service → PostgreSQL, never a shared database credential
 inside the client. Private Ed25519 keys stay encrypted on the device; the service stores the public key in the existing
 `signing_key` registry, independently re-derives signed payloads and writes through the existing append/supersede discipline.
-Next: reviewer accounts and service skeleton, then live paginated reads, annotations, curated transactions and local signing.
+
+The 2026-08-17 account round adds [`db/044`](superpowers/specs/2026-08-17-drugref-reviewer-user-management-design.md),
+`reviewer-domain/` and `reviewer-service/`. The app blocks before workspace load when no administrator is registered,
+creates the first administrator under a PostgreSQL advisory transaction lock, keeps bearer tokens in the native core,
+and gives administrators a live list/create-user GUI. Accounts are stable; profile, password and key-enrolment corrections
+are append-only; sessions store only token digests and insert-only revocations. The clinical queue is still explicitly
+fixture-backed and read-only. Next: live paginated queue reads, then annotations, curated transactions and local signing.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded
