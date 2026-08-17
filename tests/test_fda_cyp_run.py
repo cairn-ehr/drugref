@@ -421,3 +421,46 @@ def test_this_slice_creates_no_interaction_content(conn):
     assert conn.execute(
         "SELECT count(*) FROM drugref.class_contraindication "
         "WHERE source = 'FDA-CYP'").fetchone()[0] == 0
+
+
+# ---- Task 7: the gap view wired into the question register -----------------
+
+
+@pytest.mark.usefixtures("conn")
+def test_every_unadjudicated_tuple_raises_exactly_one_question(conn):
+    """The view's grain IS the gap_key's grain (#41). Grouping coarser folds two
+    independent facts onto one immortal question_uuid; finer mints two questions
+    for one fact.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    gaps = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated").fetchone()[0]
+    questions_ = conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated'").fetchone()[0]
+    assert gaps > 0
+    assert questions_ == gaps
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_members_row_raises_no_question(conn):
+    """A membership drugref already wrote asks nobody anything."""
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    leaked = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE disposition = 'member'").fetchone()[0]
+    assert leaked == 0
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_question_text_states_the_actual_reason(conn):
+    """Four dispositions reach this view and they are four different questions.
+    A single text asserting one reason would be #122's defect again -- a message
+    asserting a cause it has not confirmed.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    texts = [row[0] for row in conn.execute(
+        "SELECT question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated'").fetchall()]
+    assert any("footnote" in t.lower() for t in texts)
+    assert any("regimen" in t.lower() for t in texts)

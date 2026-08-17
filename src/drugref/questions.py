@@ -386,6 +386,58 @@ _GAP_SOURCES = {
             "Grading it `applies = false` is a real answer and retires this "
             "question.'"),
     },
+    # Slice 5c.2g. FOUR dispositions reach this view and they are four different
+    # questions, so the text branches on `disposition` with a CASE rather than
+    # asserting one reason for all of them -- issue 122's lesson: a message may not
+    # state a cause it has not confirmed.
+    #
+    # THE gap_key GRAIN MATCHES gap_fda_cyp_unadjudicated's GROUP BY EXACTLY (#41):
+    # (source, raw_substance, column_heading, pathway). db/039's own comment on that
+    # view states the rule this key restates: grouping coarser folds two independent
+    # facts onto one immortal question_uuid, grouping finer mints two questions for
+    # one fact. 'FDACYP:' rather than a source-derived prefix because the source is
+    # already a fixed literal here ('FDA-CYP' is the only source this view reads),
+    # unlike unresolved_ci_object's namespace, which genuinely varies row to row.
+    #
+    # NOTE ON A GRAIN MISMATCH THAT DOES NOT (YET) BITE: fda_cyp_assertion's own
+    # PRIMARY KEY is (ingest_run, row_ordinal, column_heading, pathway) -- keyed on
+    # the ROW FDA printed, not the substance name -- because aprepitant occupies TWO
+    # rows of FDA's table (db/039's own comment on that column). This view, and so
+    # this gap_key, group on raw_substance instead of row_ordinal. That is a
+    # DIFFERENT grain, and it would fold two assertions onto one question if FDA's
+    # table ever printed the SAME substance name against the SAME (column_heading,
+    # pathway) pair on two separate rows -- measured directly against the real page
+    # (419 tuples, task 7's report) and confirmed NOT to happen there today,
+    # including for aprepitant itself (its two rows land on three genuinely distinct
+    # (column_heading, pathway) pairs). Left as a documented risk rather than
+    # changed here: db/039 is already applied, and widening the view's grain now
+    # needs its own migration (db/040), not a quiet edit to a merged one.
+    "fda_cyp_unadjudicated": {
+        "view": "gap_fda_cyp_unadjudicated",
+        "key_sql": ("'FDACYP:' || raw_substance || '|' || column_heading || "
+                    "'|' || pathway"),
+        "text_sql": (
+            "CASE disposition "
+            "WHEN 'withheld_qualified' THEN "
+            "  'Does FDA''s footnote on ' || raw_substance || ' (' || "
+            "  column_heading || "
+            "  ', ' || pathway || ') narrow or NEGATE the membership its row states? "
+            "Drugref withheld the membership rather than assert either way. "
+            "FDA''s note: ' || COALESCE(footnote_text, '(not captured)') "
+            "WHEN 'unresolved_substance' THEN "
+            "  'Which drugref moiety, if any, is FDA''s ' || raw_substance || '? "
+            "No moiety''s display name matches it.' || "
+            "  COALESCE(' A near name in the registry is ' || registry_near_name || "
+            "  ', which is EVIDENCE for a curator, not a resolution.', '') "
+            "WHEN 'combination_regimen' THEN "
+            "  'FDA reports this role for the REGIMEN ' || raw_substance || '. "
+            "Which component, if any, carries it? Drugref does not assign a "
+            "regimen''s role to a component.' "
+            "ELSE "
+            "  'FDA lists ' || raw_substance || ' as one of five substances that are "
+            "not drugs. Should drugref carry it at all, and under what identity?' "
+            "END"),
+    },
 }
 
 
