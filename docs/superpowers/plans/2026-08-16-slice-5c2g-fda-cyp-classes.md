@@ -333,7 +333,7 @@ COMMENT ON VIEW drugref.gap_fda_cyp_unadjudicated IS
     'from this view must also use. ABSENCE OF A ROW IS NOT COVERAGE.';
 
 -- ============================================================================
--- 4. The sixteenth question kind
+-- 4. The seventeenth question kind
 -- ============================================================================
 -- Guarded on the constraint's TEXT rather than its name, so a replay against an
 -- already-widened database skips the drop/add entirely instead of rescanning --
@@ -1764,7 +1764,7 @@ Add to `_GAP_SOURCES` in `src/drugref/questions.py`, following the shape of the 
 
 ```bash
 git add src/drugref/questions.py tests/test_fda_cyp_run.py
-git commit -m "feat(fda-cyp): the sixteenth question kind
+git commit -m "feat(fda-cyp): the seventeenth question kind
 
 Four dispositions reach the gap view and they are four different questions,
 so the text branches on disposition rather than asserting one reason for all
