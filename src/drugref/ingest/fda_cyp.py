@@ -23,6 +23,7 @@ neither is "the HTML looked simple":
    with real immortal UUIDs ('cyp:1a2 20', 'transporter:oatp1b1 inhibitor').
    Those four are what this module's strictness is for.
 """
+import dataclasses
 import html
 import re
 
@@ -136,3 +137,202 @@ def extract_rows(page: str) -> list[list[str]]:
                 f"cells, expected {EXPECTED_COLUMNS}. The table's shape changed.")
         parsed.append(cells)
     return parsed
+
+
+# THE CLOSED PATHWAY VOCABULARY. An unrecognised token aborts the ingest.
+#
+# This is not defensiveness; it is the finding that justified the whole module.
+# A lenient parse of the real page -- one that strips trailing footnotes and
+# accepts whatever remains -- produces 69 classes instead of 65 while reporting
+# ZERO errors, and four are garbage minted with real immortal UUIDs:
+#   cyp:1a2 20:inhibitor:moderate            (ciprofloxacin, mid-cell footnote)
+#   transporter:oatp1b1 13:inhibitor         (rifampin, footnote on both pathways)
+#   transporter:oatp1b3 13:inhibitor
+#   transporter:oatp1b1 inhibitor:inhibitor  (teriflunomide, per-item role phrase)
+#
+# OATP1B is listed SEPARATELY from OATP1B1 and OATP1B3 and is never expanded into
+# them: FDA writes the coarser name on some rows, and expanding it would
+# manufacture a specificity FDA declined to state.
+PATHWAYS = frozenset({
+    "1A2", "2B6", "2C8", "2C9", "2C19", "2D6", "3A",
+    "P-gp", "BCRP", "OATP1B1", "OATP1B3", "OATP1B",
+    "OAT1", "OAT3", "OCT2", "MATE1", "MATE2-K",
+})
+
+# Case-folded lookup, so 'p-gp' and 'P-gp' are one pathway while the CANONICAL
+# spelling (which reaches source_code and class_name) stays FDA's own.
+_PATHWAY_BY_FOLD = {p.upper(): p for p in PATHWAYS}
+
+# The role phrase that closes a cell (or a list item). 'moderately sensitive' and
+# 'moderate sensitive' are the SAME band under two spellings -- the legend says
+# one, some cells say the other.
+_ROLE_PHRASE = re.compile(
+    r"\b(strong|moderate|moderately|weak|sensitive|"
+    r"moderate sensitive|moderately sensitive)?\s*"
+    r"(inhibitors?|inducers?|substrates?)\s*$", re.I)
+
+# Separators. THREE spellings of one concept: ';', ',' and the word 'and'.
+_SEPARATOR = re.compile(r";|,|\band\b", re.I)
+
+# Nouns FDA appends to a pathway list ('BCRP and P-gp transporters'). Not pathways.
+_TRAILING_NOUN = re.compile(r"\b(transporters?|enzymes?)\b", re.I)
+
+
+@dataclasses.dataclass(frozen=True)
+class CypTuple:
+    """One (substance x pathway x role x potency) fact, before any DB contact.
+
+    row_ordinal is carried because THE SUBSTANCE NAME IS NOT A KEY: aprepitant
+    occupies two rows, and FDA publishes no row identifier, so the 1-based
+    position is the only stable within-release handle back to the exact line.
+
+    raw_substance keeps FDA's printed form INCLUDING markers ('ritonavir 14, 15,')
+    while `substance` is the cleaned name -- the raw fact and the derived one are
+    both stored, never one in place of the other.
+    """
+    row_ordinal: int
+    raw_substance: str
+    substance: str
+    column_heading: str
+    raw_cell: str
+    system: str
+    pathway: str
+    role: str
+    potency: str | None
+    footnote_markers: str | None
+
+
+def _normalise_potency(word: str | None) -> str | None:
+    """Fold a cell's potency word onto the column's spelling of the same band.
+
+    'moderately' -> 'moderate' handles plain cells ('2D6 moderately inhibitor').
+    'moderately sensitive' -> 'moderate sensitive' handles the substrate columns,
+    where the LEGEND's word ('Mod SENS SUB') and the CELL's word ('moderately
+    sensitive substrate') are the same band spelled two ways -- design spec
+    section 2.2 finding 4. Without this second mapping the cross-check computes
+    'moderate sensitive'.startswith('moderately sensitive') == False and a
+    perfectly good cell aborts the ingest.
+    """
+    if word is None:
+        return None
+    folded = word.lower()
+    if folded == "moderately":
+        return "moderate"
+    if folded == "moderately sensitive":
+        return "moderate sensitive"
+    return folded
+
+
+def parse_cell(raw_cell: str, column_index: int,
+               column_heading: str) -> list[tuple[str, str | None]]:
+    """One cell to its (pathway, footnote_markers) pairs.
+
+    THE GRAMMAR, derived from the real bytes rather than assumed: a cell is a
+    list of `pathway [footnote] [role phrase]` items separated by ';', ',' or the
+    word 'and', closed by a trailing role phrase that applies to every item which
+    did not state its own.
+
+    Raises FdaCypParseError on an unknown pathway token, or when the cell's own
+    role/potency disagrees with the column it sits in.
+    """
+    system, column_role, column_potency = ROLE_COLUMNS[column_index]
+    # THE CELL-LEVEL MARKER MUST BE KEPT, NOT DISCARDED. conivaptan's cell reads
+    # '3A moderate inhibitor 5' -- the trailing '5' qualifies the WHOLE cell, and
+    # dropping it here would let that membership through unwithheld, which is the
+    # exact defect this slice exists to prevent (design section 5, the 29
+    # qualified-cell figure). It is merged into every pair this call returns,
+    # below, alongside any per-item marker.
+    body, cell_markers = split_footnotes(raw_cell)
+
+    match = _ROLE_PHRASE.search(body)
+    if not match:
+        raise FdaCypParseError(
+            f"cell {raw_cell!r} in column {column_heading!r} states no role phrase")
+
+    # THE CROSS-CHECK. The page states role and potency twice, so verifying them
+    # against each other costs nothing and catches a source whose shape changed
+    # under an unchanged checksum. Preferring one over the other would hide it.
+    cell_role = match.group(2).lower().rstrip("s")
+    cell_potency = _normalise_potency(match.group(1))
+    if cell_role != column_role:
+        raise FdaCypParseError(
+            f"cell {raw_cell!r} says role {cell_role!r} but column "
+            f"{column_heading!r} says {column_role!r} -- they disagree")
+    if cell_potency is not None and column_potency is not None:
+        # 'moderate sensitive' is spelled 'moderately sensitive' in some cells and
+        # reaches here already folded onto the column's spelling.
+        if not column_potency.startswith(cell_potency):
+            raise FdaCypParseError(
+                f"cell {raw_cell!r} says potency {cell_potency!r} but column "
+                f"{column_heading!r} says {column_potency!r} -- they disagree")
+
+    listed = _TRAILING_NOUN.sub("", body[:match.start()]).strip().rstrip(",")
+    pairs: list[tuple[str, str | None]] = []
+    for item in (part.strip() for part in _SEPARATOR.split(listed)):
+        if not item:
+            continue
+        # Each item may carry its OWN role phrase (teriflunomide) and its OWN
+        # footnote (ciprofloxacin, rifampin). The role phrase MUST be peeled off
+        # BEFORE split_footnotes runs: rifampin's second item is 'OATP1B3 13
+        # inhibitor', where the marker sits BEFORE the (per-item) role word, not
+        # at the item's trailing edge -- split_footnotes only strips a TRAILING
+        # marker, so it would see 'inhibitor' at the tail and find no marker at
+        # all unless the role word is gone first.
+        item = _ROLE_PHRASE.sub("", item).strip()
+        token, item_markers = split_footnotes(item)
+        token = re.sub(r"^CYP", "", token, flags=re.I).strip()
+        if not token:
+            continue
+        canonical = _PATHWAY_BY_FOLD.get(token.upper())
+        if canonical is None:
+            raise FdaCypParseError(
+                f"unknown pathway {token!r} in cell {raw_cell!r} "
+                f"(column {column_heading!r}). The closed vocabulary is "
+                f"{sorted(PATHWAYS)}. Widen it deliberately or fix the parse -- "
+                "accepting it would mint a class with an immortal UUID.")
+        # A cell-level marker qualifies EVERY item in the cell; an item-level one
+        # qualifies only that item. Both are kept, joined, rather than one
+        # overwriting the other.
+        markers = ", ".join(m for m in (cell_markers, item_markers) if m) or None
+        pairs.append((canonical, markers))
+    return pairs
+
+
+def parse_table(page: str) -> list[CypTuple]:
+    """The whole table to its tuples, in row then column order."""
+    headings = _column_headings(page)
+    tuples: list[CypTuple] = []
+    for ordinal, row in enumerate(extract_rows(page), start=1):
+        raw_substance = row[0]
+        # Computed ONCE per row, not once per role column: split_footnotes does
+        # the same regex work every time it is called, and calling it again
+        # inside the column loop below would be a second copy of one fact that
+        # could silently drift from this one.
+        substance, row_markers = split_footnotes(raw_substance)
+        for index in sorted(ROLE_COLUMNS):
+            raw_cell = row[index]
+            if not raw_cell:
+                continue
+            system, role, potency = ROLE_COLUMNS[index]
+            heading = headings[index]
+            for pathway, cell_markers in parse_cell(raw_cell, index, heading):
+                # A row-level marker qualifies EVERY cell in that row; a cell- or
+                # item-level one qualifies only where it sits. Both are kept.
+                markers = ", ".join(m for m in (row_markers, cell_markers) if m) or None
+                tuples.append(CypTuple(
+                    row_ordinal=ordinal, raw_substance=raw_substance,
+                    substance=substance, column_heading=heading, raw_cell=raw_cell,
+                    system=system, pathway=pathway, role=role, potency=potency,
+                    footnote_markers=markers))
+    return tuples
+
+
+def _column_headings(page: str) -> list[str]:
+    """FDA's own column headings, read from the header row rather than restated.
+
+    Restating them here would be a second copy of a vocabulary the page already
+    publishes -- the 'written down twice' hazard this project keeps paying for.
+    """
+    tables = _TABLE.findall(page)
+    header = _ROW.findall(tables[DATA_TABLE_INDEX])[0]
+    return [_clean(cell) for cell in _CELL.findall(header)]

@@ -106,3 +106,117 @@ def test_the_fixture_yields_ritonavir_not_ritonavir_14_15(fixture_html):
     names = {fda_cyp.split_footnotes(row[0])[0] for row in rows}
     assert "ritonavir" in names
     assert not any(name.startswith("ritonavir 14") for name in names)
+
+
+def test_a_simple_cell_yields_one_pathway():
+    assert fda_cyp.parse_cell("2D6 moderate inhibitor", 2, "CYP Mod INH") == [("2D6", None)]
+
+
+def test_a_semicolon_list_yields_several_pathways():
+    assert fda_cyp.parse_cell("P-gp; BCRP inhibitor", 9, "TRNSP INH") == [
+        ("P-gp", None), ("BCRP", None)]
+
+
+def test_the_word_and_is_also_a_separator():
+    assert fda_cyp.parse_cell("3A and 2C19 weak inhibitor", 3, "CYP WK INH") == [
+        ("3A", None), ("2C19", None)]
+
+
+def test_a_comma_is_also_a_separator():
+    assert fda_cyp.parse_cell("1A2, 2B6 weak inducer", 6, "CYP WK IND") == [
+        ("1A2", None), ("2B6", None)]
+
+
+def test_a_cyp_prefix_is_normalised_away():
+    """The page writes bare '3A' and prefixed 'CYP3A' for the same pathway."""
+    assert fda_cyp.parse_cell("CYP3A moderate inducer", 5, "CYP Mod IND") == [("3A", None)]
+
+
+def test_a_trailing_noun_is_not_a_pathway():
+    """The real cell (grepped from downloads/FDA/fda_cyp_2026-05-29.html) is
+    'BCRP and P-gp transporters inhibitor' -- the brief's own quote of it, taken
+    from spec section 2.2 point 2, is a fragment that stops at 'transporters' and
+    drops the trailing role word every real cell carries. Using the fragment
+    verbatim as the parse_cell input makes _ROLE_PHRASE find no role phrase at
+    all and raise, which is the same 'quoted the bug/fragment instead of the
+    source' trap Task 2 hit with 'ritonavir 14, 15,' -- corrected the same way,
+    against the live bytes rather than the spec's illustrative shorthand.
+    """
+    assert fda_cyp.parse_cell("BCRP and P-gp transporters inhibitor", 9, "TRNSP INH") == [
+        ("BCRP", None), ("P-gp", None)]
+
+
+def test_a_footnote_attached_to_ONE_pathway_is_kept_with_it():
+    """ciprofloxacin: '1A2 20 ; 3A moderate inhibitor'. Marker 20 belongs to 1A2
+    ALONE, mid-cell -- a trailing-only stripper turns '1A2 20' into a pathway and
+    mints the garbage class 'cyp:1a2 20:inhibitor:moderate'.
+    """
+    assert fda_cyp.parse_cell("1A2 20 ; 3A moderate inhibitor", 2, "CYP Mod INH") == [
+        ("1A2", "20"), ("3A", None)]
+
+
+def test_a_footnote_on_SEVERAL_pathways_is_kept_with_each():
+    """rifampin: 'OATP1B1 13 ; OATP1B3 13 inhibitor'."""
+    assert fda_cyp.parse_cell("OATP1B1 13 ; OATP1B3 13 inhibitor", 9, "TRNSP INH") == [
+        ("OATP1B1", "13"), ("OATP1B3", "13")]
+
+
+def test_the_role_word_may_repeat_per_list_item():
+    """teriflunomide: 'BCRP; OATP1B1 inhibitor; OAT3 inhibitor'. The trailing role
+    phrase covers only the items that do not state their own -- reading it as part
+    of the pathway mints 'transporter:oatp1b1 inhibitor'.
+    """
+    assert fda_cyp.parse_cell("BCRP; OATP1B1 inhibitor; OAT3 inhibitor", 9, "TRNSP INH") == [
+        ("BCRP", None), ("OATP1B1", None), ("OAT3", None)]
+
+
+def test_an_unknown_pathway_token_ABORTS():
+    """The closed vocabulary, and the reason this parser exists in this shape.
+
+    A lenient parse of the real page produces 69 classes instead of 65 while
+    reporting zero errors. Four are garbage, minted with real immortal UUIDs.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="pathway"):
+        fda_cyp.parse_cell("CYP9Z9 moderate inhibitor", 2, "CYP Mod INH")
+
+
+def test_a_cell_whose_role_disagrees_with_its_COLUMN_aborts():
+    """The page states role and potency TWICE -- in the column heading and in the
+    cell -- so they can be cross-checked for free. A disagreement means the
+    table's shape changed under an unchanged checksum, which must stop the ingest
+    rather than be resolved by preferring one of them.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
+        fda_cyp.parse_cell("2D6 strong inhibitor", 2, "CYP Mod INH")  # column says moderate
+
+
+def test_moderately_sensitive_matches_the_columns_moderate_sensitive():
+    """The legend's word is not always the cell's: 'moderately sensitive
+    substrate' against the column's 'Mod SENS SUB'. Not a disagreement.
+    """
+    assert fda_cyp.parse_cell("2C8 and 3A moderately sensitive substrate", 8,
+                              "CYP Mod SENS SUB") == [("2C8", None), ("3A", None)]
+
+
+def test_OATP1B_is_its_own_pathway_and_is_never_expanded():
+    """FDA writes the coarser 'OATP1B' where other rows say OATP1B1/OATP1B3.
+    Expanding it would manufacture a specificity FDA declined to state.
+    """
+    assert fda_cyp.parse_cell("OATP1B transporter inhibitor", 9, "TRNSP INH") == [
+        ("OATP1B", None)]
+    assert "OATP1B" in fda_cyp.PATHWAYS
+
+
+def test_parse_table_over_the_fixture_produces_no_garbage_pathway(fixture_html):
+    """Every pathway in every tuple is in the closed vocabulary -- the property
+    the four garbage classes violated.
+    """
+    for tup in fda_cyp.parse_table(fixture_html):
+        assert tup.pathway in fda_cyp.PATHWAYS
+
+
+def test_parse_table_carries_the_row_ordinal_because_names_repeat(fixture_html):
+    """aprepitant occupies TWO rows, so the substance name is not a row key."""
+    tuples = fda_cyp.parse_table(fixture_html)
+    ordinals = {t.row_ordinal for t in tuples if t.substance == "aprepitant"}
+    assert len(ordinals) == 2
