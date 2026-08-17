@@ -36,7 +36,7 @@ Every task's requirements implicitly include all of these.
 | `src/drugref/ingest/fda_cyp.py` | **create** — the pure parser: table location, structural assertions, name/footnote split, cell grammar, closed vocabulary, release identity. No DB, no network. ~380 lines |
 | `src/drugref/ingest/fda_cyp_run.py` | **create** — the orchestrator: resolve, disposition, clear, write, rebuild questions, finish. The only writer. ~300 lines |
 | `src/drugref/questions.py` | **modify** — one `_GAP_SOURCES` entry |
-| `src/drugref/cli_chain.py` | **modify** — `drugref ingest fda-cyp` subcommand |
+| `src/drugref/cli.py` | **modify** — `drugref ingest fda-cyp` subcommand. **This plan first named `cli_chain.py` and was wrong**: `cli.py` owns `STEPS` and `build_parser()`; `cli_chain.py` is the DB-free planning layer from slice 5c.4 and imports nothing from `drugref`. Task 8 found out by looking, which is what its Step 1 says to do. |
 | `tests/fixtures/fda_cyp_table.html` | **create** — extracted verbatim from the live page, carrying every trap |
 | `tests/test_fda_cyp_parser.py` | **create** — pure, no DB |
 | `tests/test_fda_cyp_run.py` | **create** — DB-gated |

@@ -2761,6 +2761,163 @@ results doc is explicit does **not** approve normalization or any write to `cura
   parsers reachable from `tools/` and the tests only** — no CLI subcommand, no orchestrator, no migration, no
   `ingest_run.source` spelling. They are pure parsers by the architecture rule, and nothing writes.
 
+## Slice 5c.2g — FDA-CYP potency classes (`db/039`–`db/041`, measured 2026-08-17)
+
+Spec: [slice-5c.2g](superpowers/specs/2026-08-16-drugref-slice-5c2g-fda-cyp-classes-design.md). The potency
+vocabulary the 5c.3 evaluation found missing: SPL section 7 qualifies interactions by band (*strong* CYP1A2
+inhibitors contraindicated, *moderate or weak* "avoid") and MED-RT's single undifferentiated class cannot
+express it. **65 PK classes, `has_PK` membership, and a projection holding every parsed tuple including the
+ones deliberately not promoted.** ROADMAP § 5c.2g carries the shape; this section carries the traps.
+
+### ⇒ THE HEADLINE: FIVE OF THE DESIGN'S OWN FIGURES WERE WRONG, AND EVERY ONE WAS FOUND BY IMPLEMENTATION
+
+Not by review, not by re-reading — by a task running the real bytes and reporting a number that disagreed.
+**They share one shape, and it is the same defect the slice exists to prevent:** something asserted a
+property it had not confirmed. The design round's probe was a partially-working parser, and **a
+partially-working parser does not announce itself — it hands you a plausible value, and a plausible value
+gets written down as a measurement.**
+
+| # | the spec said | the truth | how the wrong value was produced |
+|---|---|---|---|
+| 1 | FDA prints `ritonavir 14, 15,` | `ritonavir 14, 15, 16` | the probe's `(\s+\d+)+$` ate the trailing ` 16` and left the comma. **That string appears nowhere on FDA's page.** |
+| 2 | 415 tuples | **419** | the probe could not parse four tuples and *rejected* them; the round recorded the survivors of its own mis-parse as the total |
+| 3 | 29 qualified cells / 22 substances | **31 / 24** | the probe saw a footnote only at a name's or cell's very END, so it missed the mid-cell markers |
+| 4 | the closed vocabulary "must **reject**" three cells | it rejects **zero** | the gate was described as a *filter*; it is a **tripwire** |
+| 5 | `ddi_candidate_pair` **21,664** must not move | `drugref_db038` holds **21,877** | the figure was measured on `drugref_policy` and `drugref_5c4`, two earlier databases, and quoted as an expectation for a third |
+
+**Number 3 was in the unsafe direction and is the one to remember:** the undercounted cells were ones drugref
+would have **promoted to membership while FDA had qualified them**. Number 4 is the one that changed a rule
+rather than a number — the correct statement is that **the vocabulary rejects zero tokens on a correct parse,
+and that is the passing state.** Its job is to fire when the *grammar* is wrong. **A round that sees it reject
+something should suspect its own parser first and the data second**, because that is the way this one broke.
+
+Number 5 generalises furthest: **an invariance claim must be checked as an invariance** — same query, same
+database, either side of the change — never against a constant transcribed from somewhere else. The spec now
+says so and names no absolute values.
+
+### The source, and why a regex parse of HTML is defensible here
+
+Retrieved 2026-08-16; **the fetch reproduced the source spike's SHA-256 exactly**
+(`7400dc89…7ffa73`), which makes that manifest the first source figure in this project verified by a second
+independent run rather than trusted.
+
+**Table 1 is a MATRIX, not a list of facts:** 245 data rows × 11 columns, where the first column names the
+substance and **each of the other ten IS a `(system, role, potency)` tuple**, the cell holding the pathway
+list. 337 non-empty cells → **419 tuples over 65 classes**; 244 distinct substances (`aprepitant` occupies two
+rows, which is why 245 ≠ 244).
+
+The parse is guarded on both sides, and that is what makes it safe rather than reckless: **row and cell counts
+are asserted** (exactly 11 in each of 245), **the pathway vocabulary is closed and partitioned by system**, and
+**the column heading and the cell text state the role and potency independently, so they are cross-checked**.
+A lenient parse of the same page yields **69 classes reporting zero errors**, four of them garbage minted with
+real immortal UUIDs (`cyp:1a2 20`, `transporter:oatp1b1 inhibitor`).
+
+### The cell grammar, dirty in five ways, and footnotes in two namespaces and three positions
+
+A cell is a `;`-separated list of `pathway [footnote] [role phrase]` closed by a trailing role phrase covering
+the items that state none. **Three separators for one concept** (`;`, `,`, `and`) — and rifampin's
+`1A2, 2B6; 2C8; 2C9 moderate inducer` **mixes two of them**, four pathways from one cell, the only such cell in
+the 337. Plus `CYP3A` beside bare `3A`; `OATP1B` where others say `OATP1B1`/`OATP1B3` (**its own class, never
+expanded — that would manufacture specificity FDA declined to state**); `moderately sensitive` against the
+column's `Mod SENS SUB`; and teriflunomide's `BCRP; OATP1B1 inhibitor; OAT3 inhibitor`, where **the role word
+repeats per item**.
+
+**Footnote markers are numbered AND lettered, and sit in three places:** glued to the name (`adefovir 1`, 21
+rows), **as a comma-separated list** (`ritonavir 14, 15, 16`), inside a cell at the end (conivaptan's
+`3A moderate inhibitor 5`), **attached to one pathway mid-cell** (ciprofloxacin's `1A2 20 ; 3A moderate
+inhibitor`), and as a letter (cenobamate's `inducer b`).
+
+**Order is load-bearing inside the per-item loop: peel the role phrase, THEN split footnotes, THEN match the
+pathway.** Rifampin's `OATP1B1 13 ; OATP1B3 13 inhibitor` splits into an item where the marker sits *before*
+the role phrase, so the other order silently mints `transporter:oatp1b1 13`.
+
+### ⇒ TWO FOOTNOTES NEGATE THE ROW THEY SIT ON, AND THAT IS THE WHOLE DESIGN
+
+| row | the row asserts | its own footnote |
+|---|---|---|
+| `bupropion 2` | `2B6 sensitive substrate` | *"Bupropion itself is **not** a sensitive substrate."* |
+| `rolapitant 17` | `P-gp; BCRP inhibitor` | *"**Intravenously administered** rolapitant does **not** inhibit BCRP and P-gp."* |
+
+So a footnoted cell writes **no membership** — 31 cells, 24 substances, 9.2%. It lands in `fda_cyp_assertion`
+with the footnote text and raises a question. **Ingest never decides whether the footnote negates**, because
+that is a clinical reading of prose: *ingest preserves evidence; curation creates clinical judgement.*
+
+**The footnote text is PARSED from the page (21 markers), not transcribed.** The first implementation
+hardcoded FDA's prose as a Python dict. `checksum` and `dateModified` exist to make a source change loud, and
+**that one column escaped both**: a reworded footnote would re-ingest *green* while storing the old wording in
+the column whose entire purpose is carrying FDA's words. The fixture gained the footnote block; the dict is
+gone. **All 65 classes are minted even when every member is withheld**, so a withheld row can name the class
+it would have joined, and a zero-member class is distinguishable from a band FDA never defined.
+
+### Name resolution: 224 of 244, five different jobs, and nothing bridged
+
+Exact, case-insensitive, against `substance_moiety.display_name`. **Ambiguity is unresolved, never "pick the
+first"** — pinned by a test although nothing is ambiguous today, because the registry grows.
+
+The 20-name residue splits into **five jobs, and conflating them would under-cost the next slice** (the lesson
+the DrugCentral evaluation recorded when it split its own 102): **9** combination regimens, **3** non-drug
+entities, **3** enantiomers, **3** apparent synonyms (`rifampin`/`rifampicin`, `glyburide`/`glibenclamide`,
+`peginterferon alpha-2a`/`alfa-2a`), **1** apparent metabolite, **1** group term (`oral contraceptives`).
+
+**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared
+non-drugs — RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the
+non-drug list must be FDA's own pinned five, read from its prose, never inferred from a resolution failure.**
+Disposition order is therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen`
+→ `unresolved_substance` → `withheld_qualified` → `member`, because grapefruit juice is *both* a non-drug and
+footnoted. Pinned by a test, which was mutation-tested to prove it pins the order rather than passing
+incidentally.
+
+### The stored vocabulary has FIVE values, not nine — the standing rule at work
+
+Only **`combination_regimen`** and **`non_drug_entity`** name a category, because only those two are asserted
+by **FDA** (the regimen string it wrote; its own five-substance sentence). The other four recognisable
+categories collapse to **`unresolved_substance`**, because calling `R-venlafaxine` an "enantiomer of a held
+racemate" is a chemical relationship inferred **from a string prefix** — [#122](https://github.com/cairn-ehr/drugref/issues/122)'s
+manufactured-cause defect in a new coat. See § "Standing rules": *a disposition records what was OBSERVED,
+never what the round suspects it MEANS.*
+
+### `db/040` and `db/041` — two migrations spent on the question register, and why
+
+**`db/040`: the gap view's grain was wrong in the FINER direction.** It grouped every disposition on
+`(substance, column_heading, pathway)`, so *"which drugref moiety is FDA's rifampin?"* was asked **eight
+times**, once per cell mentioning it — **71 immortal `question_uuid`s where 55 belong.** Only
+`withheld_qualified` is genuinely per-cell (each footnoted cell is its own adjudication); the other three are
+per-substance. The view became a `UNION ALL` of two grains, and **the `COALESCE` in the key was chosen so every
+`withheld_qualified` UUID stayed byte-identical** — proven by computing the old and new key sets over the same
+data and diffing them, not argued. [#41](https://github.com/cairn-ehr/drugref/issues/41)'s standing rule, in
+the direction it is usually not caught.
+
+**`db/041`: splitting the view left its own silent hole.** Two halves need two `WHERE` clauses, and those
+became an **allowlist** of the four known dispositions — so a future fifth or sixth value would be **dropped
+from the worklist entirely**, never reaching the question `CASE`, while `questions.py`'s comment claimed it
+"aborts the ingest loudly". **A gate that does not fire, with a comment saying it does** (issues 74/66/76 plus
+122). The subject half now reads `NOT IN ('member', 'withheld_qualified')`, so an unknown disposition reaches
+the `CASE`, matches no `WHEN`, yields `NULL` and trips `question_text`'s `NOT NULL`. Verified by widening the
+CHECK with a synthetic sixth value: **before, 0 gap rows; after, 1.**
+
+### Traps and standing notes
+
+- **`ClassConcept.code` is now `str | None`.** FDA-CYP is the first source publishing **no code at all**, and
+  `substance_class.published_code` has been nullable since `db/003`. Inventing a string for a column reserved
+  for "the code as published" would be a manufactured fact in a provenance field.
+- **`class_name` is source-tagged** — `CYP3A strong inhibitor [FDA-CYP]`, not MED-RT's `[MoA]` shape. MED-RT's
+  bracketed suffix is *published by MED-RT*; this one is drugref's own label and says so.
+- **The release identity is the page's own `dateModified`** (`2026-05-29T14:00`, in JSON-LD and two meta
+  tags), **not fetch time** — the source spike said the page carries no release identifier and it does.
+  **Fetch time records when drugref looked; `dateModified` records when FDA changed the content**, and only
+  the second distinguishes a re-fetch of unchanged material from a revision. A page without it **fails and
+  names the field** rather than substituting fetch time, which would put a value with a different meaning in
+  the same column.
+- **`--release` on the CLI is optional, and supplying it is a CHECK, not an override**: it must match the
+  page's own stamp or the ingest fails naming both values, **before `provenance.open_run`**, so a wrong
+  `--release` leaves no history behind.
+- **A test module exercising an orchestrator needs its own autouse cleanup fixture.** `provenance.open_run`
+  commits in its own transaction, so an `ingest_run` row escapes the `conn` fixture's rollback —
+  `tests/conftest.py` says so in its own docstring, and `tests/test_gsrs_run.py:13` is the model.
+- **Seeding a `substance_class` row does NOT test per-source clearing.** Class rows *accumulate* and are never
+  deleted; only `class_membership` edges are rebuilt. A clear-scope test must seed an **edge**. Found by an
+  implementer mutation-testing its own test, which is the sharpest self-check this slice produced.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
