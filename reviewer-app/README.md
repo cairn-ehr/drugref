@@ -2,12 +2,23 @@
 
 Cross-platform Tauri 2 interface for human review of Drugref's curated overlay.
 
-Accounts and sessions are live through `reviewer-service/`; the clinical queue remains
-an intentionally read-only fixture sampled from Drugref's gap views. On first run the
-desktop core checks the service before loading the workspace. If the database has no
-administrator, only first-administrator registration is shown. Administrators can then
-list and create reviewer accounts in the GUI. No preview clinical control can write
-clinical data, and authentication is not a clinical signature.
+Accounts, sessions and the paginated clinical queue are live through
+`reviewer-service/`. On first run the desktop core checks the service before loading
+the workspace. If the database has no administrator, only first-administrator
+registration is shown. Administrators can then list and create reviewer accounts in
+the GUI. Queue search and the type, source and relationship filters execute on the
+service; no clinical control can write data, and authentication is not a clinical
+signature.
+
+The Vite browser surface retains representative data only for visual development and
+labels it **Browser queue preview**. The installed Tauri app never falls back to that
+data when its authenticated service request fails.
+
+Behavioural and validation values live in `src/lib/constants.ts`; pure queue-query
+and presentation transformations live in `src/lib/queue.ts` and
+`src/lib/presentation.ts`. Components retain only lifecycle, event, and view state.
+The repository-wide documentation, constants, typing, and functional-decomposition
+rules are defined in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Development
 

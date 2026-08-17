@@ -6,3 +6,6 @@ is the **global tier** — a registry of active drug moieties, each with an immo
 append-only external-identifier claims, seeded reproducibly from public-domain and open sources (UNII/GSRS,
 ChEBI, INN, RxNorm). For the design rationale and scope of the first slice, see
 [`docs/superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md`](docs/superpowers/specs/2026-07-23-drugref-global-moiety-spine-design.md).
+
+Repository-wide coding and documentation requirements are defined in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).

@@ -9,6 +9,7 @@ downloads/
 # Reviewer desktop build output and installed dependencies.
 node_modules/
 target/
+/reviewer-domain/Cargo.lock
 .svelte-kit/
 
 # Real MED-RT / MeSH release files: large, fetched per docs/HANDOVER.md, never

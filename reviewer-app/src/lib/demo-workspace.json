@@ -1,13 +1,5 @@
 {
-  "mode": "preview",
   "generatedAt": "2026-08-17T08:00:00Z",
-  "reviewer": {
-    "username": "maya.chen",
-    "fullName": "Dr Maya Chen",
-    "qualifications": "MBBS, BPharm, FRACP",
-    "bioMarkdown": "Clinical pharmacologist reviewing interaction and contraindication evidence.",
-    "keyFingerprint": "ae2407b52a5171f9d55ec43863ed68358e75c76049f1eddb8c7766db32721e57"
-  },
   "summary": {
     "interactionRules": 593,
     "conditionContradictions": 168,
@@ -23,12 +15,7 @@
       "subjectName": "anistreplase",
       "objectName": "Blood Pressure Alteration [PE]",
       "relationship": "CI_PE",
-      "candidateSource": "MED-RT",
-      "upstreamRelease": "2026.07.06",
       "impactCount": 244,
-      "priority": "high",
-      "reviewState": "unreviewed",
-      "signatureStatus": "unsigned",
       "question": "Does anistreplase have a clinically actionable interaction with members of Blood Pressure Alteration [PE]?",
       "provenance": "A source rule expanded through the Drugref class graph to 244 candidate drug pairs."
     },
@@ -41,12 +28,7 @@
       "subjectName": "amlodipine",
       "objectName": "Decreased Blood Pressure [PE]",
       "relationship": "CI_PE",
-      "candidateSource": "MED-RT",
-      "upstreamRelease": "2026.07.06",
       "impactCount": 221,
-      "priority": "high",
-      "reviewState": "in_review",
-      "signatureStatus": "unsigned",
       "question": "Does amlodipine have a clinically actionable interaction with members of Decreased Blood Pressure [PE]?",
       "provenance": "A source rule expanded through the Drugref class graph to 221 candidate drug pairs."
     },
@@ -59,12 +41,7 @@
       "subjectName": "perphenazine",
       "objectName": "Central Nervous System Depression [PE]",
       "relationship": "CI_PE",
-      "candidateSource": "MED-RT",
-      "upstreamRelease": "2026.07.06",
       "impactCount": 156,
-      "priority": "routine",
-      "reviewState": "unreviewed",
-      "signatureStatus": "unsigned",
       "question": "Does perphenazine have a clinically actionable interaction with members of Central Nervous System Depression [PE]?",
       "provenance": "A source rule expanded through the Drugref class graph to 156 candidate drug pairs."
     },
@@ -77,12 +54,7 @@
       "subjectName": "alteplase",
       "objectName": "Stroke",
       "relationship": "indication + contraindication",
-      "candidateSource": "MED-RT + MeSH",
-      "upstreamRelease": "2026.07.06 / 2026",
       "impactCount": 1,
-      "priority": "high",
-      "reviewState": "unreviewed",
-      "signatureStatus": "unsigned",
       "question": "How should Drugref rule when alteplase is projected as both indicated and contraindicated for Stroke?",
       "provenance": "The same stable drug-condition pair is reached by indication and contraindication projections."
     },
@@ -95,12 +67,7 @@
       "subjectName": "atenolol",
       "objectName": "Heart Failure",
       "relationship": "indication + contraindication",
-      "candidateSource": "MED-RT + MeSH",
-      "upstreamRelease": "2026.07.06 / 2026",
       "impactCount": 1,
-      "priority": "routine",
-      "reviewState": "unreviewed",
-      "signatureStatus": "unsigned",
       "question": "How should Drugref rule when atenolol is projected as both indicated and contraindicated for Heart Failure?",
       "provenance": "The same stable drug-condition pair is reached by indication and contraindication projections."
     }

@@ -1,3 +1,5 @@
+//! PostgreSQL persistence for reviewer identities, profiles, credentials, and sessions.
+
 use chrono::{DateTime, Duration, Utc};
 use reviewer_domain::{CreateAccountRequest, ReviewerAccount, ReviewerRole, SessionGrant};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -8,6 +10,10 @@ use crate::{
     error::AppError,
 };
 
+const SESSION_DURATION_HOURS: i64 = 12;
+const UNIQUE_VIOLATION_SQLSTATE: &str = "23505";
+
+/// Current account projection read from append-only reviewer relations.
 #[derive(FromRow)]
 struct AccountRow {
     reviewer_uuid: Uuid,
@@ -24,6 +30,7 @@ struct AccountRow {
 impl TryFrom<AccountRow> for ReviewerAccount {
     type Error = AppError;
 
+    /// Parse database role vocabulary into the shared API projection.
     fn try_from(row: AccountRow) -> Result<Self, Self::Error> {
         let role = match row.role.as_str() {
             "reviewer" => ReviewerRole::Reviewer,
@@ -44,18 +51,26 @@ impl TryFrom<AccountRow> for ReviewerAccount {
     }
 }
 
+/// Credential fields needed to evaluate one login attempt.
 #[derive(FromRow)]
 pub struct LoginRow {
+    /// Stable reviewer identity owning the credential.
     pub reviewer_uuid: Uuid,
+    /// Encoded Argon2id password hash.
     pub password_hash: String,
+    /// Whether the reviewer's current profile permits sign-in.
     pub active: bool,
 }
 
+/// Live session identity and its current reviewer projection.
 pub struct Authenticated {
+    /// Stable session identity used for append-only revocation.
     pub session_uuid: Uuid,
+    /// Current reviewer projection associated with the session.
     pub reviewer: ReviewerAccount,
 }
 
+/// Reusable SQL projection for current reviewer account reads.
 const ACCOUNT_COLUMNS: &str = r#"
     a.reviewer_uuid, a.username, p.full_name, p.qualifications, p.bio_markdown,
     p.role, p.active, a.created_at,
@@ -64,19 +79,25 @@ const ACCOUNT_COLUMNS: &str = r#"
        AND e.enrolled) AS key_count
 "#;
 
+/// Confirm that the account and clinical queue schema exists before serving traffic.
 pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
-    let present: Option<String> =
-        sqlx::query_scalar("SELECT to_regclass('drugref.reviewer_account')::text")
-            .fetch_one(pool)
-            .await?;
-    if present.is_none() {
+    let present: bool = sqlx::query_scalar(
+        "SELECT to_regclass('drugref.reviewer_account') IS NOT NULL \
+         AND to_regclass('drugref.gap_uncurated_interaction_rule') IS NOT NULL \
+         AND to_regclass('drugref.gap_uncurated_condition_contradiction') IS NOT NULL \
+         AND to_regclass('drugref.curated_ddi_pair') IS NOT NULL",
+    )
+    .fetch_one(pool)
+    .await?;
+    if !present {
         return Err(AppError::internal(
-            "db/044 is not applied; run `drugref migrate` before starting reviewer-service",
+            "the reviewer account or clinical queue schema is missing; run `drugref migrate` before starting reviewer-service",
         ));
     }
     Ok(())
 }
 
+/// Return whether no active current administrator profile exists.
 pub async fn bootstrap_required(pool: &PgPool) -> Result<bool, AppError> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM drugref.reviewer_profile WHERE role = \
@@ -87,6 +108,7 @@ pub async fn bootstrap_required(pool: &PgPool) -> Result<bool, AppError> {
     Ok(!exists)
 }
 
+/// Atomically create the first administrator and its authenticated session.
 pub async fn bootstrap_admin(
     pool: &PgPool,
     input: &CreateAccountRequest,
@@ -115,6 +137,7 @@ pub async fn bootstrap_admin(
     Ok(grant)
 }
 
+/// Atomically create a reviewer account on behalf of an administrator.
 pub async fn create_user(
     pool: &PgPool,
     input: &CreateAccountRequest,
@@ -128,6 +151,7 @@ pub async fn create_user(
     Ok(reviewer)
 }
 
+/// Insert account, profile, and password rows inside the caller's transaction.
 async fn insert_account(
     transaction: &mut Transaction<'_, Postgres>,
     input: &CreateAccountRequest,
@@ -150,7 +174,7 @@ async fn insert_account(
             .as_database_error()
             .and_then(|detail| detail.code())
             .as_deref()
-            == Some("23505")
+            == Some(UNIQUE_VIOLATION_SQLSTATE)
         {
             return Err(AppError::conflict("username already exists"));
         }
@@ -181,6 +205,7 @@ async fn insert_account(
     Ok(reviewer_uuid)
 }
 
+/// Return current credential fields for a stable username, if it exists.
 pub async fn login_row(pool: &PgPool, username: &str) -> Result<Option<LoginRow>, AppError> {
     Ok(sqlx::query_as::<_, LoginRow>(
         "SELECT a.reviewer_uuid, c.password_hash, p.active \
@@ -196,6 +221,7 @@ pub async fn login_row(pool: &PgPool, username: &str) -> Result<Option<LoginRow>
     .await?)
 }
 
+/// Start a session for an already authenticated reviewer identity.
 pub async fn start_session(pool: &PgPool, reviewer_uuid: Uuid) -> Result<SessionGrant, AppError> {
     let reviewer = account_by_uuid(pool, reviewer_uuid).await?;
     let mut transaction = pool.begin().await?;
@@ -204,6 +230,7 @@ pub async fn start_session(pool: &PgPool, reviewer_uuid: Uuid) -> Result<Session
     Ok(grant)
 }
 
+/// Insert a bounded-lifetime opaque session and return its raw token once.
 async fn insert_session(
     transaction: &mut Transaction<'_, Postgres>,
     reviewer: ReviewerAccount,
@@ -211,7 +238,7 @@ async fn insert_session(
     let token = new_session_token();
     let digest = token_digest(&token);
     let session_uuid = Uuid::new_v4();
-    let expires_at = Utc::now() + Duration::hours(12);
+    let expires_at = Utc::now() + Duration::hours(SESSION_DURATION_HOURS);
     sqlx::query(
         "INSERT INTO drugref.auth_session \
          (session_uuid, reviewer_uuid, token_digest, expires_at) VALUES ($1, $2, $3, $4)",
@@ -225,6 +252,7 @@ async fn insert_session(
     Ok(SessionGrant { token, reviewer })
 }
 
+/// Resolve one raw bearer token to a live session and current active reviewer.
 pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Authenticated, AppError> {
     let digest = token_digest(token);
     let session_uuid: Option<Uuid> = sqlx::query_scalar(
@@ -250,6 +278,7 @@ pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Authenticated, A
     })
 }
 
+/// Return all reviewer accounts using each identity's current profile.
 pub async fn list_users(pool: &PgPool) -> Result<Vec<ReviewerAccount>, AppError> {
     let query = format!(
         "SELECT {ACCOUNT_COLUMNS} FROM drugref.reviewer_account a \
@@ -264,6 +293,7 @@ pub async fn list_users(pool: &PgPool) -> Result<Vec<ReviewerAccount>, AppError>
         .collect()
 }
 
+/// Append an idempotent revocation for one authenticated session.
 pub async fn revoke_session(
     pool: &PgPool,
     session_uuid: Uuid,
@@ -281,6 +311,7 @@ pub async fn revoke_session(
     Ok(())
 }
 
+/// Return one current reviewer projection outside a transaction.
 async fn account_by_uuid(pool: &PgPool, reviewer_uuid: Uuid) -> Result<ReviewerAccount, AppError> {
     let query = format!(
         "SELECT {ACCOUNT_COLUMNS} FROM drugref.reviewer_account a \
@@ -294,6 +325,7 @@ async fn account_by_uuid(pool: &PgPool, reviewer_uuid: Uuid) -> Result<ReviewerA
         .try_into()
 }
 
+/// Return one current reviewer projection inside the caller's transaction.
 async fn account_by_uuid_tx(
     transaction: &mut Transaction<'_, Postgres>,
     reviewer_uuid: Uuid,

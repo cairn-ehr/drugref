@@ -18,6 +18,10 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **CODE MUST EXPLAIN ITS OWN CONTRACT.** The repository-wide house rules now live in
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md): docstrings are mandatory; behavioural numbers are named constants;
+  dynamically typed code carries complete type hints; and pure reusable logic belongs in focused modules where
+  meaningful. New work complies in the same change, and a touched older unit is brought forward with it.
 - **INGEST WHAT IS UNAMBIGUOUS; SET ASIDE FOR CLINICIAN REVIEW WHAT IS NOT. ERR ON THE SIDE OF CAUTION.**
   Stated by the project owner during the 5c.2g design round (2026-08-16) as the rule governing **every source
   round**, and written here rather than in that slice's spec because it is not that slice's rule. Two
@@ -3048,7 +3052,8 @@ Canonical design: [`2026-08-17-drugref-reviewer-user-management-design.md`](supe
 **The GUI now has real account writes without moving the database trust boundary into the desktop app.** `reviewer-service/`
 is the Axum/SQLx service; `reviewer-domain/` owns shared request/response types and validation; the Tauri core uses an HTTPS
 client and retains bearer tokens in native memory. The WebView invokes narrow commands and still has no network capability.
-Debug accepts loopback HTTP; release configuration requires HTTPS. The clinical queue remains the same read-only fixture.
+Debug accepts loopback HTTP; release configuration requires HTTPS. The clinical queue remained the same read-only fixture
+in this account round.
 
 **First run is a database state, not a preference.** No account is seeded. Before loading the workspace, the app calls the
 bootstrap-status endpoint. With no live administrator profile it renders first-admin registration and nothing beyond it.
@@ -3076,8 +3081,42 @@ overridden) → second bootstrap HTTP 409 → password login → authenticated r
 passed. Frontend output is 0.63 kB HTML + 17.54 kB CSS + 69.14 kB JS (24.75 kB gzipped). No in-app or connected browser was
 available, so the new bootstrap/admin layouts still need the same desktop/narrow visual pass the foundation was missing.
 
-**Next:** replace the bundled queue with live, paginated read-only service endpoints and database-derived filter vocabularies.
-Do not enable clinical write controls as part of that read slice.
+## Reviewer live queue (2026-08-17) — no migration
+
+Canonical design: [`2026-08-17-drugref-reviewer-live-queue-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-live-queue-design.md).
+
+**The installed app now reads the clinical queue from PostgreSQL without moving the trust boundary.** Any authenticated
+reviewer may call `GET /v1/review-queue`; the Tauri core attaches its native-memory bearer token and forwards structured data
+to the WebView. The endpoint validates bounded `page` / `pageSize`, kind, source, relationship and literal substring search.
+The browser-only Vite adapter retains representative records for layout work, is labelled as a preview, and is never a native
+fallback after a service error.
+
+**One materialised SQL union owns the response snapshot.** It reads `gap_uncurated_interaction_rule` and
+`gap_uncurated_condition_contradiction`, enriches their stable natural keys from projection rows and `ingest_run`, then derives
+the current queue totals, kind/source/relationship options, filtered total and deterministic impact/name/UUID-ordered page.
+Sources, releases and condition predicates are arrays: source is deliberately absent from the curated natural key and more
+than one authority may assert the same candidate. No queue table, cache or migration was added.
+
+**The GUI no longer invents state the database does not have.** The fixture-only `in_review`, signature and priority fields
+are gone. A gap is **Unreviewed**, not **Unsigned**, because no curated row exists to sign. Search is debounced; filter changes
+reset to page one; overlapping responses are sequenced so an old response cannot replace a newer one; an inline failure keeps
+the last successful page visible. A failure immediately after authentication retains the native session and **Try again**
+retries the workspace directly rather than sending the reviewer back through startup. All decision, annotation and signing
+controls remain disabled.
+
+**`drugref_test` is destructive test infrastructure, not a GUI database.** The PostgreSQL-backed pytest suite recreates its
+schema and therefore removes reviewer accounts, credentials and sessions stored there. Run `reviewer-service` against a
+separate migrated database with the desired queue content; the local persistent GUI database is `drugref_reviewer_dev`.
+
+**Verification:** full PostgreSQL-backed Python suite **1,779 passed**; domain **6 passed**; service **5 passed + 1 populated-
+database integration passed explicitly**; Tauri **1 passed**; `ruff`; Rust formatting; `npm run check` with 0 diagnostics;
+production frontend build; `npm audit` with 0 vulnerabilities; native no-bundle build. The reference-database integration test
+made two real queue requests (default 25-row page, then five condition rows) in **11.42 s** total, including the known expensive
+interaction-gap read. No in-app or connected browser was available, so desktop/narrow visual verification is still outstanding.
+
+**Next:** append-only annotations and evidence references without manufacturing a clinical ruling. Curated revision
+transactions and local key enrolment/signing remain separate later slices. The administration tail is profile correction,
+disable/enable, password rotation, all-session revocation and signing-key enrolment UI over `db/044`.
 
 ## The standing open-issue ledger
 
@@ -3232,14 +3271,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1763 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1779 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1763
-# passed in 45.16 s (slice 5c.2g implementation + review: 1660 → 1763). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1779
+# passed in 49.79 s on 2026-08-17 (db/044 added 16: 1763 → 1779; the live-queue round added no Python tests). THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
 # section, because it had none. A round that lands via a different agent will not have
