@@ -206,6 +206,22 @@ class CypTuple:
     raw_substance keeps FDA's printed form INCLUDING markers ('ritonavir 14, 15,')
     while `substance` is the cleaned name -- the raw fact and the derived one are
     both stored, never one in place of the other.
+
+    footnote_markers, row_footnote_markers AND cell_footnote_markers -- THREE
+    fields, not one, because WHERE a marker sits on the page is part of what it
+    means. A marker glued to the substance NAME is a claim about the substance;
+    one attached inside a CELL (trailing the whole cell, or mid-cell on one
+    pathway item) is a claim about that specific role/pathway. Merging both into
+    one string (which footnote_markers still does, for every caller that only
+    needs "is this row qualified at all" -- disposition and the footnote-text
+    lookup) is exactly right for THAT question and wrong for "does this
+    footnote narrow or negate THIS CELL'S membership", which can only be
+    answered honestly by knowing whether the marker was ever attached to the
+    cell in the first place. row_footnote_markers and cell_footnote_markers
+    keep that distinction alive past parse_table; footnote_markers is their
+    join (row_footnote_markers, then cell_footnote_markers, matching the order
+    they are found in on the page), kept for backward compatibility with
+    everything that only needs the merged fact.
     """
     row_ordinal: int
     raw_substance: str
@@ -217,6 +233,8 @@ class CypTuple:
     role: str
     potency: str | None
     footnote_markers: str | None
+    row_footnote_markers: str | None
+    cell_footnote_markers: str | None
 
 
 def _normalise_potency(word: str | None) -> str | None:
@@ -249,9 +267,20 @@ def parse_cell(raw_cell: str, column_index: int,
     word 'and', closed by a trailing role phrase that applies to every item which
     did not state its own.
 
-    Raises FdaCypParseError on an unknown pathway token, or when the cell's own
-    role/potency disagrees with the column it sits in.
+    Raises FdaCypParseError on an unknown pathway token, when the cell's own
+    role/potency disagrees with the column it sits in, or when column_index
+    itself is out of range.
     """
+    if column_index not in ROLE_COLUMNS:
+        # Guarded explicitly rather than left to the dict lookup below: an
+        # unguarded ROLE_COLUMNS[column_index] raises a bare KeyError, which
+        # contradicts this docstring's own documented contract (every failure
+        # here is an FdaCypParseError) and would surprise a caller that
+        # legitimately catches only the documented type.
+        raise FdaCypParseError(
+            f"column index {column_index!r} (heading {column_heading!r}) is not "
+            f"one of the {len(ROLE_COLUMNS)} declared role columns "
+            f"{sorted(ROLE_COLUMNS)} -- the table's shape changed.")
     system, column_role, column_potency = ROLE_COLUMNS[column_index]
     # THE CELL-LEVEL MARKER MUST BE KEPT, NOT DISCARDED. conivaptan's cell reads
     # '3A moderate inhibitor 5' -- the trailing '5' qualifies the WHOLE cell, and
@@ -293,8 +322,22 @@ def parse_cell(raw_cell: str, column_index: int,
             f"cell {raw_cell!r} states no potency but column {column_heading!r} "
             f"says {column_potency!r} -- they disagree")
     elif not column_potency.startswith(cell_potency):
-        # 'moderate sensitive' is spelled 'moderately sensitive' in some cells and
-        # reaches here already folded onto the column's spelling.
+        # THE LENIENCY THIS BRANCH EXISTS FOR, quoted verbatim from the pinned
+        # page: atorvastatin's real 'CYP Mod SENS SUB' cell reads
+        # '3A moderate substrate' -- FDA drops the word 'sensitive' from the
+        # CELL entirely while the COLUMN still declares the full band
+        # 'moderate sensitive'. That is a THIRD spelling, distinct from
+        # 'moderately sensitive' (which _normalise_potency already folds onto
+        # 'moderate sensitive' above, and which therefore compares EQUAL, never
+        # reaching this branch at all). Only a startswith comparison admits the
+        # shortened cell; replacing it with == aborts the real page on this
+        # exact cell (pinned by
+        # test_atorvastatins_real_cell_drops_the_word_sensitive_entirely,
+        # which quotes the byte-for-byte cell). 'moderate substrate' is in NO
+        # test fixture and NOT exercised by anything CI runs -- downloads/ is
+        # gitignored, so only a skipif(not REAL_PAGE.exists()) test would ever
+        # see it -- which is exactly why a "tightening" here would go green in
+        # CI and abort the real ingest.
         raise FdaCypParseError(
             f"cell {raw_cell!r} says potency {cell_potency!r} but column "
             f"{column_heading!r} says {column_potency!r} -- they disagree")
@@ -360,14 +403,23 @@ def parse_table(page: str) -> list[CypTuple]:
             system, role, potency = ROLE_COLUMNS[index]
             heading = headings[index]
             for pathway, cell_markers in parse_cell(raw_cell, index, heading):
-                # A row-level marker qualifies EVERY cell in that row; a cell- or
-                # item-level one qualifies only where it sits. Both are kept.
+                # A row-level (name-glued) marker qualifies EVERY cell in that
+                # row; a cell- or item-level one (parse_cell's own return,
+                # already itself a merge of the two WITHIN-cell positions --
+                # see parse_cell's comment above) qualifies only where it sits.
+                # row_markers and cell_markers are kept SEPARATE here (issue
+                # 122's shape applied to footnote SCOPE) so a caller can tell
+                # "FDA qualified this substance" from "FDA qualified THIS
+                # CELL" -- footnote_markers is still their join, for every
+                # caller that only needs the merged fact.
                 markers = ", ".join(m for m in (row_markers, cell_markers) if m) or None
                 tuples.append(CypTuple(
                     row_ordinal=ordinal, raw_substance=raw_substance,
                     substance=substance, column_heading=heading, raw_cell=raw_cell,
                     system=system, pathway=pathway, role=role, potency=potency,
-                    footnote_markers=markers))
+                    footnote_markers=markers,
+                    row_footnote_markers=row_markers,
+                    cell_footnote_markers=cell_markers))
     return tuples
 
 
@@ -376,16 +428,31 @@ def _column_headings(page: str) -> list[str]:
 
     Restating them here would be a second copy of a vocabulary the page already
     publishes -- the 'written down twice' hazard this project keeps paying for.
+
+    ASSERTED, not assumed: extract_rows checks every DATA row's cell count but
+    deliberately skips rows[0] -- the header -- so a header that lost a column
+    would otherwise sail through unchecked, and parse_table's `headings[index]`
+    lookup would then raise a bare IndexError on a real column instead of the
+    documented FdaCypParseError. This is the header-row half of the same
+    integrity gate extract_rows already applies to every data row.
     """
     tables = _TABLE.findall(page)
     header = _ROW.findall(tables[DATA_TABLE_INDEX])[0]
-    return [_clean(cell) for cell in _CELL.findall(header)]
+    headings = [_clean(cell) for cell in _CELL.findall(header)]
+    if len(headings) != EXPECTED_COLUMNS:
+        raise FdaCypParseError(
+            f"the header row has {len(headings)} cells, expected "
+            f"{EXPECTED_COLUMNS}. The table's shape changed.")
+    return headings
 
 
 # FDA's CMS prints the modification stamp in three places with one format:
 # JSON-LD "dateModified", og:updated_time and article:modified_time.
 # Accepting all three is not redundancy -- it is not knowing which the CMS will
-# keep, and they are read in this order.
+# keep. They are NOT "read in this order": `finditer` below walks the page in
+# DOCUMENT POSITION order, not in the order the three alternatives are written
+# in this pattern, so which one is tried first depends on where each happens
+# to sit on the page, not on this regex's own alternation order.
 _MODIFIED = re.compile(
     r'"dateModified"\s*:\s*"([^"]+)"'
     r'|(?:article:modified_time|og:updated_time)"\s+content="([^"]+)"')
@@ -407,13 +474,29 @@ def parse_release(page: str) -> str:
     with a DIFFERENT MEANING into upstream_release, and one field carrying two
     meanings is a defect this project has already paid for more than once. If FDA
     stops publishing the field, that is a decision for a human, not a default.
+
+    TWO DIFFERENT FAILURES SHARE THIS FUNCTION, and they get TWO DIFFERENT
+    MESSAGES rather than one message asserting a cause it has not confirmed
+    (issue 122's shape): the field may be ABSENT altogether, or it may be
+    PRESENT with a value the MM/DD/YYYY - HH:MM stamp regex cannot read (a CMS
+    reformat, say). `candidate` tracks whether any of the three spellings was
+    ever found at all, so the raised message names the failure that actually
+    happened instead of defaulting to "absent" for both.
     """
+    candidate = None
     for match in _MODIFIED.finditer(page):
         raw = match.group(1) or match.group(2)
+        candidate = raw
         stamp = _STAMP.search(raw or "")
         if stamp:
             month, day, year, clock = stamp.groups()
             return f"{year}-{month}-{day}T{clock}"
+    if candidate is not None:
+        raise FdaCypParseError(
+            f"found {candidate!r} in dateModified / article:modified_time / "
+            "og:updated_time but could not read it as MM/DD/YYYY - HH:MM. The "
+            "field is present; its format changed -- decide deliberately "
+            "before ingesting this page.")
     raise FdaCypParseError(
         "the page carries no dateModified / article:modified_time / "
         "og:updated_time stamp, so its release identity is unknown. Fetch time is "

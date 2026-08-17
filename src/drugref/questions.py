@@ -416,15 +416,34 @@ _GAP_SOURCES = {
     # unanticipated disposition still reaches the view, and so still reaches the
     # CASE below, instead of vanishing before either can see it.
     #
-    # key_sql below COALESCEs both nullable columns to '' before concatenating.
-    # NOT COSMETIC: SQL's `||` returns NULL if any operand is NULL, so an
-    # unguarded key_sql would silently mint a NULL gap_key -- and so one shared,
-    # NULL-derived question_uuid -- for every subject-grain row. For
-    # withheld_qualified the two columns are never NULL, so COALESCE is a no-op
-    # there and every one of its gap_keys, and therefore its question_uuids, is
-    # BYTE-IDENTICAL to what db/039 minted -- only the subject-grain dispositions'
-    # keys change, and on the real page they change from up to sixteen keys to
-    # eight.
+    # ⇒ db/042: `substance`, NOT `raw_substance`, IS WHAT gap_key AND question_text
+    # QUOTE NOW. db/039's view (and this entry, until db/042) built both from
+    # raw_substance -- FDA's PRINTED form, footnote markers and all -- so a
+    # question read "Which drugref moiety, if any, is FDA's oseltamivir
+    # carboxylate 1?" and its gap_key was
+    # 'FDACYP:oseltamivir carboxylate 1||': the trailing '1' is a FOOTNOTE
+    # MARKER, not part of the name, reproducing the exact defect that gave this
+    # slice its headline case ('ritonavir 14, 15,') in the human-readable
+    # output. Worse than cosmetic: question_uuid = uuid5(gap_kind, gap_key) is
+    # IMMORTAL and externally citable, so keying on FDA's own footnote
+    # NUMBERING means FDA renumbering a footnote changes the identity of every
+    # open question about that substance. `substance` is fda_cyp.CypTuple's
+    # already-clean name (db/042 adds the column db/039 never stored);
+    # `COALESCE(substance, raw_substance)` guards the one honest reason it can
+    # still be NULL -- a database that has applied db/042 but not yet re-run
+    # `drugref ingest fda-cyp` -- the same NULL-propagation hazard db/040's own
+    # header already explains for column_heading/pathway (SQL's `||` returns
+    # NULL if ANY operand is NULL). raw_substance is UNCHANGED in the view and
+    # kept available for evidence; it is simply no longer what identifies or
+    # narrates a question.
+    #
+    # key_sql below ALSO COALESCEs column_heading/pathway to '' before
+    # concatenating, unchanged from db/040/041: for withheld_qualified those two
+    # are never NULL, so every one of its gap_keys -- and therefore its
+    # question_uuids -- stays BYTE-IDENTICAL to what db/041 minted; only the
+    # subject-grain dispositions' keys change (and, within them, only the ones
+    # whose raw_substance actually carried a footnote marker or differed from
+    # its clean form).
     #
     # key_sql DELIBERATELY OMITS `disposition` even though the subject half now
     # groups by it. That is safe only because `fda_cyp_run._classify` decides
@@ -444,6 +463,29 @@ _GAP_SOURCES = {
     # the view's grain agrees, naming a cell in the text would misstate what the
     # question is actually about: one substance, not one occurrence of it.
     #
+    # ⇒ db/042: THE withheld_qualified BRANCH NO LONGER ASSERTS A CELL
+    # ATTACHMENT FDA DID NOT MAKE. FDA's footnote markers live in TWO positions
+    # -- glued to the substance NAME (a claim about the substance) or attached
+    # INSIDE the cell (a claim about that one role/pathway) -- and db/039's
+    # single `footnote_markers` merged both, so EVERY withheld cell got the same
+    # "Does FDA's footnote on X (column, pathway) narrow or NEGATE the
+    # membership its row states?" wording, whether or not the footnote was ever
+    # attached to that cell at all. Measured: 31 of the 33 withheld gap rows
+    # carry a NAME-level marker only -- bupropion's own withheld question is the
+    # example that named this defect (footnote 2 is about CYP2B6 substrate
+    # status generally, glued to the name, and says nothing about the specific
+    # 2D6-inhibitor cell the old text named). Withholding the membership is
+    # still correct for a name-level marker (any footnote on the row is grounds
+    # to withhold -- db/039 section 3); asserting the footnote is ABOUT that one
+    # cell is not, when it is not. The nested CASE below branches on
+    # `cell_footnote_markers` (db/042): NOT NULL means a marker genuinely
+    # attaches to THIS cell, and the text says so; NULL means only
+    # `row_footnote_markers` (never both NULL for a withheld_qualified row,
+    # since `_classify` only reaches this disposition when footnote_markers --
+    # their merge -- is truthy) is present, and the text asks about "this
+    # cell's membership" without claiming the footnote is specifically about
+    # it.
+    #
     # 'FDACYP:' rather than a source-derived prefix because the source is already
     # a fixed literal here ('FDA-CYP' is the only source this view reads), unlike
     # unresolved_ci_object's namespace, which genuinely varies row to row.
@@ -458,27 +500,40 @@ _GAP_SOURCES = {
     # unresolved_ci_object comment warns against, restated for a second gap kind.
     "fda_cyp_unadjudicated": {
         "view": "gap_fda_cyp_unadjudicated",
-        "key_sql": ("'FDACYP:' || raw_substance || '|' || "
+        "key_sql": ("'FDACYP:' || COALESCE(substance, raw_substance) || '|' || "
                     "COALESCE(column_heading, '') || '|' || COALESCE(pathway, '')"),
         "text_sql": (
             "CASE disposition "
             "WHEN 'withheld_qualified' THEN "
-            "  'Does FDA''s footnote on ' || raw_substance || ' (' || "
-            "  column_heading || "
-            "  ', ' || pathway || ') narrow or NEGATE the membership its row states? "
-            "Drugref withheld the membership rather than assert either way. "
-            "FDA''s note: ' || COALESCE(footnote_text, '(not captured)') "
+            "  CASE WHEN cell_footnote_markers IS NOT NULL THEN "
+            "    'Does FDA''s footnote (marker(s) ' || cell_footnote_markers || "
+            "    ') on the ' || column_heading || '/' || pathway || ' cell for ' || "
+            "    COALESCE(substance, raw_substance) || ' narrow or NEGATE the "
+            "membership that cell states? Drugref withheld the membership rather "
+            "than assert either way. FDA''s note: ' || "
+            "    COALESCE(footnote_text, '(not captured)') "
+            "  ELSE "
+            "    'FDA''s row for ' || COALESCE(substance, raw_substance) || "
+            "    ' carries footnote(s) ' || row_footnote_markers || '. Does it "
+            "narrow or negate this cell''s membership (' || column_heading || ', ' "
+            "|| pathway || ')? Drugref withheld the membership rather than assert "
+            "either way. FDA''s note: ' || "
+            "    COALESCE(footnote_text, '(not captured)') "
+            "  END "
             "WHEN 'unresolved_substance' THEN "
-            "  'Which drugref moiety, if any, is FDA''s ' || raw_substance || '? "
+            "  'Which drugref moiety, if any, is FDA''s ' || "
+            "  COALESCE(substance, raw_substance) || '? "
             "No moiety''s display name matches it.' || "
             "  COALESCE(' A near name in the registry is ' || registry_near_name || "
             "  ', which is EVIDENCE for a curator, not a resolution.', '') "
             "WHEN 'combination_regimen' THEN "
-            "  'FDA reports this role for the REGIMEN ' || raw_substance || '. "
+            "  'FDA reports this role for the REGIMEN ' || "
+            "  COALESCE(substance, raw_substance) || '. "
             "Which component, if any, carries it? Drugref does not assign a "
             "regimen''s role to a component.' "
             "WHEN 'non_drug_entity' THEN "
-            "  'FDA lists ' || raw_substance || ' as one of five substances that are "
+            "  'FDA lists ' || COALESCE(substance, raw_substance) || "
+            "  ' as one of five substances that are "
             "not drugs. Should drugref carry it at all, and under what identity?' "
             "END"),
     },

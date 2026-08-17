@@ -44,6 +44,21 @@ def test_the_header_row_is_not_returned_as_data(fixture_html):
     assert not any(row[0] == "Drug or Other Substance" for row in rows)
 
 
+def test_a_short_header_row_raises_rather_than_a_bare_indexerror(fixture_html):
+    """extract_rows asserts EVERY data row's cell count but skips rows[0] (the
+    header) entirely -- so a header that lost a column sails through
+    extract_rows unchecked, and parse_table's `headings[index]` lookup would
+    then raise a bare IndexError instead of the documented FdaCypParseError.
+    _column_headings must assert its own row's shape rather than leave that
+    gap.
+    """
+    broken = fixture_html.replace(
+        '<th style="width:9%;" scope="col" title="Transporter substrate">TRNSP SUB</th>',
+        "", 1)
+    with pytest.raises(fda_cyp.FdaCypParseError, match="header"):
+        fda_cyp.parse_table(broken)
+
+
 def test_the_ten_role_columns_are_pinned_to_their_meanings():
     """Each column IS a (system, role, potency) tuple -- the table is a MATRIX,
     not a list of facts, and this mapping is the whole reason a cell can be read.
@@ -190,6 +205,16 @@ def test_a_cell_whose_role_disagrees_with_its_COLUMN_aborts():
         fda_cyp.parse_cell("2D6 strong inhibitor", 2, "CYP Mod INH")  # column says moderate
 
 
+def test_an_out_of_range_column_index_raises_the_documented_error_not_a_bare_keyerror():
+    """parse_cell's docstring promises FdaCypParseError on a bad column, but
+    `ROLE_COLUMNS[column_index]` was unguarded -- an out-of-range index (a
+    ragged-row or off-by-one bug reaching this far) raised a bare KeyError
+    instead, contradicting the documented contract.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="column"):
+        fda_cyp.parse_cell("3A moderate inhibitor", 99, "bogus heading")
+
+
 def test_the_potency_cross_check_is_total_not_skipped_when_one_side_is_missing():
     """`if cell_potency is not None and column_potency is not None:` reads like a
     guard but is really a SKIP: whenever either side is missing, the comparison
@@ -231,6 +256,21 @@ def test_moderately_sensitive_matches_the_columns_moderate_sensitive():
                               "CYP Mod SENS SUB") == [("2C8", None), ("3A", None)]
 
 
+def test_atorvastatins_real_cell_drops_the_word_sensitive_entirely():
+    """The REAL reason `column_potency.startswith(cell_potency)` exists, quoted
+    verbatim from the pinned page (downloads/FDA/fda_cyp_2026-05-29.html):
+    atorvastatin's 'CYP Mod SENS SUB' cell reads '3A moderate substrate' -- not
+    '...moderate SENSITIVE substrate' and not '...moderately sensitive
+    substrate' (the case _normalise_potency already folds by EQUALITY). FDA's
+    cell drops the word 'sensitive' entirely, so cell_potency comes out as bare
+    'moderate' while the column declares 'moderate sensitive' -- a THIRD
+    spelling, distinct from the one the branch's old comment named. Only the
+    startswith comparison ('moderate sensitive'.startswith('moderate')) admits
+    it; an == comparison aborts the real page on this exact cell.
+    """
+    assert fda_cyp.parse_cell("3A moderate substrate", 8, "CYP Mod SENS SUB") == [("3A", None)]
+
+
 def test_OATP1B_is_its_own_pathway_and_is_never_expanded():
     """FDA writes the coarser 'OATP1B' where other rows say OATP1B1/OATP1B3.
     Expanding it would manufacture a specificity FDA declined to state.
@@ -240,12 +280,30 @@ def test_OATP1B_is_its_own_pathway_and_is_never_expanded():
     assert "OATP1B" in fda_cyp.PATHWAYS
 
 
-def test_parse_table_over_the_fixture_produces_no_garbage_pathway(fixture_html):
-    """Every pathway in every tuple is in the closed vocabulary -- the property
-    the four garbage classes violated.
+def test_parse_table_over_the_fixture_produces_the_measured_tuple_and_pathway_count(
+        fixture_html):
+    """The PREVIOUS version of this test asserted `tup.pathway in fda_cyp.PATHWAYS`
+    for every tuple -- which is GUARANTEED BY CONSTRUCTION, not a property that
+    can fail: parse_cell raises FdaCypParseError before returning any pathway
+    outside the closed vocabulary (test_an_unknown_pathway_token_ABORTS pins
+    that directly), so nothing in parse_table's own code path could ever
+    produce a tuple violating it. A green run proved only that parse_cell's
+    own guard exists, which a different test already pins more directly.
+
+    This pins something that CAN fail instead: the exact tuple count and
+    pathway set the fixture's grammar (three separators, a mixed-separator
+    cell, mid-cell and per-item footnotes, OATP1B kept distinct from
+    OATP1B1/OATP1B3) actually produces. A regression that silently drops or
+    duplicates an item -- a separator no longer splitting, a role phrase
+    consuming part of a pathway token -- moves this count without ever
+    tripping the closed-vocabulary guard, because the tokens it would still
+    emit are all real pathways.
     """
-    for tup in fda_cyp.parse_table(fixture_html):
-        assert tup.pathway in fda_cyp.PATHWAYS
+    tuples = fda_cyp.parse_table(fixture_html)
+    assert len(tuples) == 71
+    assert {t.pathway for t in tuples} == {
+        "1A2", "2B6", "2C8", "2C9", "2C19", "2D6", "3A",
+        "BCRP", "OAT1", "OAT3", "OATP1B1", "OATP1B3", "P-gp"}
 
 
 def test_parse_table_carries_the_row_ordinal_because_names_repeat(fixture_html):
@@ -253,6 +311,46 @@ def test_parse_table_carries_the_row_ordinal_because_names_repeat(fixture_html):
     tuples = fda_cyp.parse_table(fixture_html)
     ordinals = {t.row_ordinal for t in tuples if t.substance == "aprepitant"}
     assert len(ordinals) == 2
+
+
+def test_a_name_glued_marker_and_a_cell_attached_marker_are_kept_APART(fixture_html):
+    """ISSUE 122's SHAPE, restated for footnote SCOPE rather than value: FDA's
+    footnote can be glued to the SUBSTANCE NAME (about the substance) or
+    attached inside a CELL (about that one role/pathway) -- two different
+    claims, and the earlier parser merged both into one `footnote_markers`
+    string with no way to tell which applied. Downstream text that says
+    "does FDA's footnote on THIS CELL narrow or negate it" is true only for
+    the second position; asserting it for the first is attaching a claim FDA
+    never made to a specific cell.
+
+    * adefovir<sup>1</sup>'s marker is glued to the NAME alone -- its one cell
+      (OAT1 substrate) carries no cell-level marker of its own.
+    * conivaptan's CYP-Mod-INH cell reads '3A moderate inhibitor<sup>5</sup>'
+      -- marker 5 is attached INSIDE that cell, and conivaptan's name itself
+      carries no marker.
+    * cenobamate carries BOTH at once: <sup>4</sup> glued to the name, and the
+      lettered 'b' attached inside its CYP-Mod-IND cell -- the case that
+      proves the two are tracked independently rather than one flag merely
+      renamed.
+    """
+    tuples = fda_cyp.parse_table(fixture_html)
+
+    adefovir = next(t for t in tuples if t.substance == "adefovir")
+    assert adefovir.row_footnote_markers == "1"
+    assert adefovir.cell_footnote_markers is None
+
+    conivaptan_inhibitor = next(
+        t for t in tuples if t.substance == "conivaptan" and t.role == "inhibitor")
+    assert conivaptan_inhibitor.row_footnote_markers is None
+    assert conivaptan_inhibitor.cell_footnote_markers == "5"
+
+    cenobamate = next(
+        t for t in tuples if t.substance == "cenobamate" and t.role == "inducer")
+    assert cenobamate.row_footnote_markers == "4"
+    assert cenobamate.cell_footnote_markers == "b"
+    # The merged column every OTHER caller already relies on (disposition,
+    # footnote-text lookup) must still carry both, byte-identical to before.
+    assert cenobamate.footnote_markers == "4, b"
 
 
 def test_the_release_is_read_from_the_pages_own_dateModified():
@@ -278,6 +376,21 @@ def test_a_page_without_a_modified_date_FAILS_and_names_the_field():
     """
     with pytest.raises(fda_cyp.FdaCypParseError, match="dateModified"):
         fda_cyp.parse_release("<html><body>no date here</body></html>")
+
+
+def test_a_present_but_unparseable_stamp_names_ITSELF_not_absence():
+    """TWO DIFFERENT FAILURES, and the old message named only one of them.
+    'the page carries no dateModified stamp' asserts the field is ABSENT -- true
+    of test_a_page_without_a_modified_date_FAILS_and_names_the_field above, but
+    NOT of this page: dateModified is PRESENT here, carrying a value the MM/DD/
+    YYYY - HH:MM stamp regex cannot read. The old code fell through the same
+    loop and raised the same "carries no dateModified" message for both cases,
+    which is a message asserting a cause (absence) it had not confirmed for
+    this one (a present-but-malformed value).
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError,
+                       match=r"found .*not-a-real-timestamp.* could not read"):
+        fda_cyp.parse_release('<script>{"dateModified": "not-a-real-timestamp"}</script>')
 
 
 @pytest.mark.skipif(

@@ -8,6 +8,8 @@ in ids._SOURCE_CANONICAL and in provenance.WRITERS *in the same migration*, and
 the failure mode when it does not is silent -- a per-source rebuild deletes
 nothing and reports success. These tests are the guard against that silence.
 """
+import re
+
 import pytest
 
 from drugref import db, ids, provenance
@@ -43,10 +45,20 @@ def test_substance_class_admits_the_fda_cyp_source(conn):
     """db/003 created this CHECK with a comment instructing exactly this edit:
     'Extend it and _SOURCE_CANONICAL together when a source lands.' FDA-CYP is
     the first source to land since, so this is that instruction being followed.
+
+    THE FULL WIDENED SET IS CHECKED, not merely two of its four members. The
+    PREVIOUS version of this test asserted 'MED-RT' and 'MeSH' survived but
+    NOT 'DRUGREF' -- which is precisely the value db/039's own header records
+    as the one a retyped list would have silently DROPPED ("would have DROPPED
+    'DRUGREF' had its list been retyped instead of copied"). A test that
+    checks two of three pre-existing values and calls that "widening must not
+    drop a value" cannot catch the exact failure its own docstring names.
     """
     live = db.constraint_definition(conn, "substance_class", "substance_class_source")
-    assert "'FDA-CYP'" in live
-    assert "'MED-RT'" in live and "'MeSH'" in live, "widening must not drop a value"
+    values = set(re.findall(r"'([^']+)'", live))
+    assert values == {"MED-RT", "MeSH", "DRUGREF", "FDA-CYP"}, (
+        "the widened set must be exactly the pre-db/039 set ({'MED-RT', 'MeSH', "
+        f"'DRUGREF'}} plus 'FDA-CYP' -- got {values!r}")
 
 
 @pytest.mark.usefixtures("conn")
@@ -64,11 +76,19 @@ def test_disposition_is_a_closed_set_of_exactly_five_values(conn):
     """Five, not nine -- spec section 7.1. Only combination_regimen and
     non_drug_entity name a CATEGORY, because only those two are asserted by FDA
     rather than inferred by drugref from a string prefix.
+
+    THE COUNT ITSELF IS ASSERTED, not just presence of the five named values.
+    The PREVIOUS version of this test checked the five ARE present and four
+    named "inferred" categories are ABSENT, but nothing stopped a SIXTH,
+    unnamed value also being present -- which would still satisfy every
+    assertion here despite the set no longer being exactly five. The function
+    name promises "exactly five"; only a count check can honour it.
     """
     live = db.constraint_definition(conn, "fda_cyp_assertion", "fda_cyp_assertion_disposition")
-    for value in ("member", "withheld_qualified", "unresolved_substance",
-                  "combination_regimen", "non_drug_entity"):
-        assert f"'{value}'" in live
+    values = set(re.findall(r"'([^']+)'", live))
+    assert values == {"member", "withheld_qualified", "unresolved_substance",
+                      "combination_regimen", "non_drug_entity"}, (
+        f"the disposition CHECK must be exactly these five values -- got {values!r}")
     for inferred in ("enantiomer", "synonym", "metabolite", "group_term"):
         assert inferred not in live, (
             f"{inferred!r} is a cause drugref would be INFERRING from a name, which is "

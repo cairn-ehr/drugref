@@ -128,10 +128,14 @@ class FdaCypSummary:
     arithmetic that reconstructs it from the other counts (design section 11).
 
     `questions_registered` reads the 'fda_cyp_unadjudicated' bucket of
-    questions.register_from_gaps's return value. Task 7 is what wires that gap
-    kind into questions.py's _GAP_SOURCES; until it does, this reads 0 on every
-    run -- an honest consequence of running before that wiring exists, not a bug
-    in this module.
+    questions.register_from_gaps's return value -- wired into
+    questions.py's _GAP_SOURCES in the same round as this module, so it is
+    the live count of currently-open fda_cyp_unadjudicated questions on every
+    run, not a placeholder. Measured on the pinned page: 55 (33
+    withheld_qualified + 9 combination_regimen + 8 unresolved_substance + 5
+    non_drug_entity) -- a figure of THIS run, not a property of the code, so
+    it moves if a future release changes what FDA prints; only the wiring
+    itself is the invariant this docstring promises.
     """
     upstream_release: str
     classes_minted: int
@@ -185,8 +189,11 @@ def _fold_by_lower(
     display names that happen to fold onto one lower-case string are correctly
     MERGED here -- both sets of claimants kept, never one dropped -- and a
     lookup against the merged bucket then naturally lands on unresolved_substance
-    if it holds more than one moiety (ruling 3: ambiguity is unresolved, not
-    "pick the first"). Nothing collides under lower() on the registry measured
+    if it holds more than one moiety: resolution is exact and case-insensitive,
+    and AMBIGUITY IS UNRESOLVED, never "pick the first", because a name
+    resolving to several moieties is real information (the registry grew and
+    now genuinely disagrees with itself about this name) that silently picking
+    one would erase. Nothing collides under lower() on the registry measured
     for this design, but the registry grows, and this is what keeps that true
     without anyone having to re-derive it by hand later.
     """
@@ -198,15 +205,18 @@ def _fold_by_lower(
 
 def _classify(substance: str, single: uuid.UUID | None,
              footnote_markers: str | None) -> tuple[str, uuid.UUID | None]:
-    """One tuple's disposition and resolved moiety, in the FIXED order ruling 2
-    sets: non_drug_entity -> combination_regimen -> unresolved_substance ->
+    """One tuple's disposition and resolved moiety, in this FIXED order:
+    non_drug_entity -> combination_regimen -> unresolved_substance ->
     withheld_qualified -> member.
 
     The order exists BECAUSE the categories overlap, not despite it:
-    grapefruit juice is both one of FDA's own pinned five non-drugs (section 7.2)
-    AND footnoted (marker 9), so a disposition function that checked footnote
-    status first would misfile it as withheld_qualified -- a real category, but
-    the wrong one, and silently so, since both are valid CHECK values. Checking
+    grapefruit juice is both one of FDA's own pinned five non-drugs (the
+    sentence at the end of the design spec's section 7, quoted verbatim on
+    NON_DRUG_ENTITIES above -- NOT section 7.2, which is about the three
+    enantiomer names and their own, unrelated deferral) AND footnoted (marker
+    9), so a disposition function that checked footnote status first would
+    misfile it as withheld_qualified -- a real category, but the wrong one,
+    and silently so, since both are valid CHECK values. Checking
     non_drug_entity first is what keeps grapefruit juice non_drug_entity
     regardless of what else is true of the row (pinned directly by
     test_grapefruit_juice_is_non_drug_entity_even_though_it_is_footnoted).
@@ -214,13 +224,14 @@ def _classify(substance: str, single: uuid.UUID | None,
     `single` is the ALREADY-RESOLVED moiety (or None), computed once by the
     caller from the case-folded index -- so this function only decides WHERE
     that resolution result lands, never how it was computed. The resolution
-    itself and the non_drug_entity/combination_regimen check are independent
-    (design section 7's inversion): curcumin resolves to a real moiety AND is
-    still non_drug_entity, so `single` is threaded through unchanged for that
-    branch. combination_regimen forces None regardless of what `single` says --
-    FDA reports the role for the REGIMEN, and assigning it to any one
-    component (even an accidental exact-name match) is an inference FDA did not
-    make.
+    itself and the non_drug_entity/combination_regimen check are independent:
+    curcumin resolves to a real moiety AND is still non_drug_entity (the
+    design spec's own "trap worth stating because it inverts the obvious
+    assumption" -- non-drug and unresolvable are independent properties), so
+    `single` is threaded through unchanged for that branch. combination_regimen
+    forces None regardless of what `single` says -- FDA reports the role for
+    the REGIMEN, and assigning it to any one component (even an accidental
+    exact-name match) is an inference FDA did not make.
     """
     if substance.lower() in NON_DRUG_ENTITIES:
         return "non_drug_entity", single
@@ -310,7 +321,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             class_uuid, _is_new = classes.upsert_class(conn, concept, run_id, SOURCE)
             class_cache[key] = class_uuid
 
-        # Resolution is exact and case-insensitive (ruling 3). `single` is None
+        # Resolution is exact and case-insensitive. `single` is None
         # for zero matches AND for more than one -- ambiguity is unresolved,
         # never "pick the first", because a name resolving to several moieties
         # is real information (the registry grew and now genuinely disagrees
@@ -333,13 +344,21 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "INSERT INTO drugref.fda_cyp_assertion "
             "(ingest_run, source, row_ordinal, raw_substance, resolved_moiety_uuid, "
             " column_heading, raw_cell, system, pathway, role, potency, class_uuid, "
-            " footnote_markers, footnote_text, registry_near_name, disposition) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " footnote_markers, footnote_text, registry_near_name, disposition, "
+            " substance, row_footnote_markers, cell_footnote_markers) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "        %s, %s, %s)",
             (run_id, SOURCE, t.row_ordinal, t.raw_substance, resolved_moiety,
              t.column_heading, t.raw_cell, t.system, t.pathway, t.role, t.potency,
              class_uuid, t.footnote_markers,
              _footnote_text(t.footnote_markers, footnote_by_marker),
-             None, disposition))
+             None, disposition,
+             # db/042: the clean name and the row-vs-cell footnote split
+             # fda_cyp.CypTuple already computed, which db/039's INSERT never
+             # stored -- see db/042's header for why this column ships
+             # nullable rather than backfilled by a second, SQL-side
+             # reimplementation of split_footnotes.
+             t.substance, t.row_footnote_markers, t.cell_footnote_markers))
 
         if disposition == "member":
             # _classify only ever returns "member" alongside a real moiety --

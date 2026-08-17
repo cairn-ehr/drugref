@@ -148,6 +148,34 @@ def test_every_withheld_row_carries_its_footnote_text(conn):
 
 
 @pytest.mark.usefixtures("conn")
+def test_the_orchestrator_writes_substance_and_the_two_footnote_scope_columns(conn):
+    """db/042. Every row must carry the clean `substance` fda_cyp.CypTuple
+    already computed (db/039 never stored it, which is I1's defect), and the
+    row-level / cell-level footnote-scope split (I2) rather than only the
+    merged footnote_markers db/039 shipped.
+
+    adefovir<sup>1</sup> is the row-level-only case (its one cell, OAT1
+    substrate, carries no marker of its own); conivaptan's CYP-Mod-INH cell
+    ('3A moderate inhibitor<sup>5</sup>') is the cell-level case, with no
+    marker on the name itself.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+
+    adefovir = conn.execute(
+        "SELECT substance, row_footnote_markers, cell_footnote_markers "
+        "FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) LIKE 'adefovir%' LIMIT 1").fetchone()
+    assert adefovir == ("adefovir", "1", None)
+
+    conivaptan = conn.execute(
+        "SELECT substance, row_footnote_markers, cell_footnote_markers "
+        "FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) = 'conivaptan' AND role = 'inhibitor' "
+        "LIMIT 1").fetchone()
+    assert conivaptan == ("conivaptan", None, "5")
+
+
+@pytest.mark.usefixtures("conn")
 def test_a_marker_with_no_page_side_definition_does_not_abort_its_row(conn):
     """cenobamate's CYP3A-inducer cell carries TWO markers: '4' (row-level, on
     the substance name) and 'b' (cell-level, and per fda_cyp.parse_footnotes's
@@ -266,10 +294,26 @@ def test_a_near_name_never_upgrades_a_rows_disposition(conn):
     NULL -- a green test asserting the inverse of its own name, and this repo
     has already lost a round to exactly that shape. Inserting a row that DOES
     carry a near name -- something issue 129's future detector will do -- is
-    the only way to make the assertion able to fail: if a later change let a
-    near name silently promote a row's disposition or attach a moiety, this
-    would catch it; today, with no such logic anywhere, it passes because
-    nothing here reads the column at all.
+    the only way to make the assertion able to fail.
+
+    WHAT THIS ACTUALLY PINS, stated precisely rather than aspirationally: the
+    SCHEMA and the gap view treat `registry_near_name` as inert evidence.
+    Nothing in this test ever calls `_classify` or any other ingest code on
+    the hand-inserted row -- it is written directly with `conn.execute`, after
+    the one real ingest above it has already finished -- so a FUTURE change to
+    `_classify`'s own logic could not be exercised by this test at all; it
+    would need its own test against a real fixture row. The two assertions
+    this one DOES protect are narrower and real: (1) a roundtrip check that
+    inserting a row with disposition='unresolved_substance' and a near name
+    reads back unchanged (protects nothing on its own -- nothing between the
+    INSERT and the SELECT could have altered it -- but pins the query used to
+    read it back), and (2) the actually load-bearing assertion: the gap view
+    still SURFACES a near-name-bearing row on the worklist rather than
+    filtering it out because the column is non-NULL. That second assertion
+    would catch a future gap-view predicate that mistook "has a near name" for
+    "has been looked at" and dropped the row from
+    gap_fda_cyp_unadjudicated -- which is a real, specific regression this
+    test can actually detect.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     run_id = conn.execute(
@@ -471,15 +515,113 @@ def test_the_question_text_states_the_actual_reason(conn):
     own no-ELSE rule (see questions.py's `fda_cyp_unadjudicated` entry, and
     unresolved_ci_object's comment above it). A wording assertion per branch is
     what would have caught a branch silently swallowed by the wrong one.
+
+    JOINED ON DISPOSITION, not four independent `any(...)` scans over the WHOLE
+    text list. The previous version of this test only checked that each phrase
+    appeared SOMEWHERE among all the texts, which cannot tell "this disposition's
+    branch says the right thing" from "some OTHER branch's wording leaked onto
+    this disposition's row" -- a branch silently emitting another branch's text
+    (the CASE matching the wrong WHEN, or two branches accidentally sharing a
+    string) would still pass every `any(...)` here. Joining question_text back to
+    the gap view's own `disposition` column (via the same gap_key format
+    questions.py's key_sql builds -- pinned directly, on
+    test_the_subject_grain_collapses_repeated_cells_for_one_substance's own
+    precedent of matching against `gap_key LIKE 'FDACYP:...'`) makes the
+    assertion fail if a phrase shows up under the wrong disposition's own rows.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
-    texts = [row[0] for row in conn.execute(
-        "SELECT question_text FROM drugref.open_question "
-        "WHERE gap_kind = 'fda_cyp_unadjudicated'").fetchall()]
-    assert any("footnote" in t.lower() for t in texts), "withheld_qualified"
-    assert any("moiety" in t.lower() for t in texts), "unresolved_substance"
-    assert any("regimen" in t.lower() for t in texts), "combination_regimen"
-    assert any("not drugs" in t.lower() for t in texts), "non_drug_entity"
+    rows = conn.execute(
+        "SELECT g.disposition, q.question_text "
+        "FROM drugref.gap_fda_cyp_unadjudicated g "
+        "JOIN drugref.open_question q "
+        "  ON q.gap_kind = 'fda_cyp_unadjudicated' "
+        " AND q.gap_key = 'FDACYP:' || g.substance || '|' || "
+        "     COALESCE(g.column_heading, '') || '|' || COALESCE(g.pathway, '')"
+    ).fetchall()
+    texts_by_disposition: dict[str, list[str]] = {}
+    for disposition, text in rows:
+        texts_by_disposition.setdefault(disposition, []).append(text.lower())
+
+    for disposition, phrase in (
+            ("withheld_qualified", "footnote"),
+            ("unresolved_substance", "moiety"),
+            ("combination_regimen", "regimen"),
+            ("non_drug_entity", "not drugs")):
+        texts = texts_by_disposition.get(disposition, [])
+        assert texts, f"no gap row found for disposition {disposition!r}"
+        assert any(phrase in t for t in texts), (
+            f"{disposition}'s OWN question text must contain {phrase!r}; "
+            f"got {texts!r}")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_gap_key_and_text_quote_the_clean_substance_not_footnote_markers(conn):
+    """I1. db/039's INSERT never stored fda_cyp.CypTuple's clean `substance`, so
+    the gap_key and question text were built from raw_substance -- FDA's PRINTED
+    form, footnote markers and all. 'ritonavir 14, 15, 16' produced the gap_key
+    'FDACYP:ritonavir 14, 15, 16||' and the text "...is FDA's ritonavir 14, 15,
+    16?" -- the exact defect that gave this slice its headline case, reproduced
+    in the human-readable output db/039 shipped. Worse than cosmetic:
+    question_uuid = uuid5(gap_kind, gap_key) is IMMORTAL, so keying on FDA's own
+    footnote NUMBERING means a footnote renumbering changes a question's identity
+    for a reason unrelated to the substance.
+
+    ritonavir (unresolved -- not seeded) and grapefruit juice (non_drug_entity
+    AND footnoted, marker 9) both pin it: neither the key nor the text may carry
+    trailing digits.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    rows = conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated' "
+        "  AND (gap_key LIKE 'FDACYP:ritonavir%' "
+        "    OR gap_key LIKE 'FDACYP:grapefruit juice%')").fetchall()
+    assert len(rows) == 2, "both ritonavir and grapefruit juice must raise a question"
+    for gap_key, text in rows:
+        assert gap_key in ("FDACYP:ritonavir||", "FDACYP:grapefruit juice||"), (
+            f"gap_key must quote the clean name, no footnote digits: {gap_key!r}")
+        assert "14" not in text and "15" not in text and "16" not in text, (
+            f"ritonavir's text must not carry its footnote markers: {text!r}")
+        assert " 9" not in text and "juice 9" not in text, (
+            f"grapefruit juice's text must not carry its footnote marker: {text!r}")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_withheld_text_only_asserts_cell_attachment_when_the_marker_is_cell_level(conn):
+    """I2. cenobamate carries BOTH footnote positions on ONE row: <sup>4</sup>
+    glued to the NAME (row-level -- a claim about cenobamate, not about any one
+    cell) and the lettered <sup>b</sup> attached INSIDE the CYP-Mod-IND cell
+    (cell-level -- a claim about that cell specifically). db/039's merged
+    footnote_markers could not tell them apart, so BOTH of cenobamate's withheld
+    cells got the same wording: "Does FDA's footnote on cenobamate (COLUMN,
+    PATHWAY) narrow or NEGATE the membership its row states?" -- asserting a
+    cell-specific attachment FDA never made for the CYP-Mod-INH cell, whose only
+    footnote is glued to the name.
+
+    * CYP Mod INH / 2C19 (row-marker 4 only, no cell-level marker on THIS cell)
+      must get the NAME-level wording: it does not claim the footnote is
+      specifically about this cell.
+    * CYP Mod IND / 3A (cell-level marker 'b' present) must get wording that
+      DOES assert cell attachment, because here the attachment is real.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    rows = dict(conn.execute(
+        "SELECT column_heading, question_text FROM drugref.gap_fda_cyp_unadjudicated g "
+        "JOIN drugref.open_question q "
+        "  ON q.gap_kind = 'fda_cyp_unadjudicated' "
+        " AND q.gap_key = 'FDACYP:' || g.substance || '|' || "
+        "     COALESCE(g.column_heading, '') || '|' || COALESCE(g.pathway, '') "
+        "WHERE g.substance = 'cenobamate'").fetchall())
+    assert set(rows) == {"CYP Mod INH", "CYP Mod IND"}
+
+    name_level_text = rows["CYP Mod INH"].lower()
+    assert "carries footnote" in name_level_text, (
+        f"the row-marker-only cell must use the name-level wording: {name_level_text!r}")
+    assert "cell for cenobamate" not in name_level_text
+
+    cell_level_text = rows["CYP Mod IND"].lower()
+    assert "cell for cenobamate" in cell_level_text, (
+        f"the cell-marker cell must assert real attachment: {cell_level_text!r}")
 
 
 @pytest.mark.usefixtures("conn")
@@ -544,6 +686,41 @@ def test_the_subject_grain_collapses_repeated_cells_for_one_substance(conn):
     assert bupropion_gaps == bupropion_cells, (
         "withheld_qualified keeps the per-CELL grain -- it must NOT collapse "
         "the way the other three dispositions do")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_subject_half_does_not_attribute_an_arbitrary_cells_text_to_the_whole_substance(
+        conn):
+    """db/041's subject half (unresolved_substance / combination_regimen /
+    non_drug_entity) projected `max(raw_cell)` and `max(footnote_text)` across
+    EVERY row sharing a substance -- for rifampin (8 cells) that picks ONE
+    arbitrary cell's raw text via whichever value happens to sort highest and
+    attributes it to the whole substance, in columns a curator might reasonably
+    read as meaning something. Neither column is read by any of the three
+    subject-half branches in questions.py's CASE, so db/042 projects NULL for
+    both there -- matching db/040's own reasoning for why column_heading and
+    pathway are NULL in this half: the honest value for a fact this half is
+    not asking about is NULL, not an arbitrary survivor of max().
+
+    registry_near_name is the CONTRAST: unresolved_substance's own branch DOES
+    read it (test_a_near_name_never_upgrades_a_rows_disposition depends on the
+    view still surfacing it), so it must NOT be nulled the same way.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+
+    subject_half = conn.execute(
+        "SELECT raw_cell, footnote_text FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE lower(raw_substance) = 'rifampin'").fetchone()
+    assert subject_half == (None, None), (
+        "the subject half must not attribute an arbitrary cell's raw_cell/"
+        f"footnote_text to the whole substance -- got {subject_half!r}")
+
+    cell_half = conn.execute(
+        "SELECT raw_cell, footnote_text FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE lower(raw_substance) LIKE 'bupropion%' LIMIT 1").fetchone()
+    assert cell_half[0] is not None and cell_half[1] is not None, (
+        "the CELL half (withheld_qualified) is about one specific cell, so its "
+        "raw_cell/footnote_text stay real, unlike the subject half's")
 
 
 @pytest.mark.usefixtures("conn")
