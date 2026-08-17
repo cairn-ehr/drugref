@@ -33,15 +33,22 @@ signature fields are removed; gaps say **Unreviewed**, because no curated row ex
 filters reset pagination, stale responses cannot overwrite a newer request, and inline failures preserve the last
 successful page. The browser-only Vite adapter remains explicit preview data and is never a native fallback.
 
+**GUI HOUSE-RULE CATCH-UP IS COMPLETE.** `CONTRIBUTING.md` is now the durable repository rule: functions and
+public contracts require docstrings, behavioural values require documented constants, dynamically typed code
+requires complete type hints, and pure reusable logic belongs in focused modules where meaningful. The GUI now
+centralises validation and paging constants, keeps pure queue/presentation transforms outside components, and
+enforces Rust public API documentation with `deny(missing_docs)`.
+
 **⇒ DO THIS NEXT FOR THE GUI:** append-only annotations and evidence references without manufacturing a clinical
 ruling. Then curated revision transactions and local key enrolment/signing in separate slices. The administration
 tail remains profile correction, disable/enable, password rotation, all-session revocation and signing-key
 enrolment UI over `db/044`. Do not enable a clinical decision or signing button in the annotation slice.
 
-**Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 5 plus the populated-
-database live-queue integration; Tauri 1; `ruff`; Rust formatting; `npm run check` with 0 diagnostics; production
-frontend build; `npm audit` with 0 vulnerabilities; native debug app bundle. Frontend output is 0.63 kB HTML +
-18.10 kB CSS + 71.85 kB JS (25.73 kB gzipped). Two real reference-database queue reads took 11.42 s total,
+**Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 6 plus the populated-
+database live-queue integration; Tauri 1; `ruff`; Rust formatting and clippy with warnings denied;
+`npm run check` with 0 diagnostics; production frontend build; `npm audit` with 0 vulnerabilities; native debug
+app bundle. Frontend output is 0.63 kB HTML +
+18.10 kB CSS + 72.45 kB JS (26.04 kB gzipped). Two real reference-database queue reads took 11.34 s total,
 including the known expensive interaction-gap view. No browser surface was available, so desktop/narrow visual
 verification remains outstanding.
 

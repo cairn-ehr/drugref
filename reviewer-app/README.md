@@ -14,6 +14,12 @@ The Vite browser surface retains representative data only for visual development
 labels it **Browser queue preview**. The installed Tauri app never falls back to that
 data when its authenticated service request fails.
 
+Behavioural and validation values live in `src/lib/constants.ts`; pure queue-query
+and presentation transformations live in `src/lib/queue.ts` and
+`src/lib/presentation.ts`. Components retain only lifecycle, event, and view state.
+The repository-wide documentation, constants, typing, and functional-decomposition
+rules are defined in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
+
 ## Development
 
 ```sh

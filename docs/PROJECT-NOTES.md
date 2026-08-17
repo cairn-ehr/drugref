@@ -18,6 +18,10 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **CODE MUST EXPLAIN ITS OWN CONTRACT.** The repository-wide house rules now live in
+  [`CONTRIBUTING.md`](../CONTRIBUTING.md): docstrings are mandatory; behavioural numbers are named constants;
+  dynamically typed code carries complete type hints; and pure reusable logic belongs in focused modules where
+  meaningful. New work complies in the same change, and a touched older unit is brought forward with it.
 - **INGEST WHAT IS UNAMBIGUOUS; SET ASIDE FOR CLINICIAN REVIEW WHAT IS NOT. ERR ON THE SIDE OF CAUTION.**
   Stated by the project owner during the 5c.2g design round (2026-08-16) as the rule governing **every source
   round**, and written here rather than in that slice's spec because it is not that slice's rule. Two
