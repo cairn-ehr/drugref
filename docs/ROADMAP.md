@@ -805,26 +805,19 @@ allowlist that left a silent hole). Both vocabularies it uses — `PK` and `has_
   PROJECT-NOTES § "Slice 5c.2g". They share one shape — **something asserted a property it had not
   confirmed** — which is the same defect the slice exists to prevent FDA's table from inflicting on drugref.
 
-- **What it adds is CLASSIFICATION MEMBERSHIP, not interaction advice.** `substance_class.source = 'FDA-CYP'`,
-  `concept_type = 'PK'`, deterministic `source_code` (`cyp:1a2:inhibitor:strong`, `transporter:pgp:substrate`),
-  `class_membership.relationship = 'has_PK'`, **no inferred parent edges in the first release**.
-- **It explicitly does NOT create DDI pairs by joining inhibitors to substrates.** FDA describes the table as
-  an optional, non-exhaustive interpretive guide. A pair still needs an SPL assertion or a curated clinical
-  source before it can enter `class_contraindication` or the curated overlay.
-- **Three populations the parser must report SEPARATELY rather than explode**: combination regimens
-  (`atazanavir and ritonavir` — a role reported for the regimen may not be assigned to either component), the
-  five entries FDA itself says are not drugs (St John's wort, curcumin, diosmin, tobacco smoking, grapefruit
-  juice), and unresolved substances.
-- **The open design question this round must answer: `class_membership` cannot carry a row qualifier today**,
-  and several memberships are dose-, route-, preparation-, metabolite- or genotype-dependent. Either a
-  source-evidence projection keyed to the membership, or withhold every qualified row — **silently dropping a
-  qualifier is not permitted.**
-- **A new source spelling is not a one-line change** (the lesson [#101](https://github.com/cairn-ehr/drugref/issues/101)
-  records for `DRUGCENTRAL`, and it applies unchanged here): the CHECKs and `ids._SOURCE_CANONICAL` must gain
-  `FDA-CYP` **in the same migration**, and `ids.py` warns by name against leaning on the upper-case
-  fall-through. **`db/029`–`db/038` are all FROZEN**, so this needs `db/039`.
-- **The page publishes no release identifier**, so fetch time + SHA-256 are the release identity — recorded in
-  the spike's §2 manifest, and re-fetched rather than re-quoted.
+- **Release identity is the page's own `dateModified`** — `2026-05-29T14:00`, in JSON-LD and two meta tags —
+  **not fetch time.** The source spike said the page carries no release identifier; it carries one. Fetch time
+  records when drugref looked, `dateModified` records when FDA changed the content, and only the second
+  distinguishes a re-fetch of unchanged material from a revision. A page without it **fails and names the
+  field** rather than substituting fetch time. `--release` on the CLI is a CHECK, not an override: supply it
+  and it must match the page or the ingest fails naming both values, **before `provenance.open_run`**, so a
+  wrong `--release` leaves no history behind.
+
+> **This entry's own six planning bullets were deleted when it went to DONE, and one of them said the page
+> publishes no release identifier — the opposite of what shipped, sitting under a ✅.** They were written
+> before the round and left in place beneath the account of what it did. **A planning bullet that survives
+> its own slice becomes a claim**, and this file has now made that mistake once; the account above is the one
+> home for what 5c.2g does.
 
 ##### 5c.3 — SPL/DailyMed mining
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **No spec yet; it opens with its own

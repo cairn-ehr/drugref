@@ -125,8 +125,10 @@ The other footnotes narrow rather than negate — dose (`4`: "based on 200 mg da
 widely"), metabolite (`2`), genotype (`11`: "in CYP2C19 extensive metabolizer subjects"), single dose (`13`),
 and pharmacogenetic basis (`3`). **Ingest does not sort them into negating and narrowing**, because that
 sorting is a clinical reading of free-text prose, and it is exactly the judgement the spike's invariant
-reserves: *ingest preserves evidence; curation creates clinical judgement.* 18 footnotes exist today and a
-re-fetch can add a nineteenth nobody classified.
+reserves: *ingest preserves evidence; curation creates clinical judgement.* **21 numbered footnotes exist
+today** (plus one lettered `b` that the page defines nowhere), and a re-fetch can add a twenty-second nobody
+classified. **This sentence first said "18 … a nineteenth"** — a seventh wrong figure in this document, from
+the same probe, corrected once the shipped parser read the block and counted them.
 
 ## 4. What lands
 
@@ -462,7 +464,8 @@ field carrying two meanings.
 - **65 classes with no hierarchy may be awkward for 5c.3 to point at.** Accepted deliberately (§4.2):
   inventing a hierarchy now, before any consumer exists, is how a structure gets frozen wrong. 5c.3 can
   propose one with a real requirement behind it.
-- **The 8.6% withheld could grow** if FDA footnotes more rows. That is the correct direction — more
+- **The 9.2% withheld could grow** if FDA footnotes more rows. (**This line said 8.6% — §5's pre-correction
+  figure — while §5 itself said 9.2%: one number, two homes in one document, disagreeing.**) That is the correct direction — more
   qualification means more curator attention, not more silent assertion — but it is worth watching, and the
   measured figure is recorded so a future round can see the drift.
 - **`aprepitant` on two rows** is handled today, but the design assumes a substance's rows are independent.
