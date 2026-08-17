@@ -6,6 +6,11 @@ dist/
 *.egg-info/
 downloads/
 
+# Reviewer desktop build output and installed dependencies.
+node_modules/
+target/
+.svelte-kit/
+
 # Real MED-RT / MeSH release files: large, fetched per docs/HANDOVER.md, never
 # committed. downloads/ is their intended home; these guard against an accidental
 # drop in the repo root (supp2026 alone is 750 MB uncompressed). Fixtures live in
