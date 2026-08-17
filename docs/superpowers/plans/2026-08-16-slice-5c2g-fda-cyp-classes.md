@@ -697,15 +697,23 @@ def test_a_single_trailing_footnote_is_split_off():
 
 
 def test_a_COMMA_SEPARATED_footnote_list_is_split_off():
-    """THE LOAD-BEARING CASE. FDA prints 'ritonavir 14, 15,' -- several markers,
-    comma-separated, with a TRAILING comma.
+    """THE LOAD-BEARING CASE. FDA prints 'ritonavir 14, 15, 16' -- three markers,
+    comma-separated.
 
     A stripper that handles 'adefovir 1' but not this leaves the substance named
-    'ritonavir 14, 15,', which resolves to nothing -- so one of the most important
-    CYP3A inhibitors in medicine drops out of the ingest SILENTLY and the run
-    still reports success. It was found only by reading the unresolved-name
-    residue row by row, which is why it has a test of its own.
+    with its markers attached, which resolves to nothing -- so one of the most
+    important CYP3A inhibitors in medicine drops out of the ingest SILENTLY and
+    the run still reports success.
+
+    THE DESIGN ROUND FIRST WROTE THIS STRING DOWN AS 'ritonavir 14, 15,' -- a
+    string that appears nowhere on FDA's page. It was its own probe stripper's
+    output: the regex ate the trailing ' 16' and left the comma, and the result
+    was recorded as a measurement of the source. A partially-working parser hands
+    you a plausible string, and a plausible string gets quoted.
     """
+    assert fda_cyp.split_footnotes("ritonavir 14, 15, 16") == ("ritonavir", "14, 15, 16")
+    # And the trailing-comma form the probe produced must ALSO split cleanly, so a
+    # re-fetch that really does end in a comma is not a new bug.
     assert fda_cyp.split_footnotes("ritonavir 14, 15,") == ("ritonavir", "14, 15")
 
 

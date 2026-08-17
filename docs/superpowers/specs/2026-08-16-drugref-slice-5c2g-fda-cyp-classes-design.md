@@ -79,15 +79,25 @@ a trailing role phrase applying to every item that did not state one.**
 | position | example | note |
 |---|---|---|
 | glued to the substance name | `adefovir 1` | 21 rows |
-| **a comma-separated list on the name** | `ritonavir 14, 15,` | trailing comma included |
+| **a comma-separated list on the name** | `ritonavir 14, 15, 16` | three markers |
 | inside a cell, at the end | `3A moderate inhibitor 5` (conivaptan) | 2 cells |
 | **inside a cell, attached to one pathway** | `1A2 20 ; 3A moderate inhibitor` (ciprofloxacin) | mid-cell |
 | as a **letter**, not a digit | `CYP3A moderate inducer b` (cenobamate) | a second namespace |
 
-**`ritonavir 14, 15,` is the load-bearing case.** A stripper that handles `adefovir 1` but not a
-comma-separated list leaves the substance named `ritonavir 14, 15,`, which resolves to nothing — so **one of
-the most important CYP3A inhibitors in medicine disappears from the ingest silently, and the run still
-reports success.** It was found only because the unresolved-name residue was read row by row.
+**`ritonavir 14, 15, 16` is the load-bearing case.** A stripper that handles `adefovir 1` but not a
+comma-separated list leaves the substance named with its markers attached, which resolves to nothing — so
+**one of the most important CYP3A inhibitors in medicine disappears from the ingest silently, and the run
+still reports success.** It was found only because the unresolved-name residue was read row by row.
+
+**⇒ AND THE FIRST DRAFT OF THIS ROW QUOTED THE BUG INSTEAD OF THE SOURCE, which is worth more than the
+correction.** It recorded FDA's text as `ritonavir 14, 15,` — with a trailing comma and no `16`. That string
+appears nowhere on FDA's page. It was the *output of the design round's own probe stripper*, whose
+`(\s+\d+)+$` ate the trailing ` 16` and left the comma behind; the figure was then written down as a
+measurement of the source. Task 2 of the implementation caught it by printing the cleaned name.
+**The lesson generalises past this row: a partially-working parser does not announce itself — it hands you a
+plausible string, and a plausible string gets quoted.** Every substance name in this spec was produced by
+that same probe, so any of them may carry the same defect; the parser's own output, not the probe's, is the
+authority from here.
 
 ## 3. The decisive finding: two footnotes negate the row they sit on
 
