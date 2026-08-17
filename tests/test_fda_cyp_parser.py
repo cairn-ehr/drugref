@@ -253,3 +253,36 @@ def test_parse_table_carries_the_row_ordinal_because_names_repeat(fixture_html):
     tuples = fda_cyp.parse_table(fixture_html)
     ordinals = {t.row_ordinal for t in tuples if t.substance == "aprepitant"}
     assert len(ordinals) == 2
+
+
+def test_the_release_is_read_from_the_pages_own_dateModified():
+    """The spike said the HTML carries no release identifier. It carries one.
+
+    Fetch time records when drugref LOOKED; dateModified records when FDA CHANGED
+    the content, and only the second distinguishes a re-fetch of unchanged
+    material from a genuine revision.
+    """
+    page = '<script>{"dateModified": "Fri, 05/29/2026 - 14:00"}</script>'
+    assert fda_cyp.parse_release(page) == "2026-05-29T14:00"
+
+
+def test_the_meta_tag_is_an_accepted_second_spelling():
+    page = '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />'
+    assert fda_cyp.parse_release(page) == "2026-05-29T14:00"
+
+
+def test_a_page_without_a_modified_date_FAILS_and_names_the_field():
+    """It does NOT silently substitute fetch time. That would put a value with a
+    different meaning in the same column, and this project has already lost
+    rounds to one field carrying two meanings.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="dateModified"):
+        fda_cyp.parse_release("<html><body>no date here</body></html>")
+
+
+@pytest.mark.skipif(
+    not pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").exists(),
+    reason="live page not downloaded")
+def test_the_real_page_reports_the_expected_release():
+    page = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
+    assert fda_cyp.parse_release(page) == "2026-05-29T14:00"

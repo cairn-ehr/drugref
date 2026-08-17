@@ -380,3 +380,42 @@ def _column_headings(page: str) -> list[str]:
     tables = _TABLE.findall(page)
     header = _ROW.findall(tables[DATA_TABLE_INDEX])[0]
     return [_clean(cell) for cell in _CELL.findall(header)]
+
+
+# FDA's CMS prints the modification stamp in three places with one format:
+# JSON-LD "dateModified", og:updated_time and article:modified_time.
+# Accepting all three is not redundancy -- it is not knowing which the CMS will
+# keep, and they are read in this order.
+_MODIFIED = re.compile(
+    r'"dateModified"\s*:\s*"([^"]+)"'
+    r'|(?:article:modified_time|og:updated_time)"\s+content="([^"]+)"')
+
+# 'Fri, 05/29/2026 - 14:00'
+_STAMP = re.compile(r"(\d{2})/(\d{2})/(\d{4})\s*-\s*(\d{2}:\d{2})")
+
+
+def parse_release(page: str) -> str:
+    """The page's own modification stamp, as '2026-05-29T14:00'.
+
+    WHY NOT FETCH TIME, which the source spike proposed: fetch time records when
+    drugref looked, and dateModified records when FDA changed the content. Only
+    the second can tell a re-fetch of unchanged material from a genuine revision
+    -- which is the question check_release_agreement and every per-source rebuild
+    actually ask.
+
+    RAISES rather than falling back. Substituting fetch time would put a value
+    with a DIFFERENT MEANING into upstream_release, and one field carrying two
+    meanings is a defect this project has already paid for more than once. If FDA
+    stops publishing the field, that is a decision for a human, not a default.
+    """
+    for match in _MODIFIED.finditer(page):
+        raw = match.group(1) or match.group(2)
+        stamp = _STAMP.search(raw or "")
+        if stamp:
+            month, day, year, clock = stamp.groups()
+            return f"{year}-{month}-{day}T{clock}"
+    raise FdaCypParseError(
+        "the page carries no dateModified / article:modified_time / "
+        "og:updated_time stamp, so its release identity is unknown. Fetch time is "
+        "NOT a substitute: it records when drugref looked, not when FDA changed "
+        "the content. Decide deliberately before ingesting this page.")
