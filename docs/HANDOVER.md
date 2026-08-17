@@ -18,21 +18,22 @@
 
 **Merged to `main`**: through **5c.2f — the guard round**, plus two source spikes
 ([#126](https://github.com/cairn-ehr/drugref/pull/126) FDA, [#127](https://github.com/cairn-ehr/drugref/pull/127)
-pregnancy/lactation). **`db/029`–`db/038` ARE ALL FROZEN. `db/039`–`db/041` are 5c.2g's and are NOT yet merged**
-— on branch `slice/5c2g-fda-cyp-classes`, in a PR. Correct them in place only while that PR is open; once it
-merges they freeze too and a correction needs `db/042`.
+pregnancy/lactation). **`db/029`–`db/038` ARE ALL FROZEN, and so are `db/039`–`db/042`** — 5c.2g's four, applied to `drugref_test`
+and to the measurement database, so a correction to any of them needs `db/043` **even though the PR is still
+open.** `db/042` exists precisely because that rule was followed rather than argued with.
 
 **⇒ JUST FINISHED — 5c.2g, `FDA-CYP` potency classes: 65 PK classes, 348 memberships, 55 curator questions,
-three migrations, suite 1660 → 1730.** The potency vocabulary 5c.3 needs. **It creates NO DDI pair, and that
+four migrations, suite 1660 → 1739.** The potency vocabulary 5c.3 needs. **It creates NO DDI pair, and that
 is a refusal rather than a deferral** — joining FDA's inhibitor and substrate columns would manufacture ~800
 pairs no source asserts. Full account: PROJECT-NOTES § "Slice 5c.2g"; shape: ROADMAP § 5c.2g.
 
-**⇒ READ THIS BEFORE TRUSTING ANY FIGURE THIS PROJECT WROTE DOWN. FIVE OF 5c.2g's OWN SPEC FIGURES WERE
-WRONG, AND IMPLEMENTATION FOUND EVERY ONE** — not review, not re-reading: a task ran the real bytes and
+**⇒ READ THIS BEFORE TRUSTING ANY FIGURE THIS PROJECT WROTE DOWN. SEVEN OF 5c.2g's OWN SPEC FIGURES WERE
+WRONG, AND IMPLEMENTATION FOUND EVERY ONE** — the last two found by the FINAL review, **after the count had
+been written down as five, making the count of wrong figures itself a wrong figure** — not review, not re-reading: a task ran the real bytes and
 reported a number that disagreed. They share one shape, and it is the shape the slice exists to prevent:
 **something asserted a property it had not confirmed.** The design round's probe was a partially-working
 parser, and **a partially-working parser does not announce itself — it hands you a plausible value, and a
-plausible value gets written down as a measurement.** The five, and the two that changed a RULE rather than a
+plausible value gets written down as a measurement.** All seven, and the two that changed a RULE rather than a
 number, are tabulated in PROJECT-NOTES § "Slice 5c.2g". The two rules:
 
 1. **The closed vocabulary rejects ZERO tokens on a correct parse, and that is the passing state.** It is a
@@ -54,7 +55,7 @@ which unrelated feed ran last. New datum recorded as a comment on #104.
 (`S-mephenytoin` is the reference CYP2C19 probe substrate; carrying it on the racemate is pharmacology with a
 literature behind it, **scoped to every source — DrugCentral will meet it too**) ·
 [#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because a near-name
-heuristic with no measured output is the exact pattern this slice spent five corrections catching ·
+heuristic with no measured output is the exact pattern this slice spent seven corrections catching ·
 [#130](https://github.com/cairn-ehr/drugref/issues/130) **`cli.py` sits at exactly 500/500 against a HARD cap
 test — the next line added to it breaks CI**, and the cap has already begun dictating where functions live.
 

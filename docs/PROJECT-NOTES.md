@@ -2769,11 +2769,13 @@ inhibitors contraindicated, *moderate or weak* "avoid") and MED-RT's single undi
 express it. **65 PK classes, `has_PK` membership, and a projection holding every parsed tuple including the
 ones deliberately not promoted.** ROADMAP § 5c.2g carries the shape; this section carries the traps.
 
-### ⇒ THE HEADLINE: FIVE OF THE DESIGN'S OWN FIGURES WERE WRONG, AND EVERY ONE WAS FOUND BY IMPLEMENTATION
+### ⇒ THE HEADLINE: SEVEN OF THE DESIGN'S OWN FIGURES WERE WRONG, AND EVERY ONE WAS FOUND BY IMPLEMENTATION
 
 Not by review, not by re-reading — by a task running the real bytes and reporting a number that disagreed.
 **They share one shape, and it is the same defect the slice exists to prevent:** something asserted a
-property it had not confirmed. The design round's probe was a partially-working parser, and **a
+property it had not confirmed. **Numbers 6 and 7 were found by the FINAL review, after this table said
+five** — so the count of wrong figures was itself a wrong figure, in the paragraph about wrong figures. That
+is not an embarrassment to bury; it is the measurement of how strong the pull is. The design round's probe was a partially-working parser, and **a
 partially-working parser does not announce itself — it hands you a plausible value, and a plausible value
 gets written down as a measurement.**
 
@@ -2784,6 +2786,8 @@ gets written down as a measurement.**
 | 3 | 29 qualified cells / 22 substances | **31 / 24** | the probe saw a footnote only at a name's or cell's very END, so it missed the mid-cell markers |
 | 4 | the closed vocabulary "must **reject**" three cells | it rejects **zero** | the gate was described as a *filter*; it is a **tripwire** |
 | 5 | `ddi_candidate_pair` **21,664** must not move | `drugref_db038` holds **21,877** | the figure was measured on `drugref_policy` and `drugref_5c4`, two earlier databases, and quoted as an expectation for a third |
+| 6 | **18** footnotes, "a re-fetch can add a nineteenth" | **21** numbered, plus one lettered `b` the page defines nowhere | counted by hand off the rendered page rather than by the parser that reads the block |
+| 7 | §14: "the **8.6%** withheld could grow" | **9.2%** | §5 was corrected to 9.2% and §14 was not — **one number, two homes, inside the very document arguing against that** |
 
 **Number 3 was in the unsafe direction and is the one to remember:** the undercounted cells were ones drugref
 would have **promoted to membership while FDA had qualified them**. Number 4 is the one that changed a rule
