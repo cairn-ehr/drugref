@@ -13,38 +13,35 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-gui`, from merged `main` at `2cc9f45`.** The FDA-CYP slice and review are
-merged through **`db/043`**; every migration through 043 is frozen. A new schema change starts at **044**.
+**Current branch: `codex/reviewer-user-management`, from merged PR #136 on `main` at `511f16f`.** Migrations
+through **`db/043`** are frozen; this round adds **`db/044`**.
 
-**⇒ JUST FINISHED — the human reviewer GUI foundation, no migration.** Canonical design:
-[`2026-08-17-drugref-reviewer-gui-foundation-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-gui-foundation-design.md).
-`reviewer-app/` is Tauri 2 + plain Svelte/TypeScript with a Rust IPC boundary. It presents a preview-only login
-and reviewer profile, queue totals and filters, live-shaped review records, provenance, decision fields,
-annotations and signature posture. One committed JSON fixture feeds both native IPC and browser preview;
-Rust validates the fingerprint, complete targets and target uniqueness.
+**⇒ JUST FINISHED — reviewer accounts, service authentication and first-run administration.** Canonical design:
+[`2026-08-17-drugref-reviewer-user-management-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-user-management-design.md).
+`reviewer-domain/` shares API types; `reviewer-service/` is the Axum/SQLx trust boundary; Tauri keeps bearer
+tokens in native memory and the WebView retains no network permission. `db/044` adds stable accounts,
+append-only profile/password/key-enrolment history, digest-only sessions and insert-only revocations.
 
-**THE FOUNDATION IS DELIBERATELY READ-ONLY.** All clinical-write, annotation and signing controls are disabled
-and labelled. It has no database connection, account table, session, private-key store or migration. Do not
-enable a button by wiring the Tauri client directly to PostgreSQL: a shared client credential makes the login
-cosmetic and bypassable.
+**FIRST RUN BLOCKS BEFORE WORKSPACE LOAD.** With no live administrator profile, the app shows only first-admin
+registration. Bootstrap is advisory-lock serialized, rechecked inside its transaction, forces the administrator
+role, and closes permanently once an administrator exists (disablement does not reopen it). Administrators can
+list/create users in the GUI; the service checks the role independently. Login is Argon2id-backed, rate-limited
+and constant-shape for missing/wrong/disabled accounts. Login remains authorisation, never a clinical signature.
 
-**The production trust boundary is decided:** Tauri client → authenticated Rust review service → PostgreSQL.
-Passwords are server-side Argon2id hashes. Private Ed25519 keys stay encrypted on the reviewer's device; the
-existing `signing_key` registry remains the public-key authority. Login authorises an operation but is not a
-clinical signature. The service independently re-derives every signed payload before inserting the detached
-signature.
+**THE CLINICAL QUEUE IS STILL DELIBERATELY READ-ONLY AND FIXTURE-BACKED.** Authentication is live; decision,
+annotation and signing controls are not. Do not wire Tauri directly to PostgreSQL and do not enable a clinical
+button in the next read slice.
 
-**⇒ DO THIS NEXT FOR THE GUI:** design and build the reviewer-account migration plus authenticated Rust service
-skeleton. Likely storage: stable `reviewer_account`; append-only `reviewer_profile` and
-`reviewer_password_credential`; `reviewer_key` mapping to `signing_key`; revocable sessions; append-only notes
-on `question_uuid`. Exact DDL is not yet accepted — start with its own design/TDD round. Then replace the fixture
-with live, paginated read-only queue endpoints before taking any clinical write.
+**⇒ DO THIS NEXT FOR THE GUI:** replace the bundled queue with live, paginated read-only service endpoints and
+database-derived vocabularies/filters. Then append-only annotations/evidence, curated revision transactions, and
+local key enrolment/signing in separate slices. The administration tail is profile correction, disable/enable,
+password rotation, all-session revocation and signing-key enrolment UI over `db/044`.
 
-**Verification completed:** 2 Rust unit tests; `cargo fmt --check`; `npm run check` with 0 errors/warnings;
-`npm run build`; `npm audit` with 0 advisories; debug and release native builds. The frontend output is
-0.63 kB HTML + 14.51 kB CSS + 58.21 kB JS (21.45 kB gzipped); the release macOS app is **8.3 MB** with an
-**8.0 MB** executable. The in-app browser was unavailable, so the
-desktop/narrow visual pass in the design spec remains to run when a browser surface is connected.
+**Verification completed:** full Python/PostgreSQL suite 1,779 passed; Rust domain/service/Tauri suites 3 + 4 +
+3; `ruff`; `cargo fmt --check`; `npm run check` with 0 diagnostics; `npm run build`; `npm audit` with 0
+vulnerabilities; native no-bundle build; local end-to-end bootstrap → login → administrator create/list. Frontend
+output is 0.63 kB HTML + 17.54 kB CSS + 69.14 kB JS (24.75 kB gzipped). The prior desktop/narrow visual-pass
+limitation remains until a browser surface is connected.
 
 ## Parallel project sequencing
 

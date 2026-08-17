@@ -294,6 +294,13 @@ def test_apply_migrations_is_idempotent(conn):
         # than only in fda_cyp._PATHWAYS_BY_SYSTEM, so the assertion table can
         # foreign-key to it and no writer can widen it by accident.
         "fda_cyp_pathway",
+        # Slice 6r, db/044: authenticated reviewer identities. The stable account is
+        # separate from append-only profile, role/status, password and key-enrolment
+        # history. Sessions store only bearer-token digests; revocation is its own
+        # insert-only fact rather than an UPDATE that erases when access ended.
+        "reviewer_role_kind", "reviewer_account", "reviewer_profile",
+        "reviewer_password_credential", "reviewer_key_enrolment",
+        "auth_session", "auth_session_revocation",
     }
 
 
