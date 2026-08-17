@@ -4,7 +4,7 @@
 
 **Goal:** Land FDA's CYP/transporter examples table as 65 source-defined PK classes with `has_PK` membership, so slice 5c.3 can point an SPL rule at an exact potency band instead of MED-RT's undifferentiated inhibitor class.
 
-**Architecture:** A pure streaming parser (`ingest/fda_cyp.py`, no DB access) turns the page's 245×11 matrix into `(substance, pathway, role, potency)` tuples; an orchestrator (`ingest/fda_cyp_run.py`) owns the transaction and is the only writer. Classes are minted from the parsed vocabulary; membership is written only for tuples that are unqualified, resolved and in the closed pathway vocabulary. Everything else — 29 qualified cells, 20 unresolved names, 9 regimens, 5 non-drug entries — lands in a rebuildable `fda_cyp_assertion` projection and raises an open question.
+**Architecture:** A pure streaming parser (`ingest/fda_cyp.py`, no DB access) turns the page's 245×11 matrix into `(substance, pathway, role, potency)` tuples; an orchestrator (`ingest/fda_cyp_run.py`) owns the transaction and is the only writer. Classes are minted from the parsed vocabulary; membership is written only for tuples that are unqualified, resolved and in the closed pathway vocabulary. Everything else — 31 qualified cells, 20 unresolved names, 9 regimens, 5 non-drug entries — lands in a rebuildable `fda_cyp_assertion` projection and raises an open question.
 
 **Tech Stack:** Python 3.13 (`uv`), psycopg 3, Postgres 18, pytest. **No new dependency** — the parser uses `re` + `html` from the standard library. Adding an HTML parser would need a rule-6 licence check; the table is regular enough not to need one, and §8's closed vocabulary is what makes a regex parse safe rather than reckless.
 
@@ -218,7 +218,7 @@ ALTER TABLE drugref.substance_class ADD CONSTRAINT substance_class_source
 -- ENTRY, not an error and not a drop.
 --
 -- It holds every tuple the parser produced -- members and withheld alike --
--- because the withheld ones are the point. 29 of 337 cells carry a footnote, and
+-- because the withheld ones are the point. 31 of 337 cells carry a footnote, and
 -- two of those footnotes NEGATE the row they sit on: bupropion's row asserts
 -- '2B6 sensitive substrate' while footnote 2 says "Bupropion itself is not a
 -- sensitive substrate", and rolapitant's asserts P-gp/BCRP inhibition while
@@ -553,7 +553,7 @@ It is a MATRIX, not a list of facts: 245 data rows x 11 columns, where the first
 column names the substance and EACH OF THE OTHER TEN IS a (system, role,
 potency) tuple. The cell holds the pathway list. So one cell such as
 'P-gp; BCRP inhibitor' in the TRNSP INH column is two facts, and the whole table
-is 337 non-empty cells expanding to 415 tuples over 65 classes.
+is 337 non-empty cells expanding to 419 tuples over 65 classes.
 
 WHY A REGEX PARSE IS DEFENSIBLE HERE, when it usually is not. Two reasons, and
 neither is "the HTML looked simple":
@@ -1137,7 +1137,7 @@ print('qualified tuples:', sum(1 for t in tuples if t.footnote_markers))
 "
 ```
 
-Expected: **415 tuples, 65 classes.** If either differs, stop and reconcile against spec §2.1 before continuing — the numbers are the design's evidence, and a silent divergence here is the failure this whole task exists to prevent.
+Expected: **419 tuples, 65 classes.** If either differs, stop and reconcile against spec §2.1 before continuing — the numbers are the design's evidence, and a silent divergence here is the failure this whole task exists to prevent.
 
 - [ ] **Step 6: Commit**
 

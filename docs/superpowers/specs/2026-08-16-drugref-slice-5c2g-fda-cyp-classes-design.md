@@ -49,8 +49,13 @@ list*:
 | 7–8 | `CYP SENS SUB` · `CYP Mod SENS SUB` | CYP sensitive / moderately sensitive substrate |
 | 9–10 | `TRNSP INH` · `TRNSP SUB` | transporter inhibitor / substrate — **no potency vocabulary** |
 
-**337 non-empty cells expand to 415 `(substance × pathway × role × potency)` tuples over 65 classes.** 244
+**337 non-empty cells expand to 419 `(substance × pathway × role × potency)` tuples over 65 classes.** 244
 distinct substances; `aprepitant` is the one substance on two rows, which is why 245 ≠ 244.
+
+> **419 corrects the 415 this section first carried, and §8 explains why the wrong number looked right.**
+> The design round's probe could not parse four tuples and *rejected* them; the round read those rejections
+> as the closed vocabulary working, and recorded the survivors as the total. The shipped parser handles all
+> four. **245, 337 and 65 were re-verified against the shipped parser and are unchanged.**
 
 FDA gives the bands quantitative definitions in tables 2–5 (a strong CYP inhibitor raises a sensitive
 substrate's AUC ≥ 5-fold; moderate 2 to < 5; weak 1.25 to < 2; inducers ≥ 80% / 50–80% / 20–50% decrease).
@@ -61,9 +66,15 @@ stores the class, not the pharmacokinetics.
 
 Every one of these was found by parsing the real bytes, and each has a test in §10:
 
-1. **Three list separators for one concept** — `;` (`P-gp; BCRP`), `and` (`3A and 2C19`), `,` (`1A2, 2B6`).
+1. **Three list separators for one concept** — `;` (`P-gp; BCRP`), `and` (`3A and 2C19`), `,` (`1A2, 2B6`)
+   — **and one cell mixes two of them**: rifampin's `1A2, 2B6; 2C8; 2C9 moderate inducer`, four pathways
+   from one cell, the only such cell in the 337. A parser that treats the separators as alternatives rather
+   than as a set silently reads it as fewer facts than it states.
 2. **Inconsistent pathway spelling** — bare `3A` beside `CYP3A`; `MATE2-K`; `P-gp` with a trailing noun in
-   `BCRP and P-gp transporters`.
+   `BCRP and P-gp transporters inhibitor` (Pirtobrutinib). **Quoted in full deliberately**: an earlier draft
+   of this line shortened it to `BCRP and P-gp transporters`, dropping the role word, and Task 4's test was
+   then written against the shortened form — where it failed, because a cell with no role phrase is one the
+   parser is *supposed* to reject. Same defect as §2.3's, twice in one document.
 3. **A coarser pathway that is not a typo** — `OATP1B` appears where other rows say `OATP1B1` / `OATP1B3`.
    §4.2 rules on it.
 4. **The legend's word is not always the cell's word** — `moderately sensitive substrate` against the
@@ -166,7 +177,14 @@ three of: a single resolved substance, an unqualified cell, and a pathway in the
 cell, the footnote markers and the footnote text verbatim, and it raises an `open_question` asking a curator
 to adjudicate.
 
-Measured cost: **29 of 337 cells (8.6%), over 22 substances.** The other 91.4% land clean.
+Measured cost, **re-measured with the shipped parser**: **31 of 337 cells (9.2%), over 24 substances** —
+38 tuples, since a qualified cell may state several pathways. The other 90.8% land clean.
+
+> **This corrects "29 cells over 22 substances", and in the direction that matters.** The design round's
+> probe detected a footnote only at the very end of a name or cell, so it missed the markers sitting
+> *mid-cell* — ciprofloxacin's `1A2 20`, rifampin's two `13`s. Those cells were counted as unqualified,
+> which is the unsafe direction: **the undercount was of cells drugref would have promoted to membership
+> while FDA had qualified them.** The shipped parser finds them.
 
 This is the answer to the question the spike left open, and the reason is §3: ingest cannot promote
 `bupropion → 2B6 sensitive substrate` to a membership without contradicting the footnote it would store
@@ -295,7 +313,17 @@ transporter:oatp1b3 13:inhibitor
 transporter:oatp1b1 inhibitor:inhibitor  ← teriflunomide, per-item role phrase eaten as a pathway
 ```
 
-**Two further integrity gates**, both cheap because the page states the same fact twice:
+**⇒ THE VOCABULARY IS A TRIPWIRE, NOT A FILTER, AND THE FIRST DRAFT OF THIS SECTION CONFUSED THE TWO.**
+It described those three cells as ones "a closed vocabulary must **reject**", and counted the round's own
+probe rejecting them as the gate working. That was backwards. **The four tokens are not bad data — they are
+four legitimate tuples the probe could not parse**, and the shipped parser reads all four correctly
+(ciprofloxacin → `1A2`, rifampin → `OATP1B1` + `OATP1B3`, teriflunomide → `OATP1B1`). That is the whole
+415-versus-419 gap in §2.1: the round recorded the survivors of its own mis-parse as the total.
+
+**So the correct statement of this gate is narrower and stronger.** The closed vocabulary does not discard
+anything on this release — **it rejects zero tokens, and that is the passing state.** Its job is to fire when
+the *grammar* is wrong, converting a silent mis-parse into a stopped ingest. A round that sees it reject
+something should suspect its own parser first and the data second, because that is the way this one broke.
 
 - **The column heading and the cell text restate the role and potency independently** (`CYP Mod INH` /
   `2D6 moderate inhibitor`). The parser cross-checks them and **fails on disagreement** rather than
@@ -325,8 +353,10 @@ whose cost is on record: the last hand-written fixture invented an `INN_ID`, a C
 every trap this design was derived from, because a fixture of clean rows would pass a parser with all four
 garbage classes in it:
 
-- the three cells a closed vocabulary must reject, carrying four bad tokens between them (ciprofloxacin,
-  rifampin — two tokens in one cell — and teriflunomide);
+- the three cells whose shape defeats a naive parser and which the shipped one must read *correctly*
+  (ciprofloxacin, rifampin — two pathways in one cell — and teriflunomide);
+- Pirtobrutinib's `BCRP and P-gp transporters inhibitor` and rifampin's `1A2, 2B6; 2C8; 2C9 moderate
+  inducer`, the trailing-noun and mixed-separator cells;
 - both negating-footnote rows (bupropion, rolapitant);
 - `ritonavir 14, 15,` and the cell-level and letter footnotes (conivaptan, cenobamate);
 - the combination regimens, the five non-drug entries, the enantiomers and `oral contraceptives`;
@@ -357,8 +387,8 @@ On a scratch database built from `drugref_db038` by the documented `CREATE DATAB
 
 **Two of those are predictions and one deliberately is not.** 65 and 224/244 were measured on the real bytes
 during this design and are stated as expectations a test may pin. **Memberships written is NOT predicted
-here**: 415 is the parsed-tuple count *before* withholding and before resolution, so the written figure is
-415 minus the tuples from 29 qualified cells and minus those from 20 unresolved substances — an arithmetic
+here**: 419 is the parsed-tuple count *before* withholding and before resolution, so the written figure is
+419 minus the 38 tuples from 31 qualified cells and minus those from 20 unresolved substances — an arithmetic
 this design has not performed, because the two exclusions overlap (grapefruit juice is both footnoted and
 unresolvable) and guessing at the overlap is how a figure that looks measured enters the record. **Measure
 it; do not derive it here.**
