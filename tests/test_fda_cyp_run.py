@@ -15,19 +15,24 @@ FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
 
 @pytest.fixture(autouse=True)
 def _registry(conn):
-    """Seed the ONE real moiety a disposition test needs resolved rather than
-    unresolved: bupropion, for test_a_qualified_cell_writes_NO_membership.
+    """Seed the real moieties a disposition test needs resolved rather than
+    unresolved: bupropion (test_a_qualified_cell_writes_NO_membership) and
+    cenobamate (test_a_marker_with_no_page_side_definition_does_not_abort_its_row).
 
     conftest.py's `_migrated` fixture applies SCHEMA ONLY -- no seed data -- so
-    on a fresh connection every substance name in the fixture, bupropion
-    included, resolves to nothing. Without a registered 'bupropion' moiety its
-    footnoted '2B6 sensitive substrate' cell would land unresolved_substance
-    rather than withheld_qualified, and the section-3 case the whole design is
-    built around (a footnote that NEGATES the row it sits on) would never
-    actually be exercised -- the test would pass for the wrong reason, on an
-    empty registry where nothing resolves regardless of the footnote logic.
+    on a fresh connection every substance name in the fixture resolves to
+    nothing. Without a registered 'bupropion' moiety its footnoted '2B6
+    sensitive substrate' cell would land unresolved_substance rather than
+    withheld_qualified, and the section-3 case the whole design is built
+    around (a footnote that NEGATES the row it sits on) would never actually
+    be exercised -- the test would pass for the wrong reason, on an empty
+    registry where nothing resolves regardless of the footnote logic. Without
+    a registered 'cenobamate' its CYP3A-inducer cell (markers '4' and the
+    undefined letter 'b') would land unresolved_substance too, and the test
+    that a marker with no page-side definition still leaves a withheld row
+    with real footnote text would be exercising the WRONG disposition path.
 
-    ONE NAME IS ENOUGH. Every other test here is resolution-shape-agnostic:
+    ONLY THESE TWO NAMES. Every other test here is resolution-shape-agnostic:
     S-mephenytoin must stay unresolved whatever else is registered (issue 128),
     and curcumin's own assertion never reads resolved_moiety_uuid, only
     disposition. Seeding more would be data nothing here reads.
@@ -43,11 +48,13 @@ def _registry(conn):
         "(source, upstream_release, source_checksum, writer) "
         "VALUES ('UNII', 'test', 'test', 'unii_run') RETURNING ingest_run_id"
     ).fetchone()[0]
-    moiety_uuid = ids.mint_moiety_uuid("TESTUNII_BUPROPION")
-    conn.execute(
-        "INSERT INTO drugref.substance_moiety "
-        "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
-        (moiety_uuid, "bupropion", seed_run))
+    for unii, name in (("TESTUNII_BUPROPION", "bupropion"),
+                       ("TESTUNII_CENOBAMATE", "cenobamate")):
+        moiety_uuid = ids.mint_moiety_uuid(unii)
+        conn.execute(
+            "INSERT INTO drugref.substance_moiety "
+            "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
+            (moiety_uuid, name, seed_run))
     conn.commit()
 
 
@@ -134,6 +141,31 @@ def test_every_withheld_row_carries_its_footnote_text(conn):
 
 
 @pytest.mark.usefixtures("conn")
+def test_a_marker_with_no_page_side_definition_does_not_abort_its_row(conn):
+    """cenobamate's CYP3A-inducer cell carries TWO markers: '4' (row-level, on
+    the substance name) and 'b' (cell-level, and per fda_cyp.parse_footnotes's
+    own docstring, never defined anywhere in FDA's Footnotes list -- design
+    section 2.3's lettered 'second namespace'). The row must still land
+    withheld with real footnote text, built from whichever of its markers ARE
+    on file ('4'), rather than the whole ingest aborting over the one that
+    is not, or the row silently losing its text because one lookup missed.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    row = conn.execute(
+        "SELECT disposition, footnote_markers, footnote_text "
+        "FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) LIKE 'cenobamate%' "
+        "  AND column_heading = 'CYP Mod IND' LIMIT 1").fetchone()
+    assert row is not None
+    disposition, footnote_markers, footnote_text = row
+    assert disposition == "withheld_qualified"
+    assert "b" in footnote_markers, "the cell-level lettered marker must still be recorded"
+    assert footnote_text is not None
+    assert "200 mg daily dose" in footnote_text, (
+        "footnote 4's text, the one marker on this row that IS on file")
+
+
+@pytest.mark.usefixtures("conn")
 def test_S_mephenytoin_is_unresolved_and_NOT_mapped_to_mephenytoin(conn):
     """Issue 128. S-mephenytoin is the reference CYP2C19 probe substrate, and it
     is the ENANTIOMER that makes it one. Mapping it to the racemate asserts a
@@ -214,16 +246,61 @@ def test_a_combination_regimen_is_never_exploded_into_its_components(conn):
 
 
 @pytest.mark.usefixtures("conn")
-def test_a_row_with_a_near_name_is_counted_as_unresolved(conn):
-    """registry_near_name is EVIDENCE, never coverage. This test exists because a
-    nullable text column beside an unresolved row is precisely the shape a later
-    reader will be tempted to count.
+def test_a_near_name_never_upgrades_a_rows_disposition(conn):
+    """registry_near_name is EVIDENCE, never coverage (design section 7.1).
+    Near-name DETECTION is deliberately NOT implemented in this slice -- it is
+    filed as issue 129 -- so ingest_fda_cyp never writes a non-NULL value into
+    the column at all, and the column ships NULL throughout.
+
+    THIS TEST CONSTRUCTS ITS OWN ROW rather than asking the ingest to produce
+    one, and that is the point, not a shortcut: the PREVIOUS version of this
+    test filtered `registry_near_name IS NOT NULL AND disposition = 'member'`,
+    which can never match while the ingest writes the column unconditionally
+    NULL -- a green test asserting the inverse of its own name, and this repo
+    has already lost a round to exactly that shape. Inserting a row that DOES
+    carry a near name -- something issue 129's future detector will do -- is
+    the only way to make the assertion able to fail: if a later change let a
+    near name silently promote a row's disposition or attach a moiety, this
+    would catch it; today, with no such logic anywhere, it passes because
+    nothing here reads the column at all.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
-    contradictions = conn.execute(
-        "SELECT count(*) FROM drugref.fda_cyp_assertion "
-        "WHERE registry_near_name IS NOT NULL AND disposition = 'member'").fetchone()[0]
-    assert contradictions == 0
+    run_id = conn.execute(
+        "SELECT ingest_run_id FROM drugref.ingest_run "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+    a_class_uuid = conn.execute(
+        "SELECT class_uuid FROM drugref.substance_class "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+
+    # row_ordinal 9999 cannot collide with a real row (the fixture's rows are
+    # numbered from 1); the rest is deliberately synthetic too -- this row
+    # asserts nothing about any real FDA substance, only about how the schema
+    # and gap view treat registry_near_name in isolation.
+    conn.execute(
+        "INSERT INTO drugref.fda_cyp_assertion "
+        "(ingest_run, source, row_ordinal, raw_substance, resolved_moiety_uuid, "
+        " column_heading, raw_cell, system, pathway, role, potency, class_uuid, "
+        " footnote_markers, footnote_text, registry_near_name, disposition) "
+        "VALUES (%s, 'FDA-CYP', 9999, 'testonly nearname substance', NULL, "
+        " 'CYP Strg INH', '3A strong inhibitor', 'CYP', '3A', 'inhibitor', "
+        " 'strong', %s, NULL, NULL, 'testonly registry candidate', "
+        " 'unresolved_substance')",
+        (run_id, a_class_uuid))
+
+    row = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE raw_substance = 'testonly nearname substance'").fetchone()
+    assert row == ("unresolved_substance", None), (
+        "a row carrying a near name must stay exactly as unresolved as one "
+        "without -- a near name is evidence, never a resolution")
+
+    on_worklist = conn.execute(
+        "SELECT registry_near_name FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE raw_substance = 'testonly nearname substance'").fetchone()
+    assert on_worklist is not None, (
+        "the row must still raise its question -- a near name must not "
+        "quietly remove a row from the unadjudicated worklist")
+    assert on_worklist[0] == "testonly registry candidate"
 
 
 @pytest.mark.usefixtures("conn")
@@ -269,14 +346,66 @@ def test_a_second_run_rebuilds_rather_than_duplicating(conn):
 def test_clearing_FDA_CYP_touches_no_other_sources_classes(conn):
     """Per-source rebuild safety, pinned rather than argued. class_membership has
     no source column of its own, so the clear is scoped through ingest_run.
+
+    A MED-RT class AND a MED-RT class_membership edge are seeded FIRST, and
+    that seed is what makes this test able to fail -- on a schema-only test
+    database that never loads any other source, 'before' and 'after' were
+    both 0 regardless of whether the clear was correctly scoped, so the
+    comparison held even if fda_cyp_run's clear touched every source's rows,
+    not only its own.
+
+    BOTH A CLASS AND A MEMBERSHIP, because they are not equally at risk.
+    substance_class rows are never DELETEd by anything in this codebase --
+    class_uuid is immortal and classes.upsert_class only ever INSERTs or
+    refreshes one (classes.py's own module docstring) -- so a substance_class
+    count alone cannot distinguish correct scoping from a scoping bug: it
+    would read the same either way. class_membership is what
+    classes.clear_source_edges actually DELETEs on every re-ingest, so it is
+    where a wrong source string would actually show up. Verified directly
+    (not merely argued): temporarily rewriting the clear call to scope on
+    'MED-RT' instead of 'FDA-CYP' left the substance_class assertion below
+    passing unchanged, while the class_membership assertion caught it --
+    the seeded edge dropped from 1 row to 0.
     """
-    before = conn.execute(
+    from tests.test_curated_overlay import _a_class
+
+    other_run = conn.execute(
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('MED-RT', 'test', 'test', 'medrt_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
+    other_class = _a_class(conn, other_run)
+    other_moiety = ids.mint_moiety_uuid("TESTUNII_OTHER_SOURCE_SCOPE")
+    conn.execute(
+        "INSERT INTO drugref.substance_moiety "
+        "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
+        (other_moiety, "scopetestdrug", other_run))
+    conn.execute(
+        "INSERT INTO drugref.class_membership "
+        "(moiety_uuid, class_uuid, relationship, ingest_run) "
+        "VALUES (%s, %s, 'has_MoA', %s)", (other_moiety, other_class, other_run))
+    conn.commit()
+
+    before_classes = conn.execute(
         "SELECT count(*) FROM drugref.substance_class WHERE source <> 'FDA-CYP'").fetchone()[0]
+    before_membership = conn.execute(
+        "SELECT count(*) FROM drugref.class_membership "
+        "WHERE class_uuid = %s", (other_class,)).fetchone()[0]
+    assert (before_classes, before_membership) == (1, 1), (
+        "the seed above must be the only non-FDA-CYP class/membership present")
+
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
-    after = conn.execute(
+
+    after_classes = conn.execute(
         "SELECT count(*) FROM drugref.substance_class WHERE source <> 'FDA-CYP'").fetchone()[0]
-    assert before == after
+    after_membership = conn.execute(
+        "SELECT count(*) FROM drugref.class_membership "
+        "WHERE class_uuid = %s", (other_class,)).fetchone()[0]
+    assert before_classes == after_classes
+    assert after_membership == 1, (
+        "the MED-RT membership edge must survive two FDA-CYP re-ingests "
+        "untouched -- this is the assertion a scoping regression actually breaks")
 
 
 @pytest.mark.usefixtures("conn")

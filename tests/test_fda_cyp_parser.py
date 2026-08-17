@@ -286,3 +286,55 @@ def test_a_page_without_a_modified_date_FAILS_and_names_the_field():
 def test_the_real_page_reports_the_expected_release():
     page = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
     assert fda_cyp.parse_release(page) == "2026-05-29T14:00"
+
+
+def test_the_bupropion_footnote_is_read_verbatim_from_the_page(fixture_html):
+    """Marker 2 is the footnote the whole withholding design in section 3 rests
+    on: bupropion's row asserts '2B6 sensitive substrate' while this text says
+    the opposite. Reading it wrong -- or not reading it at all -- would make
+    the withholding decision look justified by a test while carrying nothing
+    to back it up in the database.
+    """
+    footnotes = fda_cyp.parse_footnotes(fixture_html)
+    assert footnotes["2"] == (
+        "Bupropion itself is not a sensitive substrate. It is metabolized by "
+        "multiple enzymes including CYP2B6 that is only responsible for the "
+        "formation of hydroxybupropion, an active metabolite. Thus, the "
+        "considerations of drug interactions with CYP2B6 modulators should "
+        "take into account plasma concentration changes of both buproprion "
+        "and hydroxybupropion.")
+
+
+def test_a_marker_with_no_page_side_definition_is_simply_absent(fixture_html):
+    """cenobamate's cell carries a bare letter marker, 'b' (section 2.3, 'a
+    second namespace'), and FDA's own Footnotes list never defines a letter at
+    all -- verified against the real page, not assumed. parse_footnotes must
+    not raise over this: an undefined marker is a page oddity to record
+    evidence about, not a reason to abort reading every OTHER, well-defined
+    footnote on the page.
+    """
+    footnotes = fda_cyp.parse_footnotes(fixture_html)
+    assert "b" not in footnotes
+    assert len(footnotes) == 21, "the 21 numbered footnotes must still all be read"
+
+
+def test_a_missing_footnotes_section_raises():
+    """Unlike a single undefined MARKER, the whole SECTION going missing is a
+    structural change to the page (FDA renaming or removing "Footnotes"), not
+    a data variation -- so this raises, matching extract_rows on a missing
+    table and parse_release on a missing dateModified stamp.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="Footnotes"):
+        fda_cyp.parse_footnotes("<table><tr><td>x</td></tr></table>")
+
+
+@pytest.mark.skipif(
+    not pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").exists(),
+    reason="live page not downloaded")
+def test_the_real_page_and_the_fixture_agree_on_every_footnote(fixture_html):
+    """The fixture's appended Footnotes block is a verbatim excerpt of the real
+    page (never hand-written, per the fixture rule at the top of this file),
+    so parsing both must produce byte-identical text for all 21 markers.
+    """
+    real = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
+    assert fda_cyp.parse_footnotes(real) == fda_cyp.parse_footnotes(fixture_html)

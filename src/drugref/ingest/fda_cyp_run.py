@@ -78,105 +78,37 @@ _COMBINATION_WORD = re.compile(r"\band\b", re.I)
 log = logging.getLogger(__name__)
 
 
-# FDA'S OWN FOOTNOTE PROSE, quoted verbatim from the same live page whose
-# SHA-256 the design spec verified (design section 2). This is hardcoded for the
-# same reason NON_DRUG_ENTITIES above is: the footnotes live in a page section
-# ("<h2>Footnotes</h2>", a flat <p><sup>N</sup>text</p> list) that sits OUTSIDE
-# table 1, so fda_cyp.py's parser -- which the fixture policy (spec section 10)
-# deliberately keeps to "the data table, verbatim" -- never sees it and has no
-# reason to. Quoting it here, once, keyed by FDA's own marker, is the same
-# treatment as the non-drug sentence: a fact this slice needs that can only come
-# from FDA's prose, not from the matrix.
-#
-# Twenty-one markers, 1-21, matching every marker the real page's 419 tuples
-# carry (measured directly against the shipped parser). Marker 'b' -- cenobamate's
-# lone lettered marker (design section 2.3, "a second namespace") -- has NO
-# entry here on purpose: the live page's own Footnotes list runs 1-21 and never
-# defines a letter. That is not a gap this ingest can fill without inventing
-# text FDA never wrote, so `_footnote_text` below simply skips an unknown
-# marker rather than raising -- and it is safe to skip, because 'b' never
-# appears alone: it is always paired with cenobamate's numbered marker '4' on
-# the same row (verified against the real page), so the row's footnote_text is
-# never empty.
-FOOTNOTE_TEXT: dict[str, str] = {
-    "1": "These drugs are active moieties of their corresponding pro-drugs, "
-         "adefovir dipivoxil, oseltamivir, tenofovir alafenamide fumarate (TAF), "
-         "and tenofovir disoproxil fumarate (TDF). Those pro-drugs are "
-         "substrates of P-gp.",
-    "2": "Bupropion itself is not a sensitive substrate. It is metabolized by "
-         "multiple enzymes including CYP2B6 that is only responsible for the "
-         "formation of hydroxybupropion, an active metabolite. Thus, the "
-         "considerations of drug interactions with CYP2B6 modulators should "
-         "take into account plasma concentration changes of both buproprion "
-         "and hydroxybupropion.",
-    "3": "Listed based on pharmacogenetic studies.",
-    "4": "The classification is based on 200 mg daily dose. The effect "
-         "potentially could be stronger at 400 mg/day.",
-    "5": "The classification is based on studies conducted with intravenously "
-         "administered conivaptan.",
-    "6": "Usually administered to patients in combination with ritonavir, a "
-         "strong CYP3A inhibitor.",
-    "7": "Diltiazem increased AUC of certain sensitive CYP3A substrates (e.g., "
-         "buspirone) more than 5-fold.",
-    "8": "Fluvoxamine increased the AUC of certain sensitive CYP3A substrates "
-         "more than 2-fold (e.g., increased the AUC of buspirone 2.35-fold)",
-    "9": "The effect of grapefruit juice varies widely among brands and is "
-         "concentration-, dose-, and preparation-dependent. Studies have shown "
-         "that it can be classified as a “strong CYP3A inhibitor” "
-         "when a certain preparation was used (e.g., high dose, double "
-         "strength) or more commonly as a “moderate CYP3A inhibitor” "
-         "when another preparation was used (e.g., low dose, single strength).",
-    "10": "Based on PBPK simulation",
-    "11": "S-lansoprazole is a sensitive substrate in CYP2C19 extensive "
-          "metabolizer subjects.",
-    "12": "Based on effect of 200 mg/day modafinil. A higher dosage (400 "
-          "mg/day) modafinil had larger induction effect on CYP3A.",
-    "13": "Single dose",
-    "14": "Ritonavir is approved for use in combination with other anti-HIV or "
-          "anti-HCV drugs. Caution should be used when extrapolating the "
-          "observed effect of ritonavir alone to the effect of anti-HIV or "
-          "anti-HCV combination regimens on CYP3A activities.",
-    "15": "Moderate inducer of CYP1A2 with dosage of 800 mg/day ritonavir (not "
-          "with other anti-HIV drugs). Effect on CYP1A2 at lower dosages of "
-          "ritonavir is unknown.",
-    "16": "Weak inducer of CYP2B6, CYP2C9, and CYP2C19. Classification is "
-          "based on studies conducted with ritonavir itself (not with other "
-          "anti-HIV drugs) at dosages of 100-200 mg/day, although larger "
-          "effects have been reported in literature for high dosages of "
-          "ritonavir.",
-    "17": "Intravenously administered rolapitant does not inhibit BCRP and "
-          "P-gp.",
-    "18": "The effect of St. John’s wort varies widely and is preparation "
-          "dependent.",
-    "19": "S-warfarin",
-    "20": "Ciprofloxacin is generally classified a moderate CYP 1A2 inhibitor "
-          "based on totality of evidence; however, it can sometimes behave "
-          "like a strong inhibitor (i.e., increase AUC more than 5-fold) when "
-          "it interacts with certain CYP 1A2 substrates that are considered "
-          "highly sensitive (e.g., tizanidine).",
-    "21": "Selexipag is a prodrug. it is the selexipag active metabolite "
-          "ACT-333679 that is a sensitive substrate of CYP2C8. Selexipag and "
-          "ACT-333679 are also substrates of OATP1B transporter",
-}
-
-
-def _footnote_text(markers: str | None) -> str | None:
+def _footnote_text(markers: str | None,
+                   footnote_by_marker: dict[str, str]) -> str | None:
     """FDA's own prose for a tuple's footnote_markers ('14, 15, 16' -> joined text).
+
+    `footnote_by_marker` is fda_cyp.parse_footnotes's return value for THIS
+    page -- read structurally on every ingest, never hardcoded here. An
+    earlier round of this module kept a hand-copied dict of FDA's footnote
+    text instead, quoted verbatim from a checksum-verified fetch; review
+    caught what that copy could not detect: checksum() and parse_release()
+    exist specifically to make a SOURCE CHANGE loud, and a copy pasted into
+    Python escapes both of them. If FDA reworded footnote 2 tomorrow, the
+    checksum would change and the ingest would still run green, silently
+    writing the OLD wording into footnote_text -- the one column whose entire
+    job is to carry FDA's current words. Reading it fresh from the page every
+    time is what keeps that column and the checksum answering the same
+    question.
 
     Returns None only when `markers` itself is None -- an unqualified cell has
     nothing to explain. For a qualified cell this looks up EVERY marker in the
-    comma-separated list and joins whatever text is on file, silently skipping a
-    marker with no known definition (see FOOTNOTE_TEXT's docstring on marker
-    'b') rather than raising: an undefined marker is a page oddity to record
-    evidence about, not a reason to abort an otherwise-good row. It can only
-    return None for a qualified cell if NONE of its markers are on file, which
-    has not happened on any release measured so far.
+    comma-separated list and joins whatever text is on file, silently skipping
+    a marker with no known definition (see parse_footnotes's own docstring on
+    the lettered marker 'b') rather than raising: an undefined marker is a
+    page oddity to record evidence about, not a reason to abort an otherwise-
+    good row. It can only return None for a qualified cell if NONE of its
+    markers are on file, which has not happened on any release measured so far.
     """
     if markers is None:
         return None
-    found = [FOOTNOTE_TEXT[marker] for marker in
+    found = [footnote_by_marker[marker] for marker in
              (part.strip() for part in markers.split(","))
-             if marker in FOOTNOTE_TEXT]
+             if marker in footnote_by_marker]
     return " / ".join(found) if found else None
 
 
@@ -313,10 +245,14 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     changed the content.
     """
     # 1. PARSE FIRST, before any run row exists, so a crash here -- an unknown
-    #    pathway token, a ragged row, a missing dateModified -- leaves no trace
-    #    to explain (gsrs_run's ordering, restated here for the same reason).
+    #    pathway token, a ragged row, a missing dateModified, a missing
+    #    Footnotes section -- leaves no trace to explain (gsrs_run's ordering,
+    #    restated here for the same reason). parse_footnotes reads the page's
+    #    OWN current wording every call, never a cached copy -- see its
+    #    docstring and _footnote_text's for why that is the whole point.
     page = pathlib.Path(page_path).read_text(encoding="utf-8")
     tuples = fda_cyp.parse_table(page)
+    footnote_by_marker = fda_cyp.parse_footnotes(page)
     if upstream_release is None:
         upstream_release = fda_cyp.parse_release(page)
     source_checksum = checksum(page_path)
@@ -401,7 +337,8 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (run_id, SOURCE, t.row_ordinal, t.raw_substance, resolved_moiety,
              t.column_heading, t.raw_cell, t.system, t.pathway, t.role, t.potency,
-             class_uuid, t.footnote_markers, _footnote_text(t.footnote_markers),
+             class_uuid, t.footnote_markers,
+             _footnote_text(t.footnote_markers, footnote_by_marker),
              None, disposition))
 
         if disposition == "member":

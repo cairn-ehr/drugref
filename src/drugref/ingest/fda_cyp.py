@@ -419,3 +419,60 @@ def parse_release(page: str) -> str:
         "og:updated_time stamp, so its release identity is unknown. Fetch time is "
         "NOT a substitute: it records when drugref looked, not when FDA changed "
         "the content. Decide deliberately before ingesting this page.")
+
+
+# FDA's footnote prose sits in its own page section, OUTSIDE table 1 --
+# "<h2>Footnotes</h2>" followed by a flat list of "<p><sup>MARKER</sup>text</p>"
+# paragraphs, one per footnote. Markers run 1-21 today, plus a lettered 'b'
+# that appears mid-cell (cenobamate's "CYP3A moderate inducer b") but is NEVER
+# defined here -- design section 2.3 calls this "a second namespace", and the
+# live page's own Footnotes list has no entry for a letter at all. That is a
+# page oddity to preserve evidence about, not a defect to paper over: see
+# parse_footnotes's own docstring on why an undefined marker does not abort.
+_FOOTNOTES_HEADING = re.compile(r"<h2>\s*Footnotes\s*</h2>", re.I)
+_FOOTNOTE_ITEM = re.compile(r"<p>\s*<sup>(\w+)</sup>(.*?)</p>", re.S)
+
+
+def parse_footnotes(page: str) -> dict[str, str]:
+    """FDA's own footnote prose, keyed by marker ('2' -> "Bupropion itself...").
+
+    WHY THIS IS STRUCTURAL, NOT HARDCODED. An earlier round of this slice kept
+    a hand-copied dict of FDA's footnote text inside the orchestrator, quoted
+    verbatim from a checksum-verified fetch. Review caught the defect that
+    copy had and this function does not: checksum() and parse_release() exist
+    to make a SOURCE CHANGE loud -- if FDA reworded footnote 2 tomorrow, both
+    would change and the ingest would still run green, silently writing the
+    OLD wording into footnote_text, the one column whose entire job is to
+    carry FDA's current words. Reading the page's own Footnotes block on every
+    ingest is what keeps footnote_text and the checksum answering the same
+    question: what does the page say RIGHT NOW.
+
+    THE SECTION ITSELF MUST EXIST -- absence RAISES, matching parse_release's
+    own posture (and extract_rows's, on a missing table, for the identical
+    reason). FDA removing or renaming "Footnotes" entirely is a structural
+    change this parser must not absorb silently.
+
+    A SINGLE MARKER missing its own definition is different, and is NOT an
+    error: FDA's page carries a bare lettered marker ('b', cenobamate) that its
+    own Footnotes list never defines at all (design section 2.3's "second
+    namespace"). That is evidence to preserve about the page, not a reason to
+    abort an otherwise-good row -- so an undefined marker simply has no entry
+    in the returned dict, and the caller (fda_cyp_run) decides what an absent
+    lookup means for a given row rather than this function deciding for it.
+    """
+    heading = _FOOTNOTES_HEADING.search(page)
+    if not heading:
+        raise FdaCypParseError(
+            "the page carries no '<h2>Footnotes</h2>' heading, so no footnote "
+            "prose can be read at all. That is a structural change to the "
+            "page, not a missing footnote -- decide deliberately before "
+            "ingesting it.")
+    # Bounded to the next heading (or end of page), so a coincidental
+    # '<p><sup>...' elsewhere on the page can never be mistaken for a footnote
+    # -- the same reason extract_rows is bounded to table[DATA_TABLE_INDEX]
+    # rather than searching the whole document.
+    tail = page[heading.end():]
+    next_heading = re.search(r"<h[12]\b", tail, re.I)
+    end = len(tail) if next_heading is None else next_heading.start()
+    segment = tail[:end]
+    return {marker: _clean(body) for marker, body in _FOOTNOTE_ITEM.findall(segment)}
