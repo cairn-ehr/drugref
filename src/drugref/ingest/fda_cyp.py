@@ -80,6 +80,38 @@ def _clean(fragment: str) -> str:
     return _SPACE.sub(" ", html.unescape(_TAG.sub(" ", fragment))).strip()
 
 
+# A footnote marker is a whitespace-separated BARE INTEGER or SINGLE LOWER-CASE
+# LETTER, optionally repeated and comma-separated, at the very end of the text.
+#
+# THE PRECISION IS THE POINT, in both directions:
+#  * too loose eats real name characters -- 'peginterferon alpha-2a' ends in '2a'
+#    and 'MATE2-K substrate' contains '2-K', neither of which is a marker;
+#  * too tight misses 'ritonavir 14, 15,' -- markers can be a comma-separated
+#    list WITH A TRAILING COMMA, and missing it drops ritonavir from the ingest
+#    silently while the run reports success.
+_FOOTNOTE_TAIL = re.compile(r"((?:\s+(?:\d+|[a-z])\s*,?)+)\s*$")
+_MARKER = re.compile(r"\d+|[a-z]")
+
+
+def split_footnotes(text: str) -> tuple[str, str | None]:
+    """Split trailing footnote markers off a substance name or cell body.
+
+    Returns (text_without_markers, "14, 15") or (text, None).
+
+    Markers appear in THREE positions on this page and this handles the trailing
+    one; a marker attached to an individual pathway MID-cell (ciprofloxacin's
+    '1A2 20 ; 3A moderate inhibitor') is handled by the cell parser, which calls
+    this per list item.
+    """
+    match = _FOOTNOTE_TAIL.search(text)
+    if not match:
+        return text, None
+    markers = _MARKER.findall(match.group(1))
+    if not markers:
+        return text, None
+    return text[:match.start()].strip(), ", ".join(markers)
+
+
 def extract_rows(page: str) -> list[list[str]]:
     """The data table's 245 rows, each of 11 cleaned cells. Header excluded.
 

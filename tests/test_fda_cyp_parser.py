@@ -53,3 +53,56 @@ def test_the_ten_role_columns_are_pinned_to_their_meanings():
     assert fda_cyp.ROLE_COLUMNS[9] == ("transporter", "inhibitor", None)
     assert fda_cyp.ROLE_COLUMNS[10] == ("transporter", "substrate", None)
     assert len(fda_cyp.ROLE_COLUMNS) == 10
+
+
+def test_a_single_trailing_footnote_is_split_off():
+    assert fda_cyp.split_footnotes("adefovir 1") == ("adefovir", "1")
+
+
+def test_a_COMMA_SEPARATED_footnote_list_is_split_off():
+    """THE LOAD-BEARING CASE. FDA prints 'ritonavir 14, 15, 16' -- three markers,
+    comma-separated.
+
+    A stripper that handles 'adefovir 1' but not this leaves the substance named
+    with its markers attached, which resolves to nothing -- so one of the most
+    important CYP3A inhibitors in medicine drops out of the ingest SILENTLY and
+    the run still reports success.
+
+    THE DESIGN ROUND FIRST WROTE THIS STRING DOWN AS 'ritonavir 14, 15,' -- a
+    string that appears nowhere on FDA's page. It was its own probe stripper's
+    output: the regex ate the trailing ' 16' and left the comma, and the result
+    was recorded as a measurement of the source. A partially-working parser hands
+    you a plausible string, and a plausible string gets quoted.
+    """
+    assert fda_cyp.split_footnotes("ritonavir 14, 15, 16") == ("ritonavir", "14, 15, 16")
+    # And the trailing-comma form the probe produced must ALSO split cleanly, so a
+    # re-fetch that really does end in a comma is not a new bug.
+    assert fda_cyp.split_footnotes("ritonavir 14, 15,") == ("ritonavir", "14, 15")
+
+
+def test_a_LETTER_marker_is_a_second_namespace():
+    """Footnotes are numbered AND lettered: cenobamate's cell ends 'inducer b'."""
+    assert fda_cyp.split_footnotes("CYP3A moderate inducer b") == ("CYP3A moderate inducer", "b")
+
+
+def test_an_unfootnoted_name_is_returned_unchanged_with_no_markers():
+    assert fda_cyp.split_footnotes("abiraterone") == ("abiraterone", None)
+
+
+def test_a_number_that_is_part_of_the_name_is_not_eaten():
+    """The stripper must not treat a pathway digit as a footnote.
+
+    'peginterferon alpha-2a' and 'MATE2-K' both end in alphanumerics that are
+    NAME, not marker. The rule is a marker is a whitespace-separated bare integer
+    or single lower-case letter -- '2a' and '2-K' are neither.
+    """
+    assert fda_cyp.split_footnotes("peginterferon alpha-2a") == ("peginterferon alpha-2a", None)
+    assert fda_cyp.split_footnotes("MATE2-K substrate") == ("MATE2-K substrate", None)
+
+
+def test_the_fixture_yields_ritonavir_not_ritonavir_14_15(fixture_html):
+    """End to end over the real bytes: the substance is named 'ritonavir'."""
+    rows = fda_cyp.extract_rows(fixture_html)
+    names = {fda_cyp.split_footnotes(row[0])[0] for row in rows}
+    assert "ritonavir" in names
+    assert not any(name.startswith("ritonavir 14") for name in names)
