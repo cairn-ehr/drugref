@@ -61,6 +61,24 @@
     }
   }
 
+  async function retryUnavailable() {
+    if (!currentUser) {
+      await checkStartup();
+      return;
+    }
+    authError = "";
+    loading = true;
+    try {
+      await refreshQueue(1);
+      activeView = "queue";
+      screen = "workspace";
+    } catch (error) {
+      authError = `The review workspace still could not load: ${String(error)}`;
+    } finally {
+      loading = false;
+    }
+  }
+
   async function submitLogin(event: SubmitEvent) {
     event.preventDefault();
     authError = "";
@@ -183,8 +201,8 @@
         {#if screen === "checking"}
           <p class="eyebrow eyebrow--ink">Starting Drugref Reviewer</p><h2>Checking account setup…</h2><p class="login-intro">The review workspace stays closed until the service confirms that an administrator exists.</p>
         {:else if screen === "unavailable"}
-          <p class="eyebrow eyebrow--ink">Service unavailable</p><h2>Reviewer access could not be checked</h2><p class="login-intro">No workspace data has been loaded. Start the reviewer service and confirm migration 044 is applied.</p>
-          <p class="form-error" role="alert">{authError}</p><button class="primary-button" type="button" onclick={checkStartup}>Try again<span aria-hidden="true">→</span></button>
+          <p class="eyebrow eyebrow--ink">Service unavailable</p><h2>{currentUser ? "Review workspace could not be loaded" : "Reviewer access could not be checked"}</h2><p class="login-intro">No workspace data has been loaded. Start or restart the reviewer service and confirm the current migrations are applied.</p>
+          <p class="form-error" role="alert">{authError}</p><button class="primary-button" type="button" disabled={loading} onclick={retryUnavailable}>{loading ? "Trying again…" : "Try again"}<span aria-hidden="true">→</span></button>
         {:else if screen === "bootstrap"}
           <p class="eyebrow eyebrow--ink">First-run registration</p><h2 id="bootstrap-title">Create the first administrator</h2><p class="login-intro">No active administrator is registered. This account must be created before Drugref Reviewer can finish starting.</p>
           <form class="bootstrap-form" onsubmit={submitBootstrap} aria-labelledby="bootstrap-title">

@@ -7,6 +7,10 @@ Apply `db/044_reviewer_accounts.sql` through `drugref migrate`, then run:
 DATABASE_URL='postgresql://postgres@localhost:5532/drugref_db044' cargo run
 ```
 
+Use a dedicated persistent database for the GUI service. **Do not point it at
+`drugref_test`**: the PostgreSQL-backed pytest suite recreates that schema and will
+erase reviewer accounts and sessions stored there.
+
 The service binds to `127.0.0.1:8787` by default. Set `DRUGREF_REVIEW_BIND` when it is
 placed behind the production HTTPS reverse proxy. The desktop application reads
 `DRUGREF_REVIEW_SERVICE_URL`; release builds require an `https://` URL, while debug

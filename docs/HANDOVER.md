@@ -41,7 +41,7 @@ enrolment UI over `db/044`. Do not enable a clinical decision or signing button 
 **Verification completed:** full Python/PostgreSQL suite 1,779 passed; domain 6; service 5 plus the populated-
 database live-queue integration; Tauri 1; `ruff`; Rust formatting; `npm run check` with 0 diagnostics; production
 frontend build; `npm audit` with 0 vulnerabilities; native no-bundle build. Frontend output is 0.63 kB HTML +
-17.97 kB CSS + 71.50 kB JS (25.66 kB gzipped). Two real reference-database queue reads took 11.42 s total,
+17.97 kB CSS + 71.85 kB JS (25.73 kB gzipped). Two real reference-database queue reads took 11.42 s total,
 including the known expensive interaction-gap view. No browser surface was available, so desktop/narrow visual
 verification remains outstanding.
 
@@ -70,6 +70,7 @@ vocabulary-widening round.
 
 ## Current DSN
 
-- Dev DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB tests.
+- Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
+  tests; never use this database for persistent reviewer accounts or GUI service data because pytest recreates it.
 - The verification database and its exact migration state live once in PROJECT-NOTES § "How to run / test";
   do not copy that volatile map here.

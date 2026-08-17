@@ -3096,7 +3096,13 @@ than one authority may assert the same candidate. No queue table, cache or migra
 **The GUI no longer invents state the database does not have.** The fixture-only `in_review`, signature and priority fields
 are gone. A gap is **Unreviewed**, not **Unsigned**, because no curated row exists to sign. Search is debounced; filter changes
 reset to page one; overlapping responses are sequenced so an old response cannot replace a newer one; an inline failure keeps
-the last successful page visible. All decision, annotation and signing controls remain disabled.
+the last successful page visible. A failure immediately after authentication retains the native session and **Try again**
+retries the workspace directly rather than sending the reviewer back through startup. All decision, annotation and signing
+controls remain disabled.
+
+**`drugref_test` is destructive test infrastructure, not a GUI database.** The PostgreSQL-backed pytest suite recreates its
+schema and therefore removes reviewer accounts, credentials and sessions stored there. Run `reviewer-service` against a
+separate migrated database with the desired queue content; the local persistent GUI database is `drugref_reviewer_dev`.
 
 **Verification:** full PostgreSQL-backed Python suite **1,779 passed**; domain **6 passed**; service **5 passed + 1 populated-
 database integration passed explicitly**; Tauri **1 passed**; `ruff`; Rust formatting; `npm run check` with 0 diagnostics;
