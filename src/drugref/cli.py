@@ -58,12 +58,13 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_curate, cli_interactions, cli_policy, cli_signing, cli_status,
-                     curation, db, interactions, migration_guard, signatures)
-from drugref.cli_chain import (ChainError, IngestStep, check_fda_cyp_release,
-                               check_release_agreement, resolve_inputs, selected_steps)
-from drugref.ingest import (chebi, fda_cyp, fda_cyp_run, gsrs_run, medrt_run,
-                            mesh_rel_run, mesh_run, onchigh_run, pbs_run, run)
+from drugref import (cli_curate, cli_fda_cyp, cli_interactions, cli_policy,
+                     cli_signing, cli_status, curation, db, interactions,
+                     migration_guard, signatures)
+from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
+                               resolve_inputs, selected_steps)
+from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
+                            onchigh_run, pbs_run, run)
 
 # The closed seed files ship INSIDE the package (they are drugref's own curated
 # data, not a download), so they are defaults rather than required arguments.
@@ -359,20 +360,6 @@ def _handle_ingest(conn, args) -> int:
     return 0
 
 
-def _handle_fda_cyp(conn, args) -> int:
-    """`drugref ingest fda-cyp --page <path> [--release <upstream_release>]`.
-
-    Hand-built, not a STEPS entry: --release is optional because the page states its own
-    (fda_cyp.parse_release); refused by cli_chain.check_fda_cyp_release if it disagrees.
-    """
-    if args.release is not None:
-        page_text = args.page.read_text(encoding="utf-8")
-        check_fda_cyp_release(args.page, args.release, fda_cyp.parse_release(page_text))
-    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=args.page)
-    print(f"fda-cyp: {summary}")
-    return 0
-
-
 class _Parser(argparse.ArgumentParser):
     """The whole surface, plus the one cross-argument rule argparse cannot state.
 
@@ -438,14 +425,7 @@ def build_parser() -> argparse.ArgumentParser:
                                  help=f"path to the {name} file (chain glob: {glob})")
         sub.set_defaults(handler=_handle_ingest, step=step)
 
-    fda_cyp_parser = sources.add_parser(
-        "fda-cyp", help="ingest FDA's CYP/transporter examples table")
-    fda_cyp_parser.add_argument("--page", required=True, type=pathlib.Path,
-                                help="path to the downloaded FDA CYP/transporter page")
-    fda_cyp_parser.add_argument("--release", default=None,
-                                help="upstream release tag; if given, must match "
-                                     "the page's own stamp (default: read from page)")
-    fda_cyp_parser.set_defaults(handler=_handle_fda_cyp)
+    cli_fda_cyp.add_parser(sources)
 
     chain = sources.add_parser(
         "chain", help="run several feeds in dependency order from one directory")

@@ -451,3 +451,90 @@ def test_the_real_page_and_the_fixture_agree_on_every_footnote(fixture_html):
     """
     real = pathlib.Path("downloads/FDA/fda_cyp_2026-05-29.html").read_text(encoding="utf-8")
     assert fda_cyp.parse_footnotes(real) == fda_cyp.parse_footnotes(fixture_html)
+
+
+# ---------------------------------------------------------------------------
+# The gates the module's docstring claimed but did not implement (review 5c.2g).
+# ---------------------------------------------------------------------------
+
+def test_a_page_with_no_data_table_raises_the_documented_error():
+    """parse_table's contract is "every failure is an FdaCypParseError".
+
+    _column_headings indexed tables[DATA_TABLE_INDEX] and _ROW.findall(...)[0]
+    unguarded, and parse_table calls it BEFORE extract_rows -- so extract_rows'
+    own "page carries 0 table(s)" guard was unreachable through the only
+    caller, and an operator who pointed --page at the wrong file (or at a fetch
+    that captured a JS shell or an error page) got a bare IndexError naming a
+    list, not the page.
+    """
+    with pytest.raises(fda_cyp.FdaCypParseError, match="table"):
+        fda_cyp.parse_table("<html>no table here</html>")
+
+
+def test_a_data_table_with_no_rows_raises_the_documented_error():
+    with pytest.raises(fda_cyp.FdaCypParseError, match="rows"):
+        fda_cyp.parse_table("<table></table>")
+
+
+def test_a_footnotes_section_that_yields_no_items_raises(fixture_html):
+    """The SECTION being present is not the same as it being READABLE.
+
+    _FOOTNOTE_ITEM requires a bare '<p><sup>' -- so a CMS theme change that
+    adds a class attribute leaves the '<h2>Footnotes</h2>' heading in place
+    (no raise) while every item stops matching. parse_footnotes then returns
+    {}, _footnote_text finds nothing for all 33 withheld rows, and every
+    withheld question reads "FDA's note: (not captured)" with the run
+    reporting success. An empty Footnotes section is the same class of
+    structural change as a missing one, and must be as loud.
+    """
+    mangled = fixture_html.replace("<p><sup>", '<p class="footnote"><sup>')
+    with pytest.raises(fda_cyp.FdaCypParseError, match="no footnote"):
+        fda_cyp.parse_footnotes(mangled)
+
+
+def test_disagreeing_modification_stamps_raise_rather_than_taking_the_first():
+    """The page states its release THREE times; parse_release returned on the
+    first readable one without ever comparing them.
+
+    A CMS that updates og:updated_time but not the JSON-LD dateModified writes
+    a WRONG upstream_release into ingest_run -- history the module's own
+    docstring calls uncorrectable, and the value every staleness check reads.
+    check_fda_cyp_release already refuses when the OPERATOR disagrees with the
+    page; the page disagreeing with ITSELF was unguarded.
+    """
+    page = ('<script>{"dateModified": "Fri, 05/29/2026 - 14:00"}</script>'
+            '<meta property="og:updated_time" content="Fri, 01/01/1999 - 14:00" />')
+    with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
+        fda_cyp.parse_release(page)
+
+
+def test_agreeing_duplicate_stamps_are_not_a_disagreement():
+    """The real page carries all three spellings with the SAME value -- that is
+    the normal case and must stay silent."""
+    page = ('<script>{"dateModified": "Fri, 05/29/2026 - 14:00"}</script>'
+            '<meta property="og:updated_time" content="Fri, 05/29/2026 - 14:00" />')
+    assert fda_cyp.parse_release(page) == "2026-05-29T14:00"
+
+
+def test_a_marker_repeated_at_both_scopes_is_carried_once():
+    """A cell-level marker qualifies every item, so an item that ALSO states it
+    yielded '5, 5' -- and _footnote_text then joined FDA's same prose into
+    footnote_text twice.
+    """
+    pairs = fda_cyp.parse_cell("3A 5 moderate inhibitor 5", 2, "CYP Mod INH")
+    assert pairs == [("3A", "5")]
+
+
+def test_a_comma_separated_marker_list_stays_with_its_mid_cell_pathway():
+    """_SEPARATOR splits on ',' -- the same character a marker LIST uses -- and
+    it runs before split_footnotes sees the item.
+
+    Both ingredients are already on the page independently: a comma-separated
+    list glued to a name ('ritonavir 14, 15, 16') and a mid-cell single marker
+    (ciprofloxacin's '1A2 20'). Their combination made the second marker its
+    own list item, which then aborted the release blaming the PATHWAY
+    VOCABULARY -- telling the operator to widen PATHWAYS, which would be the
+    wrong fix, for a footnote-parsing problem.
+    """
+    pairs = fda_cyp.parse_cell("1A2 20, 21; 3A moderate inhibitor", 2, "CYP Mod INH")
+    assert pairs == [("1A2", "20, 21"), ("3A", None)]

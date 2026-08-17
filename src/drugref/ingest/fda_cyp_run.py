@@ -47,7 +47,11 @@ RELATIONSHIP = "has_PK"
 
 # The projection this source owns, cleared per-source on every re-ingest. Named
 # as a tuple (rather than a bare string) to match db.clear_source_tables's
-# signature and the sibling constants in classes.py and gsrs_run.py.
+# signature and the sibling constants in classes.py (CLASS_EDGE_TABLES,
+# UNMATCHED_INGREDIENT_TABLES) and onchigh_run.py (UNRESOLVED_ENDPOINT_TABLES)
+# -- the latter being the orchestrator-level precedent db/039's own header
+# already cites as this projection's shape. gsrs_run.py, named here before, has
+# no such constant and never calls clear_source_tables at all.
 FDA_CYP_TABLES = ("fda_cyp_assertion",)
 
 # FDA'S OWN FIVE, quoted from the page's prose rather than inferred:
@@ -59,11 +63,34 @@ FDA_CYP_TABLES = ("fda_cyp_assertion",)
 # READ THAT LIST CAREFULLY BEFORE CHANGING IT: curcumin and diosmin RESOLVE as
 # ordinary drugref moieties. Non-drug and unresolvable are INDEPENDENT properties,
 # so this list can never be derived from a resolution failure -- it can only be
-# FDA's own statement. Matched case-insensitively against the footnote-stripped
-# name; the apostrophe in "St. John's wort" is U+2019 as FDA prints it.
+# FDA's own statement. Matched through _is_non_drug_entity below, which folds
+# case AND apostrophe spelling: FDA prints U+2019, but this set stores the ASCII
+# form and the comparison normalises to it, so the entry no longer depends on
+# which apostrophe the CMS happens to emit.
 NON_DRUG_ENTITIES = frozenset({
-    "st. john’s wort", "curcumin", "diosmin", "tobacco (smoking)", "grapefruit juice",
+    "st. john's wort", "curcumin", "diosmin", "tobacco (smoking)", "grapefruit juice",
 })
+
+# Apostrophe spellings one name can arrive under. FDA prints U+2019; a CMS
+# change to &#39;, to a plain ASCII quote, or to U+02BC would silently stop
+# matching -- and the row would then fall through to a DIFFERENT VALID
+# disposition (withheld_qualified, since marker 18 sits on St. John's wort's
+# name), so nothing would fail. A one-codepoint change must not flip a clinical
+# classification, and this is the whole distance between "FDA says it is not a
+# drug" and "drugref asserts a CYP3A induction membership for a supplement".
+_APOSTROPHES = str.maketrans({"’": "'", "ʼ": "'", "´": "'", "`": "'"})
+
+
+def _is_non_drug_entity(substance: str) -> bool:
+    """Is this one of FDA's own five declared non-drugs?
+
+    Case- and apostrophe-insensitive, matched against the footnote-stripped
+    name. Deliberately NOT ids.normalise_name: that folds far more than
+    punctuation, and this comparison must stay narrow enough that a reader can
+    tell exactly which spellings it accepts.
+    """
+    return substance.lower().translate(_APOSTROPHES) in NON_DRUG_ENTITIES
+
 
 # A COMBINATION REGIMEN is FDA reporting a role for several substances taken
 # together ("atazanavir and ritonavir"), never for one. The word "and" as a
@@ -75,7 +102,71 @@ NON_DRUG_ENTITIES = frozenset({
 # plain substring test would not have that property.
 _COMBINATION_WORD = re.compile(r"\band\b", re.I)
 
+# Markers FDA prints in a cell but never defines in its own Footnotes list.
+# Exactly one today: the lettered 'b' on cenobamate's CYP3A-inducer cell. Design
+# section 2.3 calls the letters "a second namespace"; the live page's Footnotes
+# block has no entry for a letter at all. NAMED rather than absorbed by a
+# general "skip anything unknown" rule, so a marker going undefined for any
+# OTHER reason -- the far likelier one being that drugref stopped reading the
+# definitions correctly -- is loud instead of looking like this same oddity.
+UNDEFINED_MARKERS = frozenset({"b"})
+
 log = logging.getLogger(__name__)
+
+
+class FdaCypShrinkError(RuntimeError):
+    """This page would replace the stored projection with a fraction of itself.
+
+    Distinct from fda_cyp.FdaCypParseError because NOTHING IS WRONG WITH THE
+    PARSE: every surviving row is well-formed, the vocabulary is closed, the
+    cross-check passes. What is wrong is the COUNT, and only the writer -- which
+    knows what is already stored -- can see it.
+
+    A RuntimeError SUBCLASS, deliberately, and that is what routes it: cli.main
+    already catches RuntimeError to print one line and exit 2, which is the
+    right shape here because this is OPERATOR-FACING -- the page they fetched is
+    short, drugref is not broken, and the message (which names --allow-shrink)
+    is the whole useful answer. Contrast FdaCypDispositionError below, which is
+    a plain Exception precisely so it does NOT get that treatment: that one
+    means drugref produced a disposition it cannot count, and its traceback
+    naming the writer is the most useful thing the process can print. cli.py's
+    own comment about CheckViolation draws the same distinction.
+    """
+
+
+class FdaCypFootnoteError(Exception):
+    """A qualified cell's markers have no text on a page whose Footnotes read fine.
+
+    A plain Exception, like FdaCypDispositionError and unlike FdaCypShrinkError:
+    the Footnotes section parsed, so this is drugref and FDA disagreeing about
+    what a marker IS, and the traceback is the useful output.
+    """
+
+
+class FdaCypDispositionError(Exception):
+    """_classify returned a disposition this orchestrator cannot count.
+
+    Raised rather than absorbed for db/041's reason, applied to the Python side:
+    a disposition nothing counts is a row that vanishes from the summary while
+    still being written, and the summary is what an operator reads.
+    """
+
+
+# How much of the stored projection a re-ingest is allowed to drop before it
+# must be authorised deliberately. Half is a wide margin on purpose: FDA
+# revising the table is ordinary, and this guard is aimed at the catastrophic
+# case (a truncated fetch leaving a handful of rows), not at policing normal
+# release-to-release drift.
+MIN_RETAINED_FRACTION = 0.5
+
+# The closed disposition vocabulary, in ONE place on the Python side. It must
+# stay equal to db/039's fda_cyp_assertion_disposition CHECK -- pinned as an
+# equality (not a subset) by tests/test_fda_cyp_schema.py, so widening one
+# without the other fails rather than drifts.
+DISPOSITIONS = frozenset({
+    "member", "withheld_qualified", "unresolved_substance",
+    "combination_regimen", "non_drug_entity",
+})
 
 
 def _footnote_text(markers: str | None,
@@ -106,10 +197,29 @@ def _footnote_text(markers: str | None,
     """
     if markers is None:
         return None
-    found = [footnote_by_marker[marker] for marker in
-             (part.strip() for part in markers.split(","))
+    wanted = [part.strip() for part in markers.split(",") if part.strip()]
+    found = [footnote_by_marker[marker] for marker in wanted
              if marker in footnote_by_marker]
-    return " / ".join(found) if found else None
+    if not found:
+        # EVERY marker on a qualified cell being undefined is a different event
+        # from ONE being undefined, and only the second is the documented page
+        # oddity. The old code returned None for both, so a parse that silently
+        # stopped matching FDA's footnote paragraphs (see
+        # fda_cyp.parse_footnotes, which now raises on an empty section) would
+        # have surfaced here as "no prose on file" for every withheld row --
+        # which reads as a fact about FDA's page rather than a defect in the
+        # read. UNDEFINED_MARKERS names the ONE spelling that is genuinely
+        # undefined upstream, so anything else going missing is loud.
+        unexpected = [marker for marker in wanted if marker not in UNDEFINED_MARKERS]
+        if unexpected:
+            raise FdaCypFootnoteError(
+                f"none of the footnote markers {wanted!r} has any text on this "
+                f"page, and {unexpected!r} are not the known-undefined ones "
+                f"({sorted(UNDEFINED_MARKERS)}). FDA's Footnotes section was "
+                "read, so this is not a missing section -- the markers and the "
+                "definitions have stopped agreeing.")
+        return None
+    return " / ".join(found)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -122,23 +232,36 @@ class FdaCypSummary:
     CLI prints is the number a reader quotes later, so a name that overstates its
     scope is a wrong number with a plausible source.
 
-    `memberships_written` is MEASURED, never derived from the others: the
-    withheld and unresolved (and non-drug, and combination) exclusions overlap
-    -- grapefruit juice is both non-drug and footnoted -- so there is no safe
-    arithmetic that reconstructs it from the other counts (design section 11).
+    `classes_in_release` and `classes_added` are TWO NUMBERS BECAUSE THEY ARE
+    TWO FACTS, exactly as MedrtSummary splits them: the first is every class
+    this release names, the second is how many of them this run actually
+    minted. A single field called `classes_minted` carrying the first was a
+    wrong number with a plausible source -- it printed 65 on every re-ingest
+    while nothing was minted at all, and "did this release change anything?" is
+    the question an operator asks it.
+
+    `memberships_written` is MEASURED, never derived from the others. NOT
+    because the disposition categories overlap -- they cannot, since _classify
+    returns exactly one disposition per tuple, so the five counters are
+    disjoint by construction. The real reason is classes.add_membership's
+    ON CONFLICT DO NOTHING: two tuples resolving to the same (moiety, class)
+    pair write one edge and increment this once, so no arithmetic over the
+    other counts reconstructs it.
 
     `questions_registered` reads the 'fda_cyp_unadjudicated' bucket of
-    questions.register_from_gaps's return value -- wired into
-    questions.py's _GAP_SOURCES in the same round as this module, so it is
-    the live count of currently-open fda_cyp_unadjudicated questions on every
-    run, not a placeholder. Measured on the pinned page: 55 (33
+    questions.register_from_gaps's return value -- wired into questions.py's
+    _GAP_SOURCES in the same round as this module, so it is the live count of
+    currently-open fda_cyp_unadjudicated questions on every run, not a
+    placeholder. Measured on the pinned page: 55 gap rows (33
     withheld_qualified + 9 combination_regimen + 8 unresolved_substance + 5
-    non_drug_entity) -- a figure of THIS run, not a property of the code, so
-    it moves if a future release changes what FDA prints; only the wiring
-    itself is the invariant this docstring promises.
+    non_drug_entity). THOSE ARE GAP-ROW COUNTS, NOT THE SIBLING FIELDS ABOVE:
+    the subject-grain dispositions collapse many tuples onto one row, so
+    `combination_regimens` (17) and `unresolved_substances` (16) are larger
+    than the 9 and 8 here. A figure of THIS run, not a property of the code.
     """
     upstream_release: str
-    classes_minted: int
+    classes_in_release: int
+    classes_added: int
     memberships_written: int
     assertions_written: int
     withheld_qualified: int
@@ -211,9 +334,11 @@ def _classify(substance: str, single: uuid.UUID | None,
 
     The order exists BECAUSE the categories overlap, not despite it:
     grapefruit juice is both one of FDA's own pinned five non-drugs (the
-    sentence at the end of the design spec's section 7, quoted verbatim on
-    NON_DRUG_ENTITIES above -- NOT section 7.2, which is about the three
-    enantiomer names and their own, unrelated deferral) AND footnoted (marker
+    sentence quoted verbatim on NON_DRUG_ENTITIES above; it sits at the END of
+    the design spec's section 7.2, in the "trap worth stating" paragraph --
+    that section is mostly about the three enantiomer names and their own
+    unrelated deferral, but FDA's non-drug sentence is quoted there too) AND
+    footnoted (marker
     9), so a disposition function that checked footnote status first would
     misfile it as withheld_qualified -- a real category, but the wrong one,
     and silently so, since both are valid CHECK values. Checking
@@ -233,7 +358,7 @@ def _classify(substance: str, single: uuid.UUID | None,
     the REGIMEN, and assigning it to any one component (even an accidental
     exact-name match) is an inference FDA did not make.
     """
-    if substance.lower() in NON_DRUG_ENTITIES:
+    if _is_non_drug_entity(substance):
         return "non_drug_entity", single
     if _COMBINATION_WORD.search(substance):
         return "combination_regimen", None
@@ -245,7 +370,8 @@ def _classify(substance: str, single: uuid.UUID | None,
 
 
 def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
-                   upstream_release: str | None = None) -> FdaCypSummary:
+                   upstream_release: str | None = None,
+                   allow_shrink: bool = False) -> FdaCypSummary:
     """Ingest one FDA-CYP page: parse, resolve, clear, write, rebuild questions.
 
     `upstream_release`, if given, OVERRIDES fda_cyp.parse_release -- the escape
@@ -254,6 +380,14 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     lets the page's own stamp govern (design section 13): fetch time is never a
     substitute, because it records when drugref looked rather than when FDA
     changed the content.
+
+    `allow_shrink` authorises a run that would drop more than
+    MIN_RETAINED_FRACTION of the stored projection. It defaults to False
+    because THE DEFAULT IS THE WHOLE POINT: a truncated page parses green (its
+    surviving rows are individually perfect), and this projection is
+    delete-and-rebuild, so an unguarded run replaces 419 tuples with 5 and
+    reports success. FDA genuinely shrinking its table is a real event -- it
+    just has to be a decision someone made, not one nobody saw.
     """
     # 1. PARSE FIRST, before any run row exists, so a crash here -- an unknown
     #    pathway token, a ragged row, a missing dateModified, a missing
@@ -268,143 +402,219 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
         upstream_release = fda_cyp.parse_release(page)
     source_checksum = checksum(page_path)
 
+    # 1a. REFUSE A PAGE THAT WOULD GUT THE PROJECTION -- here, with the rest of
+    #     the parse-time refusals, so a refusal leaves NO run row to explain,
+    #     exactly as step 1's own comment requires. Compared against what is
+    #     already STORED rather than against a pinned 245, for two reasons: no
+    #     constant has to be bumped when FDA grows its table, and a FIRST
+    #     ingest (stored == 0) is never blocked -- correctly, since it destroys
+    #     nothing.
+    #
+    #     This is the guard fda_cyp.py's module docstring used to CLAIM ("the
+    #     row and cell COUNTS are asserted") while only the cell count existed.
+    #     It cannot live in the parser: 245 is a property of one release, not
+    #     of the table's shape, and the harm is done by REPLACING a stored
+    #     projection, which only the writer can see.
+    stored = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion a "
+        "JOIN drugref.ingest_run r ON r.ingest_run_id = a.ingest_run "
+        "WHERE r.source = %s", (SOURCE,)).fetchone()[0]
+    if stored and not allow_shrink and len(tuples) < stored * MIN_RETAINED_FRACTION:
+        raise FdaCypShrinkError(
+            f"refusing to replace {stored} stored FDA-CYP assertion rows with "
+            f"{len(tuples)} from {page_path}: that drops more than "
+            f"{1 - MIN_RETAINED_FRACTION:.0%} of the projection. A truncated "
+            "fetch parses green -- every surviving row is well-formed -- so "
+            "this count is the only signal. Re-fetch the page, or pass "
+            "--allow-shrink if FDA really did shrink the table.")
+
     # 2. Open the run. COMMITS in its own transaction (provenance.open_run) --
     #    everything from here is the work, and it rolls back together on failure.
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
                                  source_checksum=source_checksum, writer=WRITER)
 
-    # 3. The resolution index. Read ONCE, whole -- moieties_by_display_name is
-    #    bounded by the registry, not by this feed, exactly as classes.py's own
-    #    docstring argues for MED-RT and MeSH.
-    fold = _fold_by_lower(classes.moieties_by_display_name(conn))
+    try:
+        # 3. The resolution index. Read ONCE, whole -- moieties_by_display_name is
+        #    bounded by the registry, not by this feed, exactly as classes.py's own
+        #    docstring argues for MED-RT and MeSH.
+        fold = _fold_by_lower(classes.moieties_by_display_name(conn))
 
-    # 4. Clear this source's previous rows before writing this run's. TWO
-    #    clears, because FDA-CYP owns two kinds of table: the edges
-    #    (class_membership; class_parent, though this slice writes none) via
-    #    classes.clear_source_edges, and the assertion projection via
-    #    db.clear_source_tables directly (fda_cyp_assertion has no dedicated
-    #    wrapper of its own, unlike class_membership's). Both are scoped through
-    #    ingest_run.source, so an unrelated source's rows are untouched, and
-    #    both run BEFORE any row is written under the run just opened -- which
-    #    is what stops this run's own (still-empty) rows from being swept up.
-    classes.clear_source_edges(conn, SOURCE)
-    db.clear_source_tables(conn, FDA_CYP_TABLES, SOURCE)
+        # 4. Clear this source's previous rows before writing this run's. TWO
+        #    clears, because FDA-CYP owns two kinds of table: the edges
+        #    (class_membership; class_parent, though this slice writes none) via
+        #    classes.clear_source_edges, and the assertion projection via
+        #    db.clear_source_tables directly (fda_cyp_assertion has no dedicated
+        #    wrapper of its own, unlike class_membership's). Both are scoped through
+        #    ingest_run.source, so an unrelated source's rows are untouched, and
+        #    both run BEFORE any row is written under the run just opened -- which
+        #    is what stops this run's own (still-empty) rows from being swept up.
+        classes.clear_source_edges(conn, SOURCE)
+        db.clear_source_tables(conn, FDA_CYP_TABLES, SOURCE)
 
-    # Every (system, pathway, role, potency) seen this run mints or refreshes
-    # its class exactly once; class_uuid is a pure function of the key, so this
-    # cache only saves a round trip, never changes the identity that comes back.
-    class_cache: dict[tuple[str, str, str, str | None], uuid.UUID] = {}
+        # Every (system, pathway, role, potency) seen this run mints or refreshes
+        # its class exactly once; class_uuid is a pure function of the key, so this
+        # cache only saves a round trip, never changes the identity that comes back.
+        class_cache: dict[tuple[str, str, str, str | None], uuid.UUID] = {}
 
-    memberships_written = 0
-    withheld_qualified = 0
-    unresolved_substances = 0
-    combination_regimens = 0
-    non_drug_entities = 0
+        classes_added = 0
+        memberships_written = 0
+        withheld_qualified = 0
+        unresolved_substances = 0
+        combination_regimens = 0
+        non_drug_entities = 0
 
-    for t in tuples:
-        key = (t.system, t.pathway, t.role, t.potency)
-        class_uuid = class_cache.get(key)
-        if class_uuid is None:
-            concept = classes.ClassConcept(
-                nui=source_code(t.system, t.pathway, t.role, t.potency),
-                # published_code is deliberately None, not source_code(...) again:
-                # FDA publishes no code for these classes (design section 4.2),
-                # and writing the same string into "the code as published" would
-                # be a manufactured fact in a provenance field. ClassConcept.code
-                # is typed `str` for its other callers (MED-RT, MeSH both publish
-                # a real code); substance_class.published_code itself is
-                # nullable, and this is the first source for which None is the
-                # honest value.
-                code=None,
-                name=class_name(t.system, t.pathway, t.role, t.potency),
-                concept_type=CONCEPT_TYPE)
-            class_uuid, _is_new = classes.upsert_class(conn, concept, run_id, SOURCE)
-            class_cache[key] = class_uuid
+        for t in tuples:
+            key = (t.system, t.pathway, t.role, t.potency)
+            class_uuid = class_cache.get(key)
+            if class_uuid is None:
+                concept = classes.ClassConcept(
+                    nui=source_code(t.system, t.pathway, t.role, t.potency),
+                    # published_code is deliberately None, not source_code(...) again:
+                    # FDA publishes no code for these classes (design section 4.2),
+                    # and writing the same string into "the code as published" would
+                    # be a manufactured fact in a provenance field. ClassConcept.code
+                    # is typed `str` for its other callers (MED-RT, MeSH both publish
+                    # a real code); substance_class.published_code itself is
+                    # nullable, and this is the first source for which None is the
+                    # honest value.
+                    code=None,
+                    name=class_name(t.system, t.pathway, t.role, t.potency),
+                    concept_type=CONCEPT_TYPE)
+                class_uuid, is_new = classes.upsert_class(conn, concept, run_id, SOURCE)
+                class_cache[key] = class_uuid
+                if is_new:
+                    classes_added += 1
 
-        # Resolution is exact and case-insensitive. `single` is None
-        # for zero matches AND for more than one -- ambiguity is unresolved,
-        # never "pick the first", because a name resolving to several moieties
-        # is real information (the registry grew and now genuinely disagrees
-        # with itself about this name) that silently picking one would erase.
-        candidates = fold.get(t.substance.lower(), [])
-        single = candidates[0] if len(candidates) == 1 else None
+            # Resolution is exact and case-insensitive. `single` is None
+            # for zero matches AND for more than one -- ambiguity is unresolved,
+            # never "pick the first", because a name resolving to several moieties
+            # is real information (the registry grew and now genuinely disagrees
+            # with itself about this name) that silently picking one would erase.
+            candidates = fold.get(t.substance.lower(), [])
+            single = candidates[0] if len(candidates) == 1 else None
 
-        disposition, resolved_moiety = _classify(
-            t.substance, single, t.footnote_markers)
+            disposition, resolved_moiety = _classify(
+                t.substance, single, t.footnote_markers)
+            # CHECKED BEFORE THE INSERT, not after: this module's contract is that
+            # it refuses to write rather than writing something it cannot account
+            # for. Today db/039's CHECK would also catch an unknown value, but it
+            # catches it AFTER the row is built and only while the vocabulary
+            # stays five wide -- and db/041's header calls widening it "a real,
+            # foreseeable event". The moment the CHECK is widened, the counting
+            # chain below would bank an uncounted row: no counter sums to
+            # assertions_written anywhere, so the summary would silently stop
+            # adding up. This is db/041's negative-predicate lesson applied to the
+            # Python beside it.
+            if disposition not in DISPOSITIONS:
+                raise FdaCypDispositionError(
+                    f"row {t.row_ordinal} ({t.raw_substance!r}) has disposition "
+                    f"{disposition!r}, which this orchestrator counts into no "
+                    f"summary field. The closed set is {sorted(DISPOSITIONS)}. "
+                    "Widening it means widening the counts, db/039's CHECK and "
+                    "questions.py's CASE together.")
 
-        # registry_near_name is left NULL throughout this slice. Section 7.1
-        # describes it as curator evidence from "a stated, mechanical prefix
-        # rule", but no such rule is part of this task's interface, and
-        # inventing one here risks exactly the DrugCentral defect the design
-        # warns about (a prefix match that "found" glycerol 1,3-dimethacrylate
-        # for glycerol -- a different substance). Leaving it NULL is the safe
-        # default until a rule is specified and reviewed on its own; the column
-        # exists so a future round can populate it without a migration.
-        conn.execute(
-            "INSERT INTO drugref.fda_cyp_assertion "
-            "(ingest_run, source, row_ordinal, raw_substance, resolved_moiety_uuid, "
-            " column_heading, raw_cell, system, pathway, role, potency, class_uuid, "
-            " footnote_markers, footnote_text, registry_near_name, disposition, "
-            " substance, row_footnote_markers, cell_footnote_markers) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-            "        %s, %s, %s)",
-            (run_id, SOURCE, t.row_ordinal, t.raw_substance, resolved_moiety,
-             t.column_heading, t.raw_cell, t.system, t.pathway, t.role, t.potency,
-             class_uuid, t.footnote_markers,
-             _footnote_text(t.footnote_markers, footnote_by_marker),
-             None, disposition,
-             # db/042: the clean name and the row-vs-cell footnote split
-             # fda_cyp.CypTuple already computed, which db/039's INSERT never
-             # stored -- see db/042's header for why this column ships
-             # nullable rather than backfilled by a second, SQL-side
-             # reimplementation of split_footnotes.
-             t.substance, t.row_footnote_markers, t.cell_footnote_markers))
+            # registry_near_name is left NULL throughout this slice. Section 7.1
+            # describes it as curator evidence from "a stated, mechanical prefix
+            # rule", but no such rule is part of this task's interface, and
+            # inventing one here risks exactly the DrugCentral defect the design
+            # warns about (a prefix match that "found" glycerol 1,3-dimethacrylate
+            # for glycerol -- a different substance). Leaving it NULL is the safe
+            # default until a rule is specified and reviewed on its own; the column
+            # exists so a future round can populate it without a migration.
+            conn.execute(
+                "INSERT INTO drugref.fda_cyp_assertion "
+                "(ingest_run, source, row_ordinal, raw_substance, "
+                " resolved_moiety_uuid, column_heading, raw_cell, system, "
+                " pathway, role, potency, class_uuid, footnote_markers, "
+                " footnote_text, registry_near_name, disposition, "
+                " substance, row_footnote_markers, cell_footnote_markers) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                "        %s, %s, %s, %s, %s, %s)",
+                (run_id, SOURCE, t.row_ordinal, t.raw_substance, resolved_moiety,
+                 t.column_heading, t.raw_cell, t.system, t.pathway, t.role, t.potency,
+                 class_uuid, t.footnote_markers,
+                 _footnote_text(t.footnote_markers, footnote_by_marker),
+                 None, disposition,
+                 # db/042: the clean name and the row-vs-cell footnote split
+                 # fda_cyp.CypTuple already computed, which db/039's INSERT never
+                 # stored -- see db/042's header for why this column ships
+                 # nullable rather than backfilled by a second, SQL-side
+                 # reimplementation of split_footnotes.
+                 t.substance, t.row_footnote_markers, t.cell_footnote_markers))
 
-        if disposition == "member":
-            # _classify only ever returns "member" alongside a real moiety --
-            # the "unresolved_substance" branch it falls through from is the
-            # only place `single` can be None, and that branch returns before
-            # this one is reached. Asserted rather than left implicit: if that
-            # invariant is ever broken by a future edit, this turns it into an
-            # immediate, legible failure instead of a NULL moiety_uuid reaching
-            # add_membership's SQL and failing there with a less obvious error.
-            assert resolved_moiety is not None
-            if classes.add_membership(conn, resolved_moiety, class_uuid,
-                                      RELATIONSHIP, run_id):
-                memberships_written += 1
-        elif disposition == "withheld_qualified":
-            withheld_qualified += 1
-        elif disposition == "unresolved_substance":
-            unresolved_substances += 1
-        elif disposition == "combination_regimen":
-            combination_regimens += 1
-        elif disposition == "non_drug_entity":
-            non_drug_entities += 1
+            if disposition == "member":
+                # EVERY path on which `single` is None returns a non-member
+                # disposition before this one is reached, so a "member" without a
+                # moiety is unreachable. Checked rather than assumed: a future edit
+                # that breaks it should fail here, legibly, instead of sending a
+                # NULL moiety_uuid into add_membership's SQL to fail there with a
+                # less obvious error. `raise`, not `assert` -- python -O strips
+                # asserts, and a guard that disappears under a flag is exactly the
+                # less-obvious failure this one exists to prevent.
+                if resolved_moiety is None:
+                    raise FdaCypDispositionError(
+                        f"row {t.row_ordinal} ({t.raw_substance!r}) classified "
+                        "'member' with no resolved moiety -- _classify's ordering "
+                        "invariant is broken.")
+                if classes.add_membership(conn, resolved_moiety, class_uuid,
+                                          RELATIONSHIP, run_id):
+                    memberships_written += 1
+            elif disposition == "withheld_qualified":
+                withheld_qualified += 1
+            elif disposition == "unresolved_substance":
+                unresolved_substances += 1
+            elif disposition == "combination_regimen":
+                combination_regimens += 1
+            else:
+                # Reachable only for 'non_drug_entity': the DISPOSITIONS guard
+                # above has already rejected anything outside the closed set, so
+                # this arm needs no condition and cannot silently swallow a sixth
+                # value the way a bare `elif` chain with no else did.
+                non_drug_entities += 1
 
-    # 5. Rebuild the question register. Called unconditionally, like every other
-    #    orchestrator here: register_from_gaps refreshes EVERY currently-open
-    #    gap kind's last_derived_ingest, not only the ones this ingest touches
-    #    (gsrs_run's own test_gsrs_run.py docstring records the same point for
-    #    gap_unclassified_moiety). Until Task 7 adds 'fda_cyp_unadjudicated' to
-    #    questions._GAP_SOURCES, this derives nothing new for THIS source, but
-    #    still must run so every other source's open questions stay current.
-    register_counts = questions.register_from_gaps(conn, run_id)
+        # 5. Rebuild the question register. Called unconditionally, like every other
+        #    orchestrator here: register_from_gaps refreshes EVERY currently-open
+        #    gap kind's last_derived_ingest, not only the ones this ingest touches
+        #    (gsrs_run's own test_gsrs_run.py docstring records the same point for
+        #    gap_unclassified_moiety). 'fda_cyp_unadjudicated' IS in
+        #    questions._GAP_SOURCES as of this slice, so this call derives THIS
+        #    source's questions too -- and it would still have to run if it did
+        #    not, to keep every other source's open questions current.
+        register_counts = questions.register_from_gaps(conn, run_id)
 
-    # 6. Finish and commit. finish_run does NOT commit on its own (see its
-    #    docstring on why symmetry with open_run would be a bug), so this run's
-    #    "finished" stamp and everything it wrote land in one atomic commit.
-    provenance.finish_run(conn, run_id)
-    conn.commit()
+        # 6. Finish and commit. finish_run does NOT commit on its own (see its
+        #    docstring on why symmetry with open_run would be a bug), so this run's
+        #    "finished" stamp and everything it wrote land in one atomic commit.
+        provenance.finish_run(conn, run_id)
+        conn.commit()
+    except Exception:
+        # THE ONLY ORCHESTRATOR HERE THAT LACKED THIS, and the omission had two
+        # costs. A programmatic caller was left holding a connection in an
+        # aborted transaction (the rollback happened only incidentally, at
+        # db.connect's context manager in the CLI), and nothing recorded WHICH
+        # source or release failed -- so a CheckViolation surfaced as a bare
+        # psycopg traceback naming neither FDA-CYP nor the page it came from.
+        # onchigh_run's tail is the pattern this now matches.
+        conn.rollback()
+        log.exception("FDA-CYP ingest failed for release %s (%s); rolled back",
+                      upstream_release, page_path)
+        raise
+
 
     summary = FdaCypSummary(
         upstream_release=upstream_release,
-        classes_minted=len(class_cache),
+        classes_in_release=len(class_cache),
+        classes_added=classes_added,
         memberships_written=memberships_written,
         assertions_written=len(tuples),
         withheld_qualified=withheld_qualified,
         unresolved_substances=unresolved_substances,
         combination_regimens=combination_regimens,
         non_drug_entities=non_drug_entities,
-        questions_registered=register_counts.get("fda_cyp_unadjudicated", 0))
+        # Subscript, not .get(..., 0): register_from_gaps always sets this key,
+        # so a default could only ever mask a wiring regression -- and it would
+        # mask it as `questions_registered=0`, which is indistinguishable from
+        # the honest "no open gaps".
+        questions_registered=register_counts["fda_cyp_unadjudicated"])
     log.info("FDA-CYP ingest: %s", summary)
     return summary

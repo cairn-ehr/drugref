@@ -15,9 +15,17 @@ blocker](../decisions/licensing-is-a-blocker.md).
 | **MED-RT** | Mechanisms of action, physiologic effects, therapeutic classes, contraindications, and MeSH-keyed indications (`may_treat` / `may_prevent` / `may_diagnose`) and drug-induced states (`induces`) | Public domain (US NLM / VA) |
 | **MeSH** | Pharmacologic actions and descriptors | Public domain / NLM terms |
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
+| **FDA CYP/transporter table** | FDA's own examples of CYP and transporter substrates, inhibitors and inducers, by potency band | Public domain (US FDA website policy) |
 
 The GSRS *software*, which drugref neither uses nor redistributes, is separately licensed
 Apache-2.0; only the public data dump is bundled.
+
+FDA asks downstream users of fda.gov content to record when they copied it and to link the
+live page, because it is revised in place. drugref records the retrieval timestamp, the
+page's own `dateModified` stamp and a SHA-256 of the fetched bytes on every ingest run —
+which is also what lets a re-fetch of unchanged material be told apart from a genuine
+revision. Its table is an *optional, non-exhaustive* interpretive guide, so drugref stores
+the memberships FDA states and never joins its columns into interaction pairs FDA does not.
 
 Upstream attributions are recorded in the repository's
 [`NOTICE`](https://github.com/cairn-ehr/drugref/blob/main/NOTICE) file.

@@ -738,7 +738,7 @@ guard round's own review".
   `InFailedSqlTransaction` from inside the guard. **A FIFTH guard now covers the clinician path**, which alone
   had none.
 
-##### 5c.2g — FDA-CYP potency classes ✅ DONE — `db/039`–`db/042`, measured 2026-08-17
+##### 5c.2g — FDA-CYP potency classes ✅ DONE — `db/039`–`db/043`, measured 2026-08-17
 Spec: [slice-5c.2g FDA-CYP classes](superpowers/specs/2026-08-16-drugref-slice-5c2g-fda-cyp-classes-design.md).
 **A prerequisite for 5c.3, taken before it**, on the FDA spike's own instruction: *"Land `FDA-CYP` before SPL
 mining; SPL already proved it needs potency-specific classes, and mining first would either drop the band or
@@ -751,11 +751,13 @@ spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-
 **What landed.** **65 PK classes** (`source = 'FDA-CYP'`, `concept_type = 'PK'`, deterministic `source_code`
 such as `cyp:3a:inhibitor:strong`, `published_code` **NULL** because FDA publishes none), `has_PK` membership,
 and `fda_cyp_assertion` — a rebuildable projection holding **every** parsed tuple **including the ones
-deliberately not promoted**. **Four migrations, and three of them exist because something asserted a property
+deliberately not promoted**. **Five migrations, and four of them exist because something asserted a property
 it had not confirmed**: `db/039` (the three-place source vocabulary, the projection, the gap view, the
 seventeenth question kind), `db/040` (the gap view's grain), `db/041` (the allowlist that left a silent hole),
 `db/042` (**the curator questions quoted footnote markers as part of FDA's substance names — the slice's own
-headline defect, reproduced in its own output**; see below). Both vocabularies it uses — `PK` and `has_PK` — already existed since
+headline defect, reproduced in its own output**; see below), `db/043` (**the closed pathway vocabulary existed
+only in Python, and db/042's own view left its grain finer than the `gap_key` built from it, so two printed
+forms of one name could silently share one immortal `question_uuid`**). Both vocabularies it uses — `PK` and `has_PK` — already existed since
 `db/003`, which is the whole argument for projecting FDA's roles as classes rather than inventing a mechanism.
 
 - **⇒ IT CREATES NO DDI PAIR, AND THAT IS A REFUSAL RATHER THAN A DEFERRAL.** FDA calls its table an optional,

@@ -10,6 +10,7 @@ nothing and reports success. These tests are the guard against that silence.
 """
 import re
 
+import psycopg
 import pytest
 
 from drugref import db, ids, provenance
@@ -99,3 +100,63 @@ def test_disposition_is_a_closed_set_of_exactly_five_values(conn):
 def test_the_new_gap_kind_is_admitted(conn):
     live = db.constraint_definition(conn, "open_question", "open_question_gap_kind")
     assert "'fda_cyp_unadjudicated'" in live
+
+
+def test_the_pathway_vocabulary_is_closed_in_SQL_too(conn):
+    """db/043. Every other axis of a tuple carries a CHECK; `pathway` -- the
+    module's HEADLINE invariant, the one that stops 'cyp:1a2 20' being minted
+    with an immortal UUID -- was enforced only in Python.
+
+    A closed vocabulary that exists in one language is a vocabulary any other
+    writer can widen by accident.
+    """
+    run_id = conn.execute(
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('FDA-CYP', 'probe', 'probe', 'fda_cyp_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        conn.execute(
+            "INSERT INTO drugref.fda_cyp_assertion "
+            "(ingest_run, source, row_ordinal, raw_substance, column_heading, "
+            " raw_cell, system, pathway, role, potency, disposition) "
+            "VALUES (%s, 'FDA-CYP', 1, 'probe', 'CYP Strg INH', '1A2 20 strong "
+            "inhibitor', 'CYP', '1a2 20', 'inhibitor', 'strong', 'member')",
+            (run_id,))
+    conn.rollback()
+
+
+def test_a_real_pathway_under_the_wrong_system_is_refused_in_SQL(conn):
+    """'OATP1B1' is a genuine transporter, and a CYP row naming it would mint a
+    class under the wrong system. fda_cyp.parse_cell refuses this; db/043 makes
+    the DB refuse it too, so the two cannot disagree.
+    """
+    run_id = conn.execute(
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('FDA-CYP', 'probe', 'probe', 'fda_cyp_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        conn.execute(
+            "INSERT INTO drugref.fda_cyp_assertion "
+            "(ingest_run, source, row_ordinal, raw_substance, column_heading, "
+            " raw_cell, system, pathway, role, potency, disposition) "
+            "VALUES (%s, 'FDA-CYP', 1, 'probe', 'CYP Strg INH', "
+            "'OATP1B1 strong inhibitor', 'CYP', 'OATP1B1', 'inhibitor', "
+            "'strong', 'member')",
+            (run_id,))
+    conn.rollback()
+
+
+def test_the_SQL_pathway_vocabulary_equals_the_parsers(conn):
+    """ONE vocabulary, pinned as an EQUALITY across the two languages that
+    hold it -- the "written down twice" hazard this project keeps paying for.
+    A subset assertion would let either side drift silently.
+    """
+    from drugref.ingest import fda_cyp
+    live = {(row[0], row[1]) for row in conn.execute(
+        "SELECT system, pathway FROM drugref.fda_cyp_pathway").fetchall()}
+    expected = {(system, pathway)
+                for system, pathways in fda_cyp._PATHWAYS_BY_SYSTEM.items()
+                for pathway in pathways}
+    assert live == expected

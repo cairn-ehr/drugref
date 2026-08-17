@@ -16,12 +16,23 @@ neither is "the HTML looked simple":
 
 1. Adding an HTML-parser dependency needs a rule-6 licence check before it can
    be added, not after (CLAUDE.md rule 6). The table does not need one.
-2. The parse is guarded on both sides. The row and cell COUNTS are asserted
-   (245 x 11 exactly), and the pathway vocabulary is CLOSED -- an unrecognised
-   token aborts the ingest. A lenient parse of the real page produces 69 classes
-   instead of 65 while reporting zero errors, and four of them are garbage minted
-   with real immortal UUIDs ('cyp:1a2 20', 'transporter:oatp1b1 inhibitor').
-   Those four are what this module's strictness is for.
+2. The parse is guarded, and every guard RAISES rather than skipping. Asserted
+   here: every row's cell count (EXPECTED_COLUMNS exactly, header row included),
+   the pathway vocabulary is CLOSED and partitioned by system, the cell's own
+   role/potency must agree with its column's, the Footnotes section must exist
+   AND yield items, and the page's three modification stamps must agree. A
+   lenient parse of the real page produces 69 classes instead of 65 while
+   reporting zero errors, and four of them are garbage minted with real immortal
+   UUIDs ('cyp:1a2 20', 'transporter:oatp1b1 inhibitor'). Those four are what
+   this module's strictness is for.
+
+   WHAT IS DELIBERATELY NOT ASSERTED HERE: the ROW COUNT. An earlier version of
+   this docstring claimed "the row and cell COUNTS are asserted (245 x 11
+   exactly)" and only the cell count ever existed -- so a truncated page, whose
+   surviving rows are all still EXPECTED_COLUMNS wide, parsed green. That guard
+   is real but belongs one layer up: 245 is a property of one RELEASE, not of
+   the table's shape, and the harm is done by REPLACING a full projection with a
+   fraction of itself. fda_cyp_run owns it, because fda_cyp_run is the writer.
 """
 import dataclasses
 import html
@@ -87,9 +98,12 @@ def _clean(fragment: str) -> str:
 # THE PRECISION IS THE POINT, in both directions:
 #  * too loose eats real name characters -- 'peginterferon alpha-2a' ends in '2a'
 #    and 'MATE2-K substrate' contains '2-K', neither of which is a marker;
-#  * too tight misses 'ritonavir 14, 15,' -- markers can be a comma-separated
-#    list WITH A TRAILING COMMA, and missing it drops ritonavir from the ingest
-#    silently while the run reports success.
+#  * too tight misses 'ritonavir 14, 15, 16' -- markers can be a comma-separated
+#    LIST, so a pattern that only strips one marker leaves '14, 15' glued to the
+#    name; the row is not dropped (it becomes unresolved_substance and raises a
+#    question), but it is filed under a name FDA never printed, and question_uuid
+#    is immortal. The `,?` also tolerates a trailing comma, which today's page
+#    does not print -- defensive, not required by it.
 _FOOTNOTE_TAIL = re.compile(r"((?:\s+(?:\d+|[a-z])\s*,?)+)\s*$")
 _MARKER = re.compile(r"\d+|[a-z]")
 
@@ -113,11 +127,16 @@ def split_footnotes(text: str) -> tuple[str, str | None]:
     return text[:match.start()].strip(), ", ".join(markers)
 
 
-def extract_rows(page: str) -> list[list[str]]:
-    """The data table's 245 rows, each of 11 cleaned cells. Header excluded.
+def _data_table_rows(page: str) -> list[str]:
+    """The data table's raw <tr> fragments, header included. The ONE gate.
 
-    Raises FdaCypParseError if the page has no table, or if any row does not
-    carry exactly EXPECTED_COLUMNS cells.
+    Extracted so extract_rows and _column_headings reach the table through the
+    SAME guards. They did not before: _column_headings indexed
+    `tables[DATA_TABLE_INDEX]` and `_ROW.findall(...)[0]` directly, and
+    parse_table calls _column_headings FIRST -- so extract_rows' guards below
+    were unreachable through the only caller, and a page with no table (a
+    wrong --page, a captured error page) raised a bare IndexError instead of
+    the FdaCypParseError this module documents everywhere.
     """
     tables = _TABLE.findall(page)
     if len(tables) <= DATA_TABLE_INDEX:
@@ -127,6 +146,24 @@ def extract_rows(page: str) -> list[list[str]]:
     rows = _ROW.findall(tables[DATA_TABLE_INDEX])
     if not rows:
         raise FdaCypParseError("the data table carries no rows")
+    return rows
+
+
+def extract_rows(page: str) -> list[list[str]]:
+    """Every data row of the table, each of EXPECTED_COLUMNS cleaned cells.
+
+    Header excluded. 245 rows on the 2026-05-29 release -- a figure OF THAT
+    RELEASE, not a contract this function enforces: the only shape asserted
+    here is the cell count per row. The guard against a TRUNCATED page (which
+    parses green, because its surviving rows are all still 11 cells wide)
+    cannot live here, because it is not a property of the table's shape -- it
+    lives in fda_cyp_run, which is what replaces the projection and so is what
+    must refuse to replace it with a fraction of itself.
+
+    Raises FdaCypParseError if the page has no table, if the table has no
+    rows, or if any row does not carry exactly EXPECTED_COLUMNS cells.
+    """
+    rows = _data_table_rows(page)
 
     parsed: list[list[str]] = []
     for ordinal, row in enumerate(rows[1:], start=1):  # rows[0] is the header
@@ -194,6 +231,52 @@ _SEPARATOR = re.compile(r";|,|\band\b", re.I)
 # Nouns FDA appends to a pathway list ('BCRP and P-gp transporters'). Not pathways.
 _TRAILING_NOUN = re.compile(r"\b(transporters?|enzymes?)\b", re.I)
 
+# A fragment that is NOTHING BUT a footnote marker, left behind when _SEPARATOR
+# splits a comma-separated marker LIST. No pathway in the closed vocabulary is a
+# bare integer or a single letter, so this can never swallow a real token.
+_BARE_MARKER = re.compile(r"^(?:\d+|[a-z])$")
+
+
+def _split_items(listed: str) -> list[str]:
+    """Split a cell's pathway list, keeping comma-separated MARKER LISTS whole.
+
+    _SEPARATOR splits on ',' -- the same character a marker list uses -- and it
+    runs before split_footnotes ever sees the item, so '1A2 20, 21' became the
+    items '1A2 20' and '21'. The stray '21' then failed the closed-vocabulary
+    lookup and aborted the release with a message telling the operator to widen
+    PATHWAYS: the wrong fix, for what is a footnote-parsing problem.
+
+    Both halves of that shape are already on the real page independently -- a
+    comma-separated list glued to a name ('ritonavir 14, 15, 16') and a
+    mid-cell single marker (ciprofloxacin's '1A2 20') -- so their combination
+    is a spelling FDA can print at any time, not a hypothetical.
+
+    A fragment that is only a marker is therefore re-attached to the item it
+    was split from, which is the item it qualifies.
+    """
+    items: list[str] = []
+    for part in (fragment.strip() for fragment in _SEPARATOR.split(listed)):
+        if not part:
+            continue
+        if items and _BARE_MARKER.match(part):
+            items[-1] = f"{items[-1]} {part}"
+        else:
+            items.append(part)
+    return items
+
+
+def _merge_markers(*groups: str | None) -> str | None:
+    """Join marker groups into one comma-separated string, each marker ONCE.
+
+    A cell-level marker qualifies every item, so an item that also states it
+    yielded '5, 5' -- and _footnote_text then joined FDA's same prose into
+    footnote_text twice. dict.fromkeys rather than a set because the order the
+    markers appear in on the page is the order they must be read in.
+    """
+    markers = [marker.strip() for group in groups if group
+               for marker in group.split(",") if marker.strip()]
+    return ", ".join(dict.fromkeys(markers)) or None
+
 
 @dataclasses.dataclass(frozen=True)
 class CypTuple:
@@ -203,9 +286,12 @@ class CypTuple:
     occupies two rows, and FDA publishes no row identifier, so the 1-based
     position is the only stable within-release handle back to the exact line.
 
-    raw_substance keeps FDA's printed form INCLUDING markers ('ritonavir 14, 15,')
-    while `substance` is the cleaned name -- the raw fact and the derived one are
-    both stored, never one in place of the other.
+    raw_substance keeps FDA's printed form INCLUDING markers ('ritonavir 14, 15,
+    16') while `substance` is the cleaned name -- the raw fact and the derived
+    one are both stored, never one in place of the other. (Quote that string
+    carefully: 'ritonavir 14, 15,' -- with a trailing comma and no 16 -- is the
+    DESIGN ROUND'S PROBE OUTPUT, not FDA's text, and spec section 2.3 records
+    that it "appears nowhere on FDA's page".)
 
     footnote_markers, row_footnote_markers AND cell_footnote_markers -- THREE
     fields, not one, because WHERE a marker sits on the page is part of what it
@@ -267,9 +353,12 @@ def parse_cell(raw_cell: str, column_index: int,
     word 'and', closed by a trailing role phrase that applies to every item which
     did not state its own.
 
-    Raises FdaCypParseError on an unknown pathway token, when the cell's own
-    role/potency disagrees with the column it sits in, or when column_index
-    itself is out of range.
+    Raises FdaCypParseError on ALL FIVE of its failures, listed in full because
+    a partial contract is what lets a caller catch the wrong thing: when
+    column_index is out of range, when the cell states no role phrase at all,
+    when the cell's own role/potency disagrees with the column it sits in, on an
+    unknown pathway token, and on a pathway that is real but belongs to a
+    DIFFERENT system than the column declares.
     """
     if column_index not in ROLE_COLUMNS:
         # Guarded explicitly rather than left to the dict lookup below: an
@@ -285,9 +374,11 @@ def parse_cell(raw_cell: str, column_index: int,
     # THE CELL-LEVEL MARKER MUST BE KEPT, NOT DISCARDED. conivaptan's cell reads
     # '3A moderate inhibitor 5' -- the trailing '5' qualifies the WHOLE cell, and
     # dropping it here would let that membership through unwithheld, which is the
-    # exact defect this slice exists to prevent (design section 5, the 29
-    # qualified-cell figure). It is merged into every pair this call returns,
-    # below, alongside any per-item marker.
+    # exact defect this slice exists to prevent (design section 5: 31 of 337
+    # cells, over 24 substances, expanding to 38 tuples -- the figure was
+    # re-measured with the shipped parser and corrects the design round's "29
+    # cells over 22 substances", in the direction that matters). It is merged
+    # into every pair this call returns, below, alongside any per-item marker.
     body, cell_markers = split_footnotes(raw_cell)
 
     match = _ROLE_PHRASE.search(body)
@@ -342,9 +433,12 @@ def parse_cell(raw_cell: str, column_index: int,
             f"cell {raw_cell!r} says potency {cell_potency!r} but column "
             f"{column_heading!r} says {column_potency!r} -- they disagree")
 
+    # rstrip(',') because removing a trailing noun can leave the separator that
+    # introduced it dangling ('BCRP and P-gp transporters inhibitor' -> 'BCRP
+    # and P-gp' is clean, but a comma-separated spelling would leave 'BCRP,').
     listed = _TRAILING_NOUN.sub("", body[:match.start()]).strip().rstrip(",")
     pairs: list[tuple[str, str | None]] = []
-    for item in (part.strip() for part in _SEPARATOR.split(listed)):
+    for item in _split_items(listed):
         if not item:
             continue
         # Each item may carry its OWN role phrase (teriflunomide) and its OWN
@@ -356,6 +450,10 @@ def parse_cell(raw_cell: str, column_index: int,
         # all unless the role word is gone first.
         item = _ROLE_PHRASE.sub("", item).strip()
         token, item_markers = split_footnotes(item)
+        # FDA writes the SAME pathway both bare ('3A') and CYP-prefixed
+        # ('CYP3A'), while the closed vocabulary keys on the bare form -- so
+        # this line is what makes every 'CYP3A' cell resolve at all. Deleting
+        # it turns each of them into an "unknown pathway" abort.
         token = re.sub(r"^CYP", "", token, flags=re.I).strip()
         if not token:
             continue
@@ -379,14 +477,27 @@ def parse_cell(raw_cell: str, column_index: int,
                 "Accepting it would mint a class under the wrong system.")
         # A cell-level marker qualifies EVERY item in the cell; an item-level one
         # qualifies only that item. Both are kept, joined, rather than one
-        # overwriting the other.
-        markers = ", ".join(m for m in (cell_markers, item_markers) if m) or None
+        # overwriting the other -- and each marker appears once, however many
+        # scopes state it.
+        markers = _merge_markers(cell_markers, item_markers)
         pairs.append((canonical, markers))
     return pairs
 
 
 def parse_table(page: str) -> list[CypTuple]:
-    """The whole table to its tuples, in row then column order."""
+    """The whole table to its tuples, in row then column order.
+
+    THE RETURN GRAIN IS ONE TUPLE PER (row x column x PATHWAY), not one per
+    cell: a single cell reading 'P-gp; BCRP inhibitor' is two facts and yields
+    two CypTuples. On the 2026-05-29 release, 245 rows and 337 non-empty cells
+    produce 419 tuples.
+
+    Raises FdaCypParseError for every structural failure the module documents --
+    no table, no rows, a ragged row or header, a cell whose role or potency
+    disagrees with its column, an unknown or wrong-system pathway. It does NOT
+    read the footnote prose or the release stamp; parse_footnotes and
+    parse_release are separate calls, so the orchestrator can order them.
+    """
     headings = _column_headings(page)
     tuples: list[CypTuple] = []
     for ordinal, row in enumerate(extract_rows(page), start=1):
@@ -436,8 +547,7 @@ def _column_headings(page: str) -> list[str]:
     documented FdaCypParseError. This is the header-row half of the same
     integrity gate extract_rows already applies to every data row.
     """
-    tables = _TABLE.findall(page)
-    header = _ROW.findall(tables[DATA_TABLE_INDEX])[0]
+    header = _data_table_rows(page)[0]
     headings = [_clean(cell) for cell in _CELL.findall(header)]
     if len(headings) != EXPECTED_COLUMNS:
         raise FdaCypParseError(
@@ -484,13 +594,30 @@ def parse_release(page: str) -> str:
     happened instead of defaulting to "absent" for both.
     """
     candidate = None
+    readable: dict[str, str] = {}
     for match in _MODIFIED.finditer(page):
         raw = match.group(1) or match.group(2)
         candidate = raw
         stamp = _STAMP.search(raw or "")
         if stamp:
             month, day, year, clock = stamp.groups()
-            return f"{year}-{month}-{day}T{clock}"
+            readable[f"{year}-{month}-{day}T{clock}"] = raw
+    # A THIRD FAILURE THE TWO MESSAGES BELOW DID NOT COVER: present, readable,
+    # and CONTRADICTORY. The old loop returned on the first readable stamp
+    # without ever comparing the three, so a CMS that updates og:updated_time
+    # but not the JSON-LD dateModified wrote a WRONG upstream_release -- and
+    # ingest_run history, as this module's docstring says, cannot be corrected
+    # afterwards. check_fda_cyp_release already refuses when the OPERATOR
+    # disagrees with the page; this is that same check applied to the page
+    # disagreeing with itself.
+    if len(readable) > 1:
+        raise FdaCypParseError(
+            "the page's dateModified / article:modified_time / og:updated_time "
+            f"stamps disagree: {sorted(readable.values())!r} read as "
+            f"{sorted(readable)!r}. One page cannot have two release identities "
+            "-- decide deliberately which is authoritative before ingesting it.")
+    if readable:
+        return next(iter(readable))
     if candidate is not None:
         raise FdaCypParseError(
             f"found {candidate!r} in dateModified / article:modified_time / "
@@ -507,7 +634,10 @@ def parse_release(page: str) -> str:
 # FDA's footnote prose sits in its own page section, OUTSIDE table 1 --
 # "<h2>Footnotes</h2>" followed by a flat list of "<p><sup>MARKER</sup>text</p>"
 # paragraphs, one per footnote. Markers run 1-21 today, plus a lettered 'b'
-# that appears mid-cell (cenobamate's "CYP3A moderate inducer b") but is NEVER
+# that TRAILS A WHOLE CELL (cenobamate's "CYP3A moderate inducer b" -- the
+# conivaptan position, not the mid-cell one: "mid-cell" in this file means a
+# marker on ONE ITEM of a list, as in ciprofloxacin's "1A2 20 ; 3A moderate
+# inhibitor", and the two are handled by different code paths) but is NEVER
 # defined here -- design section 2.3 calls this "a second namespace", and the
 # live page's own Footnotes list has no entry for a letter at all. That is a
 # page oddity to preserve evidence about, not a defect to paper over: see
@@ -558,4 +688,20 @@ def parse_footnotes(page: str) -> dict[str, str]:
     next_heading = re.search(r"<h[12]\b", tail, re.I)
     end = len(tail) if next_heading is None else next_heading.start()
     segment = tail[:end]
-    return {marker: _clean(body) for marker, body in _FOOTNOTE_ITEM.findall(segment)}
+    found = {marker: _clean(body) for marker, body in _FOOTNOTE_ITEM.findall(segment)}
+    if not found:
+        # THE SECTION BEING PRESENT IS NOT THE SAME AS IT BEING READABLE, and
+        # only the heading was ever checked. _FOOTNOTE_ITEM requires a BARE
+        # '<p><sup>', so a CMS theme change that adds one class attribute
+        # leaves the heading in place and silently matches nothing. The old
+        # return then handed back {}, _footnote_text found no prose for any
+        # qualified row, and every withheld question read "FDA's note: (not
+        # captured)" while the run reported success -- the precise inversion
+        # of this function's own "a source change made loud" argument above.
+        raise FdaCypParseError(
+            "the page's '<h2>Footnotes</h2>' section yielded no footnote items "
+            "at all. The heading is present, so this is not a missing section: "
+            "the paragraph markup changed under it. Decide deliberately before "
+            "ingesting this page -- absorbing it silently would blank "
+            "footnote_text for every qualified row.")
+    return found

@@ -10,6 +10,17 @@ Seed data attributions:
   drugref neither uses nor redistributes, is Apache-2.0. The dedication is stated
   "unless otherwise noted"; no noted exception was found on any ingested record,
   and it is re-confirmed before the first production load.
+- FDA drug-development "Drug Interactions: Table of Substrates, Inhibitors and Inducers"
+  (the CYP/transporter examples table) — U.S. Food and Drug Administration. FDA states
+  that unless otherwise noted, text and graphics on fda.gov are public domain
+  (https://www.fda.gov/about-fda/about-website/website-policies), and asks downstream
+  users to record the copy date and link the live source, because the page is updated.
+  drugref bundles only FDA-authored table content — substance names, the
+  pathway/role/potency cells and FDA's own footnote prose — and copies nothing from a
+  third party. The retrieval timestamp, the page's own dateModified stamp and a SHA-256
+  of the fetched bytes are recorded on ingest_run for every load. The committed fixture
+  (tests/fixtures/fda_cyp_table.html, extracted for slice 5c.2g) is an extract of that
+  page and carries FDA content only.
 - ChEBI — EMBL-EBI, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 - International Nonproprietary Names (INN) — World Health Organization (public domain).
 - RxNorm — U.S. National Library of Medicine (public domain, prescribable subset).

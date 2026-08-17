@@ -386,8 +386,12 @@ _GAP_SOURCES = {
             "Grading it `applies = false` is a real answer and retires this "
             "question.'"),
     },
-    # Slice 5c.2g. FOUR dispositions reach this view and they are four different
-    # questions, so the text branches on `disposition` with a CASE rather than
+    # Slice 5c.2g. Four dispositions reach this view TODAY and they are four
+    # different questions -- since db/041 made the subject half a NEGATIVE
+    # predicate, every non-member disposition reaches it, which is the point:
+    # a future sixth arrives here and trips the CASE's missing ELSE loudly
+    # rather than being silently filtered out. So the text branches on
+    # `disposition` with a CASE rather than
     # asserting one reason for all of them -- issue 122's lesson: a message may not
     # state a cause it has not confirmed.
     #
@@ -470,8 +474,13 @@ _GAP_SOURCES = {
     # single `footnote_markers` merged both, so EVERY withheld cell got the same
     # "Does FDA's footnote on X (column, pathway) narrow or NEGATE the
     # membership its row states?" wording, whether or not the footnote was ever
-    # attached to that cell at all. Measured: 31 of the 33 withheld gap rows
-    # carry a NAME-level marker only -- bupropion's own withheld question is the
+    # attached to that cell at all. Measured: 30 of the 33 withheld gap rows
+    # carry a NAME-level marker ONLY, and 3 carry a cell-level one
+    # (ciprofloxacin, conivaptan, and cenobamate -- cenobamate carries BOTH at
+    # once, which is exactly why "31 rows carry a row-level marker" and "30
+    # rows are name-level only" are different figures, and only the second
+    # sizes the two arms of the CASE below) -- bupropion's own withheld
+    # question is the
     # example that named this defect (footnote 2 is about CYP2B6 substrate
     # status generally, glued to the name, and says nothing about the specific
     # 2D6-inhibitor cell the old text named). Withholding the membership is
@@ -480,11 +489,25 @@ _GAP_SOURCES = {
     # cell is not, when it is not. The nested CASE below branches on
     # `cell_footnote_markers` (db/042): NOT NULL means a marker genuinely
     # attaches to THIS cell, and the text says so; NULL means only
-    # `row_footnote_markers` (never both NULL for a withheld_qualified row,
-    # since `_classify` only reaches this disposition when footnote_markers --
-    # their merge -- is truthy) is present, and the text asks about "this
-    # cell's membership" without claiming the footnote is specifically about
-    # it.
+    # `row_footnote_markers` is present, and the text asks about "this cell's
+    # membership" without claiming the footnote is specifically about it.
+    #
+    # THE ELSE ARM COALESCEs row_footnote_markers, AND MUST. `_classify` only
+    # reaches withheld_qualified when footnote_markers is truthy, so for rows
+    # THIS code writes at least one scope column is always populated -- but
+    # that says nothing about rows ALREADY ON DISK. db/042 added all three
+    # columns nullable with NO backfill (its header argues the case at length),
+    # so on a database that has applied db/042 and not yet re-run
+    # `drugref ingest fda-cyp`, every pre-existing withheld row has BOTH scope
+    # columns NULL. SQL's `||` returns NULL if any operand is NULL, and
+    # open_question.question_text is NOT NULL -- so an unguarded concatenation
+    # here aborts `register_from_gaps`, which runs at the END OF EVERY INGEST
+    # OF EVERY SOURCE, with an error naming neither FDA-CYP nor db/042. That is
+    # the same migration window the sibling COALESCE on `substance` three lines
+    # up exists for; these two columns shipped under identical terms in the
+    # same migration and were missed. footnote_markers is the fallback because
+    # db/039 has always populated it for a withheld row; '(unrecorded)' is the
+    # last resort rather than a NULL that takes an unrelated feed down.
     #
     # 'FDACYP:' rather than a source-derived prefix because the source is already
     # a fixed literal here ('FDA-CYP' is the only source this view reads), unlike
@@ -514,7 +537,9 @@ _GAP_SOURCES = {
             "    COALESCE(footnote_text, '(not captured)') "
             "  ELSE "
             "    'FDA''s row for ' || COALESCE(substance, raw_substance) || "
-            "    ' carries footnote(s) ' || row_footnote_markers || '. Does it "
+            "    ' carries footnote(s) ' || "
+            "    COALESCE(row_footnote_markers, footnote_markers, '(unrecorded)') || "
+            "    '. Does it "
             "narrow or negate this cell''s membership (' || column_heading || ', ' "
             "|| pathway || ')? Drugref withheld the membership rather than assert "
             "either way. FDA''s note: ' || "

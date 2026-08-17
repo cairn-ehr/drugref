@@ -2761,7 +2761,7 @@ results doc is explicit does **not** approve normalization or any write to `cura
   parsers reachable from `tools/` and the tests only** — no CLI subcommand, no orchestrator, no migration, no
   `ingest_run.source` spelling. They are pure parsers by the architecture rule, and nothing writes.
 
-## Slice 5c.2g — FDA-CYP potency classes (`db/039`–`db/041`, measured 2026-08-17)
+## Slice 5c.2g — FDA-CYP potency classes (`db/039`–`db/043`, measured 2026-08-17)
 
 Spec: [slice-5c.2g](superpowers/specs/2026-08-16-drugref-slice-5c2g-fda-cyp-classes-design.md). The potency
 vocabulary the 5c.3 evaluation found missing: SPL section 7 qualifies interactions by band (*strong* CYP1A2
@@ -2952,6 +2952,60 @@ somebody else's staleness.
 - **Seeding a `substance_class` row does NOT test per-source clearing.** Class rows *accumulate* and are never
   deleted; only `class_membership` edges are rebuilt. A clear-scope test must seed an **edge**. Found by an
   implementer mutation-testing its own test, which is the sharpest self-check this slice produced.
+
+### ⇒ THE REVIEW ROUND: FOUR CRITICALS, AND EVERY ONE WAS A GATE THAT WAS REASONED ABOUT AND NOT WRITTEN
+
+Six review agents ran over the finished slice. **The pattern is worth more than the findings**: this is a
+codebase whose comments argue carefully for the guards it needs, and in four places the argument was
+written and the code was not. **Three of them carried a comment asserting the guard existed** — so reading
+the module would have told you it was safe.
+
+| # | The defect | How it was found | Fix |
+|---|---|---|---|
+| 1 | **The parser's headline claim was false.** `fda_cyp.py`'s "why a regex parse is defensible" argument said *"the row and cell COUNTS are asserted (245 x 11 exactly)"*. Only the cell count ever existed. Truncating the real page to six `<tr>` gave **5 tuples instead of 419, no error** — and the projection is delete-and-rebuild, so that run deletes 240 substances and commits, exit 0. | Measured against the real page | Shrink guard in `fda_cyp_run` (below), and the docstring now says what it actually asserts |
+| 2 | **A cross-source abort.** `questions.py` concatenated `row_footnote_markers` unguarded. db/042 shipped that column nullable with no backfill, so in its own migration window every pre-existing withheld row is NULL, `\|\|` propagates NULL, and `open_question.question_text` is NOT NULL. `register_from_gaps` runs at the end of **every ingest of every source**, so the next MeSH/GSRS/PBS run died on FDA-CYP's residue, naming neither. | Reproduced on the measurement DB: 419 rows, all `substance` NULL, 33 in the window → `NotNullViolation` | `COALESCE(row_footnote_markers, footnote_markers, '(unrecorded)')` |
+| 3 | **`parse_footnotes` returned `{}` silently.** `_FOOTNOTE_ITEM` requires a bare `<p><sup>`; adding one class attribute took 21 footnotes to 0 with the `<h2>Footnotes</h2>` heading still present. Every withheld question would then read *"FDA's note: (not captured)"* with the run green — the exact inversion of that function's own "a source change made loud" argument. | Mutated the real page | Raises when the section is present but yields nothing |
+| 4 | **`parse_table` raised a bare `IndexError`** on a page with no table and on an empty table, against a module that documents `FdaCypParseError` everywhere. `_column_headings` reached the table directly and runs *first*, so `extract_rows`' own guards were unreachable through the only caller. | Ran it | One `_data_table_rows` gate both callers go through |
+
+**The grain defect, which no test could have caught.** db/042 moved the `gap_key` onto the clean `substance`
+(right: keying on FDA's footnote *numbering* meant a renumbered footnote changed the identity of every open
+question about that substance) but left **both halves of the view grouping by `raw_substance`** — a strictly
+finer grain. Two printed forms of one name (`aprepitant 3` / `aprepitant`) therefore yield **two view rows
+carrying one `gap_key`**, and `register_from_gaps` upserts `ON CONFLICT (question_uuid) DO UPDATE` over an
+**unordered** view: the second silently overwrites the first's text, non-deterministically, for an immortal
+externally-citable UUID. **Measured: it does not fire on the 2026-05-29 release**, which is exactly why it had
+to be found by reading — and why `db/043` regroups both halves onto the clean name before the FDA release that
+introduces one. Demonstrated with synthetic rows: 2 rows, 1 key, before; 1 row after.
+
+**Two figures were wrong again, in the same direction as the seven above.** The `31 of the 33 withheld gap
+rows carry a name-level marker only` claim (in `questions.py` and in db/042's header) is **30**: 31 rows
+*carry* a row-level marker, but **cenobamate carries both at once**, so the figure that sizes the two arms of
+the nested CASE is 30 name-level-only / 3 cell-level (ciprofloxacin, conivaptan, cenobamate). Re-measured
+directly off the real page against the measurement registry.
+
+**A stated precedent that never happened.** db/041's header and a test both justify the sixth-disposition
+design with *"this project has widened the CHECK on this exact column once already"*. It never has: db/039
+creates `fda_cyp_assertion_disposition` with five values, db/040 and db/041 replace views, db/042 adds
+columns. The genuine precedent — db/035 adding a gap kind mid-plan — sits in the same sentence. db/041 is
+frozen, so the correction is recorded in db/043's header and in the test.
+
+**What the fixes added.** `MIN_RETAINED_FRACTION` refuses a re-ingest that would drop more than half the
+stored projection, compared against **what is stored** rather than a pinned 245 — so no constant needs
+bumping when FDA grows the table, and a first ingest is never blocked (it destroys nothing); `--allow-shrink`
+authorises a real one. `DISPOSITIONS` is checked **before the INSERT**, not after, so a sixth value cannot be
+banked uncounted. `classes_minted` became `classes_in_release` + `classes_added` (it printed 65 on every
+re-ingest while minting nothing). `db/043` holds the closed `(system, pathway)` vocabulary as a table the
+assertion foreign-keys to — it was enforced only in Python, and `system`/`pathway` are only meaningful as a
+pair, which two independent CHECKs cannot express. FDA-CYP was also **missing from `NOTICE` and the published
+sources page**, which is a rule-6 blocker rather than a documentation nicety.
+
+**Test coverage the round exposed.** The autouse `_registry` fixture seeded only `bupropion` and `cenobamate`
+and **both are footnoted**, so no row could reach `member` in any DB test: `memberships_written` was 0
+everywhere, `add_membership` and `RELATIONSHIP` were executed by nothing, and one test counted `member` rows
+in a table that had none — **it could not fail**. Two enantiomer tests were unfalsifiable for the same reason
+(no racemate registered, so nothing to mis-map *to*). A separate opt-in `_wider_registry` fixture now seeds
+the member, ambiguity and independence cases without disturbing the counts the existing tests were measured
+against.
 
 ## The standing open-issue ledger
 
@@ -3235,7 +3289,12 @@ ran in CI and `ruff` was not even a project dependency.
   and the `nextsession` skill both already send readers there. It used to be restated here under "update both", which is the
   same two-homes defect the standing rules above warn about. **THE CURRENT MEASUREMENT DATABASE IS
   `drugref_5c2g`** — `drugref_db038` plus `db/039`–`db/041` and one FDA-CYP ingest, kept as slice 5c.2g's
-  measured record. **`drugref_db038` is retained as its immediate before/after control** and remains the one
+  measured record. **IT SITS AT `db/041`, NOT AT HEAD**, and that is deliberate: it is a measured record, so
+  the review round verified `db/042`+`db/043` against a `TEMPLATE` copy rather than migrating it in place.
+  That copy is what proved the cross-source abort was real — 419 rows, every `substance` NULL, 33 withheld
+  rows in db/042's migration window, `register_from_gaps` raising `NotNullViolation` before the fix and
+  returning 55 questions after it. **Anything re-measured here from now on must state which migration the
+  database was on**, because the two answers differ. **`drugref_db038` is retained as its immediate before/after control** and remains the one
   to reproduce a pre-5c.2g claim on. **Two cautions about `drugref_db038` specifically, both measured:** its
   `ddi_candidate_pair` is **21,877**, NOT the 21,664 that several earlier sections quote from
   `drugref_policy`/`drugref_5c4` — a figure carries the database it came from; and it holds **8 stale

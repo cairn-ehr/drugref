@@ -9,7 +9,7 @@ import pathlib
 import psycopg
 import pytest
 
-from drugref import cli, cli_chain, ids, questions
+from drugref import cli, cli_chain, cli_fda_cyp, ids, questions
 from drugref.ingest import fda_cyp_run
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
@@ -86,7 +86,7 @@ def _clean(conn):
     it is the only tool that can clear an append-only table's guard-protected
     rows between tests (test_gsrs_run.py's `_clean` makes the same point about
     identity_claim). RESTART IDENTITY keeps ingest_run_id starting from 1 for
-    every test, which is what makes summary.classes_minted and friends
+    every test, which is what makes summary.classes_in_release and friends
     reproducible run to run rather than drifting with accumulated sequence state.
     """
     yield
@@ -364,7 +364,7 @@ def test_all_classes_are_minted_even_when_every_member_is_withheld(conn):
                                          upstream_release="2026-05-29T14:00")
     minted = conn.execute(
         "SELECT count(*) FROM drugref.substance_class WHERE source = 'FDA-CYP'").fetchone()[0]
-    assert minted == summary.classes_minted
+    assert minted == summary.classes_in_release
     orphaned = conn.execute(
         "SELECT count(*) FROM drugref.fda_cyp_assertion "
         "WHERE disposition = 'withheld_qualified' AND class_uuid IS NULL").fetchone()[0]
@@ -730,7 +730,7 @@ def test_an_unrecognised_disposition_aborts_loudly_rather_than_vanishing(conn):
     db/040's first version of the gap view named the subject half's
     dispositions POSITIVELY (`IN ('unresolved_substance', 'combination_regimen',
     'non_drug_entity')`). A future sixth disposition -- foreseeable, not
-    hypothetical: this project has widened this exact CHECK once already, and
+    hypothetical: db/035 added a whole gap kind mid-plan, and
     db/035 added a whole gap kind mid-plan -- would have matched neither that
     list nor the cell half's `= 'withheld_qualified'`, so it would have produced
     ZERO gap-view rows. SILENCE would have been the failure: `drugref ingest
@@ -842,7 +842,8 @@ def test_a_release_that_disagrees_with_the_page_is_refused_before_any_db_write(
     page.write_text(
         '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
         encoding="utf-8")
-    args = argparse.Namespace(page=page, release="1999-01-01T00:00")
+    args = argparse.Namespace(page=page, release="1999-01-01T00:00",
+                          allow_shrink=False)
 
     class _NoDBConn:
         def execute(self, *a, **kw):
@@ -850,7 +851,7 @@ def test_a_release_that_disagrees_with_the_page_is_refused_before_any_db_write(
                 "a release mismatch must be caught before any DB write")
 
     with pytest.raises(cli_chain.ReleaseError) as excinfo:
-        cli._handle_fda_cyp(_NoDBConn(), args)
+        cli_fda_cyp.handle_fda_cyp(_NoDBConn(), args)
     # BOTH VALUES NAMED, per the brief: an operator staring at this error needs
     # to see what they typed AND what the page actually says, not just one.
     assert "1999-01-01T00:00" in str(excinfo.value)
@@ -868,20 +869,22 @@ def test_a_matching_release_passes_validation_and_the_ingest_proceeds(
     page.write_text(
         '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
         encoding="utf-8")
-    args = argparse.Namespace(page=page, release="2026-05-29T14:00")
+    args = argparse.Namespace(page=page, release="2026-05-29T14:00",
+                          allow_shrink=False)
 
     calls = []
 
-    def _stub_ingest(conn, *, page_path, upstream_release=None):
+    def _stub_ingest(conn, *, page_path, upstream_release=None,
+                     allow_shrink=False):
         calls.append((page_path, upstream_release))
         return fda_cyp_run.FdaCypSummary(
-            upstream_release="2026-05-29T14:00", classes_minted=0,
+            upstream_release="2026-05-29T14:00", classes_in_release=0, classes_added=0,
             memberships_written=0, assertions_written=0, withheld_qualified=0,
             unresolved_substances=0, combination_regimens=0,
             non_drug_entities=0, questions_registered=0)
 
-    monkeypatch.setattr(cli.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
-    assert cli._handle_fda_cyp(object(), args) == 0
+    monkeypatch.setattr(cli_fda_cyp.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
+    assert cli_fda_cyp.handle_fda_cyp(object(), args) == 0
     # upstream_release is None here, NOT "2026-05-29T14:00": once --release
     # has been validated to agree with the page, the page's own stamp still
     # governs what actually gets recorded -- there is exactly one source of
@@ -897,20 +900,21 @@ def test_an_omitted_release_also_proceeds_straight_to_the_orchestrator(
     entirely rather than comparing None against anything.
     """
     page = tmp_path / "fake_fda_cyp.html"
-    args = argparse.Namespace(page=page, release=None)
+    args = argparse.Namespace(page=page, release=None, allow_shrink=False)
 
     calls = []
 
-    def _stub_ingest(conn, *, page_path, upstream_release=None):
+    def _stub_ingest(conn, *, page_path, upstream_release=None,
+                     allow_shrink=False):
         calls.append((page_path, upstream_release))
         return fda_cyp_run.FdaCypSummary(
-            upstream_release="2026-05-29T14:00", classes_minted=0,
+            upstream_release="2026-05-29T14:00", classes_in_release=0, classes_added=0,
             memberships_written=0, assertions_written=0, withheld_qualified=0,
             unresolved_substances=0, combination_regimens=0,
             non_drug_entities=0, questions_registered=0)
 
-    monkeypatch.setattr(cli.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
-    assert cli._handle_fda_cyp(object(), args) == 0
+    monkeypatch.setattr(cli_fda_cyp.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
+    assert cli_fda_cyp.handle_fda_cyp(object(), args) == 0
     assert calls == [(page, None)]
 
 
@@ -957,3 +961,359 @@ def test_a_release_flag_matching_the_real_page_succeeds_via_the_cli(
     assert cli.main(
         ["ingest", "fda-cyp", "--page", str(REAL_PAGE),
          "--release", "2026-05-29T14:00"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Review 5c.2g: the paths the autouse `_registry` fixture made untestable.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def _wider_registry(conn):
+    """Seed the names the MEMBER path and the independence claims need.
+
+    OPT-IN, not autouse, and deliberately so: the autouse `_registry` above
+    seeds only bupropion and cenobamate, and BOTH are footnoted, so every DB
+    test in this module ran against a registry where no row could reach
+    `member` at all. `memberships_written` was 0 everywhere,
+    `classes.add_membership` and `RELATIONSHIP` were executed by nothing, and
+    test_a_members_row_raises_no_question counted `member` rows in a table
+    that had none -- an assertion that could not fail. Keeping this separate
+    from `_registry` means the existing count assertions above stay pinned to
+    the registry they were measured against.
+
+    abiraterone is the member case: one tuple, no footnote marker, so it is
+    the shortest path from "FDA states a role" to "drugref asserts it".
+    mephenytoin and venlafaxine make the two enantiomer tests FALSIFIABLE --
+    without the racemate registered, "S-mephenytoin was not mapped to
+    mephenytoin" is unfalsifiable, because there is nothing to map it TO.
+    curcumin makes the independence claim real: it must resolve AND still be
+    non_drug_entity. The two alprazolam spellings are the ambiguity case.
+    """
+    seed_run = conn.execute(
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'test-wider', 'test-wider', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
+    for unii, name in (("TESTUNII_ABIRATERONE", "abiraterone"),
+                       ("TESTUNII_MEPHENYTOIN", "mephenytoin"),
+                       ("TESTUNII_VENLAFAXINE", "venlafaxine"),
+                       ("TESTUNII_CURCUMIN", "curcumin"),
+                       # TWO moieties, ONE case-folded display name.
+                       ("TESTUNII_ALPRAZOLAM_A", "alprazolam"),
+                       ("TESTUNII_ALPRAZOLAM_B", "Alprazolam")):
+        conn.execute(
+            "INSERT INTO drugref.substance_moiety "
+            "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
+            (ids.mint_moiety_uuid(unii), name, seed_run))
+    conn.commit()
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_a_clean_resolvable_cell_becomes_a_membership(conn):
+    """The path the ingest EXISTS to walk, and nothing exercised it.
+
+    abiraterone's cell carries no footnote marker and its name resolves to one
+    moiety, so _classify returns `member` and the orchestrator must write a
+    real class_membership edge under FDA-CYP's own relationship.
+    """
+    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                         upstream_release="2026-05-29T14:00")
+    assert summary.memberships_written > 0, "no row reached the member path at all"
+    row = conn.execute(
+        "SELECT m.relationship, c.source FROM drugref.class_membership m "
+        "JOIN drugref.substance_class c ON c.class_uuid = m.class_uuid "
+        "JOIN drugref.substance_moiety s ON s.moiety_uuid = m.moiety_uuid "
+        "WHERE lower(s.display_name) = 'abiraterone' AND c.source = 'FDA-CYP'").fetchone()
+    assert row is not None, "abiraterone resolved and was unfootnoted; it must be a member"
+    assert row[0] == fda_cyp_run.RELATIONSHIP == "has_PK"
+    disposition = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) = 'abiraterone'").fetchone()
+    assert disposition[0] == "member"
+    assert disposition[1] is not None
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_a_second_run_leaves_exactly_one_FDA_CYP_membership_edge(conn):
+    """Per-source rebuild safety for THIS source's OWN edges.
+
+    The existing rebuild test seeds a MED-RT edge and checks FDA-CYP's clear
+    does not take it -- the complementary half (that FDA-CYP's own edges are
+    rebuilt rather than duplicated) could not be tested while no FDA-CYP edge
+    was ever written.
+    """
+    first = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                       upstream_release="2026-05-29T14:00")
+    second = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                        upstream_release="2026-05-29T14:00")
+    assert first.memberships_written == second.memberships_written > 0
+    edges = conn.execute(
+        "SELECT count(*) FROM drugref.class_membership m "
+        "JOIN drugref.substance_class c ON c.class_uuid = m.class_uuid "
+        "WHERE c.source = 'FDA-CYP'").fetchone()[0]
+    assert edges == second.memberships_written
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_an_ambiguous_display_name_stays_unresolved_rather_than_picking_the_first(conn):
+    """`single = candidates[0] if len(candidates) == 1 else None`.
+
+    Two moieties share the case-folded name 'alprazolam'. Rewriting that line
+    as `candidates[0] if candidates else None` would silently assert a
+    membership on whichever moiety the index happened to list first -- a wrong
+    membership on a REAL moiety, which is the worst shape available here.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    row = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) = 'alprazolam' LIMIT 1").fetchone()
+    assert row[0] == "unresolved_substance"
+    assert row[1] is None
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_S_mephenytoin_stays_unresolved_WITH_the_racemate_registered(conn):
+    """Issue 128, made falsifiable. The sibling test above runs on a registry
+    with no 'mephenytoin' in it at all, so it cannot detect a prefix bridge --
+    there is nothing to bridge to. Here the racemate IS registered.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    row = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE raw_substance ILIKE 'S-mephenytoin%' LIMIT 1").fetchone()
+    assert row[0] == "unresolved_substance"
+    assert row[1] is None
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_R_venlafaxine_stays_unresolved_WITH_venlafaxine_registered(conn):
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    row = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE raw_substance ILIKE 'R-venlafaxine%' LIMIT 1").fetchone()
+    assert row[0] == "unresolved_substance"
+    assert row[1] is None
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_curcumin_RESOLVES_and_is_still_a_non_drug_entity(conn):
+    """The independence, actually exercised: the sibling test never seeds
+    curcumin, so it proves only the disposition, not that resolution and
+    non-drug status are orthogonal. `_classify` threads `single` through the
+    non_drug_entity branch unchanged, and nothing checked that.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    row = conn.execute(
+        "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE lower(raw_substance) = 'curcumin' LIMIT 1").fetchone()
+    assert row[0] == "non_drug_entity"
+    assert row[1] is not None, "curcumin resolves; the branch must not discard that"
+
+
+def _truncated_page(tmp_path, keep_rows):
+    """The fixture with all but `keep_rows` data rows removed, still well-formed.
+
+    A partial download, a CMS pagination change or a `</table>` emitted early
+    all produce exactly this: rows that are individually PERFECT (still
+    EXPECTED_COLUMNS wide, still a closed-vocabulary pathway), just far fewer
+    of them. That is why no per-row guard can catch it.
+    """
+    import re
+    page = FIXTURE.read_text(encoding="utf-8")
+    table = re.findall(r"<table.*?</table>", page, re.S)[0]
+    rows = re.findall(r"<tr.*?</tr>", table, re.S)
+    trimmed = table.split(rows[0])[0] + rows[0] + "".join(rows[1:1 + keep_rows]) + "</table>"
+    path = tmp_path / "truncated.html"
+    path.write_text(page.replace(table, trimmed), encoding="utf-8")
+    return path
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_truncated_page_refuses_to_replace_the_projection(conn, tmp_path):
+    """THE GATE THE MODULE DOCSTRING CLAIMED AND DID NOT HAVE.
+
+    fda_cyp.py's own "why a regex parse is defensible" argument said "the row
+    and cell COUNTS are asserted (245 x 11 exactly)"; only the CELL count ever
+    existed. Measured on the real page: truncating the data table to six <tr>
+    yields 5 tuples instead of 419, with NO error -- and because the
+    orchestrator clears class_membership and fda_cyp_assertion BEFORE writing,
+    that run deletes 240 substances' rows and commits, exit 0. The only trace
+    is a smaller number in a printed dataclass nobody has a baseline for.
+
+    The guard compares against what is ALREADY STORED rather than a pinned 245,
+    so it needs no constant to bump when FDA grows the table, and it cannot
+    fire on a first ingest -- which is right, because a first ingest destroys
+    nothing.
+    """
+    full = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                      upstream_release="2026-05-29T14:00")
+    assert full.assertions_written > 10
+    with pytest.raises(fda_cyp_run.FdaCypShrinkError, match="refusing"):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=_truncated_page(tmp_path, 2),
+                                   upstream_release="2026-05-29T14:01")
+    # The refusal must leave the FULL projection intact, not a half-cleared one.
+    conn.rollback()
+    remaining = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion").fetchone()[0]
+    assert remaining == full.assertions_written
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_first_ingest_is_never_blocked_by_the_shrink_guard(conn, tmp_path):
+    """Nothing is stored, so nothing can be destroyed."""
+    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=_truncated_page(tmp_path, 2),
+                                         upstream_release="2026-05-29T14:00")
+    assert summary.assertions_written > 0
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_deliberate_shrink_can_be_authorised_explicitly(conn, tmp_path):
+    """FDA genuinely shrinking the table is a real event; it just must be a
+    DECISION rather than a silent default."""
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=_truncated_page(tmp_path, 2),
+                                         upstream_release="2026-05-29T14:01",
+                                         allow_shrink=True)
+    assert summary.assertions_written > 0
+
+
+@pytest.mark.usefixtures("conn", "_wider_registry")
+def test_classes_added_and_classes_in_release_are_different_numbers(conn):
+    """`classes_minted` was `len(class_cache)` -- the classes SEEN this release,
+    not the ones this run added -- with upsert_class's `is_new` discarded.
+
+    On every re-ingest it therefore printed the same figure while zero classes
+    were minted, which is the one number an operator would quote to answer
+    "did this release change anything?". MedrtSummary splits these two for
+    exactly this reason.
+    """
+    first = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                       upstream_release="2026-05-29T14:00")
+    second = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                        upstream_release="2026-05-29T14:00")
+    assert first.classes_in_release == second.classes_in_release > 0
+    assert first.classes_added == first.classes_in_release
+    assert second.classes_added == 0, "a re-ingest mints nothing and must say so"
+
+
+@pytest.mark.usefixtures("conn")
+def test_an_unrecognised_disposition_is_counted_by_nothing_and_so_must_raise(
+        conn, monkeypatch):
+    """The Python half of the hole db/041 fixed in SQL.
+
+    The if/elif chain over the five dispositions had no terminal `else`, so a
+    sixth value -- which db/041's own header calls "a real, foreseeable event"
+    -- would be counted into NONE of the five counters while
+    `assertions_written` still included it. No counter sums to
+    assertions_written anywhere, so nothing downstream could notice.
+    """
+    monkeypatch.setattr(fda_cyp_run, "_classify",
+                        lambda substance, single, markers: ("testonly_sixth", None))
+    with pytest.raises(fda_cyp_run.FdaCypDispositionError, match="testonly_sixth"):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                   upstream_release="2026-05-29T14:00")
+    conn.rollback()
+
+
+def test_an_ascii_apostrophe_still_matches_FDAs_curly_one():
+    """NON_DRUG_ENTITIES pinned "st. john<U+2019>s wort" with FDA's curly
+    apostrophe hardcoded.
+
+    If the CMS ever emits &#39; or a plain ASCII apostrophe, the membership
+    test silently fails and St. John's wort -- a dietary supplement FDA
+    explicitly carved out -- falls through to a DIFFERENT VALID disposition, or
+    to a membership if a moiety ever carries that display name. A one-codepoint
+    change flipping a clinical classification with no error is the exact shape
+    _classify's own ordering docstring exists to prevent.
+    """
+    assert fda_cyp_run._is_non_drug_entity("St. John's wort")      # ASCII
+    assert fda_cyp_run._is_non_drug_entity("St. John’s wort")  # FDA's curly
+    assert fda_cyp_run._is_non_drug_entity("GRAPEFRUIT JUICE")
+    assert not fda_cyp_run._is_non_drug_entity("bupropion")
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_pre_db042_withheld_row_does_not_abort_an_unrelated_sources_ingest(conn):
+    """THE CROSS-SOURCE ABORT, pinned.
+
+    db/042 added `substance`, `row_footnote_markers` and `cell_footnote_markers`
+    nullable with NO backfill, so a database that applied it and has not yet
+    re-run `drugref ingest fda-cyp` carries withheld rows with all three NULL.
+    questions.py's ELSE arm concatenated `row_footnote_markers` unguarded; SQL's
+    `||` yields NULL if any operand is NULL, and open_question.question_text is
+    NOT NULL.
+
+    Because register_from_gaps runs at the END OF EVERY INGEST OF EVERY SOURCE,
+    the blast radius was cross-source: the next MeSH, GSRS or PBS ingest would
+    die on FDA-CYP's residue, with an error naming a column in open_question and
+    nothing about FDA-CYP or db/042.
+
+    Simulated exactly as the migration leaves it -- the columns NULLed on a real
+    withheld row -- rather than by mocking the view.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    conn.execute(
+        "UPDATE drugref.fda_cyp_assertion "
+        "SET substance = NULL, row_footnote_markers = NULL, "
+        "    cell_footnote_markers = NULL "
+        "WHERE disposition = 'withheld_qualified'")
+    withheld = conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion "
+        "WHERE disposition = 'withheld_qualified'").fetchone()[0]
+    assert withheld > 0, "the fixture must carry withheld rows for this to mean anything"
+
+    run_id = conn.execute(
+        "SELECT ingest_run_id FROM drugref.ingest_run "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+    counts = questions.register_from_gaps(conn, run_id)
+    assert counts["fda_cyp_unadjudicated"] > 0
+
+    blank = conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated' AND question_text IS NULL").fetchone()[0]
+    assert blank == 0
+    conn.rollback()
+
+
+@pytest.mark.usefixtures("conn")
+def test_two_printed_forms_of_one_name_raise_ONE_question_not_two(conn):
+    """db/043: the view's grain must equal the grain its gap_key uses.
+
+    db/042 moved key_sql onto COALESCE(substance, raw_substance) while both
+    halves of the view still grouped by raw_substance -- a strictly finer
+    grain. Two printed forms of one name ('aprepitant 3' and 'aprepitant')
+    therefore produced TWO view rows carrying ONE gap_key, and
+    register_from_gaps' ON CONFLICT DO UPDATE over an UNORDERED view silently
+    overwrote the first row's question_text with the second's. Which one won
+    was not deterministic, for a question_uuid that is immortal and externally
+    citable.
+    """
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    run_id = conn.execute(
+        "SELECT ingest_run_id FROM drugref.ingest_run "
+        "WHERE source = 'FDA-CYP' LIMIT 1").fetchone()[0]
+    # One substance, two printed forms, same subject disposition -- exactly what
+    # a footnote marker on one of FDA's two aprepitant rows would produce.
+    conn.execute(
+        "INSERT INTO drugref.fda_cyp_assertion "
+        "(ingest_run, source, row_ordinal, raw_substance, substance, column_heading, "
+        " raw_cell, system, pathway, role, potency, disposition) VALUES "
+        "(%s, 'FDA-CYP', 9001, 'probeamide 7', 'probeamide', 'CYP Mod INH', "
+        " '3A moderate inhibitor', 'CYP', '3A', 'inhibitor', 'moderate', "
+        " 'unresolved_substance'), "
+        "(%s, 'FDA-CYP', 9002, 'probeamide', 'probeamide', 'CYP Strg IND', "
+        " '3A strong inducer', 'CYP', '3A', 'inducer', 'strong', "
+        " 'unresolved_substance')",
+        (run_id, run_id))
+
+    rows = conn.execute(
+        "SELECT count(*) FROM drugref.gap_fda_cyp_unadjudicated "
+        "WHERE substance = 'probeamide'").fetchone()[0]
+    assert rows == 1, "one substance, one subject-grain question -- not one per printed form"
+
+    questions.register_from_gaps(conn, run_id)
+    minted = conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'fda_cyp_unadjudicated' AND gap_key LIKE '%probeamide%'").fetchone()[0]
+    assert minted == 1
+    conn.rollback()

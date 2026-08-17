@@ -19,13 +19,28 @@
 **Merged to `main`**: through **5c.2f — the guard round**, plus two source spikes
 ([#126](https://github.com/cairn-ehr/drugref/pull/126) FDA, [#127](https://github.com/cairn-ehr/drugref/pull/127)
 pregnancy/lactation). **`db/029`–`db/038` ARE ALL FROZEN, and so are `db/039`–`db/042`** — 5c.2g's four, applied to `drugref_test`
-and to the measurement database, so a correction to any of them needs `db/043` **even though the PR is still
-open.** `db/042` exists precisely because that rule was followed rather than argued with.
+and to the measurement database, so a correction to any of them needs a new file **even though the PR is still
+open.** `db/042` exists precisely because that rule was followed rather than argued with, and **`db/043` now
+exists for the same reason** — the review found two defects inside db/042's own view and none of it could be edited.
 
 **⇒ JUST FINISHED — 5c.2g, `FDA-CYP` potency classes: 65 PK classes, 348 memberships, 55 curator questions,
-four migrations, suite 1660 → 1739.** The potency vocabulary 5c.3 needs. **It creates NO DDI pair, and that
+five migrations, suite 1660 → 1763.** The potency vocabulary 5c.3 needs. **It creates NO DDI pair, and that
 is a refusal rather than a deferral** — joining FDA's inhibitor and substrate columns would manufacture ~800
 pairs no source asserts. Full account: PROJECT-NOTES § "Slice 5c.2g"; shape: ROADMAP § 5c.2g.
+
+**⇒ A SIX-AGENT REVIEW ROUND RAN ON THE FINISHED SLICE AND FOUND FOUR CRITICALS. Every one was a GATE THAT
+HAD BEEN REASONED ABOUT AT LENGTH AND THEN NOT WRITTEN**, three of them with a comment asserting the gate
+existed. **The parser's own "why a regex parse is defensible" argument claimed "the row and cell COUNTS are
+asserted (245 x 11 exactly)" and only the cell count was ever implemented** — truncating the real page to six
+`<tr>` yielded 5 tuples instead of 419 with no error, and because the projection is delete-and-rebuild that run
+would have deleted 240 substances and reported success. **The worst one was cross-source**: `questions.py`
+concatenated `row_footnote_markers` unguarded, so on any database in db/042's own migration window the next
+ingest of *any* source — MeSH, GSRS, PBS — died on FDA-CYP's residue with an error naming neither. Reproduced
+on the measurement database (419 rows, 33 in the window) and confirmed fixed there. Full tabulation:
+PROJECT-NOTES § "Slice 5c.2g".
+
+**⇒ THE REVIEW'S OWN LESSON, and it generalises past this slice: a comment claiming a guard is not evidence the
+guard exists, and this round found three.** Read `2.` in a module docstring as a claim to verify, not a fact.
 
 **⇒ READ THIS BEFORE TRUSTING ANY FIGURE THIS PROJECT WROTE DOWN. SEVEN OF 5c.2g's OWN SPEC FIGURES WERE
 WRONG, AND IMPLEMENTATION FOUND EVERY ONE** — the last two found by the FINAL review, **after the count had
@@ -50,14 +65,24 @@ number, are tabulated in PROJECT-NOTES § "Slice 5c.2g". The two rules:
 its title understates it — "the next ingest" means ANY source's ingest**, so register accuracy depends on
 which unrelated feed ran last. New datum recorded as a comment on #104.
 
-**⇒ THREE ISSUES FILED THIS ROUND, ALL DELIBERATELY NOT BUILT.**
+**⇒ FOUR MORE ISSUES FILED BY THE REVIEW ROUND, ALL DELIBERATELY NOT BUILT.**
+[#132](https://github.com/cairn-ehr/drugref/issues/132) name ambiguity is filed as `unresolved_substance`,
+whose immortal question text says "no moiety's display name matches it" — **false for the ambiguous case**;
+needs a sixth disposition, which is a spec decision ·
+[#133](https://github.com/cairn-ehr/drugref/issues/133) `fda_cyp.py` is 707 lines, over rule 4 ·
+[#134](https://github.com/cairn-ehr/drugref/issues/134) **column headings key immortal question UUIDs and
+their content is never validated**, so an FDA rewording silently retires every withheld question ·
+[#135](https://github.com/cairn-ehr/drugref/issues/135) an ingest that resolves NOTHING still exits 0 — the
+shrink guard added this round catches a short page, not a collapsed registry.
+**[#130](https://github.com/cairn-ehr/drugref/issues/130) was resolved, not deferred**: adding `--allow-shrink`
+was the "next line" it predicted, cli.py hit 516/500, and the handler moved to `cli_fda_cyp.py` (now 480).
+
+**⇒ THREE ISSUES FILED BY THE IMPLEMENTATION ROUND, ALL DELIBERATELY NOT BUILT.**
 [#128](https://github.com/cairn-ehr/drugref/issues/128) stereoisomer assertions against a held racemate
 (`S-mephenytoin` is the reference CYP2C19 probe substrate; carrying it on the racemate is pharmacology with a
 literature behind it, **scoped to every source — DrugCentral will meet it too**) ·
 [#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because a near-name
-heuristic with no measured output is the exact pattern this slice spent seven corrections catching ·
-[#130](https://github.com/cairn-ehr/drugref/issues/130) **`cli.py` sits at exactly 500/500 against a HARD cap
-test — the next line added to it breaks CI**, and the cap has already begun dictating where functions live.
+heuristic with no measured output is the exact pattern this slice spent seven corrections catching.
 
 **⇒ #89's FILE-SIZE FIGURES LIVE ON THE ISSUE AND NOWHERE ELSE.** PROJECT-NOTES used to restate them and they
 had drifted — `questions.py` recorded as 568 while the file was **664**. Re-measured and posted to #89; the
@@ -89,7 +114,7 @@ category, every figure, verbatim. It was duplicated here for four rounds against
 and that cost: **#52's "422 broadened assertions" existed ONLY in the HANDOVER copy**, so the deliberately
 disposable file was the sole record of a figure a future slice needs. Read it there.
 
-**What gates the NEXT session, and only that** — **#128/#129/#130** are this round's own tail · **#112/#105**
+**What gates the NEXT session, and only that** — **#128/#129 and #132–#135** are this round's own tail · **#112/#105**
 wait on class-grain CONTENT · **#124** is the guard round's tail, and the surface it names is unmeasured ·
 **#121 and #123** are the two review findings the guard round did not take · **#104** is confirmed still open
 and now better understood · **#94's seven withheld entries** still need research, and db/035's catalog comment
