@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-annotations`, from merged PR #138 on `main` at `ded85b4`.** Migrations through
+**Current branch: `codex/reviewer-curated-revisions`, from merged PR #139 on `main` at `a1291cd`.** Migrations through
 **`db/045`** are frozen.
 
 **PREVIOUS SLICE — authenticated live, paginated reviewer queue.** Canonical design:
@@ -41,7 +41,7 @@ requires complete type hints, and pure reusable logic belongs in focused modules
 centralises validation and paging constants, keeps pure queue/presentation transforms outside components, and
 enforces Rust public API documentation with `deny(missing_docs)`.
 
-**⇒ JUST FINISHED — append-only working notes and citation-only evidence references.** Canonical design:
+**PREVIOUS SLICE — append-only working notes and citation-only evidence references.** Canonical design:
 [`2026-08-17-drugref-reviewer-annotations-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-annotations-design.md).
 `db/045` adds two immutable reviewer-attributed ledgers against the immortal open-question UUID. Evidence references
 carry a structured DOI/PMID/PMCID/NCT/SPL/URL identifier and optional context, deliberately no verdict, confidence,
@@ -50,19 +50,29 @@ grade, clinical ruling or signature.
 **THE QUEUE/WRITE SEAM NOW USES THE REGISTRY'S FROZEN TARGET KEY.** The service resolves current canonical keys rather
 than minting a second question UUID, rejects stale targets, takes authorship only from the authenticated session, and
 returns insertion-ordered history. Tauri owns all HTTP and token access. The browser preview keeps isolated in-memory
-working history and is never a native fallback. Clinical decision fields and signing remain hard-disabled.
+working history and is never a native fallback. Clinical decision fields and signing were hard-disabled in that slice.
 
-**⇒ DO THIS NEXT FOR THE GUI:** curated interaction and condition revision transactions. Keep local key enrolment and
-signing as the following separate slice. The administration tail remains profile correction, disable/enable, password
-rotation, all-session revocation and signing-key enrolment UI over `db/044`.
+**⇒ JUST FINISHED — transactional curated interaction and condition revisions.** Canonical design:
+[`2026-08-18-drugref-reviewer-curated-revisions-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md).
+The service resolves the canonical target and question, derives current release provenance, attributes the row from the
+authenticated profile, and performs the existing insert-then-supersede sequence. A target advisory lock plus the form's
+`expectedRevisionId` refuses stale concurrent submissions rather than silently overwriting another reviewer's decision.
 
-**Verification completed:** full Python/PostgreSQL suite 1,787 passed; domain 8; service 8 plus the live PostgreSQL
-working-record integration; Tauri 1; `ruff`; Rust formatting and clippy with warnings denied; `npm run check` with 0
-diagnostics; production frontend build; `npm audit` with 0 vulnerabilities. Frontend output is 0.63 kB HTML + 20.87 kB
-CSS + 78.81 kB JS (27.77 kB gzipped); native debug no-bundle build. Chrome desktop and 740 x 900 interaction/visual
-passes covered sign-in, target switching, target-scoped annotation/reference append, history rendering and the disabled
-decision control. A 980 x 680 pass confirms the document remains viewport-bound while the queue and detail panes scroll
-independently to their bottoms; the narrow pass also verified the compact single-column workspace breakpoint.
+**THE GUI NOW RECORDS BUT DOES NOT SIGN.** Interaction and condition forms use their distinct ruling vocabularies, enforce
+the overlay's grade completeness, preview the immutable row and predecessor, and render full revision/signature-status
+history. A successful write refreshes the queue. New revisions remain prominently unsigned; private keys, enrolment,
+signing and verification are absent. Browser preview uses isolated in-memory history.
+
+**⇒ DO THIS NEXT FOR THE GUI:** local signing-key enrolment and the detached sign/verify/resume flow. Then finish profile
+correction, disable/enable, password rotation and all-session revocation administration over `db/044`.
+
+**Verification completed:** full Python/PostgreSQL suite 1,787; domain 10; service 10 plus a live PostgreSQL interaction and
+condition initial-write, correction/history and stale-form integration; Tauri 1; `ruff`; Rust formatting and clippy with
+warnings denied; `npm run check` with 0 diagnostics; production frontend build (0.63 kB HTML + 22.51 kB CSS + 86.32 kB JS,
+29.91 kB JS gzipped); `npm audit` with 0 vulnerabilities; `git diff --check`. Chrome passes at 1,440 x 900, 980 x 680 and
+740 x 900 covered sign-in, target switching, interaction and condition vocabularies, ruling-dependent grade controls,
+immutable preview, record/history/unsigned rendering and disabled signing. The intermediate document remained
+viewport-bound with independent queue/detail scrolling. The narrow pass caught and verified a footer-flow fix.
 
 ## Parallel project sequencing
 

@@ -5,6 +5,8 @@
 #![deny(missing_docs)]
 
 mod auth;
+mod decision_targets;
+mod decisions;
 mod error;
 mod limiter;
 mod queue;
@@ -21,8 +23,9 @@ use axum::{
 };
 use reviewer_domain::{
     BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest, CreateEvidenceReferenceRequest,
-    EvidenceReference, LoginRequest, ReviewAnnotation, ReviewQueuePage, ReviewQueueQuery,
-    ReviewRecord, ReviewRecordQuery, ReviewerAccount, ReviewerRole, SessionGrant,
+    CreateReviewDecisionRequest, EvidenceReference, LoginRequest, ReviewAnnotation,
+    ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery,
+    ReviewerAccount, ReviewerRole, SessionGrant,
 };
 use sqlx::PgPool;
 
@@ -58,6 +61,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions/current", post(logout))
         .route("/v1/review-queue", get(review_queue))
         .route("/v1/review-record", get(review_record))
+        .route(
+            "/v1/review-decision",
+            get(review_decision).post(create_review_decision),
+        )
         .route("/v1/review-annotations", post(create_annotation))
         .route(
             "/v1/review-evidence-references",
@@ -185,6 +192,33 @@ async fn review_record(
         .validate()
         .map_err(|error| AppError::bad_request(error.0))?;
     Ok(Json(records::load(&state.pool, &query).await?))
+}
+
+/// Return immutable clinical decision history for one registered review target.
+async fn review_decision(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReviewRecordQuery>,
+) -> Result<Json<ReviewDecisionRecord>, AppError> {
+    authenticate_headers(&state, &headers).await?;
+    let query = query
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    Ok(Json(decisions::load(&state.pool, &query).await?))
+}
+
+/// Append one authenticated clinical decision through the overlay transaction.
+async fn create_review_decision(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateReviewDecisionRequest>,
+) -> Result<(StatusCode, Json<ReviewDecisionRecord>), AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    let input = input
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    let record = decisions::create(&state.pool, &input, &authenticated.reviewer.full_name).await?;
+    Ok((StatusCode::CREATED, Json(record)))
 }
 
 /// Append one authenticated reviewer's Markdown working note.

@@ -137,7 +137,7 @@ button { color: inherit; }
 .queue-pagination button { padding: 5px 8px; color: #4c5d54; background: #fff; border: 1px solid #d2d9d4; border-radius: 4px; font-size: 8px; cursor: pointer; }
 .queue-pagination button:disabled { cursor: not-allowed; opacity: .45; }
 
-/* Read-only clinical target detail and deliberately disabled future write controls. */
+/* Clinical target detail, revision forms, and the deliberately disabled signing control. */
 .detail-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fcfcf9; }
 .detail-head { padding: 20px 25px 17px; background: linear-gradient(115deg, #f8faf6, #f2f6f1); border-bottom: 1px solid var(--line); }
 .detail-kicker { display: flex; gap: 7px; color: #76857d; font-size: 8px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
@@ -163,6 +163,26 @@ button { color: inherit; }
 .decision-grid select, .decision-grid input, .decision-grid textarea, .annotation { padding: 8px 10px; color: #7d8983; background: #f7f8f5; border: 1px solid #dce1dd; border-radius: 5px; font-size: 9px; }
 .decision-grid select, .decision-grid input { height: 33px; }
 .decision-grid textarea { min-height: 54px; resize: vertical; }
+.decision-preview-button { grid-column: 1 / -1; justify-self: end; }
+.decision-history { display: grid; gap: 7px; margin-bottom: 10px; }
+.decision-revision { padding: 10px 11px; background: #fff; border: 1px solid #dde2de; border-radius: 5px; }
+.decision-revision--current { border-color: #a9c4b5; box-shadow: inset 3px 0 #57936f; }
+.decision-revision > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.decision-revision strong { color: #40534a; font-size: 9px; text-transform: capitalize; }
+.decision-revision span, .decision-revision footer { color: #8c9791; font-size: 7px; }
+.decision-revision p { margin: 6px 0; color: #53645b; font-size: 8px; text-transform: capitalize; }
+.decision-revision small { display: block; margin-top: 4px; color: #53645b; font-size: 8px; line-height: 1.45; }
+.decision-revision small b { margin-right: 4px; color: #77857e; font-size: 7px; text-transform: uppercase; }
+.decision-revision footer { margin-top: 7px; }
+.decision-preview { margin-top: 10px; padding: 12px; background: #eef5f0; border: 1px solid #cdded3; border-radius: 6px; }
+.decision-preview > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+.decision-preview .section-label { width: 100%; }
+.decision-preview strong { color: #315f50; font: 600 14px Georgia, serif; text-transform: capitalize; }
+.decision-preview span, .decision-preview p { color: #63736b; font-size: 8px; }
+.decision-preview small { display: block; margin-top: 5px; color: #53645b; font-size: 8px; line-height: 1.45; }
+.decision-preview small b { margin-right: 4px; color: #77857e; font-size: 7px; text-transform: uppercase; }
+.decision-preview p { margin: 8px 0; line-height: 1.5; }
+.decision-preview-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .provenance-card { padding: 13px 14px; background: #fff; border: 1px solid #dde2de; border-radius: 6px; }
 .provenance-line { display: flex; justify-content: space-between; color: #829088; font-size: 8px; }
 .provenance-line strong { color: #485a51; }
@@ -265,6 +285,7 @@ button { color: inherit; }
   .metrics { padding: 14px 0; }
   .review-layout { min-height: 0; flex: none; grid-template-columns: 1fr; overflow: visible; }
   .queue-panel { height: 520px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .detail-scroll { overflow: visible; }
+  .detail-panel { min-height: auto; }
+  .detail-scroll { flex: 0 0 auto; overflow: visible; }
   .user-layout { flex: none; overflow: visible; }
 }

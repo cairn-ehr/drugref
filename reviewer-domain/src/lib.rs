@@ -4,8 +4,13 @@
 //! silently disagree about account or queue semantics.
 #![deny(missing_docs)]
 
+mod decisions;
 mod records;
 
+pub use decisions::{
+    CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
+    ReviewDecisionRevision, Severity,
+};
 pub use records::{
     CreateAnnotationRequest, CreateEvidenceReferenceRequest, EvidenceReference,
     EvidenceReferenceScheme, ReviewAnnotation, ReviewRecord, ReviewRecordQuery,
