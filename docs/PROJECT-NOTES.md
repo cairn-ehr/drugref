@@ -3153,6 +3153,39 @@ detail panes independently scroll to their bottoms; the narrow pass caught and v
 slice. The administration tail is profile correction, disable/enable, password rotation, all-session revocation and
 signing-key enrolment UI over `db/044`.
 
+## Reviewer curated revisions (2026-08-18) — no migration
+
+Canonical design: [`2026-08-18-drugref-reviewer-curated-revisions-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md).
+
+**The GUI can now record clinical content without conflating authentication and signing.** Interaction targets admit
+`applies` / `does_not_apply`; condition targets admit `contraindicated` / `indicated` / `context_dependent` / `spurious`.
+Asserting decisions require severity and evidence grade, while retiring/spurious decisions require both absent. Mechanism
+and management remain bounded optional prose. The GUI previews the exact immutable revision and predecessor before recording.
+
+**The service owns every attribution and identity field.** It resolves the frozen target key through `open_question`, parses
+the natural-key UUIDs itself, writes `reviewed_by` from the authenticated current profile and derives `reviewed_against` from
+candidate ingest releases. A transaction-scoped advisory target lock plus `expectedRevisionId` rejects a stale form instead
+of silently superseding another reviewer's decision. The existing append-only and deferred single-live triggers remain the
+floor; `db/045` stays the latest migration.
+
+**The response is database-derived history, not a success guess.** Both overlay tables project into one typed revision model,
+including predecessor links and `curated_signature_status`. Tauri retains the bearer token; browser preview uses isolated
+memory. Successful writes refresh the queue, while the footer keeps detached signing disabled and newly recorded rows visible
+as unsigned.
+
+**Verified:** full Python/PostgreSQL suite **1,787 passed**; reviewer-domain **10 passed**; reviewer-service **10 passed** plus
+a live PostgreSQL interaction and condition initial-write, correction/history and stale-form integration; Tauri **1 passed**;
+Rust formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build (0.63 kB
+HTML + 22.51 kB CSS + 86.32 kB JS, 29.91 kB JS gzipped); `npm audit` with 0 vulnerabilities; `git diff --check`. Chrome
+passes at 1,440 x 900, 980 x 680 and 740 x 900 covered sign-in, target switching, both decision vocabularies,
+ruling-dependent grade controls, immutable preview, record/history/unsigned rendering and disabled signing. The
+intermediate document remained viewport-bound with independent queue/detail scrolling. The narrow pass caught a flex-item
+height defect that overlaid the signing footer on clinical content; the corrected footer now follows the complete detail
+content without overlap.
+
+**Next:** local signing-key enrolment and the detached sign/verify/resume flow. The administration tail remains profile
+correction, disable/enable, password rotation and all-session revocation.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER

@@ -17,6 +17,8 @@ pub fn run() {
             accounts::login,
             accounts::load_review_queue,
             accounts::load_review_record,
+            accounts::load_review_decision,
+            accounts::create_review_decision,
             accounts::create_review_annotation,
             accounts::create_evidence_reference,
             accounts::list_users,

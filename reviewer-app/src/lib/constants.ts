@@ -42,6 +42,9 @@ export const EVIDENCE_REFERENCE_MAX_LENGTH = 2_000;
 /** Maximum citation context length shared with db/045. */
 export const EVIDENCE_NOTE_MAX_LENGTH = 10_000;
 
+/** Maximum characters accepted for mechanism or management prose. */
+export const CLINICAL_PROSE_MAX_LENGTH = 20_000;
+
 /** Minimum password length enforced before Argon2id hashing. */
 export const PASSWORD_MIN_LENGTH = 12;
 

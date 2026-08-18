@@ -179,7 +179,10 @@ pub struct ReviewRecord {
 }
 
 /// Validate the canonical gap-key prefix associated with one review kind.
-fn validated_target_key(kind: ReviewKind, value: &str) -> Result<String, ValidationError> {
+pub(crate) fn validated_target_key(
+    kind: ReviewKind,
+    value: &str,
+) -> Result<String, ValidationError> {
     let value = value.trim();
     let shape_is_valid = match kind {
         ReviewKind::InteractionRule => {

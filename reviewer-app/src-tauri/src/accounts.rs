@@ -5,12 +5,13 @@ use std::sync::Mutex;
 use reqwest::{Client, Method, StatusCode};
 use reviewer_domain::{
     ApiErrorBody, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
-    CreateEvidenceReferenceRequest, EvidenceReference, LoginRequest, ReviewAnnotation,
-    ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewerAccount,
-    SessionGrant,
+    CreateEvidenceReferenceRequest, CreateReviewDecisionRequest, EvidenceReference, LoginRequest,
+    ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord,
+    ReviewRecordQuery, ReviewerAccount, SessionGrant,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
+#[cfg(debug_assertions)]
 const DEFAULT_DEBUG_SERVICE_URL: &str = "http://127.0.0.1:8787";
 const BOOTSTRAP_STATUS_PATH: &str = "/v1/bootstrap/status";
 const BOOTSTRAP_ADMIN_PATH: &str = "/v1/bootstrap/admin";
@@ -19,6 +20,7 @@ const CURRENT_SESSION_PATH: &str = "/v1/sessions/current";
 const USERS_PATH: &str = "/v1/users";
 const REVIEW_QUEUE_PATH: &str = "/v1/review-queue";
 const REVIEW_RECORD_PATH: &str = "/v1/review-record";
+const REVIEW_DECISION_PATH: &str = "/v1/review-decision";
 const REVIEW_ANNOTATIONS_PATH: &str = "/v1/review-annotations";
 const REVIEW_EVIDENCE_REFERENCES_PATH: &str = "/v1/review-evidence-references";
 
@@ -225,6 +227,39 @@ pub async fn load_review_record(
         .await
         .map_err(|error| format!("cannot reach the review service: {error}"))?;
     response_json(response).await
+}
+
+/// Load immutable clinical decision history for one review target.
+#[tauri::command]
+pub async fn load_review_decision(
+    query: ReviewRecordQuery,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<ReviewDecisionRecord, String> {
+    let response = client
+        .http
+        .get(client.endpoint(REVIEW_DECISION_PATH)?)
+        .bearer_auth(client.token()?)
+        .query(&query)
+        .send()
+        .await
+        .map_err(|error| format!("cannot reach the review service: {error}"))?;
+    response_json(response).await
+}
+
+/// Record one clinical revision through the authenticated native boundary.
+#[tauri::command]
+pub async fn create_review_decision(
+    input: CreateReviewDecisionRequest,
+    client: tauri::State<'_, AccountClient>,
+) -> Result<ReviewDecisionRecord, String> {
+    send_json(
+        &client,
+        Method::POST,
+        REVIEW_DECISION_PATH,
+        Some(&input),
+        true,
+    )
+    .await
 }
 
 /// Append one Markdown working note through the authenticated native boundary.

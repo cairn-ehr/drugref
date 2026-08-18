@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
   import UserManagement from "./UserManagement.svelte";
   import WorkingRecords from "./WorkingRecords.svelte";
+  import ClinicalDecision from "./ClinicalDecision.svelte";
   import {
     accountMode,
     bootstrapAdmin,
@@ -78,6 +79,7 @@
     password: "",
   });
   let bootstrapConfirmation = $state("");
+  let recordedTargets = $state<string[]>([]);
 
   let selectedItem = $derived(workspace ? retainedQueueSelection(workspace.items, selectedId) : null);
 
@@ -240,6 +242,12 @@
   function selectQueueItem(item: ReviewQueueItem): void {
     selectedId = item.id;
   }
+
+  /** Mark a recorded target locally and refresh the live queue that should retire it. */
+  function decisionRecorded(targetKey: string): void {
+    if (!recordedTargets.includes(targetKey)) recordedTargets = [...recordedTargets, targetKey];
+    void refreshQueue(FIRST_QUEUE_PAGE);
+  }
 </script>
 
 <svelte:head><meta name="description" content="Human review interface for Drugref's signed, append-only curated overlay" /></svelte:head>
@@ -296,12 +304,12 @@
     </aside>
 
     <main class="workspace-shell">
-      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "users" ? "Administration" : "Clinical curation"}</p><h1>{activeView === "users" ? "Reviewer accounts" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live read-only queue"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
+      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "users" ? "Administration" : "Clinical curation"}</p><h1>{activeView === "users" ? "Reviewer accounts" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
 
       {#if activeView === "users"}
         <UserManagement />
       {:else}
-        <section class="metrics" aria-label="Review queue summary"><article><span class="metric-icon metric-icon--amber" aria-hidden="true">↔</span><div><strong>{workspace.summary.interactionRules}</strong><span>Interaction rules</span></div><small>Awaiting judgement</small></article><article><span class="metric-icon metric-icon--rose" aria-hidden="true">±</span><div><strong>{workspace.summary.conditionContradictions}</strong><span>Condition conflicts</span></div><small>Need clinical context</small></article><article><span class="metric-icon metric-icon--green" aria-hidden="true">✓</span><div><strong>{workspace.summary.reviewedPairs}</strong><span>Curated DDI pairs</span></div><small>Expanded from signed rules</small></article></section>
+        <section class="metrics" aria-label="Review queue summary"><article><span class="metric-icon metric-icon--amber" aria-hidden="true">↔</span><div><strong>{workspace.summary.interactionRules}</strong><span>Interaction rules</span></div><small>Awaiting judgement</small></article><article><span class="metric-icon metric-icon--rose" aria-hidden="true">±</span><div><strong>{workspace.summary.conditionContradictions}</strong><span>Condition conflicts</span></div><small>Need clinical context</small></article><article><span class="metric-icon metric-icon--green" aria-hidden="true">✓</span><div><strong>{workspace.summary.reviewedPairs}</strong><span>Curated DDI pairs</span></div><small>Expanded from live rules</small></article></section>
         <section class="review-layout">
           <div class="queue-panel">
             <div class="queue-tools">
@@ -325,20 +333,19 @@
                 <div class="detail-kicker"><span>{reviewKindLabel(selectedItem.kind)}</span><span>•</span><span>{selectedItem.relationships.join(" + ")}</span></div>
                 <h2>{selectedItem.subjectName}</h2>
                 <p class="relation-line"><span>with</span> {selectedItem.objectName}</p>
-                <div class="detail-badges"><span class="badge badge--amber">Unreviewed</span><span class="badge">{selectedItem.candidateSources.join(" + ")}</span><span class="badge">Release {selectedItem.upstreamReleases.join(" / ")}</span></div>
+                <div class="detail-badges"><span class="badge badge--amber">{recordedTargets.includes(selectedItem.targetKey) ? "Recorded · unsigned" : "Unreviewed"}</span><span class="badge">{selectedItem.candidateSources.join(" + ")}</span><span class="badge">Release {selectedItem.upstreamReleases.join(" / ")}</span></div>
               </div>
               <div class="detail-scroll">
                 <article class="question-card"><p class="section-label">Review question</p><p>{selectedItem.question}</p><div class="impact-callout"><strong>{selectedItem.impactCount}</strong><span>{selectedItem.kind === "interaction_rule" ? "candidate pairs inherit this one rule" : "stable pair carries contradictory projections"}</span></div></article>
-                <div class="section-heading"><div><p class="section-label">Clinical judgement</p><h3>Decision fields</h3></div><span>Write path remains disabled</span></div>
-                <div class="decision-grid" aria-disabled="true"><label><span>Ruling</span><select disabled><option>Choose a ruling…</option></select></label><label><span>Severity</span><select disabled><option>Choose severity…</option></select></label><label class="wide"><span>Mechanism</span><textarea disabled placeholder="Explain the clinical mechanism"></textarea></label><label class="wide"><span>Management</span><textarea disabled placeholder="Describe practical management"></textarea></label><label><span>Evidence grade</span><select disabled><option>Choose evidence…</option></select></label><label><span>Reviewed against</span><input disabled value={selectedItem.upstreamReleases.join(" / ")} /></label></div>
+                {#key `decision-${selectedItem.id}`}<ClinicalDecision item={selectedItem} onRecorded={decisionRecorded} />{/key}
                 <div class="section-heading"><div><p class="section-label">Provenance</p><h3>Why this is in the queue</h3></div></div>
                 <article class="provenance-card"><div class="provenance-line"><span>Source assertion</span><strong>{selectedItem.candidateSources.join(" + ")}</strong></div><p>{selectedItem.provenance}</p><dl><div><dt>Subject UUID</dt><dd>{selectedItem.subjectUuid}</dd></div><div><dt>Object UUID</dt><dd>{selectedItem.objectUuid}</dd></div></dl></article>
 
                 {#key selectedItem.id}<WorkingRecords item={selectedItem} />{/key}
               </div>
               <footer class="detail-actions detail-actions--decision-only">
-                <div><span class="key-indicator"><span></span> Working records are append-only</span><small>Clinical decisions and signing remain disabled · {keyCountLabel(currentUser.keyCount)} enrolled</small></div>
-                <button class="primary-button primary-button--compact" type="button" disabled>Record &amp; sign decision</button>
+                <div><span class="key-indicator"><span></span> Decisions and working records are append-only</span><small>Detached signing remains disabled · {keyCountLabel(currentUser.keyCount)} enrolled</small></div>
+                <button class="primary-button primary-button--compact" type="button" disabled>Sign decision</button>
               </footer>
             </section>
           {:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}

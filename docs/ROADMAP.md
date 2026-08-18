@@ -937,7 +937,7 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
-### Slice 6r — Human reviewer application 🚧 WORKING RECORDS BUILT
+### Slice 6r — Human reviewer application 🚧 CURATED REVISIONS BUILT
 
 The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
 append-only clinical revisions, and sign the exact row reviewed. Canonical design:
@@ -975,6 +975,13 @@ attributed to stable reviewer identities and resolved through the open-question 
 no question state, evidence verdict, grade, clinical ruling or signature; closing a gap retains the cited question and its
 research history. Next: curated interaction/condition revision transactions, then local signing. Administration still needs
 profile correction, disable/enable, password rotation, all-session revocation and signing-key enrolment UI.
+
+The [curated-revision round](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md) exposes the existing
+`curated_interaction` and `curated_condition` append-then-supersede model through authenticated service and Tauri boundaries.
+The service owns question identity, reviewer attribution and release provenance; an expected live revision identifier plus a
+transaction-scoped target lock refuses stale concurrent forms. The GUI provides kind-specific decision vocabularies, a
+two-step immutable-row preview and complete revision history. New rows remain explicitly unsigned. Next: local signing, then
+the remaining reviewer administration operations.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

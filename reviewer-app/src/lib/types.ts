@@ -6,6 +6,21 @@ export type ReviewKind = "interaction_rule" | "condition_contradiction";
 /** Identifier schemes admitted for citation-only working references. */
 export type EvidenceReferenceScheme = "DOI" | "PMID" | "PMCID" | "NCT" | "SPL" | "URL";
 
+/** Clinical decisions admitted across interaction and condition targets. */
+export type ReviewDecision =
+  | "applies"
+  | "does_not_apply"
+  | "contraindicated"
+  | "indicated"
+  | "context_dependent"
+  | "spurious";
+
+/** Ordered clinical severities accepted by the curated overlay. */
+export type Severity = "contraindicated" | "major" | "moderate" | "minor";
+
+/** Evidence-attestation grades accepted by the curated overlay. */
+export type EvidenceGrade = "established" | "probable" | "suspected" | "theoretical";
+
 /** Optional paging and filter parameters accepted by the review queue endpoint. */
 export interface ReviewQueueQuery {
   /** One-based page number. */
@@ -46,7 +61,7 @@ export interface ReviewQueueFilters {
 export interface ReviewQueueItem {
   /** UI identity derived from the target's stable natural key. */
   id: string;
-  /** Source-neutral natural key used by the future write path. */
+  /** Source-neutral natural key used by target-scoped review writes. */
   targetKey: string;
   /** Kind of clinical question represented by this target. */
   kind: ReviewKind;
@@ -140,6 +155,60 @@ export interface ReviewRecord {
   annotations: ReviewAnnotation[];
   /** Citation-only references in insertion order. */
   evidenceReferences: EvidenceReference[];
+}
+
+/** Request to create one immutable clinical decision revision. */
+export interface CreateReviewDecisionInput extends ReviewRecordQuery {
+  /** Target-specific clinical decision. */
+  decision: ReviewDecision;
+  /** Required severity for asserting decisions. */
+  severity?: Severity;
+  /** Optional clinical mechanism. */
+  mechanism?: string;
+  /** Optional practical management guidance. */
+  management?: string;
+  /** Required evidence grade for asserting decisions. */
+  evidenceGrade?: EvidenceGrade;
+  /** Live revision observed when the form was loaded. */
+  expectedRevisionId?: number | null;
+}
+
+/** One immutable curated interaction or condition revision. */
+export interface ReviewDecisionRevision {
+  /** Stable curated row identifier within this target kind. */
+  revisionId: number;
+  /** Target-specific clinical decision. */
+  decision: ReviewDecision;
+  /** Stored severity, absent for retiring decisions. */
+  severity: Severity | null;
+  /** Optional clinical mechanism. */
+  mechanism: string | null;
+  /** Optional practical management guidance. */
+  management: string | null;
+  /** Stored evidence grade, absent for retiring decisions. */
+  evidenceGrade: EvidenceGrade | null;
+  /** Immortal question UUID, absent on legacy CLI rows. */
+  questionUuid: string | null;
+  /** Authenticated reviewer-name snapshot. */
+  reviewedBy: string;
+  /** Candidate releases against which the decision was formed. */
+  reviewedAgainst: string;
+  /** RFC 3339 recording time. */
+  reviewedAt: string;
+  /** Later immutable revision, absent while this row is live. */
+  supersededBy: number | null;
+  /** Database-derived detached signature verdict. */
+  signatureStatus: string;
+}
+
+/** Complete append-only decision history for one canonical target. */
+export interface ReviewDecisionRecord {
+  /** Frozen canonical open-question gap key. */
+  targetKey: string;
+  /** Current live revision identifier, absent before the first decision. */
+  currentRevisionId: number | null;
+  /** Immutable revisions in insertion order. */
+  history: ReviewDecisionRevision[];
 }
 
 /** Page metadata returned with every queue snapshot. */

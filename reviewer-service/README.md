@@ -30,6 +30,12 @@ Any authenticated reviewer can also read `GET /v1/review-record` and append thro
 write attributed, immutable research history only. They do not update question state,
 record an evidence verdict, create a curated assertion or sign anything.
 
+`GET /v1/review-decision` returns immutable curated revision history for one canonical
+target. `POST /v1/review-decision` records an interaction judgement or condition ruling
+through the existing insert-then-supersede overlay transaction. The service derives
+authorship and reviewed releases itself and rejects a stale `expectedRevisionId`; the
+new row remains unsigned until the separate local-signing workflow is implemented.
+
 Run the populated-database integration check explicitly:
 
 ```sh
@@ -38,4 +44,7 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_d
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_working_record_round_trip -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_decision_revision_round_trip -- --ignored
 ```
