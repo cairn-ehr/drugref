@@ -11,8 +11,21 @@ the GUI. Queue search and the type, source and relationship filters execute on t
 service. Reviewers can append attributed Markdown notes and citation-only evidence
 references; these do not change clinical state. They can separately preview and record
 an immutable interaction judgement or condition ruling with stale-form protection.
-Signing remains disabled, newly recorded revisions are visibly unsigned, and
-authentication is not a clinical signature.
+They can then create an encrypted device-local Stronghold key, enrol only its public
+half, inspect the exact canonical payload, and explicitly sign. Current unsigned GUI
+revisions remain available in **Pending signatures** after queue refresh or restart.
+Authentication is not a clinical signature.
+
+Signature confirmation displays every canonically rendered field in signed order,
+including complete mechanism and management text, provenance, identifiers, key and
+signing instant. SQL NULL is explicit. The raw length-prefixed byte buffer remains in
+native memory and is still bound to the displayed digest.
+
+The signing-vault passphrase is separate from the reviewer account password and is
+never sent to the service. If it is lost, **Replace key** first retires the
+authenticated public enrolment and then deletes only this reviewer's fixed local vault
+files. An unused key reports zero preserved signatures; earlier signatures from a used
+key remain valid under the registry's time-scoped rotation rule.
 
 The Vite browser surface retains representative data only for visual development and
 labels it **Browser queue preview**. The installed Tauri app never falls back to that
@@ -21,8 +34,9 @@ data when its authenticated service request fails.
 Behavioural and validation values live in `src/lib/constants.ts`; pure queue-query
 and presentation transformations live in `src/lib/queue.ts` and
 `src/lib/presentation.ts`; `src/lib/records.ts` and `src/lib/decisions.ts` own the
-native/browser-preview working-record and clinical-revision adapters. Components retain
-only lifecycle, event, and view state.
+native/browser-preview working-record and clinical-revision adapters;
+`src/lib/signing.ts` owns the narrow signing adapter. Components retain only lifecycle,
+event, and view state.
 The repository-wide documentation, constants, typing, and functional-decomposition
 rules are defined in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
@@ -35,6 +49,6 @@ npm run build
 npm run tauri dev
 ```
 
-Apply migrations through 045 and start `reviewer-service/` first. Debug builds use
+Apply migrations through 046 and start `reviewer-service/` first. Debug builds use
 `http://127.0.0.1:8787` by default; set `DRUGREF_REVIEW_SERVICE_URL` to override it.
 Rust unit tests run from `src-tauri` with `cargo test`.

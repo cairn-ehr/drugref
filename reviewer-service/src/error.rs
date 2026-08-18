@@ -30,6 +30,11 @@ impl AppError {
         Self::new(StatusCode::FORBIDDEN, "administrator access required")
     }
 
+    /// Construct an authorisation failure with a workflow-specific safe message.
+    pub fn forbidden_message(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, message)
+    }
+
     /// Construct a client-visible uniqueness or state conflict.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)

@@ -3,6 +3,8 @@
 
   import { onMount } from "svelte";
   import UserManagement from "./UserManagement.svelte";
+  import SigningKeys from "./SigningKeys.svelte";
+  import PendingSignatures from "./PendingSignatures.svelte";
   import WorkingRecords from "./WorkingRecords.svelte";
   import ClinicalDecision from "./ClinicalDecision.svelte";
   import {
@@ -29,7 +31,6 @@
     USERNAME_PATTERN,
   } from "./lib/constants";
   import {
-    keyCountLabel,
     queueReadDate,
     retainedQueueSelection,
     reviewerInitials,
@@ -45,7 +46,7 @@
   type Screen = "checking" | "bootstrap" | "login" | "workspace" | "unavailable";
 
   /** Authenticated workspace sections selectable from the sidebar. */
-  type View = "queue" | "users";
+  type View = "queue" | "pending" | "users" | "signing";
 
   /** Initial sequence number used to reject stale overlapping queue responses. */
   const INITIAL_QUEUE_REQUEST = 0;
@@ -233,9 +234,24 @@
     activeView = "queue";
   }
 
+  /** Select current curated revisions whose detached signing can be resumed. */
+  function showPendingSignatures(): void {
+    activeView = "pending";
+  }
+
   /** Select the reviewer-account administration view. */
   function showUsers(): void {
     activeView = "users";
+  }
+
+  /** Select the current reviewer's local signing-key surface. */
+  function showSigningKeys(): void {
+    activeView = "signing";
+  }
+
+  /** Keep the signed-in reviewer chip aligned with refreshed enrolment status. */
+  function updateKeyCount(keyCount: number): void {
+    if (currentUser) currentUser = { ...currentUser, keyCount };
   }
 
   /** Select a queue item for inspection and append-only working history. */
@@ -295,19 +311,23 @@
       <nav aria-label="Primary navigation">
         <p class="nav-label">Workspace</p>
         <button class="nav-item" class:active={activeView === "queue"} type="button" onclick={showQueue}><span class="nav-icon" aria-hidden="true">⌁</span>Review queue<span class="nav-count">{unresolvedQueueCount(workspace.summary)}</span></button>
-        <button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">✓</span>Reviewed entries</button><button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">⌕</span>Evidence library</button>
+        <button class="nav-item" class:active={activeView === "pending"} type="button" onclick={showPendingSignatures}><span class="nav-icon" aria-hidden="true">✓</span>Pending signatures</button><button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">⌕</span>Evidence library</button>
         <p class="nav-label nav-label--spaced">Administration</p>
         {#if currentUser.role === "administrator"}<button class="nav-item" class:active={activeView === "users"} type="button" onclick={showUsers}><span class="nav-icon" aria-hidden="true">♙</span>Reviewers</button>{/if}
-        <button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">◇</span>Signing keys</button>
+        <button class="nav-item" class:active={activeView === "signing"} type="button" onclick={showSigningKeys}><span class="nav-icon" aria-hidden="true">◇</span>Signing keys</button>
       </nav>
       <div class="sidebar-status"><div class="status-row"><span class="status-dot status-dot--live"></span><span>Review service connected</span></div><small>Queue read {queueReadDate(workspace.generatedAt)}</small></div>
     </aside>
 
     <main class="workspace-shell">
-      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "users" ? "Administration" : "Clinical curation"}</p><h1>{activeView === "users" ? "Reviewer accounts" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
+      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "queue" || activeView === "pending" ? "Clinical curation" : "Administration"}</p><h1>{activeView === "users" ? "Reviewer accounts" : activeView === "signing" ? "Signing keys" : activeView === "pending" ? "Pending signatures" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
 
       {#if activeView === "users"}
         <UserManagement />
+      {:else if activeView === "signing"}
+        <SigningKeys onEnrolled={updateKeyCount} />
+      {:else if activeView === "pending"}
+        <PendingSignatures />
       {:else}
         <section class="metrics" aria-label="Review queue summary"><article><span class="metric-icon metric-icon--amber" aria-hidden="true">↔</span><div><strong>{workspace.summary.interactionRules}</strong><span>Interaction rules</span></div><small>Awaiting judgement</small></article><article><span class="metric-icon metric-icon--rose" aria-hidden="true">±</span><div><strong>{workspace.summary.conditionContradictions}</strong><span>Condition conflicts</span></div><small>Need clinical context</small></article><article><span class="metric-icon metric-icon--green" aria-hidden="true">✓</span><div><strong>{workspace.summary.reviewedPairs}</strong><span>Curated DDI pairs</span></div><small>Expanded from live rules</small></article></section>
         <section class="review-layout">
@@ -343,10 +363,6 @@
 
                 {#key selectedItem.id}<WorkingRecords item={selectedItem} />{/key}
               </div>
-              <footer class="detail-actions detail-actions--decision-only">
-                <div><span class="key-indicator"><span></span> Decisions and working records are append-only</span><small>Detached signing remains disabled · {keyCountLabel(currentUser.keyCount)} enrolled</small></div>
-                <button class="primary-button primary-button--compact" type="button" disabled>Sign decision</button>
-              </footer>
             </section>
           {:else}<div class="detail-panel empty-state">Choose a record to inspect it.</div>{/if}
         </section>

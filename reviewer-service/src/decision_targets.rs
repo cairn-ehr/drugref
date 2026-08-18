@@ -1,7 +1,7 @@
 //! Canonical target parsing, locking, question resolution, and release provenance.
 
 use reviewer_domain::{ReviewKind, ReviewRecordQuery};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::AppError;
@@ -28,13 +28,22 @@ pub(super) async fn read_target(
     pool: &PgPool,
     query: &ReviewRecordQuery,
 ) -> Result<ReviewTarget, AppError> {
+    let mut connection = pool.acquire().await?;
+    read_target_connection(&mut connection, query).await
+}
+
+/// Resolve a target on a caller-owned connection or locked transaction.
+pub(super) async fn read_target_connection(
+    connection: &mut PgConnection,
+    query: &ReviewRecordQuery,
+) -> Result<ReviewTarget, AppError> {
     let target = parse_target(query.kind, &query.target_key)?;
     let found: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM drugref.open_question WHERE gap_kind = $1 AND gap_key = $2)",
     )
     .bind(gap_kind(query.kind))
     .bind(&query.target_key)
-    .fetch_one(pool)
+    .fetch_one(connection)
     .await?;
     if !found {
         return Err(AppError::not_found("review target is not registered"));

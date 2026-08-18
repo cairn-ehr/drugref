@@ -3,6 +3,7 @@
 
   import { onDestroy, onMount } from "svelte";
   import { CLINICAL_PROSE_MAX_LENGTH } from "./lib/constants";
+  import ReviewSigning from "./ReviewSigning.svelte";
   import { createReviewDecision, loadReviewDecision } from "./lib/decisions";
   import { workingRecordDate } from "./lib/presentation";
   import type {
@@ -101,6 +102,9 @@
         management,
         evidenceGrade: requiresGrade ? evidenceGrade : undefined,
         expectedRevisionId: record.currentRevisionId,
+      }, {
+        subjectName: item.subjectName,
+        objectName: item.objectName,
       });
       if (!mounted) return;
       record = updated;
@@ -116,6 +120,11 @@
   /** Render a compact human label for a wire decision or grade. */
   function label(value: string): string {
     return value.replaceAll("_", " ");
+  }
+
+  /** Replace local history with the service response after verified signing. */
+  function signatureRecorded(updated: ReviewDecisionRecord): void {
+    record = updated;
   }
 </script>
 
@@ -137,6 +146,10 @@
   </div>
 {:else if !loading}
   <p class="record-empty">No clinical decision has been recorded for this target.</p>
+{/if}
+
+{#if record}
+  <ReviewSigning {item} {record} onSigned={signatureRecorded} />
 {/if}
 
 <form class="decision-grid" onsubmit={previewRevision}>
@@ -161,7 +174,7 @@
     {#if mechanism.trim()}<small><b>Mechanism</b> {mechanism.trim()}</small>{/if}
     {#if management.trim()}<small><b>Management</b> {management.trim()}</small>{/if}
     <small><b>Reviewed against</b> {item.upstreamReleases.join(" / ")}</small>
-    <p>{record.currentRevisionId ? `This will supersede revision #${record.currentRevisionId}.` : "This will be the first clinical revision for this target."} Signing remains a separate later action.</p>
+    <p>{record.currentRevisionId ? `This will supersede revision #${record.currentRevisionId}.` : "This will be the first clinical revision for this target."} Signing remains a separate action.</p>
     <div class="decision-preview-actions"><button class="secondary-button" type="button" disabled={saving} onclick={() => previewing = false}>Keep editing</button><button class="primary-button primary-button--compact" type="button" disabled={saving} onclick={() => void recordRevision()}>{saving ? "Recording…" : "Record revision"}</button></div>
   </article>
 {/if}

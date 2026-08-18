@@ -1,7 +1,7 @@
 # Drugref reviewer service
 
 Authenticated service boundary between the native reviewer application and PostgreSQL.
-Apply migrations through `db/045_reviewer_annotations.sql`, then run:
+Apply migrations through `db/046_reviewer_signing_enrolment_comment.sql`, then run:
 
 ```sh
 DATABASE_URL='postgresql://postgres@localhost:5532/drugref_reviewer_dev' cargo run
@@ -34,7 +34,20 @@ record an evidence verdict, create a curated assertion or sign anything.
 target. `POST /v1/review-decision` records an interaction judgement or condition ruling
 through the existing insert-then-supersede overlay transaction. The service derives
 authorship and reviewed releases itself and rejects a stale `expectedRevisionId`; the
-new row remains unsigned until the separate local-signing workflow is implemented.
+new row remains unsigned until the separate local-signing action succeeds.
+
+`GET` and `POST /v1/signing-keys/current` expose the authenticated reviewer's public
+key enrolments; private key material never enters this service. `GET
+/v1/pending-signatures` lists current GUI revisions awaiting their first signature.
+`GET /v1/review-signature` prepares a short-lived canonical challenge and `POST
+/v1/review-signature` independently rebuilds its bytes, verifies Ed25519 against an
+active enrolled key, and inserts the detached signature.
+
+`DELETE /v1/signing-keys/current` supports lost-passphrase recovery without erasing
+audit history. It requires ownership, records the registry key as time-scoped
+`rotated`, withdraws the enrolment, and reports how many prior signatures remain
+valid. The native client deletes its fixed encrypted vault files only after that
+transaction commits and can retry cleanup idempotently.
 
 Run the populated-database integration check explicitly:
 
@@ -47,4 +60,7 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_decision_revision_round_trip -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_detached_signing_round_trip -- --ignored
 ```

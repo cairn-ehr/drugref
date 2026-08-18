@@ -211,6 +211,90 @@ export interface ReviewDecisionRecord {
   history: ReviewDecisionRevision[];
 }
 
+/** One current public signing key enrolled to the authenticated reviewer. */
+export interface SigningKeySummary {
+  /** SHA-256 fingerprint of the raw Ed25519 public key. */
+  keyFingerprint: string;
+  /** Registry algorithm name. */
+  algorithm: string;
+  /** Human-readable registry holder. */
+  holder: string;
+  /** Current database-owned key status. */
+  status: string;
+  /** RFC 3339 enrolment timestamp. */
+  enrolledAt: string;
+  /** Detached signatures already recorded with this fingerprint. */
+  signatureCount: number;
+}
+
+/** Result of retiring a public enrolment and replacing its local private key. */
+export interface SigningKeyReplacement {
+  /** Fingerprint withdrawn from this reviewer and device. */
+  keyFingerprint: string;
+  /** Existing signatures preserved by time-scoped rotation. */
+  preservedSignatureCount: number;
+}
+
+/** Native device-vault state merged with service enrolments. */
+export interface DeviceSigningStatus {
+  /** Whether this reviewer has an encrypted local vault on this device. */
+  localVaultExists: boolean;
+  /** Public fingerprint recorded beside the vault after local generation. */
+  localKeyFingerprint: string | null;
+  /** Current service enrolments. */
+  keys: SigningKeySummary[];
+}
+
+/** One current curated revision still awaiting its first detached signature. */
+export interface PendingReviewSignature extends ReviewRecordQuery {
+  /** Current immutable curated row identifier. */
+  revisionId: number;
+  /** Human-readable subject name. */
+  subjectName: string;
+  /** Human-readable class or condition name. */
+  objectName: string;
+  /** Stored target-specific clinical decision. */
+  decision: string;
+  /** Authenticated reviewer-name snapshot stored on the curated row. */
+  reviewedBy: string;
+  /** RFC 3339 recording timestamp. */
+  reviewedAt: string;
+}
+
+/** Selector for one current curated row and one enrolled signing key. */
+export interface ReviewSignatureQuery extends ReviewRecordQuery {
+  /** Current immutable curated revision identifier. */
+  revisionId: number;
+  /** Enrolled key fingerprint bound into the payload. */
+  keyFingerprint: string;
+}
+
+/** One named, canonically rendered value covered by a detached signature. */
+export interface CanonicalField {
+  /** Frozen field name and ordering identity. */
+  name: string;
+  /** Exact rendered value, or null when the database value is SQL NULL. */
+  value: string | null;
+}
+
+/** Exact payload metadata shown before native signing can proceed. */
+export interface ReviewSignaturePreview {
+  /** Current curated revision that will be signed. */
+  revisionId: number;
+  /** Domain-separated canonical payload context. */
+  payloadContext: string;
+  /** SHA-256 digest of the exact canonical payload. */
+  payloadDigest: string;
+  /** Enrolled key fingerprint bound into the payload. */
+  keyFingerprint: string;
+  /** Server-issued signing instant bound into the payload. */
+  signedAt: string;
+  /** Number of frozen fields covered by the signature. */
+  fieldCount: number;
+  /** Every exact field in the canonical order covered by the digest. */
+  fields: CanonicalField[];
+}
+
 /** Page metadata returned with every queue snapshot. */
 export interface Pagination {
   /** One-based current page number. */

@@ -45,6 +45,12 @@ export const EVIDENCE_NOTE_MAX_LENGTH = 10_000;
 /** Maximum characters accepted for mechanism or management prose. */
 export const CLINICAL_PROSE_MAX_LENGTH = 20_000;
 
+/** Minimum length of the distinct local signing-vault passphrase. */
+export const SIGNING_PASSPHRASE_MIN_LENGTH = 12;
+
+/** Maximum length accepted by the native signing-vault KDF. */
+export const SIGNING_PASSPHRASE_MAX_LENGTH = 1_024;
+
 /** Minimum password length enforced before Argon2id hashing. */
 export const PASSWORD_MIN_LENGTH = 12;
 

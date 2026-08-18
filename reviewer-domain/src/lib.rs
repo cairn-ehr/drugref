@@ -6,6 +6,7 @@
 
 mod decisions;
 mod records;
+mod signing;
 
 pub use decisions::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
@@ -14,6 +15,13 @@ pub use decisions::{
 pub use records::{
     CreateAnnotationRequest, CreateEvidenceReferenceRequest, EvidenceReference,
     EvidenceReferenceScheme, ReviewAnnotation, ReviewRecord, ReviewRecordQuery,
+};
+pub use signing::{
+    canonical_payload, validate_signing_passphrase, CanonicalField, DeviceSigningStatus,
+    EnrolSigningKeyRequest, PendingReviewSignature, ReplaceSigningKeyRequest,
+    ReviewSignatureChallenge, ReviewSignaturePreview, ReviewSignatureQuery, SigningKeyReplacement,
+    SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest, CURATED_CONDITION_V1_FIELDS,
+    CURATED_INTERACTION_V1_FIELDS,
 };
 
 use serde::{Deserialize, Serialize};

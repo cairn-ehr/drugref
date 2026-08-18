@@ -26,9 +26,10 @@ const REVIEW_EVIDENCE_REFERENCES_PATH: &str = "/v1/review-evidence-references";
 
 /// Native HTTP client and process-memory session store managed by Tauri.
 pub struct AccountClient {
-    http: Client,
+    pub(crate) http: Client,
     service_url: Result<String, String>,
     session_token: Mutex<Option<String>>,
+    current_reviewer: Mutex<Option<ReviewerAccount>>,
 }
 
 impl AccountClient {
@@ -38,11 +39,12 @@ impl AccountClient {
             http: Client::new(),
             service_url: configured_service_url(),
             session_token: Mutex::new(None),
+            current_reviewer: Mutex::new(None),
         }
     }
 
     /// Join a service-relative API path to the validated base URL.
-    fn endpoint(&self, path: &str) -> Result<String, String> {
+    pub(crate) fn endpoint(&self, path: &str) -> Result<String, String> {
         self.service_url
             .as_ref()
             .map(|base| format!("{base}{path}"))
@@ -50,7 +52,7 @@ impl AccountClient {
     }
 
     /// Return a copy of the authenticated bearer token held in native memory.
-    fn token(&self) -> Result<String, String> {
+    pub(crate) fn token(&self) -> Result<String, String> {
         self.session_token
             .lock()
             .map_err(|_| "native session store is unavailable".to_string())?
@@ -59,12 +61,25 @@ impl AccountClient {
     }
 
     /// Replace the native process-memory bearer token after authentication.
-    fn store_token(&self, token: String) -> Result<(), String> {
+    fn store_session(&self, token: String, reviewer: ReviewerAccount) -> Result<(), String> {
         *self
             .session_token
             .lock()
             .map_err(|_| "native session store is unavailable".to_string())? = Some(token);
+        *self
+            .current_reviewer
+            .lock()
+            .map_err(|_| "native reviewer store is unavailable".to_string())? = Some(reviewer);
         Ok(())
+    }
+
+    /// Return the authenticated reviewer identity retained beside the bearer token.
+    pub(crate) fn reviewer(&self) -> Result<ReviewerAccount, String> {
+        self.current_reviewer
+            .lock()
+            .map_err(|_| "native reviewer store is unavailable".to_string())?
+            .clone()
+            .ok_or_else(|| "sign in before using the signing vault".to_string())
     }
 
     /// Remove the bearer token from native process memory after logout.
@@ -73,6 +88,10 @@ impl AccountClient {
             .session_token
             .lock()
             .map_err(|_| "native session store is unavailable".to_string())? = None;
+        *self
+            .current_reviewer
+            .lock()
+            .map_err(|_| "native reviewer store is unavailable".to_string())? = None;
         Ok(())
     }
 }
@@ -102,7 +121,9 @@ fn configured_service_url() -> Result<String, String> {
 }
 
 /// Decode a successful JSON response or return the service's safe error message.
-async fn response_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
+pub(crate) async fn response_json<T: DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, String> {
     if response.status().is_success() {
         return response
             .json::<T>()
@@ -119,7 +140,7 @@ async fn response_json<T: DeserializeOwned>(response: reqwest::Response) -> Resu
 }
 
 /// Send one typed JSON request with optional native bearer authentication.
-async fn send_json<B: Serialize, T: DeserializeOwned>(
+pub(crate) async fn send_json<B: Serialize, T: DeserializeOwned>(
     client: &AccountClient,
     method: Method,
     path: &str,
@@ -162,8 +183,9 @@ pub async fn bootstrap_admin(
         false,
     )
     .await?;
-    client.store_token(grant.token)?;
-    Ok(grant.reviewer)
+    let reviewer = grant.reviewer;
+    client.store_session(grant.token, reviewer.clone())?;
+    Ok(reviewer)
 }
 
 /// Authenticate a reviewer and retain the returned bearer token in native memory.
@@ -174,8 +196,9 @@ pub async fn login(
 ) -> Result<ReviewerAccount, String> {
     let grant: SessionGrant =
         send_json(&client, Method::POST, SESSIONS_PATH, Some(&input), false).await?;
-    client.store_token(grant.token)?;
-    Ok(grant.reviewer)
+    let reviewer = grant.reviewer;
+    client.store_session(grant.token, reviewer.clone())?;
+    Ok(reviewer)
 }
 
 /// List reviewer accounts through an authenticated native service request.
@@ -296,19 +319,28 @@ pub async fn create_evidence_reference(
 
 /// Revoke the current service session and clear its token from native memory.
 #[tauri::command]
-pub async fn logout(client: tauri::State<'_, AccountClient>) -> Result<(), String> {
-    let token = client.token()?;
-    let response = client
-        .http
-        .post(client.endpoint(CURRENT_SESSION_PATH)?)
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|error| format!("cannot reach the review service: {error}"))?;
-    if response.status() != StatusCode::NO_CONTENT {
-        let _: serde_json::Value = response_json(response).await?;
+pub async fn logout(
+    client: tauri::State<'_, AccountClient>,
+    signing: tauri::State<'_, crate::signing::SigningClient>,
+) -> Result<(), String> {
+    let service_result = async {
+        let token = client.token()?;
+        let response = client
+            .http
+            .post(client.endpoint(CURRENT_SESSION_PATH)?)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|error| format!("cannot reach the review service: {error}"))?;
+        if response.status() != StatusCode::NO_CONTENT {
+            let _: serde_json::Value = response_json(response).await?;
+        }
+        Ok::<(), String>(())
     }
-    client.clear_token()
+    .await;
+    signing.clear_pending()?;
+    client.clear_token()?;
+    service_result
 }
 
 #[cfg(test)]
