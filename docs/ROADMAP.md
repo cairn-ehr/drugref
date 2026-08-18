@@ -986,13 +986,19 @@ The [detached-signing round](superpowers/specs/2026-08-18-drugref-reviewer-signi
 an encrypted native Stronghold snapshot, enrols only the public key, previews the exact frozen canonical digest, and requires a
 second explicit local unlock before the service independently rebuilds and verifies the signature. A database-derived pending
 view resumes unsigned current revisions after the clinical queue refreshes or the app restarts. `db/046` changes no table
-shape; it corrects the signing registry's catalog comment to state this authenticated enrolment trust root. Next: profile
-correction, disable/enable, password rotation and all-session revocation.
+shape; it corrects the signing registry's catalog comment to state this authenticated enrolment trust root.
 
 The [key-replacement follow-up](superpowers/specs/2026-08-18-drugref-reviewer-key-replacement-design.md) handles a lost
 device-vault passphrase without weakening those boundaries. The service appends a time-scoped `rotated` correction and
 withdrawn enrolment, then native code deletes only the fixed device files. Unused keys report zero preserved signatures;
 used keys retain their earlier valid signatures. Hard deletion of the append-only registry remains forbidden.
+
+The [account-administration round](superpowers/specs/2026-08-18-drugref-reviewer-account-administration-design.md) completes
+the `db/044` account lifecycle without a migration: stale-write-guarded append-only profile corrections, disable/enable,
+Argon2id password rotation and auditable all-session revocation. Administration transactions recheck authority under one
+lock, refuse to disable or demote the last active administrator, and bind session creation to the credential revision that
+was actually verified so a concurrent rotation cannot admit the predecessor password. Next: design the remaining reviewer/
+key administration, revocation-queue and counter-signing policy as a separate trust round.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

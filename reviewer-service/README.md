@@ -19,6 +19,11 @@ builds also accept loopback HTTP for local development.
 On an empty account database, only the bootstrap status and one concurrency-guarded
 first-administrator registration are useful. After that registration, the same endpoint
 returns a conflict and administrators create users through authenticated `/v1/users`.
+`PUT /v1/users/{reviewer_uuid}/profile` appends a stale-write-guarded complete profile
+correction, while the corresponding `/password` route appends an Argon2id credential.
+`POST /v1/users/{reviewer_uuid}/sessions/revoke` invalidates every live session. A
+password rotation or disablement also revokes affected sessions in the same transaction,
+and the last active administrator cannot be disabled or demoted.
 
 Any authenticated reviewer can read `GET /v1/review-queue`. It returns the current gap
 totals, database-derived source/relationship filters, stable review targets and a
@@ -63,4 +68,7 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_detached_signing_round_trip -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_account_administration_round_trip -- --ignored
 ```

@@ -4,10 +4,16 @@
 //! silently disagree about account or queue semantics.
 #![deny(missing_docs)]
 
+mod accounts;
 mod decisions;
 mod records;
 mod signing;
 
+pub use accounts::{
+    AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, LoginRequest,
+    ReviewerAccount, ReviewerRole, RotateReviewerPasswordRequest, SessionGrant,
+    UpdateReviewerProfileRequest,
+};
 pub use decisions::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
     ReviewDecisionRevision, Severity,
@@ -42,128 +48,6 @@ const DEFAULT_PAGE_SIZE: u16 = 25;
 const MAXIMUM_PAGE_SIZE: u16 = 100;
 const FILTER_MAX_LENGTH: usize = 100;
 const SEARCH_MAX_LENGTH: usize = 200;
-
-/// Access-control roles understood by the reviewer service.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewerRole {
-    /// May access the review workspace but not account administration.
-    Reviewer,
-    /// May access the review workspace and account administration.
-    Administrator,
-}
-
-impl ReviewerRole {
-    /// Return the stable database and wire representation of the role.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Reviewer => "reviewer",
-            Self::Administrator => "administrator",
-        }
-    }
-}
-
-/// Fields required to create an initial or subsequent reviewer account.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateAccountRequest {
-    /// Stable lowercase sign-in name.
-    pub username: String,
-    /// Reviewer's human-readable name.
-    pub full_name: String,
-    /// Professional qualifications displayed in the workspace.
-    pub qualifications: String,
-    /// Markdown biography source stored in the append-only profile.
-    pub bio_markdown: String,
-    /// Access-control role assigned to the account.
-    pub role: ReviewerRole,
-    /// Raw password accepted only for immediate hashing.
-    pub password: String,
-}
-
-impl CreateAccountRequest {
-    /// Validate all account fields before hashing or opening a transaction.
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_username(&self.username)?;
-        validate_text(
-            "full name",
-            &self.full_name,
-            REQUIRED_TEXT_MIN_LENGTH,
-            FULL_NAME_MAX_LENGTH,
-        )?;
-        validate_text(
-            "qualifications",
-            &self.qualifications,
-            OPTIONAL_TEXT_MIN_LENGTH,
-            QUALIFICATIONS_MAX_LENGTH,
-        )?;
-        validate_text(
-            "biography",
-            &self.bio_markdown,
-            OPTIONAL_TEXT_MIN_LENGTH,
-            BIOGRAPHY_MAX_LENGTH,
-        )?;
-        validate_text(
-            "password",
-            &self.password,
-            PASSWORD_MIN_LENGTH,
-            PASSWORD_MAX_LENGTH,
-        )?;
-        Ok(())
-    }
-}
-
-/// Credentials submitted to create an authenticated reviewer session.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginRequest {
-    /// Stable lowercase sign-in name.
-    pub username: String,
-    /// Raw password accepted only for verification.
-    pub password: String,
-}
-
-/// Current reviewer account projection returned to authenticated clients.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewerAccount {
-    /// Stable reviewer identity.
-    pub reviewer_uuid: Uuid,
-    /// Stable lowercase sign-in name.
-    pub username: String,
-    /// Current human-readable name.
-    pub full_name: String,
-    /// Current professional qualifications.
-    pub qualifications: String,
-    /// Current Markdown biography source.
-    pub bio_markdown: String,
-    /// Current access-control role.
-    pub role: ReviewerRole,
-    /// Whether the current profile permits sign-in.
-    pub active: bool,
-    /// RFC 3339 account creation timestamp.
-    pub created_at: String,
-    /// Number of live signing-key enrolments.
-    pub key_count: i64,
-}
-
-/// First-run state returned before authentication.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootstrapStatus {
-    /// Whether the database still needs its first administrator.
-    pub bootstrap_required: bool,
-}
-
-/// Authenticated session material returned only to the trusted native core.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionGrant {
-    /// Raw bearer token retained in native process memory.
-    pub token: String,
-    /// Current reviewer projection associated with the session.
-    pub reviewer: ReviewerAccount,
-}
 
 /// Stable kinds of unresolved clinical records exposed by the review service.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -413,7 +297,8 @@ fn validate_text(
 mod tests {
     use super::{
         validate_username, CreateAccountRequest, ReviewKind, ReviewQueueQuery, ReviewerRole,
-        DEFAULT_PAGE_SIZE, FIRST_PAGE, MAXIMUM_PAGE_SIZE,
+        RotateReviewerPasswordRequest, UpdateReviewerProfileRequest, DEFAULT_PAGE_SIZE, FIRST_PAGE,
+        MAXIMUM_PAGE_SIZE,
     };
 
     const FILTER_TEST_PAGE: u32 = 3;
@@ -453,6 +338,41 @@ mod tests {
         let mut input = request();
         input.password = "too short".into();
         assert!(input.validate().is_err());
+    }
+
+    /// Apply profile bounds to corrections and reject an invalid concurrency token.
+    #[test]
+    fn profile_correction_requires_complete_content_and_a_revision() {
+        let valid = UpdateReviewerProfileRequest {
+            full_name: "Maya Chen".into(),
+            qualifications: "MD".into(),
+            bio_markdown: String::new(),
+            role: ReviewerRole::Reviewer,
+            active: true,
+            expected_profile_revision_id: 1,
+        };
+        valid.validate().expect("valid profile correction");
+
+        let invalid = UpdateReviewerProfileRequest {
+            expected_profile_revision_id: 0,
+            ..valid
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    /// Keep administrative password rotation on the initial password bounds.
+    #[test]
+    fn password_rotation_uses_shared_password_bounds() {
+        assert!(RotateReviewerPasswordRequest {
+            password: "a new long passphrase".into()
+        }
+        .validate()
+        .is_ok());
+        assert!(RotateReviewerPasswordRequest {
+            password: "short".into()
+        }
+        .validate()
+        .is_err());
     }
 
     /// Pin one-based paging defaults and their zero SQL offset.

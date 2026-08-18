@@ -4,10 +4,11 @@ use std::sync::Mutex;
 
 use reqwest::{Client, Method, StatusCode};
 use reviewer_domain::{
-    ApiErrorBody, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
-    CreateEvidenceReferenceRequest, CreateReviewDecisionRequest, EvidenceReference, LoginRequest,
-    ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord,
-    ReviewRecordQuery, ReviewerAccount, SessionGrant,
+    AccountAdministrationResult, ApiErrorBody, BootstrapStatus, CreateAccountRequest,
+    CreateAnnotationRequest, CreateEvidenceReferenceRequest, CreateReviewDecisionRequest,
+    EvidenceReference, LoginRequest, ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage,
+    ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewerAccount,
+    RotateReviewerPasswordRequest, SessionGrant, UpdateReviewerProfileRequest,
 };
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -66,6 +67,15 @@ impl AccountClient {
             .session_token
             .lock()
             .map_err(|_| "native session store is unavailable".to_string())? = Some(token);
+        *self
+            .current_reviewer
+            .lock()
+            .map_err(|_| "native reviewer store is unavailable".to_string())? = Some(reviewer);
+        Ok(())
+    }
+
+    /// Refresh the process-memory account projection after a self-profile correction.
+    fn store_reviewer(&self, reviewer: ReviewerAccount) -> Result<(), String> {
         *self
             .current_reviewer
             .lock()
@@ -216,6 +226,66 @@ pub async fn create_user(
     client: tauri::State<'_, AccountClient>,
 ) -> Result<ReviewerAccount, String> {
     send_json(&client, Method::POST, USERS_PATH, Some(&input), true).await
+}
+
+/// Append a complete reviewer-profile correction through the authenticated service.
+#[tauri::command]
+pub async fn update_user_profile(
+    reviewer_uuid: uuid::Uuid,
+    input: UpdateReviewerProfileRequest,
+    client: tauri::State<'_, AccountClient>,
+    signing: tauri::State<'_, crate::signing::SigningClient>,
+) -> Result<AccountAdministrationResult, String> {
+    let current_reviewer_uuid = client.reviewer()?.reviewer_uuid;
+    let path = format!("{USERS_PATH}/{reviewer_uuid}/profile");
+    let result: AccountAdministrationResult =
+        send_json(&client, Method::PUT, &path, Some(&input), true).await?;
+    if reviewer_uuid == current_reviewer_uuid {
+        if result.reviewer.active {
+            client.store_reviewer(result.reviewer.clone())?;
+        } else {
+            signing.clear_pending()?;
+            client.clear_token()?;
+        }
+    }
+    Ok(result)
+}
+
+/// Rotate one reviewer's password and clear native state when it is the current user.
+#[tauri::command]
+pub async fn rotate_user_password(
+    reviewer_uuid: uuid::Uuid,
+    input: RotateReviewerPasswordRequest,
+    client: tauri::State<'_, AccountClient>,
+    signing: tauri::State<'_, crate::signing::SigningClient>,
+) -> Result<AccountAdministrationResult, String> {
+    let current_reviewer_uuid = client.reviewer()?.reviewer_uuid;
+    let path = format!("{USERS_PATH}/{reviewer_uuid}/password");
+    let result: AccountAdministrationResult =
+        send_json(&client, Method::PUT, &path, Some(&input), true).await?;
+    if reviewer_uuid == current_reviewer_uuid {
+        signing.clear_pending()?;
+        client.clear_token()?;
+    }
+    Ok(result)
+}
+
+/// Revoke every live session and clear native state when it is the current user.
+#[tauri::command]
+pub async fn revoke_user_sessions(
+    reviewer_uuid: uuid::Uuid,
+    client: tauri::State<'_, AccountClient>,
+    signing: tauri::State<'_, crate::signing::SigningClient>,
+) -> Result<AccountAdministrationResult, String> {
+    let current_reviewer_uuid = client.reviewer()?.reviewer_uuid;
+    let path = format!("{USERS_PATH}/{reviewer_uuid}/sessions/revoke");
+    let result: AccountAdministrationResult =
+        send_json::<(), _>(&client, Method::POST, &path, None, true).await?;
+    if reviewer_uuid == current_reviewer_uuid {
+        signing.clear_pending()?;
+        client.clear_token()?;
+    }
+    Ok(result)
 }
 
 /// Load one filtered review queue page without exposing the bearer token to the WebView.

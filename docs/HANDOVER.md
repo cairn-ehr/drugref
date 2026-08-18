@@ -13,53 +13,36 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-signing`, from merged PR #140 on `main` at `c9f9653`.** Migrations through
+**Current branch: `codex/reviewer-account-administration`, from merged PR #141 on `main` at `dd8e653`.** Migrations through
 **`db/046`** are frozen; `db/046` changes only the signing registry's catalog comment.
 
-**PREVIOUS SLICE — transactional curated interaction and condition revisions.** Canonical design:
-[`2026-08-18-drugref-reviewer-curated-revisions-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md).
-The service resolves the frozen target key and question, derives release provenance, attributes the immutable row from
-the authenticated profile, and uses a target advisory lock plus `expectedRevisionId` to reject stale concurrent forms.
-The GUI provides distinct interaction/condition vocabularies, grade completeness, two-step preview and full history.
-
-**⇒ JUST FINISHED — local key enrolment and detached sign/verify/resume.** Canonical design:
+**PREVIOUS SLICE — local key enrolment and detached sign/verify/resume.** Canonical design:
 [`2026-08-18-drugref-reviewer-signing-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md).
-Tauri integrates Stronghold directly behind narrow commands: a per-reviewer Argon2id-encrypted local snapshot retains
-the Ed25519 private key, while only its public key/fingerprint reaches the authenticated service. No generic vault/sign
-procedure is exposed to the WebView, no path is client-controlled, and the signing passphrase is zeroized after use.
+Stronghold retains the encrypted private key locally while the service enrols only its public half, rebuilds canonical
+bytes and verifies detached signatures. Pending signatures survive queue refresh/restart. Lost-passphrase replacement
+appends a time-scoped `rotated` correction before native cleanup; it never deletes signing history.
 
-**RECORDING AND SIGNING REMAIN TWO ACTIONS.** `GET /v1/review-signature` resolves the current natural key and produces
-the exact frozen `/v1` fields, server-issued signing instant and SHA-256 digest. Native code independently validates and
-retains those canonical bytes for explicit confirmation. The GUI now shows every validated named value in canonical order,
-with complete clinical narrative text and explicit NULL, rather than asking a reviewer to trust a heading and digest.
-`POST /v1/review-signature` re-resolves the row and active key,
-enforces a five-minute challenge window, rebuilds the payload, verifies Ed25519 and appends `assertion_signature`.
-The shared encoder is pinned against every committed Python signing vector.
+**⇒ JUST FINISHED — append-only reviewer account administration.** Canonical design:
+[`2026-08-18-drugref-reviewer-account-administration-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-account-administration-design.md).
+The administrator GUI now selects current reviewers, previews complete profile corrections, disables/enables access,
+rotates Argon2id passwords and revokes all live sessions. Stable usernames remain immutable. Self-disable, self-rotation
+and self-revocation clear native authentication plus prepared signing state and return to sign-in.
 
-**QUEUE REFRESH CANNOT STRAND SIGN-OFF.** `GET /v1/pending-signatures` lists current interaction/condition revisions with
-no signature. The new Pending signatures view reloads history and resumes the same prepare-confirm-unlock flow after a
-queue refresh or app restart; verified rows leave the list. Browser preview remains isolated in memory and never becomes
-a native failure fallback. `db/046` replaces `db/030`'s obsolete “no enrolment protocol” catalog claim and names
-authenticated active reviewer enrolment as the initial-registration trust root; no table shape changed.
+**ADMINISTRATION CANNOT ERASE HISTORY OR LOCK OUT THE SERVICE.** Profile forms carry `expectedProfileRevisionId`; the
+service serializes mutations, rechecks current administrator authority inside the transaction and refuses to disable or
+demote the last active administrator. Disablement and rotation append reason-specific revocations. Session creation binds
+to the credential revision actually verified, so an old password cannot finish login after a concurrent rotation.
 
-**LOST-PASSPHRASE REPLACEMENT IS AUDITED, NOT A HARD DELETE.** Canonical design:
-[`2026-08-18-drugref-reviewer-key-replacement-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-key-replacement-design.md).
-The authenticated service records `rotated` plus an unenrolment correction in one transaction, reports the number of
-preserved signatures, and is idempotent for native cleanup retry. Tauri derives the fingerprint and fixed file paths,
-deletes `.hold`, `.salt` and `.fingerprint` only after the transaction commits, then permits a fresh key/passphrase.
-An unused key has zero preserved signatures and changes no clinical record.
+**⇒ DO THIS NEXT FOR THE GUI:** design the remaining reviewer/key trust round: general retired/compromised key
+administration, revocation queues and counter-signing policy. Do not broaden the existing owned-device lost-passphrase
+replacement while doing so. Issue #86's `signed_by_unknown_key` vocabulary widening remains its own explicit round.
 
-**⇒ DO THIS NEXT FOR THE GUI:** finish the `db/044` administration tail: append-only profile correction, disable/enable,
-password rotation and all-session revocation. General retired/compromised key administration remains a separate trust round;
-the lost-passphrase path now supports only owned device-key replacement through time-scoped `rotated` correction.
-
-**Verification completed:** full Python/PostgreSQL suite 1,790; domain 14; service 12 plus the live PostgreSQL
-enrol/replace/prepare/sign/verify/rotate/persist/resume integration; native 5 including fixed-path replacement cleanup,
-Stronghold restart, wrong-passphrase, signature verification and exact-field projection; `ruff`; Rust
-formatting/clippy with warnings denied; `npm run check` with 0 diagnostics; production frontend build (0.63 kB HTML +
-28.06 kB CSS + 104.04 kB JS, 35.30 kB JS gzipped); debug macOS app bundle with strict code-sign verification; npm audit
-with 0 vulnerabilities; `git diff --check`. Complete 15-field signing review passed at 1,440 x 900 and 740 x 900 with no
-horizontal clipping or console warnings.
+**Verification completed:** full Python/PostgreSQL suite 1,790; domain 16; service 12 plus the live clean-database account
+lifecycle integration; native 5; `ruff`; Rust formatting/clippy with warnings denied; `npm run check` with 0 diagnostics;
+production frontend build (0.63 kB HTML + 30.45 kB CSS + 114.51 kB JS, 38.01 kB JS gzipped); native debug no-bundle
+build; npm audit with 0 vulnerabilities; `git diff --check`. Chrome passed creation, correction, disable/re-enable,
+last-admin refusal, password rotation and self-session revocation at 1,440 x 900 and 740 x 900, with no horizontal
+overflow or console warnings.
 
 ## Parallel project sequencing
 

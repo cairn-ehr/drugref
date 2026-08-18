@@ -20,6 +20,22 @@ export interface CreateAccountInput {
   password: string;
 }
 
+/** Complete append-only profile replacement submitted by an administrator. */
+export interface UpdateReviewerProfileInput {
+  /** Corrected human-readable name. */
+  fullName: string;
+  /** Corrected professional qualifications. */
+  qualifications: string;
+  /** Corrected Markdown biography source. */
+  bioMarkdown: string;
+  /** Corrected access-control role. */
+  role: ReviewerRole;
+  /** Whether the replacement profile permits authentication. */
+  active: boolean;
+  /** Profile revision observed when the form was opened. */
+  expectedProfileRevisionId: number;
+}
+
 /** Current reviewer account projection returned by the service. */
 export interface ReviewerAccount {
   /** Stable identity of the reviewer. */
@@ -36,10 +52,22 @@ export interface ReviewerAccount {
   role: ReviewerRole;
   /** Whether the current profile permits sign-in. */
   active: boolean;
+  /** Current append-only profile revision identifier. */
+  profileRevisionId: number;
   /** RFC 3339 account creation timestamp. */
   createdAt: string;
   /** Number of live signing-key enrolments. */
   keyCount: number;
+  /** Number of unexpired, unrevoked sessions. */
+  liveSessionCount: number;
+}
+
+/** Database-derived result returned by every account-administration mutation. */
+export interface AccountAdministrationResult {
+  /** Current reviewer projection after the mutation. */
+  reviewer: ReviewerAccount;
+  /** Number of session revocation facts appended by the mutation. */
+  revokedSessionCount: number;
 }
 
 /** First-run state returned before authentication. */
@@ -66,8 +94,10 @@ const previewAdmin: ReviewerAccount = {
   bioMarkdown: "Clinical pharmacologist and Drugref reviewer.",
   role: "administrator",
   active: true,
+  profileRevisionId: 1,
   createdAt: "2026-08-17T00:00:00Z",
   keyCount: PREVIEW_ADMIN_KEY_COUNT,
+  liveSessionCount: 1,
 };
 
 /** Mutable browser-preview account list; native builds never read it. */
@@ -78,6 +108,12 @@ let previewPasswords = new Map([[previewAdmin.username, "preview"]]);
 
 /** Browser-preview authentication state; native sessions remain in Rust memory. */
 let previewSignedIn = false;
+
+/** Browser-preview identity corresponding to the simulated current session. */
+let previewCurrentReviewerUuid = "";
+
+/** Monotonic browser-preview profile revision identifier. */
+let previewProfileRevision = previewAdmin.profileRevisionId;
 
 /** Return whether the browser URL explicitly requests the first-run preview. */
 function previewBootstrapRequested(): boolean {
@@ -97,6 +133,7 @@ export async function bootstrapAdmin(input: CreateAccountInput): Promise<Reviewe
   previewUsers = [reviewer];
   previewPasswords = new Map([[reviewer.username, input.password]]);
   previewSignedIn = true;
+  previewCurrentReviewerUuid = reviewer.reviewerUuid;
   return reviewer;
 }
 
@@ -104,11 +141,14 @@ export async function bootstrapAdmin(input: CreateAccountInput): Promise<Reviewe
 export async function login(username: string, password: string): Promise<ReviewerAccount> {
   if (isTauri) return invoke<ReviewerAccount>("login", { input: { username, password } });
   const reviewer = previewUsers.find((user) => user.username === username);
-  if (!reviewer || previewPasswords.get(username) !== password) {
+  if (!reviewer || !reviewer.active || previewPasswords.get(username) !== password) {
     throw new Error("invalid username or password");
   }
   previewSignedIn = true;
-  return reviewer;
+  previewCurrentReviewerUuid = reviewer.reviewerUuid;
+  const signedIn = { ...reviewer, liveSessionCount: Math.max(1, reviewer.liveSessionCount) };
+  replacePreviewUser(signedIn);
+  return signedIn;
 }
 
 /** List current reviewer profiles for the administrator surface. */
@@ -130,10 +170,94 @@ export async function createUser(input: CreateAccountInput): Promise<ReviewerAcc
   return reviewer;
 }
 
+/** Append a profile correction through native IPC or isolated preview memory. */
+export async function updateUserProfile(
+  reviewerUuid: string,
+  input: UpdateReviewerProfileInput,
+): Promise<AccountAdministrationResult> {
+  if (isTauri) {
+    return invoke<AccountAdministrationResult>("update_user_profile", { reviewerUuid, input });
+  }
+  const current = previewUser(reviewerUuid);
+  if (current.profileRevisionId !== input.expectedProfileRevisionId) {
+    throw new Error("reviewer profile changed; reload before recording this correction");
+  }
+  if (
+    current.role === "administrator" &&
+    current.active &&
+    (input.role !== "administrator" || !input.active) &&
+    !previewUsers.some(
+      (user) => user.reviewerUuid !== reviewerUuid && user.role === "administrator" && user.active,
+    )
+  ) {
+    throw new Error("the last active administrator cannot be disabled or demoted");
+  }
+  if (
+    current.fullName === input.fullName &&
+    current.qualifications === input.qualifications &&
+    current.bioMarkdown === input.bioMarkdown &&
+    current.role === input.role &&
+    current.active === input.active
+  ) {
+    throw new Error("reviewer profile has no changes");
+  }
+  previewProfileRevision += 1;
+  const revokedSessionCount = current.active && !input.active ? current.liveSessionCount : 0;
+  const reviewer: ReviewerAccount = {
+    ...current,
+    fullName: input.fullName,
+    qualifications: input.qualifications,
+    bioMarkdown: input.bioMarkdown,
+    role: input.role,
+    active: input.active,
+    profileRevisionId: previewProfileRevision,
+    liveSessionCount: input.active ? current.liveSessionCount : 0,
+  };
+  replacePreviewUser(reviewer);
+  if (reviewerUuid === previewCurrentReviewerUuid && !reviewer.active) previewSignedIn = false;
+  return { reviewer, revokedSessionCount };
+}
+
+/** Rotate one password and invalidate every existing session. */
+export async function rotateUserPassword(
+  reviewerUuid: string,
+  password: string,
+): Promise<AccountAdministrationResult> {
+  if (isTauri) {
+    return invoke<AccountAdministrationResult>("rotate_user_password", {
+      reviewerUuid,
+      input: { password },
+    });
+  }
+  const current = previewUser(reviewerUuid);
+  const revokedSessionCount = current.liveSessionCount;
+  const reviewer = { ...current, liveSessionCount: 0 };
+  previewPasswords.set(current.username, password);
+  replacePreviewUser(reviewer);
+  if (reviewerUuid === previewCurrentReviewerUuid) previewSignedIn = false;
+  return { reviewer, revokedSessionCount };
+}
+
+/** Revoke every current session without changing profile or credentials. */
+export async function revokeUserSessions(
+  reviewerUuid: string,
+): Promise<AccountAdministrationResult> {
+  if (isTauri) {
+    return invoke<AccountAdministrationResult>("revoke_user_sessions", { reviewerUuid });
+  }
+  const current = previewUser(reviewerUuid);
+  const revokedSessionCount = current.liveSessionCount;
+  const reviewer = { ...current, liveSessionCount: 0 };
+  replacePreviewUser(reviewer);
+  if (reviewerUuid === previewCurrentReviewerUuid) previewSignedIn = false;
+  return { reviewer, revokedSessionCount };
+}
+
 /** Revoke the current native session and reset browser-preview authentication. */
 export async function logout(): Promise<void> {
   if (isTauri) await invoke("logout");
   previewSignedIn = false;
+  previewCurrentReviewerUuid = "";
 }
 
 /** Identify whether account calls use the native service or browser-only preview. */
@@ -151,7 +275,23 @@ function previewAccount(input: CreateAccountInput, role: ReviewerRole): Reviewer
     bioMarkdown: input.bioMarkdown,
     role,
     active: true,
+    profileRevisionId: ++previewProfileRevision,
     createdAt: new Date().toISOString(),
     keyCount: NEW_PREVIEW_ACCOUNT_KEY_COUNT,
+    liveSessionCount: 0,
   };
+}
+
+/** Return one browser-preview account or fail with the service's public shape. */
+function previewUser(reviewerUuid: string): ReviewerAccount {
+  const reviewer = previewUsers.find((user) => user.reviewerUuid === reviewerUuid);
+  if (!reviewer) throw new Error("reviewer account was not found");
+  return reviewer;
+}
+
+/** Replace one preview projection without changing stable list order. */
+function replacePreviewUser(reviewer: ReviewerAccount): void {
+  previewUsers = previewUsers.map((user) =>
+    user.reviewerUuid === reviewer.reviewerUuid ? reviewer : user,
+  );
 }
