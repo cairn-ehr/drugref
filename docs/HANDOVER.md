@@ -13,66 +13,53 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-curated-revisions`, from merged PR #139 on `main` at `a1291cd`.** Migrations through
-**`db/045`** are frozen.
+**Current branch: `codex/reviewer-signing`, from merged PR #140 on `main` at `c9f9653`.** Migrations through
+**`db/046`** are frozen; `db/046` changes only the signing registry's catalog comment.
 
-**PREVIOUS SLICE — authenticated live, paginated reviewer queue.** Canonical design:
-[`2026-08-17-drugref-reviewer-live-queue-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-live-queue-design.md).
-Any live reviewer session may call `GET /v1/review-queue`; Tauri attaches the bearer token from native memory and
-the WebView retains no network permission or database credential. Page size is bounded, search is a literal
-substring, and kind/source/relationship filters come from the current database queue.
-
-**ONE MATERIALISED UNION OWNS EACH RESPONSE SNAPSHOT.** The interaction half reads the existing
-`ci_rule_partner_reach` aggregate and applies current expansion policy instead of enumerating millions of candidate-pair
-join rows merely to count them; the condition half reads its inexpensive gap view. The reviewed-pair summary likewise
-sums the exact moiety- and class-rule reach aggregates instead of expanding `curated_ddi_pair`. The local interaction
-plan fell from 3.02 s and a 387 MB temporary sort to 34.7 ms, while the replacement pair count took 32.9 ms; both had
-zero mismatches against their authoritative views. The complete unfiltered 25-row queue query then ran in 87.5 ms.
-Sources, releases and condition predicates remain arrays. No queue table, cache or migration was added.
-
-**THE CLINICAL QUEUE IS LIVE AND STILL DELIBERATELY READ-ONLY.** The fixture-only `in_review`, priority and
-signature fields are removed; gaps say **Unreviewed**, because no curated row exists to sign. Search is debounced,
-filters reset pagination, stale responses cannot overwrite a newer request, and inline failures preserve the last
-successful page. The browser-only Vite adapter remains explicit preview data and is never a native fallback.
-
-**GUI HOUSE-RULE CATCH-UP IS COMPLETE.** `CONTRIBUTING.md` is now the durable repository rule: functions and
-public contracts require docstrings, behavioural values require documented constants, dynamically typed code
-requires complete type hints, and pure reusable logic belongs in focused modules where meaningful. The GUI now
-centralises validation and paging constants, keeps pure queue/presentation transforms outside components, and
-enforces Rust public API documentation with `deny(missing_docs)`.
-
-**PREVIOUS SLICE — append-only working notes and citation-only evidence references.** Canonical design:
-[`2026-08-17-drugref-reviewer-annotations-design.md`](superpowers/specs/2026-08-17-drugref-reviewer-annotations-design.md).
-`db/045` adds two immutable reviewer-attributed ledgers against the immortal open-question UUID. Evidence references
-carry a structured DOI/PMID/PMCID/NCT/SPL/URL identifier and optional context, deliberately no verdict, confidence,
-grade, clinical ruling or signature.
-
-**THE QUEUE/WRITE SEAM NOW USES THE REGISTRY'S FROZEN TARGET KEY.** The service resolves current canonical keys rather
-than minting a second question UUID, rejects stale targets, takes authorship only from the authenticated session, and
-returns insertion-ordered history. Tauri owns all HTTP and token access. The browser preview keeps isolated in-memory
-working history and is never a native fallback. Clinical decision fields and signing were hard-disabled in that slice.
-
-**⇒ JUST FINISHED — transactional curated interaction and condition revisions.** Canonical design:
+**PREVIOUS SLICE — transactional curated interaction and condition revisions.** Canonical design:
 [`2026-08-18-drugref-reviewer-curated-revisions-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md).
-The service resolves the canonical target and question, derives current release provenance, attributes the row from the
-authenticated profile, and performs the existing insert-then-supersede sequence. A target advisory lock plus the form's
-`expectedRevisionId` refuses stale concurrent submissions rather than silently overwriting another reviewer's decision.
+The service resolves the frozen target key and question, derives release provenance, attributes the immutable row from
+the authenticated profile, and uses a target advisory lock plus `expectedRevisionId` to reject stale concurrent forms.
+The GUI provides distinct interaction/condition vocabularies, grade completeness, two-step preview and full history.
 
-**THE GUI NOW RECORDS BUT DOES NOT SIGN.** Interaction and condition forms use their distinct ruling vocabularies, enforce
-the overlay's grade completeness, preview the immutable row and predecessor, and render full revision/signature-status
-history. A successful write refreshes the queue. New revisions remain prominently unsigned; private keys, enrolment,
-signing and verification are absent. Browser preview uses isolated in-memory history.
+**⇒ JUST FINISHED — local key enrolment and detached sign/verify/resume.** Canonical design:
+[`2026-08-18-drugref-reviewer-signing-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md).
+Tauri integrates Stronghold directly behind narrow commands: a per-reviewer Argon2id-encrypted local snapshot retains
+the Ed25519 private key, while only its public key/fingerprint reaches the authenticated service. No generic vault/sign
+procedure is exposed to the WebView, no path is client-controlled, and the signing passphrase is zeroized after use.
 
-**⇒ DO THIS NEXT FOR THE GUI:** local signing-key enrolment and the detached sign/verify/resume flow. Then finish profile
-correction, disable/enable, password rotation and all-session revocation administration over `db/044`.
+**RECORDING AND SIGNING REMAIN TWO ACTIONS.** `GET /v1/review-signature` resolves the current natural key and produces
+the exact frozen `/v1` fields, server-issued signing instant and SHA-256 digest. Native code independently validates and
+retains those canonical bytes for explicit confirmation. The GUI now shows every validated named value in canonical order,
+with complete clinical narrative text and explicit NULL, rather than asking a reviewer to trust a heading and digest.
+`POST /v1/review-signature` re-resolves the row and active key,
+enforces a five-minute challenge window, rebuilds the payload, verifies Ed25519 and appends `assertion_signature`.
+The shared encoder is pinned against every committed Python signing vector.
 
-**Verification completed:** full Python/PostgreSQL suite 1,787; domain 10; service 10 plus a live PostgreSQL interaction and
-condition initial-write, correction/history and stale-form integration; Tauri 1; `ruff`; Rust formatting and clippy with
-warnings denied; `npm run check` with 0 diagnostics; production frontend build (0.63 kB HTML + 22.51 kB CSS + 86.32 kB JS,
-29.91 kB JS gzipped); `npm audit` with 0 vulnerabilities; `git diff --check`. Chrome passes at 1,440 x 900, 980 x 680 and
-740 x 900 covered sign-in, target switching, interaction and condition vocabularies, ruling-dependent grade controls,
-immutable preview, record/history/unsigned rendering and disabled signing. The intermediate document remained
-viewport-bound with independent queue/detail scrolling. The narrow pass caught and verified a footer-flow fix.
+**QUEUE REFRESH CANNOT STRAND SIGN-OFF.** `GET /v1/pending-signatures` lists current interaction/condition revisions with
+no signature. The new Pending signatures view reloads history and resumes the same prepare-confirm-unlock flow after a
+queue refresh or app restart; verified rows leave the list. Browser preview remains isolated in memory and never becomes
+a native failure fallback. `db/046` replaces `db/030`'s obsolete “no enrolment protocol” catalog claim and names
+authenticated active reviewer enrolment as the initial-registration trust root; no table shape changed.
+
+**LOST-PASSPHRASE REPLACEMENT IS AUDITED, NOT A HARD DELETE.** Canonical design:
+[`2026-08-18-drugref-reviewer-key-replacement-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-key-replacement-design.md).
+The authenticated service records `rotated` plus an unenrolment correction in one transaction, reports the number of
+preserved signatures, and is idempotent for native cleanup retry. Tauri derives the fingerprint and fixed file paths,
+deletes `.hold`, `.salt` and `.fingerprint` only after the transaction commits, then permits a fresh key/passphrase.
+An unused key has zero preserved signatures and changes no clinical record.
+
+**⇒ DO THIS NEXT FOR THE GUI:** finish the `db/044` administration tail: append-only profile correction, disable/enable,
+password rotation and all-session revocation. General retired/compromised key administration remains a separate trust round;
+the lost-passphrase path now supports only owned device-key replacement through time-scoped `rotated` correction.
+
+**Verification completed:** full Python/PostgreSQL suite 1,790; domain 14; service 12 plus the live PostgreSQL
+enrol/replace/prepare/sign/verify/rotate/persist/resume integration; native 5 including fixed-path replacement cleanup,
+Stronghold restart, wrong-passphrase, signature verification and exact-field projection; `ruff`; Rust
+formatting/clippy with warnings denied; `npm run check` with 0 diagnostics; production frontend build (0.63 kB HTML +
+28.06 kB CSS + 104.04 kB JS, 35.30 kB JS gzipped); debug macOS app bundle with strict code-sign verification; npm audit
+with 0 vulnerabilities; `git diff --check`. Complete 15-field signing review passed at 1,440 x 900 and 740 x 900 with no
+horizontal clipping or console warnings.
 
 ## Parallel project sequencing
 

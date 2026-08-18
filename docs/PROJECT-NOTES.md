@@ -3186,6 +3186,76 @@ content without overlap.
 **Next:** local signing-key enrolment and the detached sign/verify/resume flow. The administration tail remains profile
 correction, disable/enable, password rotation and all-session revocation.
 
+## Reviewer detached signing (2026-08-18) — `db/046` catalog comment only
+
+Canonical design: [`2026-08-18-drugref-reviewer-signing-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md).
+
+**The private key stays behind a deliberately narrow native boundary.** The Tauri core integrates IOTA Stronghold directly,
+using a per-reviewer encrypted snapshot under the application-local data directory; it does not register the generic plugin
+commands that would let the WebView select vault procedures or arbitrary bytes. A separate signing-vault passphrase derives a
+256-bit snapshot key with Argon2id. Only the Ed25519 public key, its SHA-256 fingerprint and confirmation metadata leave the
+native core. Logout clears any prepared payload retained in native memory.
+
+**Enrolment and clinical sign-off are separate authenticated transactions.** The service derives the fingerprint, records the
+existing `reviewer_key_enrolment` against the authenticated reviewer, requires the current registry key to be active and makes
+same-owner replay idempotent. Preparing a signature binds the frozen target key, current immutable revision, enrolled key,
+server-issued microsecond timestamp, payload context and frozen field order. Native code independently encodes and hashes the
+challenge before showing the digest; confirmation unlocks Stronghold and signs only those retained bytes. The service then
+re-resolves the natural key, enforces a five-minute challenge lifetime, reconstructs the canonical payload, checks the digest,
+verifies Ed25519 and appends `assertion_signature` before returning database-derived history.
+
+**A digest is not human review.** The first confirmation surface showed only the revision heading, context, field count,
+digest and key even though native code had already validated all canonical named values. The preview contract now copies
+those values—not the encoded byte buffer—after validation and renders every field in frozen order. Mechanism, management and
+release provenance are untruncated full-width text; every other identifier, ruling, attribution, fingerprint and timestamp is
+visible, and SQL NULL is explicit. Native code still signs only the retained bytes whose recomputed digest the preview names.
+
+**Queue retirement no longer strands an unsigned row.** Successful clinical recording still refreshes the unresolved queue,
+so a separate `GET /v1/pending-signatures` union lists current interaction and condition revisions having no signature. The
+GUI can resume their complete history and two-step sign-off after refresh or restart; a verified row disappears from that
+list. The browser preview remains isolated in memory and is never a native fallback.
+
+**No table shape moved.** `db/046` corrects `signing_key`'s catalog comment: `db/030` accurately said no enrolment protocol
+existed then, but the reviewer service now makes an authenticated active account session the authority for initial public-key
+registration and enrolment. Account-session possession and local-private-key possession are separate requirements. Key-status
+administration, recovery/export, release-manifest signing, profile correction, disable/enable, password rotation and
+all-session revocation remain separate work.
+
+**Verified:** canonical Rust encoding matches every committed Python signing vector; the full Python/PostgreSQL suite is
+**1,790 passed**; reviewer-domain **13 passed**; reviewer-service **12 passed + 4 ignored**, with the detached-signing live
+PostgreSQL round trip passed explicitly; native **3 passed**, including Stronghold restart/wrong-passphrase/signature
+verification; Rust formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend
+build (0.63 kB HTML + 26.13 kB CSS + 99.11 kB JS, 33.63 kB JS gzipped); native debug no-bundle build; npm audit with 0
+vulnerabilities; `git diff --check`. Chrome passed at 1,440 x 900, 980 x 680 and 740 x 900 across public key status,
+resumable unsigned decisions, exact confirmation, simulated signing and pending-list retirement, with no horizontal overflow
+or console warnings. The pass caught and verified browser-preview target labels that had fallen back to a generic title and
+raw target key.
+
+## Reviewer signing-key replacement (2026-08-18) — no migration
+
+Canonical design: [`2026-08-18-drugref-reviewer-key-replacement-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-key-replacement-design.md).
+
+**A lost passphrase does not justify breaking the append-only registry.** Hard deletion is already forbidden by both
+`signing_key` and `reviewer_key_enrolment` triggers. `DELETE /v1/signing-keys/current` therefore names the authenticated
+resource operation, not a physical row deletion: under a fingerprint advisory lock it derives the owned current row,
+counts all signatures, appends a `rotated` key correction and an unenrolled account correction, then supersedes both prior
+rows in one transaction. Holder, algorithm and public bytes come from PostgreSQL, never the client. A second call reads the
+already-withdrawn enrolment and returns the same count, making the database/filesystem boundary retryable.
+
+**The WebView chooses no identity or path.** Native code reads the authenticated reviewer's fixed public fingerprint,
+requests the audited rotation, then deletes that reviewer's `.hold`, `.salt` and `.fingerprint` files in that order and
+clears any pending signature. The public fingerprint is last so a partial cleanup can retry. No passphrase is required:
+this is specifically the recovery path when it is unavailable. The two-step GUI names the signature count before deletion;
+zero means no clinical record changes, while a used key's earlier signatures remain valid under `rotated`'s time-scoped
+rule. The sign confirmation field also disables account-password autocomplete rather than inviting the wrong credential.
+
+**Verified:** full Python/PostgreSQL suite **1,790 passed**; reviewer-domain **14 passed**; reviewer-service **12 passed +
+4 ignored**, with the live PostgreSQL flow explicitly covering cross-reviewer refusal, zero-signature replacement,
+idempotent retry and one-signature rotation; native **5 passed** including exact-field confirmation projection, fixed-path cleanup and unrelated-file retention;
+Rust formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build; npm
+audit with 0 vulnerabilities; debug macOS app bundle with strict code-sign verification; `git diff --check`. Complete
+15-field signing confirmation passed at 1,440 x 900 and 740 x 900 with no horizontal clipping or console warnings.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -3339,15 +3409,16 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1787 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1790 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-17 at 1787
-# passed in 48.97 s (db/044 added 16: 1763 → 1779; the live-queue round added no
-# Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787).
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-18 at 1790
+# passed in 51.64 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
+# db/046's catalog-comment guard added 3: 1787 → 1790).
 # THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own

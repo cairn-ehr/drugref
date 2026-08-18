@@ -87,7 +87,10 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
          AND to_regclass('drugref.gap_uncurated_condition_contradiction') IS NOT NULL \
          AND to_regclass('drugref.curated_ddi_pair') IS NOT NULL \
          AND to_regclass('drugref.reviewer_annotation') IS NOT NULL \
-         AND to_regclass('drugref.reviewer_evidence_reference') IS NOT NULL",
+         AND to_regclass('drugref.reviewer_evidence_reference') IS NOT NULL \
+         AND to_regclass('drugref.signing_key') IS NOT NULL \
+         AND to_regclass('drugref.assertion_signature') IS NOT NULL \
+         AND to_regclass('drugref.reviewer_key_enrolment') IS NOT NULL",
     )
     .fetch_one(pool)
     .await?;

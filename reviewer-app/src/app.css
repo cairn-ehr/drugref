@@ -60,7 +60,7 @@ button { color: inherit; }
 .auth-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .primary-button { display: inline-flex; min-height: 49px; align-items: center; justify-content: center; gap: 18px; margin-top: 16px; padding: 0 20px; color: #fff; background: var(--forest); border: 0; border-radius: 7px; font-size: 13px; font-weight: 750; cursor: pointer; box-shadow: 0 8px 20px rgba(21,63,58,.14); }
 .primary-button:hover:not(:disabled) { background: var(--forest-deep); }
-.primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: .48; }
+.primary-button:disabled, .secondary-button:disabled, .danger-button:disabled { cursor: not-allowed; opacity: .48; }
 .primary-button span { font-size: 20px; font-weight: 400; }
 .form-error { margin: 4px 0 0; color: #9b3434; font-size: 12px; }
 .security-note { display: flex; gap: 12px; margin-top: 28px; padding: 15px; color: #748078; background: #e9ece6; border-radius: 7px; }
@@ -137,7 +137,7 @@ button { color: inherit; }
 .queue-pagination button { padding: 5px 8px; color: #4c5d54; background: #fff; border: 1px solid #d2d9d4; border-radius: 4px; font-size: 8px; cursor: pointer; }
 .queue-pagination button:disabled { cursor: not-allowed; opacity: .45; }
 
-/* Clinical target detail, revision forms, and the deliberately disabled signing control. */
+/* Clinical target detail, revision forms, and detached signing confirmation. */
 .detail-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fcfcf9; }
 .detail-head { padding: 20px 25px 17px; background: linear-gradient(115deg, #f8faf6, #f2f6f1); border-bottom: 1px solid var(--line); }
 .detail-kicker { display: flex; gap: 7px; color: #76857d; font-size: 8px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
@@ -219,8 +219,10 @@ button { color: inherit; }
 .key-indicator { display: flex; align-items: center; gap: 5px; color: #55685e; font-size: 8px; font-weight: 700; }
 .key-indicator span { width: 6px; height: 6px; background: #57936f; border-radius: 50%; }
 .detail-actions small { color: #919c96; font: 7px ui-monospace, monospace; }
-.secondary-button, .primary-button--compact { min-height: 32px; margin: 0; padding: 0 11px; border-radius: 5px; font-size: 8px; }
+.secondary-button, .danger-button, .primary-button--compact { min-height: 32px; margin: 0; padding: 0 11px; border-radius: 5px; font-size: 8px; }
 .secondary-button { height: 32px; color: #4c5d54; background: #fff; border: 1px solid #d2d9d4; font-weight: 700; }
+.danger-button { color: #fff; background: #9b3434; border: 1px solid #882e2e; font-weight: 750; cursor: pointer; }
+.danger-button:hover:not(:disabled) { background: #842b2b; }
 .empty-state { padding: 40px 20px; color: #89958f; font-size: 11px; text-align: center; }
 
 /* Administrator account list and creation form. */
@@ -252,6 +254,61 @@ button { color: inherit; }
 .admin-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-success { margin: 2px 0 0; color: #2d7057; font-size: 10px; }
 
+/* Device-local key enrolment and resumable signing. */
+.signing-layout { min-height: 0; flex: 1 1 0; display: grid; grid-template-columns: minmax(400px, 1fr) minmax(420px, 1fr); gap: 18px; overflow: auto; padding-top: 20px; }
+.signing-key-list { display: grid; }
+.signing-key-row { display: grid; gap: 6px; padding: 18px 24px; border-bottom: 1px solid #e4e8e4; }
+.signing-key-row:last-child { border-bottom: 0; }
+.signing-key-row strong { color: #344d42; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.signing-key-row small { color: #87938d; font-size: 8px; }
+.vault-warning { margin: 0; padding: 11px 12px; color: #76562e; background: #fbf0da; border-radius: 5px; font-size: 8px; line-height: 1.55; }
+.key-replacement { display: grid; gap: 12px; padding: 18px 24px 24px; border-top: 1px solid var(--line); }
+.key-replacement > div:first-child { display: grid; gap: 4px; }
+.key-replacement > div:first-child strong { font-size: 11px; }
+.key-replacement > .secondary-button { justify-self: start; }
+.key-replacement-confirmation { padding: 12px; color: #713737; background: var(--rose-pale); border: 1px solid #efd2cd; border-radius: 6px; }
+.key-replacement-confirmation p { margin: 0 0 11px; font-size: 9px; line-height: 1.55; }
+.review-signing { margin: 12px 0; padding: 11px 12px; background: #f3f7f3; border: 1px solid #d5e1d8; border-radius: 6px; }
+.review-signing-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.review-signing-head > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.review-signing-head small { color: #87938d; font-size: 7px; }
+.signature-verdict { padding: 5px 8px; color: #2f6b53; background: #dfeee5; border-radius: 999px; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.signature-confirmation { display: grid; gap: 8px; margin-top: 11px; padding-top: 11px; border-top: 1px solid #d5e1d8; }
+.signature-confirmation > strong { color: #334d42; font: 600 13px Georgia, serif; text-transform: capitalize; }
+.signed-content { display: grid; gap: 8px; margin: 3px 0; padding: 12px; background: #fff; border: 1px solid #d6dfd9; border-radius: 6px; }
+.signed-content-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.signed-content-head h3 { margin: 2px 0 0; color: #31483f; font: 600 14px Georgia, serif; }
+.signed-content-head > span { flex: 0 0 auto; padding: 4px 7px; color: #456257; background: #e6f0e9; border-radius: 999px; font-size: 7px; font-weight: 750; }
+.signed-content > p { margin: 0; color: #718078; font-size: 8px; line-height: 1.5; }
+.signed-field-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 0; }
+.signed-field-list > div { min-width: 0; display: grid; align-content: start; gap: 4px; padding: 8px 9px; background: #f6f8f5; border: 1px solid #e1e6e2; border-radius: 5px; }
+.signed-field-list > .signed-field--wide { grid-column: 1 / -1; }
+.signed-field-list dt { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.signed-field-list dt span, .signature-metadata dt, .signature-confirmation label span { color: #6f8077; font-size: 7px; font-weight: 750; text-transform: uppercase; }
+.signed-field-list dt code { color: #9aa49f; font: 6px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.signed-field-list dd { margin: 0; color: #33483f; font-size: 9px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.signed-field-list dd.signed-field-null { color: #8a7770; font-style: italic; }
+.signature-metadata { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 0; padding: 9px 0; border-top: 1px solid #d5e1d8; border-bottom: 1px solid #d5e1d8; }
+.signature-metadata div { min-width: 0; display: grid; gap: 2px; }
+.signature-metadata dd { overflow: hidden; margin: 0; color: #4f6259; font: 8px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.signature-confirmation label { display: grid; gap: 4px; }
+.signature-confirmation input { height: 34px; padding: 0 9px; color: var(--ink); background: #fff; border: 1px solid #ced6d0; border-radius: 5px; }
+.signature-confirmation > p:not(.section-label) { margin: 0; color: #708078; font-size: 8px; line-height: 1.5; }
+.pending-layout { min-height: 0; flex: 1 1 0; display: grid; grid-template-columns: minmax(350px, .8fr) minmax(430px, 1.2fr); overflow: hidden; margin-top: 20px; background: var(--paper); border: 1px solid #d8ded9; border-radius: 9px; box-shadow: var(--shadow); }
+.pending-list-panel { min-height: 0; overflow: hidden; border-right: 1px solid var(--line); }
+.pending-list { max-height: calc(100vh - 190px); overflow-y: auto; }
+.pending-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 15px 18px; background: #fff; border: 0; border-bottom: 1px solid #e4e8e4; text-align: left; cursor: pointer; }
+.pending-row.active { background: #edf5f0; box-shadow: inset 3px 0 #57936f; }
+.pending-row > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pending-row > span:last-child { align-items: end; }
+.pending-row strong { overflow: hidden; font: 600 13px Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+.pending-row b { color: #53645b; font-size: 8px; text-transform: capitalize; }
+.pending-row small { overflow: hidden; max-width: 230px; color: #8a9690; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.pending-detail-panel { min-width: 0; overflow-y: auto; padding: 25px; }
+.pending-detail-panel h2 { margin: 4px 0 2px; font: 500 25px Georgia, serif; }
+.pending-object { margin: 0; color: #53645b; font: 14px Georgia, serif; }
+.pending-attribution { margin: 13px 0; color: #7c8982; font-size: 8px; text-transform: capitalize; }
+
 /* Intermediate breakpoint: preserve both workspace panes while simplifying metrics. */
 @media (max-width: 1050px) {
   .login-shell { grid-template-columns: 1fr 1fr; }
@@ -262,6 +319,8 @@ button { color: inherit; }
   .metrics small { display: none; }
   .review-layout { grid-template-columns: 340px 1fr; }
   .user-layout { grid-template-columns: 1fr; }
+  .signing-layout { grid-template-columns: 1fr; }
+  .pending-layout { grid-template-columns: 330px 1fr; }
   .user-list { max-height: 360px; }
 }
 
@@ -277,7 +336,7 @@ button { color: inherit; }
   .app-shell { height: auto; min-height: 100vh; grid-template-columns: 1fr; overflow: visible; }
   .sidebar { position: static; height: auto; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 20px; padding: 14px 18px; }
   .brand--sidebar { padding: 0; }
-  .sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sidebar nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .nav-label, .sidebar nav .nav-item:disabled, .sidebar-status { display: none; }
   .nav-item { height: 36px; }
   .workspace-shell { height: auto; overflow: visible; padding: 0 14px 18px; }
@@ -288,4 +347,8 @@ button { color: inherit; }
   .detail-panel { min-height: auto; }
   .detail-scroll { flex: 0 0 auto; overflow: visible; }
   .user-layout { flex: none; overflow: visible; }
+  .signing-layout { flex: none; overflow: visible; }
+  .pending-layout { flex: none; grid-template-columns: 1fr; overflow: visible; }
+  .pending-list-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+  .pending-list { max-height: 360px; }
 }

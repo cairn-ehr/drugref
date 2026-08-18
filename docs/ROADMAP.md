@@ -937,7 +937,7 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
-### Slice 6r — Human reviewer application 🚧 CURATED REVISIONS BUILT
+### Slice 6r — Human reviewer application 🚧 DETACHED SIGNING BUILT
 
 The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
 append-only clinical revisions, and sign the exact row reviewed. Canonical design:
@@ -973,15 +973,26 @@ The [annotation/evidence round](superpowers/specs/2026-08-17-drugref-reviewer-an
 authenticated working-record path. Immutable Markdown notes and citation-only DOI/PMID/PMCID/NCT/SPL/URL references are
 attributed to stable reviewer identities and resolved through the open-question registry's canonical target key. They carry
 no question state, evidence verdict, grade, clinical ruling or signature; closing a gap retains the cited question and its
-research history. Next: curated interaction/condition revision transactions, then local signing. Administration still needs
-profile correction, disable/enable, password rotation, all-session revocation and signing-key enrolment UI.
+research history. Administration still needs profile correction, disable/enable, password rotation and all-session
+revocation.
 
 The [curated-revision round](superpowers/specs/2026-08-18-drugref-reviewer-curated-revisions-design.md) exposes the existing
 `curated_interaction` and `curated_condition` append-then-supersede model through authenticated service and Tauri boundaries.
 The service owns question identity, reviewer attribution and release provenance; an expected live revision identifier plus a
 transaction-scoped target lock refuses stale concurrent forms. The GUI provides kind-specific decision vocabularies, a
-two-step immutable-row preview and complete revision history. New rows remain explicitly unsigned. Next: local signing, then
-the remaining reviewer administration operations.
+two-step immutable-row preview and complete revision history. New rows remain explicitly unsigned until the separate action.
+
+The [detached-signing round](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md) keeps each Ed25519 private key in
+an encrypted native Stronghold snapshot, enrols only the public key, previews the exact frozen canonical digest, and requires a
+second explicit local unlock before the service independently rebuilds and verifies the signature. A database-derived pending
+view resumes unsigned current revisions after the clinical queue refreshes or the app restarts. `db/046` changes no table
+shape; it corrects the signing registry's catalog comment to state this authenticated enrolment trust root. Next: profile
+correction, disable/enable, password rotation and all-session revocation.
+
+The [key-replacement follow-up](superpowers/specs/2026-08-18-drugref-reviewer-key-replacement-design.md) handles a lost
+device-vault passphrase without weakening those boundaries. The service appends a time-scoped `rotated` correction and
+withdrawn enrolment, then native code deletes only the fixed device files. Unused keys report zero preserved signatures;
+used keys retain their earlier valid signatures. Hard deletion of the append-only registry remains forbidden.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

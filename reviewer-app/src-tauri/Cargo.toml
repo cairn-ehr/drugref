@@ -24,3 +24,26 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 reviewer-domain = { path = "../../reviewer-domain" }
+argon2 = "0.5"
+iota_stronghold = "2"
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+zeroize = "1"
+uuid = { version = "1", features = ["serde"] }
+
+[dev-dependencies]
+ed25519-dalek = "2"
+
+# Argon2's deliberately expensive inner loop is unusably slow when left
+# completely unoptimised during local Tauri development and native tests.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.test.package.argon2]
+opt-level = 3
+
+[profile.test.package.blake2]
+opt-level = 3
