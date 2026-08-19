@@ -54,11 +54,7 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
 
 nav:
   - Overview: index.md
@@ -81,4 +77,4 @@ nav:
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md
   - Developer guide: developer/index.md
-  - User manual: user-manual/index.md
+  - Reviewer manual: user-manual/index.md

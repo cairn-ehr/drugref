@@ -1,7 +1,7 @@
 # Drugref reviewer service
 
 Authenticated service boundary between the native reviewer application and PostgreSQL.
-Apply migrations through `db/046_reviewer_signing_enrolment_comment.sql`, then run:
+Apply migrations through `db/047_signing_key_status_floor.sql`, then run:
 
 ```sh
 DATABASE_URL='postgresql://postgres@localhost:5532/drugref_reviewer_dev' cargo run
@@ -53,6 +53,13 @@ audit history. It requires ownership, records the registry key as time-scoped
 `rotated`, withdraws the enrolment, and reports how many prior signatures remain
 valid. The native client deletes its fixed encrypted vault files only after that
 transaction commits and can retry cleanup idempotently.
+
+Administrators can read `GET /v1/signing-keys` to inspect the current public-key trust
+projection and append `retired` or `compromised` through `PUT
+/v1/signing-keys/{key_fingerprint}/status`. Retirement is time-scoped; compromise
+objects to the fingerprint's entire history. Current revisions left with no
+registry-unobjected signature return from `GET /v1/pending-signatures` as independent
+counter-sign tasks, without withdrawing the clinical row.
 
 Run the populated-database integration check explicitly:
 

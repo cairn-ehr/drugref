@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>drugref.org — the open drug-information commons</title>
-<meta name="description" content="drugref.org is an open, vendor-independent drug-information service: a registry of active drug moieties with immortal identities, seeded reproducibly from public-domain and open sources. AGPL-3.0.">
+<meta name="description" content="drugref.org is an open, vendor-independent drug-information commons with reproducible source data, append-only clinical curation and device-signed human review. AGPL-3.0.">
 <link rel="icon" type="image/png" href="assets/drugref_logo.png">
 <style>
   :root {
@@ -161,8 +161,8 @@
 <body>
 
 <div class="status">
-  drugref.org v2 is under active development — the global moiety spine, classification and first
-  interaction data are built; the public API is coming. Follow progress
+  drugref.org v2 is under active development — identity, classification, interaction data and the
+  signed clinical-review workflow are built; the public API is coming. Follow progress
   <a href="https://github.com/cairn-ehr/drugref">on GitHub</a>.
 </div>
 
@@ -233,6 +233,18 @@
         <p>Class-level contraindication data from MED-RT, expanded to candidate drug–drug pairs —
            the advisory foundation for interaction checking, clearly tiered by evidence.</p>
       </div>
+      <div class="card">
+        <h3>Human-reviewed knowledge</h3>
+        <p>An authenticated desktop workflow keeps research notes, immutable clinical revisions
+           and detached Ed25519 signatures distinct. Private signing keys stay on the reviewer's
+           device, and corrections preserve history.</p>
+      </div>
+      <div class="card">
+        <h3>Published knowledge gaps</h3>
+        <p>Missing classifications, unresolved source objects and clinical questions remain
+           queryable worklists instead of disappearing as silent absence. Coverage improves in
+           public, one reviewed gap at a time.</p>
+      </div>
     </div>
     <p>
       Two tiers are planned: the <strong>global tier</strong> (jurisdiction-independent substance
@@ -281,9 +293,11 @@
     <p>
       The project is developed in the open at
       <a href="https://github.com/cairn-ehr/drugref">github.com/cairn-ehr/drugref</a> —
-      code, design specifications, roadmap and issues. Contributions are welcome: source-licence
-      review, ingestion of additional open vocabularies, API design, and national local-tier
-      pilots are all on the horizon.
+      code, public documentation, design specifications, roadmap and issues. Contributions are
+      welcome: source-licence review, ingestion of additional open vocabularies, clinical review,
+      API design, and national local-tier pilots are all on the horizon. Start with the
+      <a href="https://docs.drugref.org/user-manual/">reviewer manual</a> or
+      <a href="https://docs.drugref.org/developer/">developer guide</a>.
     </p>
     <p>
       All code is licensed <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a>;
