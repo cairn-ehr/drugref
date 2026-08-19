@@ -46,6 +46,16 @@ This is a reader-friendly summary; the working roadmap lives in the
   revocation, and `drugref keys | sign | verify | publish` over both. A signature is
   published as metadata and **never gates a read** — see
   [signing the curated overlay](../decisions/signing-the-curated-overlay.md).
+- **Clinical reviewer application** — a cross-platform Tauri/Svelte desktop queue over
+  an authenticated Rust service. It supports first-administrator bootstrap, reviewer
+  accounts and session revocation, live queue filtering, append-only annotations and
+  citation-only evidence, immutable interaction and condition revisions, device-local
+  Stronghold keys, exact-payload sign-off and resumable pending signatures.
+- **Public-key trust administration** — administrators can inspect every enrolled
+  public fingerprint and its current-review impact, append a time-scoped retirement or
+  permanent compromise, and return affected current revisions to the counter-sign
+  queue without withdrawing clinical rows. The key-status rule itself is now
+  insert-only database data.
 - **Local-tier proof (Australia)** — a minimal PBS product layer bridged to the
   global moiety spine by name, the only licence-clean join, proving the local-tier
   pattern of jurisdiction scoping and structural encumbrance quarantine.
@@ -71,6 +81,9 @@ This is a reader-friendly summary; the working roadmap lives in the
     the population is right, not merely the pair.**
 
 ## Next
+- **Signature-status vocabulary** — distinguish an unknown signing key from a known
+  revoked key in published registry-level status while retaining the existing
+  cryptographic verification verdicts.
 - **Clinical drugs** — moiety + strength + form, built on the composition tree.
 - **Public HTTP API** — the co-equal-consumer interface; any EHR / pharmacy / app on the
   same footing.

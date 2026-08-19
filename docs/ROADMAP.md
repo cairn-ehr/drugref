@@ -1007,6 +1007,12 @@ independent unobjected signature resolves them, and clinical rows never disappea
 narrow local cleanup path and preserves an administrator-recorded compromise label. Issue #86's published
 `signed_by_unknown_key` vocabulary widening remains a separate explicit compatibility round.
 
+The first post-key-trust documentation round replaces the public reviewer/developer placeholders with an operational reviewer
+manual and component-aware developer guide, adds the native/service/PostgreSQL trust boundary to the architecture page,
+updates the public roadmap and signing decision through `db/047`, and brings the repository/component READMEs and
+drugref.org landing page up to the same state. The website continues to describe the general public HTTP API and release
+packaging as future work; a working internal reviewer is not presented as a consumer API or downloadable release.
+
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded
 substance, DDI advisory — **overlay enrichment, never a wire change** on the Cairn side.

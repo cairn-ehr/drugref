@@ -55,6 +55,6 @@ npm run build
 npm run tauri dev
 ```
 
-Apply migrations through 046 and start `reviewer-service/` first. Debug builds use
+Apply migrations through 047 and start `reviewer-service/` first. Debug builds use
 `http://127.0.0.1:8787` by default; set `DRUGREF_REVIEW_SERVICE_URL` to override it.
 Rust unit tests run from `src-tauri` with `cargo test`.

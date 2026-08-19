@@ -1,9 +1,10 @@
 # Signing the curated overlay
 
 **Status:** Active
-**Last reviewed:** 2026-08-10
-**Applies to:** slice 5c.4 — `db/030`, `signing.py`, `keys.py`, `signatures.py`, `releases.py`,
-`release_verification.py`, and the `drugref keys | sign | verify | publish` commands
+**Last reviewed:** 2026-08-19
+**Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`,
+`signing.py`, `keys.py`, `signatures.py`, `releases.py`, `release_verification.py`, the
+`drugref keys | sign | verify | publish` commands, and the reviewer app/service
 **Full derivation:** the [slice-5c.4 signing design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md)
 
 ## Context
@@ -41,6 +42,13 @@ layer exists for.
 
 Because the key is the curator's, an insider with total database access can still *write* a row claiming any
 `reviewed_by` — but cannot produce a signature over it.
+
+The desktop reviewer now implements that custody boundary end to end. It keeps the
+encrypted private half in device-local Stronghold, sends only the public half for
+enrolment, shows every human-readable canonical field before confirmation, signs in the
+native core, and asks the service to independently rebuild and verify the payload before
+insertion. Authentication remains a separate password-backed session and is never
+treated as clinical attestation.
 
 ### The release layer — distribution integrity and completeness
 
@@ -92,6 +100,12 @@ actually reads. The verdict rule is a pure function in
 `signing.py`, on `accumulation.fires`' precedent — drugref publishes facts rather than verdicts, and hands out
 the rule as code so "why did this verify?" has one answer everywhere.
 
+`db/047` also makes the four status rules themselves insert-only. An administrator can
+append a time-scoped `retired` correction or permanent `compromised` correction through
+the reviewer service, but cannot rewrite the meaning of an existing status. The sibling
+`signature_target_kind` remains mutable because advancing a target to a versioned
+payload context is an intended migration.
+
 ### A signature is metadata, never an admission gate
 
 `curated_ddi_pair` and `curated_condition_ruling` carry a trailing `signature_status` column —
@@ -107,6 +121,13 @@ lets the consumer set policy, the same posture as `is_direct`.
 as well as a revoked one — an unknown key being the *more* suspicious of the two. Telling them apart is
 `drugref verify`'s job; whether the view should carry a third value is
 [issue 86](https://github.com/cairn-ehr/drugref/issues/86).
+
+The reviewer work queue uses the underlying registry counts rather than treating that
+coarse label as a cryptographic verdict. A current revision is pending when it has zero
+registry-unobjected signatures. That includes an unsigned first sign-off and a
+counter-sign task after retirement or compromise. One independent unobjected signature
+resolves the task; objected signatures remain immutable, and the clinical row stays on
+the consumer read path throughout.
 
 **`signed` does not mean verified.** Postgres cannot verify an Ed25519 signature, so `signature_status`
 reports registry-level facts only: is a signature present, is its key known, has that key been revoked. Only
@@ -129,17 +150,14 @@ They **can**:
   closed here**. It is arguably *more* visible now, because dropping a trigger is the remaining way to remove
   a signature. Verification against a signed release still catches the resulting content drift on any node
   that runs it — but the local database's own floor is not what stops a superuser.
-- **Disarm every compromise verdict with one `UPDATE`.** `signing_key_status_kind` carries the revocation
-  rule as data — which is the point — but, unlike `signing_key` and `assertion_signature`, it carries **no
-  append-only floor**, so `UPDATE signing_key_status_kind SET invalidates_all_signatures = false WHERE
-  status = 'compromised'` silently turns the blanket revocation above into a time-scoped one on that node.
-  Flooring it is purely additive later (a trigger, not a column) and is tracked as
-  [issue 85](https://github.com/cairn-ehr/drugref/issues/85). **A second route to the same outcome — needing no
-  raw SQL at all, just `drugref keys revoke --status active` on a compromised key — was found in review and is
-  CLOSED**: permanence is now read off the key's whole history, not its live row. Issue 85 covers the remaining
-  one. Note the floor belongs on that table **only**:
-  its sibling `signature_target_kind` is *designed* to be updated, since moving a target kind to a `/v2`
-  payload context is exactly the migration the read-back machinery exists to support.
+
+**Closed since this record was first published:** rewriting a compromise verdict
+through the supported system or by editing the status rule. Permanence is read from the
+key's whole history, and `db/047` prevents UPDATE or DELETE of the status rules
+themselves. The floor belongs on that table **only**: its sibling
+`signature_target_kind` is *designed* to be updated, since moving a target kind to a
+`/v2` payload context is exactly the migration the read-back machinery exists to
+support.
 
 Signing converts **trust the database** into **trust the key holders**. That is a real reduction in what a
 consumer must take on faith, and it is **not** the same as making the database tamper-proof.

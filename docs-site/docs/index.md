@@ -9,9 +9,10 @@ reproducible from source.
 !!! info "Status — under active development"
     The global moiety spine, classification (MED-RT + MeSH), candidate-tier
     interaction / contraindication / indication projections, the GSRS composition
-    tree and the append-only floor of the curated overlay are built. The overlay
-    ships **empty** until signing lands — no row may be curated before it can be
-    signed — and the public API is still to come. Follow progress
+    tree, append-only curated overlay and human clinical-review workflow are built.
+    Reviewers can research, record immutable revisions and sign them with device-local
+    keys; administrators can manage accounts and public-key trust. The general public
+    API and release packaging are still to come. Follow progress
     [on GitHub](https://github.com/cairn-ehr/drugref).
 
 ## Why it exists
@@ -41,6 +42,10 @@ sources, and published under licences that keep it open for everyone, forever.
   indications generalised *up* it, both over a MeSH-keyed condition registry.
 - **Composition tree** — which registered moieties a specific substance (a salt, a
   hydrate) is composed of, from the FDA/NCATS GSRS public data dump.
+- **Human clinical review** — an authenticated desktop queue for annotations,
+  citation-only evidence, append-only clinical revisions, complete-payload sign-off,
+  pending counter-signatures, account administration and public-key trust. Private
+  signing keys remain encrypted on the reviewer's device.
 
 ## Two tiers
 
@@ -57,3 +62,7 @@ and a later **local tier** for country-specific packaging, product, and subsidy 
 - [Data sources & licensing](sources/index.md) — where the data comes from and the
   licence rules that govern it.
 - [Roadmap](roadmap/index.md) — what is done and what is next.
+- [Reviewer manual](user-manual/index.md) — how clinical review, signing and
+  administration work.
+- [Developer guide](developer/index.md) — how the codebase is divided and how to run
+  its main checks.

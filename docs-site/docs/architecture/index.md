@@ -10,17 +10,17 @@ triggers, and (later) row-level security. The substrate is Python 3.12 + `uv`,
 
 drugref models medicines as two independent graphs that a moiety sits in at once:
 
-```mermaid
-graph TD
-  subgraph ct["Composition tree — is made of, downward"]
-    M[Active moiety] --> S[Specific substance<br/>salt / ester / hydrate]
-    S --> C[Clinical drug<br/>moiety + strength + form]
-    C --> P[Product<br/>brand / pack — local tier]
-  end
-  subgraph cd["Classification DAG — is a kind of"]
-    K1[Class] --> K2[Class]
-    M -. member of many .-> K1
-  end
+```text
+Composition tree — is made of, downward
+
+Active moiety ──> Specific substance ──> Clinical drug ──> Product
+                  salt/ester/hydrate     strength + form    local tier
+
+Classification DAG — is a kind of
+
+Class ──> Class
+  ^
+  └──── an active moiety can be a member of many classes
 ```
 
 1. **Composition tree** (*is-made-of*): active moiety → specific substance → clinical
@@ -48,6 +48,42 @@ Two kinds of data with opposite update semantics live side by side:
 See the decision records on the [hybrid store](../decisions/hybrid-store.md) and
 [signing the curated overlay](../decisions/signing-the-curated-overlay.md).
 
+## The clinical-review boundary
+
+The reviewer is a desktop client, not a database administration tool. Privileged
+operations cross four explicit boundaries:
+
+```text
+Svelte WebView
+    │ typed Tauri commands
+    ▼
+Rust desktop core ───── local encryption ─────> Stronghold private key
+    │ HTTPS + bearer session
+    ▼
+Rust reviewer service
+    │ authorised transactions; public keys and detached signatures only
+    ▼
+PostgreSQL
+```
+
+- **Svelte** renders typed queue, history and confirmation data. It never receives a
+  bearer token, database credential, private key or raw canonical signing bytes.
+- **The Tauri core** owns sessions, device-local Stronghold keys, canonical payload
+  construction and local Ed25519 signing.
+- **The reviewer service** authenticates and authorises requests, independently
+  rebuilds every submitted signing payload and owns the append-then-supersede
+  transactions.
+- **PostgreSQL** enforces append-only account, clinical revision, key-status and
+  signature history. Ingested candidates remain distinct from curated judgements.
+
+Authentication and clinical attestation are deliberately separate. A valid session
+authorises an action now; a detached signature proves that an enrolled private key
+attested to exact content. Neither substitutes for the other.
+
+See the [reviewer manual](../user-manual/index.md) for the human workflow and the
+[reviewer foundation design](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-08-17-drugref-reviewer-gui-foundation-design.md)
+for the full threat-boundary derivation.
+
 ## Immortal identity & append-only claims
 
 Every active moiety has its own **immortal `moiety_uuid`** — a `UUIDv5` derived
@@ -67,7 +103,8 @@ projections**, deliberately outside the append-only floor.
 ## Where the parts live
 
 Ingest parsers are **pure and streaming** (no database access); orchestrators
-(`ingest/*_run.py`) own the transaction and are the only writers. The code lives under
-`src/drugref/` (`ids`, `claims`, `classes`, `db`, and `ingest/*`). For the full
-derivation of any slice, see the design specs in the
-[repository](https://github.com/cairn-ehr/drugref/tree/main/docs/superpowers/specs).
+(`ingest/*_run.py`) own the transaction and are the only feed writers. Operator code
+lives under `src/drugref/`; ordered invariants under `db/`; shared reviewer API types
+under `reviewer-domain/`; the service under `reviewer-service/`; and the native client
+under `reviewer-app/`. For the full derivation of any slice, see the design specs in
+the [repository](https://github.com/cairn-ehr/drugref/tree/main/docs/superpowers/specs).

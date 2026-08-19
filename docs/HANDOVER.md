@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-key-trust`, from merged PR #142 on `main` at `b7e8b7d`.** Migrations through
+**Current branch: `agent/reviewer-docs-website`, from merged PR #143 on `main` at `0955554`.** Migrations through
 **`db/047`** are frozen; `db/047` floors the key-status rule vocabulary and deliberately leaves target contexts mutable.
 
 **PREVIOUS SLICE — local key enrolment and detached sign/verify/resume.** Canonical design:
@@ -22,7 +22,7 @@ Stronghold retains the encrypted private key locally while the service enrols on
 bytes and verifies detached signatures. Pending signatures survive queue refresh/restart. Lost-passphrase replacement
 appends a time-scoped `rotated` correction before native cleanup; it never deletes signing history.
 
-**⇒ JUST FINISHED — public signing-key trust administration and counter-sign queues.** Canonical design:
+**PREVIOUS SLICE — public signing-key trust administration and counter-sign queues.** Canonical design:
 [`2026-08-19-drugref-reviewer-key-trust-design.md`](superpowers/specs/2026-08-19-drugref-reviewer-key-trust-design.md).
 Administrators inspect every public fingerprint, reviewer enrolment, status boundary and current-review impact, then append
 time-scoped retirement or permanent compromise. Compromise can escalate a rotated/retired key and cannot be downgraded.
@@ -32,15 +32,21 @@ objected attestations return as explicit counter-sign tasks. One independent uno
 the compromised signature remains immutable. Clinical rows remain served. PostgreSQL supplies registry policy, not an
 Ed25519 verdict. `db/047` closes #85; `signature_target_kind` remains mutable for versioned payload contexts.
 
-**⇒ DO THIS NEXT FOR THE GUI:** take issue #86 as its own compatibility round: design and add
-`signed_by_unknown_key` to the published signature-status vocabulary, update every GUI label/consumer and retain the
-existing six-verdict `drugref verify` boundary. Do not bundle release-manifest signing or class-grain issue #98.
+**⇒ JUST FINISHED — first post-reviewer documentation/website pass.** The root and reviewer component READMEs describe the
+complete reviewer stack; the docs site has a real reviewer manual and developer guide, a four-boundary architecture section,
+current roadmap/signing-decision copy and no non-rendering Mermaid fence; and `site/index.html` now presents signed human
+review and published gaps. The general HTTP API and release packaging remain marked future: the internal reviewer is
+functional but is not yet a public download or consumer surface.
 
-**Verification completed:** full Python/PostgreSQL suite 1,792; domain 17; service 12 plus live retirement, compromise and
+**⇒ DO THIS NEXT:** merge the documentation PR, then take #86 as its own compatibility round: add
+`signed_by_unknown_key` to the published status vocabulary, update every GUI label/consumer and retain the six-verdict
+`drugref verify` boundary. Do not bundle release-manifest signing or class-grain issue #98.
+
+**PR #143 verification:** full Python/PostgreSQL suite 1,792; domain 17; service 12 plus live retirement, compromise and
 counter-sign lifecycle; native 5; `ruff`; Rust formatting/clippy with warnings denied; `npm run check` with 0 diagnostics;
-production frontend build (0.63 kB HTML + 33.24 kB CSS + 124.07 kB JS, 40.56 kB JS gzipped); native debug no-bundle
-build; npm audit with 0 vulnerabilities; `git diff --check`. Chrome passed key selection, confirmation and result at
-1,440 x 900 and 740 x 900 with no horizontal overflow or console warnings.
+production frontend build; native debug no-bundle build; npm audit with 0 vulnerabilities. **Documentation pass:** strict
+MkDocs build; `git diff --check`; Chrome landing/manual/architecture checks at 1,440, 740 and 520 px with no horizontal
+overflow or console warnings.
 
 ## Parallel project sequencing
 
