@@ -14,6 +14,7 @@ mod queue;
 mod records;
 mod signing;
 mod store;
+mod trust;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -24,13 +25,14 @@ use axum::{
     Json, Router,
 };
 use reviewer_domain::{
-    AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
-    CreateEvidenceReferenceRequest, CreateReviewDecisionRequest, EnrolSigningKeyRequest,
-    EvidenceReference, LoginRequest, PendingReviewSignature, ReplaceSigningKeyRequest,
-    ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord,
-    ReviewRecordQuery, ReviewSignatureChallenge, ReviewSignatureQuery, ReviewerAccount,
-    ReviewerRole, RotateReviewerPasswordRequest, SessionGrant, SigningKeyReplacement,
-    SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest,
+    validate_signing_key_fingerprint, AccountAdministrationResult, AdministerSigningKeyRequest,
+    BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest, CreateEvidenceReferenceRequest,
+    CreateReviewDecisionRequest, EnrolSigningKeyRequest, EvidenceReference, LoginRequest,
+    PendingReviewSignature, ReplaceSigningKeyRequest, ReviewAnnotation, ReviewDecisionRecord,
+    ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewSignatureChallenge,
+    ReviewSignatureQuery, ReviewerAccount, ReviewerRole, RotateReviewerPasswordRequest,
+    SessionGrant, SigningKeyAdministrationResult, SigningKeyReplacement, SigningKeyStatus,
+    SigningKeySummary, SigningKeyTrustStatus, SubmitReviewSignatureRequest,
     UpdateReviewerProfileRequest,
 };
 use sqlx::PgPool;
@@ -81,6 +83,11 @@ pub fn router(state: AppState) -> Router {
             get(signing_keys)
                 .post(enrol_signing_key)
                 .delete(replace_signing_key),
+        )
+        .route("/v1/signing-keys", get(signing_key_trust))
+        .route(
+            "/v1/signing-keys/{key_fingerprint}/status",
+            put(administer_signing_key),
         )
         .route(
             "/v1/review-signature",
@@ -363,6 +370,39 @@ async fn signing_keys(
     let authenticated = authenticate_headers(&state, &headers).await?;
     Ok(Json(
         signing::list_keys(&state.pool, authenticated.reviewer.reviewer_uuid).await?,
+    ))
+}
+
+/// Return every current public key and its trust impact to an administrator.
+async fn signing_key_trust(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<SigningKeyTrustStatus>, AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    require_admin(&authenticated.reviewer)?;
+    Ok(Json(trust::list(&state.pool).await?))
+}
+
+/// Append an administrator-confirmed retired or compromised key correction.
+async fn administer_signing_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(key_fingerprint): Path<String>,
+    Json(input): Json<AdministerSigningKeyRequest>,
+) -> Result<Json<SigningKeyAdministrationResult>, AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    require_admin(&authenticated.reviewer)?;
+    validate_signing_key_fingerprint(&key_fingerprint)
+        .map_err(|error| AppError::bad_request(error.0))?;
+    Ok(Json(
+        trust::administer(
+            &state.pool,
+            &key_fingerprint,
+            input.status,
+            authenticated.reviewer.reviewer_uuid,
+            &authenticated.reviewer.full_name,
+        )
+        .await?,
     ))
 }
 

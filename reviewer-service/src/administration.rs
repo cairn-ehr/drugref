@@ -169,7 +169,7 @@ pub async fn revoke_user_sessions(
 }
 
 /// Serialise authority mutations and confirm the caller is still an active administrator.
-async fn lock_and_require_administrator(
+pub(crate) async fn lock_and_require_administrator(
     transaction: &mut Transaction<'_, Postgres>,
     actor: Uuid,
 ) -> Result<(), AppError> {

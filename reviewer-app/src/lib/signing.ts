@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { markPreviewDecisionSigned, previewPendingSignatures } from "./decisions";
 import type {
+  AdministrativeSigningKeyStatus,
   CanonicalField,
   DeviceSigningStatus,
   PendingReviewSignature,
@@ -10,7 +11,10 @@ import type {
   ReviewSignaturePreview,
   ReviewSignatureQuery,
   SigningKeyReplacement,
+  SigningKeyAdministrationResult,
   SigningKeySummary,
+  SigningKeyTrustStatus,
+  SigningKeyTrustSummary,
 } from "./types";
 
 /** Whether signing calls may cross the protected native trust boundary. */
@@ -24,6 +28,13 @@ let previewEnrolled = true;
 
 /** Pending browser-only preview retained across the explicit confirmation step. */
 let previewPending: ReviewSignaturePreview | null = null;
+
+/** Browser-only public trust projection for responsive administration testing. */
+let previewTrustKeys: SigningKeyTrustSummary[] = [
+  previewTrustKey(PREVIEW_FINGERPRINT, "active", "Dr Maya Chen", "maya.chen", 4, 2, 0),
+  previewTrustKey("c".repeat(64), "compromised", "Dr Rowan Ellis", "rowan.ellis", 7, 3, 2),
+  previewTrustKey("d".repeat(64), "retired", "Dr Aisha Patel", "aisha.patel", 12, 5, 0),
+];
 
 /** Load current enrolments and whether an encrypted vault exists on this device. */
 export async function loadSigningStatus(): Promise<DeviceSigningStatus> {
@@ -41,6 +52,54 @@ export async function loadPendingReviewSignatures(): Promise<PendingReviewSignat
   return previewPendingSignatures();
 }
 
+/** Load the administrator's public signing-key trust projection. */
+export async function loadSigningKeyTrust(): Promise<SigningKeyTrustStatus> {
+  if (isTauri) return invoke<SigningKeyTrustStatus>("load_signing_key_trust");
+  return { keys: previewTrustKeys.map((key): SigningKeyTrustSummary => ({ ...key })) };
+}
+
+/** Append a browser-preview or live administrative trust correction. */
+export async function administerSigningKey(
+  keyFingerprint: string,
+  status: AdministrativeSigningKeyStatus,
+): Promise<SigningKeyAdministrationResult> {
+  if (isTauri) {
+    return invoke<SigningKeyAdministrationResult>("administer_signing_key", {
+      keyFingerprint,
+      input: { status },
+    });
+  }
+  const current = previewTrustKeys.find(
+    (key): boolean => key.keyFingerprint === keyFingerprint,
+  );
+  if (!current) throw new Error("signing key was not found");
+  if (status === "retired" && current.status !== "active" && current.status !== "retired") {
+    throw new Error("only an active key can be retired");
+  }
+  const affected = status === "compromised" ? current.currentRevisionCount : 0;
+  const key: SigningKeyTrustSummary = {
+    ...current,
+    status,
+    statusFrom: new Date().toISOString(),
+    registeredAt: new Date().toISOString(),
+    enrolled: false,
+    affectedCurrentRevisionCount: affected,
+  };
+  previewTrustKeys = previewTrustKeys.map(
+    (candidate): SigningKeyTrustSummary =>
+      candidate.keyFingerprint === keyFingerprint ? key : candidate,
+  );
+  if (keyFingerprint === PREVIEW_FINGERPRINT) {
+    previewEnrolled = false;
+    previewPending = null;
+  }
+  return {
+    key,
+    withdrawnEnrolment: current.enrolled,
+    revisionsAwaitingCounterSignature: affected,
+  };
+}
+
 /** Generate or reopen the native vault and enrol only its public key. */
 export async function enrolLocalSigningKey(passphrase: string): Promise<SigningKeySummary> {
   if (isTauri) return invoke<SigningKeySummary>("enrol_local_signing_key", { passphrase });
@@ -54,6 +113,7 @@ export async function replaceLocalSigningKey(): Promise<SigningKeyReplacement> {
   const replacement: SigningKeyReplacement = {
     keyFingerprint: PREVIEW_FINGERPRINT,
     preservedSignatureCount: 0,
+    registryStatus: "rotated",
   };
   previewEnrolled = false;
   previewPending = null;
@@ -151,5 +211,32 @@ function previewKey(): SigningKeySummary {
     status: "active",
     enrolledAt: "2026-08-18T00:00:00Z",
     signatureCount: 0,
+  };
+}
+
+/** Build one representative browser-only trust row without private material. */
+function previewTrustKey(
+  keyFingerprint: string,
+  status: string,
+  holder: string,
+  username: string,
+  signatureCount: number,
+  currentRevisionCount: number,
+  affectedCurrentRevisionCount: number,
+): SigningKeyTrustSummary {
+  return {
+    keyFingerprint,
+    algorithm: "Ed25519",
+    holder,
+    status,
+    statusFrom: "2026-08-18T00:00:00Z",
+    registeredAt: "2026-08-18T00:00:00Z",
+    reviewerUuid: crypto.randomUUID(),
+    username,
+    reviewerFullName: holder,
+    enrolled: status === "active",
+    signatureCount,
+    currentRevisionCount,
+    affectedCurrentRevisionCount,
   };
 }

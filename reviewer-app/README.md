@@ -27,6 +27,12 @@ authenticated public enrolment and then deletes only this reviewer's fixed local
 files. An unused key reports zero preserved signatures; earlier signatures from a used
 key remain valid under the registry's time-scoped rotation rule.
 
+Administrators have a separate public-key trust view covering every current registry
+fingerprint, reviewer enrolment, status boundary, signature count and current review
+impact. Retirement is time-scoped; compromise objects to the key's entire signature
+history. Current revisions with no registry-unobjected signature return to **Pending
+signatures** as counter-signature tasks. Clinical rows remain served throughout.
+
 The Vite browser surface retains representative data only for visual development and
 labels it **Browser queue preview**. The installed Tauri app never falls back to that
 data when its authenticated service request fails.

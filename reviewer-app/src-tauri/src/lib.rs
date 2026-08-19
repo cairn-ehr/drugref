@@ -39,6 +39,8 @@ pub fn run() {
             accounts::revoke_user_sessions,
             signing::signing_status,
             signing::load_pending_signatures,
+            signing::load_signing_key_trust,
+            signing::administer_signing_key,
             signing::enrol_local_signing_key,
             signing::replace_local_signing_key,
             signing::prepare_review_signature,

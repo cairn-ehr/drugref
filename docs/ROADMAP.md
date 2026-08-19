@@ -937,7 +937,7 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
-### Slice 6r — Human reviewer application 🚧 DETACHED SIGNING BUILT
+### Slice 6r — Human reviewer application 🚧 KEY TRUST ADMINISTRATION BUILT
 
 The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
 append-only clinical revisions, and sign the exact row reviewed. Canonical design:
@@ -997,8 +997,15 @@ The [account-administration round](superpowers/specs/2026-08-18-drugref-reviewer
 the `db/044` account lifecycle without a migration: stale-write-guarded append-only profile corrections, disable/enable,
 Argon2id password rotation and auditable all-session revocation. Administration transactions recheck authority under one
 lock, refuse to disable or demote the last active administrator, and bind session creation to the credential revision that
-was actually verified so a concurrent rotation cannot admit the predecessor password. Next: design the remaining reviewer/
-key administration, revocation-queue and counter-signing policy as a separate trust round.
+was actually verified so a concurrent rotation cannot admit the predecessor password.
+
+The [key-trust round](superpowers/specs/2026-08-19-drugref-reviewer-key-trust-design.md) adds administrator inspection and
+append-only retirement/compromise over every public registry key. `db/047` floors only the status-rule vocabulary against
+UPDATE/DELETE, closing issue #85 without freezing the deliberately mutable target-context catalog. Pending signatures now
+means zero registry-unobjected signatures: compromise returns affected live revisions as explicit counter-sign tasks, one
+independent unobjected signature resolves them, and clinical rows never disappear. Owned-device replacement remains the
+narrow local cleanup path and preserves an administrator-recorded compromise label. Issue #86's published
+`signed_by_unknown_key` vocabulary widening remains a separate explicit compatibility round.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

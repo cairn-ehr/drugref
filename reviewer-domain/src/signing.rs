@@ -84,6 +84,8 @@ pub struct SigningKeyReplacement {
     pub key_fingerprint: String,
     /// Existing detached signatures retained under time-scoped rotation semantics.
     pub preserved_signature_count: i64,
+    /// Current registry status retained after local cleanup.
+    pub registry_status: String,
 }
 
 impl EnrolSigningKeyRequest {
@@ -136,7 +138,17 @@ pub struct DeviceSigningStatus {
     pub keys: Vec<SigningKeySummary>,
 }
 
-/// One live curated revision still awaiting its first detached signature.
+/// Reason a current curated revision needs a detached signature.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingSignatureReason {
+    /// No detached signature has been recorded for the current revision.
+    Unsigned,
+    /// Recorded signatures exist but every one is objected to by the registry.
+    NeedsCounterSignature,
+}
+
+/// One live curated revision awaiting an unobjected detached signature.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingReviewSignature {
@@ -156,6 +168,10 @@ pub struct PendingReviewSignature {
     pub reviewed_by: String,
     /// RFC 3339 recording timestamp.
     pub reviewed_at: String,
+    /// Whether this is first sign-off or counter-signing after registry objection.
+    pub pending_reason: PendingSignatureReason,
+    /// Existing signature rows currently objected to by the registry.
+    pub objected_signature_count: i64,
 }
 
 /// Stable selector for preparing one current curated-row signature.
@@ -346,7 +362,11 @@ fn valid_context(context: &str) -> bool {
 }
 
 /// Require lowercase fixed-width hexadecimal so identifiers have one wire spelling.
-fn validate_lower_hex(label: &str, value: &str, length: usize) -> Result<(), ValidationError> {
+pub(crate) fn validate_lower_hex(
+    label: &str,
+    value: &str,
+    length: usize,
+) -> Result<(), ValidationError> {
     if value.len() != length
         || !value
             .bytes()
