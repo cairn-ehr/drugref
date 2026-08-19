@@ -116,6 +116,8 @@ export function previewPendingSignatures(): PendingReviewSignature[] {
           decision: current.decision,
           reviewedBy: current.reviewedBy,
           reviewedAt: current.reviewedAt,
+          pendingReason: "unsigned",
+          objectedSignatureCount: 0,
         },
       ];
     },

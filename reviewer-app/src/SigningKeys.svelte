@@ -77,9 +77,11 @@
       passphrase = "";
       confirmation = "";
       confirmingReplacement = false;
-      successMessage = replacement.preservedSignatureCount === 0
-        ? "The unused key was retired and its local vault deleted. You can create a replacement now."
-        : `${replacement.preservedSignatureCount} existing signatures were preserved; the old key was rotated and its local vault deleted.`;
+      successMessage = replacement.registryStatus === "compromised"
+        ? `${replacement.preservedSignatureCount} existing signatures remain in audit history under the compromise objection; this device's local vault was deleted.`
+        : replacement.preservedSignatureCount === 0
+          ? "The unused key was retired and its local vault deleted. You can create a replacement now."
+          : `${replacement.preservedSignatureCount} existing signatures were preserved; the old key is ${replacement.registryStatus} and its local vault was deleted.`;
       await refresh();
     } catch (error) {
       errorMessage = String(error);

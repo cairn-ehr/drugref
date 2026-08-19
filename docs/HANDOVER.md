@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Current branch: `codex/reviewer-account-administration`, from merged PR #141 on `main` at `dd8e653`.** Migrations through
-**`db/046`** are frozen; `db/046` changes only the signing registry's catalog comment.
+**Current branch: `codex/reviewer-key-trust`, from merged PR #142 on `main` at `b7e8b7d`.** Migrations through
+**`db/047`** are frozen; `db/047` floors the key-status rule vocabulary and deliberately leaves target contexts mutable.
 
 **PREVIOUS SLICE — local key enrolment and detached sign/verify/resume.** Canonical design:
 [`2026-08-18-drugref-reviewer-signing-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md).
@@ -22,27 +22,25 @@ Stronghold retains the encrypted private key locally while the service enrols on
 bytes and verifies detached signatures. Pending signatures survive queue refresh/restart. Lost-passphrase replacement
 appends a time-scoped `rotated` correction before native cleanup; it never deletes signing history.
 
-**⇒ JUST FINISHED — append-only reviewer account administration.** Canonical design:
-[`2026-08-18-drugref-reviewer-account-administration-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-account-administration-design.md).
-The administrator GUI now selects current reviewers, previews complete profile corrections, disables/enables access,
-rotates Argon2id passwords and revokes all live sessions. Stable usernames remain immutable. Self-disable, self-rotation
-and self-revocation clear native authentication plus prepared signing state and return to sign-in.
+**⇒ JUST FINISHED — public signing-key trust administration and counter-sign queues.** Canonical design:
+[`2026-08-19-drugref-reviewer-key-trust-design.md`](superpowers/specs/2026-08-19-drugref-reviewer-key-trust-design.md).
+Administrators inspect every public fingerprint, reviewer enrolment, status boundary and current-review impact, then append
+time-scoped retirement or permanent compromise. Compromise can escalate a rotated/retired key and cannot be downgraded.
 
-**ADMINISTRATION CANNOT ERASE HISTORY OR LOCK OUT THE SERVICE.** Profile forms carry `expectedProfileRevisionId`; the
-service serializes mutations, rechecks current administrator authority inside the transaction and refuses to disable or
-demote the last active administrator. Disablement and rotation append reason-specific revocations. Session creation binds
-to the credential revision actually verified, so an old password cannot finish login after a concurrent rotation.
+**PENDING MEANS ZERO UNOBJECTED SIGNATURES.** Unsigned revisions enter normally; current revisions left only with registry-
+objected attestations return as explicit counter-sign tasks. One independent unobjected signature resolves the task while
+the compromised signature remains immutable. Clinical rows remain served. PostgreSQL supplies registry policy, not an
+Ed25519 verdict. `db/047` closes #85; `signature_target_kind` remains mutable for versioned payload contexts.
 
-**⇒ DO THIS NEXT FOR THE GUI:** design the remaining reviewer/key trust round: general retired/compromised key
-administration, revocation queues and counter-signing policy. Do not broaden the existing owned-device lost-passphrase
-replacement while doing so. Issue #86's `signed_by_unknown_key` vocabulary widening remains its own explicit round.
+**⇒ DO THIS NEXT FOR THE GUI:** take issue #86 as its own compatibility round: design and add
+`signed_by_unknown_key` to the published signature-status vocabulary, update every GUI label/consumer and retain the
+existing six-verdict `drugref verify` boundary. Do not bundle release-manifest signing or class-grain issue #98.
 
-**Verification completed:** full Python/PostgreSQL suite 1,790; domain 16; service 12 plus the live clean-database account
-lifecycle integration; native 5; `ruff`; Rust formatting/clippy with warnings denied; `npm run check` with 0 diagnostics;
-production frontend build (0.63 kB HTML + 30.45 kB CSS + 114.51 kB JS, 38.01 kB JS gzipped); native debug no-bundle
-build; npm audit with 0 vulnerabilities; `git diff --check`. Chrome passed creation, correction, disable/re-enable,
-last-admin refusal, password rotation and self-session revocation at 1,440 x 900 and 740 x 900, with no horizontal
-overflow or console warnings.
+**Verification completed:** full Python/PostgreSQL suite 1,792; domain 17; service 12 plus live retirement, compromise and
+counter-sign lifecycle; native 5; `ruff`; Rust formatting/clippy with warnings denied; `npm run check` with 0 diagnostics;
+production frontend build (0.63 kB HTML + 33.24 kB CSS + 124.07 kB JS, 40.56 kB JS gzipped); native debug no-bundle
+build; npm audit with 0 vulnerabilities; `git diff --check`. Chrome passed key selection, confirmation and result at
+1,440 x 900 and 740 x 900 with no horizontal overflow or console warnings.
 
 ## Parallel project sequencing
 

@@ -233,6 +233,8 @@ export interface SigningKeyReplacement {
   keyFingerprint: string;
   /** Existing signatures preserved by time-scoped rotation. */
   preservedSignatureCount: number;
+  /** Current public registry status retained after local cleanup. */
+  registryStatus: string;
 }
 
 /** Native device-vault state merged with service enrolments. */
@@ -245,7 +247,56 @@ export interface DeviceSigningStatus {
   keys: SigningKeySummary[];
 }
 
-/** One current curated revision still awaiting its first detached signature. */
+/** Administrator-selectable append-only signing-key trust action. */
+export type AdministrativeSigningKeyStatus = "retired" | "compromised";
+
+/** One current public registry key with reviewer ownership and review impact. */
+export interface SigningKeyTrustSummary {
+  /** SHA-256 fingerprint of the raw Ed25519 public key. */
+  keyFingerprint: string;
+  /** Registry algorithm name. */
+  algorithm: string;
+  /** Human-readable holder recorded with the key. */
+  holder: string;
+  /** Current database-owned status. */
+  status: string;
+  /** RFC 3339 instant at which the current status began. */
+  statusFrom: string;
+  /** RFC 3339 registry timestamp for the current correction. */
+  registeredAt: string;
+  /** Stable reviewer identity owning the enrolment, when one exists. */
+  reviewerUuid: string | null;
+  /** Stable reviewer username, when one exists. */
+  username: string | null;
+  /** Current reviewer display name, when one exists. */
+  reviewerFullName: string | null;
+  /** Whether the current reviewer enrolment still permits this key. */
+  enrolled: boolean;
+  /** Every detached signature recorded with this fingerprint. */
+  signatureCount: number;
+  /** Current curated revisions carrying a signature from this key. */
+  currentRevisionCount: number;
+  /** Current revisions with no registry-unobjected signature remaining. */
+  affectedCurrentRevisionCount: number;
+}
+
+/** Complete current public registry projection for administrators. */
+export interface SigningKeyTrustStatus {
+  /** Current keys ordered by holder and fingerprint. */
+  keys: SigningKeyTrustSummary[];
+}
+
+/** Result of one append-only administrative key status correction. */
+export interface SigningKeyAdministrationResult {
+  /** Fresh database projection after the correction. */
+  key: SigningKeyTrustSummary;
+  /** Whether a live reviewer enrolment was withdrawn. */
+  withdrawnEnrolment: boolean;
+  /** Current revisions now awaiting an unobjected counter-signature. */
+  revisionsAwaitingCounterSignature: number;
+}
+
+/** One current curated revision awaiting an unobjected detached signature. */
 export interface PendingReviewSignature extends ReviewRecordQuery {
   /** Current immutable curated row identifier. */
   revisionId: number;
@@ -259,6 +310,10 @@ export interface PendingReviewSignature extends ReviewRecordQuery {
   reviewedBy: string;
   /** RFC 3339 recording timestamp. */
   reviewedAt: string;
+  /** Whether this is first sign-off or counter-signing after registry objection. */
+  pendingReason: "unsigned" | "needs_counter_signature";
+  /** Existing signature rows currently objected to by the registry. */
+  objectedSignatureCount: number;
 }
 
 /** Selector for one current curated row and one enrolled signing key. */

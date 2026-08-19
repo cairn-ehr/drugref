@@ -3,10 +3,10 @@
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use reviewer_domain::{
-    CanonicalField, EnrolSigningKeyRequest, PendingReviewSignature, ReviewDecisionRecord,
-    ReviewKind, ReviewRecordQuery, ReviewSignatureChallenge, ReviewSignatureQuery,
-    SigningKeyReplacement, SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest,
-    CURATED_CONDITION_V1_FIELDS, CURATED_INTERACTION_V1_FIELDS,
+    CanonicalField, EnrolSigningKeyRequest, PendingReviewSignature, PendingSignatureReason,
+    ReviewDecisionRecord, ReviewKind, ReviewRecordQuery, ReviewSignatureChallenge,
+    ReviewSignatureQuery, SigningKeyReplacement, SigningKeyStatus, SigningKeySummary,
+    SubmitReviewSignatureRequest, CURATED_CONDITION_V1_FIELDS, CURATED_INTERACTION_V1_FIELDS,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgConnection, PgPool};
@@ -104,6 +104,7 @@ struct PendingSignatureRow {
     decision: String,
     reviewed_by: String,
     reviewed_at: DateTime<Utc>,
+    signature_count: i64,
 }
 
 impl TryFrom<PendingSignatureRow> for PendingReviewSignature {
@@ -125,37 +126,44 @@ impl TryFrom<PendingSignatureRow> for PendingReviewSignature {
             decision: row.decision,
             reviewed_by: row.reviewed_by,
             reviewed_at: row.reviewed_at.to_rfc3339(),
+            pending_reason: if row.signature_count == 0 {
+                PendingSignatureReason::Unsigned
+            } else {
+                PendingSignatureReason::NeedsCounterSignature
+            },
+            objected_signature_count: row.signature_count,
         })
     }
 }
 
-/// Return every live curated GUI revision with no detached signature yet recorded.
+/// Return every live GUI revision with no registry-unobjected signature.
 pub async fn pending(pool: &PgPool) -> Result<Vec<PendingReviewSignature>, AppError> {
     sqlx::query_as::<_, PendingSignatureRow>(
         "SELECT 'interaction_rule'::text AS kind, q.gap_key AS target_key, \
                 c.curated_interaction_id AS revision_id, m.display_name AS subject_name, \
                 k.class_name AS object_name, \
                 CASE WHEN c.applies THEN 'applies' ELSE 'does_not_apply' END AS decision, \
-                c.reviewed_by, c.reviewed_at \
+                c.reviewed_by, c.reviewed_at, COALESCE(status.signature_count, 0) AS signature_count \
          FROM drugref.curated_interaction c \
          JOIN drugref.open_question q ON q.question_uuid = c.question_uuid \
          JOIN drugref.substance_moiety m ON m.moiety_uuid = c.subject_moiety_uuid \
          JOIN drugref.substance_class k ON k.class_uuid = c.object_class_uuid \
-         WHERE c.superseded_by IS NULL AND NOT EXISTS ( \
-             SELECT 1 FROM drugref.assertion_signature s \
-             WHERE s.target_kind = 'curated_interaction' \
-               AND s.target_id = c.curated_interaction_id) \
+         LEFT JOIN drugref.curated_signature_status status \
+           ON status.target_kind = 'curated_interaction' \
+          AND status.target_id = c.curated_interaction_id \
+         WHERE c.superseded_by IS NULL AND COALESCE(status.unobjected_count, 0) = 0 \
          UNION ALL \
          SELECT 'condition_contradiction'::text, q.gap_key, c.curated_condition_id, \
-                m.display_name, d.name, c.ruling, c.reviewed_by, c.reviewed_at \
+                m.display_name, d.name, c.ruling, c.reviewed_by, c.reviewed_at, \
+                COALESCE(status.signature_count, 0) \
          FROM drugref.curated_condition c \
          JOIN drugref.open_question q ON q.question_uuid = c.question_uuid \
          JOIN drugref.substance_moiety m ON m.moiety_uuid = c.subject_moiety_uuid \
          JOIN drugref.condition d ON d.condition_uuid = c.object_condition_uuid \
-         WHERE c.superseded_by IS NULL AND NOT EXISTS ( \
-             SELECT 1 FROM drugref.assertion_signature s \
-             WHERE s.target_kind = 'curated_condition' \
-               AND s.target_id = c.curated_condition_id) \
+         LEFT JOIN drugref.curated_signature_status status \
+           ON status.target_kind = 'curated_condition' \
+          AND status.target_id = c.curated_condition_id \
+         WHERE c.superseded_by IS NULL AND COALESCE(status.unobjected_count, 0) = 0 \
          ORDER BY reviewed_at DESC, revision_id DESC",
     )
     .fetch_all(pool)
@@ -225,11 +233,14 @@ pub async fn replace_key(
     .await?;
 
     let Some(current) = current else {
-        let previous_signature_count: Option<i64> = sqlx::query_scalar(
+        let previous: Option<(i64, String)> = sqlx::query_as(
             "SELECT (SELECT count(*) FROM drugref.assertion_signature s \
-                     WHERE s.key_fingerprint = enrolled.key_fingerprint) \
+                     WHERE s.key_fingerprint = enrolled.key_fingerprint), current.status \
              FROM drugref.reviewer_key_enrolment e \
              JOIN drugref.signing_key enrolled ON enrolled.signing_key_id = e.signing_key_id \
+             JOIN drugref.signing_key current \
+               ON current.key_fingerprint = enrolled.key_fingerprint \
+              AND current.superseded_by IS NULL \
              WHERE e.reviewer_uuid = $1 AND e.superseded_by IS NULL AND NOT e.enrolled \
                AND enrolled.key_fingerprint = $2",
         )
@@ -238,11 +249,14 @@ pub async fn replace_key(
         .fetch_optional(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        return previous_signature_count
-            .map(|preserved_signature_count| SigningKeyReplacement {
-                key_fingerprint: key_fingerprint.to_string(),
-                preserved_signature_count,
-            })
+        return previous
+            .map(
+                |(preserved_signature_count, registry_status)| SigningKeyReplacement {
+                    key_fingerprint: key_fingerprint.to_string(),
+                    preserved_signature_count,
+                    registry_status,
+                },
+            )
             .ok_or_else(|| AppError::not_found("no matching active signing key is enrolled"));
     };
 
@@ -287,6 +301,7 @@ pub async fn replace_key(
     Ok(SigningKeyReplacement {
         key_fingerprint: key_fingerprint.to_string(),
         preserved_signature_count: current.signature_count,
+        registry_status: ROTATED_KEY_STATUS.to_string(),
     })
 }
 
@@ -721,8 +736,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use ed25519_dalek::{Signer, SigningKey};
     use reviewer_domain::{
-        CreateReviewDecisionRequest, EnrolSigningKeyRequest, EvidenceGrade, ReviewDecision,
-        ReviewKind, ReviewSignatureQuery, Severity, SubmitReviewSignatureRequest,
+        AdministrativeSigningKeyStatus, CreateReviewDecisionRequest, EnrolSigningKeyRequest,
+        EvidenceGrade, PendingSignatureReason, ReviewDecision, ReviewKind, ReviewSignatureQuery,
+        Severity, SubmitReviewSignatureRequest,
     };
     use sha2::{Digest, Sha256};
     use sqlx::postgres::PgPoolOptions;
@@ -773,6 +789,33 @@ mod tests {
         .execute(&pool)
         .await
         .expect("test reviewer");
+        sqlx::query(
+            "INSERT INTO drugref.reviewer_profile \
+             (reviewer_uuid, full_name, role, active, recorded_by) \
+             VALUES ($1, 'Signing Reviewer', 'reviewer', true, $1)",
+        )
+        .bind(reviewer_uuid)
+        .execute(&pool)
+        .await
+        .expect("test reviewer profile");
+        let administrator_uuid = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO drugref.reviewer_account (reviewer_uuid, username) VALUES ($1, $2)",
+        )
+        .bind(administrator_uuid)
+        .bind(format!("t{}", administrator_uuid.simple()))
+        .execute(&pool)
+        .await
+        .expect("test administrator");
+        sqlx::query(
+            "INSERT INTO drugref.reviewer_profile \
+             (reviewer_uuid, full_name, role, active, recorded_by) \
+             VALUES ($1, 'Trust Administrator', 'administrator', true, $1)",
+        )
+        .bind(administrator_uuid)
+        .execute(&pool)
+        .await
+        .expect("test administrator profile");
         let run_id: i64 = sqlx::query_scalar(
             "INSERT INTO drugref.ingest_run \
              (source, upstream_release, source_checksum, writer) \
@@ -915,16 +958,18 @@ mod tests {
             revision_id,
             key_fingerprint: enrolled.key_fingerprint.clone(),
         };
-        let challenge = challenge(&pool, &query, reviewer_uuid)
+        let initial_challenge = challenge(&pool, &query, reviewer_uuid)
             .await
             .expect("signing challenge");
-        let payload = challenge.canonical_payload().expect("canonical payload");
+        let payload = initial_challenge
+            .canonical_payload()
+            .expect("canonical payload");
         let signed = submit(
             &pool,
             &SubmitReviewSignatureRequest {
                 query,
-                signed_at: challenge.signed_at,
-                payload_digest: challenge.payload_digest,
+                signed_at: initial_challenge.signed_at,
+                payload_digest: initial_challenge.payload_digest,
                 signature_hex: encode_hex(&signing_key.sign(&payload).to_bytes()),
             },
             reviewer_uuid,
@@ -937,6 +982,30 @@ mod tests {
             .expect("refreshed pending queue")
             .iter()
             .any(|item| item.revision_id == revision_id));
+        let retirement_seed: [u8; 32] = Sha256::digest(object_uuid.as_bytes()).into();
+        let retirement_key = SigningKey::from_bytes(&retirement_seed);
+        let retirement_enrolment = enrol_key(
+            &pool,
+            &EnrolSigningKeyRequest {
+                public_key_hex: encode_hex(retirement_key.verifying_key().as_bytes()),
+            },
+            reviewer_uuid,
+            "Signing Reviewer",
+        )
+        .await
+        .expect("retirement test key");
+        let retirement = crate::trust::administer(
+            &pool,
+            &retirement_enrolment.key_fingerprint,
+            AdministrativeSigningKeyStatus::Retired,
+            administrator_uuid,
+            "Trust Administrator",
+        )
+        .await
+        .expect("administrative retirement");
+        assert!(retirement.withdrawn_enrolment);
+        assert_eq!(retirement.key.status, "retired");
+        assert_eq!(retirement.revisions_awaiting_counter_signature, 0);
         let replacement = replace_key(
             &pool,
             &enrolled.key_fingerprint,
@@ -951,5 +1020,83 @@ mod tests {
             .expect("keys after rotation")
             .keys
             .is_empty());
+        assert!(!pending(&pool)
+            .await
+            .expect("rotation preserves queue state")
+            .iter()
+            .any(|item| item.revision_id == revision_id));
+
+        let compromise = crate::trust::administer(
+            &pool,
+            &enrolled.key_fingerprint,
+            AdministrativeSigningKeyStatus::Compromised,
+            administrator_uuid,
+            "Trust Administrator",
+        )
+        .await
+        .expect("retrospective compromise");
+        assert_eq!(compromise.revisions_awaiting_counter_signature, 1);
+        let counter_sign = pending(&pool)
+            .await
+            .expect("counter-sign queue")
+            .into_iter()
+            .find(|item| item.revision_id == revision_id)
+            .expect("compromised signature is pending");
+        assert_eq!(
+            counter_sign.pending_reason,
+            PendingSignatureReason::NeedsCounterSignature
+        );
+        assert_eq!(counter_sign.objected_signature_count, 1);
+        let compromised_cleanup = replace_key(
+            &pool,
+            &enrolled.key_fingerprint,
+            reviewer_uuid,
+            "Signing Reviewer",
+        )
+        .await
+        .expect("device cleanup after administrative compromise");
+        assert_eq!(compromised_cleanup.registry_status, "compromised");
+
+        let counter_seed: [u8; 32] = Sha256::digest(target_key.as_bytes()).into();
+        let counter_key = SigningKey::from_bytes(&counter_seed);
+        let counter_enrolment = enrol_key(
+            &pool,
+            &EnrolSigningKeyRequest {
+                public_key_hex: encode_hex(counter_key.verifying_key().as_bytes()),
+            },
+            reviewer_uuid,
+            "Signing Reviewer",
+        )
+        .await
+        .expect("counter-signing key");
+        let counter_query = ReviewSignatureQuery {
+            kind: ReviewKind::InteractionRule,
+            target_key,
+            revision_id,
+            key_fingerprint: counter_enrolment.key_fingerprint,
+        };
+        let counter_challenge = challenge(&pool, &counter_query, reviewer_uuid)
+            .await
+            .expect("counter-signing challenge");
+        let counter_payload = counter_challenge
+            .canonical_payload()
+            .expect("counter-signing payload");
+        submit(
+            &pool,
+            &SubmitReviewSignatureRequest {
+                query: counter_query,
+                signed_at: counter_challenge.signed_at,
+                payload_digest: counter_challenge.payload_digest,
+                signature_hex: encode_hex(&counter_key.sign(&counter_payload).to_bytes()),
+            },
+            reviewer_uuid,
+        )
+        .await
+        .expect("verified counter-signature");
+        assert!(!pending(&pool)
+            .await
+            .expect("counter-sign queue resolved")
+            .iter()
+            .any(|item| item.revision_id == revision_id));
     }
 }

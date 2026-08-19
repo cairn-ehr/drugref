@@ -3286,6 +3286,39 @@ CSS + 114.51 kB JS, 38.01 kB JS gzipped); npm audit with 0 vulnerabilities; nati
 rotation and self-session revocation with no horizontal overflow or console warnings. Next: design general reviewer/key
 administration, revocation queues and counter-signing policy; the owned lost-passphrase path remains deliberately narrower.
 
+## Reviewer key trust administration (2026-08-19) — `db/047`
+
+Canonical design: [`2026-08-19-drugref-reviewer-key-trust-design.md`](superpowers/specs/2026-08-19-drugref-reviewer-key-trust-design.md).
+
+**The remaining public-key trust round is complete.** Administrators can inspect every current registry key with reviewer
+ownership, status boundaries, all-signature and current-revision counts, then append an explicit `retired` or `compromised`
+correction. The service rechecks current administrator authority inside the transaction, serializes by fingerprint, copies
+public bytes from the live registry row and withdraws a live enrolment. Retirement is allowed only from active and remains
+time-scoped; compromise can escalate a rotated or retired key retrospectively and can never be downgraded.
+
+**Pending now means no registry-unobjected signature, not no signature row.** An unsigned current GUI revision is labelled
+`unsigned`; a revision carrying only compromised, expired or unknown-key attestations returns as
+`needs_counter_signature`, with the number of objected rows. One independent unobjected counter-signature removes it from
+the queue even when the compromised signature remains in immutable history. This reuses `curated_signature_status`'s
+registry policy and does not pretend PostgreSQL verified Ed25519. Clinical rows remain served throughout.
+
+**`db/047` closes issue #85's schema hole.** `signing_key_status_kind` is now INSERT-only, so one UPDATE cannot disarm every
+historical compromise verdict. `signature_target_kind` deliberately remains mutable for `/v2` context migrations. The
+WebView receives only public fingerprints, identity, timestamps and aggregate impact; bearer tokens, private bytes and
+canonical payload buffers stay behind their existing native/service boundaries. General administration never deletes local
+files. Administering the signed-in reviewer's own key clears any native prepared payload. A reviewer whose administrator
+acted first can still run fixed-path device cleanup idempotently, and the result now reports the actual registry status
+instead of misdescribing compromise as rotation.
+
+**Verified:** full Python/PostgreSQL suite **1,792 passed**; reviewer-domain **17 passed**; reviewer-service **12 passed +
+5 ignored**, with the live PostgreSQL signing lifecycle explicitly covering retirement, retrospective compromise,
+counter-sign queue entry, clean counter-sign recovery and post-administration device cleanup; native **5 passed**; Rust
+formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build (0.63 kB
+HTML + 33.24 kB CSS + 124.07 kB JS, 40.56 kB JS gzipped); npm audit with 0 vulnerabilities; native debug no-bundle build;
+`git diff --check`. Chrome at 1,440 x 900 and 740 x 900 covered key selection, compromise confirmation/result and narrow
+layout with no horizontal overflow or console warnings. Next: issue #86's `signed_by_unknown_key` published-vocabulary
+widening remains its own explicit compatibility round.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -3314,9 +3347,9 @@ schema-level: a rule naming two axes) · **#93 MED-RT carries no QT class** · *
 need research. **#100 is CLOSED**: `ci_class_subtree`'s narrow definition is pinned from `pg_depend`,
 mutation-verified against db/033's wide seed.
 
-**Filed by 5c.4 and its review** — **#85 `signing_key_status_kind` has no append-only floor**, so one `UPDATE`
-disarms every compromise verdict; **floor that one ALONE** — `signature_target_kind` is *designed* to move to a
-`/v2` · #86 (decided, not built: `signed_by_unknown_key` as a fourth `signature_status`) · #88 · #89. Unfiled:
+**Filed by 5c.4 and its review** — **#85 is CLOSED by `db/047`**: `signing_key_status_kind` is INSERT-only while
+`signature_target_kind` remains free to move to a `/v2` · #86 (decided, not built: `signed_by_unknown_key` as a fourth
+`signature_status`) · #88 · #89. Unfiled:
 `tests/test_cli_signing*.py` **cannot commit for real** — test isolation, shaped like #2.
 
 **Filed by the PR #113 review, ALL FOUR NOW CLOSED by the db/038 round** — #114 (`effective_grades_for` had no

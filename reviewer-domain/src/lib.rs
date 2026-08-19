@@ -8,6 +8,7 @@ mod accounts;
 mod decisions;
 mod records;
 mod signing;
+mod trust;
 
 pub use accounts::{
     AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, LoginRequest,
@@ -24,10 +25,14 @@ pub use records::{
 };
 pub use signing::{
     canonical_payload, validate_signing_passphrase, CanonicalField, DeviceSigningStatus,
-    EnrolSigningKeyRequest, PendingReviewSignature, ReplaceSigningKeyRequest,
-    ReviewSignatureChallenge, ReviewSignaturePreview, ReviewSignatureQuery, SigningKeyReplacement,
-    SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest, CURATED_CONDITION_V1_FIELDS,
-    CURATED_INTERACTION_V1_FIELDS,
+    EnrolSigningKeyRequest, PendingReviewSignature, PendingSignatureReason,
+    ReplaceSigningKeyRequest, ReviewSignatureChallenge, ReviewSignaturePreview,
+    ReviewSignatureQuery, SigningKeyReplacement, SigningKeyStatus, SigningKeySummary,
+    SubmitReviewSignatureRequest, CURATED_CONDITION_V1_FIELDS, CURATED_INTERACTION_V1_FIELDS,
+};
+pub use trust::{
+    validate_signing_key_fingerprint, AdministerSigningKeyRequest, AdministrativeSigningKeyStatus,
+    SigningKeyAdministrationResult, SigningKeyTrustStatus, SigningKeyTrustSummary,
 };
 
 use serde::{Deserialize, Serialize};

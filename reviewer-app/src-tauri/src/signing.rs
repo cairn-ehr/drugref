@@ -20,10 +20,11 @@ use iota_stronghold::{
 use rand_core::{OsRng, RngCore};
 use reqwest::Method;
 use reviewer_domain::{
-    validate_signing_passphrase, DeviceSigningStatus, EnrolSigningKeyRequest,
-    PendingReviewSignature, ReplaceSigningKeyRequest, ReviewDecisionRecord,
-    ReviewSignatureChallenge, ReviewSignaturePreview, ReviewSignatureQuery, SigningKeyReplacement,
-    SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest,
+    validate_signing_key_fingerprint, validate_signing_passphrase, AdministerSigningKeyRequest,
+    DeviceSigningStatus, EnrolSigningKeyRequest, PendingReviewSignature, ReplaceSigningKeyRequest,
+    ReviewDecisionRecord, ReviewSignatureChallenge, ReviewSignaturePreview, ReviewSignatureQuery,
+    SigningKeyAdministrationResult, SigningKeyReplacement, SigningKeyStatus, SigningKeySummary,
+    SigningKeyTrustStatus, SubmitReviewSignatureRequest,
 };
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -34,6 +35,7 @@ use crate::accounts::{send_json, AccountClient};
 const SIGNING_KEYS_PATH: &str = "/v1/signing-keys/current";
 const REVIEW_SIGNATURE_PATH: &str = "/v1/review-signature";
 const PENDING_SIGNATURES_PATH: &str = "/v1/pending-signatures";
+const SIGNING_KEY_TRUST_PATH: &str = "/v1/signing-keys";
 const VAULT_FILE_PREFIX: &str = "reviewer-signing-";
 const VAULT_FILE_SUFFIX: &str = ".hold";
 const SALT_FILE_SUFFIX: &str = ".salt";
@@ -193,6 +195,33 @@ pub async fn load_pending_signatures(
     accounts: tauri::State<'_, AccountClient>,
 ) -> Result<Vec<PendingReviewSignature>, String> {
     send_json::<(), _>(&accounts, Method::GET, PENDING_SIGNATURES_PATH, None, true).await
+}
+
+/// Load the public registry trust projection through the administrator session.
+#[tauri::command]
+pub async fn load_signing_key_trust(
+    accounts: tauri::State<'_, AccountClient>,
+) -> Result<SigningKeyTrustStatus, String> {
+    send_json::<(), _>(&accounts, Method::GET, SIGNING_KEY_TRUST_PATH, None, true).await
+}
+
+/// Append one narrow administrator-confirmed key status through the service.
+#[tauri::command]
+pub async fn administer_signing_key(
+    key_fingerprint: String,
+    input: AdministerSigningKeyRequest,
+    accounts: tauri::State<'_, AccountClient>,
+    signing: tauri::State<'_, SigningClient>,
+) -> Result<SigningKeyAdministrationResult, String> {
+    validate_signing_key_fingerprint(&key_fingerprint).map_err(|error| error.0)?;
+    let actor = accounts.reviewer()?;
+    let path = format!("{SIGNING_KEY_TRUST_PATH}/{key_fingerprint}/status");
+    let result: SigningKeyAdministrationResult =
+        send_json(&accounts, Method::PUT, &path, Some(&input), true).await?;
+    if result.key.reviewer_uuid == Some(actor.reviewer_uuid) {
+        signing.clear_pending()?;
+    }
+    Ok(result)
 }
 
 /// Generate or reopen the local key and enrol only its public half with the service.
