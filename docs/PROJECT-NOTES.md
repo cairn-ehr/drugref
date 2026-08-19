@@ -3256,6 +3256,36 @@ Rust formatting and clippy with warnings denied; `ruff`; Svelte check with 0 dia
 audit with 0 vulnerabilities; debug macOS app bundle with strict code-sign verification; `git diff --check`. Complete
 15-field signing confirmation passed at 1,440 x 900 and 740 x 900 with no horizontal clipping or console warnings.
 
+## Reviewer account administration (2026-08-18) — no migration
+
+Canonical design: [`2026-08-18-drugref-reviewer-account-administration-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-account-administration-design.md).
+
+**The `db/044` administration tail is complete without changing its schema.** Administrators can append a complete profile
+correction, disable or re-enable access, rotate an Argon2id password, and revoke every live session. The account projection
+now carries the current profile revision and live-session count; profile writes require the observed revision and return 409
+on a stale form. Disablement and credential rotation append reason-specific session revocations in their own transaction.
+Stable usernames, clinical records, signatures and signing-key history do not move.
+
+**Authority is rechecked where the write occurs.** Administration mutations serialize under one transaction advisory lock,
+re-read the acting account's current active-administrator profile, and refuse to disable or demote the last active
+administrator. Session creation takes the same lock, rechecks enabled status and requires the credential revision whose hash
+the login path verified. That last comparison closes the race where an old password could otherwise finish authentication
+after a concurrent rotation committed. Re-enabling an account never revives a revoked bearer token.
+
+**The WebView still receives no bearer token, hash or session secret.** Narrow Tauri commands forward typed profile,
+password and session actions; self-disable, self-rotation and self-revocation clear the native session and prepared signing
+payload before returning the GUI to sign-in. The administrator view provides selectable reviewers, immutable usernames,
+complete-profile preview, separate danger confirmations and database-derived result messages. Browser preview mirrors the
+flow in isolated memory only.
+
+**Verified:** full Python/PostgreSQL suite **1,790 passed**; reviewer-domain **16 passed**; reviewer-service **12 passed +
+5 ignored**, with the clean live PostgreSQL account round trip passed explicitly; native **5 passed**; Rust formatting and
+clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build (0.63 kB HTML + 30.45 kB
+CSS + 114.51 kB JS, 38.01 kB JS gzipped); npm audit with 0 vulnerabilities; native debug no-bundle build; `git diff
+--check`. Chrome at 1,440 x 900 and 740 x 900 covered creation, correction, disable/re-enable, last-admin refusal, password
+rotation and self-session revocation with no horizontal overflow or console warnings. Next: design general reviewer/key
+administration, revocation queues and counter-signing policy; the owned lost-passphrase path remains deliberately narrower.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER

@@ -23,8 +23,10 @@ struct AccountRow {
     bio_markdown: String,
     role: String,
     active: bool,
+    profile_revision_id: i64,
     created_at: DateTime<Utc>,
     key_count: i64,
+    live_session_count: i64,
 }
 
 impl TryFrom<AccountRow> for ReviewerAccount {
@@ -45,8 +47,10 @@ impl TryFrom<AccountRow> for ReviewerAccount {
             bio_markdown: row.bio_markdown,
             role,
             active: row.active,
+            profile_revision_id: row.profile_revision_id,
             created_at: row.created_at.to_rfc3339(),
             key_count: row.key_count,
+            live_session_count: row.live_session_count,
         })
     }
 }
@@ -56,6 +60,8 @@ impl TryFrom<AccountRow> for ReviewerAccount {
 pub struct LoginRow {
     /// Stable reviewer identity owning the credential.
     pub reviewer_uuid: Uuid,
+    /// Current credential revision verified by this login attempt.
+    pub credential_id: i64,
     /// Encoded Argon2id password hash.
     pub password_hash: String,
     /// Whether the reviewer's current profile permits sign-in.
@@ -73,11 +79,18 @@ pub struct Authenticated {
 /// Reusable SQL projection for current reviewer account reads.
 const ACCOUNT_COLUMNS: &str = r#"
     a.reviewer_uuid, a.username, p.full_name, p.qualifications, p.bio_markdown,
-    p.role, p.active, a.created_at,
+    p.role, p.active, p.reviewer_profile_id AS profile_revision_id, a.created_at,
     (SELECT count(*) FROM drugref.reviewer_key_enrolment e
      WHERE e.reviewer_uuid = a.reviewer_uuid AND e.superseded_by IS NULL
-       AND e.enrolled) AS key_count
+       AND e.enrolled) AS key_count,
+    (SELECT count(*) FROM drugref.auth_session s
+     LEFT JOIN drugref.auth_session_revocation r ON r.session_uuid = s.session_uuid
+     WHERE s.reviewer_uuid = a.reviewer_uuid AND s.expires_at > now()
+       AND r.session_uuid IS NULL) AS live_session_count
 "#;
+
+pub(crate) const ADMINISTRATION_LOCK: &str =
+    "SELECT pg_advisory_xact_lock(hashtext('drugref reviewer administration'))";
 
 /// Confirm that the account and clinical queue schema exists before serving traffic.
 pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
@@ -102,7 +115,7 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Return whether no active current administrator profile exists.
+/// Return whether no current administrator profile exists, regardless of enabled status.
 pub async fn bootstrap_required(pool: &PgPool) -> Result<bool, AppError> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM drugref.reviewer_profile WHERE role = \
@@ -213,7 +226,7 @@ async fn insert_account(
 /// Return current credential fields for a stable username, if it exists.
 pub async fn login_row(pool: &PgPool, username: &str) -> Result<Option<LoginRow>, AppError> {
     Ok(sqlx::query_as::<_, LoginRow>(
-        "SELECT a.reviewer_uuid, c.password_hash, p.active \
+        "SELECT a.reviewer_uuid, c.credential_id, c.password_hash, p.active \
          FROM drugref.reviewer_account a \
          JOIN drugref.reviewer_profile p ON p.reviewer_uuid = a.reviewer_uuid \
            AND p.superseded_by IS NULL \
@@ -227,9 +240,26 @@ pub async fn login_row(pool: &PgPool, username: &str) -> Result<Option<LoginRow>
 }
 
 /// Start a session for an already authenticated reviewer identity.
-pub async fn start_session(pool: &PgPool, reviewer_uuid: Uuid) -> Result<SessionGrant, AppError> {
-    let reviewer = account_by_uuid(pool, reviewer_uuid).await?;
+pub async fn start_session(
+    pool: &PgPool,
+    reviewer_uuid: Uuid,
+    expected_credential_id: i64,
+) -> Result<SessionGrant, AppError> {
     let mut transaction = pool.begin().await?;
+    sqlx::query(ADMINISTRATION_LOCK)
+        .execute(&mut *transaction)
+        .await?;
+    let reviewer = account_by_uuid_tx(&mut transaction, reviewer_uuid).await?;
+    let current_credential_id: i64 = sqlx::query_scalar(
+        "SELECT credential_id FROM drugref.reviewer_password_credential \
+         WHERE reviewer_uuid = $1 AND superseded_by IS NULL",
+    )
+    .bind(reviewer_uuid)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if !reviewer.active || current_credential_id != expected_credential_id {
+        return Err(AppError::unauthorized());
+    }
     let grant = insert_session(&mut transaction, reviewer).await?;
     transaction.commit().await?;
     Ok(grant)
@@ -331,7 +361,7 @@ async fn account_by_uuid(pool: &PgPool, reviewer_uuid: Uuid) -> Result<ReviewerA
 }
 
 /// Return one current reviewer projection inside the caller's transaction.
-async fn account_by_uuid_tx(
+pub(crate) async fn account_by_uuid_tx(
     transaction: &mut Transaction<'_, Postgres>,
     reviewer_uuid: Uuid,
 ) -> Result<ReviewerAccount, AppError> {

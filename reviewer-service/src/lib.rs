@@ -4,6 +4,7 @@
 //! the GUI receives only typed projections and never connects to the database directly.
 #![deny(missing_docs)]
 
+mod administration;
 mod auth;
 mod decision_targets;
 mod decisions;
@@ -17,18 +18,20 @@ mod store;
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use reviewer_domain::{
-    BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest, CreateEvidenceReferenceRequest,
-    CreateReviewDecisionRequest, EnrolSigningKeyRequest, EvidenceReference, LoginRequest,
-    PendingReviewSignature, ReplaceSigningKeyRequest, ReviewAnnotation, ReviewDecisionRecord,
-    ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewSignatureChallenge,
-    ReviewSignatureQuery, ReviewerAccount, ReviewerRole, SessionGrant, SigningKeyReplacement,
+    AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
+    CreateEvidenceReferenceRequest, CreateReviewDecisionRequest, EnrolSigningKeyRequest,
+    EvidenceReference, LoginRequest, PendingReviewSignature, ReplaceSigningKeyRequest,
+    ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord,
+    ReviewRecordQuery, ReviewSignatureChallenge, ReviewSignatureQuery, ReviewerAccount,
+    ReviewerRole, RotateReviewerPasswordRequest, SessionGrant, SigningKeyReplacement,
     SigningKeyStatus, SigningKeySummary, SubmitReviewSignatureRequest,
+    UpdateReviewerProfileRequest,
 };
 use sqlx::PgPool;
 
@@ -85,6 +88,18 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/pending-signatures", get(pending_signatures))
         .route("/v1/users", get(list_users).post(create_user))
+        .route(
+            "/v1/users/{reviewer_uuid}/profile",
+            put(update_user_profile),
+        )
+        .route(
+            "/v1/users/{reviewer_uuid}/password",
+            put(rotate_user_password),
+        )
+        .route(
+            "/v1/users/{reviewer_uuid}/sessions/revoke",
+            post(revoke_user_sessions),
+        )
         .with_state(state)
 }
 
@@ -146,7 +161,12 @@ async fn login(
         return Err(AppError::unauthorized());
     }
     Ok(Json(
-        store::start_session(&state.pool, credential.reviewer_uuid).await?,
+        store::start_session(
+            &state.pool,
+            credential.reviewer_uuid,
+            credential.credential_id,
+        )
+        .await?,
     ))
 }
 
@@ -180,6 +200,71 @@ async fn create_user(
     )
     .await?;
     Ok((StatusCode::CREATED, Json(reviewer)))
+}
+
+/// Append one administrator-attributed replacement for a reviewer's current profile.
+async fn update_user_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(reviewer_uuid): Path<uuid::Uuid>,
+    Json(input): Json<UpdateReviewerProfileRequest>,
+) -> Result<Json<AccountAdministrationResult>, AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    require_admin(&authenticated.reviewer)?;
+    input
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    Ok(Json(
+        administration::update_user_profile(
+            &state.pool,
+            reviewer_uuid,
+            &input,
+            authenticated.reviewer.reviewer_uuid,
+        )
+        .await?,
+    ))
+}
+
+/// Append a replacement password credential and revoke sessions using its predecessor.
+async fn rotate_user_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(reviewer_uuid): Path<uuid::Uuid>,
+    Json(input): Json<RotateReviewerPasswordRequest>,
+) -> Result<Json<AccountAdministrationResult>, AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    require_admin(&authenticated.reviewer)?;
+    input
+        .validate()
+        .map_err(|error| AppError::bad_request(error.0))?;
+    let password_hash = hash_password(&input.password)?;
+    Ok(Json(
+        administration::rotate_user_password(
+            &state.pool,
+            reviewer_uuid,
+            &password_hash,
+            authenticated.reviewer.reviewer_uuid,
+        )
+        .await?,
+    ))
+}
+
+/// Append administrative revocations for every live session owned by one reviewer.
+async fn revoke_user_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(reviewer_uuid): Path<uuid::Uuid>,
+) -> Result<Json<AccountAdministrationResult>, AppError> {
+    let authenticated = authenticate_headers(&state, &headers).await?;
+    require_admin(&authenticated.reviewer)?;
+    Ok(Json(
+        administration::revoke_user_sessions(
+            &state.pool,
+            reviewer_uuid,
+            authenticated.reviewer.reviewer_uuid,
+        )
+        .await?,
+    ))
 }
 
 /// Return one validated, filtered queue page to an authenticated reviewer.

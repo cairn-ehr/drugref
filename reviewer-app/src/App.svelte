@@ -219,14 +219,19 @@
     try {
       await logout();
     } finally {
-      workspace = null;
-      currentUser = null;
-      selectedId = "";
-      queueRequest += QUEUE_REQUEST_INCREMENT;
-      if (searchTimer) clearTimeout(searchTimer);
-      password = accountMode() === "browser-preview" ? "preview" : "";
-      screen = "login";
+      clearWorkspaceSession();
     }
+  }
+
+  /** Clear WebView workspace state after native or service session invalidation. */
+  function clearWorkspaceSession(): void {
+    workspace = null;
+    currentUser = null;
+    selectedId = "";
+    queueRequest += QUEUE_REQUEST_INCREMENT;
+    if (searchTimer) clearTimeout(searchTimer);
+    password = accountMode() === "browser-preview" ? "preview" : "";
+    screen = "login";
   }
 
   /** Select the review queue workspace view. */
@@ -252,6 +257,12 @@
   /** Keep the signed-in reviewer chip aligned with refreshed enrolment status. */
   function updateKeyCount(keyCount: number): void {
     if (currentUser) currentUser = { ...currentUser, keyCount };
+  }
+
+  /** Keep the application shell aligned with a self-profile correction. */
+  function updateCurrentUser(reviewer: ReviewerAccount): void {
+    currentUser = reviewer;
+    if (reviewer.role !== "administrator") activeView = "queue";
   }
 
   /** Select a queue item for inspection and append-only working history. */
@@ -286,7 +297,7 @@
           <p class="eyebrow eyebrow--ink">Service unavailable</p><h2>{currentUser ? "Review workspace could not be loaded" : "Reviewer access could not be checked"}</h2><p class="login-intro">No workspace data has been loaded. Start or restart the reviewer service and confirm the current migrations are applied.</p>
           <p class="form-error" role="alert">{authError}</p><button class="primary-button" type="button" disabled={loading} onclick={retryUnavailable}>{loading ? "Trying again…" : "Try again"}<span aria-hidden="true">→</span></button>
         {:else if screen === "bootstrap"}
-          <p class="eyebrow eyebrow--ink">First-run registration</p><h2 id="bootstrap-title">Create the first administrator</h2><p class="login-intro">No active administrator is registered. This account must be created before Drugref Reviewer can finish starting.</p>
+          <p class="eyebrow eyebrow--ink">First-run registration</p><h2 id="bootstrap-title">Create the first administrator</h2><p class="login-intro">No administrator is registered. This account must be created before Drugref Reviewer can finish starting.</p>
           <form class="bootstrap-form" onsubmit={submitBootstrap} aria-labelledby="bootstrap-title">
             <div class="auth-form-row"><label><span>Username</span><input required minlength={USERNAME_MIN_LENGTH} maxlength={USERNAME_MAX_LENGTH} pattern={USERNAME_PATTERN} autocomplete="username" bind:value={bootstrapInput.username} /></label><label><span>Full name</span><input required maxlength={FULL_NAME_MAX_LENGTH} autocomplete="name" bind:value={bootstrapInput.fullName} /></label></div>
             <div class="auth-form-row"><label><span>Qualifications</span><input maxlength={QUALIFICATIONS_MAX_LENGTH} bind:value={bootstrapInput.qualifications} /></label><label><span>Role</span><input value="Administrator" disabled /></label></div>
@@ -323,7 +334,7 @@
       <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "queue" || activeView === "pending" ? "Clinical curation" : "Administration"}</p><h1>{activeView === "users" ? "Reviewer accounts" : activeView === "signing" ? "Signing keys" : activeView === "pending" ? "Pending signatures" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
 
       {#if activeView === "users"}
-        <UserManagement />
+        <UserManagement {currentUser} onCurrentUserUpdated={updateCurrentUser} onCurrentSessionRevoked={clearWorkspaceSession} />
       {:else if activeView === "signing"}
         <SigningKeys onEnrolled={updateKeyCount} />
       {:else if activeView === "pending"}
