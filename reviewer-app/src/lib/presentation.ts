@@ -1,6 +1,11 @@
 /** Pure presentation transformations shared across reviewer GUI components. */
 
-import type { ReviewKind, ReviewQueueItem, ReviewQueueSummary } from "./types";
+import type {
+  ReviewKind,
+  ReviewQueueItem,
+  ReviewQueueSummary,
+  SignatureStatus,
+} from "./types";
 
 /** Maximum number of letters displayed in a reviewer avatar. */
 const REVIEWER_INITIALS_LENGTH = 2;
@@ -14,9 +19,27 @@ const SINGULAR_COUNT = 1;
 /** Honorific omitted from reviewer avatars because it adds no identifying letter. */
 const LEADING_DOCTOR_HONORIFIC = /^Dr\s+/u;
 
+/** Human labels for the complete published registry-level signature vocabulary. */
+const SIGNATURE_STATUS_LABELS: Readonly<Record<SignatureStatus, string>> = {
+  unsigned: "Unsigned",
+  signed: "Signed",
+  signed_by_revoked_key: "Signed by revoked key",
+  signed_by_unknown_key: "Signed by unknown key",
+};
+
 /** Return a concise human label for a review queue kind. */
 export function reviewKindLabel(kind: ReviewKind): string {
   return kind === "interaction_rule" ? "Interaction rule" : "Condition conflict";
+}
+
+/** Render the published registry-level signature vocabulary for human review. */
+export function signatureStatusLabel(status: SignatureStatus): string {
+  return SIGNATURE_STATUS_LABELS[status];
+}
+
+/** Return whether a current revision still needs an independent attestation. */
+export function signatureNeedsAttestation(status: SignatureStatus): boolean {
+  return status !== "signed";
 }
 
 /** Derive stable uppercase avatar initials from a reviewer's display name. */

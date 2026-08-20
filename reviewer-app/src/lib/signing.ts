@@ -1,7 +1,11 @@
 /** Narrow native signing adapter plus explicitly simulated browser-preview state. */
 
 import { invoke } from "@tauri-apps/api/core";
-import { markPreviewDecisionSigned, previewPendingSignatures } from "./decisions";
+import {
+  markPreviewDecisionSigned,
+  markPreviewDecisionsObjected,
+  previewPendingSignatures,
+} from "./decisions";
 import type {
   AdministrativeSigningKeyStatus,
   CanonicalField,
@@ -90,6 +94,9 @@ export async function administerSigningKey(
       candidate.keyFingerprint === keyFingerprint ? key : candidate,
   );
   if (keyFingerprint === PREVIEW_FINGERPRINT) {
+    if (status === "compromised") {
+      markPreviewDecisionsObjected("signed_by_revoked_key");
+    }
     previewEnrolled = false;
     previewPending = null;
   }

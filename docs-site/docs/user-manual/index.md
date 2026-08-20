@@ -112,8 +112,11 @@ counter-signs them. The compromised signature remains immutable, and clinical ro
 remain visible throughout.
 
 The status displayed by database views is registry policy, not a cached cryptographic
-verdict. Historical mathematics is checked by `drugref verify`; PostgreSQL does not
-perform Ed25519 verification itself.
+verdict. The GUI distinguishes **Signed**, **Unsigned**, **Signed by revoked key** and
+**Signed by unknown key**. An unknown fingerprint is the stronger warning when every
+signature is objected; one independent unobjected signature still restores **Signed**.
+Historical mathematics is checked by `drugref verify`; PostgreSQL does not perform
+Ed25519 verification itself.
 
 ## Deliberate limits
 

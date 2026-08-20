@@ -72,6 +72,37 @@ pub enum EvidenceGrade {
     Theoretical,
 }
 
+/// Registry-level signature status published for one curated revision.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignatureStatus {
+    /// No detached signature has been recorded for the revision.
+    Unsigned,
+    /// At least one signature is not objected to by the public key registry.
+    Signed,
+    /// Every signature is objected to because its registered key is revoked.
+    SignedByRevokedKey,
+    /// Every signature is objected to and at least one key was never registered.
+    SignedByUnknownKey,
+}
+
+impl TryFrom<&str> for SignatureStatus {
+    type Error = ValidationError;
+
+    /// Parse the complete published database vocabulary without accepting drift.
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "unsigned" => Ok(Self::Unsigned),
+            "signed" => Ok(Self::Signed),
+            "signed_by_revoked_key" => Ok(Self::SignedByRevokedKey),
+            "signed_by_unknown_key" => Ok(Self::SignedByUnknownKey),
+            value => Err(ValidationError(format!(
+                "unknown curated signature status {value}"
+            ))),
+        }
+    }
+}
+
 impl EvidenceGrade {
     /// Return the stable database spelling of this evidence grade.
     pub fn as_str(self) -> &'static str {
@@ -162,8 +193,8 @@ pub struct ReviewDecisionRevision {
     pub reviewed_at: String,
     /// Later revision that superseded this row, or null while it is live.
     pub superseded_by: Option<i64>,
-    /// Database-derived detached signature verdict.
-    pub signature_status: String,
+    /// Database-derived registry-level detached signature status.
+    pub signature_status: SignatureStatus,
 }
 
 /// Complete append-only decision history for one canonical target.
@@ -222,7 +253,9 @@ fn normalised_optional(
 
 #[cfg(test)]
 mod tests {
-    use super::{CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, Severity};
+    use super::{
+        CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, Severity, SignatureStatus,
+    };
     use crate::ReviewKind;
 
     /// Require complete grading only for decisions that assert clinical content.
@@ -256,6 +289,16 @@ mod tests {
             ..incomplete
         };
         assert!(partly_graded_retirement.validate().is_err());
+    }
+
+    /// Pin all four published signature-status spellings and reject silent widening.
+    #[test]
+    fn signature_status_vocabulary_is_exact() {
+        assert_eq!(
+            SignatureStatus::try_from("signed_by_unknown_key"),
+            Ok(SignatureStatus::SignedByUnknownKey)
+        );
+        assert!(SignatureStatus::try_from("verified").is_err());
     }
 
     /// Keep interaction and condition decision vocabularies disjoint at the boundary.

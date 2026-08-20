@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use reviewer_domain::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
-    ReviewDecisionRevision, ReviewRecordQuery, Severity,
+    ReviewDecisionRevision, ReviewRecordQuery, Severity, SignatureStatus,
 };
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -54,7 +54,8 @@ impl TryFrom<RevisionRow> for ReviewDecisionRevision {
             reviewed_against: row.reviewed_against,
             reviewed_at: row.reviewed_at.to_rfc3339(),
             superseded_by: row.superseded_by,
-            signature_status: row.signature_status,
+            signature_status: SignatureStatus::try_from(row.signature_status.as_str())
+                .map_err(|error| AppError::internal(error.to_string()))?,
         })
     }
 }

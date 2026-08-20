@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Last reviewed:** 2026-08-19
-**Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`,
+**Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`, `db/048`,
 `signing.py`, `keys.py`, `signatures.py`, `releases.py`, `release_verification.py`, the
 `drugref keys | sign | verify | publish` commands, and the reviewer app/service
 **Full derivation:** the [slice-5c.4 signing design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md)
@@ -109,7 +109,8 @@ payload context is an intended migration.
 ### A signature is metadata, never an admission gate
 
 `curated_ddi_pair` and `curated_condition_ruling` carry a trailing `signature_status` column —
-`signed` · `signed_by_revoked_key` · `unsigned` — and **no row is ever withheld because of it**.
+`signed` · `signed_by_revoked_key` · `signed_by_unknown_key` · `unsigned` — and **no row is ever
+withheld because of it**.
 
 That is a deliberate refusal, and the reason is clinical. Gating the read views on a valid signature would
 make the entire curated tier invisible until curators are signing, and — far worse — a key revocation would
@@ -117,10 +118,10 @@ silently withdraw contraindication advice from every downstream consumer. **Fewe
 for a contraindication.** A key-management event must not be able to cause it. drugref publishes the fact and
 lets the consumer set policy, the same posture as `is_direct`.
 
-`signed_by_revoked_key` is the coarser of two SQL labels and covers a key the registry has **never heard of**
-as well as a revoked one — an unknown key being the *more* suspicious of the two. Telling them apart is
-`drugref verify`'s job; whether the view should carry a third value is
-[issue 86](https://github.com/cairn-ehr/drugref/issues/86).
+`db/048` distinguishes an unregistered fingerprint as `signed_by_unknown_key`. One registry-unobjected
+signature still makes the target `signed`; when every signature is objected, an unknown key takes precedence
+over `signed_by_revoked_key` because it is the more suspicious registry fact. `drugref verify` remains the only
+surface that distinguishes all six mathematical and registry verdicts.
 
 The reviewer work queue uses the underlying registry counts rather than treating that
 coarse label as a cryptographic verdict. A current revision is pending when it has zero

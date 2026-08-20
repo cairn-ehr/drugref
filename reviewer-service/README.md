@@ -1,7 +1,7 @@
 # Drugref reviewer service
 
 Authenticated service boundary between the native reviewer application and PostgreSQL.
-Apply migrations through `db/047_signing_key_status_floor.sql`, then run:
+Apply migrations through `db/048_unknown_signature_status.sql`, then run:
 
 ```sh
 DATABASE_URL='postgresql://postgres@localhost:5532/drugref_reviewer_dev' cargo run

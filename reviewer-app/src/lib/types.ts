@@ -21,6 +21,13 @@ export type Severity = "contraindicated" | "major" | "moderate" | "minor";
 /** Evidence-attestation grades accepted by the curated overlay. */
 export type EvidenceGrade = "established" | "probable" | "suspected" | "theoretical";
 
+/** Registry-level detached signature status published for a curated revision. */
+export type SignatureStatus =
+  | "unsigned"
+  | "signed"
+  | "signed_by_revoked_key"
+  | "signed_by_unknown_key";
+
 /** Optional paging and filter parameters accepted by the review queue endpoint. */
 export interface ReviewQueueQuery {
   /** One-based page number. */
@@ -197,8 +204,8 @@ export interface ReviewDecisionRevision {
   reviewedAt: string;
   /** Later immutable revision, absent while this row is live. */
   supersededBy: number | null;
-  /** Database-derived detached signature verdict. */
-  signatureStatus: string;
+  /** Database-derived registry-level detached signature status. */
+  signatureStatus: SignatureStatus;
 }
 
 /** Complete append-only decision history for one canonical target. */

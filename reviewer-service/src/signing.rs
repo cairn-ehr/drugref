@@ -976,7 +976,10 @@ mod tests {
         )
         .await
         .expect("verified detached signature");
-        assert_eq!(signed.history[0].signature_status, "signed");
+        assert_eq!(
+            signed.history[0].signature_status,
+            reviewer_domain::SignatureStatus::Signed
+        );
         assert!(!pending(&pool)
             .await
             .expect("refreshed pending queue")

@@ -32,6 +32,8 @@ fingerprint, reviewer enrolment, status boundary, signature count and current re
 impact. Retirement is time-scoped; compromise objects to the key's entire signature
 history. Current revisions with no registry-unobjected signature return to **Pending
 signatures** as counter-signature tasks. Clinical rows remain served throughout.
+Revision history distinguishes signed, unsigned, revoked-key and unknown-key registry
+states with human-readable labels; only `drugref verify` checks Ed25519 mathematics.
 
 The Vite browser surface retains representative data only for visual development and
 labels it **Browser queue preview**. The installed Tauri app never falls back to that
@@ -55,6 +57,6 @@ npm run build
 npm run tauri dev
 ```
 
-Apply migrations through 047 and start `reviewer-service/` first. Debug builds use
+Apply migrations through 048 and start `reviewer-service/` first. Debug builds use
 `http://127.0.0.1:8787` by default; set `DRUGREF_REVIEW_SERVICE_URL` to override it.
 Rust unit tests run from `src-tauri` with `cargo test`.
