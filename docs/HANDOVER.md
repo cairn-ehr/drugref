@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Current branch: `agent/reviewer-docs-website`, from merged PR #143 on `main` at `0955554`.** Migrations through
-**`db/047`** are frozen; `db/047` floors the key-status rule vocabulary and deliberately leaves target contexts mutable.
+**Current branch: `codex/reviewer-gui-finalization`, from merged PR #144 on `main` at `cfc542f`.** Migrations through
+**`db/048`** are frozen; `db/048` widens only the published registry-level signature status.
 
 **PREVIOUS SLICE — local key enrolment and detached sign/verify/resume.** Canonical design:
 [`2026-08-18-drugref-reviewer-signing-design.md`](superpowers/specs/2026-08-18-drugref-reviewer-signing-design.md).
@@ -32,21 +32,27 @@ objected attestations return as explicit counter-sign tasks. One independent uno
 the compromised signature remains immutable. Clinical rows remain served. PostgreSQL supplies registry policy, not an
 Ed25519 verdict. `db/047` closes #85; `signature_target_kind` remains mutable for versioned payload contexts.
 
-**⇒ JUST FINISHED — first post-reviewer documentation/website pass.** The root and reviewer component READMEs describe the
-complete reviewer stack; the docs site has a real reviewer manual and developer guide, a four-boundary architecture section,
-current roadmap/signing-decision copy and no non-rendering Mermaid fence; and `site/index.html` now presents signed human
-review and published gaps. The general HTTP API and release packaging remain marked future: the internal reviewer is
-functional but is not yet a public download or consumer surface.
+**⇒ JUST FINISHED — internal reviewer GUI finalization.** `db/048` publishes `signed_by_unknown_key`
+separately from revoked keys; the Rust/service/WebView contract is a closed four-state vocabulary with human labels.
+Unknown outranks revoked only when every signature is objected, while one unobjected signature still restores `signed`.
+Clinical rows remain served and `drugref verify` retains its six verdicts. The audit also fixed a real GUI dead end:
+counter-sign tasks were listed but the
+shared control admitted only literal `unsigned`; every non-`signed` current revision can now be independently attested.
+The disabled global Evidence library placeholder is removed; target-scoped immutable citations remain fully functional.
 
-**⇒ DO THIS NEXT:** merge the documentation PR, then take #86 as its own compatibility round: add
-`signed_by_unknown_key` to the published status vocabulary, update every GUI label/consumer and retain the six-verdict
-`drugref verify` boundary. Do not bundle release-manifest signing or class-grain issue #98.
+**⇒ DO THIS NEXT:** publish this GUI-finalization change as its own PR and close #86 on merge, then return to the
+separately
+gated DrugCentral content slice #101. Do not bundle release-manifest signing, class-grain issue #98 or public installer
+distribution. The internal GUI has no known open functional follow-up; signing/notarization and downloads are
+release work.
 
-**PR #143 verification:** full Python/PostgreSQL suite 1,792; domain 17; service 12 plus live retirement, compromise and
+**GUI-finalization verification:** full Python/PostgreSQL suite 1,794; domain 18; service 12 plus live detached
+signing and
 counter-sign lifecycle; native 5; `ruff`; Rust formatting/clippy with warnings denied; `npm run check` with 0 diagnostics;
-production frontend build; native debug no-bundle build; npm audit with 0 vulnerabilities. **Documentation pass:** strict
-MkDocs build; `git diff --check`; Chrome landing/manual/architecture checks at 1,440, 740 and 520 px with no horizontal
-overflow or console warnings.
+production frontend and debug macOS app builds; npm audit with 0 vulnerabilities; strict MkDocs; `git diff --check`.
+Browser preview exercised record/sign/compromise/counter-sign at 1,440, 740 and 520 px with no overflow or console
+warnings.
+The strictly ad-hoc-signed `.app` launched against the persistent migrated reviewer service and remained running.
 
 ## Parallel project sequencing
 
@@ -67,9 +73,6 @@ next rounds: #128/#129 and #132–#135 are FDA-CYP residue; #112/#105 wait on cl
 guard-round tail; #121/#123 remain open; #104 makes question counts depend on which unrelated ingest ran last;
 #94's seven withheld entries need research. Before production: re-run every parser on current releases, resolve
 #17, and complete the three outstanding rule-6 deeds (#6, #25, GSRS).
-
-One decision is taken and not built: #86 adds `signed_by_unknown_key` as a fourth signature status in its own
-vocabulary-widening round.
 
 ## Current DSN
 

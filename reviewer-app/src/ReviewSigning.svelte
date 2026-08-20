@@ -11,6 +11,7 @@
     loadSigningStatus,
     prepareReviewSignature,
   } from "./lib/signing";
+  import { signatureNeedsAttestation, signatureStatusLabel } from "./lib/presentation";
   import type {
     CanonicalField,
     DeviceSigningStatus,
@@ -76,7 +77,12 @@
     ) ?? null,
   );
   let canPrepare = $derived(
-    Boolean(current && current.signatureStatus === "unsigned" && activeKey && status?.localVaultExists),
+    Boolean(
+      current &&
+        signatureNeedsAttestation(current.signatureStatus) &&
+        activeKey &&
+        status?.localVaultExists,
+    ),
   );
 
   onMount((): void => void refreshStatus());
@@ -161,12 +167,28 @@
 <section class="review-signing" aria-live="polite">
   <div class="review-signing-head">
     <div><span class="key-indicator"><span></span> Detached device signature</span><small>Authentication records the row; this separate action attests it.</small></div>
-    {#if current?.signatureStatus === "unsigned"}
-      <button class="primary-button primary-button--compact" type="button" disabled={loading || preparing || !canPrepare} onclick={() => void prepare()}>{preparing ? "Preparing…" : "Prepare signature"}</button>
+    {#if current && signatureNeedsAttestation(current.signatureStatus)}
+      <button
+        class="primary-button primary-button--compact"
+        type="button"
+        disabled={loading || preparing || !canPrepare}
+        onclick={() => void prepare()}
+      >{preparing
+          ? "Preparing…"
+          : current.signatureStatus === "unsigned"
+            ? "Prepare signature"
+            : "Prepare counter-signature"}</button>
     {:else if current}
-      <span class="signature-verdict">{current.signatureStatus}</span>
+      <span class="signature-verdict">{signatureStatusLabel(current.signatureStatus)}</span>
     {/if}
   </div>
+  {#if current && current.signatureStatus !== "unsigned" && current.signatureStatus !== "signed"}
+    <p class="signature-status-warning" role="status">
+      <strong>{signatureStatusLabel(current.signatureStatus)}.</strong>
+      The registry objects to every existing signature. Add an independent signature
+      after reviewing the complete payload.
+    </p>
+  {/if}
   {#if !loading && !activeKey}<p class="record-status">Enrol this device's key under Signing keys before signing this revision.</p>{/if}
   {#if errorMessage}<p class="form-error" role="alert">{errorMessage}</p>{/if}
   {#if successMessage}<p class="form-success" role="status">{successMessage}</p>{/if}

@@ -937,7 +937,7 @@ plug-in, like every other encumbered source.
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
 
-### Slice 6r — Human reviewer application 🚧 KEY TRUST ADMINISTRATION BUILT
+### Slice 6r — Human reviewer application ✅ INTERNAL GUI COMPLETE
 
 The internal curation surface: inspect candidate assertions and gaps, attach evidence and Markdown annotations, record
 append-only clinical revisions, and sign the exact row reviewed. Canonical design:
@@ -1004,8 +1004,14 @@ append-only retirement/compromise over every public registry key. `db/047` floor
 UPDATE/DELETE, closing issue #85 without freezing the deliberately mutable target-context catalog. Pending signatures now
 means zero registry-unobjected signatures: compromise returns affected live revisions as explicit counter-sign tasks, one
 independent unobjected signature resolves them, and clinical rows never disappear. Owned-device replacement remains the
-narrow local cleanup path and preserves an administrator-recorded compromise label. Issue #86's published
-`signed_by_unknown_key` vocabulary widening remains a separate explicit compatibility round.
+narrow local cleanup path and preserves an administrator-recorded compromise label.
+
+The [GUI finalization round](superpowers/specs/2026-08-20-drugref-reviewer-gui-finalization-design.md) adds `db/048` and
+closes issue #86's compatibility gap. The published registry status now distinguishes unknown from revoked keys, the
+shared
+Rust and TypeScript contracts admit exactly four values, and the GUI renders readable objected-state warnings. `signed`
+still wins when any independent signature is unobjected, and clinical rows remain served. The unused disabled Evidence
+library navigation item is removed; evidence remains attached to each target's immutable working history.
 
 The first post-key-trust documentation round replaces the public reviewer/developer placeholders with an operational reviewer
 manual and component-aware developer guide, adds the native/service/PostgreSQL trust boundary to the architecture page,

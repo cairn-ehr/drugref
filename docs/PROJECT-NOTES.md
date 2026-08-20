@@ -3316,8 +3316,37 @@ counter-sign queue entry, clean counter-sign recovery and post-administration de
 formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build (0.63 kB
 HTML + 33.24 kB CSS + 124.07 kB JS, 40.56 kB JS gzipped); npm audit with 0 vulnerabilities; native debug no-bundle build;
 `git diff --check`. Chrome at 1,440 x 900 and 740 x 900 covered key selection, compromise confirmation/result and narrow
-layout with no horizontal overflow or console warnings. Next: issue #86's `signed_by_unknown_key` published-vocabulary
-widening remains its own explicit compatibility round.
+layout with no horizontal overflow or console warnings. Issue #86's separate compatibility round is recorded immediately
+below.
+
+## Reviewer GUI finalization (2026-08-20) - `db/048`
+
+Canonical design: [`GUI finalization`](superpowers/specs/2026-08-20-drugref-reviewer-gui-finalization-design.md).
+
+**Issue #86's published-vocabulary widening is built.** `curated_signature_status` now counts unknown fingerprints
+separately and publishes `signed_by_unknown_key` when every signature is objected and at least one key was never
+registered.
+One registry-unobjected signature still wins; otherwise unknown outranks revoked. The read views continue to left-join
+status, so no key event removes a clinical row, and `drugref verify` retains the six detailed verdicts.
+
+The reviewer domain and WebView use closed four-value signature-status types. Unexpected database vocabulary fails
+inside
+the service instead of entering the GUI, while revision history and signing controls render readable labels and visibly
+warn on objected states. The signing control now admits objected current revisions as explicit counter-signatures
+instead
+of listing them in Pending signatures while disabling the only completion action. The disabled global Evidence library
+placeholder is gone; citations remain available in the target-scoped immutable working record that owns their clinical
+context.
+
+**Verified:** full Python/PostgreSQL suite **1,794 passed**; reviewer-domain **18 passed**; reviewer-service
+**12 passed + 5 ignored**, with the live detached-signing/counter-sign lifecycle passed explicitly; native **5 passed**;
+Rust formatting and clippy with warnings denied; `ruff`; Svelte check with 0 diagnostics; production frontend build
+(0.63 kB HTML + 33.35 kB CSS + 124.96 kB JS, 40.82 kB JS gzipped); npm audit with 0 vulnerabilities; strict MkDocs;
+`git diff --check`; debug macOS
+app bundle build and strict ad-hoc signature verification. Browser preview exercised initial signing, compromise and the
+resulting counter-sign state at 1,440 x 900, 740 x 900 and 520 x 900 with no horizontal overflow or console warnings.
+The
+native `.app` launched against the persistent reviewer service after migrations through `db/048` and remained running.
 
 ## The standing open-issue ledger
 
@@ -3347,9 +3376,9 @@ schema-level: a rule naming two axes) · **#93 MED-RT carries no QT class** · *
 need research. **#100 is CLOSED**: `ci_class_subtree`'s narrow definition is pinned from `pg_depend`,
 mutation-verified against db/033's wide seed.
 
-**Filed by 5c.4 and its review** — **#85 is CLOSED by `db/047`**: `signing_key_status_kind` is INSERT-only while
-`signature_target_kind` remains free to move to a `/v2` · #86 (decided, not built: `signed_by_unknown_key` as a fourth
-`signature_status`) · #88 · #89. Unfiled:
+**Filed by 5c.4 and its review** - **#85 is CLOSED by `db/047`**: `signing_key_status_kind` is INSERT-only while
+`signature_target_kind` remains free to move to a `/v2` · **#86 is implemented by `db/048`** with
+`signed_by_unknown_key` as the fourth `signature_status` · #88 · #89. Unfiled:
 `tests/test_cli_signing*.py` **cannot commit for real** — test isolation, shaped like #2.
 
 **Filed by the PR #113 review, ALL FOUR NOW CLOSED by the db/038 round** — #114 (`effective_grades_for` had no

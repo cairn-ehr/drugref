@@ -8,6 +8,7 @@ import type {
   ReviewDecisionRevision,
   ReviewQueueItem,
   ReviewRecordQuery,
+  SignatureStatus,
 } from "./types";
 
 /** Whether clinical decision calls should cross the protected native boundary. */
@@ -95,13 +96,32 @@ export function markPreviewDecisionSigned(query: ReviewRecordQuery): ReviewDecis
   return cloneRecord(updated);
 }
 
-/** Project unsigned browser-preview records into the same resume contract as the service. */
+/** Apply a simulated blanket registry objection to signed current preview revisions. */
+export function markPreviewDecisionsObjected(
+  status: Extract<SignatureStatus, "signed_by_revoked_key" | "signed_by_unknown_key">,
+): void {
+  for (const [targetKey, record] of previewDecisions) {
+    previewDecisions.set(targetKey, {
+      ...record,
+      history: record.history.map(
+        (revision: ReviewDecisionRevision): ReviewDecisionRevision =>
+          revision.revisionId === record.currentRevisionId &&
+          revision.signatureStatus === "signed"
+            ? { ...revision, signatureStatus: status }
+            : { ...revision },
+      ),
+    });
+  }
+}
+
+/** Project browser-preview records needing attestation into the service contract. */
 export function previewPendingSignatures(): PendingReviewSignature[] {
   return [...previewDecisions.values()].flatMap(
     (record: ReviewDecisionRecord): PendingReviewSignature[] => {
       const current = record.history.find(
         (revision: ReviewDecisionRevision): boolean =>
-          revision.revisionId === record.currentRevisionId && revision.signatureStatus === "unsigned",
+          revision.revisionId === record.currentRevisionId &&
+          revision.signatureStatus !== "signed",
       );
       const kind = previewKinds.get(record.targetKey);
       const labels = previewLabels.get(record.targetKey);
@@ -116,8 +136,9 @@ export function previewPendingSignatures(): PendingReviewSignature[] {
           decision: current.decision,
           reviewedBy: current.reviewedBy,
           reviewedAt: current.reviewedAt,
-          pendingReason: "unsigned",
-          objectedSignatureCount: 0,
+          pendingReason:
+            current.signatureStatus === "unsigned" ? "unsigned" : "needs_counter_signature",
+          objectedSignatureCount: current.signatureStatus === "unsigned" ? 0 : 1,
         },
       ];
     },

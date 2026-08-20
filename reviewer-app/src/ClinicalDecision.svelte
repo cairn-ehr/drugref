@@ -5,7 +5,7 @@
   import { CLINICAL_PROSE_MAX_LENGTH } from "./lib/constants";
   import ReviewSigning from "./ReviewSigning.svelte";
   import { createReviewDecision, loadReviewDecision } from "./lib/decisions";
-  import { workingRecordDate } from "./lib/presentation";
+  import { signatureStatusLabel, workingRecordDate } from "./lib/presentation";
   import type {
     EvidenceGrade,
     ReviewDecision,
@@ -136,7 +136,15 @@
   <div class="decision-history">
     {#each record.history as revision (revision.revisionId)}
       <article class="decision-revision" class:decision-revision--current={revision.revisionId === record.currentRevisionId}>
-        <div><strong>{label(revision.decision)}</strong><span>{revision.revisionId === record.currentRevisionId ? "Current" : `Superseded by #${revision.supersededBy}`} · {revision.signatureStatus}</span></div>
+        <div>
+          <strong>{label(revision.decision)}</strong>
+          <span>
+            {revision.revisionId === record.currentRevisionId
+              ? "Current"
+              : `Superseded by #${revision.supersededBy}`}
+            · {signatureStatusLabel(revision.signatureStatus)}
+          </span>
+        </div>
         <p>{revision.severity ? `${label(revision.severity)} · ${label(revision.evidenceGrade ?? "")}` : "Reviewed as non-applying / spurious"}</p>
         {#if revision.mechanism}<small><b>Mechanism</b> {revision.mechanism}</small>{/if}
         {#if revision.management}<small><b>Management</b> {revision.management}</small>{/if}

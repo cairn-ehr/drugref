@@ -328,7 +328,12 @@
       <nav aria-label="Primary navigation">
         <p class="nav-label">Workspace</p>
         <button class="nav-item" class:active={activeView === "queue"} type="button" onclick={showQueue}><span class="nav-icon" aria-hidden="true">⌁</span>Review queue<span class="nav-count">{unresolvedQueueCount(workspace.summary)}</span></button>
-        <button class="nav-item" class:active={activeView === "pending"} type="button" onclick={showPendingSignatures}><span class="nav-icon" aria-hidden="true">✓</span>Pending signatures</button><button class="nav-item" type="button" disabled><span class="nav-icon" aria-hidden="true">⌕</span>Evidence library</button>
+        <button
+          class="nav-item"
+          class:active={activeView === "pending"}
+          type="button"
+          onclick={showPendingSignatures}
+        ><span class="nav-icon" aria-hidden="true">✓</span>Pending signatures</button>
         <p class="nav-label nav-label--spaced">Administration</p>
         {#if currentUser.role === "administrator"}<button class="nav-item" class:active={activeView === "users"} type="button" onclick={showUsers}><span class="nav-icon" aria-hidden="true">♙</span>Reviewers</button><button class="nav-item" class:active={activeView === "trust"} type="button" onclick={showKeyTrust}><span class="nav-icon" aria-hidden="true">◈</span>Key trust</button>{/if}
         <button class="nav-item" class:active={activeView === "signing"} type="button" onclick={showSigningKeys}><span class="nav-icon" aria-hidden="true">◇</span>Signing keys</button>

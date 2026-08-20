@@ -289,6 +289,42 @@ def test_one_good_signature_outweighs_one_revoked_one(conn, a_graded_rule):
     ).fetchall() == [("signed",)]
 
 
+def test_an_unknown_key_has_its_own_published_status(conn, a_graded_rule):
+    """An unregistered key is not described as revoked in the read vocabulary.
+
+    `drugref verify` already distinguishes UNKNOWN_KEY from every revocation verdict.
+    The registry-level view cannot verify the signature mathematics, but it can and
+    must state the one fact it does know: no public key was ever registered for the
+    fingerprint.
+    """
+    target_id = _graded(conn, a_graded_rule)
+    _sign_under_a_key_with_status(
+        conn, target_id, status="active", signed_at=SIGNED_AT, registered=False)
+
+    assert conn.execute(
+        "SELECT signature_status FROM drugref.curated_signature_status "
+        "WHERE target_kind = 'curated_interaction' AND target_id = %s",
+        (target_id,),
+    ).fetchone() == ("signed_by_unknown_key",)
+
+
+def test_unknown_key_outranks_revocation_when_every_signature_is_objected(
+        conn, a_graded_rule):
+    """The more suspicious unknown-key fact wins when no signature is unobjected."""
+    target_id = _graded(conn, a_graded_rule)
+    compromised_fp = _sign_under_a_key_with_status(
+        conn, target_id, status="compromised", signed_at=SIGNED_AT, registered=True)
+    assert compromised_fp
+    _sign_under_a_key_with_status(
+        conn, target_id, status="active", signed_at=SIGNED_AT, registered=False)
+
+    assert conn.execute(
+        "SELECT signature_status FROM drugref.curated_signature_status "
+        "WHERE target_kind = 'curated_interaction' AND target_id = %s",
+        (target_id,),
+    ).fetchone() == ("signed_by_unknown_key",)
+
+
 def test_signing_one_rule_does_not_leak_to_a_sibling_rule(
         conn, a_graded_rule, ingest_run_id):
     """The join must match on target_id, not merely target_kind. See

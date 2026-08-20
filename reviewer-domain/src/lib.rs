@@ -17,7 +17,7 @@ pub use accounts::{
 };
 pub use decisions::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
-    ReviewDecisionRevision, Severity,
+    ReviewDecisionRevision, Severity, SignatureStatus,
 };
 pub use records::{
     CreateAnnotationRequest, CreateEvidenceReferenceRequest, EvidenceReference,

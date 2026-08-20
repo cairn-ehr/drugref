@@ -78,7 +78,6 @@ button { color: inherit; }
 .nav-label--spaced { margin-top: 28px; }
 .nav-item { display: flex; height: 42px; align-items: center; gap: 10px; padding: 0 11px; color: #9db1aa; background: transparent; border: 0; border-radius: 6px; font-size: 12px; text-align: left; }
 .nav-item.active { color: #fff; background: rgba(201,224,211,.11); box-shadow: inset 2px 0 #b7d7c6; }
-.nav-item:disabled { opacity: .55; }
 .nav-icon { width: 18px; color: #b9cec4; font-size: 17px; text-align: center; }
 .nav-count { min-width: 31px; margin-left: auto; padding: 3px 6px; color: #dcebe3; background: rgba(255,255,255,.1); border-radius: 999px; font-size: 9px; text-align: center; }
 .sidebar-status { margin-top: auto; padding: 15px 12px 2px; border-top: 1px solid rgba(255,255,255,.1); color: #a2b6ae; }
@@ -300,6 +299,16 @@ button { color: inherit; }
 .review-signing-head > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .review-signing-head small { color: #87938d; font-size: 7px; }
 .signature-verdict { padding: 5px 8px; color: #2f6b53; background: #dfeee5; border-radius: 999px; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.signature-status-warning {
+  margin: 9px 0 0;
+  padding: 8px 10px;
+  color: #76332f;
+  background: #f4ded9;
+  border-left: 3px solid #a84941;
+  border-radius: 0 5px 5px 0;
+  font-size: 8px;
+  line-height: 1.5;
+}
 .signature-confirmation { display: grid; gap: 8px; margin-top: 11px; padding-top: 11px; border-top: 1px solid #d5e1d8; }
 .signature-confirmation > strong { color: #334d42; font: 600 13px Georgia, serif; text-transform: capitalize; }
 .signed-content { display: grid; gap: 8px; margin: 3px 0; padding: 12px; background: #fff; border: 1px solid #d6dfd9; border-radius: 6px; }
@@ -401,7 +410,7 @@ button { color: inherit; }
   .sidebar { position: static; height: auto; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 20px; padding: 14px 18px; }
   .brand--sidebar { padding: 0; }
   .sidebar nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .nav-label, .sidebar nav .nav-item:disabled, .sidebar-status { display: none; }
+  .nav-label, .sidebar-status { display: none; }
   .nav-item { height: 36px; }
   .workspace-shell { height: auto; overflow: visible; padding: 0 14px 18px; }
   .topbar { min-height: 76px; }
