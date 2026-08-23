@@ -194,3 +194,67 @@ COMMENT ON TABLE drugref.drugcentral_ddi_assertion IS
     'canonicalises, rather than either endpoint column alone.';
 COMMENT ON COLUMN drugref.drugcentral_ddi_assertion.severity_label IS
     'The upstream band VERBATIM. drugref''s grade is ddi_source_severity''s job.';
+
+-- ============================================================================
+-- 4. drugcentral_ddi_pair -- canonical unordered pairs, graded
+-- ============================================================================
+-- THREE RULES LIVE HERE AND NOWHERE ELSE, which is why this is a view and not
+-- something the writer decided:
+--
+--  (a) ORIENTATION IS COLLAPSED. least/greatest gives one row per unordered pair.
+--      The source publishes 33 pairs in both orders -- two VA entries at different
+--      salt grains, visible in upstream_label -- and they are one pair.
+--  (b) MOST-SEVERE-WINS between two orientations that disagree (4 of the 33 do).
+--      `ORDER BY severity_rank` needs no DESC because db/035 made rank 1 the most
+--      severe precisely so the safe read is the one a caller writes by default.
+--  (c) A TOTAL ORDER, so (b) is REPRODUCIBLE. 29 of the 33 duplicates carry the
+--      same band, so severity_rank ties and DISTINCT ON would otherwise keep
+--      whichever row the plan emitted first -- and the reported upstream_key and
+--      upstream_label could then differ between two runs over the same bytes.
+--      That is exactly the defect found in three unordered registry lookups in the
+--      round whose entire justification was reproducibility. upstream_key is a
+--      primary-key component, so it breaks every tie.
+--
+-- db/037's standing instruction: the rule that chooses between two grades is
+-- stated ONCE, in SQL, so a consumer querying from any language gets it.
+CREATE OR REPLACE VIEW drugref.drugcentral_ddi_pair AS
+SELECT DISTINCT ON (p.moiety_lo, p.moiety_hi)
+       p.moiety_lo,
+       p.moiety_hi,
+       p.source               AS candidate_source,
+       m.severity,                              -- drugref's grade, DERIVED
+       s.severity_rank,
+       p.severity_label       AS upstream_severity_label,  -- the authority's word
+       p.upstream_key,
+       p.upstream_label,
+       p.ingest_run,
+       r.upstream_release,                      -- WHICH release said so
+       r.finished_at          AS ingested_at
+FROM  (SELECT least(a.moiety_1_uuid, a.moiety_2_uuid)    AS moiety_lo,
+              greatest(a.moiety_1_uuid, a.moiety_2_uuid) AS moiety_hi,
+              a.*
+         FROM drugref.drugcentral_ddi_assertion a
+              -- Unresolved endpoints stay in the table and out of the pairs. They
+              -- are gap_unresolved_ddi_endpoint's subject, not a consumer's.
+        WHERE a.moiety_1_uuid IS NOT NULL
+          AND a.moiety_2_uuid IS NOT NULL
+              -- A rule whose two endpoints denote one substance asserts nothing
+              -- about an interaction between two drugs.
+          AND a.moiety_1_uuid <> a.moiety_2_uuid) p
+JOIN  drugref.ddi_source_severity m
+      ON m.source = p.source AND m.source_label = p.severity_label
+JOIN  drugref.severity_kind s ON s.severity = m.severity
+JOIN  drugref.ingest_run    r ON r.ingest_run_id = p.ingest_run
+ORDER BY p.moiety_lo, p.moiety_hi, s.severity_rank, p.upstream_key;
+
+COMMENT ON VIEW drugref.drugcentral_ddi_pair IS
+    'DrugCentral''s NDF-RT interactions as ONE row per unordered moiety pair, '
+    'carrying drugref''s derived grade beside the upstream band it came from. '
+    'CANDIDATE TIER: the 2023 release does not refresh and nothing here is a '
+    'drugref judgement -- the grade is ddi_source_severity''s reading of VA''s '
+    'own band, and a curated ruling overrides it. Rows whose endpoint did not '
+    'resolve are ABSENT rather than dropped: they are still in '
+    'drugcentral_ddi_assertion and are published as questions.';
+COMMENT ON COLUMN drugref.drugcentral_ddi_pair.upstream_severity_label IS
+    'The authority''s own word, kept beside the derived grade so the mapping can '
+    'be checked and disagreed with without re-reading a 1.4 GB dump.';
