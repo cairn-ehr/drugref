@@ -324,3 +324,86 @@ COMMENT ON VIEW drugref.exact_ddi_pair IS
     'NOT A SUPERSET OF ddi_candidate_pair: that view expands CLASS rules and this '
     'one does not, so a consumer wanting everything reads both. severity is NULL '
     'wherever the authority states none.';
+
+-- ============================================================================
+-- 6. gap_unresolved_ddi_endpoint, and the eighteenth question kind
+-- ============================================================================
+-- NO TABLE OF ITS OWN, unlike db/031's ingest_unresolved_onc_endpoint. That table
+-- was needed because _GAP_SOURCES derives every kind FROM A VIEW and an ONC
+-- endpoint resolving to nothing was in no table at all. Here the assertion table
+-- already holds every row, resolved or not, so a view over it is the whole job.
+--
+-- GRAIN: one folded endpoint NAME, not one row. A curator resolves a name; 37
+-- rows over 10 names is 10 questions. The fold is lower(trim(...)), which is
+-- drugcentral_resolve.fold_name's rule -- restated here because question_uuid is
+-- IMMORTAL and externally cited, so two spellings of one endpoint must never mint
+-- two questions that can then be answered differently.
+--
+-- FILTERED ON A NULL uuid, NEVER ON THE ROUTE VOCABULARY. The routes are
+-- descriptive; filtering on them would put that list in a second place, which is
+-- the defect db/006 exists to remove -- and this view would then need widening
+-- every time a route is added.
+CREATE OR REPLACE VIEW drugref.gap_unresolved_ddi_endpoint AS
+SELECT e.source,
+       e.endpoint_name,
+       count(*)                AS row_count,
+       max(r.upstream_release) AS upstream_release
+FROM  (SELECT a.source, a.ingest_run,
+              lower(btrim(a.endpoint_1_name)) AS endpoint_name
+         FROM drugref.drugcentral_ddi_assertion a
+        WHERE a.moiety_1_uuid IS NULL
+        UNION ALL
+       SELECT a.source, a.ingest_run,
+              lower(btrim(a.endpoint_2_name)) AS endpoint_name
+         FROM drugref.drugcentral_ddi_assertion a
+        WHERE a.moiety_2_uuid IS NULL) e
+JOIN  drugref.ingest_run r ON r.ingest_run_id = e.ingest_run
+      -- A blank endpoint is not a question anyone can answer, and the resolver
+      -- already refuses to look one up (an empty structural key would otherwise
+      -- collapse every keyless substance onto one moiety).
+WHERE e.endpoint_name <> ''
+GROUP BY e.source, e.endpoint_name;
+
+COMMENT ON VIEW drugref.gap_unresolved_ddi_endpoint IS
+    'Endpoint names DrugCentral resolves to a structure and drugref cannot key. '
+    'ONE ROW PER FOLDED NAME, because a curator resolves a name rather than a '
+    'row. Measured 2026-08-23: 37 rows over 10 names, every one on route '
+    '''unresolved'' -- DrugCentral holds an InChIKey or a CAS number that no live '
+    'identity_claim carries. They are REGISTRY-COVERAGE work, not a synonym list: '
+    '''phytomenadione'' is the INN for phytonadione and ''atracurium'' the base of '
+    'the besylate drugref already holds, so an answer could change something, '
+    'which is db/012''s test for whether the review gate may ask at all. The '
+    'question retires by itself when the claim lands.';
+
+-- The eighteenth question kind. Guarded on the constraint's TEXT rather than its
+-- name, so a replay against an already-widened database skips the drop/add
+-- entirely instead of rescanning -- the idiom db/016, db/019, db/022, db/028,
+-- db/029, db/031 and db/039 all reuse.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE  conname  = 'open_question_gap_kind'
+                   AND    conrelid = 'drugref.open_question'::regclass
+                   AND    pg_get_constraintdef(oid) LIKE '%unresolved_ddi_endpoint%') THEN
+        ALTER TABLE drugref.open_question DROP CONSTRAINT IF EXISTS open_question_gap_kind;
+        ALTER TABLE drugref.open_question ADD CONSTRAINT open_question_gap_kind
+            CHECK (gap_kind IN (
+                -- COPIED VERBATIM from the live catalog, then extended by one.
+                -- Retyping this list from memory would silently drop a kind and
+                -- orphan every question already minted under it -- and db/039
+                -- found the live catalog holding SIXTEEN where its own plan
+                -- expected fifteen, because db/035 had landed in between. Here
+                -- the live catalog already held SEVENTEEN, one more than this
+                -- brief's own comments assumed, for the identical reason.
+                'unpopulated_contraindication', 'unclassified_moiety',
+                'unmatched_ingredient', 'unreviewed_expansion_root',
+                'unresolved_ci_object', 'dead_by_expansion_policy',
+                'condition_without_indication', 'uncurated_additive_effect',
+                'uncurated_threshold', 'ineffective_contribution',
+                'ungraded_contribution', 'unruled_composition_activity',
+                'uncurated_condition_contradiction', 'uncurated_interaction_rule',
+                'unresolved_onc_endpoint', 'uncurated_class_interaction_rule',
+                'fda_cyp_unadjudicated',
+                'unresolved_ddi_endpoint'));
+    END IF;
+END $$;

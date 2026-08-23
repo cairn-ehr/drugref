@@ -320,6 +320,12 @@ def test_apply_migrations_is_idempotent(conn):
         # CI_ChemClass moiety arm, additive to (not merged into) ddi_candidate_pair.
         "ddi_source_severity", "drugcentral_ddi_assertion", "drugcentral_ddi_pair",
         "exact_ddi_pair",
+        # db/049 section 6: gap_unresolved_ddi_endpoint is gap kind EIGHTEEN, not
+        # seventeen -- the live open_question_gap_kind CHECK already held
+        # seventeen values (fda_cyp_unadjudicated above was the seventeenth)
+        # before this one was appended. Named explicitly for the same
+        # information_schema.tables reason as every other view above.
+        "gap_unresolved_ddi_endpoint",
     }
 
 

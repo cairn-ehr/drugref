@@ -562,6 +562,23 @@ _GAP_SOURCES = {
             "not drugs. Should drugref carry it at all, and under what identity?' "
             "END"),
     },
+    # Issue 101 (db/049). The endpoint names DrugCentral keys to a structure and
+    # drugref does not. NOT a synonym-bridge worklist: the re-measurement showed a
+    # display_name -> inchikey -> cas cascade takes resolution from 857 of 924
+    # names to 914, so what is left is registry COVERAGE -- a moiety or an
+    # identity_claim drugref does not yet hold. The question retires by itself
+    # when the claim lands.
+    "unresolved_ddi_endpoint": {
+        "view": "gap_unresolved_ddi_endpoint",
+        # FOLDED in the view, so the key is folded here too. question_uuid is
+        # immortal, so 'Phytomenadione' and 'phytomenadione' must be one question.
+        "key_sql": "'DRUGCENTRAL:ENDPOINT:' || endpoint_name",
+        "text_sql": (
+            "'Which moiety does the interaction endpoint ' || endpoint_name || "
+            "' denote? DrugCentral resolves it to a structure with an InChIKey or "
+            "a CAS number, and no live identity_claim in drugref carries either, "
+            "so ' || row_count || ' interaction row(s) cannot yield a pair.'"),
+    },
 }
 
 
