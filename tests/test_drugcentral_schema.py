@@ -167,27 +167,43 @@ def test_an_unmapped_severity_band_is_refused_at_insert(conn):
 
 @pytest.mark.usefixtures("conn")
 def test_a_resolved_route_without_a_moiety_is_unrepresentable(conn):
+    """Asserts the constraint NAME, not just the exception type. Re-review (round
+    2) found that `pytest.raises(CheckViolation)` alone does not attribute the
+    violation to any particular constraint -- a mutation that broke
+    endpoint_1_complete so it never fires would still pass this test if any OTHER
+    constraint on the row happened to raise instead. Naming the constraint is
+    what makes this test catch a mutation to endpoint_1_complete specifically,
+    rather than to the table in general.
+    """
     run = _open_run(conn)
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
         conn.execute(
             "INSERT INTO drugref.drugcentral_ddi_assertion "
             "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
             " upstream_label, severity_label, route_1, route_2) "
             "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
             "        'display_name', 'unresolved')", (run,))
+    assert caught.value.diag.constraint_name == \
+        "drugcentral_ddi_assertion_endpoint_1_complete"
 
 
 @pytest.mark.usefixtures("conn")
 def test_a_moiety_on_an_unresolved_route_is_unrepresentable(conn):
+    """Asserts the constraint NAME for the same reason as its sibling above:
+    without it, this test would still pass even if endpoint_1_complete were
+    broken, so long as some other constraint on the row raised in its place.
+    """
     run = _open_run(conn)
     one = _a_moiety(conn, run, "a")
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
         conn.execute(
             "INSERT INTO drugref.drugcentral_ddi_assertion "
             "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
             " upstream_label, severity_label, moiety_1_uuid, route_1, route_2) "
             "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
             "        %s, 'unresolved', 'unresolved')", (run, one))
+    assert caught.value.diag.constraint_name == \
+        "drugcentral_ddi_assertion_endpoint_1_complete"
 
 
 @pytest.mark.usefixtures("conn")
@@ -211,16 +227,29 @@ def test_a_resolved_route_2_without_a_moiety_is_unrepresentable(conn):
     would fail (no CheckViolation) exactly when that mutation is present. A
     design where moiety_1_uuid stayed NULL would let the same wrong wiring
     still raise for the wrong reason and hide the bug.
+
+    ALSO asserts the constraint NAME (re-review, round 2): route_1 and route_2
+    carry the SAME value here ('display_name'/'display_name'), so a mutation
+    that rewired drugcentral_ddi_assertion_route_2's vocabulary CHECK to read
+    route_1 instead of route_2 would be invisible to `pytest.raises` alone --
+    endpoint_2_complete still raises on this row regardless, for the unrelated
+    reason this test targets, so the bare exception type passes either way.
+    Naming endpoint_2_complete specifically closes that gap for THIS test; the
+    route_2-reads-route_1 mutation itself is caught by
+    test_route_2_outside_the_vocabulary_is_unrepresentable below, which is the
+    one test built to isolate that constraint alone.
     """
     run = _open_run(conn)
     one = _a_moiety(conn, run, "a")
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
         conn.execute(
             "INSERT INTO drugref.drugcentral_ddi_assertion "
             "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
             " upstream_label, severity_label, moiety_1_uuid, route_1, route_2) "
             "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
             "        %s, 'display_name', 'display_name')", (run, one))
+    assert caught.value.diag.constraint_name == \
+        "drugcentral_ddi_assertion_endpoint_2_complete"
 
 
 @pytest.mark.usefixtures("conn")
@@ -242,16 +271,88 @@ def test_a_moiety_on_an_unresolved_route_2_is_unrepresentable(conn):
     nullity here) would make the wrong wiring raise for the wrong reason and
     hide the bug, the same trap the sibling test above avoids in the other
     direction.
+
+    ALSO asserts the constraint NAME (re-review, round 2), for the same reason
+    as its sibling above: route_1 and route_2 are both 'unresolved' here, so a
+    route_2-reads-route_1 mutation would not change this row's outcome (the
+    same value either way), and endpoint_2_complete raises regardless -- so
+    without naming the constraint, this test cannot tell that mutation from a
+    correctly wired schema. test_route_2_outside_the_vocabulary_is_
+    unrepresentable below is the test built to isolate route_2's own CHECK.
     """
     run = _open_run(conn)
     two = _a_moiety(conn, run, "b")
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
         conn.execute(
             "INSERT INTO drugref.drugcentral_ddi_assertion "
             "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
             " upstream_label, severity_label, moiety_2_uuid, route_1, route_2) "
             "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
             "        %s, 'unresolved', 'unresolved')", (run, two))
+    assert caught.value.diag.constraint_name == \
+        "drugcentral_ddi_assertion_endpoint_2_complete"
+
+
+@pytest.mark.usefixtures("conn")
+def test_route_2_outside_the_vocabulary_is_unrepresentable(conn):
+    """ISOLATES drugcentral_ddi_assertion_route_2 -- re-review, round 2. The two
+    endpoint-2 mirrored tests above use the SAME value for route_1 and route_2,
+    so a mutation that rewired route_2's vocabulary CHECK to read route_1
+    instead produces the identical boolean on those rows and endpoint_2_complete
+    raises anyway either way; neither the bare exception type nor those tests'
+    constraint-name assertion (which names endpoint_2_complete, correctly, for
+    what THEY test) can see a route_2-reads-route_1 swap.
+
+    This row is built so route_2's vocabulary CHECK is the ONLY constraint that
+    can fire: route_2 = 'not_a_route' is outside `drugcentral_resolve.ROUTES`
+    entirely, so it is not in the resolved subset either -- the completeness
+    CHECK reads (route_2 IN resolved-routes) = FALSE, (moiety_2_uuid IS NOT
+    NULL) = FALSE (omitted here), FALSE = FALSE = TRUE, satisfied. Endpoint 1 is
+    kept fully legal and resolved (moiety_1_uuid set, route_1 = 'display_name')
+    so nothing on that side can raise either. Under the route_2-reads-route_1
+    mutation, route_1's own value ('display_name') is IN the vocabulary, so the
+    mutated constraint would be satisfied too and the row would insert cleanly
+    -- exactly when this test must fail. Verified against a scratch table
+    reproducing that mutation before trusting this test (task-4-report.md).
+    """
+    run = _open_run(conn)
+    one = _a_moiety(conn, run, "a")
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
+        conn.execute(
+            "INSERT INTO drugref.drugcentral_ddi_assertion "
+            "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+            " upstream_label, severity_label, moiety_1_uuid, route_1, route_2) "
+            "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
+            "        %s, 'display_name', 'not_a_route')", (run, one))
+    assert caught.value.diag.constraint_name == "drugcentral_ddi_assertion_route_2"
+
+
+@pytest.mark.usefixtures("conn")
+def test_route_1_outside_the_vocabulary_is_unrepresentable(conn):
+    """The mirror of test_route_2_outside_the_vocabulary_is_unrepresentable,
+    ISOLATING drugcentral_ddi_assertion_route_1 -- added alongside it because
+    the file had no dedicated isolation test for route_1's own CHECK either
+    (the two endpoint-1 tests above both attribute to endpoint_1_complete).
+
+    route_1 = 'not_a_route' is outside the vocabulary entirely, with
+    moiety_1_uuid omitted, so endpoint_1_complete reads FALSE = FALSE = TRUE
+    and stays satisfied; endpoint 2 is kept fully legal and resolved
+    (moiety_2_uuid set, route_2 = 'display_name') so nothing on that side can
+    raise. Under a route_1-reads-route_2 mutation, route_2's value
+    ('display_name') is IN the vocabulary, so the mutated constraint would be
+    satisfied too and the row would insert cleanly -- exactly when this test
+    must fail.
+    """
+    run = _open_run(conn)
+    two = _a_moiety(conn, run, "b")
+    with pytest.raises(psycopg.errors.CheckViolation) as caught:
+        conn.execute(
+            "INSERT INTO drugref.drugcentral_ddi_assertion "
+            "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+            " upstream_label, severity_label, moiety_2_uuid, route_1, route_2) "
+            "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
+            "        %s, 'not_a_route', 'display_name')", (run, two))
+    assert caught.value.diag.constraint_name == "drugcentral_ddi_assertion_route_1"
 
 
 @pytest.mark.usefixtures("conn")
