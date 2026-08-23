@@ -77,6 +77,35 @@ def test_a_resolved_endpoint_raises_no_question(conn):
 
 
 @pytest.mark.usefixtures("conn")
+def test_a_blank_endpoint_is_no_question_and_mints_no_uuid(conn):
+    """The view's `endpoint_name <> ''` guard, exercised rather than read.
+
+    A blank endpoint CAN reach the assertion table: `resolve_endpoint` returns
+    Resolution(None, ROUTE_NOT_A_SUBSTANCE) for an empty name, so the row lands
+    with a NULL uuid and is a gap row on every other test the view applies. What
+    stops it becoming a question is that one guard -- and without it the register
+    would mint a question keyed 'DRUGCENTRAL:ENDPOINT:' with empty text, whose
+    question_uuid is IMMORTAL and externally cited. A garbage question is not
+    free to withdraw, which is why three lines of test are worth writing for a
+    case no row on the 2023 release exercises (zero `ddi` rows have a blank
+    `drug_class1` or `drug_class2`).
+
+    Both spellings of "blank" are covered, because the guard is applied to the
+    FOLDED value: a truly empty name and a whitespace-only one, which
+    `lower(btrim(...))` turns into the same empty string.
+    """
+    run = _run(conn)
+    _unresolved(conn, run, "a", "")
+    _unresolved(conn, run, "b", "   ")
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unresolved_ddi_endpoint").fetchone() == (0,)
+    questions.register_from_gaps(conn, run)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ddi_endpoint'").fetchone() == (0,)
+
+
+@pytest.mark.usefixtures("conn")
 def test_the_gap_kind_is_admitted_and_registered(conn):
     """The CHECK, _GAP_SOURCES and the view are a TRIO: a kind registered with no
     view raises, and a view with no registration is a detector nobody reads --
