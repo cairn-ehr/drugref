@@ -381,3 +381,66 @@ def record_unresolved_ci_objects(
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT DO NOTHING", batch)
     return len(batch)
+
+
+# ---- issue 101: DrugCentral's unordered graded pairs (db/049) ------------------
+#
+# The projection this source owns, cleared per-source on every re-ingest. Named as
+# a tuple to match db.clear_source_tables's signature and every sibling constant
+# (MESH_CONTRAINDICATION_TABLES above, onchigh_run's UNRESOLVED_ENDPOINT_TABLES,
+# fda_cyp_run's FDA_CYP_TABLES). ONE table, because unlike db/031's ONC endpoints
+# the unresolvable rows live in the assertion table itself.
+DRUGCENTRAL_TABLES = ("drugcentral_ddi_assertion",)
+
+
+def clear_source_drugcentral(conn: psycopg.Connection, source: str) -> None:
+    """Drop every DrugCentral assertion contributed by `source`.
+
+    Same rebuildable-projection discipline as clear_source_contraindications: an
+    assertion retracted upstream has to be able to DISAPPEAR, and an insert-only
+    merge could never express that. It also clears the unresolved rows, for the
+    reason classes.clear_source_unmatched_ingredients gives: an endpoint that
+    starts resolving must LEAVE the worklist, or the worklist grows by its own
+    length every ingest and never shrinks.
+    """
+    db.clear_source_tables(conn, DRUGCENTRAL_TABLES, source)
+
+
+def add_drugcentral_assertion(conn: psycopg.Connection, *,
+                              ingest_run_id: int,
+                              source: str,
+                              upstream_key: str,
+                              endpoint_1_name: str,
+                              endpoint_2_name: str,
+                              upstream_label: str,
+                              severity_label: str,
+                              moiety_1_uuid: uuid.UUID | None,
+                              moiety_2_uuid: uuid.UUID | None,
+                              route_1: str,
+                              route_2: str) -> bool:
+    """Record one published DrugCentral interaction, resolved or not.
+
+    KEYWORD-ONLY, and that is not style: this function takes four strings and two
+    optional UUIDs in two matched pairs, and a positional call that swapped
+    endpoint_1 with endpoint_2 -- or route_1 with route_2 -- would insert cleanly
+    and produce a wrong resolution route beside a right moiety. The endpoints are
+    UNORDERED, so nothing downstream could ever detect the swap.
+
+    NOT DIRECTIONAL. `endpoint_1`/`endpoint_2` are the dump's own column order and
+    carry no clinical meaning: measured 2026-08-23, 33 pairs are published in both
+    orders and no ordered pair repeats. drugcentral_ddi_pair canonicalises.
+
+    Returns True if a new row was inserted. ON CONFLICT DO NOTHING keeps a dump
+    that repeats one assertion harmless, as every sibling writer does.
+    """
+    cur = conn.execute(
+        "INSERT INTO drugref.drugcentral_ddi_assertion "
+        "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+        " upstream_label, severity_label, moiety_1_uuid, moiety_2_uuid, "
+        " route_1, route_2) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT DO NOTHING",
+        (ingest_run_id, source, upstream_key, endpoint_1_name, endpoint_2_name,
+         upstream_label, severity_label, moiety_1_uuid, moiety_2_uuid,
+         route_1, route_2))
+    return cur.rowcount == 1
