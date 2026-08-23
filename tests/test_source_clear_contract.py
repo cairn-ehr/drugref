@@ -62,6 +62,11 @@ EXPECTED_TABLES = {
     "interactions.CLASS_PAIR_CONTRAINDICATION_TABLES": (
         interactions.CLASS_PAIR_CONTRAINDICATION_TABLES,
         ("class_pair_contraindication",)),
+    # Task 8 (db/049, issue 101): DrugCentral's candidate-tier projection, ONE
+    # table because -- unlike db/031's ONC endpoints -- the unresolvable rows
+    # live in the assertion table itself rather than a separate worklist.
+    "interactions.DRUGCENTRAL_TABLES": (
+        interactions.DRUGCENTRAL_TABLES, ("drugcentral_ddi_assertion",)),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
         interactions.MESH_CONTRAINDICATION_TABLES,
         ("moiety_condition_contraindication", "moiety_contraindication",

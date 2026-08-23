@@ -58,9 +58,9 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_curate, cli_fda_cyp, cli_interactions, cli_policy,
-                     cli_signing, cli_status, curation, db, interactions,
-                     migration_guard, signatures)
+from drugref import (cli_curate, cli_drugcentral, cli_fda_cyp, cli_interactions,
+                     cli_policy, cli_signing, cli_status, curation, db,
+                     interactions, migration_guard, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -426,6 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
         sub.set_defaults(handler=_handle_ingest, step=step)
 
     cli_fda_cyp.add_parser(sources)
+    cli_drugcentral.add_parser(sources)
 
     chain = sources.add_parser(
         "chain", help="run several feeds in dependency order from one directory")

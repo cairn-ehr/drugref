@@ -19,18 +19,18 @@ from __future__ import annotations
 
 import pytest
 
+from drugref.ingest.drugcentral_resolve import (
+    ROUTE_CAS,
+    ROUTE_DISPLAY_NAME,
+    ROUTE_NOT_A_SUBSTANCE,
+    Resolution,
+)
 from tools.drugcentral_ddi_measure import (
     Measurement,
     class_coverage,
     measure,
     mentions_qt,
     name_provenance,
-)
-from tools.drugcentral_resolve import (
-    ROUTE_CAS,
-    ROUTE_DISPLAY_NAME,
-    ROUTE_NOT_A_SUBSTANCE,
-    Resolution,
 )
 
 

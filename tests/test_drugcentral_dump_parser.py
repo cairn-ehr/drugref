@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.drugcentral_dump import (
+from drugref.ingest.drugcentral_dump import (
     CopyFormatError,
     decode_copy_field,
     decode_copy_row,
@@ -354,7 +354,7 @@ def test_the_docstring_examples_actually_run():
     """
     import doctest
 
-    from tools import drugcentral_dump
+    from drugref.ingest import drugcentral_dump
 
     results = doctest.testmod(drugcentral_dump, verbose=False)
 

@@ -304,6 +304,28 @@ def test_apply_migrations_is_idempotent(conn):
         # Slice 6r, db/045: immutable research history. These rows deliberately
         # carry no clinical ruling, grade, signature or mutable workflow state.
         "reviewer_annotation", "reviewer_evidence_reference",
+        # Issue 101, db/049: DrugCentral's `ddi` table as drugref's third
+        # interaction candidate source. ddi_source_severity maps one upstream
+        # authority's severity words onto drugref's four grades, AS DATA rather
+        # than as code, because the mapping is a clinical judgement a node
+        # operator must be able to SELECT and disagree with. drugcentral_ddi_
+        # assertion is the content table itself -- fda_cyp_assertion's shape,
+        # one row per published interaction, resolved or not, so the withheld
+        # rows (an endpoint drugref cannot key) are stored rather than dropped.
+        # drugcentral_ddi_pair (section 4) is the read-time VIEW over it: one row
+        # per unordered moiety pair, orientation collapsed and most-severe-wins,
+        # named explicitly here for the same reason ddi_candidate_pair is above.
+        # exact_ddi_pair (section 5) is the read path moiety_contraindication has
+        # lacked since db/014: it unions DrugCentral's graded pairs with MED-RT's
+        # CI_ChemClass moiety arm, additive to (not merged into) ddi_candidate_pair.
+        "ddi_source_severity", "drugcentral_ddi_assertion", "drugcentral_ddi_pair",
+        "exact_ddi_pair",
+        # db/049 section 6: gap_unresolved_ddi_endpoint is gap kind EIGHTEEN, not
+        # seventeen -- the live open_question_gap_kind CHECK already held
+        # seventeen values (fda_cyp_unadjudicated above was the seventeenth)
+        # before this one was appended. Named explicitly for the same
+        # information_schema.tables reason as every other view above.
+        "gap_unresolved_ddi_endpoint",
     }
 
 

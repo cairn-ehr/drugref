@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from tools.drugcentral_resolve import (
+from drugref.ingest.drugcentral_resolve import (
     Resolution,
     build_endpoint_index,
     fold_name,

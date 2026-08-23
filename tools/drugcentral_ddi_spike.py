@@ -28,13 +28,14 @@ registry. See PROJECT-NOTES § "How to run / test".
 
 **What it reports, and the one thing to read first.** The script measures endpoint
 resolution TWICE: once by name alone (what issue #101 did) and once through the
-structural cascade in `tools.drugcentral_resolve`. Reporting both is the point --
-the difference between them is the finding, and a single number would hide it.
+structural cascade in `drugref.ingest.drugcentral_resolve`. Reporting both is the
+point -- the difference between them is the finding, and a single number would
+hide it.
 
-**Where the parts live.** The COPY reader is `tools.drugcentral_dump`, the extract
-cache `tools.drugcentral_cache`, the arithmetic `tools.drugcentral_ddi_measure` and
-the rendering `tools.drugcentral_ddi_report` -- all four pure and tested without a
-dump or a database. This file owns the two things that are neither: the command
+**Where the parts live.** The COPY reader is `drugref.ingest.drugcentral_dump`, the
+extract cache `tools.drugcentral_cache`, the arithmetic `tools.drugcentral_ddi_measure`
+and the rendering `tools.drugcentral_ddi_report` -- all four pure and tested without
+a dump or a database. This file owns the two things that are neither: the command
 line and the only transaction.
 """
 from __future__ import annotations
@@ -52,6 +53,30 @@ from dataclasses import dataclass
 
 import psycopg
 
+# THE RULE-6 DETERMINATION IS IMPORTED, NEVER RESTATED HERE. `BUNDLEABLE_REF_IDS`
+# has exactly ONE home -- `drugref.ingest.drugcentral` -- and this script filters on
+# that same object at `measure_dump` below and passes it into the report, so the
+# verdict the measurement PRINTS and the set the ingest APPLIES cannot drift apart.
+# Rule 6 is decided by the dump's own `reference` table, NOT by DrugCentral's CC
+# BY-SA over the compilation: two of its three references are third-party compendia
+# it has no power to relicense, and this script re-reads and re-prints all three so
+# the determination is never inferred. This file used to define its own copy of the
+# set, which is the SECOND time the same defect appeared in this tooling -- the
+# re-measurement round's review found a hard-coded `ref_id == "2"` in the renderer,
+# unconnected to the set that filtered the rows, which is why the design spec §2
+# insists in bold on the one home.
+from drugref.ingest.drugcentral import BUNDLEABLE_REF_IDS
+from drugref.ingest.drugcentral_resolve import (
+    ROUTE_DISPLAY_NAME,
+    ROUTE_NOT_A_SUBSTANCE,
+    Registry,
+    Resolution,
+    build_endpoint_index,
+    first_wins,
+    fold_key,
+    fold_name,
+    resolve_endpoint,
+)
 from tools.drugcentral_cache import (
     CacheManifest,
     cache_status,
@@ -67,15 +92,6 @@ from tools.drugcentral_ddi_measure import (
     name_provenance,
 )
 from tools.drugcentral_ddi_report import RegistryTotals, ReportContext, render_report
-from tools.drugcentral_resolve import (
-    ROUTE_DISPLAY_NAME,
-    ROUTE_NOT_A_SUBSTANCE,
-    Registry,
-    Resolution,
-    build_endpoint_index,
-    fold_name,
-    resolve_endpoint,
-)
 
 # The tables this measurement reads, and the columns kept from each. `ddi`,
 # `ddi_risk` and `reference` are small enough to keep whole; the other three are
@@ -92,14 +108,6 @@ WANTED_COLUMNS: dict[str, Sequence[str] | None] = {
     "structures": ("id", "name", "cas_reg_no", "inchikey", "status"),
     "synonyms": ("syn_id", "id", "name", "preferred_name", "parent_id", "lname"),
 }
-
-# `ddi.ddi_ref_id` values whose rows drugref may bundle. Rule 6 is decided by the
-# `reference` table, NOT by DrugCentral's own CC BY-SA over the compilation: two of
-# its three references are third-party compendia it has no power to relicense. The
-# script re-reads and re-prints all three so the determination is never inferred,
-# and this set is passed into the report so the verdict it PRINTS and the filter it
-# APPLIES cannot drift apart.
-BUNDLEABLE_REF_IDS = frozenset({"2"})
 
 # `drugcentral.dump.11012023.sql.gz` -> `11012023`.
 _RELEASE_IN_FILENAME = re.compile(r"\.dump\.(?P<release>\d{8})\.")
@@ -129,29 +137,6 @@ def sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _first_wins(rows: Sequence[tuple[str, str]]) -> tuple[dict[str, str], int]:
-    """Fold ``(key, uuid)`` rows into a lookup, counting keys claimed more than once.
-
-    First-wins over a deterministically ORDERED read, which is the rule
-    `src/drugref/classes.py` states for the same join: `identity_claim` is unique
-    on ``(moiety_uuid, scheme, value)`` and deliberately NOT across moieties, so
-    two moieties may legitimately carry one CAS number. An unordered single-row
-    read *"could answer differently run to run"* -- in a script whose entire
-    justification is reproducibility.
-
-    The collision count is returned rather than discarded, because the previous
-    docstring promised that the totals would report duplicates and nothing did.
-    """
-    lookup: dict[str, str] = {}
-    duplicates = 0
-    for key, uuid in rows:
-        if key in lookup:
-            duplicates += 1
-            continue
-        lookup[key] = uuid
-    return lookup, duplicates
 
 
 @dataclass(frozen=True)
@@ -184,7 +169,8 @@ def load_registry(dsn: str) -> RegistrySide:
     from a different state of the database. For a measurement claiming
     reproducibility that is the wrong isolation level.
 
-    Every read is ORDERED. See `_first_wins` for why that is not cosmetic.
+    Every read is ORDERED. See `drugref.ingest.drugcentral_resolve.first_wins` for
+    why that is not cosmetic.
     """
     with psycopg.connect(dsn) as conn:
         conn.read_only = True
@@ -193,19 +179,20 @@ def load_registry(dsn: str) -> RegistrySide:
             cur.execute("SELECT display_name, moiety_uuid::text "
                         "FROM drugref.substance_moiety "
                         "ORDER BY display_name, moiety_uuid")
-            display_name, duplicate_display_names = _first_wins(cur.fetchall())
+            display_name, duplicate_display_names = first_wins(
+                cur.fetchall(), fold_name)
 
             cur.execute(
                 "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
                 "WHERE scheme = %s AND superseded_by IS NULL "
                 "ORDER BY value, moiety_uuid", ("INCHIKEY",))
-            inchikey, duplicate_inchikeys = _first_wins(cur.fetchall())
+            inchikey, duplicate_inchikeys = first_wins(cur.fetchall(), fold_key)
 
             cur.execute(
                 "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
                 "WHERE scheme = %s AND superseded_by IS NULL "
                 "ORDER BY value, moiety_uuid", ("CAS",))
-            cas, duplicate_cas = _first_wins(cur.fetchall())
+            cas, duplicate_cas = first_wins(cur.fetchall(), fold_key)
 
             cur.execute("SELECT lower(class_name), source "
                         "FROM drugref.substance_class "

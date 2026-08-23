@@ -44,7 +44,7 @@ is a broken join and is a bug.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -76,12 +76,24 @@ ROUTE_MISSING_KEYS_ROW = "missing_keys_row"
 #: Keys existed and drugref simply does not hold them.
 ROUTE_UNRESOLVED = "unresolved"
 
+#: The endpoint text is EMPTY -- the dump published a NULL or blank
+#: `drug_class1`/`drug_class2`. A MALFORMED UPSTREAM ROW, not a miss of any
+#: kind, and its own route for exactly the reason ROUTE_MISSING_KEYS_ROW is:
+#: filing it under `not_a_substance` labelled a broken row as "a class name
+#: drugref was never going to resolve", which is how a corrupt extract passes
+#: for a difficult one. It is additionally invisible downstream --
+#: gap_unresolved_ddi_endpoint drops blank names (it must: a blank is not a
+#: question anyone can answer), so before this route existed a blank endpoint
+#: reached NO layer that could report it and was counted beside genuine misses.
+ROUTE_BLANK_ENDPOINT = "blank_endpoint"
+
 RESOLVED_ROUTES = frozenset({ROUTE_DISPLAY_NAME, ROUTE_INCHIKEY, ROUTE_CAS})
 UNRESOLVED_ROUTES = frozenset({
     ROUTE_NOT_A_SUBSTANCE,
     ROUTE_NO_STRUCTURAL_KEY,
     ROUTE_MISSING_KEYS_ROW,
     ROUTE_UNRESOLVED,
+    ROUTE_BLANK_ENDPOINT,
 })
 ROUTES = RESOLVED_ROUTES | UNRESOLVED_ROUTES
 
@@ -131,8 +143,14 @@ def fold_name(value: str) -> str:
     return value.strip().lower()
 
 
-def _fold_key(value: str) -> str:
-    """Fold a STRUCTURAL KEY (InChIKey, CAS) to its lookup key."""
+def fold_key(value: str) -> str:
+    """Fold a STRUCTURAL KEY (InChIKey, CAS) to its lookup key.
+
+    PUBLIC alongside `fold_name`, and for the same reason: `load_registry` now
+    hands the fold to `first_wins` so that de-duplication and lookup happen in one
+    key space. A private copy on the caller's side would be the second home this
+    module's whole design exists to avoid.
+    """
     return value.strip().upper()
 
 
@@ -164,12 +182,19 @@ class Registry:
     cas: Mapping[str, str]
 
     def __post_init__(self) -> None:
+        # FIRST-WINS, not a dict comprehension. A comprehension is last-wins, and
+        # for a caller that folds upstream (`load_registry`, via `first_wins`) this
+        # pass is a no-op re-fold -- but for one that hands over raw keys it used to
+        # SILENTLY REVERSE the first-wins discipline the ordered read establishes.
+        # Same rule in both places, so there is no order in which they disagree.
         for field_name, fold in (("display_name", fold_name),
-                                 ("inchikey", _fold_key),
-                                 ("cas", _fold_key)):
+                                 ("inchikey", fold_key),
+                                 ("cas", fold_key)):
             source: Mapping[str, str] = getattr(self, field_name)
-            object.__setattr__(self, field_name, MappingProxyType(
-                {fold(key): value for key, value in source.items()}))
+            folded: dict[str, str] = {}
+            for key, value in source.items():
+                folded.setdefault(fold(key), value)
+            object.__setattr__(self, field_name, MappingProxyType(folded))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -236,8 +261,8 @@ def build_endpoint_index(
         if not struct_id:
             continue
         structural_keys.setdefault(struct_id, (
-            _fold_key(row.get("inchikey") or ""),
-            _fold_key(row.get("cas_reg_no") or ""),
+            fold_key(row.get("inchikey") or ""),
+            fold_key(row.get("cas_reg_no") or ""),
         ))
         name = fold_name(row.get("name") or "")
         if name:
@@ -259,16 +284,24 @@ def resolve_endpoint(
 ) -> Resolution:
     """Resolve one endpoint name to a `Resolution`.
 
-    A blank name never resolves. `structures` stores an empty InChIKey for
-    biologics and mixtures and the TSV cache round-trips SQL NULL as ``""``, so a
-    registry that happened to contain the empty string would otherwise collapse
-    every keyless substance -- and every NULL endpoint -- onto one moiety: a
-    silent, catastrophic merge rather than an honest miss. The guard covers all
-    three lookups, not just the two structural ones.
+    A blank name never resolves, and reports `ROUTE_BLANK_ENDPOINT` when it does
+    not. `structures` stores an empty InChIKey for biologics and mixtures and the
+    TSV cache round-trips SQL NULL as ``""``, so a registry that happened to
+    contain the empty string would otherwise collapse every keyless substance --
+    and every NULL endpoint -- onto one moiety: a silent, catastrophic merge
+    rather than an honest miss. The guard covers all three lookups, not just the
+    two structural ones.
+
+    THE ROUTE IS NOT `not_a_substance`. That route means "DrugCentral has no
+    struct_id for this text", whose overwhelmingly likely cause is a class name --
+    a CORRECT miss. A blank endpoint is a malformed row, and labelling it as a
+    correct miss made it indistinguishable from one at every layer: excluded from
+    the pair view, excluded from the question view by the `<> ''` filter that has
+    to be there, and summed into `rows_unresolved` beside genuine misses.
     """
     folded = fold_name(name)
     if not folded:
-        return Resolution(None, ROUTE_NOT_A_SUBSTANCE)
+        return Resolution(None, ROUTE_BLANK_ENDPOINT)
 
     direct = registry.display_name.get(folded)
     if direct is not None:
@@ -323,3 +356,50 @@ def unordered_pair(left: str, right: str) -> tuple[str, str] | None:
     if left == right:
         return None
     return (left, right) if left <= right else (right, left)
+
+
+def first_wins(rows: Sequence[tuple[str, str]],
+               fold: Callable[[str], str]) -> tuple[dict[str, str], int]:
+    """Fold ``(key, uuid)`` rows into a lookup, counting keys claimed more than once.
+
+    First-wins over a deterministically ORDERED read, which is the rule
+    `src/drugref/classes.py` states for the same join: `identity_claim` is unique
+    on ``(moiety_uuid, scheme, value)`` and deliberately NOT across moieties, so
+    two moieties may legitimately carry one CAS number. An unordered single-row
+    read *"could answer differently run to run"*.
+
+    PUBLIC, and shared by the measurement instrument and the ingest. Both build the
+    same three lookups against the same table; two private copies of this rule would
+    be two chances for one of them to stop being first-wins.
+
+    **`fold` IS REQUIRED, AND IT IS THE WHOLE POINT OF THE PARAMETER.** De-duplication,
+    first-wins and the collision count must all happen in the SAME key space
+    `Registry` will look up in. They did not: this function de-duplicated on the RAW
+    key and `Registry.__post_init__` then re-keyed the survivors through `fold_name`
+    / `fold_key` with a dict comprehension -- which is **last**-wins. Two moieties
+    named ``Warfarin`` and ``warfarin`` were therefore two distinct keys here (so
+    ``duplicates`` reported 0, and the count this returns is the one the summary
+    publishes), and the fold then silently kept the SECOND. Which one that is depends
+    on how the database collates upper against lower case, so the same dump resolved
+    differently on two nodes -- the exact failure the ORDER BY on the caller's side
+    exists to prevent. `substance_moiety.display_name` carries no uniqueness
+    constraint, so this is representable, not theoretical.
+
+    The collision count is returned rather than discarded, because the previous
+    docstring promised the totals would report duplicates and nothing did. It counts
+    DISTINCT KEYS claimed more than once, not surplus rows: three moieties claiming
+    one CAS number is ONE collision. `DrugCentralSummary.__str__` calls the figure
+    "colliding registry keys" and PROJECT-NOTES records the baseline as "14 InChIKeys
+    and 29 CAS numbers are claimed by more than one" -- both distinct-key counts, so
+    a surplus-row count could not be checked against the number it exists to be
+    checked against.
+    """
+    lookup: dict[str, str] = {}
+    collided: set[str] = set()
+    for key, uuid in rows:
+        folded = fold(key)
+        if folded in lookup:
+            collided.add(folded)
+            continue
+        lookup[folded] = uuid
+    return lookup, len(collided)

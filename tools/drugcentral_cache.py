@@ -5,9 +5,10 @@ Caching it is what lets the measurement be re-run while a design is being argued
 about, rather than once at the end.
 
 **Why the cache is a liability if it is not committed properly.** Every guard in
-`tools/drugcentral_dump.py` -- refusing a malformed row, an unterminated block, a
-merged table -- exists so that a partially working parser cannot report a plausible
-figure. The cache sits downstream of all of them and used to undo every one:
+`drugref/ingest/drugcentral_dump.py` -- refusing a malformed row, an unterminated
+block, a merged table -- exists so that a partially working parser cannot report a
+plausible figure. The cache sits downstream of all of them and used to undo every
+one:
 
 * a crashed extract left well-formed but truncated TSVs behind, and the next run
   found ``ddi.tsv``, said "using cached extract" and measured the wreckage;
@@ -32,7 +33,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import TextIO
 
-from tools.drugcentral_dump import iter_copy_rows
+from drugref.ingest.drugcentral_dump import iter_copy_rows
 
 MANIFEST_NAME = "manifest.json"
 

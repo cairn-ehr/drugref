@@ -1,9 +1,9 @@
 """Tests for the DrugCentral extract cache -- the layer that lost the parser's strictness.
 
-`tools/drugcentral_dump.py` refuses a malformed row, an unterminated block and a
-merged table, loudly, and its docstring explains why tolerance would be worse than
-a crash. **None of that survived the trip through the TSV cache**, and the cache is
-the path every run after the first one takes:
+`drugref/ingest/drugcentral_dump.py` refuses a malformed row, an unterminated block
+and a merged table, loudly, and its docstring explains why tolerance would be worse
+than a crash. **None of that survived the trip through the TSV cache**, and the
+cache is the path every run after the first one takes:
 
 * a crashed extract left well-formed but truncated TSVs on disk, and the next run
   found `ddi.tsv`, printed "using cached extract" and reported the short count as a

@@ -562,6 +562,50 @@ _GAP_SOURCES = {
             "not drugs. Should drugref carry it at all, and under what identity?' "
             "END"),
     },
+    # Issue 101 (db/049). The endpoint names DrugCentral keys to a structure and
+    # drugref does not. NOT a synonym-bridge worklist: the re-measurement showed a
+    # display_name -> inchikey -> cas cascade takes resolution from 857 of 924
+    # names to 914, so what is left is registry COVERAGE -- a moiety or an
+    # identity_claim drugref does not yet hold. The question retires by itself
+    # when the claim lands.
+    "unresolved_ddi_endpoint": {
+        "view": "gap_unresolved_ddi_endpoint",
+        # FOLDED in the view, so the key is folded here too. question_uuid is
+        # immortal, so 'Phytomenadione' and 'phytomenadione' must be one question.
+        "key_sql": "'DRUGCENTRAL:ENDPOINT:' || endpoint_name",
+        # ROUTE-AWARE, because the view is deliberately route-AGNOSTIC. It filters
+        # on a NULL uuid and never on the route vocabulary (db/049's own comment
+        # says why), so it admits `not_a_substance` and `no_structural_key` too --
+        # and the old single sentence asserted the `unresolved` story about all of
+        # them: "DrugCentral resolves it to a structure with an InChIKey or a CAS
+        # number, and no live identity_claim in drugref carries either". For a
+        # class name DrugCentral has no struct_id at all, so the first half is
+        # false; for a keyless structure the second half is. question_uuid is
+        # IMMORTAL and externally cited, so a question minted under the wrong story
+        # cannot be quietly reworded later -- the text has to be right the first
+        # time. db/050 publishes `route` for exactly this CASE to read.
+        "text_sql": (
+            "'Which moiety does the interaction endpoint ' || endpoint_name || "
+            "' denote? ' || CASE route "
+            "  WHEN 'unresolved' THEN "
+            "    'DrugCentral resolves it to a structure with an InChIKey or a CAS "
+            "number, and no live identity_claim in drugref carries either' "
+            "  WHEN 'not_a_substance' THEN "
+            "    'DrugCentral itself holds no structure under this text, so it is "
+            "most likely a drug CLASS rather than a substance -- the question is "
+            "whether drugref should carry it, and under what identity' "
+            "  WHEN 'no_structural_key' THEN "
+            "    'DrugCentral holds a structure for it but records neither an "
+            "InChIKey nor a CAS number, which is what it does for biologics and "
+            "mixtures, so there is no structural key to join on' "
+            "  WHEN 'missing_keys_row' THEN "
+            "    'DrugCentral names a structure that is ABSENT from the structures "
+            "extract -- a broken join rather than a hard endpoint, and the extract "
+            "should be re-read before this is curated' "
+            "  ELSE 'drugref cannot key it (route ' || route || ')' "
+            "END || ', so ' || row_count || ' interaction row(s) cannot yield a "
+            "pair.'"),
+    },
 }
 
 
