@@ -191,6 +191,70 @@ def test_a_moiety_on_an_unresolved_route_is_unrepresentable(conn):
 
 
 @pytest.mark.usefixtures("conn")
+def test_a_resolved_route_2_without_a_moiety_is_unrepresentable(conn):
+    """Mirrors test_a_resolved_route_without_a_moiety_is_unrepresentable, but on
+    ENDPOINT 2 -- added on code review because the parametrized pinning test
+    only checks that endpoint_2_complete's route VOCABULARY matches Python; it
+    extracts quoted literals from the constraint definition and would not
+    notice the constraint being wired to the WRONG COLUMN, since the same
+    literal set appears whichever column it is attached to (see db/029's
+    index-column mutation, which survived 936 passing tests for the same
+    reason -- PROJECT-NOTES.md).
+
+    Endpoint 1 is left FULLY RESOLVED (moiety_1_uuid set, route_1 =
+    'display_name') so the attribution is unambiguous, and specifically so this
+    test is SENSITIVE to a copy-paste bug that wired
+    drugcentral_ddi_assertion_endpoint_2_complete to moiety_1_uuid instead of
+    moiety_2_uuid: with endpoint 1 resolved, that wrong right-hand side would
+    read `moiety_1_uuid IS NOT NULL` = TRUE, matching route_2's `IN (...)` =
+    TRUE, so the row would insert cleanly instead of raising -- and this test
+    would fail (no CheckViolation) exactly when that mutation is present. A
+    design where moiety_1_uuid stayed NULL would let the same wrong wiring
+    still raise for the wrong reason and hide the bug.
+    """
+    run = _open_run(conn)
+    one = _a_moiety(conn, run, "a")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.drugcentral_ddi_assertion "
+            "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+            " upstream_label, severity_label, moiety_1_uuid, route_1, route_2) "
+            "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
+            "        %s, 'display_name', 'display_name')", (run, one))
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_moiety_on_an_unresolved_route_2_is_unrepresentable(conn):
+    """Mirrors test_a_moiety_on_an_unresolved_route_is_unrepresentable, but on
+    ENDPOINT 2 -- the execution-based counterpart the pinning test cannot
+    provide, for the same reason as its sibling above.
+
+    Endpoint 1 is left legally UNRESOLVED (route_1 = 'unresolved',
+    moiety_1_uuid NULL) rather than resolved, deliberately: that gives
+    moiety_1_uuid and moiety_2_uuid OPPOSITE nullity (NULL vs. NOT NULL) here,
+    which is what makes the test sensitive to endpoint_2_complete being wired
+    to moiety_1_uuid instead of its own column. Under that wrong wiring, the
+    right-hand side would read `moiety_1_uuid IS NOT NULL` = FALSE, matching
+    route_2's `IN (...)` = FALSE (route_2 is 'unresolved'), so the row would
+    insert cleanly instead of raising -- and this test would fail (no
+    CheckViolation) exactly when that mutation is present. Leaving endpoint 1
+    resolved instead (moiety_1_uuid NOT NULL, matching moiety_2_uuid's
+    nullity here) would make the wrong wiring raise for the wrong reason and
+    hide the bug, the same trap the sibling test above avoids in the other
+    direction.
+    """
+    run = _open_run(conn)
+    two = _a_moiety(conn, run, "b")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.drugcentral_ddi_assertion "
+            "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+            " upstream_label, severity_label, moiety_2_uuid, route_1, route_2) "
+            "VALUES (%s, 'DRUGCENTRAL', 'X', 'a', 'b', 'A/B [VA]', 'Critical', "
+            "        %s, 'unresolved', 'unresolved')", (run, two))
+
+
+@pytest.mark.usefixtures("conn")
 def test_an_unresolved_row_is_stored_rather_than_dropped(conn):
     """db/039's fda_cyp_assertion states the principle: the withheld rows are the
     point. An endpoint drugref cannot key is a WORKLIST ENTRY, not a drop."""
