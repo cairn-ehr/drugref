@@ -53,6 +53,19 @@ from dataclasses import dataclass
 
 import psycopg
 
+# THE RULE-6 DETERMINATION IS IMPORTED, NEVER RESTATED HERE. `BUNDLEABLE_REF_IDS`
+# has exactly ONE home -- `drugref.ingest.drugcentral` -- and this script filters on
+# that same object at `measure_dump` below and passes it into the report, so the
+# verdict the measurement PRINTS and the set the ingest APPLIES cannot drift apart.
+# Rule 6 is decided by the dump's own `reference` table, NOT by DrugCentral's CC
+# BY-SA over the compilation: two of its three references are third-party compendia
+# it has no power to relicense, and this script re-reads and re-prints all three so
+# the determination is never inferred. This file used to define its own copy of the
+# set, which is the SECOND time the same defect appeared in this tooling -- the
+# re-measurement round's review found a hard-coded `ref_id == "2"` in the renderer,
+# unconnected to the set that filtered the rows, which is why the design spec §2
+# insists in bold on the one home.
+from drugref.ingest.drugcentral import BUNDLEABLE_REF_IDS
 from drugref.ingest.drugcentral_resolve import (
     ROUTE_DISPLAY_NAME,
     ROUTE_NOT_A_SUBSTANCE,
@@ -94,14 +107,6 @@ WANTED_COLUMNS: dict[str, Sequence[str] | None] = {
     "structures": ("id", "name", "cas_reg_no", "inchikey", "status"),
     "synonyms": ("syn_id", "id", "name", "preferred_name", "parent_id", "lname"),
 }
-
-# `ddi.ddi_ref_id` values whose rows drugref may bundle. Rule 6 is decided by the
-# `reference` table, NOT by DrugCentral's own CC BY-SA over the compilation: two of
-# its three references are third-party compendia it has no power to relicense. The
-# script re-reads and re-prints all three so the determination is never inferred,
-# and this set is passed into the report so the verdict it PRINTS and the filter it
-# APPLIES cannot drift apart.
-BUNDLEABLE_REF_IDS = frozenset({"2"})
 
 # `drugcentral.dump.11012023.sql.gz` -> `11012023`.
 _RELEASE_IN_FILENAME = re.compile(r"\.dump\.(?P<release>\d{8})\.")

@@ -57,6 +57,24 @@ selects a ref-1/ref-3 row whose `source_id` is not a short heading but
 free-form prose, THIS determination no longer covers it and the row needs the
 same redaction `description` gets.
 
+`ddi_risk` IS ALSO COMMITTED UNREDACTED ON THE EXCLUDED ROWS, and it needs its
+own sentence rather than an implied ride on the paragraph above: on a ref-1 or
+ref-3 row the band is the EXCLUDED compendium's own severity label, not the
+VHA's ('Potentially significant' and 'Contraindicated' belong to Stockley's,
+'Avoid combination' and 'Potentially significant' to Lexicomp -- read out of the
+dump's own `ddi_risk` table, which pairs each band with its `ddi_ref_id`). It is
+cleared on BOTH the grounds above at once. (1) It is a one- or two-word label
+drawn from a CLOSED five-value vocabulary ('Critical', 'Significant',
+'Potentially significant', 'Contraindicated', 'Avoid combination'); a single
+word leaves no room for authorship at all and is a short phrase under 37 C.F.R.
+Sec 202.1(a) on the same footing as the headings. (2) What it conveys is the
+FACT of how that compendium graded the pair, which is where Feist puts it. The
+four excluded rows carry three distinct bands between them, so the vocabulary's
+own selection and arrangement -- the only thing a compilation copyright could
+reach -- is not reproduced here either. Same bound as `source_id`: a future
+regeneration selecting a row whose `ddi_risk` is anything other than a band from
+that closed vocabulary is NOT covered by this determination.
+
 WHY THE GENERATOR READS THE REAL .sql.gz RATHER THAN THE EXTRACTED TSV CACHE
 under downloads/DRUGCENTRAL/extracted/: that cache exists to make repeated
 *measurement* runs cheap (tools/drugcentral_cache.py), and it round-trips SQL
@@ -227,8 +245,20 @@ def select_rows(tables: drugcentral.DumpTables) -> dict[str, list[Mapping[str, s
         row = ddi_by_id.get(ddi_id)
         if row is None:
             continue
-        if row.get("ddi_ref_id") != "2":
+        if row.get("ddi_ref_id") not in drugcentral.BUNDLEABLE_REF_IDS:
             # RULE 6: redact before it ever reaches the output file, not after.
+            #
+            # THE SET IS IMPORTED, NEVER RESTATED, AND THAT IS A LICENCE RULE
+            # RATHER THAN A STYLE ONE. This line is what decides which rows'
+            # `description` prose gets committed into an AGPL repository, so a
+            # hard-coded '2' here that drifted from
+            # `drugcentral.BUNDLEABLE_REF_IDS` would not be untidy -- it would be
+            # a licence bug: narrow the cleared set in drugcentral.py and a
+            # regeneration would go on committing verbatim text from a reference
+            # rule 6 no longer clears, with the redaction test
+            # (tests/test_drugcentral_fixture.py) none the wiser because it pins
+            # today's ref-1/ref-3 ids. The design spec §2 says in bold that this
+            # constant has exactly one home; this file is a CONSUMER of it.
             row = {**row, "description": REDACTED}
         ddi_rows.append(row)
 

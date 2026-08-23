@@ -76,17 +76,36 @@ Seed data attributions:
   tests/fixtures/make_drugcentral_subset.py) carries rows from ALL THREE references so
   the exclusion is exercised against a dump that really contains what it excludes, and
   the excluded references' `description` text is redacted, following the MED-RT
-  fixture's endpoint redaction. One field on those excluded rows is committed
-  unredacted, and that determination was made before the fixture was committed rather
-  than justified afterwards: `ddi.source_id` carries the source compendium's own
-  monograph heading in readable form ("MAOIs or RIMAs + Buspirone" from Stockley's,
-  "Conivaptan: CYP3A4 Substrates" from Lexicomp). It is kept on two independent
-  grounds — short noun-phrase titles and headings are categorically outside copyright
-  protection (37 C.F.R. §202.1(a), "words and short phrases such as names, titles, and
-  slogans"), and they restate the same drug-pair fact already committed unredacted in
-  `drug_class1`/`drug_class2` on the very same rows, under the same
-  facts-are-not-copyrightable argument (Feist) this file already makes for ONCHIGH.
-  The full reasoning is written out in tests/fixtures/make_drugcentral_subset.py's
-  docstring; a future regeneration that selects an excluded row whose `source_id` is
-  free-form prose rather than a heading is NOT covered by it and needs the same
-  redaction `description` gets.
+  fixture's endpoint redaction. `description` is the ONLY column redacted, so the rest
+  of each excluded row is committed as it stands; what that amounts to is set out here
+  field by field, because a licence notice that miscounts the artefact it accounts for
+  is worth nothing. Two of the seven columns are numbers with no expressive content at
+  all (`id`, the dump's surrogate row key, and `ddi_ref_id`, the reference number rule 6
+  turns on). The other four carry text — `drug_class1`, `drug_class2`, `ddi_risk` and
+  `source_id` — and each was cleared BEFORE the fixture was committed rather than
+  justified afterwards, on two grounds that run through all four: short words and
+  phrases are categorically outside copyright protection whatever went into them
+  (37 C.F.R. §202.1(a), "words and short phrases such as names, titles, and slogans"),
+  and what these fields express is fact rather than expression, unprotectable under
+  Feist Publications, Inc. v. Rural Telephone Service Co., 499 U.S. 340 (1991) — the
+  same argument this file already makes for ONCHIGH. Applied field by field:
+  `drug_class1`/`drug_class2` are the two endpoint names ("Monoamine Oxidase
+  Inhibitors", "buspirone"), and together they state the fact that a compendium pairs
+  those two agents. `source_id` carries that compendium's own monograph heading in
+  readable form ("MAOIs or RIMAs + Buspirone" from Stockley's, "Conivaptan: CYP3A4
+  Substrates" from Lexicomp) — three-to-five-word noun phrases naming a drug/class
+  pairing, and restating the same pairing fact the two endpoint columns already carry.
+  `ddi_risk` is a one- or two-word severity band drawn from the dump's own closed
+  five-value vocabulary ("Critical", "Significant", "Potentially significant",
+  "Contraindicated", "Avoid combination"); on the excluded rows it is the excluded
+  compendium's label rather than the VHA's, which is why it is assessed here and not
+  waved through with the ref-2 content. It is cleared on both grounds together: a
+  one-word band leaves no room for authorship and is a short phrase under §202.1(a),
+  and what it conveys is the fact of how that compendium graded the pair, which Feist
+  puts outside protection. The four excluded rows carry three distinct bands between
+  them, so no part of the vocabulary's own selection or arrangement is reproduced
+  either. The full reasoning is written out in
+  tests/fixtures/make_drugcentral_subset.py's docstring; a future regeneration that
+  selects an excluded row whose `source_id` is free-form prose rather than a heading,
+  or whose `ddi_risk` is anything other than a band from that closed vocabulary, is NOT
+  covered by it and needs the same redaction `description` gets.
