@@ -370,7 +370,7 @@ anchor the 2026-08-13 run never recorded is captured by the ingest for free, on 
 
 TDD throughout: the failing test first, then the code.
 
-- **Fixture.** `tests/fixtures/drugcentral_ddi_subset.sql.gz`, built by `tools/make_drugcentral_subset.py`,
+- **Fixture.** `tests/fixtures/drugcentral_ddi_subset.sql.gz`, built by `tests/fixtures/make_drugcentral_subset.py` (where every other subset generator lives),
   carrying rows from **all three** references so the rule-6 filter and the §2 reference guard are both
   exercised, plus the `structures`/`synonyms` rows the cascade needs. **The `ddi_ref_id` 1 and 3 descriptions
   are redacted**, following the MED-RT fixture's endpoint redaction, which a test enforces there and will here.
