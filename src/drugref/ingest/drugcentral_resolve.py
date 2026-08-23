@@ -44,7 +44,7 @@ is a broken join and is a bug.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -323,3 +323,29 @@ def unordered_pair(left: str, right: str) -> tuple[str, str] | None:
     if left == right:
         return None
     return (left, right) if left <= right else (right, left)
+
+
+def first_wins(rows: Sequence[tuple[str, str]]) -> tuple[dict[str, str], int]:
+    """Fold ``(key, uuid)`` rows into a lookup, counting keys claimed more than once.
+
+    First-wins over a deterministically ORDERED read, which is the rule
+    `src/drugref/classes.py` states for the same join: `identity_claim` is unique
+    on ``(moiety_uuid, scheme, value)`` and deliberately NOT across moieties, so
+    two moieties may legitimately carry one CAS number. An unordered single-row
+    read *"could answer differently run to run"*.
+
+    PUBLIC, and shared by the measurement instrument and the ingest. Both build the
+    same three lookups against the same table; two private copies of this rule would
+    be two chances for one of them to stop being first-wins.
+
+    The collision count is returned rather than discarded, because the previous
+    docstring promised the totals would report duplicates and nothing did.
+    """
+    lookup: dict[str, str] = {}
+    duplicates = 0
+    for key, uuid in rows:
+        if key in lookup:
+            duplicates += 1
+            continue
+        lookup[key] = uuid
+    return lookup, duplicates

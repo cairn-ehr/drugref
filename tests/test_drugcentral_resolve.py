@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from tools.drugcentral_resolve import (
+from drugref.ingest import drugcentral_resolve
+from drugref.ingest.drugcentral_resolve import (
     ROUTE_CAS,
     ROUTE_DISPLAY_NAME,
     ROUTE_INCHIKEY,
@@ -309,3 +310,28 @@ def test_a_self_pair_is_not_a_pair():
     """A rule whose two endpoints resolve to ONE moiety states nothing about an
     interaction between two drugs. `db/010` subtracts the same case upstream."""
     assert unordered_pair("a", "a") is None
+
+
+# ---------------------------------------------------------------------------
+# first_wins -- folding an ordered read into a lookup, colliding keys and all
+# ---------------------------------------------------------------------------
+
+def test_first_wins_keeps_the_first_row_and_counts_the_collisions():
+    """The rule that makes a colliding structural key resolve the same way twice.
+
+    identity_claim is unique on (moiety_uuid, scheme, value) and deliberately NOT
+    across moieties, so two moieties may legitimately carry one CAS number. The
+    caller reads under a deterministic ORDER BY; this decides what happens when
+    that ordered read hands over the same key twice.
+    """
+    lookup, duplicates = drugcentral_resolve.first_wins(
+        [("aaa", "uuid-1"), ("aaa", "uuid-2"), ("bbb", "uuid-3")])
+    assert lookup == {"aaa": "uuid-1", "bbb": "uuid-3"}
+    assert duplicates == 1
+
+
+def test_first_wins_counts_nothing_when_every_key_is_unique():
+    lookup, duplicates = drugcentral_resolve.first_wins(
+        [("aaa", "uuid-1"), ("bbb", "uuid-2")])
+    assert lookup == {"aaa": "uuid-1", "bbb": "uuid-2"}
+    assert duplicates == 0
