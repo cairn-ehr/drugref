@@ -179,6 +179,21 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
         resolved = self_pair = unresolved = 0
         for row in bundleable:
             record = drugcentral.resolve_row(row, index, registry)
+            # The return value (False on an ON CONFLICT DO NOTHING skip) is
+            # deliberately IGNORED here, and that is safe rather than sloppy:
+            # the table's PRIMARY KEY is (ingest_run, source, upstream_key), so
+            # a conflict can only happen BETWEEN TWO ROWS OF THIS SAME RUN, and
+            # db/049_drugcentral_ddi.sql's own comment on `upstream_key` records
+            # the measured fact that all 7,571 real bundleable rows carry a
+            # distinct `source_id` -- so within one run this path is provably
+            # dead on real data. If a future release ever DID repeat a
+            # source_id within one dump, a skipped insert would silently drop
+            # a row from `rows_bundleable` while still counting it into
+            # resolved/self_pair/unresolved below, drifting the buckets from
+            # what `drugcentral_ddi_assertion` actually stores -- exactly the
+            # kind of silent miscount CLAUDE.md rule 5 exists to catch, so
+            # widening BUNDLEABLE_REF_IDS or upstream_key's source column is
+            # the moment to revisit this comment, not before.
             interactions.add_drugcentral_assertion(
                 conn,
                 ingest_run_id=run_id,

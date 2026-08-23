@@ -6,12 +6,94 @@ re-measurement's Measurement guard: a summary whose buckets do not sum is a
 number that cannot be checked, and every row must land in exactly one of them.
 """
 import pathlib
+import uuid
 
 import pytest
 
 from drugref.ingest import drugcentral, drugcentral_run
 
 FIXTURE = pathlib.Path("tests/fixtures/drugcentral_ddi_subset.sql.gz")
+
+# Two moieties DELIBERATELY sharing the display_name 'gatifloxacin', so
+# load_registry's first_wins must pick one deterministically -- fixed, ordered
+# UUIDs (rather than gen_random_uuid()) so the test can assert WHICH one wins
+# without re-deriving it. _GATIFLOXACIN_LOW sorts before _GATIFLOXACIN_HIGH
+# under both PostgreSQL's native uuid ordering and plain text comparison, so
+# there is no ambiguity about which one `ORDER BY display_name, moiety_uuid`
+# visits first.
+_GATIFLOXACIN_LOW = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_GATIFLOXACIN_HIGH = uuid.UUID("ffffffff-ffff-ffff-ffff-fffffffffffe")
+_PIOGLITAZONE = uuid.UUID("00000000-0000-0000-0000-000000000002")
+# ONE moiety carries BOTH names below -- see _seed_registry's docstring for
+# why that is what makes ddi row 870 a genuine self-pair.
+_ACETAMINOPHEN_AND_SULFINPYRAZONE = uuid.UUID("00000000-0000-0000-0000-000000000003")
+
+
+def _seed_registry(conn) -> int:
+    """Seed a small, real registry so the fixture's rows resolve for real.
+
+    conftest's `_migrated` fixture applies SCHEMA ONLY, so every other
+    DB-gated test in this module runs `ingest_drugcentral` against an EMPTY
+    registry: every endpoint is honestly unresolved, `resolved == self_pair
+    == 0` on every run, and the `elif record.resolved` branch of the counting
+    loop is never taken at all (review round, Finding 1). This fixture buys
+    three things the rest of the module cannot exercise:
+
+    1. A REAL resolved, non-self pair: 'gatifloxacin' and 'pioglitazone' are
+       registered as two DIFFERENT moieties, so ddi rows 15 and 2890 (the
+       fixture's own both-order, disagreeing-severity pair -- see
+       tests/fixtures/make_drugcentral_subset.py's selection notes) resolve
+       to two distinct moiety_uuids and exercise drugcentral_ddi_pair's
+       orientation-collapse and most-severe-wins tie-break for real.
+    2. A REAL self-pair: 'acetaminophen' is registered as the display_name
+       for _ACETAMINOPHEN_AND_SULFINPYRAZONE, and a SECOND identity_claim
+       carries sulfinpyrazone's own InChIKey
+       ('MBGGBVCUIVRRBF-UHFFFAOYSA-N', read straight from the fixture's
+       `structures` table) against that SAME moiety. So 'acetaminophen'
+       resolves via the display_name route and 'sulfinpyrazone' resolves via
+       the InChIKey route, and both land on ONE moiety -- ddi row 870
+       becomes a genuine self-pair. This is the ONLY thing that can catch a
+       regression that swaps the counting loop's `if record.self_pair: ...
+       elif record.resolved: ...` order (self_pair is a STRICT SUBSET of
+       resolved, per AssertionRecord.self_pair's own docstring): with the
+       checks swapped, a self-pair row is `resolved` too, so it would be
+       silently folded into the `resolved` bucket and `rows_self_pair` would
+       read 0 no matter how many genuine self-pairs the run produced.
+    3. A REAL duplicate registry key: TWO 'gatifloxacin' moieties are
+       registered (_GATIFLOXACIN_LOW, _GATIFLOXACIN_HIGH). load_registry's
+       `ORDER BY display_name, moiety_uuid` + `first_wins` must resolve every
+       'gatifloxacin' endpoint to the LOWER uuid, deterministically, and
+       report the collision through `duplicate_keys` rather than silently
+       dropping it -- exercising the live SQL, not just first_wins's own
+       pure unit tests (tests/test_drugcentral_resolve.py).
+
+    'cortisone' (ddi row 1288's other endpoint) is deliberately left
+    unregistered: it is absent from the fixture's own `structures`/`synonyms`
+    tables too, so that row stays an honest, unresolved miss -- the fourth
+    bucket every other DB-gated test in this module already covers.
+
+    Returns the seed run's ingest_run_id, in case a future test needs it.
+    """
+    seed_run = conn.execute(
+        "INSERT INTO drugref.ingest_run "
+        "(source, upstream_release, source_checksum, writer) "
+        "VALUES ('UNII', 'test', 'test', 'unii_run') RETURNING ingest_run_id"
+    ).fetchone()[0]
+    for moiety_uuid, name in (
+            (_GATIFLOXACIN_LOW, "gatifloxacin"),
+            (_GATIFLOXACIN_HIGH, "gatifloxacin"),
+            (_PIOGLITAZONE, "pioglitazone"),
+            (_ACETAMINOPHEN_AND_SULFINPYRAZONE, "acetaminophen")):
+        conn.execute(
+            "INSERT INTO drugref.substance_moiety "
+            "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
+            (moiety_uuid, name, seed_run))
+    conn.execute(
+        "INSERT INTO drugref.identity_claim (moiety_uuid, scheme, value, ingest_run) "
+        "VALUES (%s, 'INCHIKEY', 'MBGGBVCUIVRRBF-UHFFFAOYSA-N', %s)",
+        (_ACETAMINOPHEN_AND_SULFINPYRAZONE, seed_run))
+    conn.commit()
+    return seed_run
 
 
 def test_the_summary_refuses_to_exist_unless_its_buckets_sum():
@@ -41,10 +123,21 @@ def test_the_summary_refuses_a_read_count_that_excludes_more_than_it_read():
 @pytest.fixture
 def _clean(conn):
     """ingest_drugcentral COMMITS, so the conn fixture's rollback cannot undo it.
-    Same shape as tests/test_ingest_run.py's autouse truncate fixture."""
+    Same shape as tests/test_ingest_run.py's autouse truncate fixture.
+
+    Also truncates substance_moiety and identity_claim, EXPLICITLY rather than
+    relying on the CASCADE from ingest_run alone: the registry-seeded test
+    below (test_a_seeded_registry_...) commits real moiety and identity_claim
+    rows via _seed_registry so the resolution cascade fires for real, and
+    those must not survive to the next test file any more than the
+    DrugCentral rows do (review round, "make sure cleanup cannot leak
+    seeded moieties"). Listed explicitly, matching test_ingest_run.py's own
+    style, so a reader does not have to trace the FK graph to see what this
+    clears."""
     yield
     conn.execute("TRUNCATE drugref.drugcentral_ddi_assertion, "
-                 "drugref.open_question, drugref.ingest_run CASCADE")
+                 "drugref.open_question, drugref.identity_claim, "
+                 "drugref.substance_moiety, drugref.ingest_run CASCADE")
     conn.commit()
 
 
@@ -94,3 +187,66 @@ def test_a_renumbered_reference_writes_nothing_at_all(conn, tmp_path):
             conn, dump_path=forged, release="11012023")
     after = conn.execute("SELECT count(*) FROM drugref.ingest_run").fetchone()[0]
     assert after == before
+
+
+@pytest.mark.usefixtures("_clean")
+def test_a_seeded_registry_resolves_collapses_and_picks_the_lower_uuid(conn):
+    """The ONE test in this module that runs the resolution cascade for real.
+
+    Review round, Finding 1: every OTHER DB-gated test here ingests against
+    an empty registry, so `resolved == self_pair == 0` on every row and the
+    orchestrator's `elif record.resolved` branch is never taken -- a
+    regression that swapped the self_pair/resolved check order would pass
+    the whole suite. _seed_registry's docstring explains exactly how this
+    test's four seeded rows turn the fixture's four bundleable ddi rows into
+    one real resolved pair, one real self-pair, one real duplicate registry
+    key, and one honest miss -- all four buckets, all exercised through
+    `ingest_drugcentral` itself rather than through the pure resolver's own
+    isolated unit tests.
+    """
+    _seed_registry(conn)
+    summary = drugcentral_run.ingest_drugcentral(
+        conn, dump_path=FIXTURE, release="11012023")
+
+    # ddi rows 15 and 2890: gatifloxacin/pioglitazone, both orders, resolve to
+    # TWO DIFFERENT moieties -- two genuinely resolved (non-self-pair) rows.
+    assert summary.rows_resolved == 2
+    # ddi row 870: acetaminophen/sulfinpyrazone resolve to ONE moiety -- the
+    # self-pair _seed_registry constructs. This is the assertion a swapped
+    # self_pair/resolved check order breaks: see the mutation check in the
+    # fix report for the reviewer.
+    assert summary.rows_self_pair == 1
+    # ddi row 1288: cortisone never resolves (registered nowhere, and absent
+    # from the fixture's own structures/synonyms tables), so the whole row
+    # stays an honest miss.
+    assert summary.rows_unresolved == 1
+
+    # Finding 1's own request: drugcentral_ddi_pair collapses the both-order
+    # pair to ONE row, and the more severe orientation (row 15, 'Critical')
+    # wins over the reverse orientation (row 2890, 'Significant').
+    pair_rows = conn.execute(
+        "SELECT severity FROM drugref.drugcentral_ddi_pair "
+        "WHERE moiety_lo = least(%s, %s) AND moiety_hi = greatest(%s, %s)",
+        (_GATIFLOXACIN_LOW, _PIOGLITAZONE,
+         _GATIFLOXACIN_LOW, _PIOGLITAZONE)).fetchall()
+    assert len(pair_rows) == 1, "the both-order pair must collapse to ONE row"
+    assert pair_rows[0][0] == "contraindicated", (
+        "Critical (row 15) must win over Significant (row 2890)")
+
+    # A self-pair asserts nothing about an interaction between two drugs, so
+    # it must be ABSENT from drugcentral_ddi_pair, not merely un-severe.
+    self_paired = conn.execute(
+        "SELECT count(*) FROM drugref.drugcentral_ddi_pair "
+        "WHERE moiety_lo = %s AND moiety_hi = %s",
+        (_ACETAMINOPHEN_AND_SULFINPYRAZONE,
+         _ACETAMINOPHEN_AND_SULFINPYRAZONE)).fetchone()[0]
+    assert self_paired == 0
+
+    # Finding 2: the duplicate 'gatifloxacin' display_name is counted, and
+    # resolves deterministically to the LOWER of the two registered uuids.
+    assert summary.duplicate_keys >= 1
+    row_15 = conn.execute(
+        "SELECT moiety_1_uuid, moiety_2_uuid FROM drugref.drugcentral_ddi_assertion "
+        "WHERE upstream_key = 'C23308143128526'").fetchone()
+    assert _GATIFLOXACIN_LOW in row_15
+    assert _GATIFLOXACIN_HIGH not in row_15
