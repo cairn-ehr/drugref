@@ -99,6 +99,60 @@ def test_the_clear_is_per_source_and_covers_the_whole_projection(conn):
         "SELECT count(*) FROM drugref.drugcentral_ddi_assertion").fetchone() == (0,)
 
 
+@pytest.mark.usefixtures("conn")
+def test_a_mixed_row_keeps_every_value_beside_its_own_endpoint(conn):
+    """THE TRANSPOSITION TEST. Catches endpoint_1_name and endpoint_2_name being
+    swapped against each other INSIDE add_drugcentral_assertion -- the column
+    list and the parameter tuple drifting apart, which is the one drift the
+    function's keyword-only signature cannot prevent, because the signature only
+    protects the CALLER.
+
+    Nothing else in the suite could see it. The final review proved that by
+    execution: with `endpoint_1_name`/`endpoint_2_name` transposed in the INSERT,
+    and again with `route_1`/`route_2` transposed, all 1959 tests still passed.
+    The reason is that every other test writing through this function resolves
+    BOTH endpoints or NEITHER, and a transposition of two equal-shaped columns is
+    invisible on a symmetric row. This test writes the asymmetric shape instead --
+    endpoint 1 resolved onto a real moiety on route 'display_name', endpoint 2
+    unresolved with a NULL uuid on route 'unresolved' -- which is the shape 37
+    rows of the real 2023 release actually have.
+
+    WHY IT IS WORTH A TEST OF ITS OWN RATHER THAN A CODE READING. Under the name
+    transposition, gap_unresolved_ddi_endpoint (which selects endpoint_1_name
+    WHERE moiety_1_uuid IS NULL, and the mirror for endpoint 2) would publish the
+    RESOLVED partner's name as the unresolvable endpoint -- 'rifabutin' where
+    'cortisone' belongs -- and questions.register_from_gaps would mint
+    question_uuids from it. Those UUIDs are immortal and externally cited, so a
+    wrong one is not cheaply retractable; the gap-view assertion at the end of
+    this test is therefore not decoration, it is the consequence being pinned.
+    """
+    run = _run(conn)
+    resolved = _moiety(conn, run, "rifabutin")
+    assert interactions.add_drugcentral_assertion(
+        conn, ingest_run_id=run, source="DRUGCENTRAL", upstream_key="C56.3",
+        endpoint_1_name="rifabutin", endpoint_2_name="cortisone",
+        upstream_label="RIFABUTIN/CORTISONE [VA Drug Interaction]",
+        severity_label="Significant",
+        moiety_1_uuid=resolved, moiety_2_uuid=None,
+        route_1="display_name", route_2="unresolved") is True
+
+    # Every column read back beside the endpoint it belongs to. Asserted as one
+    # tuple rather than six separate asserts so a transposition cannot be half
+    # caught: the whole row is either aligned or it is not.
+    assert conn.execute(
+        "SELECT endpoint_1_name, endpoint_2_name, moiety_1_uuid, moiety_2_uuid, "
+        "       route_1, route_2 "
+        "FROM drugref.drugcentral_ddi_assertion").fetchone() == (
+            "rifabutin", "cortisone", resolved, None, "display_name", "unresolved")
+
+    # The consequence, through the view that mints immortal question keys: the
+    # UNRESOLVED endpoint's name is what gets published, never the resolved
+    # partner's.
+    assert conn.execute(
+        "SELECT endpoint_name, row_count "
+        "FROM drugref.gap_unresolved_ddi_endpoint").fetchall() == [("cortisone", 1)]
+
+
 def test_the_projection_tuple_is_restated_independently():
     """Pinned by name, as every sibling table tuple is: dropping a table from one
     of these leaves a projection that grows a little on every ingest."""
