@@ -62,3 +62,39 @@ def test_class_contraindication_source_is_NOT_widened(conn):
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
         "WHERE conname = 'class_contraindication_source'").fetchone()
     assert "DRUGCENTRAL" not in definition
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_two_va_bands_are_seeded_and_mapped(conn):
+    """VA/NDF-RT's own semantics: Critical = avoid, Significant = monitor/adjust.
+
+    `major` is deliberately unused by this source. A two-band authority has two
+    bands, and spreading them across three grades would invent a distinction VA
+    does not draw.
+    """
+    rows = conn.execute(
+        "SELECT source_label, severity FROM drugref.ddi_source_severity "
+        "WHERE source = 'DRUGCENTRAL' ORDER BY source_label").fetchall()
+    assert rows == [("Critical", "contraindicated"), ("Significant", "moderate")]
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_mapped_severity_must_be_a_real_grade(conn):
+    """The FK into severity_kind is what stops a mapping naming a grade that has
+    no rank -- and severity_rank is what decides which of two grades a consumer
+    sees, so a rankless one would make that non-deterministic."""
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        conn.execute(
+            "INSERT INTO drugref.ddi_source_severity "
+            "(source, source_label, severity) "
+            "VALUES ('DRUGCENTRAL', 'Catastrophic', 'apocalyptic')")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_mapping_is_keyed_per_source(conn):
+    """Two authorities may both use the word 'Significant' and mean different
+    things, so the label alone is not the key."""
+    (definition,) = conn.execute(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conname = 'ddi_source_severity_pkey'").fetchone()
+    assert definition == "PRIMARY KEY (source, source_label)"

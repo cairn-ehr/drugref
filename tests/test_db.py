@@ -304,6 +304,12 @@ def test_apply_migrations_is_idempotent(conn):
         # Slice 6r, db/045: immutable research history. These rows deliberately
         # carry no clinical ruling, grade, signature or mutable workflow state.
         "reviewer_annotation", "reviewer_evidence_reference",
+        # Issue 101, db/049: DrugCentral's `ddi` table as drugref's third
+        # interaction candidate source. ddi_source_severity maps one upstream
+        # authority's severity words onto drugref's four grades, AS DATA rather
+        # than as code, because the mapping is a clinical judgement a node
+        # operator must be able to SELECT and disagree with.
+        "ddi_source_severity",
     }
 
 
