@@ -308,8 +308,11 @@ def test_apply_migrations_is_idempotent(conn):
         # interaction candidate source. ddi_source_severity maps one upstream
         # authority's severity words onto drugref's four grades, AS DATA rather
         # than as code, because the mapping is a clinical judgement a node
-        # operator must be able to SELECT and disagree with.
-        "ddi_source_severity",
+        # operator must be able to SELECT and disagree with. drugcentral_ddi_
+        # assertion is the content table itself -- fda_cyp_assertion's shape,
+        # one row per published interaction, resolved or not, so the withheld
+        # rows (an endpoint drugref cannot key) are stored rather than dropped.
+        "ddi_source_severity", "drugcentral_ddi_assertion",
     }
 
 
