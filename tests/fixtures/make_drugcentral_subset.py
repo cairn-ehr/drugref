@@ -37,6 +37,26 @@ The `ddi_ref_id = 2` rows are VHA NDF-RT content -- a US federal work -- and are
 committed in full, at the fair-dealing scale tests/fixtures/pbs_items_subset.csv
 already established for a handful of upstream rows.
 
+WHAT IS DELIBERATELY *NOT* REDACTED, AND WHY THAT WAS CHECKED RATHER THAN
+ASSUMED: `source_id` is committed unredacted on every row, including the
+excluded ref-1/ref-3 ones, even though on those rows it carries readable text
+that mirrors the source compendium's own monograph heading rather than an
+opaque code -- e.g. id 15522's "MAOIs or RIMAs + Buspirone" (Stockley's) and id
+15535's "Conivaptan: CYP3A4 Substrates" (Lexicomp). Rule 6 requires the check to
+be made BEFORE a source is added, not merely that the result look safe in
+hindsight, so the determination is recorded here rather than left for a future
+maintainer to re-derive under time pressure. Two independent grounds: (1) these
+are short noun-phrase titles/headings, categorically outside US copyright
+protection regardless of authorship (37 C.F.R. Sec 202.1(a) -- "words and short
+phrases such as names, titles, and slogans"); (2) they restate the same
+drug-pair fact already committed unredacted in `drug_class1`/`drug_class2` on
+the very same rows, under the same facts-are-not-copyrightable reasoning NOTICE
+already invokes for the ONCHIGH list (Feist Publications, Inc. v. Rural
+Telephone Service Co., 499 U.S. 340 (1991)). If a future regeneration ever
+selects a ref-1/ref-3 row whose `source_id` is not a short heading but
+free-form prose, THIS determination no longer covers it and the row needs the
+same redaction `description` gets.
+
 WHY THE GENERATOR READS THE REAL .sql.gz RATHER THAN THE EXTRACTED TSV CACHE
 under downloads/DRUGCENTRAL/extracted/: that cache exists to make repeated
 *measurement* runs cheap (tools/drugcentral_cache.py), and it round-trips SQL
@@ -250,10 +270,14 @@ def _verify_escaper_is_invertible() -> None:
     """Belt-and-braces: prove `encode_copy_field` inverts against the real
     decoder before trusting it with 17 rows of real data. Exercises the cases a
     plain-prose ddi.description will never happen to cover on its own -- a
-    literal tab, a literal backslash, and the two-character string that LOOKS
-    like the NULL sentinel but must not decode as one.
+    literal tab, a literal backslash, the two-character string that LOOKS like
+    the NULL sentinel but must not decode as one, and the three named escapes
+    (backspace, form feed, vertical tab) no selected row's text contains, so
+    every entry in `_ENCODE_ESCAPES` is proven by execution here, not merely
+    reasoned about from matching `decode_copy_field`'s own table.
     """
-    for value in (None, "", "a\tb\n\\c", "\\N", "trailing backslash: \\"):
+    for value in (None, "", "a\tb\n\\c", "\\N", "trailing backslash: \\",
+                 "a\bb\fc\vd"):
         encoded = encode_copy_field(value)
         decoded = decode_copy_field(encoded)
         if decoded != value:
