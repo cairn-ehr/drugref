@@ -143,3 +143,80 @@ def test_the_pair_carries_the_upstream_band_beside_the_drugref_grade(conn):
         "SELECT severity, upstream_severity_label, candidate_source, upstream_release "
         "FROM drugref.drugcentral_ddi_pair").fetchone()
     assert row == ("moderate", "Significant", "DRUGCENTRAL", "11012023")
+
+
+@pytest.mark.usefixtures("conn")
+def test_medrt_exact_pairs_reach_a_consumer_at_last(conn):
+    """moiety_contraindication has had NO read view since db/014 --
+    ddi_candidate_pair expands class_contraindication only. This is the first."""
+    run = _run(conn, "MED-RT", "medrt_run", "2026.07.06")
+    a, b = _moiety(conn, run, "warfarin"), _moiety(conn, run, "aspirin")
+    conn.execute(
+        "INSERT INTO drugref.moiety_contraindication "
+        "(subject_moiety_uuid, object_moiety_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, 'CI_ChemClass', 'MED-RT', %s)", (a, b, run))
+    row = conn.execute(
+        "SELECT candidate_source, relationship, severity, subject_moiety = %s "
+        "FROM drugref.exact_ddi_pair", (a,)).fetchone()
+    assert row == ("MED-RT", "CI_ChemClass", None, True)
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_medrt_pair_is_keyed_unordered_even_though_it_is_directional(conn):
+    """moiety_lo/moiety_hi is the LOOKUP key -- 'am I about to co-prescribe these
+    two?' is an unordered question. The direction is not lost; it moves to
+    subject_moiety/object_moiety, which stay populated."""
+    run = _run(conn, "MED-RT", "medrt_run", "2026.07.06")
+    a, b = _moiety(conn, run, "warfarin"), _moiety(conn, run, "aspirin")
+    conn.execute(
+        "INSERT INTO drugref.moiety_contraindication "
+        "(subject_moiety_uuid, object_moiety_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, 'CI_ChemClass', 'MED-RT', %s)", (a, b, run))
+    lo, hi, subject, obj = conn.execute(
+        "SELECT moiety_lo, moiety_hi, subject_moiety, object_moiety "
+        "FROM drugref.exact_ddi_pair").fetchone()
+    assert (lo, hi) == (min(a, b), max(a, b))
+    assert (subject, obj) == (a, b)
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_drugcentral_pair_asserts_no_direction(conn):
+    """NULL states a fact about the source rather than hiding a missing value:
+    DrugCentral publishes an unordered pair and names no subject."""
+    run = _run(conn)
+    a, b = _moiety(conn, run, "a"), _moiety(conn, run, "b")
+    _assert_row(conn, run, "X", a, b, "A/B [VA]", band="Critical")
+    row = conn.execute(
+        "SELECT candidate_source, subject_moiety, object_moiety, relationship, "
+        "       severity, severity_rank, upstream_severity_label "
+        "FROM drugref.exact_ddi_pair").fetchone()
+    assert row == ("DRUGCENTRAL", None, None, None, "contraindicated", 1, "Critical")
+
+
+@pytest.mark.usefixtures("conn")
+def test_both_authorities_appear_for_one_pair_rather_than_one_hiding_the_other(conn):
+    """Fewer rows is the harm direction for a contraindication, so this is a
+    UNION ALL and a consumer sees both authorities. Which one wins is a curated
+    question (issues 97 and 106), deliberately not answered here."""
+    medrt = _run(conn, "MED-RT", "medrt_run", "2026.07.06")
+    a, b = _moiety(conn, medrt, "warfarin"), _moiety(conn, medrt, "aspirin")
+    conn.execute(
+        "INSERT INTO drugref.moiety_contraindication "
+        "(subject_moiety_uuid, object_moiety_uuid, relationship, source, ingest_run) "
+        "VALUES (%s, %s, 'CI_ChemClass', 'MED-RT', %s)", (a, b, medrt))
+    _assert_row(conn, _run(conn), "X", a, b, "A/B [VA]", band="Critical")
+    sources = conn.execute(
+        "SELECT candidate_source FROM drugref.exact_ddi_pair "
+        "ORDER BY candidate_source").fetchall()
+    assert sources == [("DRUGCENTRAL",), ("MED-RT",)]
+
+
+@pytest.mark.usefixtures("conn")
+def test_ddi_candidate_pair_is_untouched_by_this_migration(conn):
+    """db/034 measured an arm added to that view costing 3.6x with the new grain
+    EMPTY -- a structural cost paid by every existing consumer. This slice is
+    additive, and this test is what keeps it that way."""
+    (definition,) = conn.execute(
+        "SELECT pg_get_viewdef('drugref.ddi_candidate_pair'::regclass)").fetchone()
+    assert "drugcentral" not in definition.lower()
+    assert "exact_ddi_pair" not in definition

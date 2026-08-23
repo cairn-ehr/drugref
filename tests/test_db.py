@@ -315,7 +315,11 @@ def test_apply_migrations_is_idempotent(conn):
         # drugcentral_ddi_pair (section 4) is the read-time VIEW over it: one row
         # per unordered moiety pair, orientation collapsed and most-severe-wins,
         # named explicitly here for the same reason ddi_candidate_pair is above.
+        # exact_ddi_pair (section 5) is the read path moiety_contraindication has
+        # lacked since db/014: it unions DrugCentral's graded pairs with MED-RT's
+        # CI_ChemClass moiety arm, additive to (not merged into) ddi_candidate_pair.
         "ddi_source_severity", "drugcentral_ddi_assertion", "drugcentral_ddi_pair",
+        "exact_ddi_pair",
     }
 
 

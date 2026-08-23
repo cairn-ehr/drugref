@@ -258,3 +258,69 @@ COMMENT ON VIEW drugref.drugcentral_ddi_pair IS
 COMMENT ON COLUMN drugref.drugcentral_ddi_pair.upstream_severity_label IS
     'The authority''s own word, kept beside the derived grade so the mapping can '
     'be checked and disagreed with without re-reading a 1.4 GB dump.';
+
+-- ============================================================================
+-- 5. exact_ddi_pair -- the read path exact pairs have never had
+-- ============================================================================
+-- drugref has held EXACT drug-drug pairs since db/014 and no view has ever
+-- returned them: ddi_candidate_pair expands class_contraindication only, and
+-- nothing else reads moiety_contraindication at all. A second source of exact
+-- pairs makes that hole load-bearing, so this view closes it.
+--
+-- WHY NOT AN ARM ON ddi_candidate_pair, which is the shape db/033 chose for the
+-- two grains: db/034 then MEASURED that arm costing 3.6x with the new grain
+-- EMPTY -- a structural cost paid by every existing consumer on every query, for
+-- content most of them do not have. And that view's columns are
+-- class-expansion-shaped (via_class, member_class, is_direct), all meaningless at
+-- moiety grain, so unioning would mean 7,501 rows of NULL in three columns. This
+-- view is ADDITIVE: no existing query changes.
+--
+-- UNION ALL, not UNION: fewer rows is the harm direction for a contraindication,
+-- so a pair asserted by two authorities appears twice rather than being folded to
+-- whichever one sorted first. Which authority a consumer should believe is issues
+-- 97/106's question and is deliberately not answered here.
+CREATE OR REPLACE VIEW drugref.exact_ddi_pair AS
+-- Arm 1: MED-RT's CI_ChemClass moiety arm (db/014). DIRECTIONAL -- MED-RT states
+-- which drug the assertion is ABOUT -- so subject/object stay populated, while
+-- moiety_lo/moiety_hi give the unordered LOOKUP key both arms share. It asserts
+-- no severity, hence the NULLs.
+SELECT least(mc.subject_moiety_uuid, mc.object_moiety_uuid)    AS moiety_lo,
+       greatest(mc.subject_moiety_uuid, mc.object_moiety_uuid) AS moiety_hi,
+       mc.subject_moiety_uuid  AS subject_moiety,
+       mc.object_moiety_uuid   AS object_moiety,
+       mc.source               AS candidate_source,
+       mc.relationship,
+       NULL::text              AS severity,
+       NULL::smallint          AS severity_rank,
+       NULL::text              AS upstream_severity_label,
+       r.upstream_release,
+       r.finished_at           AS ingested_at
+FROM   drugref.moiety_contraindication mc
+JOIN   drugref.ingest_run r ON r.ingest_run_id = mc.ingest_run
+UNION ALL
+-- Arm 2: DrugCentral's graded unordered pairs. It names no subject, so those two
+-- columns are NULL -- a fact about the source, not a missing value. It names no
+-- axis either: `relationship` is MED-RT's typed predicate vocabulary and VA's
+-- assertion is simply "these two interact".
+SELECT p.moiety_lo,
+       p.moiety_hi,
+       NULL::uuid              AS subject_moiety,
+       NULL::uuid              AS object_moiety,
+       p.candidate_source,
+       NULL::text              AS relationship,
+       p.severity,
+       p.severity_rank,
+       p.upstream_severity_label,
+       p.upstream_release,
+       p.ingested_at
+FROM   drugref.drugcentral_ddi_pair p;
+
+COMMENT ON VIEW drugref.exact_ddi_pair IS
+    'Every EXACT drug-drug pair some upstream authority asserts, whatever its '
+    'grain -- the read path moiety_contraindication has lacked since db/014. '
+    'KEYED UNORDERED (moiety_lo, moiety_hi), because "am I about to co-prescribe '
+    'these two?" is an unordered question; a source that DOES assert a direction '
+    'keeps it in subject_moiety/object_moiety. CANDIDATE TIER, and DELIBERATELY '
+    'NOT A SUPERSET OF ddi_candidate_pair: that view expands CLASS rules and this '
+    'one does not, so a consumer wanting everything reads both. severity is NULL '
+    'wherever the authority states none.';
