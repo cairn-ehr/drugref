@@ -16,6 +16,7 @@ blocker](../decisions/licensing-is-a-blocker.md).
 | **MeSH** | Pharmacologic actions and descriptors | Public domain / NLM terms |
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
 | **FDA CYP/transporter table** | FDA's own examples of CYP and transporter substrates, inhibitors and inducers, by potency band | Public domain (US FDA website policy) |
+| **DrugCentral `ddi`** — the NDF-RT half only | Drug–drug interaction pairs at moiety grain, each carrying the VA's own severity band | CC BY-SA 4.0 over DrugCentral's compilation; the ingested rows are a US federal work (VHA NDF-RT) |
 
 The GSRS *software*, which drugref neither uses nor redistributes, is separately licensed
 Apache-2.0; only the public data dump is bundled.
@@ -26,6 +27,17 @@ page's own `dateModified` stamp and a SHA-256 of the fetched bytes on every inge
 which is also what lets a re-fetch of unchanged material be told apart from a genuine
 revision. Its table is an *optional, non-exhaustive* interpretive guide, so drugref stores
 the memberships FDA states and never joins its columns into interaction pairs FDA does not.
+
+DrugCentral is the one bundled source whose licence question had to be answered **per
+reference rather than per source**. Its `ddi` table cites three references, and its own
+CC BY-SA licence over the compilation is not evidence of a right to relicense a
+third-party compendium inside it — so drugref reads the dump's own `reference` table and
+ingests only `ddi_ref_id = 2`, the VHA's NDF-RT. *Stockley's Drug Interactions* (a
+copyrighted book) and Lexicomp Online (a commercial compendium) are excluded. Because that
+`2` is a surrogate key in a database dump published once, the constant is not trusted on
+its own: every ingest re-reads the reference row and **aborts** unless its recorded authors
+and title still match, so a re-published dump that renumbered its references stops rather
+than bundling an excluded one.
 
 Upstream attributions are recorded in the repository's
 [`NOTICE`](https://github.com/cairn-ehr/drugref/blob/main/NOTICE) file.
@@ -53,12 +65,13 @@ contain. Both checks matter, and only the first one is about licences:
 | --- | --- | --- |
 | **DDInter** | CC BY-NC-SA — NonCommercial | **Excluded.** Not AGPL-compatible; node-local plug-in only |
 | **OnSIDES** (data) | CC BY 4.0 — clean | **Not a fit.** Its unit is one label × one MedDRA adverse-effect term; there is no drug–drug pair anywhere in its shipped data. Its MIT-licensed *method* remains the model for label mining |
-| **DrugCentral** `ddi` | CC BY-SA 4.0 | **Candidate, partially.** 7,571 of its 7,621 interaction rows (dump `11012023`, `dbversion` 54) come from the VHA's NDF-RT (US federal, clean). The remaining 50 cite *Stockley's Drug Interactions* (a copyrighted book) and Lexicomp (commercial) and are **excluded** — a share-alike licence over a compilation is not evidence of the right to relicense a third-party compendium inside it |
+| **DrugCentral** `ddi` | CC BY-SA 4.0 | **Bundled, partially — shipped 2026-08-23.** 7,571 of its 7,621 interaction rows (dump `11012023`, `dbversion` 54) come from the VHA's NDF-RT (US federal, clean) and are ingested, yielding 7,501 distinct drug pairs. The remaining 50 cite *Stockley's Drug Interactions* (a copyrighted book) and Lexicomp (commercial) and are **excluded** — a share-alike licence over a compilation is not evidence of the right to relicense a third-party compendium inside it. The release is pinned to November 2023, with no successor published, so it is a floor that does not refresh |
 | **CredibleMeds** (QT risk) | Registration-gated, not redistributable | **Excluded.** No open, redistributable QT-prolongation list is published by FDA, EMA or BfArM either |
 
 The pattern worth stating plainly: **a source can be perfectly licence-clean and still be
 the wrong source.** OnSIDES cleared the licence gate and failed on content; DrugCentral
-cleared it only for the part of its content whose provenance was actually checked.
+cleared it only for the part of its content whose provenance was actually checked, and only
+that part is bundled.
 
 ## Documentation licence
 

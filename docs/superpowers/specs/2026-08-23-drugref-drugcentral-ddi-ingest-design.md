@@ -314,7 +314,15 @@ gets silence on a pair DrugCentral grades `contraindicated`. It is outweighed by
 on the hot path before it ships (§9). The cost is stated plainly: a consumer must learn one view name. That is
 recorded in the published decision record so it is discoverable outside this spec.
 
-## 7. The gap — kind 17, `unresolved_ddi_endpoint`
+## 7. The gap — the EIGHTEENTH kind, `unresolved_ddi_endpoint`
+
+> **Correction, applied in place on 2026-08-23 rather than left to decay.** This section shipped saying
+> *"kind 17"*, and it is wrong: the live `open_question_gap_kind` CHECK already held SEVENTEEN values when this
+> design was written, because `db/039` had added `fda_cyp_unadjudicated` in slice 5c.2g. `unresolved_ddi_endpoint`
+> is the **eighteenth**. Nothing else in this section moves — the migration copies the live CHECK verbatim before
+> extending it (and its own comment records finding seventeen where this design assumed sixteen), and the 10/37
+> figures below reproduced exactly. PROJECT-NOTES § "Plan A" is the count's ONE home and now says EIGHTEEN.
+
 
 `gap_unresolved_ddi_endpoint` reads the assertion table directly; no third table is needed. Grain is **one
 folded endpoint name** — 10 today, from 37 rows — because a curator resolves a name, not a row.

@@ -13,103 +13,116 @@
 
 ## ⇒ NEXT
 
-**Branch `codex/drugcentral-remeasurement`, from `main` at `c10b97b`** (PR #145 merged 2026-08-20; #86 CLOSED).
-Migrations through **`db/048`** are frozen and **this round adds none**. Suite total lives in
-PROJECT-NOTES § "How to run / test" and nowhere else (issue 146); this branch adds 94 tests.
+**Branch `claude/drugcentral-ddi-ingest`, from `main` at `ae1d1d3`** (PR #147, the re-measurement, merged
+2026-08-23). Migrations through **`db/049`** — this round added it. The suite total lives in PROJECT-NOTES
+§ "How to run / test" and **nowhere else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it
+there at the START of the session, because that is what caught the last drift.
 
-**⇒ JUST FINISHED — the DrugCentral re-measurement, and it changes the slice that follows.** Results:
-[`drugcentral-ddi-remeasurement-results`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md);
-full account in PROJECT-NOTES § "The DrugCentral re-measurement". No SQL, no source admitted, no ingest.
-Issue [#101](https://github.com/cairn-ehr/drugref/issues/101)'s figures rested on one unrepeated 2026-08-13 run
-over a 1.4 GB dump that was then deleted. The dump is re-fetched (SHA-256 recorded in PROJECT-NOTES), the
-measurement lives in `tools/` as six modules with **94 tests**, and it re-runs in ~25 s from a
-cached extract.
+**⇒ JUST FINISHED — the DrugCentral `ddi` ingest, [#101](https://github.com/cairn-ehr/drugref/issues/101),
+`db/049`.** Design:
+[`drugcentral-ddi-ingest`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-design.md); measurement
+on the real release:
+[`…-ingest-measurement`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-measurement.md); full
+account and **every figure**: PROJECT-NOTES § "The DrugCentral ddi ingest". Do not re-derive them from here.
 
-**Rule 6 reproduces EXACTLY, re-read from the `reference` table rather than inferred:** `ddi_ref_id = 2` is the
-VHA's NDF-RT (7,571 rows, clean, US federal); `1` is Stockley's (copyrighted book) and `3` is Lexicomp
-(commercial) — both **out**. Licence re-confirmed at source as CC BY-SA 4.0. Staleness stands: the download page
-still offers only 11/01/2023.
+**What shipped.** `source = 'DRUGCENTRAL'` admitted (`ingest_run_source` + `ingest_run_writer` + an explicit
+`ids._SOURCE_CANONICAL` entry + `provenance.py`, all in one commit — the trio whose failure mode is a silent
+no-op rebuild). `ddi_source_severity`, the upstream-band → drugref-grade mapping **as seeded data**.
+`drugcentral_ddi_assertion`, every bundleable row as published. `drugcentral_ddi_pair`, orientation collapsed,
+most-severe-wins. **`exact_ddi_pair` — the read path exact drug–drug pairs have never had**: MED-RT's 1,442
+`moiety_contraindication` rows reached no consumer view at all before this. `gap_unresolved_ddi_endpoint` and
+the **eighteenth** question kind. Plus `tools/drugcentral_{dump,resolve}.py` promoted into
+`src/drugref/ingest/` with **no re-export shims**, so the instrument and the ingest are the same code, and a
+standalone `drugref ingest drugcentral` subcommand (NOT a chain step — 1.4 GB, one pinned release).
 
-**⇒ THE FINDING: resolve endpoints on STRUCTURE, not on spelling.** DrugCentral resolves its own free text to a
-`struct_id` for 918 of 924 NDF-RT endpoint names, and `structures` carries an InChIKey and a CAS number drugref
-already holds as `identity_claim` rows (16,046 / 19,010). A `display_name → inchikey → cas` cascade takes
-resolution from 857/924 names to **914**, unresolvable rows from 598 to **37**, and **NEW pairs from 6,337 to
-6,866** — with **no synonym bridge**, which is exactly what #101 had budgeted for. CAS is last on purpose; a
-blank structural key is never looked up (a registry holding `""` would collapse every keyless substance onto one
-moiety — that guard has a test).
+**Measured end to end on `drugref_dc049`: 12 predictions, 12 MATCHED, 0 mismatched, no code defects.** 7,621
+rows read, 50 excluded by rule 6, 7,571 bundleable → 7,501 pairs, 37 unresolvable over 10 endpoint names, 0
+self-pairs, in 20.2 s of which the DB transaction is ~1.5 ms. `ddi_candidate_pair` (21,664) and
+`substance_moiety` (19,438) did not move, and that view's plan is byte-identical before and after once
+run-to-run noise is blanked.
 
-**Seven published figures were wrong and are corrected in place** in PROJECT-NOTES and ROADMAP: "8 MED-RT class
-names" is **4, and they are MeSH**; 102 → **106**; 7,000 keyable → **6,991**; `MAOIs or RIMAs` **is not in the
-table** (the only `MAOI` hit is `clotrimazole`); the QT strings are `High Risk QT Prolonging Agents` /
-`Moderate Risk QT Prolonging Agents`; **all three QT rows are `ddi_ref_id = 3`**, so issue #93's content sits
-in the half rule 6 forbids; and the endpoint provenance split is **905 / 13 / 6**, not 905 / 17 / 2 — the
-`structures` half reproduced exactly and the synonym half did not. Everything on the moiety side — 7,621 / 970 /
-860 / 6,973 / 6,941 / 604 / 6,337 — reproduced to the row.
+**Two measurements taken for the design changed it.** (1) The `description` column carries **no clinical
+content** — all 7,571 match `NAME1/NAME2 [VA Drug Interaction]` — so the severity band is the whole of what
+this source adds, and the design budget went there. (2) **The source asserts an UNORDERED pair**: 33 published
+in both orders, 4 disagreeing with themselves, which is what rules out the directional
+`moiety_contraindication`. The 4 were located and named for the first time by the measurement —
+atazanavir/atorvastatin, atazanavir/rifapentine, gemfibrozil/pioglitazone, gatifloxacin/pioglitazone — all
+resolving `contraindicated`.
 
-**⇒ THEN: the code review of this branch, and it found real defects in the instrument.** All fixed on the same
-branch; the results file was regenerated end to end, not edited. The five that mattered: the TSV cache was
-committed by `ddi.tsv` merely existing, so a crashed extract left a truncated cache the next run measured, and a
-warm cache plus a new `--dump` printed the new SHA-256 over the old figures — there is now a manifest, written
-last and validated first, and `extract` builds into a sibling directory and renames. `csv.DictWriter` wrote a
-blank column for any projection the dump did not declare (so a renamed `structures.inchikey` would have silently
-reduced the cascade to name matching and reproduced #101's own numbers); `csv.DictReader` padded short rows with
-`None`; the three registry lookups had **no `ORDER BY`**, and **14 InChIKeys and 29 CAS numbers are claimed by
-more than one moiety**, so "pairs that are NEW" could differ between two runs over the same bytes; and the rule-6
-verdict was a second hard-coded `ref_id == "2"` in the renderer, unconnected to the set that filtered the rows.
-`measure`, `class_coverage`, the cache and the renderer now have tests — 60 of the 94.
+**Rule 6 discharged, and `NOTICE` says so.** Only `ddi_ref_id = 2` (VHA NDF-RT, US federal) is ingested;
+Stockley's and Lexicomp are out, and DrugCentral's own CC BY-SA over the compilation is not treated as evidence
+of a right to relicense either. The constant is not trusted alone: the orchestrator re-reads the dump's
+`reference` row and **aborts** on a renumber. The committed fixture carries all three references with the
+excluded descriptions redacted; `NOTICE` also records why the excluded rows' `source_id` is *not* redacted.
 
-**Five figures the docs called "re-derivable" were not computed by the tool, and now are**: the class residue and
-its authority (`4`, MeSH), 106, 6,991 keyable, 6,973 moiety × moiety, and the endpoint provenance split. The
-report prints keyability under **both** resolvers, because #101's 7,000 was a name-matching figure and quoting it
-beside a cascade number compares two different questions.
+**⇒ FOUR PUBLISHED FIGURES WERE WRONG AND ARE CORRECTED IN PLACE. Three were this project's own state files.**
 
-**⇒ DO THIS NEXT: design and build the DRUGCENTRAL ingest itself (#101). It has not been started.** Brainstorm
-before designing — the measurement moved the target (6,866 new pairs, structural resolution, no synonym list) and
-the open questions are now design questions, listed below. Admitting the source is **not** a one-line change:
-two CHECKs widened (`ingest_run_source`, `class_contraindication_source`) **and** an explicit
-`ids._SOURCE_CANONICAL` entry, **in the same migration** — `ids.py` warns by name against leaning on the
-upper-case fall-through, and the failure mode is a per-source rebuild that silently deletes nothing. Follow
-`db/031` (ONCHIGH) and `db/039` (FDA-CYP): copy the live catalog's CHECK **verbatim** before adding one value.
-Do not bundle release-manifest signing, class-grain #98, or public installer distribution.
+1. **The gap kind is the EIGHTEENTH.** The live CHECK already held seventeen (`db/039` added
+   `fda_cyp_unadjudicated`) while PROJECT-NOTES § "Plan A" said SIXTEEN and both the spec and the plan said
+   "kind 17". The migration was right — it copies the live CHECK verbatim — and § "Plan A" is the count's ONE
+   home and now says EIGHTEEN.
+2. **`MAOIs or RIMAs` DOES exist in the dump.** The re-measurement's own correction 4 said *"does not exist in
+   the table"*; measured, it is on **10 `ddi.source_id` rows, every one `ddi_ref_id = 1`**. It appears as an
+   ENDPOINT zero times, which is the claim that holds. Decision impact nil; the point is that **the correction
+   round's own file was wrong in the way the round exists to prevent** — a sentence's scope is a figure too.
+3. **`class_contraindication_source` did NOT need widening.** This file said it did, quoting PROJECT-NOTES
+   § "The 5c.3 source evaluation", which said it first. DrugCentral writes no class rule; that CHECK stays
+   `('MED-RT','ONCHIGH')` and a test pins that it is untouched. **The CHECK a new source really needs is
+   `ingest_run_writer`, which no document had named at all.**
+4. **The suite count** was stale again — 71 tests added over this round without it moving. Read off
+   `pytest --collect-only -q` at the start of the documentation task, written in its ONE home, and
+   deliberately not restated here.
 
-**The design questions the measurement leaves open** — none of them answerable from the dump alone:
-1. **Severity.** The bundleable subset uses exactly two labels, `Significant` (5,264) and `Critical` (2,307).
-   They must map onto drugref's own `severity_kind`, and `ddi_risk` is reference-scoped so the mapping cannot be
-   inherited from the other four labels.
-2. **Grain.** 7,501 pairs are moiety × moiety — the grain the moiety rule already handles — so this is *not* a
-   second class-grain problem. But it is drug-level assertion content arriving beside MED-RT's class-level
-   rules, and #97/#106 already ask what happens when two sources grade one pair differently.
-3. **Projection or overlay.** `ddi` is a rebuildable projection by every existing precedent, but the 2023 pin
-   means it never refreshes; decide deliberately rather than by default.
-4. **The 10 residual names** (`Vitamin E`, `atracurium`, `mivacurium`, `doxacurium`, `sodium polystyrene
-   sulfonate`, …) are biologics and mixtures with no single structure — the composition tree's problem, not the
-   ingest's. Decide whether they raise questions or are simply dropped with a count.
+## ⇒ DO THIS NEXT
+
+**ROADMAP's next content slice is `5c.3` — SPL/DailyMed mining**, whose prerequisite (`FDA-CYP`'s potency
+vocabulary, `db/039`–`db/043`) has landed. **No spec yet; it opens with its own brainstorm/design round**, and
+that round has one decision it cannot dodge: SPL section `34073-7` qualifies interactions **by potency band**
+(tizanidine: *strong* CYP1A2 inhibitors contraindicated, *moderate or weak* "avoid") while MED-RT's
+`Cytochrome P450 1A2 Inhibitors [MoA]` is one undifferentiated class. Carry the band or drop it and accept
+over-warning — it cannot be ignored. OnSIDES's **method** is the precedent; its **data** is not a DDI source
+and must stop being listed as one.
+
+**The alternative, equally ready:** `5c.5` pregnancy & lactation is **spiked, not designed** — LactMed alone
+puts 1,679 moieties outside MED-RT's thin lactation floor. It is gated on a **clinician review that has not
+happened** (a 23-row worklist ships with the spike results), and its three sources have unlike grains that must
+not be collapsed into one recommendation.
+
+**Whichever is chosen, brainstorm before designing, and measure before both.** That is now twice in a row that
+measuring first changed the shape of the slice.
 
 ## Parallel project sequencing
 
-DrugCentral remains the next **content** slice and is now measured rather than estimated. Pregnancy/lactation and
-FDA toxicity remain ready but separately gated as ROADMAP states.
+DrugCentral is done and is a **candidate-tier floor pinned to the 2023 release** — it does not refresh, and
+nothing in that tier may auto-alert. FDA toxicity (DICTrank/DIRIL/DILIrank, a non-firing evidence projection)
+remains cleared and unscheduled. Class-grain content (#98) still gates #112/#105.
 
-Do not lose 5c.2g's two broad lessons — **this round is a third instance of both**: a comment claiming a guard
-exists is not evidence the code contains the guard; and a plausible figure from a partially working parser is not
-a measurement. Six figures decayed here precisely because nobody could re-derive them.
+Do not lose the two lessons this round is now a fourth instance of: **a comment claiming a guard exists is not
+evidence the code contains it**, and **a figure nobody can re-derive decays silently** — including a figure
+that is itself a correction.
 
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). New this
-round: **[#146](https://github.com/cairn-ehr/drugref/issues/146)** — the suite-count line in PROJECT-NOTES has
-now drifted **six** times and is guarded by prose only; it wants a test that reads the stated number and counts
-the collected suite. For the next rounds: #128/#129 and #132–#135 are FDA-CYP residue; #112/#105 wait on
-class-grain content; #124 is the guard-round tail; #121/#123 remain open; #104 makes question counts depend on
-which unrelated ingest ran last; #94's seven withheld entries need research. Before production: re-run every
-parser on current releases, resolve #17, and complete the three outstanding rule-6 deeds (#6, #25, GSRS).
+round: **[#148](https://github.com/cairn-ehr/drugref/issues/148)** — `exact_ddi_pair` adds a THIRD population
+to the ungraded cross-source disagreement question (**635 of the 7,501 pairs are already reachable through
+MED-RT's class expansion and nothing compares them**), which is #97/#106 one tier down; and
+**[#149](https://github.com/cairn-ehr/drugref/issues/149)** — `fda_cyp_run.FDA_CYP_TABLES` is not registered in
+`test_source_clear_contract.py`'s `EXPECTED_TABLES`, so a table dropped from that tuple is caught by nothing
+(pre-existing). Also unfilled and recorded in PROJECT-NOTES only: `gap_unresolved_ddi_endpoint`'s
+`endpoint_name <> ''` exclusion has **no automated test** (verified by manual probe). Still standing: #146,
+#128/#129 and #132–#135 (FDA-CYP residue), #124, #121/#123, #104, #94. Before production: re-run every parser
+on current releases, resolve #17, and complete the three outstanding rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never use this database for persistent reviewer accounts or GUI service data because pytest recreates it.
-- **`drugref_dc101`** is this round's reference database — `db/048` plus the full documented `ingest chain`
-  (built in 131.9 s), and what every DrugCentral resolution figure was joined against. Keep it or rebuild it;
-  the spike needs *a* release-carrying database, not that one specifically.
+- **`drugref_dc049`** is this round's measured database — `TEMPLATE drugref_dc101` plus `drugref migrate` to
+  `049` plus the DrugCentral ingest (`ingest_run_id` 6). **`drugref_dc101`** is the untouched `db/048` baseline
+  the hot-path comparison was made against; keep both, or rebuild `dc101` from the documented chain — note that
+  chain runs neither FDA-CYP nor DrugCentral, both being standalone subcommands.
+- The dump lives at `downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz` (SHA-256 `0559…3e04f`, recorded
+  on `ingest_run.source_checksum`) with a validated TSV extract cached beside it.
 - The verification database and its exact migration state live once in PROJECT-NOTES § "How to run / test";
   do not copy that volatile map here.

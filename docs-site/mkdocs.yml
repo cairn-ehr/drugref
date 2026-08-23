@@ -73,6 +73,7 @@ nav:
       - Curating a drug–condition pair: decisions/curating-a-drug-condition-pair.md
       - Signing the curated overlay: decisions/signing-the-curated-overlay.md
       - The ONC high-priority floor is facts, not text: decisions/the-onc-high-priority-floor.md
+      - The candidate tier carries an upstream severity: decisions/upstream-severity-is-data.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

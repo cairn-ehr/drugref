@@ -287,11 +287,18 @@ intent (`question_state`), tier watermarks (`question_source_check`) and finding
 keyed off an immortal `question_uuid` external tooling can cite — so a rebuild can never erase a `withdrawn`. **Populated is
 per axis** (joins `ci_axis`). **Watermark, not closure:** only `withdrawn` is terminal. **A closed gap carrying curator work
 is retired, not deleted** (`is_current`) — the curated tables cascade from `open_question` *and* refuse `DELETE`. Rebuilt
-before commit by **five of the seven orchestrators**. **SIXTEEN** gap kinds — twelve by Slice 3, then `db/029`'s two
-(5c.1), `db/031`'s `unresolved_onc_endpoint` (5c.2) and `db/035`'s `uncurated_class_interaction_rule`. **This line
-said TWELVE for four rounds after it stopped being true**, because each round updated its own section; the count
-belongs here, so **change it here.** Re-derived end to end on `drugref_db035` (2026-08-14, `register_from_gaps` in
-4.1 s, rolled back), **21,840 live**:
+before commit by **five of the seven orchestrators**. **EIGHTEEN** gap kinds — twelve by Slice 3, then `db/029`'s
+two (5c.1), `db/031`'s `unresolved_onc_endpoint` (5c.2), `db/035`'s `uncurated_class_interaction_rule`, `db/039`'s
+`fda_cyp_unadjudicated` (5c.2g) and `db/049`'s `unresolved_ddi_endpoint` (DrugCentral). **This line said TWELVE for
+four rounds after it stopped being true, and then said SIXTEEN for two more**, because each round updates its own
+section and not this one; the count belongs here, so **change it here** — and read it off `pg_constraint` rather
+than off this file. `db/049`'s own comment records that the live catalog already held SEVENTEEN where the plan that
+wrote it assumed sixteen, which is exactly how `db/039` found sixteen where its plan assumed fifteen: **the
+migrations are right both times because they copy the live CHECK verbatim before extending it, and it is this line
+that has now been stale twice.** Re-derived end to end on `drugref_db035` (2026-08-14, `register_from_gaps` in
+4.1 s, rolled back), **21,840 live** — the table below is *that* measurement, and the two kinds added since are
+deliberately NOT folded into it, because their counts come from different databases and a table carrying two
+denominators is how [#115](https://github.com/cairn-ehr/drugref/issues/115) happened:
 
 | kind | live | | kind | live |
 |---|---|---|---|---|
@@ -303,6 +310,14 @@ belongs here, so **change it here.** Re-derived end to end on `drugref_db035` (2
 | uncurated_condition_contradiction | 168 | | ungraded_contribution | 0 |
 | unresolved_ci_object | 103 | | unresolved_onc_endpoint | 0 |
 | condition_without_indication | 97 | | **uncurated_class_interaction_rule** | **0** |
+
+**The two kinds added after that measurement, each named with the database it was measured on rather than folded
+into a table that predates them.** `fda_cyp_unadjudicated` (kind **17**, `db/039`, slice 5c.2g) — **55** questions
+on `drugref_5c2g`, split `withheld_qualified` 33 · `combination_regimen` 9 · `unresolved_substance` 8 ·
+`non_drug_entity` 5. `unresolved_ddi_endpoint` (kind **18**, `db/049`, DrugCentral) — **10** on `drugref_dc049`,
+one per folded endpoint name over 37 unresolvable rows. Neither shows up in the `drugref_db035` table above, and
+neither shows up in the `drugref_dc101` reference database either: the documented `ingest chain` runs neither
+FDA-CYP nor DrugCentral, because both are standalone subcommands.
 
 **21,840 DERIVED vs 21,848 STORED, and the 8-row gap is a real finding, not rounding**
 ([#104](https://github.com/cairn-ehr/drugref/issues/104)): `drugref curate` is deliberately not a chain step, so
@@ -2663,9 +2678,13 @@ costs nothing measurable, which is the nice part: all 50 non-NDF-RT rows are als
 not resolve** (they are class-named — `MAOIs or RIMAs`, `Strong CYP3A4 Inhibitors`), verified by the resolution
 run — 648 unresolvable rows over the whole table, 598 over the NDF-RT subset, a difference of exactly 50.
 **⇒ THE 648/598/50 ARITHMETIC REPRODUCES EXACTLY. Two things in the sentence around it do not.** (a)
-**`MAOIs or RIMAs` does not occur in the table** — the only endpoint containing the letters `MAOI` is
-`clotrimazole`; the real string is `Monoamine Oxidase Inhibitors`, so that example was paraphrased from
-memory, not read. (b) *"the rows whose endpoints are class-named"* reads as BOTH endpoints and at least three
+**`MAOIs or RIMAs` is not an ENDPOINT** — `drug_class1`/`drug_class2` carry the letters `MAOI` on **zero** of the
+7,621 rows, and the endpoint string this example was reaching for is `Monoamine Oxidase Inhibitors`, so the
+example above was paraphrased from memory rather than read. **It does exist in the table, though, in a column
+neither this note nor the correction that first fixed it was looking at:** `ddi.source_id` carries `MAOIs or
+RIMAs` on **10** rows and the shorter `MAOIs` on **3** more — **all 13 of them `ddi_ref_id = 1`**, which is every
+Stockley's row and nothing else, i.e. entirely inside the half rule 6 excludes. Re-derived 2026-08-23 against the
+recorded extract; the over-general first correction is § "The DrugCentral ddi ingest"'s own finding. (b) *"the rows whose endpoints are class-named"* reads as BOTH endpoints and at least three
 rows have an ordinary drug at one end (`fusidic acid`, `methyldopa`, `risedronic acid`, each paired with a
 class). The claim is true **per row** — every excluded row has at least one class-named endpoint — and the
 2026-08-23 run states it exactly: **the 50 excluded rows contribute ZERO resolvable pairs**, so whole-table and
@@ -2681,10 +2700,18 @@ compare unordered pairs against `ddi_candidate_pair` (MED-RT, **20,238** distinc
   carries NDF-RT's **drug-level** interaction assertions. Neither is a superset of the other.
 - **This is the number that justifies a slice.** A second candidate source that is 91% new, public-domain,
   moiety-grained and 92%-resolvable is worth `source = 'DRUGCENTRAL'`; one that merely restated MED-RT would
-  not have been. **Admitting that source is NOT a one-line change** — it needs two CHECKs widened
-  (`ingest_run_source`, `class_contraindication_source`) *and* an explicit `ids._SOURCE_CANONICAL` entry, in
-  the same migration; `ids.py` warns by name against leaning on the upper-case fall-through. Detail and the
-  silent-rebuild failure mode it prevents: [#101](https://github.com/cairn-ehr/drugref/issues/101).
+  not have been. **Admitting that source is NOT a one-line change** — it needs two CHECKs widened *and* an
+  explicit `ids._SOURCE_CANONICAL` entry, in the same migration; `ids.py` warns by name against leaning on the
+  upper-case fall-through. Detail and the silent-rebuild failure mode it prevents:
+  [#101](https://github.com/cairn-ehr/drugref/issues/101).
+  **⇒ CORRECTED 2026-08-23 BY THE INGEST THAT ACTUALLY DID IT: this sentence named the second CHECK as
+  `class_contraindication_source`, and HANDOVER then quoted it forward. Both were wrong.** DrugCentral asserts
+  unordered moiety pairs carrying a severity — neither a class rule nor a directional moiety rule — so it writes
+  no row into `class_contraindication` or `moiety_contraindication`, and `db/049` deliberately leaves both source
+  CHECKs (`('MED-RT','ONCHIGH')` and `('MED-RT')`) exactly as they were;
+  `test_class_contraindication_source_is_NOT_widened` pins that they are untouched. The second CHECK a new source
+  really needs is **`ingest_run_writer`**, which no document had named at all — so the sentence was not merely
+  imprecise, it pointed at the wrong constraint and hid the right one.
 
 ### Which of these figures can be RE-DERIVED, and which must be taken on trust
 
@@ -3455,7 +3482,18 @@ Licence re-confirmed at `drugcentral.org/privacy`: **CC BY-SA 4.0**, legalcode l
 2. **"102 match neither" → 106.** Follows from (1); 860 + 4 + 106 = 970.
 3. **"7,000 of 7,621 (91.9%) keyable" → 6,991 (91.7%)**, and the *"27-row difference"* between keyable and
    moiety × moiety → **18**.
-4. **`MAOIs or RIMAs` does not exist in the table.** The only endpoint containing `MAOI` is `clotrimazole`.
+4. **`MAOIs or RIMAs` is not an ENDPOINT** — `drug_class1`/`drug_class2` carry the letters `MAOI` **zero** times
+   over all 7,621 rows, and the endpoint string the original example was reaching for is
+   `Monoamine Oxidase Inhibitors`.
+   **⇒ AS FIRST PUBLISHED THIS CORRECTION READ "`MAOIs or RIMAs` does not exist in the table", AND THAT IS ITSELF
+   WRONG.** Found by the ingest round on 2026-08-23 and corrected here in place. The string occurs on **10** rows
+   in `ddi.source_id`, and the shorter `MAOIs` on **3** more — **all 13 of them `ddi_ref_id = 1`**, every
+   Stockley's row and nothing else. The correction had checked the endpoint columns and then generalised to the
+   whole table without checking the remaining ones. **Decision impact: none** — all 13 rows sit in the half rule 6
+   excludes and none of them yields a resolvable pair, so nothing that was decided on this basis changes.
+   **Credibility impact is the whole point:** this is the correction round's own results file being wrong in
+   exactly the way the round exists to prevent, and the scope of a sentence is a figure like any other. Full
+   account: § "The DrugCentral ddi ingest".
 5. **The QT class strings, transcribed at last**: `High Risk QT Prolonging Agents` /
    `Moderate Risk QT Prolonging Agents` — and **all three QT rows are `ddi_ref_id = 3`**, already excluded.
 6. **The endpoint provenance split → 905 / 13 / 6**, not 905 / 17 / 2. The `structures.name` half reproduced
@@ -3506,10 +3544,279 @@ Fixed on the branch; the results file was regenerated end to end rather than edi
   *re-derivable* while nothing in `tools/` computed them — relabelling is not the same act as instrumenting.
 - **The example strings are where paraphrase hides.** `MAOIs or RIMAs` and the `High/Moderate` token order were
   both plausible, both wrong, and both survived because nobody could open the source. This file had already
-  flagged the second one as *proof that neither was transcribed* — and was right.
+  flagged the second one as *proof that neither was transcribed* — and was right. **⇒ AND THE CORRECTION TO THE
+  FIRST ONE WAS ITSELF WRONG** (correction 4 above, fixed 2026-08-23 by the ingest round): it checked the two
+  endpoint columns, concluded "not in the table", and never looked at `source_id`, where the string sits on 10
+  rows. A correction is a figure, and one that quietly widened its own scope on the way to being published decays
+  the same way the claim it replaced did.
 - **Measuring before designing changed the design.** The synonym bridge #101 planned for is not needed; the
   slice is 6,866 new pairs rather than 6,337; and the QT gap is not merely un-closed but sits in the
   licence-excluded half.
+
+## The DrugCentral ddi ingest (2026-08-23) — `db/049`, issue #101
+
+Design, approved and followed:
+[`drugcentral-ddi-ingest-design`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-design.md).
+Measured end to end on the real release:
+[`drugcentral-ddi-ingest-measurement`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-measurement.md).
+Published record of the one decision worth publishing: [the candidate tier carries an upstream
+severity](https://docs.drugref.org/decisions/upstream-severity-is-data/). The re-measurement section above is
+the round this one rests on — **every figure below was re-derived here rather than quoted forward from it**,
+which is why §8 of the measurement can say 12 predictions and 12 matches instead of asserting agreement.
+
+### What shipped
+
+**`db/049_drugcentral_ddi.sql`, in six sections**, each of which is a decision rather than a step:
+
+1. **The source vocabulary, as a TRIO in one commit.** `ingest_run_source` gains `'DRUGCENTRAL'` and
+   `ingest_run_writer` gains `'drugcentral_run'`, both **copied verbatim off the live catalog and then
+   extended by one** rather than retyped from the design; `src/drugref/ids.py` gains
+   `"DRUGCENTRAL": "DRUGCENTRAL"` and `src/drugref/provenance.py` gains the writer. The failure mode when one
+   of the three lands without the others is silent: `ids.canonical_source` folds the source to a spelling the
+   CHECK does not admit, and a per-source rebuild then deletes nothing and reports success.
+2. **`ddi_source_severity`** — `(source, source_label) → severity`, a seeded two-row table, FK'd into
+   `severity_kind`. §"The four decisions" below is why it is a table.
+3. **`drugcentral_ddi_assertion`** — every bundleable row exactly as published: `upstream_key`, both endpoint
+   names, `upstream_label`, `severity_label`, two nullable moiety UUIDs and two route labels, with a severity
+   FK, two route CHECKs and two completeness CHECKs.
+4. **`drugcentral_ddi_pair`** — one row per unordered pair, `DISTINCT ON (moiety_lo, moiety_hi)` ordered by
+   `severity_rank` then `upstream_key`. Most-severe-wins, stated once, in SQL.
+5. **`exact_ddi_pair`** — the read path exact pairs have never had. Arm 1 is `moiety_contraindication`
+   (MED-RT, directional, ungraded); arm 2 is `drugcentral_ddi_pair` (unordered, graded). `UNION ALL`, not
+   `UNION`.
+6. **`gap_unresolved_ddi_endpoint` and the EIGHTEENTH question kind**, `unresolved_ddi_endpoint` — a view over
+   the assertion table, no worklist table of its own.
+
+**Code.** `tools/drugcentral_dump.py` and `tools/drugcentral_resolve.py` were **promoted into
+`src/drugref/ingest/`, with no re-export shims**, so the instrument that produced the re-measurement's figures
+and the ingest that acts on them are the same code — a shim would have been a third home. `tools/` now imports
+them from `drugref.ingest`. New: `ingest/drugcentral.py` (pure — the reference guard, the rule-6 filter, row →
+`AssertionRecord`), `ingest/drugcentral_run.py` (the orchestrator, the only writer, owner of the transaction),
+`interactions.py`'s `DRUGCENTRAL_TABLES` / `clear_source_drugcentral` / `add_drugcentral_assertion`, and
+`cli_drugcentral.py` for `drugref ingest drugcentral --release 11012023 --dump …`. **A standalone subcommand,
+NOT a chain step** — following FDA-CYP rather than ONCHIGH, because the dump is 1.4 GB and pinned to a single
+2023 release while `chain` is the routine rebuild-everything path. The data dependency is documented on the
+subcommand: the cascade needs slice-1 identity claims, so `unii` (and `chebi`, for InChIKeys) must have run.
+`ingest_run.source_checksum` receives the dump's SHA-256 from the existing `ingest/checksum.py`, so the anchor
+the 2026-08-13 run never recorded is now captured on every run for free.
+
+**Fixture.** `tests/fixtures/drugcentral_ddi_subset.sql.gz`, built by
+`tests/fixtures/make_drugcentral_subset.py` (where every other subset generator lives — the design spec said
+`tools/` and was corrected). It carries rows from **all three** references, so the rule-6 filter and the
+reference-identity guard are exercised against a dump that really contains what it excludes, and the excluded
+references' `description` text is redacted. The suite grew by **71 tests** over this round — a delta, not a
+total: the number itself has exactly one home, § "How to run / test", and this section deliberately does not
+restate it.
+
+### ⇒ TWO MEASUREMENTS THIS ROUND ADDED, AND BOTH CHANGED THE DESIGN
+
+Neither is in the re-measurement; both were taken off the cached extract of the recorded dump before the
+design was written, and each one decided a section of it.
+
+**1. The `description` column carries no clinical content — all 7,571 of 7,571.** Every one matches
+`NAME1/NAME2 [VA Drug Interaction]`: 35 characters at the shortest, 75 at the longest, mean 46, every one
+containing the `/`. Issue #101's *"every row carries a description"* is **true and empty** — no mechanism, no
+management, no prose of any kind. **What DrugCentral adds over a bare pair list is one severity band and
+nothing else**, which is why the whole design budget went to the band and none to text extraction. The label
+is stored anyway, for one reason: it names the endpoints at **product/salt** grain (`INDINAVIR SULFATE`,
+`PIOGLITAZONE HCL`) while `drug_class1`/`drug_class2` carry the base, and that is the only visible explanation
+for measurement 2.
+
+**2. The source asserts an UNORDERED pair, and 4 pairs disagree with themselves.** Over the 7,571 bundleable
+rows: 7,571 distinct **ordered** endpoint pairs, **0** appearing more than once; 7,538 distinct **unordered**
+pairs; **33** present in both orders, all 33 with a different `description`, **4** with a different `ddi_risk`.
+The two orientations are two VA entries at different salt grains folded onto one base-name pair — so
+orientation carries no meaning here, and the 33 are not noise to drop but a genuine intra-source disagreement
+that has to resolve **deterministically**.
+
+**⇒ MEASUREMENT 2 IS WHAT RULES OUT THE SMALLEST MIGRATION.** Widening `moiety_contraindication` was the
+obvious shape — the table already exists for exact pairs — and `db/014` documents it as *"DIRECTIONAL: the
+subject is the drug the statement is ABOUT, and swapping the columns changes the meaning."* DrugCentral asserts
+no subject. Storing it there would have **fabricated an orientation, 7,534 rows of it**, and that is a
+different claim from the one the source makes.
+
+### The four decisions, and what each one rejected
+
+**1. A storage table plus views, not a widened `moiety_contraindication` and not db/031's two-table shape.**
+Rejected, in order: widening `moiety_contraindication` on the directionality above *and* on severity (that
+table's comment says the candidate tier carries no grade, and its `relationship` CHECK admits only
+`CI_ChemClass`, a MED-RT predicate DrugCentral does not assert). Reproducing db/031's ONCHIGH shape — a
+canonical pair table plus an `ingest_unresolved_ddi_endpoint` table — rejected because db/031 needed that
+second table only for endpoints that were **in no table at all**, whereas here the assertion table already
+holds every row; and because it would have resolved the 33 duplicates at **write** time in Python, discarding
+the losing row and putting the precedence rule in code, against db/037's standing instruction that the rule
+choosing between two grades is stated once, in SQL.
+
+**2. The severity mapping is DATA, in `ddi_source_severity`, not four lines of Python.** db/006's finding one
+tier up: a vocabulary written in code and in a CHECK is two lists to widen and one way to disagree. And this
+one is additionally a **clinical judgement drugref makes on a consumer's behalf**, so a node operator must be
+able to `SELECT` it, disagree with it, and see exactly what it did; revising it is then a migration over two
+rows rather than a re-ingest of 7,571. Rejected: mapping the band in the parser and storing only drugref's
+grade (the upstream label becomes unrecoverable without re-reading a 1.4 GB dump, and a clinical judgement
+lives where no query can show it); and storing no severity at all, matching MED-RT exactly (it discards the
+only thing this source adds, for 7,501 pairs no curator will reach in any foreseeable round). The mapping
+itself follows VA/NDF-RT's own semantics — *Critical = avoid the combination* → `contraindicated`,
+*Significant = may have clinical consequences; monitor or adjust* → `moderate`. **`major` deliberately carries
+no DrugCentral row**: a two-band authority has two bands, and spreading them over three grades would invent a
+distinction VA does not draw. The cost is stated rather than hidden — some `Significant` pairs
+(`fluvoxamine + tapentadol`, `apixaban + heparin`) are arguably major and are graded a notch low, which is what
+the curated overlay corrects one pair at a time and what makes the mapping's revisability load-bearing.
+
+**3. `upstream_key` is `ddi.source_id`, not `ddi.id`.** All 7,571 bundleable rows carry a distinct `source_id`
+(`'C56^4966^'`), so it is a valid key, and it is the upstream **authority's** identifier rather than an artifact
+of one dump's row numbering. A dump row number inside a key a `question_uuid` could ever be built from would
+not survive a re-publication.
+
+**4. `ddi_candidate_pair` is NOT touched, and `exact_ddi_pair` is additive.** The harm-direction argument for
+unioning into the view consumers already know is real — a consumer who queries it gets silence on a pair
+DrugCentral grades `contraindicated`. It is outweighed by two measured facts: **db/034 measured this exact move
+costing 3.6× with the new arm EMPTY**, a structural cost paid by every existing consumer on every query; and
+`ddi_candidate_pair`'s columns are class-expansion-shaped (`via_class`, `member_class`, `is_direct`), all
+meaningless at moiety grain, so unioning would mean 7,501 rows of NULL in three columns — not a read path, a
+second vocabulary hiding in a view. The cost of the decision, stated plainly: a consumer must learn one view
+name. That is why it is in the published decision record rather than only here.
+
+### Measured on `drugref_dc049` (`TEMPLATE drugref_dc101` + `drugref migrate`, the eighth round running)
+
+Full transcript, commands and plans: the measurement spec. **12 predictions, 12 MATCHED, 0 mismatched, no code
+defects.** Two record defects were found on review of the measurement itself and fixed there (an unearned
+"reconciled" claim, and a plan-shape claim that pointed at a plan instead of quoting both).
+
+| | |
+|---|---|
+| dump | `drugcentral.dump.11012023.sql.gz`, 1,400,714,190 bytes, SHA-256 `0559…3e04f` — recorded on `ingest_run.source_checksum` |
+| wall-clock | **20.183 s** (15.53 s user), of which the DB transaction is **~1.5 ms** — the rest is the pure streaming parser, before any connection opens |
+| rows read | **7,621** · excluded by rule 6 **50** (13 Stockley's + 37 Lexicomp) · bundleable **7,571** |
+| bundleable split | resolved **7,534** + self-pair **0** + unresolved **37** = 7,571, and `DrugCentralSummary` refuses to exist otherwise |
+| pairs | **7,501** distinct unordered · **43** colliding registry keys (14 InChIKey + 29 CAS, already known and ordered) |
+| routes (per row, endpoint 1) | `display_name` **7,233** · `inchikey` **297** · `cas` **21** · `unresolved` **20** |
+| severity, PRE-collapse (`drugcentral_ddi_assertion.severity_label`) | `Critical` **2,307** · `Significant` **5,264** |
+| severity, POST-collapse (`drugcentral_ddi_pair.severity`) | `contraindicated` **2,294** · `moderate` **5,207** |
+| `exact_ddi_pair` | `MED-RT` **1,442** (unchanged — this ingest never writes `moiety_contraindication`) · `DRUGCENTRAL` **7,501** |
+| gap kind 18 | **10** rows, `row_count` summing to **37** · `open_question` **21,842 → 21,852**, +10 and −0 at ROW level |
+| must not move | `ddi_candidate_pair` **21,664** before and after · `substance_moiety` **19,438** before and after |
+| hot path | `ddi_candidate_pair`'s plan on `drugref_dc049` vs `drugref_dc101` (`db/048`): **`diff` exit 0** once `actual time`/`Buffers`/`Planning Time`/`Execution Time` are blanked |
+
+**⇒ THE 70-ROW GAP BETWEEN 7,571 AND 7,501 HAS TWO DISJOINT CAUSES, AND THE ARITHMETIC CLOSES.** 37 rows never
+reach the pair view (2 `Critical` + 35 `Significant`), and 33 are the second orientation of a both-order pair,
+removed by the collapse (11 `Critical`-only pairs + 18 `Significant`-only + 4 conflicting). By label:
+`Critical` 2 + 11 + 0 = 13, `Significant` 35 + 18 + 4 = 57, and 13 + 57 = 70. **This is the trap that bit the
+measurement's own first draft**: `severity_label` on the assertion table and `severity` on the pair view have
+**different denominators**, so a figure quoted from one against the other looks like a defect and is not.
+
+**⇒ THE HEADLINE REAL-DATA FINDING: the 4 self-disagreeing pairs, located and named for the first time.**
+`db/049`'s comment predicted them; nobody had opened them. `atazanavir + atorvastatin`,
+`atazanavir + rifapentine`, `gemfibrozil + pioglitazone`, `gatifloxacin + pioglitazone` — in each case one
+orientation is published at the salt grain and the other at the base
+(`ATAZANAVIR SO4/ATORVASTATIN CALCIUM` → `Critical` vs `ATAZANAVIR/ATORVASTATIN CALCIUM` → `Significant`), and
+all four land `contraindicated` under most-severe-wins. **Real NDF-RT content disagreeing with itself across
+the two directions it published the same pair in — not a drugref defect**, and the first time the rule was
+observed doing what its comment says rather than what a hypothetical predicted.
+
+The 10 unresolved endpoint names, each on route `unresolved` (DrugCentral holds a structural key and drugref
+does not — so an answer could change something, which is db/012's test for whether the gate may ask at all):
+`aluminium chlorohydrate` 2 · `amyl nitrite` 1 · `atracurium` 7 · `doxacurium` 7 · `glycopyrronium bromide` 2 ·
+`mivacurium` 7 · `pentosan polysulfate` 1 · `phytomenadione` 4 · `sodium polystyrene sulfonate` 2 ·
+`vitamin e` 4.
+
+### ⇒ FOUR PUBLISHED FIGURES WERE WRONG, AND THREE OF THEM WERE THIS PROJECT'S OWN STATE FILES
+
+All four are corrected in place in the sections they belong to; they are listed together here because the
+pattern is the finding.
+
+1. **The gap kind is the EIGHTEENTH, not the seventeenth.** The live `open_question_gap_kind` CHECK already held
+   seventeen — `db/039` added `fda_cyp_unadjudicated` — while § "Plan A" still said SIXTEEN and listed sixteen,
+   and both the design spec and the implementation plan said "kind 17". **The migration is correct**, because
+   it copies the live CHECK verbatim before extending it and its comment records finding seventeen where the
+   plan assumed sixteen. Fixed in § "Plan A", which is the count's one home.
+2. **`MAOIs or RIMAs` DOES exist in the table.** The re-measurement's published correction 4 read *"does not
+   exist in the table"*. Measured this round against the recorded extract: **10 rows carry it in
+   `ddi.source_id`** (and 3 more carry the shorter `MAOIs`), **all 13 of them `ddi_ref_id = 1`** — every
+   Stockley's row and nothing else. It appears as an **endpoint** zero times, which is the claim that actually
+   holds; the correction checked `drug_class1`/`drug_class2` and then generalised to the whole table.
+   **Decision impact: none** — all 13 sit in the half rule 6 excludes and none yields a resolvable pair.
+   **Credibility impact: this is the correction round's own results file being wrong in exactly the way the
+   round exists to prevent**, which is worth more than the fact it corrects. The scope of a sentence is a
+   figure, and it decays the same way a number does.
+3. **`class_contraindication_source` did NOT need widening.** HANDOVER said admitting this source required it,
+   quoting § "The 5c.3 source evaluation" which said it first. It did not: that CHECK is `('MED-RT','ONCHIGH')`
+   and DrugCentral writes no class rule, so `db/049` leaves it and `moiety_contraindication_source` alone and
+   `test_class_contraindication_source_is_NOT_widened` pins that they are untouched. **The second CHECK a new
+   source really needs is `ingest_run_writer`, which no document had named** — so the claim was not merely
+   imprecise, it pointed at the wrong constraint and hid the right one.
+4. **The suite count.** That line was stale again — the 71 tests this round added had landed in twelve commits
+   without it moving. It has now drifted six times and is issue #146. This round read the collected number off
+   `pytest --collect-only -q` at the START of its documentation task, wrote it in § "How to run / test", and
+   **deliberately did not restate it** here, in HANDOVER, in ROADMAP or in a section heading — restating it is
+   precisely the act that created the sixth occurrence, in the round that filed the issue about it.
+
+### Traps and standing notes
+
+- **The route vocabulary has TWO homes, deliberately, and a test is what makes that safe.**
+  `drugcentral_resolve` holds `RESOLVED_ROUTES` (3), `UNRESOLVED_ROUTES` (4) and their union `ROUTES` (7); the
+  two route CHECKs restate `ROUTES` in SQL and the two completeness CHECKs restate `RESOLVED_ROUTES`. That is
+  the defect db/006 exists to remove, admitted on purpose and pinned by
+  `test_the_route_checks_match_the_python_vocabulary`, which reads the live definitions out of `pg_constraint`
+  and asserts the admitted sets equal the frozensets. A lookup table the column FKs into was considered and
+  rejected: a descriptive column nothing joins on does not earn a table, and the FK would not catch the drift
+  the test catches — a route removed from Python while the CHECK still admits it.
+- **`missing_keys_row` is in the vocabulary on purpose.** It means a `struct_id` was found by name and is
+  absent from the key index, which cannot happen on a well-formed extract. It is counted apart so **a corrupt
+  extract does not pass for a difficult one**.
+- **`p.upstream_key` is the final sort key of `drugcentral_ddi_pair` and it is load-bearing, not decoration.**
+  29 of the 33 duplicate pairs tie on `severity_rank`, and `DISTINCT ON` keeps the first row of a group — so
+  without a total order the *reported* `upstream_key` and `upstream_label` could differ between two runs over
+  the same bytes. That is the exact defect the re-measurement's review found in three unordered registry
+  lookups, in the round whose whole justification was reproducibility.
+  `test_the_collapse_is_stable_when_the_two_orientations_tie` pins it.
+- **`class_contraindication_source` is NOT widened** — see correction 3 above. Do not "fix" it.
+- **Self-pairs are PERMITTED in the assertion table and excluded by the view**, and the asymmetry with db/014's
+  `moiety_contraindication_not_self` is deliberate: there a self-pair is a malformed assertion, here it is a
+  consequence of resolution (two endpoint names legitimately folding onto one moiety), so refusing it would
+  abort an ingest over a correct reading of the source. 0 of 7,571 today, and `DrugCentralSummary` carries it
+  as its own bucket so it cannot become nonzero unnoticed.
+- **`gap_unresolved_ddi_endpoint`'s `WHERE e.endpoint_name <> ''` exclusion has NO automated test.** It was
+  verified correct by a manual probe during review — a blank endpoint is not a question anyone can answer, and
+  the resolver already refuses to look one up — but nothing in the suite would fail if the predicate were
+  deleted. Recorded rather than left implied; the cheap fix is a fixture row with a blank endpoint name.
+- **The gap key folds the name.** `gap_key = 'DRUGCENTRAL:ENDPOINT:' || lower(btrim(name))`, matching
+  `drugcentral_resolve.fold_name`, because `question_uuid` is immortal and externally cited and two spellings of
+  one endpoint must never mint two questions that can then be answered differently. The view is filtered on
+  `moiety_uuid IS NULL`, **never on the route vocabulary** — filtering on routes would put that list in a third
+  place and force a widening every time a route is added.
+- **The severity FK is what refuses a future release quietly.** A third band is refused at INSERT, loudly,
+  rather than stored and silently mapped to nothing by the view's join.
+- **The reference guard is not the constant.** `BUNDLEABLE_REF_IDS = frozenset({"2"})` has exactly one home
+  (the re-measurement's own review found a second hard-coded `ref_id == "2"` in the renderer), *and* the
+  orchestrator reads the `reference` row for every admitted id and **aborts** unless the recorded authors and
+  title still match. `2` is a surrogate key in a dump published once; a re-publication is free to renumber it,
+  and a silent renumber would bundle Lexicomp under a constant that still reads `2`. A mismatch is a hard abort
+  with both strings printed — not a warning, not a skip.
+- **The fixture commits `source_id` unredacted on excluded rows, and that determination was made before it was
+  committed.** Those strings are the source compendium's own monograph headings (`MAOIs or RIMAs + Buspirone`,
+  `Conivaptan: CYP3A4 Substrates`). Kept on two independent grounds — short noun-phrase titles are outside
+  copyright (37 C.F.R. §202.1(a)), and they restate a drug-pair fact already committed unredacted in
+  `drug_class1`/`drug_class2` on the same rows, under the Feist argument NOTICE already makes for ONCHIGH. The
+  reasoning is in `make_drugcentral_subset.py`'s docstring; the conclusion is in `NOTICE`. **A future
+  regeneration that selects an excluded row whose `source_id` is free-form prose is not covered** and needs the
+  same redaction `description` gets.
+- **The 2023 pin is honest provenance, not a defect to fix.** `upstream_release = '11012023'`;
+  `drugcentral.org/download` still offers no successor as of 2026-08-23. The tier is CANDIDATE and the table
+  comment says so: rows feed review and must not auto-alert.
+
+### Filed rather than fixed
+
+- **[#148](https://github.com/cairn-ehr/drugref/issues/148) — `exact_ddi_pair` adds a THIRD population to the
+  ungraded cross-source disagreement question.** 635 of the 7,501 DrugCentral pairs are already reachable
+  through MED-RT's class expansion and nothing compares them. That is #97/#106's question one tier down, over a
+  population neither covers: the arms are different grains (asserted vs expanded) carrying different
+  information (graded vs no grade stated), and `exact_ddi_pair` uses `UNION ALL` precisely so the disagreement
+  stays visible rather than being folded away. This slice adds to the question without answering it.
+- **[#149](https://github.com/cairn-ehr/drugref/issues/149) — `fda_cyp_run.FDA_CYP_TABLES` is not registered in
+  `test_source_clear_contract.py`'s `EXPECTED_TABLES`**, so a table dropped from that tuple would be caught by
+  nothing. Pre-existing and unrelated to this round; found while registering
+  `interactions.DRUGCENTRAL_TABLES`. `interactions.py`'s comment was corrected to stop citing it as a peer with
+  the same guard, and the gap was filed rather than fixed in passing.
 
 ## The standing open-issue ledger
 
@@ -3564,6 +3871,18 @@ posted to the issue, with the natural seam for `curation.py`. **`cli.py` is a se
 ([#130](https://github.com/cairn-ehr/drugref/issues/130)) because its failure mode differs** — it sits at
 exactly 500 against a HARD cap test, so the next line added to it breaks CI, and the cap has already begun
 dictating where functions live rather than merely measuring size.
+
+**Filed by the DrugCentral rounds (2026-08-23)** — **[#146](https://github.com/cairn-ehr/drugref/issues/146)**
+the suite-count line in § "How to run / test" has drifted six times and is guarded by prose only; it wants a
+test that reads the stated number and counts the collected suite (filed by the re-measurement round, recorded
+here because this ledger is the ONE home and it had lived only in HANDOVER) ·
+**[#148](https://github.com/cairn-ehr/drugref/issues/148)** `exact_ddi_pair` adds a THIRD population to the
+ungraded cross-source disagreement question — **635 of the 7,501 DrugCentral pairs are already reachable
+through MED-RT's class expansion and nothing compares them**, which is #97/#106 one tier down ·
+**[#149](https://github.com/cairn-ehr/drugref/issues/149)** `fda_cyp_run.FDA_CYP_TABLES` is not registered in
+`test_source_clear_contract.py`'s `EXPECTED_TABLES`, so a table dropped from that tuple would be caught by
+nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`). Full account: § "The
+DrugCentral ddi ingest".
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -3664,19 +3983,26 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1888 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1959 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1794
-# passed in 55.21 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1959
+# passed in 54.86 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
-# re-measurement added 34 with NO migration: 1794 → 1828, and the review-fix
-# round on the same branch added 60 more: 1828 → 1888).
+# re-measurement added 34 with NO migration: 1794 → 1828; the review-fix
+# round on the same branch added 60 more: 1828 → 1888; and db/049, the DrugCentral
+# ddi ingest, added 71: 1888 → 1959).
+# THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
+# round read the collected count off `pytest --collect-only -q` at the START of its
+# documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
+# ROADMAP or its own section heading -- which is the exact act that created the sixth
+# occurrence. Issue 146 (a test that reads this number and counts the suite) is still
+# the only thing that would make prose unnecessary, and it is still not written.
 # THE SIXTH OCCURRENCE WAS CAUGHT IN REVIEW ON THIS BRANCH, and is issue 146: the
 # re-measurement round wrote 1828 into THREE more places (HANDOVER, ROADMAP and its
 # own section heading) while filing an issue about this line drifting. All three now

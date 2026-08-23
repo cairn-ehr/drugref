@@ -71,3 +71,7 @@ history is never lost — it remains in the git log and in the dated design spec
   argument (Feist) rather than on its public-funding history alone, and the re-encoding
   discipline — no verbatim paper text, every `mechanism`/`management` string drugref's own —
   that keeps the argument true.
+- [The candidate tier carries an upstream severity, and the mapping is data](upstream-severity-is-data.md)
+  — why DrugCentral's severity band is stored verbatim beside drugref's derived grade rather than folded into
+  it, why the band → grade mapping is a seeded table a node operator can `SELECT` and disagree with rather
+  than four lines in a parser, and why `major` deliberately carries no row from a two-band authority.

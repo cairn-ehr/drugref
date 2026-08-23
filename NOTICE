@@ -54,3 +54,39 @@ Seed data attributions:
   See "The ONC high-priority floor is facts, not text"
   (https://docs.drugref.org/decisions/the-onc-high-priority-floor/) for the full
   argument.
+- DrugCentral `ddi` (drug–drug interactions) — DrugCentral is published by the Division
+  of Translational Informatics, University of New Mexico, under CC BY-SA 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/). That licence covers DrugCentral's
+  compilation and is not evidence of a right to relicense a third-party compendium
+  inside it, so the determination was made per reference, read out of the dump's own
+  `reference` table rather than inferred. drugref ingests ONE of the three references
+  the `ddi` table cites: `ddi_ref_id = 2`, the U.S. Department of Veterans Affairs /
+  Veterans Health Administration National Drug File – Reference Terminology (NDF-RT),
+  a work of the U.S. federal government. The other two — Stockley's Drug Interactions
+  (Karen Baxter, 2010, ISBN 0853699143, a copyrighted book) and Lexicomp Online
+  (Wolters Kluwer Health, a commercial compendium) — are NOT ingested. Because `2` is
+  a surrogate key in a dump that has been published once, the constant is not trusted
+  alone: the orchestrator reads the `reference` row for every admitted id and ABORTS
+  the ingest unless its recorded authors and title still match, so a re-published dump
+  that renumbered its references stops rather than bundling an excluded one. Source
+  release: drugcentral.dump.11012023.sql.gz, SHA-256
+  055904d152d6c8eef4ee872b25f6476019682df8b5f49bcdf7cc018204f3e04f, recorded on
+  ingest_run.source_checksum for every load. The committed fixture
+  (tests/fixtures/drugcentral_ddi_subset.sql.gz, built by
+  tests/fixtures/make_drugcentral_subset.py) carries rows from ALL THREE references so
+  the exclusion is exercised against a dump that really contains what it excludes, and
+  the excluded references' `description` text is redacted, following the MED-RT
+  fixture's endpoint redaction. One field on those excluded rows is committed
+  unredacted, and that determination was made before the fixture was committed rather
+  than justified afterwards: `ddi.source_id` carries the source compendium's own
+  monograph heading in readable form ("MAOIs or RIMAs + Buspirone" from Stockley's,
+  "Conivaptan: CYP3A4 Substrates" from Lexicomp). It is kept on two independent
+  grounds — short noun-phrase titles and headings are categorically outside copyright
+  protection (37 C.F.R. §202.1(a), "words and short phrases such as names, titles, and
+  slogans"), and they restate the same drug-pair fact already committed unredacted in
+  `drug_class1`/`drug_class2` on the very same rows, under the same
+  facts-are-not-copyrightable argument (Feist) this file already makes for ONCHIGH.
+  The full reasoning is written out in tests/fixtures/make_drugcentral_subset.py's
+  docstring; a future regeneration that selects an excluded row whose `source_id` is
+  free-form prose rather than a heading is NOT covered by it and needs the same
+  redaction `description` gets.

@@ -866,6 +866,11 @@ before that round starts** — full account and every number: PROJECT-NOTES § "
   source evaluation".** **⇒ Read and transcribed 2026-08-23: `High Risk QT Prolonging Agents` and
   `Moderate Risk QT Prolonging Agents` — and all three QT rows are `ddi_ref_id = 3`, so they already sit
   outside the half rule 6 permits.**
+- **⇒ THIS EVALUATION IS NOW DISCHARGED: the ingest shipped as `db/049` on 2026-08-23**, after a re-measurement
+  round rebuilt the figures above from the dump. Read them off "The DrugCentral ddi ingest" below rather than
+  from this bullet — the cascade that resolves endpoints on structure rather than spelling moved the pair count
+  from 6,941 to **7,501** and the new-pair count from 6,337 to **6,866**, and the two figures in this bullet
+  that did not reproduce are corrected where they are quoted, not here.
 
 **2026-08-16 source follow-up:** the
 [FDA interaction and toxicity source spike](superpowers/specs/2026-08-16-drugref-fda-interaction-and-toxicity-source-spike.md)
@@ -876,7 +881,8 @@ DDI pairs. The same spike clears DICTrank, DIRIL's narrow FDA-authored projectio
 DILIrank for a later **non-firing toxicity evidence projection**, and rejects
 DrugCentral `omop_relationship` for bundling because its live rows cannot distinguish
 pre-2012 OMOP content from later label curation. This does not change the immediate
-order: DrugCentral's clean `ddi_ref_id = 2` subset remains the next cheap content slice.
+order: DrugCentral's clean `ddi_ref_id = 2` subset was the next cheap content slice, and **it shipped on
+2026-08-23 as `db/049`** — see "The DrugCentral ddi ingest" below.
 
 ##### 5c.4 — signing ✅ DONE
 Spec: [slice-5c.4 signing](superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md); published record:
@@ -1044,9 +1050,11 @@ own free text to a `struct_id` for 918 of 924 NDF-RT endpoint names, and `struct
 CAS number drugref already holds as `identity_claim` rows. A `display_name → inchikey → cas` cascade moves
 resolution from 857/924 names to **914/924**, unresolvable rows from 598 to **37**, and **new pairs from 6,337 to
 6,866** — with no hand-maintained synonym list, which is what #101 had budgeted for. **Seven published figures
-were wrong** (the "8 MED-RT class names" is 4 MeSH ones; 102 → 106; 7,000 → 6,991; `MAOIs or RIMAs` is not in the
-data; the QT strings; the QT rows all sit in the licence-excluded subset; the provenance split is 905/13/6, not
-905/17/2), all corrected in place.
+were wrong** (the "8 MED-RT class names" is 4 MeSH ones; 102 → 106; 7,000 → 6,991; `MAOIs or RIMAs` is not an
+ENDPOINT — **and that correction, as first published, said "not in the table" and is itself WRONG**: the string
+sits on 10 `ddi.source_id` rows, all of them `ddi_ref_id = 1`, and the ingest round below is what caught it; the
+QT strings; the QT rows all sit in the licence-excluded subset; the provenance split is 905/13/6, not 905/17/2),
+all corrected in place.
 
 **The branch's own code review then hardened the instrument**, and the finding there is the same one a layer
 down: the parser refuses a malformed row loudly, and the TSV cache underneath it quietly undid that. A crashed
@@ -1056,9 +1064,52 @@ claimed by more than one moiety**; and the rule-6 verdict was hard-coded a secon
 fixed, results regenerated, and five figures this file had called re-derivable are now actually computed.
 Full account: PROJECT-NOTES § "What the code review of this branch changed".
 
-**Still not started: the ingest itself.** Admitting `source = 'DRUGCENTRAL'` needs two CHECKs widened
-(`ingest_run_source`, `class_contraindication_source`) *and* an explicit `ids._SOURCE_CANONICAL` entry in the same
-migration — the silent-rebuild failure mode `ids.py` warns about by name.
+**⇒ THE INGEST ITSELF HAS SINCE SHIPPED — `db/049`, immediately below — AND THIS PARAGRAPH NAMED THE WRONG
+CONSTRAINT WHILE IT STOOD.** Admitting `source = 'DRUGCENTRAL'` does need two CHECKs widened *and* an explicit
+`ids._SOURCE_CANONICAL` entry in the same migration — the silent-rebuild failure mode `ids.py` warns about by
+name — but the two are **`ingest_run_source` and `ingest_run_writer`**, not `class_contraindication_source`.
+DrugCentral asserts unordered moiety pairs with a severity, which is neither a class rule nor a directional
+moiety rule, so it writes no row into `class_contraindication`; `db/049` leaves that CHECK at
+`('MED-RT','ONCHIGH')` and a test pins that it is untouched. PROJECT-NOTES § "The DrugCentral ddi ingest" carries
+the correction in full.
+
+### The DrugCentral ddi ingest ✅ DONE (2026-08-23) — `db/049`, measured on the real release
+Design: [drugcentral-ddi-ingest](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-design.md).
+Measurement: [drugcentral-ddi-ingest-measurement](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-measurement.md).
+Full account and every figure: PROJECT-NOTES § "The DrugCentral ddi ingest" — **not restated here.**
+Published decision: [the candidate tier carries an upstream
+severity](https://docs.drugref.org/decisions/upstream-severity-is-data/).
+
+**drugref's THIRD interaction candidate source, and the first that grades what it asserts.** `db/049` admits
+`source = 'DRUGCENTRAL'`, seeds `ddi_source_severity` (the upstream band → drugref grade mapping, **as data**),
+stores every bundleable row in `drugcentral_ddi_assertion`, collapses orientation in `drugcentral_ddi_pair`, and
+adds `exact_ddi_pair` — **the read path exact drug–drug pairs have never had**, since `ddi_candidate_pair`
+expands class rules only and nothing else read `moiety_contraindication` at all. Plus the **eighteenth** question
+kind, `unresolved_ddi_endpoint`.
+
+**Two measurements taken for the design changed it.** The `description` column carries **no clinical content** —
+all 7,571 rows match `NAME1/NAME2 [VA Drug Interaction]` — so what this source adds over a bare pair list is one
+severity band and nothing else, and the whole design budget went there. And **the source asserts an UNORDERED
+pair**: 33 pairs are published in both orders, 4 of them with disagreeing severities, which is what rules out
+widening the directional `moiety_contraindication` (storing it there would have fabricated an orientation on
+7,534 rows).
+
+**`ddi_candidate_pair` is deliberately untouched** — db/034 measured that exact union costing 3.6× with the new
+arm EMPTY, and that view's columns are class-expansion-shaped. `exact_ddi_pair` is additive: no existing query
+changes, and the plan was measured byte-identical before and after. The costs, stated: the release is pinned to
+**11/01/2023** with no successor offered, and a consumer wanting everything must now read two views.
+
+**Rule 6 is enforced twice.** `BUNDLEABLE_REF_IDS = {2}` (VHA NDF-RT, a US federal work) has one home in the
+code, *and* the orchestrator reads the dump's own `reference` row for every admitted id and **aborts** unless
+its authors and title still match — because `2` is a surrogate key and a re-published dump is free to renumber
+it. `NOTICE` carries the determination, including why the committed fixture's `source_id` field is not redacted
+on the excluded rows.
+
+**Filed rather than silently widened:** [#148](https://github.com/cairn-ehr/drugref/issues/148) — 635 of the
+7,501 pairs are already reachable through MED-RT's class expansion and nothing compares them, which is
+[#97](https://github.com/cairn-ehr/drugref/issues/97)/[#106](https://github.com/cairn-ehr/drugref/issues/106)'s
+question one tier down; and [#149](https://github.com/cairn-ehr/drugref/issues/149), a pre-existing gap in the
+per-source-clear contract test found while registering this round's own writer.
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded
