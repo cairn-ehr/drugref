@@ -88,7 +88,20 @@ class AssertionRecord:
 
     @property
     def resolved(self) -> bool:
-        """True when BOTH endpoints reached a moiety -- the pair-yielding case."""
+        """True when BOTH endpoints reached a moiety.
+
+        NOT DISJOINT FROM `self_pair`. A self-pair (both endpoints resolving to
+        the SAME moiety) still has two non-null uuids, so it is `resolved` too --
+        `self_pair` is a STRICT SUBSET of this property, true only when the two
+        moieties are additionally equal to each other. A caller assembling the
+        three disjoint buckets a summary needs (Task 11's
+        `rows_resolved + rows_self_pair + rows_unresolved == rows_bundleable`,
+        the same invariant `tools/drugcentral_ddi_measure.Measurement` already
+        enforces for this source) must therefore check `self_pair` FIRST and
+        treat this property as "resolved and not a self-pair" for that bucket --
+        summing `resolved` directly would double-count every self-pair row into
+        both the resolved bucket and the self-pair bucket.
+        """
         return self.moiety_1_uuid is not None and self.moiety_2_uuid is not None
 
     @property
@@ -99,7 +112,8 @@ class AssertionRecord:
         an unresolvable row nor a pair: two endpoint names legitimately folding
         onto one moiety asserts nothing about an interaction between two drugs.
         Measured 2026-08-23: 0 of 7,571, and counting it is what would make that
-        stop being true visibly.
+        stop being true visibly -- see `resolved`'s docstring for the double-
+        counting bug a caller that forgets this overlap would introduce.
         """
         return self.resolved and self.moiety_1_uuid == self.moiety_2_uuid
 

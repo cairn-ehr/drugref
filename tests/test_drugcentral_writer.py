@@ -80,10 +80,20 @@ def test_an_unresolved_row_is_written_with_null_uuids(conn):
 
 @pytest.mark.usefixtures("conn")
 def test_the_clear_is_per_source_and_covers_the_whole_projection(conn):
+    """Writes ONE resolved row and ONE unresolved row, and clears both.
+
+    A resolved-only fixture would still pass this test's assertion even if
+    someone added a `moiety_1_uuid IS NOT NULL` filter to
+    clear_source_drugcentral -- the clear's docstring specifically claims it
+    also covers the unresolved worklist rows (an endpoint that starts
+    resolving must LEAVE the worklist), and that half of the claim needs its
+    own row to be at risk of failing.
+    """
     run = _run(conn)
     a = _moiety(conn, run, "a")
     b = _moiety(conn, run, "b")
     _write(conn, run, "C56.1", a, b)
+    _write(conn, run, "C56.2")  # unresolved: NULL uuids, route 'unresolved'
     interactions.clear_source_drugcentral(conn, "DRUGCENTRAL")
     assert conn.execute(
         "SELECT count(*) FROM drugref.drugcentral_ddi_assertion").fetchone() == (0,)

@@ -83,6 +83,59 @@ def test_an_unresolvable_endpoint_becomes_a_record_with_a_null_uuid():
     assert record.route_2 == "not_a_substance"
 
 
+# ---- AssertionRecord.resolved / .self_pair: overlap, not a partition ----------
+#
+# `self_pair` is a STRICT SUBSET of `resolved` (see resolved's docstring), and
+# these three tests pin that relationship by construction rather than by reading
+# the comment. Building AssertionRecord directly, not through resolve_row: what
+# is under test is the two properties' relationship to each other, not the
+# resolver.
+
+
+def test_a_resolved_pair_is_resolved_but_not_a_self_pair():
+    record = drugcentral.AssertionRecord(
+        upstream_key="C56.1", endpoint_1_name="warfarin", endpoint_2_name="aspirin",
+        upstream_label="WARFARIN/ASPIRIN [VA Drug Interaction]",
+        severity_label="Critical",
+        moiety_1_uuid="u-1", moiety_2_uuid="u-2",
+        route_1="display_name", route_2="display_name")
+    assert record.resolved is True
+    assert record.self_pair is False
+
+
+def test_a_self_pair_is_resolved_too_the_two_are_not_disjoint():
+    """Pins the double-count bug FINDING 1 exists to prevent: `self_pair` is a
+    STRICT SUBSET of `resolved`, not a sibling bucket. A caller computing
+    ``rows_resolved = sum(r.resolved for r in records)`` would count this row
+    into BOTH the resolved bucket and the self_pair bucket, breaking the
+    invariant ``rows_resolved + rows_self_pair + rows_unresolved ==
+    rows_bundleable`` that Task 11's summary (and
+    tools/drugcentral_ddi_measure.Measurement) depends on. Measured
+    2026-08-23: 0 of 7,571 real rows hit this case -- which is exactly why a
+    live-data spot check would never have caught the bug and a test is needed.
+    """
+    record = drugcentral.AssertionRecord(
+        upstream_key="C56.3", endpoint_1_name="warfarin", endpoint_2_name="Warfarin",
+        upstream_label="WARFARIN/WARFARIN [VA Drug Interaction]",
+        severity_label="Critical",
+        moiety_1_uuid="u-1", moiety_2_uuid="u-1",
+        route_1="display_name", route_2="display_name")
+    assert record.resolved is True
+    assert record.self_pair is True
+
+
+def test_an_unresolved_endpoint_is_neither_resolved_nor_a_self_pair():
+    record = drugcentral.AssertionRecord(
+        upstream_key="C56.2", endpoint_1_name="warfarin",
+        endpoint_2_name="phytomenadione",
+        upstream_label="WARFARIN/PHYTONADIONE [VA Drug Interaction]",
+        severity_label="Critical",
+        moiety_1_uuid="u-1", moiety_2_uuid=None,
+        route_1="display_name", route_2="not_a_substance")
+    assert record.resolved is False
+    assert record.self_pair is False
+
+
 def test_read_tables_streams_the_four_tables_it_needs():
     # Field separators are REAL tab characters (single-backslash `\t` escapes,
     # decoding to one tab byte each) and the block terminator is a single

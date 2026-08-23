@@ -387,9 +387,17 @@ def record_unresolved_ci_objects(
 #
 # The projection this source owns, cleared per-source on every re-ingest. Named as
 # a tuple to match db.clear_source_tables's signature and every sibling constant
-# (MESH_CONTRAINDICATION_TABLES above, onchigh_run's UNRESOLVED_ENDPOINT_TABLES,
-# fda_cyp_run's FDA_CYP_TABLES). ONE table, because unlike db/031's ONC endpoints
-# the unresolvable rows live in the assertion table itself.
+# (MESH_CONTRAINDICATION_TABLES above, onchigh_run's UNRESOLVED_ENDPOINT_TABLES).
+# ONE table, because unlike db/031's ONC endpoints the unresolvable rows live in
+# the assertion table itself.
+#
+# Registered in tests/test_source_clear_contract.py's EXPECTED_TABLES, which is
+# what turns a table silently dropped from this tuple into a failing test rather
+# than a rebuild that quietly stops covering it. fda_cyp_run's own
+# FDA_CYP_TABLES is deliberately NOT cited here as a peer with the same guard --
+# a code-review pass found it is not actually registered there. That gap is
+# pre-existing and tracked separately; this comment simply stops claiming
+# otherwise.
 DRUGCENTRAL_TABLES = ("drugcentral_ddi_assertion",)
 
 
