@@ -269,9 +269,29 @@ def test_a_blank_endpoint_name_is_never_looked_up_either():
     """
     registry = Registry(display_name={"": "WRONG"}, inchikey={}, cas={})
     assert resolve_endpoint("", INDEX, registry) == Resolution(
-        None, ROUTE_NOT_A_SUBSTANCE)
+        None, drugcentral_resolve.ROUTE_BLANK_ENDPOINT)
     assert resolve_endpoint("   ", INDEX, registry) == Resolution(
-        None, ROUTE_NOT_A_SUBSTANCE)
+        None, drugcentral_resolve.ROUTE_BLANK_ENDPOINT)
+
+
+def test_a_blank_endpoint_is_NOT_reported_as_a_correct_miss():
+    """It gets its own route, for ROUTE_MISSING_KEYS_ROW's stated reason.
+
+    `not_a_substance` means "DrugCentral holds no structure under this text",
+    whose overwhelmingly likely cause is a class name -- a CORRECT reading of the
+    source. A blank endpoint is a MALFORMED ROW, and filing it under that route
+    made the two indistinguishable at every layer: the pair view drops it on the
+    NULL uuid, the question view drops it on the `<> ''` filter that has to be
+    there, and the summary summed it in beside genuine misses. Nothing anywhere
+    could report it.
+    """
+    blank = resolve_endpoint("", INDEX, REGISTRY)
+    class_name = resolve_endpoint("Strong CYP3A4 Inhibitors", INDEX, REGISTRY)
+    assert blank.route != class_name.route
+    assert class_name.route == ROUTE_NOT_A_SUBSTANCE
+    # Both are still honestly unresolved -- the distinction is WHY, not whether.
+    assert not blank.resolved and not class_name.resolved
+    assert blank.route in drugcentral_resolve.UNRESOLVED_ROUTES
 
 
 def test_a_name_drugcentral_itself_does_not_know_is_reported_as_not_a_substance():
@@ -325,13 +345,55 @@ def test_first_wins_keeps_the_first_row_and_counts_the_collisions():
     that ordered read hands over the same key twice.
     """
     lookup, duplicates = drugcentral_resolve.first_wins(
-        [("aaa", "uuid-1"), ("aaa", "uuid-2"), ("bbb", "uuid-3")])
+        [("aaa", "uuid-1"), ("aaa", "uuid-2"), ("bbb", "uuid-3")],
+        drugcentral_resolve.fold_name)
     assert lookup == {"aaa": "uuid-1", "bbb": "uuid-3"}
     assert duplicates == 1
 
 
 def test_first_wins_counts_nothing_when_every_key_is_unique():
     lookup, duplicates = drugcentral_resolve.first_wins(
-        [("aaa", "uuid-1"), ("bbb", "uuid-2")])
+        [("aaa", "uuid-1"), ("bbb", "uuid-2")], drugcentral_resolve.fold_name)
     assert lookup == {"aaa": "uuid-1", "bbb": "uuid-2"}
     assert duplicates == 0
+
+
+def test_first_wins_de_duplicates_in_THE_SAME_KEY_SPACE_the_registry_looks_up_in():
+    """The defect this parameter exists to close.
+
+    first_wins used to de-duplicate on the RAW key and Registry then re-keyed the
+    survivors through the fold with a dict comprehension -- which is LAST-wins. So
+    two moieties named 'Warfarin' and 'warfarin' were two distinct keys here (the
+    collision count, which the summary publishes, read 0) and the fold silently
+    kept the SECOND. Which one that is depends on how the database collates upper
+    against lower case, so the same dump resolved differently on two nodes --
+    exactly what the caller's ORDER BY exists to prevent. substance_moiety
+    .display_name carries no uniqueness constraint, so this is representable.
+    """
+    lookup, duplicates = drugcentral_resolve.first_wins(
+        [("Warfarin", "uuid-FIRST"), ("warfarin", "uuid-SECOND")],
+        drugcentral_resolve.fold_name)
+    assert lookup == {"warfarin": "uuid-FIRST"}, "the fold must not be last-wins"
+    assert duplicates == 1, "a case-variant collision must be REPORTED, not hidden"
+
+
+def test_first_wins_counts_DISTINCT_KEYS_not_surplus_rows():
+    """Three moieties claiming one CAS number is ONE collision, not two.
+
+    DrugCentralSummary.__str__ calls the figure "colliding registry keys" and
+    PROJECT-NOTES records the baseline as "14 InChIKeys and 29 CAS numbers are
+    claimed by more than one" -- both DISTINCT-key counts. A surplus-row count
+    could not be checked against the number it exists to be checked against.
+    """
+    _, duplicates = drugcentral_resolve.first_wins(
+        [("k", "u-1"), ("k", "u-2"), ("k", "u-3"), ("j", "u-4")],
+        drugcentral_resolve.fold_name)
+    assert duplicates == 1
+
+
+def test_the_registry_fold_is_first_wins_too_so_the_two_cannot_disagree():
+    """Registry may be constructed directly, so its own fold has to hold the rule."""
+    registry = Registry(display_name={"Warfarin": "uuid-FIRST",
+                                      "warfarin": "uuid-SECOND"},
+                        inchikey={}, cas={})
+    assert registry.display_name["warfarin"] == "uuid-FIRST"

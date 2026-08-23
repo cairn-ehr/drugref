@@ -73,6 +73,7 @@ from drugref.ingest.drugcentral_resolve import (
     Resolution,
     build_endpoint_index,
     first_wins,
+    fold_key,
     fold_name,
     resolve_endpoint,
 )
@@ -178,19 +179,20 @@ def load_registry(dsn: str) -> RegistrySide:
             cur.execute("SELECT display_name, moiety_uuid::text "
                         "FROM drugref.substance_moiety "
                         "ORDER BY display_name, moiety_uuid")
-            display_name, duplicate_display_names = first_wins(cur.fetchall())
+            display_name, duplicate_display_names = first_wins(
+                cur.fetchall(), fold_name)
 
             cur.execute(
                 "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
                 "WHERE scheme = %s AND superseded_by IS NULL "
                 "ORDER BY value, moiety_uuid", ("INCHIKEY",))
-            inchikey, duplicate_inchikeys = first_wins(cur.fetchall())
+            inchikey, duplicate_inchikeys = first_wins(cur.fetchall(), fold_key)
 
             cur.execute(
                 "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
                 "WHERE scheme = %s AND superseded_by IS NULL "
                 "ORDER BY value, moiety_uuid", ("CAS",))
-            cas, duplicate_cas = first_wins(cur.fetchall())
+            cas, duplicate_cas = first_wins(cur.fetchall(), fold_key)
 
             cur.execute("SELECT lower(class_name), source "
                         "FROM drugref.substance_class "

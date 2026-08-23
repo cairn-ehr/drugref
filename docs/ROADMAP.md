@@ -1073,7 +1073,7 @@ moiety rule, so it writes no row into `class_contraindication`; `db/049` leaves 
 `('MED-RT','ONCHIGH')` and a test pins that it is untouched. PROJECT-NOTES § "The DrugCentral ddi ingest" carries
 the correction in full.
 
-### The DrugCentral ddi ingest ✅ DONE (2026-08-23) — `db/049`, measured on the real release
+### The DrugCentral ddi ingest ✅ DONE (2026-08-23) — `db/049` + `db/050`, measured on the real release
 Design: [drugcentral-ddi-ingest](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-design.md).
 Measurement: [drugcentral-ddi-ingest-measurement](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-measurement.md).
 Full account and every figure: PROJECT-NOTES § "The DrugCentral ddi ingest" — **not restated here.**
@@ -1094,8 +1094,11 @@ pair**: 33 pairs are published in both orders, 4 of them with disagreeing severi
 widening the directional `moiety_contraindication` (storing it there would have fabricated an orientation on
 7,534 rows).
 
-**`ddi_candidate_pair` is deliberately untouched** — db/034 measured that exact union costing 3.6× with the new
-arm EMPTY, and that view's columns are class-expansion-shaped. `exact_ddi_pair` is additive: no existing query
+**`ddi_candidate_pair` is deliberately untouched** — db/034 measured ~3.6× with the new grain EMPTY when that
+view was widened to serve a second grain, and its columns are class-expansion-shaped. (Read db/034 before
+reusing that as evidence: the cost came from widening `ci_class_subtree`'s RECURSIVE SEED, and db/034 KEPT the
+arm it had. db/049's comment read as though a union arm had been measured and rejected; `db/050` records the
+correction, db/049 being immutable.) `exact_ddi_pair` is additive: no existing query
 changes, and the plan was measured byte-identical before and after. The costs, stated: the release is pinned to
 **11/01/2023** with no successor offered, and a consumer wanting everything must now read two views.
 
@@ -1110,6 +1113,21 @@ on the excluded rows.
 [#97](https://github.com/cairn-ehr/drugref/issues/97)/[#106](https://github.com/cairn-ehr/drugref/issues/106)'s
 question one tier down; and [#149](https://github.com/cairn-ehr/drugref/issues/149), a pre-existing gap in the
 per-source-clear contract test found while registering this round's own writer.
+
+**⇒ THEN `db/050`, the PR-150 review round.** Five specialist agents; 1 critical, 9 important, all applied.
+**The critical one: a dump this code cannot read wiped the projection and exited 0** — renaming ONE column took
+the fixture from 4 rows to 0 and blamed rule 6 for it in the summary line. Every guard passed vacuously,
+because **every reconciliation in the slice proved the orchestrator self-consistent and none proved it
+published anything** — the diagnosis that also explains the blank `upstream_key`, the blank endpoint and the
+empty-registry case. `db/050` adds floor checks before `open_run`, the constraints db/049 stated in comments
+and enforced nowhere (`upstream_key <> ''`, a `blank_endpoint` route, `ddi_source_severity.source`) and a
+route-aware gap view, the question text having asserted one route's story about three under an immortal
+`question_uuid`. In code: a disjoint `Outcome` enum, `first_wins` folding in the registry's own key space, the
+REPEATABLE READ bump removed, and an autocommit refusal. Mutation testing found 17 survivors concentrated in the
+orchestrator's tail; all killed. **Full account: PROJECT-NOTES § "The PR-150 review round".** Filed rather than
+fixed: [#152](https://github.com/cairn-ehr/drugref/issues/152) (synthesise the fixture's excluded-reference rows
+— a licensing-posture call) and [#153](https://github.com/cairn-ehr/drugref/issues/153) (concurrent pytest
+sessions wipe each other's schema, pre-existing).
 
 ### Slice 7 — Cairn `inn_code` wiring (Tier-A consumer)
 Fill the deliberately-nullable `inn_code` slot in Cairn's medication surface: autocomplete, coding a previously-uncoded

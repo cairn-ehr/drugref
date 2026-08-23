@@ -202,9 +202,19 @@ def test_a_drugcentral_pair_asserts_no_direction(conn):
     _assert_row(conn, run, "X", a, b, "A/B [VA]", band="Critical")
     row = conn.execute(
         "SELECT candidate_source, subject_moiety, object_moiety, relationship, "
-        "       severity, severity_rank, upstream_severity_label "
+        "       severity, severity_rank, upstream_severity_label, "
+        "       moiety_lo, moiety_hi "
         "FROM drugref.exact_ddi_pair").fetchone()
-    assert row == ("DRUGCENTRAL", None, None, None, "contraindicated", 1, "Critical")
+    assert row[:7] == (
+        "DRUGCENTRAL", None, None, None, "contraindicated", 1, "Critical")
+    # THE SHARED LOOKUP KEY, asserted on THIS arm too. The MED-RT arm's identical
+    # transposition is caught by the test above; swapping moiety_lo/moiety_hi in
+    # the DrugCentral arm alone left the suite green, which made the coverage
+    # asymmetric on the exact contract the view's COMMENT calls out ("KEYED
+    # UNORDERED"). Under that mutation a consumer joining
+    # `WHERE moiety_lo = %s AND moiety_hi = %s` gets MED-RT's row for a pair and
+    # misses DrugCentral's -- the two UNION ALL arms disagreeing on orientation.
+    assert row[7:] == (min(a, b), max(a, b))
 
 
 @pytest.mark.usefixtures("conn")

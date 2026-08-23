@@ -420,3 +420,75 @@ def test_the_route_checks_match_the_python_vocabulary(conn, constraint, expected
     assert found == wanted, (
         f"{constraint} admits {sorted(found)}, "
         f"drugcentral_resolve.{expected} is {sorted(wanted)}")
+
+
+# ---- db/050: the constraints db/049 stated in comments and enforced nowhere ----
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_blank_upstream_key_is_refused_at_insert(conn):
+    """ONE blank is already a defect, and it used to take TWO to be noticed.
+
+    `resolve_row` falls back to '' when `source_id` is NULL, and the orchestrator's
+    read-back compares COUNTS -- so a single blank was a perfectly valid row as far
+    as it could tell. db/049 calls this column "the upstream AUTHORITY's identifier
+    ... which is what a key anything downstream might cite has to be", and
+    drugcentral_ddi_pair uses it as the total-order tie-break that makes
+    most-severe-wins reproducible: '' sorts before every real key, so a blank
+    silently wins every tie it takes part in.
+
+    Named, not merely typed: an unnamed CheckViolation would also be raised by the
+    completeness CHECKs on this row, so a mutation that removed THIS constraint
+    would still pass a bare `pytest.raises(CheckViolation)`.
+    """
+    run = _open_run(conn)
+    one, two = _a_moiety(conn, run, "a"), _a_moiety(conn, run, "b")
+    with pytest.raises(psycopg.errors.CheckViolation,
+                       match="drugcentral_ddi_assertion_key_present"):
+        conn.execute(
+            "INSERT INTO drugref.drugcentral_ddi_assertion "
+            "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+            " upstream_label, severity_label, moiety_1_uuid, moiety_2_uuid, "
+            " route_1, route_2) "
+            "VALUES (%s, 'DRUGCENTRAL', '', 'a', 'b', 'A/B [VA]', 'Critical', "
+            "        %s, %s, 'display_name', 'display_name')",
+            (run, one, two))
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_severity_map_admits_only_declared_sources(conn):
+    """Symmetry db/049 wrote down for the assertion table and then did not apply.
+
+    Its comment on drugcentral_ddi_assertion.source states the rule -- source
+    columns are "widened per source as authorities land, not left open" -- and
+    ddi_source_severity.source was left open. A typo'd mapping row is inert rather
+    than harmful (the assertion FK rejects any label it cannot reach), so this is
+    symmetry rather than a defect; the asymmetry was unintended.
+    """
+    with pytest.raises(psycopg.errors.CheckViolation,
+                       match="ddi_source_severity_source"):
+        conn.execute(
+            "INSERT INTO drugref.ddi_source_severity (source, source_label, severity) "
+            "VALUES ('DRUGCENRTAL', 'Critical', 'contraindicated')")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_blank_endpoint_route_is_admitted_by_the_check(conn):
+    """The route exists in Python, so the CHECK must admit it or ingest aborts.
+
+    The parametrised vocabulary test above derives its expectations from
+    drugcentral_resolve's own frozensets, so it moves in lockstep with them by
+    construction. This one executes the INSERT, which is what proves the widened
+    CHECK actually reached the database rather than only the migration file.
+    """
+    run = _open_run(conn)
+    conn.execute(
+        "INSERT INTO drugref.drugcentral_ddi_assertion "
+        "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
+        " upstream_label, severity_label, route_1, route_2) "
+        "VALUES (%s, 'DRUGCENTRAL', 'X', '', 'b', 'A/B [VA]', 'Critical', "
+        "        'blank_endpoint', 'unresolved')", (run,))
+    assert conn.execute(
+        "SELECT route_1 FROM drugref.drugcentral_ddi_assertion").fetchone() == (
+        "blank_endpoint",)
+    assert drugcentral_resolve.ROUTE_BLANK_ENDPOINT in drugcentral_resolve.ROUTES

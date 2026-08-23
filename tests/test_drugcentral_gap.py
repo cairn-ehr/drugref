@@ -10,6 +10,7 @@ ask what an answer COULD change, and these are registry-coverage work
 import pytest
 
 from drugref import ids, questions
+from drugref.ingest import drugcentral_resolve
 
 
 def _run(conn):
@@ -20,7 +21,7 @@ def _run(conn):
         "RETURNING ingest_run_id").fetchone()[0]
 
 
-def _unresolved(conn, run, key, name, other="warfarin"):
+def _unresolved(conn, run, key, name, other="warfarin", route="unresolved"):
     """One assertion row where endpoint_1 (`name`) is unresolved and endpoint_2
     (`other`) resolves onto a throwaway moiety.
 
@@ -41,8 +42,8 @@ def _unresolved(conn, run, key, name, other="warfarin"):
         "(ingest_run, source, upstream_key, endpoint_1_name, endpoint_2_name, "
         " upstream_label, severity_label, moiety_2_uuid, route_1, route_2) "
         "VALUES (%s, 'DRUGCENTRAL', %s, %s, %s, 'X/Y [VA]', 'Critical', %s, "
-        "        'unresolved', 'display_name')",
-        (run, key, name, other, other_moiety))
+        "        %s, 'display_name')",
+        (run, key, name, other, other_moiety, route))
 
 
 @pytest.mark.usefixtures("conn")
@@ -132,3 +133,74 @@ def test_the_question_is_minted_with_a_folded_immortal_key(conn):
     assert gap_key == "DRUGCENTRAL:ENDPOINT:phytomenadione"
     assert question_uuid == ids.mint_question_uuid(
         "unresolved_ddi_endpoint", "DRUGCENTRAL:ENDPOINT:phytomenadione")
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_view_PUBLISHES_the_route_rather_than_assuming_one(conn):
+    """The view is route-AGNOSTIC by design, so the route has to be a column.
+
+    It filters on a NULL uuid and never on the route vocabulary (db/006's reason:
+    filtering there would put the list in a second place). So it admits
+    `not_a_substance` and `no_structural_key` alongside `unresolved` -- and the
+    question text derived from it asserted the `unresolved` story about all three.
+    """
+    run = _run(conn)
+    _unresolved(conn, run, "A", "Strong CYP3A4 Inhibitors",
+                route="not_a_substance")
+    _unresolved(conn, run, "B", "phytomenadione", other="aspirin")
+    assert conn.execute(
+        "SELECT endpoint_name, route FROM drugref.gap_unresolved_ddi_endpoint "
+        "ORDER BY endpoint_name").fetchall() == [
+            ("phytomenadione", "unresolved"),
+            ("strong cyp3a4 inhibitors", "not_a_substance")]
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_question_text_TELLS_THE_TRUTH_for_each_route(conn):
+    """question_uuid is IMMORTAL and externally cited, so the text must be right
+    the first time -- it cannot be quietly reworded once minted.
+
+    For `not_a_substance` DrugCentral has no struct_id at all, so "DrugCentral
+    resolves it to a structure with an InChIKey or a CAS number" was simply false;
+    for `no_structural_key` it has one carrying neither key, so the second half
+    ("no live identity_claim in drugref carries either") was.
+    """
+    run = _run(conn)
+    _unresolved(conn, run, "A", "Strong CYP3A4 Inhibitors",
+                route="not_a_substance")
+    _unresolved(conn, run, "B", "phytomenadione", other="aspirin")
+    _unresolved(conn, run, "C", "some biologic", other="digoxin",
+                route="no_structural_key")
+    questions.register_from_gaps(conn, run)
+    text = dict(conn.execute(
+        "SELECT gap_key, question_text FROM drugref.open_question "
+        "WHERE gap_kind = 'unresolved_ddi_endpoint'").fetchall())
+
+    class_name = text["DRUGCENTRAL:ENDPOINT:strong cyp3a4 inhibitors"]
+    assert "drug CLASS" in class_name
+    assert "resolves it to a structure" not in class_name
+
+    unresolved = text["DRUGCENTRAL:ENDPOINT:phytomenadione"]
+    assert "resolves it to a structure with an InChIKey or a CAS number" in unresolved
+
+    keyless = text["DRUGCENTRAL:ENDPOINT:some biologic"]
+    assert "neither an InChIKey nor a CAS number" in keyless
+
+
+@pytest.mark.usefixtures("conn")
+def test_the_view_folds_the_way_fold_name_DOES_not_merely_the_way_btrim_would(conn):
+    """One rule, two homes, and they were not the same rule.
+
+    db/049's comment says the fold "is drugcentral_resolve.fold_name's rule --
+    restated here". One-argument btrim() strips SPACES ONLY; Python's str.strip()
+    also strips tab, newline, CR, form feed and vertical tab. Both spellings below
+    must fold to ONE name, because question_uuid is immortal and two spellings of
+    one endpoint must never mint two questions that can be answered differently.
+    """
+    run = _run(conn)
+    _unresolved(conn, run, "A", "\tPhytomenadione\n")
+    _unresolved(conn, run, "B", " phytomenadione ", other="aspirin")
+    assert conn.execute(
+        "SELECT endpoint_name, row_count FROM drugref.gap_unresolved_ddi_endpoint"
+    ).fetchall() == [("phytomenadione", 2)]
+    assert drugcentral_resolve.fold_name("\tPhytomenadione\n") == "phytomenadione"

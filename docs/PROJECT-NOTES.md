@@ -2684,7 +2684,8 @@ example above was paraphrased from memory rather than read. **It does exist in t
 neither this note nor the correction that first fixed it was looking at:** `ddi.source_id` carries `MAOIs or
 RIMAs` on **10** rows and the shorter `MAOIs` on **3** more — **all 13 of them `ddi_ref_id = 1`**, which is every
 Stockley's row and nothing else, i.e. entirely inside the half rule 6 excludes. Re-derived 2026-08-23 against the
-recorded extract; the over-general first correction is § "The DrugCentral ddi ingest"'s own finding. (b) *"the rows whose endpoints are class-named"* reads as BOTH endpoints and at least three
+recorded extract; the over-general first correction is § "The DrugCentral ddi ingest"'s own finding. (b) *"the rows whose endpoints are class-named"* reads as BOTH endpoints and — measured directly against
+`ddi.tsv` during the PR-150 review — **21 of the 50** carry an ordinary drug name at one end; at least three
 rows have an ordinary drug at one end (`fusidic acid`, `methyldopa`, `risedronic acid`, each paired with a
 class). The claim is true **per row** — every excluded row has at least one class-named endpoint — and the
 2026-08-23 run states it exactly: **the 50 excluded rows contribute ZERO resolvable pairs**, so whole-table and
@@ -3555,7 +3556,7 @@ Fixed on the branch; the results file was regenerated end to end rather than edi
   slice is 6,866 new pairs rather than 6,337; and the QT gap is not merely un-closed but sits in the
   licence-excluded half.
 
-## The DrugCentral ddi ingest (2026-08-23) — `db/049`, issue #101
+## The DrugCentral ddi ingest (2026-08-23) — `db/049` + `db/050`, issue #101
 
 Design, approved and followed:
 [`drugcentral-ddi-ingest-design`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-ingest-design.md).
@@ -3853,6 +3854,133 @@ pattern is the finding.
   because the failure mode differs — a declarative table with a visible seam, not dense prose with none. **The
   figures live on the issue.**
 
+### The PR-150 review round — `db/050`, and the diagnosis that unified it
+
+Five specialist agents reviewed the branch (`/pr-review-toolkit:review-pr 150`): general code, tests, silent
+failures, comments, type design. **1 critical, 9 important, plus a coverage report from mutation testing.**
+Every finding below was reproduced before it was believed, and the two that did not survive reproduction are
+recorded here too, because a review round that only lists what it confirmed is the same genre of unfalsifiable
+document this project keeps replacing.
+
+**THE ONE DIAGNOSIS WORTH CARRYING FORWARD, because it explains four separate findings at once: every
+reconciliation in this slice proved the orchestrator SELF-CONSISTENT, and none proved it PUBLISHED ANYTHING.**
+`rows_read = excluded + bundleable` holds at `0 = 0 + 0`. `bundleable = resolved + self_pair + unresolved`
+holds at `0 = 0 + 0 + 0`. The read-back holds because `stored (0) == len(bundleable) (0)`. So the all-zeros run
+— the one run that destroys the projection — satisfied every guard the round had been proud of. A reconciliation
+between two numbers the same loop computed is not a guard; it is arithmetic.
+
+**The critical finding, measured end to end.** Renaming ONE column in the fixture — `ddi_ref_id` →
+`reference_id`, exactly what a re-publication is free to do — took the projection from 4 rows to 0, printed
+`0 bundleable of 8 rows (8 excluded by rule 6)`, and exited **0**. The summary line was the worst part: it
+**blamed rule 6** for a loss rule 6 had no part in, because `bundleable_rows` reads a column that is no longer
+there and every row fails the test for the same wrong reason. `check_reference_identity` could not see it — it
+reads a different table. `db/050`'s answer is `check_dump_is_readable` and `check_something_is_bundleable`,
+both **before `open_run`**, with three distinct messages: a table that decoded to nothing, a `ddi` table missing
+a column this code reads, and a dump every row of which rule 6 excludes. The third is the interesting one — a
+release that dropped NDF-RT is *well-formed* and is still refused, because rebuilding a source to empty is a
+decision an operator makes deliberately, not one an ingest makes on their behalf while reporting success.
+
+**What `db/050` adds, and why each was a comment rather than a constraint.**
+
+- **`upstream_key <> ''`.** One blank `source_id` published a row keyed by the empty string and reported clean
+  success; it took TWO to trip the read-back, because a count cannot tell a blank key from a real one. The
+  empty string sorts before every real key, so a blank silently won every `DISTINCT ON` tie it took part in —
+  in the tie-break whose entire purpose is making most-severe-wins reproducible.
+- **The `blank_endpoint` route.** A blank endpoint resolved to `not_a_substance`, which the resolver documents
+  as *"A CORRECT miss"* — so a malformed row was labelled a correct reading of an upstream class name, and was
+  then invisible everywhere else: dropped from the pair view by the NULL-uuid filter, dropped from the question
+  view by the `<> ''` filter that has to be there, and summed into `rows_unresolved` beside genuine misses. The
+  argument for a route of its own is the one `missing_keys_row` already made in db/049.
+- **`ddi_source_severity.source`.** db/049 wrote the rule down twelve lines below this table and did not apply
+  it here. Symmetry, not a defect — the assertion FK rejects any unmapped label anyway.
+- **A route-aware `gap_unresolved_ddi_endpoint`.** The view filters on a NULL uuid and **never** on the route
+  vocabulary (db/006's reason), so it admits `not_a_substance` and `no_structural_key` — and the question text
+  asserted the `unresolved` story about all of them: *"DrugCentral resolves it to a structure with an InChIKey
+  or a CAS number"*. False for a class name, whose struct_id does not exist. `question_uuid` is IMMORTAL and
+  externally cited, so that text cannot be quietly reworded once minted. It measured 0 wrong questions on this
+  release **only because all 10 names happen to land on `unresolved` — the guard was the data, not the code.**
+- **The fold.** db/049 said the view restated `fold_name`'s rule. One-argument `btrim()` strips SPACES ONLY;
+  `str.strip()` also strips tab, newline, CR, form feed and vertical tab. Two homes, two different rules,
+  feeding an immortal uuid. **Latent, not live**: all 7,621 endpoint values on this release are clean — which
+  is why it is cheaper to close than to keep re-verifying.
+
+**Code findings, all reproduced.**
+
+- **`Registry.__post_init__` silently reversed `first_wins`.** `first_wins` de-duplicated on the RAW key and
+  `Registry` re-keyed the survivors through the fold with a dict comprehension, which is **last**-wins. So
+  `Warfarin` and `warfarin` were two distinct keys (collision count: **0**, and that count is what the summary
+  publishes) and the fold kept the SECOND. Which one that is depends on the database's collation, so the same
+  dump resolved differently on two nodes — the exact failure the caller's `ORDER BY` exists to prevent, and
+  `substance_moiety.display_name` carries no uniqueness constraint. `first_wins` now takes the fold, so
+  de-duplication, first-wins and the count all happen in the key space `Registry` looks up in; and it counts
+  **distinct keys**, not surplus rows, so the figure can be checked against "14 InChIKeys and 29 CAS numbers".
+- **REPEATABLE READ was held across the whole run.** This was the only orchestrator in the repo that raised
+  isolation, and the snapshot covered `questions.register_from_gaps`, which upserts `open_question` for all
+  eighteen gap kinds — most of which this run never touches. Under RR an upsert onto a row a concurrent
+  transaction has updated raises `SerializationFailure` **immediately** rather than blocking; nothing here
+  retries. Measured directly: the same upsert against the same concurrent update fails under RR and succeeds
+  under READ COMMITTED. **The fix removed the need rather than the symptom** — `load_registry` is now ONE
+  statement, and a single statement sees a single snapshot at any isolation level.
+- **An autocommit connection voided every guarantee, and Postgres only whispered.** The server answers a
+  mis-placed `SET TRANSACTION` with a **notice**, not an error, and psycopg discards notices unless a handler
+  is installed — so the ingest reported success having silently lost its atomicity, `conn.rollback()` rolling
+  back nothing. Now refused outright.
+- **`resolved`/`self_pair` were two overlapping booleans whose branch ORDER was load-bearing**, defended by 21
+  lines of docstring, a 4-line caller comment, three tests and a ~50-line DB fixture built solely so a swap
+  would fail. Replaced by a total, disjoint `Outcome` enum — a caller cannot get an enum's branches in the
+  wrong order. `tools/drugcentral_ddi_measure` had already reached the same shape by a different route.
+- **The summary was built AFTER `conn.commit()`**, so a failing bucket identity would have raised with the
+  projection already published — the reverse of the harm direction every other guard here chooses. It is now
+  built inside the transaction, and carries the one check that is **not** tautological at its call site:
+  `pairs > rows_resolved`. Both bucket identities are satisfied by construction where the summary is built, and
+  an earlier comment credited `__post_init__` with catching a swapped-branch miscount it never could.
+- **`BUNDLEABLE_REF_IDS` was a second frozenset** beside `EXPECTED_REFERENCE`; widening only the admitted set
+  made the guard die on a bare `KeyError` instead of refusing the reference. Now **derived** from the
+  identities, in the file whose stated thesis is that a rule kept in two places is a rule this repo loses.
+
+**Three published figures were wrong again.** The decision record on docs.drugref.org said the excluded labels
+included *"a further `Critical` usage"* — `ddi_risk` has six rows, `Critical` appears **once**, and the
+twice-appearing label is `Potentially significant`; `make_drugcentral_subset.py` **in the same PR** stated it
+correctly, so two committed files contradicted each other. `bundleable_rows` cited *"648 … against 598"*, which
+are the **name-matching** column of the re-measurement — the approach the cascade replaced; the cascade
+measures **87 and 37**, also exactly 50 apart, which is what made the wrong pair look right. And *"those same
+50 rows are the ones whose endpoints are class-named"* reads as BOTH endpoints: **21 of the 50** carry an
+ordinary drug name at one end. PROJECT-NOTES had already retired that phrasing once and it came back.
+
+**Coverage: 17 mutants survived, all in the orchestrator's TAIL.** Everything after the insert loop —
+`register_from_gaps`, `finish_run`, `conn.commit()`, the `pairs` count, the checksum, the `open_run` arguments,
+the rollback — was executed by tests and asserted by none, so eight consecutive lines could be deleted or
+transposed with the suite green. Two were worth more than the rest: **`superseded_by IS NULL` could be dropped
+from both registry reads** (a retracted identifier resurrecting a resolution puts a WRONG MOIETY on a
+contraindication pair), and **`test_two_blank_source_ids...` asserted its own setup** — its docstring credited
+"the rollback" while the test itself called `conn.rollback()` before counting, so deleting the orchestrator's
+rollback left the suite green. All now killed, each verified by re-running its own mutation. The
+`exact_ddi_pair` **DrugCentral arm** could also transpose `moiety_lo`/`moiety_hi` while the MED-RT arm's
+identical mutation was caught — asymmetric coverage on the one contract the view's `COMMENT ON` calls out.
+
+**Two claims did NOT survive reproduction, and that is recorded deliberately.** An intermediate probe suggested
+`finish_run` was not stamping `finished_at`; tracing the UPDATE showed `rowcount = 1` and a committed timestamp
+— an artifact of an ad-hoc script. And one agent reported a "file changed" notice showing
+`Registry(inchikey=cas, cas=inchikey)` on disk; the file never contained it. Both were **cross-talk between
+review agents running concurrently against one working tree and one test database** — which is also what
+produced a run of phantom `SerializationFailure` and `DeadlockDetected` failures across unrelated modules, and
+is now filed as **#153**. A review that runs agents in parallel must treat its own contention as a suspect
+before it treats the branch as one.
+
+### Filed rather than fixed, this round
+
+- **[#152](https://github.com/cairn-ehr/drugref/issues/152) — synthesise the fixture's excluded-reference rows
+  rather than committing their text.** The four excluded rows ship Stockley's and Lexicomp monograph headings
+  in `source_id` verbatim (`MAOIs or RIMAs + Buspirone`, `Conivaptan: CYP3A4 Substrates`). `NOTICE` argues this
+  out under *Feist* and 37 C.F.R. §202.1(a), and that section was **verified accurate throughout**. It is filed
+  rather than fixed because it is a licensing-POSTURE decision, not a defect — but the risk is free to
+  eliminate: the rule-6 filter keys on `ddi_ref_id` and never on the text, so invented rows exercise the
+  exclusion path identically, and `make_drugcentral_subset.py` never weighed that option.
+- **[#153](https://github.com/cairn-ehr/drugref/issues/153) — two concurrent pytest sessions on one database
+  wipe each other's schema.** `conftest.py` runs `DROP SCHEMA ... CASCADE` in a session-scoped fixture.
+  Pre-existing; the failure mode is worse than a crash because it is *plausible* — it invents evidence against
+  whatever branch is under review.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4022,14 +4150,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1962 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2005 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1962
-# passed in 58.41 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 2005
+# passed in 60.15 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4038,7 +4166,10 @@ git config core.hooksPath .githooks
 # ddi ingest, added 71: 1888 → 1959; and the final whole-branch review's fix round,
 # on that same branch, added 3: 1959 → 1962 -- the writer's mixed-row transposition
 # test, the orchestrator's stored-count reconciliation, and the blank-endpoint gap
-# guard).
+# guard; and the PR-150 review-fix round -- db/050 -- added 43: 1962 -> 2005, which
+# is where the floor checks, the Outcome partition, the folded first_wins, the
+# autocommit refusal and the eight orchestrator-tail assertions that killed the
+# surviving mutants all landed).
 # THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,

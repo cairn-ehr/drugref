@@ -6,6 +6,7 @@ copyrighted book and a commercial compendium, and their description text may not
 sit in an AGPL repository. tests/fixtures/medrt_subset.xml carries the same kind
 of test for the same kind of reason.
 """
+import functools
 import gzip
 import pathlib
 
@@ -18,7 +19,15 @@ FIXTURE = pathlib.Path("tests/fixtures/drugcentral_ddi_subset.sql.gz")
 REDACTED = "[redacted: cites a reference CLAUDE.md rule 6 excludes]"
 
 
+@functools.cache
 def _tables():
+    """Decode the fixture ONCE per session.
+
+    Every test here calls this, and one of them calls it four times, so the gzip
+    was being re-read and re-parsed on each. Cheap at 8 rows and an invitation to
+    stop being cheap; `DumpTables` is frozen and holds tuples and a plain mapping,
+    so a shared instance is exactly as safe as a fresh one.
+    """
     with gzip.open(FIXTURE, "rt", encoding="utf-8") as handle:
         return drugcentral.read_tables(handle)
 

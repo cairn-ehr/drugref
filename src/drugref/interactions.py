@@ -422,8 +422,17 @@ def add_drugcentral_assertion(conn: psycopg.Connection, *,
                               endpoint_2_name: str,
                               upstream_label: str,
                               severity_label: str,
-                              moiety_1_uuid: uuid.UUID | None,
-                              moiety_2_uuid: uuid.UUID | None,
+                              # `str | None`, NOT `uuid.UUID | None` as this read
+                              # before: load_registry selects `moiety_uuid::text`,
+                              # so every uuid reaching here through the cascade is
+                              # a string. The sibling writers above genuinely take
+                              # UUID objects (classes.moieties_by_rxcui yields
+                              # them), which is how the wrong annotation looked
+                              # right. psycopg lets Postgres infer the cast either
+                              # way, so nothing failed -- the signature was simply
+                              # wrong about its only production caller.
+                              moiety_1_uuid: str | uuid.UUID | None,
+                              moiety_2_uuid: str | uuid.UUID | None,
                               route_1: str,
                               route_2: str) -> bool:
     """Record one published DrugCentral interaction, resolved or not.

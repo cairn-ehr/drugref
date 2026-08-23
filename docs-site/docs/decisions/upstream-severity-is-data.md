@@ -33,9 +33,11 @@ the other is **a clinical judgement drugref makes on a consumer's behalf**, on 7
 any curator will look at individually in any foreseeable round. A judgement at that scale, made once and then
 invisible, is exactly the kind of thing that should not live in a parser.
 
-There is a second-order problem too. DrugCentral's severity lookup is scoped *per reference*: the four other
-labels in it (`Avoid combination`, `Contraindicated`, `Potentially significant` and a further `Critical`
-usage) belong to the two references drugref does not ingest. So the mapping cannot be inferred from the
+There is a second-order problem too. DrugCentral's severity lookup is scoped *per reference*: its six rows
+cover three references, and the four rows outside the ingested one belong to the two references drugref does
+not ingest — `Potentially significant` and `Contraindicated` from Stockley's, `Potentially significant` again
+and `Avoid combination` from Lexicomp. (The label appearing under two references is `Potentially significant`;
+`Critical` appears exactly once, in the ingested half. An earlier revision of this page said the opposite.) So the mapping cannot be inferred from the
 table's overall vocabulary, and a future release that added a third band to the ingested half would be a
 silent change to the meaning of every row drugref stores.
 
