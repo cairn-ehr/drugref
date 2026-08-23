@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-measure DrugCentral's `ddi` table against drugref's registry (issue #101).
+r"""Re-measure DrugCentral's `ddi` table against drugref's registry (issue #101).
 
 **Why this script exists.** Issue #101's figures were measured once, on
 2026-08-13, with throwaway code, against a 1.4 GB dump that was then deleted.
@@ -10,49 +10,80 @@ evaluation puts its measurement in ``tools/``**. This is that measurement.
 
 **Run it**::
 
-    uv run python -m tools.drugcentral_ddi_spike \\
-        --dump downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz \\
-        --dsn "host=localhost port=5532 dbname=drugref_dc101 user=postgres" \\
-        --out docs/superpowers/specs/\
-              2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md
+    RESULTS=docs/superpowers/specs
+    uv run python -m tools.drugcentral_ddi_spike \
+        --dump downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz \
+        --dsn "host=localhost port=5532 dbname=drugref_dc101 user=postgres" \
+        --out "$RESULTS/2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md"
+
+(The module docstring is a RAW string: a non-raw one silently ate the backslash
+before a wrapped ``--out`` argument, so the command printed by ``print(__doc__)``
+could not be copy-pasted -- argparse rejected it.)
 
 The dump is **not** in the repo and **not** in `downloads/` by default (both are
 gitignored); fetch it from ``https://unmtid-dbs.net/download/`` first. The DSN must
 point at a database carrying the real releases -- a `drugref migrate` plus the
 documented `ingest chain` -- because every resolution figure joins against the live
-registry. Building one takes ~132 s; see PROJECT-NOTES § "How to run / test".
+registry. See PROJECT-NOTES § "How to run / test".
 
 **What it reports, and the one thing to read first.** The script measures endpoint
 resolution TWICE: once by name alone (what issue #101 did) and once through the
 structural cascade in `tools.drugcentral_resolve`. Reporting both is the point --
 the difference between them is the finding, and a single number would hide it.
+
+**Where the parts live.** The COPY reader is `tools.drugcentral_dump`, the extract
+cache `tools.drugcentral_cache`, the arithmetic `tools.drugcentral_ddi_measure` and
+the rendering `tools.drugcentral_ddi_report` -- all four pure and tested without a
+dump or a database. This file owns the two things that are neither: the command
+line and the only transaction.
 """
 from __future__ import annotations
 
 import argparse
 import collections
-import csv
 import datetime as dt
 import gzip
 import hashlib
 import pathlib
+import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 
 import psycopg
 
-from tools.drugcentral_dump import iter_copy_rows
+from tools.drugcentral_cache import (
+    CacheManifest,
+    cache_status,
+    extract,
+    load,
+    read_manifest,
+)
+from tools.drugcentral_ddi_measure import (
+    class_coverage,
+    names_a_qt_population,
+    measure,
+    mentions_qt,
+    name_provenance,
+)
+from tools.drugcentral_ddi_report import RegistryTotals, ReportContext, render_report
 from tools.drugcentral_resolve import (
-    ROUTE_UNRESOLVED,
+    ROUTE_DISPLAY_NAME,
+    ROUTE_NOT_A_SUBSTANCE,
     Registry,
+    Resolution,
     build_endpoint_index,
+    fold_name,
     resolve_endpoint,
-    unordered_pair,
 )
 
 # The tables this measurement reads, and the columns kept from each. `ddi`,
 # `ddi_risk` and `reference` are small enough to keep whole; the other three are
-# projected because `structures.molfile` alone is most of their bulk.
+# projected because `structures.molfile` alone is most of their bulk. A projection
+# the dump does not declare is refused by `drugcentral_cache.extract` rather than
+# written blank -- an all-empty column and an absent one are indistinguishable
+# downstream, and the blank-key guards in the cascade would turn the second into a
+# silent, plausible "the structural route bought nothing".
 WANTED_COLUMNS: dict[str, Sequence[str] | None] = {
     "ddi": None,
     "ddi_risk": None,
@@ -65,22 +96,34 @@ WANTED_COLUMNS: dict[str, Sequence[str] | None] = {
 # `ddi.ddi_ref_id` values whose rows drugref may bundle. Rule 6 is decided by the
 # `reference` table, NOT by DrugCentral's own CC BY-SA over the compilation: two of
 # its three references are third-party compendia it has no power to relicense. The
-# script re-reads and re-prints all three so the determination is never inferred.
+# script re-reads and re-prints all three so the determination is never inferred,
+# and this set is passed into the report so the verdict it PRINTS and the filter it
+# APPLIES cannot drift apart.
 BUNDLEABLE_REF_IDS = frozenset({"2"})
 
+# `drugcentral.dump.11012023.sql.gz` -> `11012023`.
+_RELEASE_IN_FILENAME = re.compile(r"\.dump\.(?P<release>\d{8})\.")
 
-def _mentions_qt(row: Mapping[str, str]) -> bool:
-    """True if a `ddi` row mentions QT prolongation anywhere (issue 93).
 
-    Endpoints AND description, because the two class-named QT populations appear
-    as endpoints while the third row mentions QT only in its prose.
+def release_from_dump(dump: pathlib.Path) -> str | None:
+    """Read the published release out of the dump's filename, or return ``None``.
+
+    Derived rather than typed, because ``--release`` defaulted to ``"11012023"``
+    whatever file ``--dump`` pointed at, so measuring a later dump would assert a
+    2023 release beside a SHA-256 of completely different bytes.
     """
-    blob = f'{row["drug_class1"]} {row["drug_class2"]} {row["description"]}'.lower()
-    return "qt" in blob or "torsade" in blob
+    match = _RELEASE_IN_FILENAME.search(dump.name)
+    return match.group("release") if match else None
 
 
 def sha256(path: pathlib.Path) -> str:
-    """Hash the dump so a later run can prove it measured the same bytes."""
+    """Hash the dump so a later run can prove it measured the same bytes.
+
+    Recorded in the cache manifest as well as the report, and compared before a
+    cached extract is trusted -- otherwise a warm cache plus a new ``--dump``
+    prints the new digest above the old figures, which is worse than recording no
+    digest at all.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -88,167 +131,235 @@ def sha256(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def extract(dump: pathlib.Path, work_dir: pathlib.Path) -> dict[str, int]:
-    """Stream the dump once, writing one TSV per wanted table. Returns row counts.
+def _first_wins(rows: Sequence[tuple[str, str]]) -> tuple[dict[str, str], int]:
+    """Fold ``(key, uuid)`` rows into a lookup, counting keys claimed more than once.
 
-    One pass over ~5 GB of decompressed SQL, ~14 s. The caches make every later
-    phase cheap, which is what lets this script be re-run while a design is being
-    argued about rather than once at the end.
+    First-wins over a deterministically ORDERED read, which is the rule
+    `src/drugref/classes.py` states for the same join: `identity_claim` is unique
+    on ``(moiety_uuid, scheme, value)`` and deliberately NOT across moieties, so
+    two moieties may legitimately carry one CAS number. An unordered single-row
+    read *"could answer differently run to run"* -- in a script whose entire
+    justification is reproducibility.
+
+    The collision count is returned rather than discarded, because the previous
+    docstring promised that the totals would report duplicates and nothing did.
     """
-    work_dir.mkdir(parents=True, exist_ok=True)
-    writers: dict[str, csv.DictWriter] = {}
-    handles: dict[str, object] = {}
-    counts: collections.Counter[str] = collections.Counter()
-
-    with gzip.open(dump, "rt", encoding="utf-8") as stream:
-        for table, row in iter_copy_rows(stream, set(WANTED_COLUMNS)):
-            if table not in writers:
-                columns = WANTED_COLUMNS[table] or list(row)
-                path = work_dir / f"{table}.tsv"
-                handle = path.open("w", newline="", encoding="utf-8")
-                handles[table] = handle
-                writers[table] = csv.DictWriter(
-                    handle, fieldnames=list(columns), delimiter="\t",
-                    extrasaction="ignore")
-                writers[table].writeheader()
-            writers[table].writerow(
-                {k: ("" if v is None else v) for k, v in row.items()})
-            counts[table] += 1
-
-    for handle in handles.values():
-        handle.close()          # type: ignore[attr-defined]
-    return dict(counts)
+    lookup: dict[str, str] = {}
+    duplicates = 0
+    for key, uuid in rows:
+        if key in lookup:
+            duplicates += 1
+            continue
+        lookup[key] = uuid
+    return lookup, duplicates
 
 
-def load(work_dir: pathlib.Path, table: str) -> list[dict[str, str]]:
-    """Read one cached TSV back."""
-    with (work_dir / f"{table}.tsv").open(encoding="utf-8", newline="") as handle:
-        return list(csv.DictReader(handle, delimiter="\t"))
+@dataclass(frozen=True)
+class RegistrySide:
+    """Everything read from the drugref database, in one snapshot.
 
-
-def load_registry(
-    dsn: str,
-) -> tuple[Registry, set[tuple[str, str]], int, dict[str, int]]:
-    """Load the drugref side: three lookups, the held pairs, and some totals.
-
-    ``setdefault`` on every map because a duplicate key must not silently pick the
-    last row read; the totals report whether any duplicates existed at all.
+    Attributes:
+        registry: the three moiety lookups the cascade joins against.
+        class_sources: folded ``substance_class.class_name`` -> ``source``. Read
+            so the report can say how much of the endpoint residue is a class
+            drugref DOES hold, and under which authority -- the half of issue
+            #101's claim that was wrong.
+        held: the unordered moiety pairs `ddi_candidate_pair` already carries.
+        candidate_rows: its row count, which is not its pair count.
+        totals: sizes and collision counts, for the report's audit line.
     """
-    display_name: dict[str, str] = {}
-    inchikey: dict[str, str] = {}
-    cas: dict[str, str] = {}
 
-    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
-        cur.execute("SELECT lower(display_name), moiety_uuid::text "
-                    "FROM drugref.substance_moiety")
-        for name, uuid in cur.fetchall():
-            display_name.setdefault(name, uuid)
-
-        cur.execute(
-            "SELECT upper(value), moiety_uuid::text FROM drugref.identity_claim "
-            "WHERE scheme = %s AND superseded_by IS NULL", ("INCHIKEY",))
-        for value, uuid in cur.fetchall():
-            inchikey.setdefault(value, uuid)
-
-        cur.execute(
-            "SELECT upper(value), moiety_uuid::text FROM drugref.identity_claim "
-            "WHERE scheme = %s AND superseded_by IS NULL", ("CAS",))
-        for value, uuid in cur.fetchall():
-            cas.setdefault(value, uuid)
-
-        cur.execute("""
-            SELECT DISTINCT
-                   least(subject_moiety, partner_moiety)::text,
-                   greatest(subject_moiety, partner_moiety)::text
-              FROM drugref.ddi_candidate_pair
-        """)
-        held = {(a, b) for a, b in cur.fetchall()}
-
-        cur.execute("SELECT count(*) FROM drugref.ddi_candidate_pair")
-        candidate_rows = int(cur.fetchone()[0])
-
-        cur.execute("""
-            SELECT (SELECT count(*) FROM drugref.substance_moiety),
-                   (SELECT count(*) FROM drugref.substance_class),
-                   (SELECT max(filename) FROM drugref.schema_migration)
-        """)
-        moieties, classes, migration = cur.fetchone()
-
-    totals = {"moieties": int(moieties), "classes": int(classes),
-              "migration": migration}
-    return Registry(display_name, inchikey, cas), held, candidate_rows, totals
+    registry: Registry
+    class_sources: Mapping[str, str]
+    held: set[tuple[str, str]]
+    candidate_rows: int
+    totals: RegistryTotals
 
 
-def name_only(name: str, registry: Registry) -> tuple[str | None, str]:
+def load_registry(dsn: str) -> RegistrySide:
+    """Load the drugref side of the join in one REPEATABLE READ transaction.
+
+    Every statement in a READ COMMITTED transaction gets its own snapshot, so the
+    registry totals, the three lookups and `ddi_candidate_pair` could each come
+    from a different state of the database. For a measurement claiming
+    reproducibility that is the wrong isolation level.
+
+    Every read is ORDERED. See `_first_wins` for why that is not cosmetic.
+    """
+    with psycopg.connect(dsn) as conn:
+        conn.read_only = True
+        conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+        with conn.cursor() as cur:
+            cur.execute("SELECT display_name, moiety_uuid::text "
+                        "FROM drugref.substance_moiety "
+                        "ORDER BY display_name, moiety_uuid")
+            display_name, duplicate_display_names = _first_wins(cur.fetchall())
+
+            cur.execute(
+                "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
+                "WHERE scheme = %s AND superseded_by IS NULL "
+                "ORDER BY value, moiety_uuid", ("INCHIKEY",))
+            inchikey, duplicate_inchikeys = _first_wins(cur.fetchall())
+
+            cur.execute(
+                "SELECT value, moiety_uuid::text FROM drugref.identity_claim "
+                "WHERE scheme = %s AND superseded_by IS NULL "
+                "ORDER BY value, moiety_uuid", ("CAS",))
+            cas, duplicate_cas = _first_wins(cur.fetchall())
+
+            cur.execute("SELECT lower(class_name), source "
+                        "FROM drugref.substance_class "
+                        "ORDER BY class_name, source")
+            class_sources = {name: source for name, source in cur.fetchall()}
+
+            cur.execute("""
+                SELECT DISTINCT
+                       least(subject_moiety, partner_moiety)::text,
+                       greatest(subject_moiety, partner_moiety)::text
+                  FROM drugref.ddi_candidate_pair
+            """)
+            held = {(a, b) for a, b in cur.fetchall()}
+
+            cur.execute("SELECT count(*) FROM drugref.ddi_candidate_pair")
+            candidate_rows = int(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT (SELECT count(*) FROM drugref.substance_moiety),
+                       (SELECT count(*) FROM drugref.substance_class),
+                       (SELECT max(filename) FROM drugref.schema_migration)
+            """)
+            moieties, classes, migration = cur.fetchone()
+
+    # `Registry` folds its own keys, so the SQL above does not -- the case rule
+    # used to live in both places, which is the shape this repo keeps losing to.
+    registry = Registry(display_name=display_name, inchikey=inchikey, cas=cas)
+    totals = RegistryTotals(
+        moieties=int(moieties),
+        classes=int(classes),
+        migration=migration,
+        display_names=len(registry.display_name),
+        inchikeys=len(registry.inchikey),
+        cas=len(registry.cas),
+        duplicate_display_names=duplicate_display_names,
+        duplicate_inchikeys=duplicate_inchikeys,
+        duplicate_cas=duplicate_cas,
+    )
+    return RegistrySide(registry, class_sources, held, candidate_rows, totals)
+
+
+def name_only_resolver(registry: Registry) -> Callable[[str], Resolution]:
     """Issue #101's original resolver: ``display_name`` and nothing else.
 
     Kept so the report can state both figures side by side. A comparison against a
     remembered number is not a comparison.
     """
-    hit = registry.display_name.get(name.strip().lower())
-    return (hit, "display_name") if hit is not None else (None, ROUTE_UNRESOLVED)
+    def resolve(name: str) -> Resolution:
+        hit = registry.display_name.get(fold_name(name))
+        if hit is None:
+            return Resolution(None, ROUTE_NOT_A_SUBSTANCE)
+        return Resolution(hit, ROUTE_DISPLAY_NAME)
+
+    return resolve
 
 
-def measure(
-    rows: Sequence[Mapping[str, str]],
-    resolve: object,
-    held: set[tuple[str, str]],
-) -> dict[str, object]:
-    """Resolve every endpoint in *rows* and count rows, pairs and overlap.
+def _ensure_cache(args: argparse.Namespace, dump_sha256: str) -> CacheManifest:
+    """Extract unless the cache can be PROVED to match this dump.
 
-    Three units, deliberately kept apart and all reported: **rows** (one `ddi`
-    record), **pairs** (a resolved, orientation-normalised moiety pair) and
-    **distinct pairs**. PROJECT-NOTES records that these were being quoted
-    interchangeably in the original evaluation.
+    Returns the manifest either way, so the report's provenance block and its
+    table counts come from the same record as the TSVs beside it.
     """
-    names = sorted({r["drug_class1"] for r in rows} | {r["drug_class2"] for r in rows})
-    resolved: dict[str, str | None] = {}
-    routes: collections.Counter[str] = collections.Counter()
-    for name in names:
-        uuid, route = resolve(name)            # type: ignore[operator]
-        resolved[name] = uuid
-        routes[route] += 1
+    usable, reason = cache_status(args.work_dir, dump_sha256, WANTED_COLUMNS)
+    if args.refresh or not usable:
+        if not args.refresh:
+            print(f"re-extracting: {reason}", file=sys.stderr)
+        print(f"extracting {args.dump} -> {args.work_dir} ...", file=sys.stderr)
+        with gzip.open(args.dump, "rt", encoding="utf-8") as stream:
+            manifest = extract(
+                stream,
+                args.work_dir,
+                wanted_columns=WANTED_COLUMNS,
+                dump_path=str(args.dump),
+                dump_bytes=args.dump.stat().st_size,
+                dump_sha256=dump_sha256,
+            )
+        return manifest
 
-    pairs: set[tuple[str, str]] = set()
-    unresolvable_rows = 0
-    self_pair_rows = 0
-    for row in rows:
-        left, right = resolved[row["drug_class1"]], resolved[row["drug_class2"]]
-        if left is None or right is None:
-            unresolvable_rows += 1
-            continue
-        pair = unordered_pair(left, right)
-        if pair is None:
-            self_pair_rows += 1
-            continue
-        pairs.add(pair)
-
-    overlap = pairs & held
-    return {
-        "rows": len(rows),
-        "names": len(names),
-        "routes": dict(routes),
-        "names_resolved": sum(1 for v in resolved.values() if v is not None),
-        "unresolved_names": sorted(n for n in names if resolved[n] is None),
-        "unresolvable_rows": unresolvable_rows,
-        "self_pair_rows": self_pair_rows,
-        "pairs": len(pairs),
-        "held": len(overlap),
-        "new": len(pairs) - len(overlap),
-    }
+    print(f"using cached extract in {args.work_dir}", file=sys.stderr)
+    manifest = read_manifest(args.work_dir)
+    assert manifest is not None                 # cache_status proved it readable
+    return manifest
 
 
-def render(context: dict[str, object]) -> str:
-    """Render the measurement as Markdown. Pure: every figure arrives in *context*."""
-    from tools.drugcentral_ddi_report import render_report
+def build_context(args: argparse.Namespace, release: str) -> ReportContext:
+    """Do the measuring. Every figure the report prints is decided here."""
+    dump_sha256 = sha256(args.dump)
+    manifest = _ensure_cache(args, dump_sha256)
 
-    return render_report(context)
+    ddi = load(args.work_dir, "ddi")
+    if not ddi:
+        raise SystemExit("the dump's `ddi` table is empty: nothing to measure")
+    structures = load(args.work_dir, "structures")
+    synonyms = load(args.work_dir, "synonyms")
+    references = {r["id"]: r for r in load(args.work_dir, "reference")}
+    bundleable = [r for r in ddi if r["ddi_ref_id"] in BUNDLEABLE_REF_IDS]
+
+    index = build_endpoint_index(structures, synonyms)
+    side = load_registry(args.dsn)
+
+    def cascade(name: str) -> Resolution:
+        return resolve_endpoint(name, index, side.registry)
+
+    by_name = name_only_resolver(side.registry)
+    # Provenance is measured over the BUNDLEABLE endpoints, because that is the
+    # denominator the synonym-bridge claim is about: 924 NDF-RT endpoint names,
+    # not the 970 of the whole table. Class coverage below is whole-table, which
+    # is the denominator issue #101's "970 names" claim used. Two different
+    # questions, two different denominators, both named where they are printed.
+    endpoints = ([r["drug_class1"] for r in bundleable]
+                 + [r["drug_class2"] for r in bundleable])
+    pharma_class = load(args.work_dir, "pharma_class")
+
+    return ReportContext(
+        generated=dt.date.today().isoformat(),
+        dump=str(args.dump),
+        dump_bytes=args.dump.stat().st_size,
+        dump_sha256=dump_sha256,
+        release=release,
+        dump_lines=manifest.dump_lines,
+        decompressed_bytes=manifest.decompressed_bytes,
+        table_counts=dict(manifest.counts),
+        references=references,
+        ref_distribution=dict(collections.Counter(r["ddi_ref_id"] for r in ddi)),
+        bundleable_ref_ids=BUNDLEABLE_REF_IDS,
+        risk_vocabulary=load(args.work_dir, "ddi_risk"),
+        risk_whole=dict(collections.Counter(r["ddi_risk"] for r in ddi)),
+        risk_bundleable=dict(
+            collections.Counter(r["ddi_risk"] for r in bundleable)),
+        registry_totals=side.totals,
+        candidate_rows=side.candidate_rows,
+        candidate_pairs=len(side.held),
+        whole_name_only=measure(ddi, by_name, side.held),
+        whole_cascade=measure(ddi, cascade, side.held),
+        bundleable_name_only=measure(bundleable, by_name, side.held),
+        bundleable_cascade=measure(bundleable, cascade, side.held),
+        whole_class_coverage=class_coverage(ddi, cascade, side.class_sources),
+        whole_class_coverage_name_only=class_coverage(
+            ddi, by_name, side.class_sources),
+        name_provenance=name_provenance(endpoints, structures, synonyms),
+        qt_rows=[r for r in ddi if mentions_qt(r)],
+        pharma_class_rows=len(pharma_class),
+        pharma_class_named=sum(1 for r in pharma_class if (r["name"] or "").strip()),
+        # The same whole-token rule `mentions_qt` uses, so the report's two QT
+        # figures are counted the same way rather than one by substring.
+        pharma_class_qt=sum(
+            1 for r in pharma_class if names_a_qt_population(r["name"] or "")),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dump", type=pathlib.Path, required=True,
-                        help="drugcentral.dump.<date>.sql.gz")
+                        help="drugcentral.dump.<MMDDYYYY>.sql.gz")
     parser.add_argument("--dsn", required=True,
                         help="a drugref database carrying the real releases")
     parser.add_argument("--work-dir", type=pathlib.Path,
@@ -257,60 +368,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=pathlib.Path, required=True,
                         help="Markdown results file to write")
     parser.add_argument("--refresh", action="store_true",
-                        help="re-extract even if the TSV caches already exist")
-    parser.add_argument("--release", default="11012023",
-                        help="the dump's published date, recorded in the report")
+                        help="re-extract even if the cache matches this dump")
+    parser.add_argument("--release", default=None,
+                        help="override the release read from the dump's filename")
     args = parser.parse_args(argv)
 
     if not args.dump.exists():
         parser.error(f"dump not found: {args.dump}")
 
-    cached = (args.work_dir / "ddi.tsv").exists()
-    if args.refresh or not cached:
-        print(f"extracting {args.dump} -> {args.work_dir} ...", file=sys.stderr)
-        table_counts = extract(args.dump, args.work_dir)
-    else:
-        print(f"using cached extract in {args.work_dir}", file=sys.stderr)
-        table_counts = {t: len(load(args.work_dir, t)) for t in WANTED_COLUMNS}
+    derived = release_from_dump(args.dump)
+    release = args.release or derived
+    if release is None:
+        parser.error(
+            f"cannot read a release date out of {args.dump.name!r}; pass --release")
+    if args.release and derived and args.release != derived:
+        parser.error(
+            f"--release {args.release} disagrees with the dump's filename "
+            f"({derived}); the report would attribute these figures to the wrong "
+            "release")
 
-    ddi = load(args.work_dir, "ddi")
-    references = {r["id"]: r for r in load(args.work_dir, "reference")}
-    bundleable = [r for r in ddi if r["ddi_ref_id"] in BUNDLEABLE_REF_IDS]
-
-    index = build_endpoint_index(load(args.work_dir, "structures"),
-                                 load(args.work_dir, "synonyms"))
-    registry, held, candidate_rows, totals = load_registry(args.dsn)
-
-    def cascade(name: str) -> tuple[str | None, str]:
-        return resolve_endpoint(name, index, registry)
-
-    context: dict[str, object] = {
-        "generated": dt.date.today().isoformat(),
-        "dump": str(args.dump),
-        "dump_bytes": args.dump.stat().st_size,
-        "dump_sha256": sha256(args.dump),
-        "release": args.release,
-        "table_counts": table_counts,
-        "references": references,
-        "ref_distribution": dict(collections.Counter(r["ddi_ref_id"] for r in ddi)),
-        "risk_vocabulary": load(args.work_dir, "ddi_risk"),
-        "risk_whole": dict(collections.Counter(r["ddi_risk"] for r in ddi)),
-        "risk_bundleable": dict(collections.Counter(r["ddi_risk"] for r in bundleable)),
-        "registry_totals": totals,
-        "candidate_rows": candidate_rows,
-        "candidate_pairs": len(held),
-        "whole_name_only": measure(ddi, lambda n: name_only(n, registry), held),
-        "whole_cascade": measure(ddi, cascade, held),
-        "bundleable_name_only": measure(
-            bundleable, lambda n: name_only(n, registry), held),
-        "bundleable_cascade": measure(bundleable, cascade, held),
-        "qt_rows": [r for r in ddi if _mentions_qt(r)],
-        "pharma_class_qt": sum(1 for r in load(args.work_dir, "pharma_class")
-                               if "qt" in (r["name"] or "").lower()),
-    }
-
+    context = build_context(args, release)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(render(context), encoding="utf-8")
+    args.out.write_text(render_report(context), encoding="utf-8")
     print(f"wrote {args.out}", file=sys.stderr)
     return 0
 

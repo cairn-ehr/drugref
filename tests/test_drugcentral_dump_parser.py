@@ -212,3 +212,151 @@ def test_iter_copy_rows_accepts_lines_that_still_carry_their_newline():
     assert list(iter_copy_rows(dump, {"ddi"})) == [
         ("ddi", {"id": "1", "description": "a description"}),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The escapes `pg_dump` does not emit, which a dump from another producer will
+# ---------------------------------------------------------------------------
+
+def test_decode_copy_field_decodes_an_octal_escape():
+    r"""`\101` is `A`. PostgreSQL's COPY TEXT defines it; `pg_dump` never emits it.
+
+    Handled anyway because this module is the reusable instrument for the next
+    dump-shaped source, and the previous comment here claimed the escape table
+    WAS PostgreSQL's rule while omitting this form -- so `\101` decoded to the
+    three characters `101`, silently, in a parser whose whole job is refusing to
+    be silently wrong.
+    """
+    assert decode_copy_field(r"\101") == "A"
+    assert decode_copy_field(r"a\13b") == "a\vb"        # up to 3 digits, greedy
+    assert decode_copy_field(r"\0011") == "\x011"       # exactly 3 digits, then '1'
+
+
+def test_decode_copy_field_decodes_a_hex_escape():
+    r"""`\x41` is `A`; 1-2 hex digits, per PostgreSQL."""
+    assert decode_copy_field(r"\x41") == "A"
+    assert decode_copy_field(r"\x9") == "\t"
+    assert decode_copy_field(r"\x41z") == "Az"
+
+
+def test_decode_copy_field_leaves_a_bare_x_alone_when_no_hex_digit_follows():
+    r"""`\xz` has no hex digits, so it falls back to the unknown-escape rule."""
+    assert decode_copy_field(r"\xz") == "xz"
+
+
+# ---------------------------------------------------------------------------
+# Error context -- a 13.5 million line dump needs more than "a row was wrong"
+# ---------------------------------------------------------------------------
+
+def test_a_field_count_mismatch_names_the_table_and_the_line_number():
+    """`row has 3 fields but the header declared 4` is not actionable at 13.5M lines.
+
+    Without the line number the operator's only recourse is to bisect a 5 GB
+    file by hand.
+    """
+    dump = [
+        "COPY public.ddi (id, description) FROM stdin;",
+        "1\tfine",
+        "2\tone\ttoo\tmany",
+        "\\.",
+    ]
+
+    with pytest.raises(CopyFormatError) as excinfo:
+        list(iter_copy_rows(dump, {"ddi"}))
+
+    message = str(excinfo.value)
+    assert "ddi" in message and "line 3" in message
+
+
+def test_an_unterminated_block_names_the_line_the_block_opened_on():
+    dump = ["-- preamble", "COPY public.ddi (id) FROM stdin;", "1"]
+
+    with pytest.raises(CopyFormatError) as excinfo:
+        list(iter_copy_rows(dump, {"ddi"}))
+
+    assert "line 2" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# The terminator, from both sides
+# ---------------------------------------------------------------------------
+
+def test_a_data_line_that_merely_LOOKS_like_the_terminator_does_not_close_the_block():
+    r"""The mirror of the header trap, and the more dangerous half.
+
+    A field holding the two characters `\.` arrives escaped as `\\.`, which is
+    NOT the terminator. Were the terminator check ever loosened to `startswith`
+    or `in`, this block would close early, the remaining real rows would be
+    skipped as out-of-block text, and the run would finish with a short count and
+    no error -- the exact shape of failure this parser refuses everywhere else.
+    """
+    dump = [
+        "COPY public.ddi (id, description) FROM stdin;",
+        "1\t\\\\.",                                    # field is a backslash-dot
+        "2\treal row",
+        "\\.",
+    ]
+
+    got = list(iter_copy_rows(dump, {"ddi"}))
+
+    assert got == [
+        ("ddi", {"id": "1", "description": "\\."}),
+        ("ddi", {"id": "2", "description": "real row"}),
+    ]
+
+
+def test_an_unterminated_block_raises_even_for_a_table_nobody_wanted():
+    """Truncation is truncation. The wanted tables may all have arrived intact.
+
+    `pg_dump` emits tables in dependency order, so a download cut short leaves
+    the LAST table open -- and that table is usually one this measurement does
+    not decode. Silence here would mean a truncated dump measured as a whole one.
+    """
+    dump = ["COPY public.molfile_blobs (id) FROM stdin;", "1"]
+
+    with pytest.raises(CopyFormatError):
+        list(iter_copy_rows(dump, {"ddi"}))
+
+
+def test_two_schemas_holding_the_same_table_name_refuse_to_merge():
+    """The schema qualifier is dropped, so `public.ddi` and `staging.ddi` collide.
+
+    Both blocks would stream into one `"ddi"` result and the row count would be
+    their sum -- decoded correctly, attributed to a table that does not exist.
+    Nothing in the 2023-11-01 dump does this; the guard costs one comparison.
+    """
+    dump = [
+        "COPY public.ddi (id) FROM stdin;",
+        "1",
+        "\\.",
+        "COPY staging.ddi (id) FROM stdin;",
+        "2",
+        "\\.",
+    ]
+
+    with pytest.raises(CopyFormatError) as excinfo:
+        list(iter_copy_rows(dump, {"ddi"}))
+
+    assert "staging" in str(excinfo.value) and "public" in str(excinfo.value)
+
+
+def test_the_docstring_examples_actually_run():
+    """The doctests in this module were never executed by anything.
+
+    `testpaths = ["tests"]` and no `--doctest-modules`, so `>>>` examples in
+    `tools/` were documentation that looked like tests and was never checked --
+    and this module's examples are all about backslash escaping, which is the
+    easiest thing in the file to get subtly wrong.
+
+    ``attempted > 0`` is not padding: a doctest run that collects nothing passes,
+    which is the same shape of vacuous green `tests/test_lint_bounds.py` guards
+    against for the linter.
+    """
+    import doctest
+
+    from tools import drugcentral_dump
+
+    results = doctest.testmod(drugcentral_dump, verbose=False)
+
+    assert results.failed == 0
+    assert results.attempted > 0

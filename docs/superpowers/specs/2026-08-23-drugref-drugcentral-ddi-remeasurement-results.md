@@ -8,20 +8,25 @@
 | | |
 |---|---|
 | dump | `downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz` |
-| published release | **11012023** (2023-11-01, `dbversion` 54) |
+| published release | **11012023** |
 | size | 1,400,714,190 bytes |
+| decompresses to | 4,977,218,576 characters over 13,570,317 lines, counted during the extract |
 | SHA-256 | `055904d152d6c8eef4ee872b25f6476019682df8b5f49bcdf7cc018204f3e04f` |
 | drugref schema | `048_unknown_signature_status.sql` |
 | registry | 19,438 moieties · 4,202 classes |
+| registry lookups | 19,438 display names · 16,046 InChIKeys · 19,010 CAS |
 | `ddi_candidate_pair` | 21,664 rows · 20,238 distinct unordered pairs |
 
 Extracted table sizes: `ddi` 7,621 · `ddi_risk` 6 · `pharma_class` 25,687 · `reference` 1,195 · `structures` 4,995 · `synonyms` 23,369.
 
+Collision check on the join: 0 display names, 14 InChIKeys and 29 CAS numbers are claimed by more than one moiety. Every lookup is loaded under a
+deterministic `ORDER BY`, so a colliding key resolves the same way on every run.
+
 ## Rule 6 — read from the `reference` table, never inferred
 
 DrugCentral publishes the compilation under CC BY-SA 4.0, **which is not evidence of
-a right to relicense a third-party compendium inside it.** Every `ddi` row cites one
-of three references, and two of them are exactly that:
+a right to relicense a third-party compendium inside it.**
+Every `ddi` row cites one of 3 references:
 
 | `ddi_ref_id` | rows | what the dump says it is | rule 6 |
 |---|---:|---|---|
@@ -29,12 +34,14 @@ of three references, and two of them are exactly that:
 | `3` | 37 | Lexicomp Online — Wolters Kluwer Health | **out** |
 | `1` | 13 | Stockley's Drug Interactions — Karen Baxter (ISBN 0853699143, 2010) | **out** |
 
-**Bundle `ddi_ref_id = 2` only.**
+**Bundle `ddi_ref_id` 2 only.**
 
 ## Severity vocabulary
 
 `ddi_risk` is a lookup table scoped **per reference**, so the vocabulary available to
-the bundleable subset is narrower than the table's overall vocabulary:
+the bundleable subset is narrower than the table's overall vocabulary. The whole
+lookup is printed, including labels no row uses — a label at 0/0 is what makes the
+scoping visible:
 
 | risk label | whole table | bundleable subset |
 |---|---:|---:|
@@ -47,70 +54,120 @@ the bundleable subset is narrower than the table's overall vocabulary:
 ## ⇒ The finding: resolution should key on STRUCTURE, not on spelling
 
 Issue #101 resolved endpoints by matching `substance_moiety.display_name` and
-concluded the residual INN spellings *"need a synonym bridge"*. They do not:
-DrugCentral resolves its own endpoint text to a `struct_id`, and `structures`
-carries an InChIKey and a CAS number that drugref already holds as
-`identity_claim` rows.
+concluded the residual INN spellings *"need a synonym bridge"*. DrugCentral
+resolves its own endpoint text to a `struct_id`, and `structures` carries an
+InChIKey and a CAS number that drugref already holds as `identity_claim` rows.
 
-**Bundleable subset (`ddi_ref_id = 2`, 7,571 rows):**
+**Bundleable subset (7,571 rows):**
 
 | measure | name matching (issue #101) | + InChIKey/CAS cascade | delta |
 |---|---:|---:|---:|
-| distinct endpoint names | 924 | 924 | +0 |
+| distinct endpoint spellings | 924 | 924 | +0 |
+| distinct endpoint names (folded) | 924 | 924 | +0 |
 | names resolved to a moiety | 857 | 914 | +57 |
 | rows with an unresolvable endpoint | 598 | 37 | -561 |
+| rows resolving to a self-pair | 0 | 0 | +0 |
+| rows yielding a pair | 6,973 | 7,534 | +561 |
 | distinct unordered moiety pairs | 6,941 | 7,501 | +560 |
 | pairs drugref already holds | 604 | 635 | +31 |
 | pairs that are NEW | 6,337 | 6,866 | +529 |
 
-Routes that answered, cascade run:
+Row accounting, cascade run: 7,571 rows = 37 unresolvable + 0 self-pair + 7,534 pair-yielding, and those 7,534 rows collapse to 7,501 distinct unordered pairs.
+
+Routes that answered:
 
 | route | endpoint names |
 |---|---:|
 | `display_name` | 857 |
 | `inchikey` | 47 |
-| `unresolved` | 10 |
 | `cas` | 10 |
+| `unresolved` | 10 |
 
 **Whole table (7,621 rows), for comparison with the original evaluation:**
 
 | measure | name matching (issue #101) | + InChIKey/CAS cascade | delta |
 |---|---:|---:|---:|
-| distinct endpoint names | 970 | 970 | +0 |
+| distinct endpoint spellings | 970 | 970 | +0 |
+| distinct endpoint names (folded) | 970 | 970 | +0 |
 | names resolved to a moiety | 860 | 917 | +57 |
 | rows with an unresolvable endpoint | 648 | 87 | -561 |
+| rows resolving to a self-pair | 0 | 0 | +0 |
+| rows yielding a pair | 6,973 | 7,534 | +561 |
 | distinct unordered moiety pairs | 6,941 | 7,501 | +560 |
 | pairs drugref already holds | 604 | 635 | +31 |
 | pairs that are NEW | 6,337 | 6,866 | +529 |
 
-### The 10 endpoint names the cascade still cannot resolve
+Row accounting, cascade run: 7,621 rows = 87 unresolvable + 0 self-pair + 7,534 pair-yielding, and those 7,534 rows collapse to 7,501 distinct unordered pairs.
 
-- `Vitamin E`
-- `aluminium chlorohydrate`
-- `amyl nitrite`
-- `atracurium`
-- `doxacurium`
-- `glycopyrronium bromide`
-- `mivacurium`
-- `pentosan polysulfate`
-- `phytomenadione`
-- `sodium polystyrene sulfonate`
+### Where the endpoint names come from, before drugref is consulted at all
+
+Bundleable subset, over its 924 folded endpoint names — the
+denominator the synonym-bridge claim is about. This is the evidence that a
+hand-maintained bridge is unnecessary: if DrugCentral can name the structure
+itself, drugref never has to learn the spelling.
+
+| DrugCentral's own tables | endpoint names |
+|---|---:|
+| a `structures.name` | 905 |
+| a `synonyms.name` and not a primary one | 13 |
+| in neither | 6 |
+| **total (folded)** | **924** |
+
+### The residue drugref holds as a CLASS rather than a moiety
+
+Whole table. *Keyable* and *moiety x moiety* are DIFFERENT denominators -- their
+difference is the rows with exactly one class endpoint, which is why
+`rows - keyable` is not the unresolvable count:
+
+Both resolvers are shown, because issue #101's *"7,000 of 7,621 (91.9%) keyable"*
+was measured with name matching alone and is not comparable to a cascade figure:
+
+| measure | name matching (issue #101) | + cascade |
+|---|---:|---:|
+| endpoint names resolved to a moiety | 860 | 917 |
+| unresolved names that ARE a `substance_class` | 4 | 4 |
+| names matching neither | 106 | 49 |
+| rows keyable (moiety **or** class at both ends) | 6,991 | 7,552 |
+| rows moiety x moiety | 6,973 | 7,534 |
+
+Class matches by the authority that defines them — name matching:
+`MeSH` 4; cascade: `MeSH` 4.
+
+### The 10 endpoint names the cascade does not resolve
+
+Bundleable subset, each with the route that gave up. The four are not the same
+fact: `not_a_substance` means DrugCentral itself holds no structure for the text
+(a class-named endpoint, and a correct miss); `no_structural_key` is a biologic or
+mixture with neither key; `unresolved` means the keys exist and drugref does not
+hold them; and `missing_keys_row` would mean the extract is inconsistent.
+
+- `aluminium chlorohydrate` — `unresolved`
+- `amyl nitrite` — `unresolved`
+- `atracurium` — `unresolved`
+- `doxacurium` — `unresolved`
+- `glycopyrronium bromide` — `unresolved`
+- `mivacurium` — `unresolved`
+- `pentosan polysulfate` — `unresolved`
+- `phytomenadione` — `unresolved`
+- `sodium polystyrene sulfonate` — `unresolved`
+- `vitamin e` — `unresolved`
 
 ## Issue 93 (QT) — restated, and narrower than recorded
 
-`pharma_class` holds 25,687 rows and the string `QT`
-appears in **0** of their names, so the dump names those
-populations and defines them nowhere. The rows that mention QT at all, verbatim:
+`pharma_class` holds 25,687 rows
+(25,687 of 25,687 carry a name) and
+the token `QT` appears in **0** of those names,
+so the dump names those populations and defines them nowhere. The rows that mention QT at all:
 
 - `ddi_ref_id=3` · risk `Avoid combination`
   - `drug_class1` = `cisapride`
   - `drug_class2` = `Strong CYP3A4 Inhibitors`
-  - description: QT prolongation have been reported in patients taking cisapride with other drugs that inhibit CYP3A4
+  - description: _withheld — this row cites a reference rule 6 excludes; read it in the dump_
 - `ddi_ref_id=3` · risk `Avoid combination`
   - `drug_class1` = `Moderate Risk QT Prolonging Agents`
   - `drug_class2` = `High Risk QT Prolonging Agents`
-  - description: Moderate Risk QTc-Prolonging Agents may enhance the QTc-prolonging effect of Highest Risk QTc-Prolonging Agents
+  - description: _withheld — this row cites a reference rule 6 excludes; read it in the dump_
 - `ddi_ref_id=3` · risk `Avoid combination`
   - `drug_class1` = `High Risk QT Prolonging Agents`
   - `drug_class2` = `High Risk QT Prolonging Agents`
-  - description: Highest Risk QTc-Prolonging Agents may enhance the QTc-prolonging effect of other Highest Risk QTc-Prolonging Agents
+  - description: _withheld — this row cites a reference rule 6 excludes; read it in the dump_
