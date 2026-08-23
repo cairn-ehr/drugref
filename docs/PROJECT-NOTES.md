@@ -3422,8 +3422,10 @@ uv run python -m tools.drugcentral_ddi_spike --dump downloads/DRUGCENTRAL/drugce
     --dsn "$DSN" --out docs/superpowers/specs/2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md
 ```
 
-Five modules, all pure except the runner: `tools/drugcentral_dump.py` (a streaming COPY-block reader),
-`tools/drugcentral_resolve.py` (the endpoint cascade), `tools/drugcentral_cache.py` (the extract cache),
+Five modules, all pure except the runner: `src/drugref/ingest/drugcentral_dump.py` (a streaming COPY-block
+reader), `src/drugref/ingest/drugcentral_resolve.py` (the endpoint cascade) — **both promoted out of `tools/`
+by the ddi-ingest round**, because what a `ddi` row means must not live in two homes; and
+`tools/drugcentral_cache.py` (the extract cache),
 `tools/drugcentral_ddi_measure.py` (the arithmetic) and `tools/drugcentral_ddi_report.py` (rendering, which takes
 every figure through a typed `ReportContext` so it cannot consult the dump behind the report's back).
 **94 tests**, none of which need the dump or a database.
@@ -3604,9 +3606,9 @@ the 2026-08-13 run never recorded is now captured on every run for free.
 `tests/fixtures/make_drugcentral_subset.py` (where every other subset generator lives — the design spec said
 `tools/` and was corrected). It carries rows from **all three** references, so the rule-6 filter and the
 reference-identity guard are exercised against a dump that really contains what it excludes, and the excluded
-references' `description` text is redacted. The suite grew by **71 tests** over this round — a delta, not a
-total: the number itself has exactly one home, § "How to run / test", and this section deliberately does not
-restate it.
+references' `description` text is redacted. The suite grew by **71 tests** over this round, and by **3 more**
+over the final whole-branch review's fix round on the same branch — deltas, not totals: the number itself has
+exactly one home, § "How to run / test", and this section deliberately does not restate it.
 
 ### ⇒ TWO MEASUREMENTS THIS ROUND ADDED, AND BOTH CHANGED THE DESIGN
 
@@ -3775,10 +3777,12 @@ pattern is the finding.
   consequence of resolution (two endpoint names legitimately folding onto one moiety), so refusing it would
   abort an ingest over a correct reading of the source. 0 of 7,571 today, and `DrugCentralSummary` carries it
   as its own bucket so it cannot become nonzero unnoticed.
-- **`gap_unresolved_ddi_endpoint`'s `WHERE e.endpoint_name <> ''` exclusion has NO automated test.** It was
-  verified correct by a manual probe during review — a blank endpoint is not a question anyone can answer, and
-  the resolver already refuses to look one up — but nothing in the suite would fail if the predicate were
-  deleted. Recorded rather than left implied; the cheap fix is a fixture row with a blank endpoint name.
+- **`gap_unresolved_ddi_endpoint`'s `WHERE e.endpoint_name <> ''` exclusion is now tested** — it was carried
+  for one round as "verified by manual probe, nothing in the suite would fail if the predicate were deleted",
+  and the final review closed it: `test_a_blank_endpoint_is_no_question_and_mints_no_uuid` writes a blank AND a
+  whitespace-only endpoint (the guard applies to the FOLDED value) and asserts both the view and
+  `open_question` stay empty. **The failure mode is what earned the three lines**: with the predicate removed,
+  the register mints `DRUGCENTRAL:ENDPOINT:` with empty text, and a `question_uuid` is immortal.
 - **The gap key folds the name.** `gap_key = 'DRUGCENTRAL:ENDPOINT:' || lower(btrim(name))`, matching
   `drugcentral_resolve.fold_name`, because `question_uuid` is immortal and externally cited and two spellings of
   one endpoint must never mint two questions that can then be answered differently. The view is filtered on
@@ -3786,20 +3790,46 @@ pattern is the finding.
   place and force a widening every time a route is added.
 - **The severity FK is what refuses a future release quietly.** A third band is refused at INSERT, loudly,
   rather than stored and silently mapped to nothing by the view's join.
-- **The reference guard is not the constant.** `BUNDLEABLE_REF_IDS = frozenset({"2"})` has exactly one home
-  (the re-measurement's own review found a second hard-coded `ref_id == "2"` in the renderer), *and* the
+- **The reference guard is not the constant.** `BUNDLEABLE_REF_IDS = frozenset({"2"})` has exactly one home,
+  `src/drugref/ingest/drugcentral.py` — **and it took three rounds to actually become true.** The
+  re-measurement's review found a second hard-coded `ref_id == "2"` in the renderer; the final whole-branch
+  review found the spike still defining its own copy of the set and the fixture generator still deciding
+  redaction on a bare literal, so the design spec's bold "exactly one home" was false in two more places. Both
+  now import it. **In the generator that is a licence rule, not a style one**: that literal decides which rows'
+  `description` prose is committed into an AGPL repo, so a drifted copy would keep committing text from a
+  reference rule 6 no longer clears. *And* the
   orchestrator reads the `reference` row for every admitted id and **aborts** unless the recorded authors and
   title still match. `2` is a surrogate key in a dump published once; a re-publication is free to renumber it,
   and a silent renumber would bundle Lexicomp under a constant that still reads `2`. A mismatch is a hard abort
   with both strings printed — not a warning, not a skip.
-- **The fixture commits `source_id` unredacted on excluded rows, and that determination was made before it was
-  committed.** Those strings are the source compendium's own monograph headings (`MAOIs or RIMAs + Buspirone`,
-  `Conivaptan: CYP3A4 Substrates`). Kept on two independent grounds — short noun-phrase titles are outside
-  copyright (37 C.F.R. §202.1(a)), and they restate a drug-pair fact already committed unredacted in
-  `drug_class1`/`drug_class2` on the same rows, under the Feist argument NOTICE already makes for ONCHIGH. The
-  reasoning is in `make_drugcentral_subset.py`'s docstring; the conclusion is in `NOTICE`. **A future
-  regeneration that selects an excluded row whose `source_id` is free-form prose is not covered** and needs the
-  same redaction `description` gets.
+- **`description` is the ONLY column redacted on the excluded rows; FOUR text columns are committed as they
+  stand, and each has a recorded determination.** `NOTICE` said "one field" for a round and then argued two
+  lines later from a second one — the final review caught it. What is actually kept: `drug_class1`,
+  `drug_class2` (the two endpoint names), `source_id` (the compendium's own monograph heading —
+  `MAOIs or RIMAs + Buspirone`, `Conivaptan: CYP3A4 Substrates`) and **`ddi_risk`**, which had no determination
+  anywhere until the final review round made one. All four rest on the same two grounds: short words and
+  phrases are categorically outside copyright (37 C.F.R. §202.1(a)), and what they express is fact rather than
+  expression (Feist), the argument `NOTICE` already makes for ONCHIGH. `ddi_risk` is a one- or two-word band
+  from the dump's own CLOSED five-value vocabulary, and on an excluded row it is the excluded compendium's
+  label rather than the VHA's — which is why it needed assessing rather than waving through. The reasoning is
+  in `make_drugcentral_subset.py`'s docstring; the conclusion is in `NOTICE`. **A future regeneration that
+  selects an excluded row whose `source_id` is free-form prose, or whose `ddi_risk` is anything but a band from
+  that vocabulary, is not covered** and needs the same redaction `description` gets.
+- **The writer's own column-list-to-tuple alignment is tested, and it was NOT before.** The final review proved
+  by execution that transposing `endpoint_1_name`/`endpoint_2_name` — or `route_1`/`route_2` — inside
+  `interactions.add_drugcentral_assertion` left all 1959 tests passing, because every test writing through that
+  function resolved BOTH endpoints or NEITHER, and a transposition is invisible on a symmetric row. **37 rows
+  of the real release are MIXED.** Under the name transposition `gap_unresolved_ddi_endpoint` would publish the
+  RESOLVED partner's name and mint ten wrong immortal `question_uuid`s.
+  `test_a_mixed_row_keeps_every_value_beside_its_own_endpoint` writes the asymmetric shape and kills both
+  mutations. The keyword-only signature protects the CALLER; only this test protects the function.
+- **`DrugCentralSummary`'s identities are Python-side, so the orchestrator reads the table back.** Both
+  `__post_init__` checks count records the loop MADE, never rows the table KEPT, so a skipped
+  `ON CONFLICT DO NOTHING` insert would drift them silently. `ingest_drugcentral` now runs
+  `SELECT count(*) … WHERE ingest_run = %s` inside the work transaction and RAISES on a disagreement, rolling
+  the whole run back. The trigger the old comment named — "widening `BUNDLEABLE_REF_IDS` or `upstream_key`'s
+  source column" — was too narrow: `resolve_row` falls back to `""` on a NULL `source_id`, so two blank ones in
+  a release collide on the empty key with neither of those having changed.
 - **The 2023 pin is honest provenance, not a defect to fix.** `upstream_release = '11012023'`;
   `drugcentral.org/download` still offers no successor as of 2026-08-23. The tier is CANDIDATE and the table
   comment says so: rows feed review and must not auto-alert.
@@ -3817,6 +3847,11 @@ pattern is the finding.
   nothing. Pre-existing and unrelated to this round; found while registering
   `interactions.DRUGCENTRAL_TABLES`. `interactions.py`'s comment was corrected to stop citing it as a peer with
   the same guard, and the gap was filed rather than fixed in passing.
+- **[#151](https://github.com/cairn-ehr/drugref/issues/151) — `questions.py` is over rule 4's ~500-line
+  guideline**, and **71% of it is the single `_GAP_SOURCES` literal**, which grows with every source that adds
+  a gap kind (this round added the eighteenth). Pre-existing; split out of #89 the way #130 was for `cli.py`,
+  because the failure mode differs — a declarative table with a visible seam, not dense prose with none. **The
+  figures live on the issue.**
 
 ## The standing open-issue ledger
 
@@ -3881,8 +3916,12 @@ ungraded cross-source disagreement question — **635 of the 7,501 DrugCentral p
 through MED-RT's class expansion and nothing compares them**, which is #97/#106 one tier down ·
 **[#149](https://github.com/cairn-ehr/drugref/issues/149)** `fda_cyp_run.FDA_CYP_TABLES` is not registered in
 `test_source_clear_contract.py`'s `EXPECTED_TABLES`, so a table dropped from that tuple would be caught by
-nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`). Full account: § "The
-DrugCentral ddi ingest".
+nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`) ·
+**[#151](https://github.com/cairn-ehr/drugref/issues/151)** `questions.py` is over rule 4's ~500-line
+guideline and **71% of it is the one `_GAP_SOURCES` literal**, which grows with every source that adds a gap
+kind — split out of #89 the way #130 was for `cli.py`, because the failure mode differs (a declarative table
+with a visible seam, not dense prose with none). **Its figures live on the issue; do not restate them here.**
+Full account: § "The DrugCentral ddi ingest".
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -3983,20 +4022,23 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1959 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1962 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1959
-# passed in 54.86 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1962
+# passed in 58.41 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
 # re-measurement added 34 with NO migration: 1794 → 1828; the review-fix
 # round on the same branch added 60 more: 1828 → 1888; and db/049, the DrugCentral
-# ddi ingest, added 71: 1888 → 1959).
+# ddi ingest, added 71: 1888 → 1959; and the final whole-branch review's fix round,
+# on that same branch, added 3: 1959 → 1962 -- the writer's mixed-row transposition
+# test, the orchestrator's stored-count reconciliation, and the blank-endpoint gap
+# guard).
 # THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
@@ -4262,5 +4304,7 @@ ran in CI and `ruff` was not even a project dependency.
 - Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by `.github/workflows/docs.yml`; `uv run
   --group docs mkdocs build --strict -f docs-site/mkdocs.yml` is its test. Its **Design decisions** section holds *living*
   records and is **where a standing correction to an artefact that cannot be edited — an immutable spec, or a MERGED
-  migration's prose — goes**. **Eleven** live there (re-count with `ls docs-site/docs/decisions/*.md`, never
-  quote); a reversed decision is removed, not tombstoned.
+  migration's prose — goes**. **Thirteen** live there (re-count with `ls docs-site/docs/decisions/*.md` and
+  SUBTRACT `index.md`, which is the section's landing page and not a record — 14 files, 13 records; the count
+  read "eleven" for two rounds because that subtraction was never written down here); a reversed decision is
+  removed, not tombstoned.

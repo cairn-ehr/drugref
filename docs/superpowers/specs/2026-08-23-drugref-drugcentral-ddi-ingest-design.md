@@ -316,7 +316,7 @@ recorded in the published decision record so it is discoverable outside this spe
 
 ## 7. The gap — the EIGHTEENTH kind, `unresolved_ddi_endpoint`
 
-> **Correction, applied in place on 2026-08-23 rather than left to decay.** This section shipped saying
+> **Correction, applied in place on 2026-08-23 rather than left to decay.** This section was written as
 > *"kind 17"*, and it is wrong: the live `open_question_gap_kind` CHECK already held SEVENTEEN values when this
 > design was written, because `db/039` had added `fda_cyp_unadjudicated` in slice 5c.2g. `unresolved_ddi_endpoint`
 > is the **eighteenth**. Nothing else in this section moves — the migration copies the live CHECK verbatim before

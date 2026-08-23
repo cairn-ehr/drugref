@@ -41,19 +41,17 @@ self-pairs, in 20.2 s of which the DB transaction is ~1.5 ms. `ddi_candidate_pai
 `substance_moiety` (19,438) did not move, and that view's plan is byte-identical before and after once
 run-to-run noise is blanked.
 
-**Two measurements taken for the design changed it.** (1) The `description` column carries **no clinical
-content** — all 7,571 match `NAME1/NAME2 [VA Drug Interaction]` — so the severity band is the whole of what
-this source adds, and the design budget went there. (2) **The source asserts an UNORDERED pair**: 33 published
-in both orders, 4 disagreeing with themselves, which is what rules out the directional
-`moiety_contraindication`. The 4 were located and named for the first time by the measurement —
-atazanavir/atorvastatin, atazanavir/rifapentine, gemfibrozil/pioglitazone, gatifloxacin/pioglitazone — all
-resolving `contraindicated`.
+**Two measurements taken for the design changed it.** (1) `description` carries **no clinical content** — all
+7,571 match `NAME1/NAME2 [VA Drug Interaction]` — so the severity band is the whole of what this source adds.
+(2) **The source asserts an UNORDERED pair**: 33 published in both orders, 4 disagreeing with themselves,
+which rules out the directional `moiety_contraindication`. The 4 are named in PROJECT-NOTES, not here.
 
 **Rule 6 discharged, and `NOTICE` says so.** Only `ddi_ref_id = 2` (VHA NDF-RT, US federal) is ingested;
 Stockley's and Lexicomp are out, and DrugCentral's own CC BY-SA over the compilation is not treated as evidence
 of a right to relicense either. The constant is not trusted alone: the orchestrator re-reads the dump's
 `reference` row and **aborts** on a renumber. The committed fixture carries all three references with the
-excluded descriptions redacted; `NOTICE` also records why the excluded rows' `source_id` is *not* redacted.
+excluded descriptions redacted — `description` is the ONLY column redacted, and `NOTICE` now records a
+determination for each of the four text columns kept (`drug_class1`, `drug_class2`, `ddi_risk`, `source_id`).
 
 **⇒ FOUR PUBLISHED FIGURES WERE WRONG AND ARE CORRECTED IN PLACE. Three were this project's own state files.**
 
@@ -69,9 +67,15 @@ excluded descriptions redacted; `NOTICE` also records why the excluded rows' `so
    § "The 5c.3 source evaluation", which said it first. DrugCentral writes no class rule; that CHECK stays
    `('MED-RT','ONCHIGH')` and a test pins that it is untouched. **The CHECK a new source really needs is
    `ingest_run_writer`, which no document had named at all.**
-4. **The suite count** was stale again — 71 tests added over this round without it moving. Read off
-   `pytest --collect-only -q` at the start of the documentation task, written in its ONE home, and
-   deliberately not restated here.
+4. **The suite count** was stale again — 71 tests over this round without it moving. Written in its ONE home
+   and deliberately not restated here.
+
+**⇒ THEN THE FINAL WHOLE-BRANCH REVIEW: 0 critical, 3 important, 7 minor — ALL APPLIED.** Transposing the
+writer's two endpoint names (or its two routes) survived all 1959 tests, because no test wrote a MIXED row and
+37 real rows are; `NOTICE` said ONE field was committed unredacted on excluded rows when four were, and
+`ddi_risk` had a determination nowhere; `BUNDLEABLE_REF_IDS` had grown two more homes; the summary reconciled
+only against itself. **A fourth and fifth instance of the same two lessons: a comment claiming a guard is not
+evidence of the guard, and a figure nobody re-derives decays silently — including a correction.**
 
 ## ⇒ DO THIS NEXT
 
@@ -97,10 +101,6 @@ DrugCentral is done and is a **candidate-tier floor pinned to the 2023 release**
 nothing in that tier may auto-alert. FDA toxicity (DICTrank/DIRIL/DILIrank, a non-firing evidence projection)
 remains cleared and unscheduled. Class-grain content (#98) still gates #112/#105.
 
-Do not lose the two lessons this round is now a fourth instance of: **a comment claiming a guard exists is not
-evidence the code contains it**, and **a figure nobody can re-derive decays silently** — including a figure
-that is itself a correction.
-
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). New this
@@ -109,10 +109,11 @@ to the ungraded cross-source disagreement question (**635 of the 7,501 pairs are
 MED-RT's class expansion and nothing compares them**), which is #97/#106 one tier down; and
 **[#149](https://github.com/cairn-ehr/drugref/issues/149)** — `fda_cyp_run.FDA_CYP_TABLES` is not registered in
 `test_source_clear_contract.py`'s `EXPECTED_TABLES`, so a table dropped from that tuple is caught by nothing
-(pre-existing). Also unfilled and recorded in PROJECT-NOTES only: `gap_unresolved_ddi_endpoint`'s
-`endpoint_name <> ''` exclusion has **no automated test** (verified by manual probe). Still standing: #146,
-#128/#129 and #132–#135 (FDA-CYP residue), #124, #121/#123, #104, #94. Before production: re-run every parser
-on current releases, resolve #17, and complete the three outstanding rule-6 deeds (#6, #25, GSRS).
+(pre-existing); and **[#151](https://github.com/cairn-ehr/drugref/issues/151)** — `questions.py` is over rule
+4's guideline and **71% of it is the one `_GAP_SOURCES` literal** (pre-existing; split out of #89 as #130 was
+for `cli.py`). `gap_unresolved_ddi_endpoint`'s `endpoint_name <> ''` exclusion is **now tested**. Still
+standing: #146, #128/#129 and #132–#135 (FDA-CYP residue), #124, #121/#123, #104, #94. Before production:
+re-run every parser on current releases, resolve #17, and the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
