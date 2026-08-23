@@ -61,6 +61,12 @@ class DrugCentralSummary:
     silently dropped, and the re-measurement's Measurement guard exists for the
     same reason.
 
+    BOTH IDENTITIES ARE PYTHON-SIDE, so together they only prove the orchestrator
+    is self-consistent -- neither can see the table. The third reconciliation, the
+    one that reads `drugcentral_ddi_assertion` back and refuses a stored count that
+    disagrees with `rows_bundleable`, lives in `ingest_drugcentral` because it needs
+    the open transaction; see the comment there.
+
     `rows_resolved` counts rows whose two endpoints reached TWO DIFFERENT moieties;
     `rows_self_pair` counts those that reached ONE (0 of 7,571 on the 2023 release,
     and a bucket rather than a footnote so it cannot become nonzero unnoticed).
@@ -186,14 +192,22 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
             # db/049_drugcentral_ddi.sql's own comment on `upstream_key` records
             # the measured fact that all 7,571 real bundleable rows carry a
             # distinct `source_id` -- so within one run this path is provably
-            # dead on real data. If a future release ever DID repeat a
-            # source_id within one dump, a skipped insert would silently drop
-            # a row from `rows_bundleable` while still counting it into
+            # dead on THIS release's data. If a future release ever DID repeat a
+            # key within one dump, a skipped insert would silently drop a row
+            # from `rows_bundleable` while still counting it into
             # resolved/self_pair/unresolved below, drifting the buckets from
             # what `drugcentral_ddi_assertion` actually stores -- exactly the
-            # kind of silent miscount CLAUDE.md rule 5 exists to catch, so
-            # widening BUNDLEABLE_REF_IDS or upstream_key's source column is
-            # the moment to revisit this comment, not before.
+            # kind of silent miscount CLAUDE.md rule 5 exists to catch.
+            #
+            # THE TRIGGERS FOR THAT ARE NOT ONLY THE OBVIOUS TWO. An earlier
+            # version of this comment scoped them to "widening
+            # BUNDLEABLE_REF_IDS or changing upstream_key's source column", and
+            # that list was too short: `resolve_row` falls back to `""` when
+            # `source_id` is NULL (drugcentral.py's `row.get("source_id") or
+            # ""`), so a release with TWO blank source_ids collides on the empty
+            # key without either of those two things having changed. That is why
+            # the count below reads the table back rather than trusting this
+            # comment to be revisited -- a guard that executes, not a promise.
             interactions.add_drugcentral_assertion(
                 conn,
                 ingest_run_id=run_id,
@@ -217,6 +231,31 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
                 resolved += 1
             else:
                 unresolved += 1
+
+        # RECONCILE AGAINST WHAT ACTUALLY LANDED, INSIDE THE TRANSACTION.
+        # DrugCentralSummary's two identities are both computed in Python from
+        # Python counters, so they can only ever prove the orchestrator is
+        # self-consistent -- they cannot see the table. This is the one number
+        # read back out of it. If a skipped insert (see the ON CONFLICT note
+        # above) ever made the stored count disagree with `rows_bundleable`, the
+        # summary would report rows the projection does not hold, and every
+        # figure derived from it downstream would be quietly wrong. A stored
+        # count that contradicts the reported one is a defect worth ABORTING on:
+        # raising here rolls the whole run back through the `except` clause, so
+        # the database keeps the previous projection rather than a miscounted
+        # one. Scoped `WHERE ingest_run = %s` rather than counting the whole
+        # table, so a concurrent run's rows could never mask or manufacture a
+        # discrepancy in this one.
+        stored = conn.execute(
+            "SELECT count(*) FROM drugref.drugcentral_ddi_assertion "
+            "WHERE ingest_run = %s", (run_id,)).fetchone()[0]
+        if stored != len(bundleable):
+            raise ValueError(
+                f"drugcentral: {stored} assertion row(s) stored for run "
+                f"{run_id}, but {len(bundleable)} bundleable row(s) were "
+                f"written -- the projection does not hold what the summary "
+                f"would report (a repeated or blank `source_id` collapsing two "
+                f"rows onto one upstream_key is the known way this happens)")
 
         # Re-derive the open-question register LAST, exactly as every sibling
         # orchestrator does: it reads the projection this run just rebuilt, and

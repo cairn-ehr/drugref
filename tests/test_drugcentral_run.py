@@ -5,6 +5,7 @@ Issue 71's standing rule, re-learned by curate_onchigh and again by the
 re-measurement's Measurement guard: a summary whose buckets do not sum is a
 number that cannot be checked, and every row must land in exactly one of them.
 """
+import gzip
 import pathlib
 import uuid
 
@@ -13,6 +14,30 @@ import pytest
 from drugref.ingest import drugcentral, drugcentral_run
 
 FIXTURE = pathlib.Path("tests/fixtures/drugcentral_ddi_subset.sql.gz")
+
+
+def _forged_dump(tmp_path, name, *replacements):
+    """Write a copy of FIXTURE into *tmp_path* with literal substitutions applied.
+
+    Every test that needs a MALFORMED dump forges it from the committed fixture
+    rather than hand-writing one, so the forgery differs from a real dump in
+    exactly the one way the test is about and in no other. Each `(old, new)` pair
+    is asserted present first: a fixture regeneration that renamed the text being
+    substituted must fail loudly here, not silently produce an unchanged dump the
+    test then "passes" against.
+
+    Both handles are opened in `with` blocks. The read used to be a bare
+    `gzip.open(...).read()`, which leaks the handle and raises ResourceWarning.
+    """
+    with gzip.open(FIXTURE, "rt", encoding="utf-8") as handle:
+        text = handle.read()
+    for old, new in replacements:
+        assert old in text, f"the fixture no longer contains {old!r}"
+        text = text.replace(old, new)
+    path = tmp_path / name
+    with gzip.open(path, "wt", encoding="utf-8") as out:
+        out.write(text)
+    return path
 
 # Two moieties DELIBERATELY sharing the display_name 'gatifloxacin', so
 # load_registry's first_wins must pick one deterministically -- fixed, ordered
@@ -193,17 +218,52 @@ def test_a_second_ingest_replaces_rather_than_accumulates(conn):
 def test_a_renumbered_reference_writes_nothing_at_all(conn, tmp_path):
     """The refusal must leave the database exactly as it was -- including no
     ingest_run row, which is why the guard runs before open_run."""
-    import gzip as _gzip
-    forged = tmp_path / "forged.sql.gz"
-    original = _gzip.open(FIXTURE, "rt", encoding="utf-8").read()
-    with _gzip.open(forged, "wt", encoding="utf-8") as out:
-        out.write(original.replace("Veterans Health Administration", "Lexicomp"))
+    forged = _forged_dump(tmp_path, "forged.sql.gz",
+                          ("Veterans Health Administration", "Lexicomp"))
     before = conn.execute("SELECT count(*) FROM drugref.ingest_run").fetchone()[0]
     with pytest.raises(drugcentral.ReferenceIdentityError):
         drugcentral_run.ingest_drugcentral(
             conn, dump_path=forged, release="11012023")
     after = conn.execute("SELECT count(*) FROM drugref.ingest_run").fetchone()[0]
     assert after == before
+
+
+@pytest.mark.usefixtures("_clean")
+def test_two_blank_source_ids_abort_rather_than_silently_storing_fewer_rows(
+        conn, tmp_path):
+    """The stored count must be reconciled against the reported one, not assumed.
+
+    `resolve_row` falls back to `""` when `source_id` is NULL, and the writer's
+    ON CONFLICT DO NOTHING return value is deliberately ignored, so two rows with
+    a NULL `source_id` in one dump collide on the empty upstream_key: the second
+    insert is skipped, the table ends up holding ONE FEWER row than
+    `rows_bundleable` says, and every Python-side identity in DrugCentralSummary
+    still sums perfectly because all of them count records the loop MADE rather
+    than rows the table KEPT.
+
+    This forgery blanks the `source_id` of ddi rows 870 and 1288 -- both ref-2,
+    both bundleable -- so the collision happens between two rows of this same
+    run, which is the only way the PRIMARY KEY (ingest_run, source, upstream_key)
+    can be hit at all.
+
+    The trigger matters as much as the failure: the orchestrator's comment used
+    to scope the repeated-key risk to widening BUNDLEABLE_REF_IDS or changing
+    upstream_key's source column, and a blank `source_id` is NEITHER of those.
+    That is why the guard reads the table rather than relying on the comment
+    being revisited.
+    """
+    forged = _forged_dump(
+        tmp_path, "blank-keys.sql.gz",
+        ("\tC23303775029507\n", "\t\\N\n"),   # ddi row 870
+        ("\tC23304976819400\n", "\t\\N\n"))   # ddi row 1288
+    with pytest.raises(ValueError, match="does not hold what the summary"):
+        drugcentral_run.ingest_drugcentral(
+            conn, dump_path=forged, release="11012023")
+    # ABORTED, not half-written: the raise happens inside the work transaction,
+    # so the rollback leaves no assertion row behind at all.
+    conn.rollback()
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.drugcentral_ddi_assertion").fetchone() == (0,)
 
 
 @pytest.mark.usefixtures("_clean")
