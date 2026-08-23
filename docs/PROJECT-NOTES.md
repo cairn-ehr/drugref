@@ -2606,6 +2606,11 @@ registration, one 1.4 GB gzipped `pg_dump`. Bundle-OK *because* drugref's data l
   guessed. Of **970 distinct endpoint names**: **860 match a `substance_moiety.display_name`** exactly
   (case-insensitive), **8 match a MED-RT class name**, **102 match neither**. **7,000 of 7,621 pairs (91.9%)
   have both endpoints keyable today**, 6,973 of them moiety × moiety.
+  **⇒ THE CLASS HALF OF THAT SENTENCE IS WRONG IN BOTH ITS NUMBER AND ITS AUTHORITY, corrected by the
+  2026-08-23 re-measurement — see § "The DrugCentral re-measurement" below.** It is **4**, not 8, and all
+  four are **MeSH** classes, not MED-RT ones; the residue is therefore **106**, not 102, and *keyable* is
+  **6,991 (91.7%)**, not 7,000. Re-measured against the db/034-era registry the original run used, so it is
+  not a schema-drift artefact. The moiety half — 860, 6,973, 6,941, 604, 6,337 — reproduces EXACTLY.
   **⇒ FOUR DENOMINATORS LIVE IN THIS SECTION AND THEY ARE NOT INTERCHANGEABLE — read this before re-quoting any
   of them.** *Keyable* (**7,000**) counts moiety-**or**-class matches; *moiety × moiety* (**6,973**) is the
   subset with two moiety endpoints, and the **27**-row difference is the rows with exactly one class endpoint.
@@ -2630,7 +2635,11 @@ registration, one 1.4 GB gzipped `pg_dump`. Bundle-OK *because* drugref's data l
   them. Issue 93 restated, not solved. **The exact class strings were NOT recorded verbatim** — this file and
   ROADMAP quoted them with the risk words in opposite order (`High/Moderate` vs `Moderate/High`), which is proof
   that neither was transcribed rather than paraphrased, and the dump is not retained locally to settle it.
-  **Re-read them off the dump before quoting either.** **The remaining routes to a QT list are unchanged: re-derive from SPL, or
+  **⇒ SETTLED 2026-08-23, and transcribed at last: `High Risk QT Prolonging Agents` and
+  `Moderate Risk QT Prolonging Agents`.** The `pharma_class` zero reproduces. **And the sharper fact neither
+  file recorded: all THREE QT rows are `ddi_ref_id = 3` (Lexicomp), so every one of them is already excluded
+  by rule 6.** Issue 93 is not merely un-closed by DrugCentral — the QT content is in the half drugref may
+  not bundle at all. **The remaining routes to a QT list are unchanged: re-derive from SPL, or
   use the owner's Holbrook-group archive — which needs WRITTEN permission first, to the standard issues 6 and 25
   are held to.** (Recorded here because it had lived only in HANDOVER, whose history is disposable.)
 - **Staleness is the real cost:** the only published dump is **`drugcentral.dump.11012023.sql.gz`**, `dbversion`
@@ -2653,6 +2662,14 @@ relicense a third-party compendium inside it, and two of the three references ar
 costs nothing measurable, which is the nice part: all 50 non-NDF-RT rows are also the rows whose endpoints do
 not resolve** (they are class-named — `MAOIs or RIMAs`, `Strong CYP3A4 Inhibitors`), verified by the resolution
 run — 648 unresolvable rows over the whole table, 598 over the NDF-RT subset, a difference of exactly 50.
+**⇒ THE 648/598/50 ARITHMETIC REPRODUCES EXACTLY. Two things in the sentence around it do not.** (a)
+**`MAOIs or RIMAs` does not occur in the table** — the only endpoint containing the letters `MAOI` is
+`clotrimazole`; the real string is `Monoamine Oxidase Inhibitors`, so that example was paraphrased from
+memory, not read. (b) *"the rows whose endpoints are class-named"* reads as BOTH endpoints and at least three
+rows have an ordinary drug at one end (`fusidic acid`, `methyldopa`, `risedronic acid`, each paired with a
+class). The claim is true **per row** — every excluded row has at least one class-named endpoint — and the
+2026-08-23 run states it exactly: **the 50 excluded rows contribute ZERO resolvable pairs**, so whole-table and
+NDF-RT-only pair counts are identical to the row.
 
 **⇒ AND THE FOLLOW-UP QUESTION THAT ONLY BECAME ASKABLE ONCE REFERENCE 2 WAS READ: if it is NDF-RT, and drugref
 already ingests MED-RT, is any of it NEW?** Measured, not assumed — resolve both endpoints to moieties and
@@ -2689,10 +2706,13 @@ stay measured-once because the dump is gone, not because the repo still lacks a 
   (84,862,297 bytes) is **gitignored** — machine-local, not repo state. Every OnSIDES number above was
   re-derived from it independently and matched exactly, including the 6,928,666 total, all four section counts
   and the single `interact` vocabulary hit.
-- **NOT re-derivable here at all — treat as measured-once and re-measure before acting:** every DrugCentral
-  figure. The 1.4 GB dump is not retained on this machine and is not in the repo, so 7,621 / 970 / 860 / 102 /
-  7,000 / 6,941 / 604 / 6,337 and the three-reference table rest on a single unrepeated run. The rule-6
-  determination is the load-bearing one; **re-read the `reference` table before bundling anything.**
+- **~~NOT re-derivable here at all~~ — RE-DERIVABLE SINCE 2026-08-23, and six of those figures were wrong.**
+  This bullet used to read *"the 1.4 GB dump is not retained on this machine and is not in the repo, so
+  7,621 / 970 / 860 / 102 / 7,000 / 6,941 / 604 / 6,337 and the three-reference table rest on a single
+  unrepeated run"*. The dump was re-fetched, the measurement now lives in `tools/` as this bullet's own
+  paragraph demanded, and the whole thing re-runs in ~40 s from a cached extract. **The rule-6 determination —
+  the load-bearing one — reproduces exactly**, read from the `reference` table rather than inferred. Full
+  account, including which figures did NOT reproduce: § "The DrugCentral re-measurement" below.
 - **Re-measured 2026-08-13 and now closing:** the DailyMed document-type sample (above). Its predecessor did
   not close, which is why it is the one figure in this section that was redone rather than restated.
 
@@ -3348,6 +3368,149 @@ resulting counter-sign state at 1,440 x 900, 740 x 900 and 520 x 900 with no hor
 The
 native `.app` launched against the persistent reviewer service after migrations through `db/048` and remained running.
 
+## The DrugCentral re-measurement (2026-08-23) — no migration
+
+Canonical output, regenerated by the tool rather than transcribed:
+[`drugcentral-ddi-remeasurement-results`](superpowers/specs/2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md).
+**This round writes no SQL, admits no source and ships no ingest.** It exists because issue #101 asked a future
+session to act on figures that § "Which of these figures can be RE-DERIVED" had already classified as
+un-re-derivable, and HANDOVER told this session to re-measure before designing.
+
+### What it is, and how to re-run it
+
+`downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz`, **1,400,714,190 bytes**, SHA-256
+**`055904d152d6c8eef4ee872b25f6476019682df8b5f49bcdf7cc018204f3e04f`** — the anchor the 2026-08-13 run never
+recorded, and the reason a later session can prove it measured the same bytes — the digest is now written into
+the extract's `manifest.json` and **compared before a cached extract is trusted**, because a warm cache plus a
+new `--dump` used to print the new digest above the old figures. It decompresses to **4,977,218,576 characters
+over 13,570,317 lines** (counted during the pass, not quoted from a terminal) and one streaming pass takes
+**~14 s**.
+
+```bash
+# ~132 s: a registry to join against. The DSN must NOT be drugref_test (pytest recreates it).
+uv run drugref --dsn "$DSN" migrate && uv run drugref --dsn "$DSN" ingest chain --downloads downloads \
+    --unii-release 26Feb2026 --medrt-release 2026.07.06 --mesh-release 2026 \
+    --mesh-relations-release 2026.07.06 --gsrs-release 2026-02-26
+uv run python -m tools.drugcentral_ddi_spike --dump downloads/DRUGCENTRAL/drugcentral.dump.11012023.sql.gz \
+    --dsn "$DSN" --out docs/superpowers/specs/2026-08-23-drugref-drugcentral-ddi-remeasurement-results.md
+```
+
+Five modules, all pure except the runner: `tools/drugcentral_dump.py` (a streaming COPY-block reader),
+`tools/drugcentral_resolve.py` (the endpoint cascade), `tools/drugcentral_cache.py` (the extract cache),
+`tools/drugcentral_ddi_measure.py` (the arithmetic) and `tools/drugcentral_ddi_report.py` (rendering, which takes
+every figure through a typed `ReportContext` so it cannot consult the dump behind the report's back).
+**94 tests**, none of which need the dump or a database.
+
+### ⇒ THE FINDING: resolve on STRUCTURE, and the slice gets bigger, not smaller
+
+Issue #101 matched endpoints against `substance_moiety.display_name`, reached 857 of 924 NDF-RT endpoint names,
+and concluded the ~87 INN spellings *"need a synonym bridge"* — a hand-maintained list someone owns forever.
+**They do not.** DrugCentral resolves its own free text against its own tables (**905** of 924 names are a
+`structures.name`, **13** more a `synonyms.name`, leaving **6**), and a `structures` row carries an **InChIKey**
+and a **CAS** number that drugref already holds as live `identity_claim` rows (**16,046** and **19,010**). Keying
+on the structure a name denotes rather than on the spelling is **principle 2 applied to the resolution step**.
+The split is computed by the tool (`name_provenance`) rather than transcribed; the first published version of
+this line said *17 more, leaving 2*, which is correction 7 below.
+
+Cascade `display_name` → `inchikey` → `cas`, on the bundleable `ddi_ref_id = 2` subset (7,571 rows):
+
+| measure | name matching (#101) | + structural cascade | delta |
+|---|---:|---:|---:|
+| endpoint names resolved | 857 | **914** | +57 |
+| rows with an unresolvable endpoint | 598 | **37** | **−561** |
+| distinct unordered moiety pairs | 6,941 | **7,501** | +560 |
+| pairs drugref already holds | 604 | 635 | +31 |
+| **pairs that are NEW** | **6,337** | **6,866** | **+529** |
+
+Row accounting, which the first version of this table could not state: 7,571 rows = 37 unresolvable + **0
+self-pair** + 7,534 pair-yielding, and those 7,534 rows collapse to 7,501 distinct pairs — so the 33-row
+difference is **duplicate pairs, not self-pairs**. `self_pair_rows` was computed and rendered nowhere until the
+review round; `Measurement` now refuses to exist unless the three buckets sum to the row count.
+
+Routes: `display_name` 857 · `inchikey` 47 · `cas` 10 · unresolved 10. **CAS is deliberately last** — an
+InChIKey denotes a structure exactly, while a CAS number is an administrative identifier upstream sources reuse
+loosely across hydrates and salt forms. The 10 residual names are readable and mostly biologics, mixtures and
+neuromuscular blockers with no single structure (`Vitamin E`, `heparin`-shaped cases, `atracurium`,
+`mivacurium`, `doxacurium`, `sodium polystyrene sulfonate`); they are the composition tree's problem, not a
+synonym list's. **A blank structural key is never looked up** — `structures` stores an empty InChIKey for
+biologics, and a registry that happened to hold `""` would collapse every keyless substance onto one moiety.
+That guard has its own test.
+
+### What reproduced, what did not
+
+**Reproduced EXACTLY**: 7,621 rows · 970 endpoint names · 860 `display_name` matches · 6,973 moiety × moiety ·
+648/598 unresolvable (difference exactly 50) · 6,941 distinct pairs · 604 held (8.7%) · **6,337 new** ·
+`pharma_class` 25,687 with `QT` zero times · `ddi_candidate_pair` 21,664 rows / 20,238 distinct pairs · and the
+**three `reference` rows `ddi` actually cites** (the table itself holds **1,195**), re-read rather than
+inferred: `2` = VHA NDF-RT (7,571, clean), `1` =
+Stockley's, Karen Baxter, ISBN 0853699143, 2010 (13, out), `3` = Lexicomp Online, Wolters Kluwer (37, out).
+Licence re-confirmed at `drugcentral.org/privacy`: **CC BY-SA 4.0**, legalcode linked.
+
+**Did NOT reproduce, and are corrected in place above:**
+
+1. **"8 match a MED-RT class name" → 4, and they are MeSH, not MED-RT** (`Monoamine Oxidase Inhibitors`,
+   `Phosphodiesterase 5 Inhibitors`, `Proton Pump Inhibitors`, `Selective Serotonin Reuptake Inhibitors`).
+   Wrong in its number and in its authority. **Checked against `drugref_db034` — the era the original run used —
+   so it is not schema drift**; it was simply wrong.
+2. **"102 match neither" → 106.** Follows from (1); 860 + 4 + 106 = 970.
+3. **"7,000 of 7,621 (91.9%) keyable" → 6,991 (91.7%)**, and the *"27-row difference"* between keyable and
+   moiety × moiety → **18**.
+4. **`MAOIs or RIMAs` does not exist in the table.** The only endpoint containing `MAOI` is `clotrimazole`.
+5. **The QT class strings, transcribed at last**: `High Risk QT Prolonging Agents` /
+   `Moderate Risk QT Prolonging Agents` — and **all three QT rows are `ddi_ref_id = 3`**, already excluded.
+6. **The endpoint provenance split → 905 / 13 / 6**, not 905 / 17 / 2. The `structures.name` half reproduced
+   exactly; the synonym half did not, and the residue is 6 rather than 2. Now computed by
+   `drugcentral_ddi_measure.name_provenance` over the bundleable 924 rather than transcribed.
+7. **The staleness cost stands, re-checked at source**: `drugcentral.org/download` still offers only
+   **11/01/2023**, so the dump is now ~2 years 10 months old with no successor. One discrepancy worth knowing:
+   the page advertises *Postgres v14.5* while the dump's own header says **"Dumped from database version
+   10.11"**.
+
+### What the code review of this branch changed, and why it belongs in this section
+
+The instrument was reviewed before the branch merged, and the review found that **the parser's strictness did not
+survive the cache underneath it** — which is the same failure this whole round exists to prevent, one layer down.
+Fixed on the branch; the results file was regenerated end to end rather than edited.
+
+- **The cache was committed by `ddi.tsv` merely existing.** A `CopyFormatError` mid-extract left well-formed but
+  truncated TSVs behind, and the natural reaction to a traceback — re-run the command — printed *"using cached
+  extract"* and measured the wreckage. And nothing tied the files to the dump, so a warm cache plus a new
+  `--dump` printed the new SHA-256 above the old figures: **worse than recording no digest**, because the digest
+  is what invites a reader to trust the table it sits in. There is now a manifest written last and validated
+  first, and `extract` builds into a sibling directory and renames it into place.
+- **`csv.DictWriter` invented columns and `csv.DictReader` invented rows.** A projected column the dump did not
+  declare was written blank with no error — so a renamed `structures.inchikey` would have reduced the cascade to
+  name matching and reproduced #101's own 857/598 as if they were the new measurement. A short TSV row was padded
+  with `None`. Both now raise.
+- **The registry lookups had no `ORDER BY`, and the collisions are real: 14 InChIKeys and 29 CAS numbers are
+  claimed by more than one moiety.** `identity_claim` is unique on `(moiety_uuid, scheme, value)` and
+  deliberately not across moieties, so "pairs that are NEW" could have differed between two runs over the same
+  bytes — in the round whose entire justification is reproducibility. `classes.py` had already written this rule
+  down for the same join; the spike did not follow it. Reads are now `REPEATABLE READ` and ordered.
+- **The rule-6 verdict had a second home.** The renderer decided what to PRINT with a hard-coded `ref_id == "2"`
+  while `BUNDLEABLE_REF_IDS` decided which rows were COUNTED. The set is passed in now.
+- **A report over no evidence rendered cleanly and exited 0**, bold bundling recommendation included. It refuses.
+- **The QT descriptions are withheld for rows rule 6 excludes.** All three cite Lexicomp; reproducing a
+  commercial compendium's sentences verbatim into a committed AGPL repo on every run should not be a side effect
+  of that section having had no reference filter. The endpoint strings — what issue 93 actually needs — stay.
+- **Five figures this section had filed under "re-derivable" were not computed by the tool.** The class residue
+  and its authority, 106, 6,991, 6,973 and the provenance split are now all computed; the report prints
+  keyability under **both** resolvers, because #101's 7,000 was a name-matching figure and setting it beside a
+  cascade number compares two different questions.
+
+### The three lessons, none of them new to this project
+
+- **A figure nobody can re-derive decays silently.** Seven of these were wrong and every one had been quoted
+  forward into ROADMAP, an issue and this file. The instrument cost an afternoon; the figures had stood for ten
+  days across three documents. The review then found five MORE figures that this section had already relabelled
+  *re-derivable* while nothing in `tools/` computed them — relabelling is not the same act as instrumenting.
+- **The example strings are where paraphrase hides.** `MAOIs or RIMAs` and the `High/Moderate` token order were
+  both plausible, both wrong, and both survived because nobody could open the source. This file had already
+  flagged the second one as *proof that neither was transcribed* — and was right.
+- **Measuring before designing changed the design.** The synonym bridge #101 planned for is not needed; the
+  slice is 6,866 new pairs rather than 6,337; and the QT gap is not merely un-closed but sits in the
+  licence-excluded half.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -3501,21 +3664,35 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 1790 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 1888 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-18 at 1790
-# passed in 51.64 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 1794
+# passed in 55.21 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
-# db/046's catalog-comment guard added 3: 1787 → 1790).
+# db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
+# 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
+# re-measurement added 34 with NO migration: 1794 → 1828, and the review-fix
+# round on the same branch added 60 more: 1828 → 1888).
+# THE SIXTH OCCURRENCE WAS CAUGHT IN REVIEW ON THIS BRANCH, and is issue 146: the
+# re-measurement round wrote 1828 into THREE more places (HANDOVER, ROADMAP and its
+# own section heading) while filing an issue about this line drifting. All three now
+# point here instead of restating it -- a number with four homes has four chances to
+# be the one that is stale, and prose alone has now failed six times.
 # THE FIFTH OCCURRENCE WAS A NEAR MISS AND IS WHY THE COMMENT NOW NAMES
 # A SECOND FAILURE MODE: the pregnancy/lactation spike (PR #127) added 16 tests
 # (1644 + 16) and updated NO document at all -- not this line, not ROADMAP, not its own
 # section, because it had none. A round that lands via a different agent will not have
 # read this comment, so CHECK THE COUNT AT THE START OF A SESSION, not only at its end.
+# THE SIXTH OCCURRENCE HAPPENED ANYWAY, AND THE START-OF-SESSION CHECK IS WHAT CAUGHT IT:
+# db/047 and db/048 each added 2 tests and each updated only its OWN § "Verified:" line,
+# so this line read 1790 for two rounds while the suite was at 1792 and then 1794. That
+# is now SIX occurrences of one failure mode against a comment that has been rewritten
+# twice to prevent it -- prose is not a gate. A test that reads this number and counts
+# the collected suite would be, and it does not exist: filed as issue 146.
 # If you add tests, change it HERE.) The DB-gated majority SKIP without this DSN, exercising
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a
