@@ -83,11 +83,18 @@ def test_the_collapse_is_stable_when_the_two_orientations_tie(conn):
           collapse that instead broke the tie by, say, upstream_label would
           still pass an "always the same answer" test while violating the rule
           this view claims to implement.
-      (b) the tiebreak column is textually present in the view's own ORDER BY,
-          so a later edit that deletes `upstream_key` from it -- restoring the
-          exact non-determinism this view exists to remove -- fails this test
-          even on a single run, rather than requiring a five-times comparison
-          that a stable-but-wrong plan could still pass by accident.
+      (b) the tiebreak column is textually present in the view's own ORDER BY
+          CLAUSE specifically -- not merely anywhere in the view's definition.
+          upstream_key is ALSO a required SELECT column of this view (a
+          consumer reads it beside the grade), so a plain substring search
+          over the whole `pg_get_viewdef()` output would still find it after
+          it was deleted from the ORDER BY: it survives in the SELECT list
+          regardless. Scoping the search to the text after the view's LAST
+          `ORDER BY` is what makes this assertion sensitive to that specific
+          regression -- verified empirically below by reproducing the view
+          with the tiebreak dropped from ORDER BY only and confirming this
+          exact assertion then fails (see task-5-6-report.md's "Finding 1
+          fix" section for the transcript).
     """
     run = _run(conn)
     a, b = _moiety(conn, run, "atazanavir"), _moiety(conn, run, "tadalafil")
@@ -103,9 +110,16 @@ def test_the_collapse_is_stable_when_the_two_orientations_tie(conn):
 
     (viewdef,) = conn.execute(
         "SELECT pg_get_viewdef('drugref.drugcentral_ddi_pair'::regclass)").fetchone()
-    assert "upstream_key" in viewdef, (
-        "the tiebreak column must appear in the view's own ORDER BY; its "
-        "absence is exactly the regression this test exists to catch")
+    # Scoped to the text AFTER the view's own last ORDER BY, deliberately not
+    # the whole definition: upstream_key is also a SELECT column, so it is
+    # present in pg_get_viewdef()'s output even when absent from ORDER BY,
+    # and a whole-definition substring check cannot tell the two apart.
+    order_by_clause = viewdef.rsplit("ORDER BY", 1)[-1]
+    assert "upstream_key" in order_by_clause, (
+        "the tiebreak column must appear in the view's own ORDER BY clause; "
+        "its absence THERE (regardless of its presence elsewhere, e.g. the "
+        "SELECT list) is exactly the regression this test exists to catch. "
+        f"ORDER BY clause was: {order_by_clause!r}")
 
 
 @pytest.mark.usefixtures("conn")
@@ -197,7 +211,36 @@ def test_a_drugcentral_pair_asserts_no_direction(conn):
 def test_both_authorities_appear_for_one_pair_rather_than_one_hiding_the_other(conn):
     """Fewer rows is the harm direction for a contraindication, so this is a
     UNION ALL and a consumer sees both authorities. Which one wins is a curated
-    question (issues 97 and 106), deliberately not answered here."""
+    question (issues 97 and 106), deliberately not answered here.
+
+    WHAT THIS PROVES: for one pair asserted by both authorities, both rows
+    reach the consumer under `candidate_source` -- neither arm's result is
+    swallowed by the other's.
+
+    WHAT THIS DOES NOT PROVE, and cannot be made to: that UNION ALL here does
+    anything a plain UNION would not. Reviewed 2026-08-23 -- no scenario is
+    constructible, against exact_ddi_pair's CURRENT column set, where two
+    DISTINCT underlying rows project to a byte-identical output row, so
+    UNION and UNION ALL are unobservably different on this view as it
+    stands:
+      * Arm 1 (moiety_contraindication) projects subject_moiety,
+        object_moiety, relationship and candidate_source unchanged, and
+        those four ARE moiety_contraindication's own PRIMARY KEY (db/014:
+        `PRIMARY KEY (subject_moiety_uuid, object_moiety_uuid, relationship,
+        source)`). Two distinct rows can never agree on all four -- agreeing
+        on all four is what "distinct row" means here.
+      * Arm 2 is fed from drugcentral_ddi_pair, whose own
+        `DISTINCT ON (moiety_lo, moiety_hi)` already yields at most one row
+        per pair before this view sees it.
+      * The two arms can never collide with EACH OTHER: `relationship` is
+        non-NULL only in arm 1 and NULL only in arm 2; `severity` is the
+        mirror image. No row from one arm can equal a row from the other.
+    UNION ALL remains the correct choice on the stated harm-direction
+    argument (cheap, and it survives a future column removing one of the
+    distinguishers above), but this test is not evidence for that choice
+    specifically, and the docstring says so rather than implying coverage
+    the assertions below do not have.
+    """
     medrt = _run(conn, "MED-RT", "medrt_run", "2026.07.06")
     a, b = _moiety(conn, medrt, "warfarin"), _moiety(conn, medrt, "aspirin")
     conn.execute(
