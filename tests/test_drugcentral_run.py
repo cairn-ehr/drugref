@@ -60,12 +60,17 @@ def _seed_registry(conn) -> int:
        silently folded into the `resolved` bucket and `rows_self_pair` would
        read 0 no matter how many genuine self-pairs the run produced.
     3. A REAL duplicate registry key: TWO 'gatifloxacin' moieties are
-       registered (_GATIFLOXACIN_LOW, _GATIFLOXACIN_HIGH). load_registry's
-       `ORDER BY display_name, moiety_uuid` + `first_wins` must resolve every
-       'gatifloxacin' endpoint to the LOWER uuid, deterministically, and
-       report the collision through `duplicate_keys` rather than silently
-       dropping it -- exercising the live SQL, not just first_wins's own
-       pure unit tests (tests/test_drugcentral_resolve.py).
+       registered (_GATIFLOXACIN_LOW, _GATIFLOXACIN_HIGH, HIGH inserted
+       FIRST -- see the loop below for why that order is itself part of the
+       test). load_registry's `ORDER BY display_name, moiety_uuid` +
+       `first_wins` must resolve every 'gatifloxacin' endpoint to the LOWER
+       uuid, deterministically, and report the collision through
+       `duplicate_keys` rather than silently dropping it -- exercising the
+       live SQL, not just first_wins's own pure unit tests
+       (tests/test_drugcentral_resolve.py). Only the display_name path is
+       exercised here; this fixture adds no duplicate InChIKey or CAS claim,
+       so the same over-determination risk does not arise for those two
+       routes -- there is nothing here for it to apply to.
 
     'cortisone' (ddi row 1288's other endpoint) is deliberately left
     unregistered: it is absent from the fixture's own `structures`/`synonyms`
@@ -79,9 +84,21 @@ def _seed_registry(conn) -> int:
         "(source, upstream_release, source_checksum, writer) "
         "VALUES ('UNII', 'test', 'test', 'unii_run') RETURNING ingest_run_id"
     ).fetchone()[0]
+    # ORDER IS LOAD-BEARING: _GATIFLOXACIN_HIGH is inserted BEFORE
+    # _GATIFLOXACIN_LOW, deliberately opposing the winner the test expects.
+    # first_wins is a FIFO fold over whatever order the SQL hands it back, so
+    # if load_registry's `ORDER BY display_name, moiety_uuid` ever lost its
+    # `, moiety_uuid` tiebreak, `ORDER BY display_name` alone would fall back
+    # to some unspecified (commonly insertion) order -- and on this tiny,
+    # freshly-populated table that unspecified order tends to match insertion
+    # order, so a test that seeded LOW first would keep passing for the wrong
+    # reason: insertion order, not the SQL tiebreak, would be what "won".
+    # Seeding HIGH first means the two can only agree if `, moiety_uuid` is
+    # genuinely doing the work -- verified directly in the fix report by
+    # removing that clause and confirming this exact test then fails.
     for moiety_uuid, name in (
-            (_GATIFLOXACIN_LOW, "gatifloxacin"),
             (_GATIFLOXACIN_HIGH, "gatifloxacin"),
+            (_GATIFLOXACIN_LOW, "gatifloxacin"),
             (_PIOGLITAZONE, "pioglitazone"),
             (_ACETAMINOPHEN_AND_SULFINPYRAZONE, "acetaminophen")):
         conn.execute(
