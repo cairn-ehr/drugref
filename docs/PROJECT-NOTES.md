@@ -3981,6 +3981,155 @@ before it treats the branch as one.
   Pre-existing; the failure mode is worse than a crash because it is *plausible* — it invents evidence against
   whatever branch is under review.
 
+## The 5c.3 SPL measurement round (2026-08-24) — no migration, no ingest
+
+Full account and every figure:
+[slice 5c.3 SPL mining measurement](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-mining-measurement.md).
+A **measurement round only**: it commits no schema, no migration and no design spec. Three brainstorm
+decisions scoped it — the slice produces **both** drug × class rules and drug × drug exemplars kept separate
+with shared provenance; extraction is **deterministic entity recognition with NO relation extraction**
+(deciding a sentence means "contraindicated" is a clinical reading, and *ingest preserves evidence; curation
+creates clinical judgement*); and the corpus is measured **in full**, both corpora, never sampled.
+
+### ⇒ MEASURING FIRST CHANGED THE SHAPE OF THE SLICE FOR THE THIRD ROUND RUNNING, AND THIS TIME IT CHANGED THE CORPUS
+
+The round opened committed to DailyMed's 18 GB Human Rx release. **openFDA carries the same section and beats
+it on every axis**: CC0 1.0 against NLM's explicit *"cannot guarantee the copyright status"*; 1.73 GB against
+18 GB; `drug_interactions` **pre-split as a field** against nested zips → XML → LOINC splitting; and
+`openfda.unii` — which resolves the subject drug for free, `moiety_uuid` being UUIDv5-on-UNII. Both were taken
+in the end, DailyMed as the cross-check, and that was right: the cross-check is what turns "openFDA's field
+looks correct" into a measured claim.
+
+### ⇒ RULE 6: THE TWO PUBLISHERS OF ONE CORPUS TAKE OPPOSITE POSITIONS
+
+**NLM asserts nothing and disclaims** (*"It is your responsibility to determine and satisfy copyright…"*;
+*"NLM cannot guarantee the copyright status for any item"*), and DailyMed describes its content as labeling
+*"submitted to the FDA **by companies**"* — **the exact shape of the DIRIL determination**, where a
+public-domain FDA publication did not turn copied third-party material into federal work. **openFDA, FDA's own
+service, dedicates the same bytes to the public domain under CC0 1.0**, carving out only GMDN.
+
+The determination splits by what is stored, because the unit of clearance is the field: **derived facts —
+entity occurrences, offsets, `set_id`/`version` — are clear under either reading** (facts are not
+copyrightable, a citation is not a copy, and `db/045` already admits citation-only **SPL** references).
+**Verbatim prose is the contested part**, because a CC0 dedication waives the dedicator's own rights and
+cannot extinguish a third party's. **Recommendation: reference the prose, do not bundle it** — it satisfies
+both readings, costs nothing that matters, and matches the reviewer tier. Filed as
+**[#154](https://github.com/cairn-ehr/drugref/issues/154)**; it is a posture call for the owner, not a defect.
+
+### The corpus, and the de-duplication factor that was assumed wrong
+
+**262,032 records → 68,550 carry section 34073-7 → 27,406 DISTINCT WORDINGS.** The factor is **2.50 labels per
+wording**, and it is far lower than expected: one UNII appears on up to **498** labels, which invited the
+assumption that generic labels copy each other. Measured, **they do not — each manufacturer writes its own
+section 7**. Every rate is quoted against 27,406 wordings and never against 68,550 labels.
+
+**23 OTC labels of 68,550** independently confirm the 2026-08-13 finding that 34073-7 is a prescription
+section. **40,413 labels (59%) carry no `openfda` block at all** — section present, subject unkeyable.
+
+### ⇒ THE HEADLINE: THE POTENCY BAND IS PAIR-SCOPED, AND 7× MORE COMMON THAN drugref CAN SEE
+
+Two findings against issue #102, and each one moves it.
+
+**1. The band is a property of the PAIR, not of the inhibitor.** `CYP1A2 strong inhibitor [FDA-CYP]` ships with
+**0 members**. FDA's only strong 1A2 inhibitor, fluvoxamine, is `withheld_qualified` on footnote 8 (which
+concerns CYP3A substrates and does not negate the 1A2 claim — a conservative withhold working as designed).
+Ciprofloxacin, which the tizanidine label calls *strong*, FDA files under `CYP Mod INH` — and **FDA's footnote
+20 names tizanidine explicitly**: *"generally classified a moderate CYP 1A2 inhibitor… however, it can
+sometimes behave like a strong inhibitor… when it interacts with certain CYP 1A2 substrates that are
+considered highly sensitive (e.g., tizanidine)."* **So the label and the table never disagreed.** ⇒ This
+**retires options 1 and 2 of #102** — both hang the band on the class, and a per-class band is not coarser
+than the source, it is *wrong*: it would assert `strong` for ciprofloxacin against every CYP1A2 substrate.
+
+**2. The band looked rare only because drugref spells its classes backwards.** Through the stored vocabulary,
+0.8% of class occurrences carry a band (1.2% on PK axes). Against the prose directly: **`band + CYP<n> + role`
+appears 15,708 times in 4,236 wordings (15.5%)**, and any band word near a role word in **6,973 wordings
+(25.4%)** — against the **2,212** occurrences FDA-CYP's stored names actually matched. **Roughly 7×.** The
+cause is word order: labels write *"strong CYP1A2 inhibitors"*, drugref stores *"CYP1A2 strong inhibitor"*.
+⇒ **The band is not a corner to sweep into a gap view; it is in a quarter of all wordings.**
+
+### ⇒ MED-RT's PK AXIS IS NOT A DRUG-CLASS VOCABULARY, AND USING IT MANUFACTURES FALSE POSITIVES
+
+Splitting class yield by whether the class **has any members** — a class with none cannot be an endpoint,
+however often it is named — is what makes the encouraging 93.2% honest: **32.3% of all class occurrences name
+an EMPTY class.**
+
+| axis | occurrences | of which empty |
+|---|---|---|
+| MED-RT (non-PK) | 265,955 | 71,944 |
+| MeSH | 115,583 | **112** |
+| **MED-RT PK** | 80,042 | **77,795 (97.2%)** |
+| **FDA-CYP** | **2,212** | **0** |
+
+MED-RT's 59 PK concepts are pharmacokinetic **properties** — `Absorption`, `Clearance`, `Half-Life`,
+`Cytochromes`, `Hair Excretion` — and **only 6 have a single member**. Matching them recognises ordinary
+pharmacokinetic English: `Clearance [PK]` scores 22,277 "mentions". **These are false positives carrying a
+class UUID.** Filed as **[#155](https://github.com/cairn-ehr/drugref/issues/155)**. MeSH is the opposite and is
+the quiet good news. Separately, `Diuretics` (MeSH) and `Diuretic [APC]` (MED-RT) both score 17,118 because
+they fold to one string and the matcher returns **both** rather than picking one — deliberate, per FDA-CYP's
+*ambiguity is unresolved, never "pick the first"*, but it means class occurrences are not distinct concepts.
+
+### The pair yield, reported as a RANGE because one number would have been a judgement
+
+Exact matching over 19,438 names admits ordinary English — `prothrombin` (that is *prothrombin time*, a lab
+test), `lead`, `serotonin`, `alcohol`. Rather than adjudicate name by name, the count is bracketed between two
+**reproducible** endpoints: all names, and all names minus the **477** single-token ones that appear in
+`/usr/share/dict/words` (which over-corrects — `amphetamine` and `adenosine` are real drugs).
+
+| | all names | dictionary-colliding dropped |
+|---|---|---|
+| distinct candidate pairs | **21,201** | **17,279** |
+| NOVEL vs everything held | 18,754 (**88.5%**) | 15,007 (86.9%) |
+| novel vs `exact_ddi_pair` alone | 19,339 (91.2%) | 15,558 (90.0%) |
+
+**DrugCentral's whole slice was justified on 7,501 pairs at 91% new; SPL yields two to three times that at the
+same novelty rate.** The counterweight is **41,056 labels (60%) discarded before a pair can form** for want of
+a resolvable subject.
+
+### The cross-check, and what it says about trusting a derived field
+
+openFDA's `drug_interactions` is FDA's own derivation from the SPL XML, so it was **verified rather than
+trusted**. All six DailyMed Rx parts scanned: **54,813 labels**, **39,743 carry section 34073-7**, and
+**39,678 of those set_ids are present in openFDA — 65 missing (0.16%)**. On 2,000 labels read from both
+sides, **containment is 1.0000 on all 2,000**: openFDA reproduces the section exactly, nested 7.1/7.2
+subsections included.
+
+**And the two corpora are NOT two views of one population.** openFDA carries **68,550** section-bearing labels
+against DailyMed's 39,743 — **28,807 more**, because DailyMed's release is current in-use Human Rx only.
+A figure from one may not be quoted against the other's denominator. *(The download page states 50,813 files;
+the six parts contain 54,813. Counted, not quoted.)*
+
+**The perfect score is evidence only because the check was shown it could fail** — re-run with each label
+paired against a *different* label's text, mean containment collapses **1.0000 → 0.4276** and 1,937 of 2,000
+fall below 0.80. That is db/050's lesson applied before the review round instead of during it.
+
+### Traps and standing notes
+
+- **The de-duplication factor must be divided out before any rate is quoted.** Labels and wordings are
+  different units, and the 2026-08-13 evaluation was already burned once by quoting one as the other.
+- **Key on the document-type CODE, never `displayName`** — still true, and openFDA's `product_type` values are
+  `HUMAN PRESCRIPTION DRUG`, **not** DailyMed's `HUMAN PRESCRIPTION DRUG LABEL`. A query written against the
+  wrong one returns "No matches found!" rather than an error.
+- **`openfda.product_type` is populated on only 86,574 of 262,032 records.** Absence is a population, not a bug.
+- **The matcher is CONTIGUOUS on purpose.** The tizanidine label's *"strong cytochrome P450 1A2 **(CYP1A2)**
+  inhibitors"* does not match, and that miss is pinned as a passing test. A matcher that skips words produces
+  spans it cannot quote back to a reader.
+- **Containment, not Jaccard, is the fidelity metric** for comparing a derived field against its source. The
+  question is whether anything was DROPPED, which is asymmetric; Jaccard scores a perfect short-section
+  reproduction at **0.50**. Pinned as a test so it cannot be "simplified" back.
+- **Folding erases stereochemistry, and that is a bounded but real cost.** The registry spells stereoisomers
+  with a punctuation suffix -- `carvone, (+)-`, `carvone, (-)-`, `epinephrine,(+/-)-`, `.beta.-pinene` -- and
+  the matcher's fold strips punctuation, so **24 folded keys carry more than one registry name, covering 55 of
+  19,438 (0.28%)**. The matcher handles it correctly by returning EVERY colliding entry and refusing
+  `Match.entry`, per FDA-CYP's *ambiguity is unresolved, never "pick the first"*. It is recorded because the
+  direction matters for DDI specifically -- S- and R-warfarin take different CYP pathways -- and because it is
+  [#128](https://github.com/cairn-ehr/drugref/issues/128)'s problem reached from the other side: there the
+  racemate cannot carry a stereoisomer's assertion, here the label's stereoisomer folds onto the racemate's
+  name. **It is also why the dictionary-collision endpoint is 477 and not the 463 a plain `lower()` finds** --
+  the extra 14 are stereo-suffixed names folding onto a common word.
+- **A fidelity check that scores 1.0 proves nothing until it has been shown it can score low.** The negative
+  control — pairing each label with a *different* label's text — is what makes the perfect score evidence.
+  That is db/050's lesson applied before the review round rather than during it.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4050,6 +4199,19 @@ guideline and **71% of it is the one `_GAP_SOURCES` literal**, which grows with 
 kind — split out of #89 the way #130 was for `cli.py`, because the failure mode differs (a declarative table
 with a visible seam, not dense prose with none). **Its figures live on the issue; do not restate them here.**
 Full account: § "The DrugCentral ddi ingest".
+
+**Filed by the 5c.3 SPL measurement round (2026-08-24)** —
+**[#154](https://github.com/cairn-ehr/drugref/issues/154)** rule 6 for SPL section prose: NLM disclaims
+(*"cannot guarantee the copyright status for any item"*) over labeling *"submitted to the FDA by companies"*,
+while **openFDA dedicates the same bytes to the public domain under CC0 1.0** — the DIRIL shape, and it is a
+posture call for the owner rather than a defect. The recommendation is to **reference the prose, not bundle
+it**, which satisfies both readings and matches `db/045`'s citation-only SPL references ·
+**[#155](https://github.com/cairn-ehr/drugref/issues/155)** MED-RT's PK axis is not a drug-class vocabulary:
+**77,795 of its 80,042 matched occurrences (97.2%) name an EMPTY class**, its 59 concepts are pharmacokinetic
+properties (`Clearance`, `Half-Life`, `Cytochromes`) and only 6 have a member, so matching them recognises
+ordinary English and mints false positives carrying real class UUIDs. **Its figures live on the issues and in
+§ "The 5c.3 SPL measurement round"; do not restate them here.** The round also **re-opened #102 in new terms**
+— the potency band is pair-scoped, not class-scoped, which retires two of that issue's four options.
 
 **Earlier rounds** — #81 chain-time variance (**its interleaved-control method is what the debt round used**) ·
 #82 · **#75 `gap_uncurated_interaction_rule` costs ~2.7 s** — it is what both of that round's hot-path probes
@@ -4150,7 +4312,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2005 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2064 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -4169,7 +4331,11 @@ git config core.hooksPath .githooks
 # guard; and the PR-150 review-fix round -- db/050 -- added 43: 1962 -> 2005, which
 # is where the floor checks, the Outcome partition, the folded first_wins, the
 # autocommit refusal and the eight orchestrator-tail assertions that killed the
-# surviving mutants all landed).
+# surviving mutants all landed; and the 5c.3 SPL MEASUREMENT round added 59 with
+# NO migration and no ingest: 2005 -> 2064, all of them on throwaway probe code
+# under tools/, which is deliberate -- the figures that round published are worth
+# exactly as much as the parser that produced them, and this project has recorded
+# seven wrong figures from partially-working probes).
 # THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
