@@ -13,7 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-ddi-mining-measure`, from `main` at `20380ac`** (PR #150 merged 2026-08-23). Migrations
+**Branch `claude/spl-ddi-mining-measure`, from `main` at `20380ac`** (PR #150 merged 2026-08-23);
+**this round is open as [PR #156](https://github.com/cairn-ehr/drugref/pull/156) and is not merged.** Migrations
 through **`db/050`** — **this round added none.** The suite total lives in PROJECT-NOTES § "How to run / test"
 and **nowhere else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of
 the session.
