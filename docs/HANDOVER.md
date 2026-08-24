@@ -13,7 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-ddi-design`, from `main` at `c601e39`** (PR #156 merged 2026-08-24). Migrations through
+**Branch `claude/spl-ddi-design`, from `main` at `c601e39`** (PR #156 merged 2026-08-24); **this round is
+open as [PR #157](https://github.com/cairn-ehr/drugref/pull/157) and is not merged.** Migrations through
 **`db/050`** — **this round added none.** The suite total lives in PROJECT-NOTES § "How to run / test" and
 **nowhere else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the
 session.
