@@ -825,8 +825,9 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
 > home for what 5c.2g does.
 
 ##### 5c.3 — SPL/DailyMed mining
-`ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **Still no design spec; the brainstorm and
-the source measurement are DONE (2026-08-24) and the design round starts from them.** Two candidate sources
+`ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **The brainstorm, the source measurement,
+the subject-recovery measurement and the DESIGN SPEC are all DONE (2026-08-24); what remains is writing
+`db/051` and the ingest.** Two candidate sources
 were licence-checked during 5c.2 and measured on 2026-08-13 — full account: PROJECT-NOTES § "The 5c.3 source
 evaluation". **Its missing potency vocabulary was 5c.2g's job, and it landed.**
 
@@ -853,6 +854,28 @@ extraction**; and the corpus is measured in full, never sampled. Four findings t
   novel** — nearly 3× the 7,501 at 91% that justified DrugCentral. That is the *suppression* variant, the one
   whose exclusions were each measured; the round's first pass published a range whose low end deleted
   `lithium`, the corpus's most-matched moiety. The class half is where every unsolved problem lives (#155).
+
+**⇒ THE DESIGN ROUND ✅ DONE (2026-08-24) — the spec exists, `db/051` is designed but NOT written.**
+[Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md), resting on
+[the subject-recovery measurement](superpowers/specs/2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md).
+Full account and every figure: PROJECT-NOTES § "The 5c.3 subject-recovery round and the design spec".
+**Four owner decisions scope it**, and the design round that implements it should not re-open them:
+
+- **[#154](https://github.com/cairn-ehr/drugref/issues/154) is ANSWERED — bundle a QUOTED WINDOW only**,
+  neither reference-only nor the full prose. The rule is measured: ±60 chars around the first occurrence of
+  each distinct moiety, in pair-priority order, capped at **25% of the section's characters** — 14.7% of a
+  section stored on average. **A per-occurrence window would store 80.4% (sentence) or 89.6% (±120 chars)**,
+  which is the section reassembled, so the cap is a schema constraint and not a convention.
+- **Drug × drug only.** The class half is its own slice: 32.3% of class occurrences name an empty class,
+  MED-RT's PK axis is 97.2% empty (#155), and cross-source class identity is unsolved.
+- **Structural subject routes only** — `openfda.unii` plus DailyMed's `activeIngredient` block. The rank-0
+  name heuristic from `spl_product_data_elements` reaches 99.9% of wordings and is **genuinely wrong 6.2%**
+  of the time, so it does not ship; its 6,317-label overlap with route 2 is kept as a **calibration set**.
+- **The counterweight was quoted in the wrong unit and was UNDERSTATED**: 41,056 labels (60%) is 15,345
+  wordings (**56.0%**), and 14,455 of those labels were redundant reprints. Recovery via DailyMed adds
+  **11,064 pairs (+53.8%), 10,162 novel (91.8%)** — bigger on its own than DrugCentral's whole slice.
+  ⇒ **Total: at least 31,618 candidate pairs, 28,269 (89.4%) novel.** Every pair figure is a FLOOR: the probe
+  never scanned the 14,455 redundant labels, whose subjects are their own.
 
 **The evaluation moved one source and killed the other's data:**
 

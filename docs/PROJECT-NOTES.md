@@ -4152,6 +4152,113 @@ fall below 0.80. That is db/050's lesson applied before the review round instead
   control — pairing each label with a *different* label's text — is what makes the perfect score evidence.
   That is db/050's lesson applied before the review round rather than during it.
 
+## The 5c.3 subject-recovery round and the design spec (2026-08-24) — no migration, no ingest
+
+Second half of the 5c.3 design round, in the same session as the branch above. **The design spec now exists**:
+[slice 5c.3 SPL DDI ingest design](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md),
+resting on [the subject-recovery measurement](superpowers/specs/2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md).
+Still **no migration and no ingest** — `db/051` is designed, not written.
+
+**Four owner decisions scope it, and none of them should be re-litigated without a reason:**
+
+1. **[#154](https://github.com/cairn-ehr/drugref/issues/154) is ANSWERED: bundle a quoted window only.** Not
+   reference-only and not the full prose — the matched span plus a bounded context, with the rest cited.
+2. **Drug × drug only.** The class half is deferred to its own slice; every unsolved problem lives there.
+3. **Structural subject routes only.** The rank-0 name heuristic does not ship.
+4. **The quote budget is proportional**: 25% of the section's characters.
+
+### ⇒ THE COUNTERWEIGHT WAS QUOTED IN THE WRONG UNIT, AND IT WAS UNDERSTATED
+
+The mining round published the loss as **41,056 labels (60%)** — and labels are the wrong unit, which that
+same round said in a different context (*"the de-duplication factor must be divided out before any rate is
+quoted"*). Split properly it cuts both ways:
+
+- **14,455 of those labels are REDUNDANT** — another manufacturer reprinting a wording a keyed label already
+  carries. Recovering them rediscovers statements drugref already has. So 60% overstates the loss.
+- **But in WORDINGS the loss is 56.0%** — 15,345 of 27,406 are reachable only through unkeyed labels, and the
+  published 20,554 pairs came from **just 12,061 wordings**. So 60% also understates it, on the axis that
+  matters.
+
+**And the orphan half is not inferior material**: it names a known moiety in **97.2%** of wordings against the
+keyed half's 97.8%, at **higher** density (49.3 moiety occurrences per wording against 44.0) and across
+slightly more distinct drugs (1,862 against 1,846).
+
+### The three subject routes, and why only two ship
+
+| route | mechanism | wordings with a subject | pairs | novel |
+|---|---|---|---|---|
+| 1. `openfda.unii` | structural | 12,061 (44.0%) | 20,554 | 88.1% |
+| **2. + DailyMed XML** | **structural** | **16,754 (61.1%)** | **31,618** | **89.4%** |
+| 3. + rank-0 name | heuristic | 27,376 (99.9%) | 36,580 | 89.7% |
+
+**Route 2 adds 11,064 pairs (+53.8%), 10,162 of them novel (91.8%)** — a *higher* novelty rate than the
+baseline it extends, and **on its own bigger than DrugCentral's entire slice** (7,501 pairs at 91%). Of the
+26,401 labels targeted, **6,539 are in DailyMed (24.8%)** and **6,514 of those resolve (99.6%)** — zero were
+found carrying no UNII. The limit is the release, not the reading: DailyMed publishes current in-use Human Rx
+only.
+
+**Route 3 was found this round and rejected.** `openfda` is present on 100% of unkeyed records and is simply
+EMPTY, but `spl_product_data_elements` is populated on 40,633 of 40,856 (99.5%) — one flattened uppercase
+string holding product name, active ingredients, active moieties and excipients with **no delimiter**.
+Measured against route 2's output as ground truth (6,317 labels): the true moiety is among the names
+**98.9%** of the time, but the field averages **7.69 registry matches per label**.
+
+| positional rule | picks exactly the truth | extra is only a SALT of the truth | **genuinely wrong** |
+|---|---|---|---|
+| rank 0 only | 52.2% | 41.6% | **6.2%** |
+| ranks 0–1 | 8.5% | 40.8% | **50.7%** |
+
+**Splitting salt spellings out of the error is what makes it honest** — rank 0 reads 47.8% wrong or 6.2%
+wrong depending on whether *right drug, wrong grain* counts as a miss, and only one of those supports a
+decision. Excipients enter at rank 1 (`silicon dioxide` 421, `lactose monohydrate` 412, `magnesium stearate`
+271), exactly as SPL's generation order predicts. **Route 3 buys +4,962 pairs for a 6.2% wrong-subject rate
+and does not ship** — but the **6,317-label overlap is a permanent calibration set**, and any future
+heuristic route has ground truth to be measured against before it ships.
+
+### ⇒ A PER-OCCURRENCE QUOTED WINDOW IS NOT A QUOTE — IT IS THE SECTION, REASSEMBLED
+
+The owner's #154 answer needed a window rule, and the obvious ones do not survive measurement. The corpus
+averages **~48 moiety occurrences per wording** over a mean section of **3,663 characters**:
+
+| per-occurrence rule | mean % of section stored | median | ≥90% of section |
+|---|---|---|---|
+| the containing sentence | **80.4%** | 84.6% | 32.8% |
+| ±120 characters | 89.6% | 94.2% | 65.9% |
+| ±60 characters | 74.9% | 77.9% | 15.6% |
+
+**The bound must be per WORDING**, and the shipped rule is **±60 chars around the FIRST occurrence of each
+distinct moiety, in pair-priority order, until 25% of the section's characters are spent** — measured at
+**14.7% of a section stored on average**, 6.6 windows per wording, a window kept for 47.3% of distinct
+moieties. The other 52.7% lose only the window: occurrence, offsets and citation are stored regardless,
+because those are clear under either reading of rule 6. **It is a schema constraint, not a convention** — the
+failure mode is silent, additive and visible only in aggregate.
+
+### ⇒ THE ROUND'S OWN TALLY WAS WRONG BY 44, AND ITS 18 TESTS DID NOT CATCH IT
+
+The recovery summary first reported **6,583 labels found and 6,558 resolved**, because it counted the scan's
+ROWS. DailyMed ships successive **versions** of one label as separate documents sharing a `set_id`, so 44
+labels were counted twice. **What caught it was cross-checking the total against an independent pass** that
+computed resolution straight from the cache — not the probe's own tests, every one of which passed.
+⇒ **A tally that only ever agrees with itself is not checked.** Now de-duplicated by `set_id` and pinned by
+`test_one_set_id_read_TWICE_is_one_label`. The rescued-wording figure was unaffected: it was already a set.
+
+### Traps and standing notes
+
+- **Count wordings, not labels — and re-derive the unit every round.** The mining round wrote that rule down
+  and still quoted a figure the wrong way in its own summary. 60% of labels is 56% of wordings, and the two
+  say opposite things about whether the work is worth doing.
+- **A perfect resolution rate and a poor coverage rate are separate facts.** DailyMed resolves 99.6% of what
+  it holds and holds 24.8% of what was asked for; either alone describes a different source.
+- **Split salt-grain errors out of any precision figure.** [#67](https://github.com/cairn-ehr/drugref/issues/67)
+  is now wanted by three sources, and folding it into a precision number changes that number eightfold.
+- **Ground truth from one route is how another route gets measured.** Route 2's output was route 3's
+  validation set; a heuristic with no ground truth available is unmeasured, not unmeasurable.
+- **`openfda` present ≠ `openfda` populated.** The block exists on 100% of unkeyed records and is empty, so a
+  presence check reports full coverage.
+- **EVERY PAIR FIGURE IS A FLOOR.** The scan targeted orphan-wording labels only, so the **14,455 redundant
+  unkeyed labels were never read** — and a label's SUBJECT is its own even when its wording is shared, so
+  their pairs are uncounted. The ingest must scan them; the design's floor check asserts `>=`, not `==`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4334,7 +4441,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2067 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2086 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -4361,7 +4468,10 @@ git config core.hooksPath .githooks
 # CATCH forced that round to re-measure its own false-positive claim: 2064 ->
 # 2067, the suppression tests, and see that section's headline -- the round had
 # asserted 'lead is a verb' without checking, and its dictionary endpoint was
-# deleting lithium).
+# deleting lithium; and the 5c.3 SUBJECT-RECOVERY round added 19, again with no
+# migration and no ingest: 2067 -> 2086, all on throwaway probe code under
+# tools/ -- and one of those 19 exists because the round's OWN tally was wrong
+# by 44 labels while its other 18 tests passed, see that section's headline).
 # THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
