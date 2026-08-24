@@ -141,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
     measure_parser.add_argument("--cache", type=pathlib.Path, required=True)
     measure_parser.add_argument("--dsn", required=True)
     measure_parser.add_argument(
+        "--suppress-terms", type=pathlib.Path, default=None,
+        help="file of longer non-entity terms (e.g. 'prothrombin time'); "
+             "longest-match-wins then consumes the span so the short name "
+             "inside it never fires. The principled alternative to a stop-list.",
+    )
+    measure_parser.add_argument(
         "--exclude-common-words", type=pathlib.Path, default=None,
         help="word list; single-token moiety names appearing in it are dropped, "
              "giving the LOW end of the candidate-pair range",
@@ -148,7 +154,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if args.stage == "measure":
-        measure(args.cache, args.dsn, args.exclude_common_words)
+        measure(
+            args.cache, args.dsn, args.exclude_common_words, args.suppress_terms
+        )
         return 0
     if args.stage == "extract":
         census = extract(args.downloads, args.out)

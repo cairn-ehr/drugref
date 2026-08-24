@@ -173,3 +173,47 @@ def test_name_variants_offers_singular_and_plural_and_nothing_else():
 def test_name_variants_deduplicates_rather_than_returning_one_name_twice():
     from tools.spl_entity_match import name_variants
     assert len(set(name_variants("Antacids"))) == len(name_variants("Antacids"))
+
+
+# --------------------------------------------------------------------------
+# suppression: the principled alternative to a stop-list
+# --------------------------------------------------------------------------
+
+def test_a_suppress_term_consumes_the_span_so_the_short_name_never_fires():
+    # 'prothrombin time' is a lab test. Registering it as a suppress entry means
+    # longest-match-wins eats the whole span, and the moiety 'prothrombin'
+    # inside it is never reported.
+    vocab = _vocab(
+        ("moiety", "prothrombin", "prothrombin"),
+        ("suppress", "prothrombin time", "prothrombin time"),
+    )
+    (match,) = find_matches("monitor prothrombin time closely", vocab)
+    assert match.entries[0].kind == "suppress"
+
+
+def test_suppression_leaves_the_SAME_name_matchable_where_it_stands_alone():
+    # This is the whole reason suppression beats a stop-list. A stop-list would
+    # delete 'lead' everywhere, including where the label really means the
+    # element Pb -- which is a genuine moiety and a genuine interaction
+    # participant (chelation therapy). Suppression only removes 'lead to'.
+    vocab = _vocab(
+        ("moiety", "lead", "lead"),
+        ("suppress", "lead to", "lead to"),
+    )
+    assert find_matches("may lead to hypotension", vocab)[0].entries[0].kind == (
+        "suppress"
+    )
+    (standalone,) = find_matches("chelation therapy for lead poisoning", vocab)
+    assert standalone.entries[0].kind == "moiety"
+    assert standalone.entries[0].display == "lead"
+
+
+def test_a_suppress_term_does_not_shadow_a_DIFFERENT_drug_beside_it():
+    vocab = _vocab(
+        ("moiety", "warfarin", "warfarin"),
+        ("moiety", "prothrombin", "prothrombin"),
+        ("suppress", "prothrombin time", "prothrombin time"),
+    )
+    matches = find_matches("warfarin prolongs prothrombin time", vocab)
+    kinds = [m.entries[0].kind for m in matches]
+    assert kinds == ["moiety", "suppress"]

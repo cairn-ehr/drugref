@@ -20,7 +20,7 @@ from tools.spl_ddi_measure import (
     tally_bands,
 )
 from tools.spl_entity_match import find_matches
-from tools.spl_registry import Registry, load_registry
+from tools.spl_registry import Registry, load_registry, load_suppress_terms
 
 
 def _load_texts(cache: pathlib.Path) -> dict[str, str]:
@@ -38,7 +38,10 @@ def _load_sections(cache: pathlib.Path) -> list[dict]:
 
 
 def measure(
-    cache: pathlib.Path, dsn: str, words_path: pathlib.Path | None = None
+    cache: pathlib.Path,
+    dsn: str,
+    words_path: pathlib.Path | None = None,
+    suppress_path: pathlib.Path | None = None,
 ) -> None:
     """Stage 2: match the cached corpus and print every figure."""
     common_words = None
@@ -48,8 +51,18 @@ def measure(
             for line in words_path.read_text(errors="ignore").splitlines()
             if line.strip()
         )
+    suppress_terms: tuple[str, ...] = ()
+    if suppress_path is not None:
+        suppress_terms = load_suppress_terms(suppress_path)
     print("loading drugref vocabularies ...", flush=True)
-    registry = load_registry(dsn, common_words=common_words)
+    registry = load_registry(
+        dsn, common_words=common_words, suppress_terms=suppress_terms
+    )
+    if registry.suppress_terms:
+        print(
+            f"  SUPPRESSING {len(registry.suppress_terms)} measured non-entity "
+            f"terms, e.g. {', '.join(registry.suppress_terms[:4])}"
+        )
     if registry.excluded_common_words:
         print(
             f"  EXCLUDED {len(registry.excluded_common_words)} single-token moiety "

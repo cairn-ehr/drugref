@@ -101,9 +101,11 @@ The probe code is **throwaway** and says so in every module docstring:
 `tools/spl_label_extract.py`, `tools/spl_entity_match.py`,
 `tools/spl_ddi_measure.py`, `tools/spl_ddi_spike.py`,
 `tools/spl_dailymed_crosscheck.py`. Nothing under `src/drugref/` imports any of
-it. It ships with **59 tests**, because the figures below are only worth as much
+it. It ships with **62 tests**, because the figures below are only worth as much
 as the parser that produced them and this project has recorded seven wrong
-figures from partially-working probes.
+figures from partially-working probes. (The last three were added when a review
+catch forced §9 to re-measure a claim it had asserted without checking — see
+that section.)
 
 ---
 
@@ -334,14 +336,48 @@ Pairs are orientation-normalised and de-duplicated, so they are directly
 comparable with DrugCentral's. Self-pairs are excluded: a label routinely names
 its own drug, and a drug does not interact with itself.
 
-The count is reported as a **range between two reproducible endpoints**, rather
-than as one number resting on a judgement about which registry names are real.
-Exact matching over 19,438 names admits ordinary English — the profile shows
-`prothrombin` (that is *prothrombin time*, a lab test), `lead`, `serotonin`,
-`alcohol`. The low end drops all **477** single-token moiety names that also
-appear in `/usr/share/dict/words`; that over-corrects, because `amphetamine` and
-`adenosine` are perfectly good drugs. **The truth is between the two, and saying
-so is more honest than picking one.**
+### ⇒ The first pass asserted causes it had not measured, and got one backwards
+
+This section originally reported a **range** between "all names" and "all names
+minus the 477 that appear in `/usr/share/dict/words`", justified by the claim
+that exact matching admits ordinary English — *"`prothrombin` is a lab test,
+`lead` is a verb"*. **Both halves of that were unverified, and the framing was
+wrong.** The correction is recorded rather than quietly applied, because it is
+the standing rule at work: *a disposition records what was OBSERVED, never what
+the round suspects it MEANS* — the [#122](https://github.com/cairn-ehr/drugref/issues/122)
+manufactured-cause defect, reached again.
+
+Measured over the 27,406 wordings:
+
+| name | occurrences | what it actually is |
+|---|---|---|
+| `lead` | 9,160 | **the verb** — 9,157 (100.0%) followed by `to`, preceded by *may* (6,855) / *can* (1,190) / *could* (403). **False positive.** |
+| `prothrombin` | 9,363 | **a lab test** — 81.6% followed by `time`, 10.0% `times`, 1.9% `activity`. **False positive.** |
+| `serotonin` | 19,804 | **a syndrome and a drug class** — 50.2% `syndrome`, 23.6% `reuptake`, 5.9% `norepinephrine`. **Mostly false positive.** |
+| `alcohol` | 13,530 | **ethanol, a genuine interactant** — preceded by *excessive*, *opioids and*, *including*; only **0.2%** excipient-qualified (`benzyl`/`cetyl`/…). **TRUE positive, wrongly listed as suspect.** |
+
+**And the dictionary endpoint was wrong in both directions.** `lead` and
+`prothrombin` are dictionary words and were dropped correctly; but `serotonin`
+is **not** in the dictionary and survived, while `alcohol`, `iron` and — worst —
+**`lithium`, the single most-matched moiety in the whole corpus at 28,368
+occurrences and a clinically critical interactant** — are dictionary words and
+were deleted. **So that endpoint is not a lower bound on the truth. It is a
+differently-wrong number**, and calling it the bottom of a range implied a
+guarantee it does not carry.
+
+**The real mechanism is not "ordinary English".** Three of the four are the
+**head of a longer term that names something else** — and the matcher's own
+longest-match-wins rule would already suppress them *if drugref held the longer
+term*. It does not hold `prothrombin time` or `serotonin syndrome`, so the short
+name wins by default.
+
+⇒ **The fix is a negative vocabulary, not a stop-list**, and it was tested rather
+than argued: nine measured non-entity terms registered as `suppress` entries
+(`tools/spl_suppress_terms.txt`, every line carrying the distribution that
+justifies it). A stop-list deletes a name everywhere, **including where it is
+genuinely the drug** — and lead-the-element (Pb) is a real moiety and a real
+interaction participant, through chelation therapy. Suppression removes it only
+inside the phrase that misleads.
 
 **A folding cost worth naming, bounded at 0.28%:** the registry spells stereoisomers
 with a punctuation suffix (`carvone, (+)-`, `epinephrine,(+/-)-`, `.beta.-pinene`),
@@ -350,22 +386,32 @@ registry name, covering 55 of 19,438**. The matcher returns every colliding entr
 refuses to pick one. The direction matters for DDI specifically, since S- and
 R-warfarin take different CYP pathways; it is
 [#128](https://github.com/cairn-ehr/drugref/issues/128) reached from the other side.
-It is also why the exclusion endpoint is 477 rather than the 463 a plain `lower()`
-finds — the extra 14 are stereo-suffixed names folding onto a common word.
+It is also why the dictionary endpoint counts 477 rather than the 463 a plain
+`lower()` finds — the extra 14 are stereo-suffixed names folding onto a common
+word.
 
-| | all names | dictionary-colliding names dropped |
-|---|---|---|
-| labels with a resolved subject | 27,494 | 27,494 |
-| labels with **no** resolvable subject | **41,056** | 41,056 |
-| self-pairs excluded | 271,306 | 267,202 |
-| **distinct candidate pairs** | **21,201** | **17,279** |
-| already held (exact **or** class expansion) | 2,447 | 2,272 |
-| **NOVEL** | **18,754 (88.5%)** | **15,007 (86.9%)** |
-| novel vs `exact_ddi_pair` alone | 19,339 (91.2%) | 15,558 (90.0%) |
+### The three variants, and which one to quote
+
+| | all names | dictionary-excluded | **suppression (measured)** |
+|---|---|---|---|
+| labels with a resolved subject | 27,494 | 27,494 | 27,494 |
+| labels with **no** resolvable subject | 41,056 | 41,056 | 41,056 |
+| moiety occurrences | 1,319,099 | — | 1,286,775 |
+| **distinct candidate pairs** | 21,201 | 17,279 | **20,554** |
+| already held (exact **or** class) | 2,447 | 2,272 | 2,447 |
+| **NOVEL** | 18,754 (88.5%) | 15,007 (86.9%) | **18,107 (88.1%)** |
+| novel vs `exact_ddi_pair` alone | 19,339 (91.2%) | 15,558 (90.0%) | 18,692 (90.9%) |
+
+**⇒ Quote the suppression column: 20,554 distinct candidate pairs, 18,107
+(88.1%) novel.** It is the only one of the three whose exclusions were each
+measured. The naive column over-counts by the 32,324 occurrences of the three
+confirmed false positives; the dictionary column under-counts by deleting
+lithium, alcohol and iron.
 
 **For scale: DrugCentral's whole slice was justified on 7,501 pairs at 91% new.
-SPL yields two to three times that, at the same novelty rate.** On this figure
-alone the slice is worth building.
+SPL yields nearly three times that, at the same novelty rate.** On this figure
+alone the slice is worth building — and note the conclusion is robust to which
+column you take, which is the one virtue the original range framing did have.
 
 **The 41,056 labels with no resolvable subject are the counterweight** — 60% of
 the section-carrying corpus, discarded before a pair can form, because openFDA's
@@ -478,7 +524,15 @@ but a future round using this metric on short texts alone should know it.
    all defeat exact matching, and together they are the difference between 2,212
    and ~15,708 banded matches.
 6. **Subject resolution is 40% of the corpus** and the rest needs a route.
-7. **The moiety grain is ready now.** 97.6% of wordings name a known moiety, and
-   the pair yield is 2–3× DrugCentral's at the same novelty. If the slice needs
-   to be cut down, the drug × drug half stands on its own and the class half is
-   where every unsolved problem lives.
+7. **The moiety grain is ready now.** 97.5% of wordings name a known moiety, and
+   the pair yield is nearly 3× DrugCentral's at the same novelty. If the slice
+   needs to be cut down, the drug × drug half stands on its own and the class
+   half is where every unsolved problem lives.
+8. **Use a negative vocabulary, not a stop-list, for false positives** (§9).
+   Three of the four suspect names are the head of a longer term naming
+   something else, and longest-match-wins already handles them once the longer
+   term is known. A stop-list would delete `lead` everywhere — including where a
+   label means the element, which is a real moiety with a real interaction
+   (chelation) — and would still miss `serotonin`, which is not a dictionary
+   word. The nine terms used here are a starting point, not the finished list;
+   deriving it systematically from next-word distributions is design-round work.

@@ -4068,22 +4068,44 @@ the quiet good news. Separately, `Diuretics` (MeSH) and `Diuretic [APC]` (MED-RT
 they fold to one string and the matcher returns **both** rather than picking one — deliberate, per FDA-CYP's
 *ambiguity is unresolved, never "pick the first"*, but it means class occurrences are not distinct concepts.
 
-### The pair yield, reported as a RANGE because one number would have been a judgement
+### ⇒ THE ROUND ASSERTED A CAUSE IT HAD NOT MEASURED, AND GOT ONE BACKWARDS
 
-Exact matching over 19,438 names admits ordinary English — `prothrombin` (that is *prothrombin time*, a lab
-test), `lead`, `serotonin`, `alcohol`. Rather than adjudicate name by name, the count is bracketed between two
-**reproducible** endpoints: all names, and all names minus the **477** single-token ones that appear in
-`/usr/share/dict/words` (which over-corrects — `amphetamine` and `adenosine` are real drugs).
+The first pass reported the pair count as a **range** between "all names" and "all names minus the 477 in
+`/usr/share/dict/words`", justified by *"`prothrombin` is a lab test, `lead` is a verb"*. **Neither half had
+been checked, and the framing was wrong.** Recorded rather than quietly fixed, because it is the standing rule
+at work — *a disposition records what was OBSERVED, never what the round suspects it MEANS*, which is
+[#122](https://github.com/cairn-ehr/drugref/issues/122)'s manufactured-cause defect reached again.
 
-| | all names | dictionary-colliding dropped |
+| name | occurrences | measured reality |
 |---|---|---|
-| distinct candidate pairs | **21,201** | **17,279** |
-| NOVEL vs everything held | 18,754 (**88.5%**) | 15,007 (86.9%) |
-| novel vs `exact_ddi_pair` alone | 19,339 (91.2%) | 15,558 (90.0%) |
+| `lead` | 9,160 | **the verb** — 9,157 (100.0%) followed by `to`. False positive |
+| `prothrombin` | 9,363 | **a lab test** — 81.6% `time`, 10.0% `times`. False positive |
+| `serotonin` | 19,804 | **a syndrome / a class** — 50.2% `syndrome`, 23.6% `reuptake`. Mostly false |
+| `alcohol` | 13,530 | **ethanol, a REAL interactant** — 0.2% excipient-qualified. **True positive, wrongly accused** |
 
-**DrugCentral's whole slice was justified on 7,501 pairs at 91% new; SPL yields two to three times that at the
-same novelty rate.** The counterweight is **41,056 labels (60%) discarded before a pair can form** for want of
-a resolvable subject.
+**The dictionary endpoint was wrong in BOTH directions**: `serotonin` is not a dictionary word and survived,
+while `alcohol`, `iron` and **`lithium` — the corpus's most-matched moiety at 28,368 occurrences and a
+clinically critical interactant — are, and were deleted.** So it is not a lower bound; it is a
+differently-wrong number, and calling it the bottom of a range implied a guarantee it never carried.
+
+**The real mechanism is "head of a longer term naming something else", not "ordinary English"** — and
+longest-match-wins already handles that *once drugref holds the longer term*. ⇒ **The fix is a negative
+vocabulary, not a stop-list**, and it was tested rather than argued: nine measured terms in
+`tools/spl_suppress_terms.txt`, each carrying its own distribution. A stop-list deletes a name everywhere,
+including where it really is the drug — **lead the element (Pb) is a genuine moiety with a genuine interaction
+through chelation therapy**, and only `lead to` is ever noise.
+
+| | all names | dictionary-excluded | **suppression (measured)** |
+|---|---|---|---|
+| distinct candidate pairs | 21,201 | 17,279 | **20,554** |
+| NOVEL vs everything held | 18,754 (88.5%) | 15,007 (86.9%) | **18,107 (88.1%)** |
+| novel vs `exact_ddi_pair` alone | 19,339 (91.2%) | 15,558 (90.0%) | 18,692 (90.9%) |
+
+**⇒ Quote the suppression column.** It is the only one whose exclusions were each measured.
+**DrugCentral's whole slice was justified on 7,501 pairs at 91% new; SPL yields nearly three times that at the
+same novelty rate** — and that conclusion holds under all three columns, which is the one virtue the range
+framing did have. The counterweight is **41,056 labels (60%) discarded before a pair can form** for want of a
+resolvable subject.
 
 ### The cross-check, and what it says about trusting a derived field
 
@@ -4312,7 +4334,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2064 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2067 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -4335,7 +4357,11 @@ git config core.hooksPath .githooks
 # NO migration and no ingest: 2005 -> 2064, all of them on throwaway probe code
 # under tools/, which is deliberate -- the figures that round published are worth
 # exactly as much as the parser that produced them, and this project has recorded
-# seven wrong figures from partially-working probes).
+# seven wrong figures from partially-working probes; then 3 more when a REVIEW
+# CATCH forced that round to re-measure its own false-positive claim: 2064 ->
+# 2067, the suppression tests, and see that section's headline -- the round had
+# asserted 'lead is a verb' without checking, and its dictionary endpoint was
+# deleting lithium).
 # THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,

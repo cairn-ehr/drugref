@@ -830,7 +830,9 @@ the source measurement are DONE (2026-08-24) and the design round starts from th
 were licence-checked during 5c.2 and measured on 2026-08-13 — full account: PROJECT-NOTES § "The 5c.3 source
 evaluation". **Its missing potency vocabulary was 5c.2g's job, and it landed.**
 
-**⇒ THE SOURCE MEASUREMENT ROUND ✅ DONE (2026-08-24) — no migration, no ingest, suite 2005 → 2064.**
+**⇒ THE SOURCE MEASUREMENT ROUND ✅ DONE (2026-08-24) — no migration, no ingest.**
+The suite total lives once in PROJECT-NOTES § "How to run / test"; it is not restated here
+([#146](https://github.com/cairn-ehr/drugref/issues/146)).
 [Measurement record](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-mining-measurement.md); full account
 and every figure: PROJECT-NOTES § "The 5c.3 SPL measurement round". **Read the numbers there, not here.**
 Three brainstorm decisions scope the slice: it produces **both** drug × class rules and drug × drug exemplars,
@@ -847,9 +849,10 @@ extraction**; and the corpus is measured in full, never sampled. Four findings t
 - **The potency band is PAIR-scoped, not class-scoped, and affects a quarter of all wordings** — which
   retires two of [#102](https://github.com/cairn-ehr/drugref/issues/102)'s four options. FDA's own footnote 20
   names tizanidine while banding ciprofloxacin *moderate*, so the label and the table never disagreed.
-- **The pair yield justifies the slice on its own**: **17,279–21,201** distinct candidate pairs, **86.9–88.5%
-  novel** — against the 7,501 at 91% that justified DrugCentral. The class half is where every unsolved
-  problem lives (#155).
+- **The pair yield justifies the slice on its own**: **20,554** distinct candidate pairs, **18,107 (88.1%)
+  novel** — nearly 3× the 7,501 at 91% that justified DrugCentral. That is the *suppression* variant, the one
+  whose exclusions were each measured; the round's first pass published a range whose low end deleted
+  `lithium`, the corpus's most-matched moiety. The class half is where every unsolved problem lives (#155).
 
 **The evaluation moved one source and killed the other's data:**
 

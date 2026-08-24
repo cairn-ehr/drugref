@@ -58,11 +58,15 @@ MED-RT's PK axis is the worst: **97.2% empty**, because its 59 concepts are phar
 (`Clearance`, `Half-Life`, `Cytochromes`) of which only 6 have a member — matching them recognises ordinary
 English and mints false positives carrying real class UUIDs. MeSH is the opposite (112 empty of 115,583).
 
-**The pair yield justifies the slice on its own: 17,279–21,201 distinct candidate pairs, 86.9–88.5% novel**,
-against the 7,501 at 91% that justified DrugCentral. It is a **range**, not a number, because exact matching
-over 19,438 names admits ordinary English (`prothrombin` is a lab test, `lead` is a verb) and the two endpoints
-are reproducible where a judgement call would not be. **The counterweight: 41,056 labels (60%) are discarded
-before a pair can form** for want of a resolvable subject.
+**The pair yield justifies the slice on its own: 20,554 distinct candidate pairs, 18,107 (88.1%) novel**,
+against the 7,501 at 91% that justified DrugCentral — **nearly 3×, at the same novelty rate.** ⇒ **That figure
+is the SUPPRESSION variant, and it is the one to quote**: the round's first pass published a range whose low
+end deleted **`lithium`, the corpus's most-matched moiety**, along with `alcohol` and `iron`, while keeping
+`serotonin` — because it excluded dictionary words on an *unmeasured* guess ("`lead` is a verb"). Measured,
+three of the four suspects are the **head of a longer term** (`lead to`, `prothrombin time`, `serotonin
+syndrome`) which longest-match-wins already handles once drugref holds the longer term, and `alcohol` was a
+**true positive all along**. See PROJECT-NOTES for the distributions. **The counterweight: 41,056 labels (60%)
+are discarded before a pair can form** for want of a resolvable subject.
 
 ## ⇒ DO THIS NEXT
 

@@ -84,14 +84,22 @@ def name_variants(name: str) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class Entry:
-    """One name drugref already knows, offered to the matcher.
+    """One name offered to the matcher.
 
-    ``kind`` is 'moiety' or 'class' -- kept as data rather than as two separate
-    vocabularies because a single folded string can be BOTH (see ``Match``), and
-    a design that could not represent that would decide a grain question by
+    The kind is kept as data rather than as separate vocabularies because a
+    single folded string can be BOTH a moiety and a class (see ``Match``), and a
+    design that could not represent that would decide a grain question by
     accident.
     """
 
+    #: 'moiety', 'class', or 'suppress'. A **suppress** entry names a longer
+    #: term that is not an entity at all -- 'prothrombin time' is a lab test,
+    #: 'serotonin syndrome' is a syndrome, 'lead to' is a verb. It carries no
+    #: yield of its own; it exists so that longest-match-wins CONSUMES the span
+    #: and the short name inside it never fires. That is the principled fix for
+    #: these false positives, and it is strictly better than a stop-list: a
+    #: stop-list deletes the name everywhere, including where it is genuinely
+    #: the drug, whereas this suppresses it only in the phrase that misleads.
     kind: str
     key: str
     display: str

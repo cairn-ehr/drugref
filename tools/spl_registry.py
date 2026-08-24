@@ -6,6 +6,7 @@ piece of it that talks to a database.
 """
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -30,10 +31,23 @@ class Registry:
     class_members: Mapping[str, int]
     class_count: int
     excluded_common_words: tuple[str, ...] = ()
+    suppress_terms: tuple[str, ...] = ()
+
+
+def load_suppress_terms(path: pathlib.Path) -> tuple[str, ...]:
+    """Read the measured suppression list, ignoring comments and blanks."""
+    return tuple(
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
 
 
 def load_registry(
-    dsn: str, *, common_words: frozenset[str] | None = None
+    dsn: str,
+    *,
+    common_words: frozenset[str] | None = None,
+    suppress_terms: tuple[str, ...] = (),
 ) -> Registry:
     """Read the registry, the class vocabulary and the pairs drugref holds.
 
@@ -60,6 +74,9 @@ def load_registry(
     held_candidate: set[tuple[str, str]] = set()
     class_members: dict[str, int] = {}
     excluded_names: list[str] = []
+    entries.extend(
+        Entry(kind="suppress", key=term, display=term) for term in suppress_terms
+    )
 
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
@@ -132,6 +149,7 @@ def load_registry(
         class_members=class_members,
         class_count=len(classes),
         excluded_common_words=tuple(sorted(excluded_names)),
+        suppress_terms=suppress_terms,
     )
 
 

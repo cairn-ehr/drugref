@@ -1,0 +1,36 @@
+# Longer terms that are NOT entities, suppressed so longest-match-wins consumes
+# the span and the short name inside never fires.
+#
+# THROWAWAY spike data for the slice 5c.3 measurement round.
+#
+# Every line here is justified by a MEASURED distribution over the 27,406
+# distinct section-34073-7 wordings, not by intuition. The round's first pass
+# asserted causes it had not checked ("lead is a verb") and got one of them
+# backwards -- `alcohol` was called a false positive when 13,530 of its
+# occurrences are ethanol as a genuine interactant and only 0.2% are
+# excipient-qualified. So: measure, then suppress.
+#
+# This is deliberately NOT a stop-list. A stop-list deletes a name everywhere,
+# including where it really is the drug; suppression removes it only inside the
+# phrase that misleads. `lead` the element (Pb) is a real moiety and a real
+# interaction participant -- chelation therapy -- and it must stay matchable
+# even though `lead to` never is.
+
+# 'lead': 9,157 of 9,160 occurrences (100.0%) are followed by 'to',
+# preceded by may (6,855) / can (1,190) / could (403). The verb.
+lead to
+
+# 'prothrombin': 9,363 occurrences, 81.6% followed by 'time', 10.0% by 'times',
+# 1.9% 'activity', 1.4% 'time/inr', 1.0% 'response'. A LAB TEST, not a moiety.
+prothrombin time
+prothrombin times
+prothrombin activity
+prothrombin response
+
+# 'serotonin': 19,804 occurrences -- 50.2% 'syndrome' (an adverse event),
+# 23.6% 'reuptake' and 5.9% 'norepinephrine' (a drug class), 7.6% 'release'.
+# The bare moiety is a small minority.
+serotonin syndrome
+serotonin reuptake
+serotonin release
+serotonin norepinephrine
