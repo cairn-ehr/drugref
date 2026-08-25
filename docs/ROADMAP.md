@@ -863,19 +863,26 @@ Full account and every figure: PROJECT-NOTES § "The 5c.3 subject-recovery round
 
 - **[#154](https://github.com/cairn-ehr/drugref/issues/154) is ANSWERED — bundle a QUOTED WINDOW only**,
   neither reference-only nor the full prose. The rule is measured: ±60 chars around the first occurrence of
-  each distinct moiety, in pair-priority order, capped at **25% of the section's characters** — 14.7% of a
-  section stored on average. **A per-occurrence window would store 80.4% (sentence) or 89.6% (±120 chars)**,
+  each distinct moiety, in document order, capped at **25% of the section's characters** — 20.4% of a
+  section stored on average. **A per-occurrence window would store 82.7% (sentence) or 89.0% (±120 chars)**,
   which is the section reassembled, so the cap is a schema constraint and not a convention.
 - **Drug × drug only.** The class half is its own slice: 32.3% of class occurrences name an empty class,
   MED-RT's PK axis is 97.2% empty (#155), and cross-source class identity is unsolved.
-- **Structural subject routes only** — `openfda.unii` plus DailyMed's `activeIngredient` block. The rank-0
-  name heuristic from `spl_product_data_elements` reaches 99.9% of wordings and is **genuinely wrong 6.2%**
-  of the time, so it does not ship; its 6,317-label overlap with route 2 is kept as a **calibration set**.
+- **Structural subject routes only** — `openfda.unii` plus DailyMed's `activeIngredient` block, with the
+  subject taken as the **moiety where it resolves and the salt only where it does not** (one rule,
+  `subject_uniis`). The rank-0 name heuristic from `spl_product_data_elements` reaches 99.9% of wordings and
+  is **genuinely wrong 6.2%** of the time, so it does not ship; its 6,317-label overlap with route 2 is kept
+  as a **calibration set** (its producer code is owed — #158).
 - **The counterweight was quoted in the wrong unit and was UNDERSTATED**: 41,056 labels (60%) is 15,345
   wordings (**56.0%**), and 14,455 of those labels were redundant reprints. Recovery via DailyMed adds
-  **11,064 pairs (+53.8%), 10,162 novel (91.8%)** — bigger on its own than DrugCentral's whole slice.
-  ⇒ **Total: at least 31,618 candidate pairs, 28,269 (89.4%) novel.** Every pair figure is a FLOOR: the probe
-  never scanned the 14,455 redundant labels, whose subjects are their own.
+  **8,704 pairs (+42.3%), 7,853 novel (90.2%)** — still bigger on its own than DrugCentral's whole slice.
+  ⇒ **Total: at least 29,258 candidate pairs, 25,960 (88.7%) novel.** Every pair figure is a FLOOR: the probe
+  never scanned the 14,455 redundant labels, whose subjects are their own, and 200 labels carrying a UNII
+  drugref lacks were filed as keyed.
+- **⇒ THE ROUND'S OWN DELTA WAS MEASURED WITH A LOOSER RULE THAN ITS BASELINE**, found in the review of its
+  PR and corrected here: blending the salt UNII into the recovered subject set doubled a salt product's pairs
+  and published **31,618** where the exclusive rule gives **29,258**. The subject rule and the pair rule each
+  now live in exactly one function that both arms call.
 
 **The evaluation moved one source and killed the other's data:**
 

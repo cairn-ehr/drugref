@@ -41,8 +41,8 @@ than by preference:
   This slice's contribution to [#102](https://github.com/cairn-ehr/drugref/issues/102)
   is the measurement that retired its options 1 and 2, not a column.
 
-**What justifies the slice: at least 31,618 distinct candidate pairs, 28,269
-(89.4%) novel.** DrugCentral's entire slice was justified on 7,501 at 91% new.
+**What justifies the slice: at least 29,258 distinct candidate pairs, 25,960
+(88.7%) novel.** DrugCentral's entire slice was justified on 7,501 at 91% new.
 
 ---
 
@@ -63,7 +63,7 @@ bytes CC0 1.0** — so the unit of clearance is the column, as it was for DIRIL.
 | the section text in full | **NOT STORED**, under either reading |
 
 **The budget is a schema constraint, never a convention**, and §5.4 says why:
-measured, an unbounded per-occurrence window stores **80.4%** of a section, so a
+measured, an unbounded per-occurrence window stores **82.7%** of a section, so a
 rule that is merely intended would make "a quoted window" and "the prose" the
 same act.
 
@@ -80,9 +80,10 @@ same act.
 - **A per-occurrence quoted window.** Rejected on measurement (§5.4): it
   reproduces the section.
 - **The rank-0 name heuristic as a subject route.** Rejected (owner's call,
-  2026-08-24): **6.2% genuinely wrong** subjects, for +4,962 pairs on top of the
-  structural routes' 31,618. Recorded, with its calibration set, in the recovery
-  measurement §4.
+  2026-08-24): **6.2% genuinely wrong** subjects. Recorded, with its calibration
+  set, in the recovery measurement §4. Its pair yield is withdrawn pending
+  [#158](https://github.com/cairn-ehr/drugref/issues/158) and was never the
+  reason for the rejection.
 - **Discarding unresolved labels.** Rejected: 19,862 labels are absent from
   today's DailyMed release and may be in tomorrow's. They are recorded as a
   population, per the standing rule that *absence is a population, not a bug*.
@@ -202,14 +203,18 @@ prevent.
 | `quote_text` | **the only prose drugref stores** |
 
 **The rule** (measured; owner's call, 2026-08-24): **±60 characters around the
-FIRST occurrence of each distinct moiety, kept in pair-priority order, until 25%
-of `char_length` is spent.**
+FIRST occurrence of each distinct moiety, kept in DOCUMENT order, until 25% of
+`char_length` is spent.**
 
-Measured over 5,868 wordings: **14.7% of a section stored on average**, median
-15.5%, **6.6 windows per wording**, a window kept for 47.3% of the distinct
-moieties named. The alternatives and why they lose are in the recovery
-measurement §6 — briefly, the containing sentence stores **80.4%** and ±120
-characters stores **89.6%**, which is the section, reassembled.
+Document order, not "pair priority": priority order would make the stored bytes
+depend on which pairs the registry happens to resolve, and a licensing
+constraint whose result moves with the vocabulary is not a constraint.
+
+Measured over all 26,721 wordings naming a moiety: **20.4% of a section stored
+on average**, median 22.7%, **5.1 merged windows per wording**, covering 71.6%
+of the distinct moieties named. The alternatives and why they lose are in the
+recovery measurement §6 — briefly, the containing sentence stores **82.7%** and
+±120 characters **89.0%**, which is the section, reassembled.
 
 **The budget is enforced, not intended.** A deferred constraint trigger
 re-computes `sum(char_end - char_start)` per `text_key` at commit and refuses a
@@ -218,7 +223,7 @@ lesson taken before the review round instead of during it: the failure mode is
 silent, additive, and visible only in aggregate — exactly the shape that
 survives a suite.
 
-**The 52.7% of moieties with no window lose only the window.** Their occurrence,
+**The 28.4% of moieties with no window lose only the window.** Their occurrence,
 offsets and citation are stored regardless, because §2 clears those.
 
 ### 4.6 `drugref.spl_entity_occurrence` — the derived facts
@@ -289,6 +294,7 @@ orchestrators own the transaction and are the only writers*:
 | `ingest/spl_dailymed.py` | pure: SPL XML → active-ingredient/moiety UNIIs |
 | `ingest/spl_match.py` | pure: wording → entity occurrences (the shipped resolver's rule) |
 | `ingest/spl_quote.py` | pure: occurrences + text → the bounded window set |
+| | *(the measurement's rules live in `tools/spl_quote_budget.py`)* |
 | `ingest/spl_run.py` | the orchestrator: owns the transaction, sole writer |
 | `cli_spl.py` | `drugref ingest spl` |
 
@@ -298,7 +304,7 @@ only be tested through a database is a determination nobody re-checks.
 
 **The matcher must be the SHIPPED resolver's rule** — exact, case-insensitive,
 contiguous, longest-match-wins, `fold`-normalised — not a more generous variant.
-The measured 31,618 pairs rest on that rule, and a matcher that skips words
+The measured 29,258 pairs rest on that rule, and a matcher that skips words
 produces spans it cannot quote back to a reader.
 
 **The negative vocabulary, not a stop-list.** The nine measured terms in
@@ -340,15 +346,26 @@ nine terms is a starting point that was measured, not a finished list.
 | distinct wordings | 27,406 |
 | labels with a resolved subject | 34,008 (27,494 + 6,514) |
 | unresolved, recorded | 34,542 |
-| **distinct candidate pairs** | **≥ 31,618** |
-| **novel against everything held** | **≥ 28,269 (89.4%)** |
+| **distinct candidate pairs** | **≥ 29,258** |
+| **novel against everything held** | **≥ 25,960 (88.7%)** |
 
 **The pair figures are a FLOOR, not a target**, and an ingest reproducing more
-is not failing its check. The measurement scanned only orphan-wording labels, so
-the 14,455 redundant unkeyed labels contributed no subject and therefore no
-pairs; the ingest scans them and may find more. **The floor check asserts
-`>=`**, and the orchestrator prints the actual figure so the difference is
-visible rather than absorbed.
+is not failing its check. Two reasons, both pushing the same way: the
+measurement scanned only orphan-wording labels, so the 14,455 redundant unkeyed
+labels contributed no subject and therefore no pairs; and 200 labels carrying a
+UNII drugref does not hold were filed as keyed by the probe's classifiers, which
+excluded their wordings from the recoverable half. The ingest scans everything
+and may find more. **The floor check asserts `>=`**, and the orchestrator prints
+the actual figure so the difference is visible rather than absorbed.
+
+**⇒ ONE SUBJECT PER LABEL PER ROUTE, AND THE SALT IS NOT A SECOND SUBJECT.** The
+route table above is exclusive by construction, and the ingest must key subjects
+the same way `subject_uniis` does: the moiety where a moiety UNII resolves, the
+salt only where none does. The measurement's first reading blended the two and
+published 31,618 pairs where the exclusive rule gives 29,258 — because drugref
+registers a salt as its own moiety, so blending doubles a salt product's pairs.
+An ingest built to this table cannot reach a floor derived from the blended
+rule, which is why the floor above is the corrected figure.
 
 ---
 

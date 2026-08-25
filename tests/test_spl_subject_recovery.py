@@ -2,10 +2,12 @@
 
 **Throwaway spike code for the slice 5c.3 design round.**
 
-The design round has to decide what happens to the 41,056 section-carrying
-labels whose subject drug cannot be keyed, because openFDA's normalising
-``openfda`` block is absent from them. The known recovery route is
-``set_id`` -> DailyMed's own XML, which carries the ingredient list.
+The design round has to decide what happens to the 40,856 section-carrying
+labels carrying no ``unii`` in openFDA's normalising ``openfda`` block -- which
+is present on all of them and merely empty. (The parent round's 41,056 is a
+different population: labels with no *resolvable* subject, 200 more.) The known
+recovery route is ``set_id`` -> DailyMed's own XML, which carries the ingredient
+list.
 
 Two questions, and this module answers them with two different passes:
 
@@ -26,15 +28,20 @@ from __future__ import annotations
 
 import pytest
 
-from tools.spl_subject_recovery import (
-    augment_rows,
+from tools.spl_subject_read import (
     SubjectUniis,
+    dedupe_by_set_id,
+    extract_subject_uniis,
+    subject_uniis,
+)
+from tools.spl_subject_recovery import (
+    RecoverySummary,
     WordingReachability,
+    augment_rows,
     classify_wordings,
     orphan_label_targets,
     split_wordings_by_reachability,
     summarise_recovery,
-    extract_subject_uniis,
 )
 
 # A label whose active ingredient is a salt (the substance) of a different
@@ -99,12 +106,14 @@ def test_a_code_from_a_DIFFERENT_code_system_is_not_a_unii():
     assert recovered.substance_uniis == ()
 
 
-def test_the_older_ingredient_classCode_spelling_is_read_too():
+def test_the_DOMINANT_classCode_ingredient_spelling_is_read_too():
     # SPL also spells an active ingredient <ingredient classCode="ACTIB"> with
-    # an <ingredientSubstance> child. A parser that knows only the
-    # activeIngredientSubstance spelling under-counts, and under-counting here
-    # would understate the recovery route rather than overstate it -- which is
-    # the direction that quietly kills a design option.
+    # an <ingredientSubstance> child, and measured on the release this round
+    # read, that spelling is the DOMINANT one -- part6 carries 2,912 of them and
+    # zero <activeIngredientSubstance>. No label in a 3,000-label sample used
+    # both, so they are alternatives. A parser knowing only the
+    # activeIngredientSubstance spelling would have recovered close to nothing,
+    # which is the direction that quietly kills a design option.
     older = (
         SPL.replace(b"<activeIngredient>", b'<ingredient classCode="ACTIB">')
         .replace(b"</activeIngredient>", b"</ingredient>")
@@ -298,10 +307,15 @@ def test_recovery_fills_an_EMPTY_subject_and_never_overwrites_a_keyed_one():
         "a": SubjectUniis(set_id="a", moiety_uniis=("OTHER",), substance_uniis=()),
         "c": SubjectUniis(set_id="c", moiety_uniis=("FOUND",), substance_uniis=("SALT",)),
     }
-    augmented = {row["set_id"]: row["uniis"] for row in augment_rows(rows, recovered)}
-    assert augmented["a"] == ["KEYED"]          # untouched
-    assert augmented["c"] == ["FOUND", "SALT"]  # filled
-    assert augmented["e"] == []                 # nothing was found for it
+    augmented = {
+        row["set_id"]: row["uniis"]
+        for row in augment_rows(
+            rows, recovered, known_uniis={"KEYED", "OTHER", "FOUND", "SALT"}
+        )
+    }
+    assert augmented["a"] == ["KEYED"]   # untouched
+    assert augmented["c"] == ["FOUND"]   # filled, on the MOIETY route only
+    assert augmented["e"] == []          # nothing was found for it
 
 
 def test_one_set_id_read_TWICE_is_one_label():
@@ -321,3 +335,257 @@ def test_one_set_id_read_TWICE_is_one_label():
     assert summary.resolved_on_moiety == 1
     assert summary.labels_missing_from_dailymed == 0
     assert summary.wordings_rescued == 1
+
+
+# --- the subject rule, which must be ONE rule ---------------------------------
+#
+# The probe published its route-2 delta with a subject rule BROADER than the
+# baseline it was compared against: `augment_rows` handed the pair counter the
+# moiety UNII *and* the salt UNII, and drugref registers the salt as its own
+# moiety with its own live UNII claim (`metoprolol` GEB06NHM23 vs `metoprolol
+# tartrate` W5S57Y3A5L). So a salt product contributed TWO subjects and formed
+# pairs against every named partner twice, while the openFDA baseline arm
+# contributed one. Measured on the real release, 56.7% of resolvable DailyMed
+# labels gained an extra subject that way.
+#
+# `subject_uniis` is now the single rule, used by both the resolve stage and the
+# yield stage, and it is the design spec's route table: the moiety when the
+# moiety resolves, the salt ONLY when it does not (the `dailymed_active_substance`
+# route, issue #67).
+
+
+def test_the_moiety_wins_when_it_resolves_and_the_salt_is_NOT_added_too():
+    found = SubjectUniis(
+        set_id="c", moiety_uniis=("MOIETY",), substance_uniis=("SALT",)
+    )
+    assert subject_uniis(found, {"MOIETY", "SALT"}) == ("MOIETY",)
+
+
+def test_the_salt_is_used_ONLY_when_no_moiety_unii_resolves():
+    # This is the `dailymed_active_substance` route -- 16 labels on the real
+    # release. It is a real resolution, so it must not be dropped; it is a
+    # DIFFERENT route, so it must not be blended into the moiety count.
+    found = SubjectUniis(
+        set_id="c", moiety_uniis=("UNKNOWN",), substance_uniis=("SALT",)
+    )
+    assert subject_uniis(found, {"SALT"}) == ("SALT",)
+
+
+def test_a_label_resolving_on_neither_contributes_no_subject_at_all():
+    found = SubjectUniis(
+        set_id="c", moiety_uniis=("UNKNOWN",), substance_uniis=("ALSO_UNKNOWN",)
+    )
+    assert subject_uniis(found, {"SOMETHING_ELSE"}) == ()
+
+
+def test_augment_rows_uses_the_SAME_rule_the_resolve_stage_reports():
+    # The delta is only a delta if both arms key subjects the same way. Before
+    # this, `resolve` reported a salt-only label on its own route while `yield`
+    # silently credited the salt route in the headline pair figure.
+    rows = [
+        {"set_id": "a", "text_key": "w1", "uniis": ["KEYED"]},
+        {"set_id": "c", "text_key": "w2", "uniis": []},
+    ]
+    recovered = {
+        "c": SubjectUniis(
+            set_id="c", moiety_uniis=("MOIETY",), substance_uniis=("SALT",)
+        )
+    }
+    augmented = {
+        row["set_id"]: row["uniis"]
+        for row in augment_rows(rows, recovered, known_uniis={"MOIETY", "SALT"})
+    }
+    assert augmented["a"] == ["KEYED"]   # openFDA stays the authority
+    assert augmented["c"] == ["MOIETY"]  # NOT ["MOIETY", "SALT"]
+
+
+# --- one de-duplication policy, not two ---------------------------------------
+
+
+def test_the_HIGHEST_version_of_a_duplicated_set_id_wins():
+    # DailyMed ships successive versions of one label as separate documents
+    # sharing a set_id. The two consumers of the scan output used to disagree --
+    # `summarise_recovery` kept the FIRST row seen and `_load_recovered` the
+    # LAST -- so the resolve table and the pair delta were computed from
+    # different readings of the same 44 labels. Neither "first" nor "last" is a
+    # rule; the version number is.
+    rows = [
+        SubjectUniis(set_id="c", moiety_uniis=("OLD",), substance_uniis=(), version=1),
+        SubjectUniis(set_id="c", moiety_uniis=("NEW",), substance_uniis=(), version=3),
+        SubjectUniis(set_id="c", moiety_uniis=("MID",), substance_uniis=(), version=2),
+    ]
+    assert dedupe_by_set_id(rows)["c"].moiety_uniis == ("NEW",)
+
+
+def test_an_unversioned_row_never_displaces_a_versioned_one():
+    rows = [
+        SubjectUniis(set_id="c", moiety_uniis=("KNOWN",), substance_uniis=(), version=2),
+        SubjectUniis(set_id="c", moiety_uniis=("NOVERSION",), substance_uniis=()),
+    ]
+    assert dedupe_by_set_id(rows)["c"].moiety_uniis == ("KNOWN",)
+
+
+def test_the_version_is_read_off_the_label():
+    versioned = SPL.replace(
+        b'<setId root="set-abc"/>',
+        b'<setId root="set-abc"/><versionNumber value="7"/>',
+    )
+    assert extract_subject_uniis(versioned).version == 7
+
+
+# --- the population that had no bucket ----------------------------------------
+
+
+def test_a_label_whose_UNII_drugref_does_not_hold_gets_its_OWN_bucket():
+    # 25 labels on the real release: found in DailyMed, carrying a UNII, and
+    # drugref has never heard of it. They incremented NOTHING, so `labels_found`
+    # minus the named buckets left 25 labels in a population the report never
+    # named -- and "99.6% of those found resolve" is only true if they do not
+    # exist. They are a registry coverage gap, which is a finding, not a rounding.
+    targets = {"c": "w2"}
+    recovered = [
+        SubjectUniis(set_id="c", moiety_uniis=("NEVER_HEARD_OF_IT",), substance_uniis=())
+    ]
+    summary = summarise_recovery(recovered, targets, known_uniis={"KNOWN1"})
+    assert summary.labels_found == 1
+    assert summary.labels_without_any_unii == 0
+    assert summary.labels_resolved == 0
+    assert summary.labels_found_but_unresolvable == 1
+
+
+def test_the_recovery_tally_refuses_to_exist_unless_the_found_labels_add_up():
+    with pytest.raises(ValueError):
+        RecoverySummary(
+            wordings_targeted=1, labels_targeted=10,
+            labels_found=10, labels_missing_from_dailymed=0,
+            labels_without_any_unii=1, labels_resolved=1,
+            labels_found_but_unresolvable=1,   # 1 + 1 + 1 != 10
+            resolved_on_moiety=1, resolved_on_substance_only=0,
+            wordings_rescued=1,
+        )
+
+
+def test_the_recovery_tally_refuses_a_negative_bucket():
+    # The pre-fix over-count produced `len(targets) - found` going wrong in the
+    # other direction; a bucket that can go negative is a bucket nobody checked.
+    with pytest.raises(ValueError):
+        RecoverySummary(
+            wordings_targeted=1, labels_targeted=1,
+            labels_found=2, labels_missing_from_dailymed=-1,
+            labels_without_any_unii=0, labels_resolved=2,
+            labels_found_but_unresolvable=0,
+            resolved_on_moiety=2, resolved_on_substance_only=0,
+            wordings_rescued=1,
+        )
+
+
+def test_the_two_resolution_routes_must_sum_to_the_resolved_total():
+    with pytest.raises(ValueError):
+        RecoverySummary(
+            wordings_targeted=1, labels_targeted=1,
+            labels_found=1, labels_missing_from_dailymed=0,
+            labels_without_any_unii=0, labels_resolved=1,
+            labels_found_but_unresolvable=0,
+            resolved_on_moiety=0, resolved_on_substance_only=0,  # 0 + 0 != 1
+            wordings_rescued=1,
+        )
+
+
+def test_labels_missing_from_dailymed_is_COUNTED_not_derived_by_subtraction():
+    # `len(targets) - found` absorbs any upstream drop without residue: the
+    # round's 44-label over-count still balanced that identity exactly
+    # (6,583 + 19,818 = 26,401), which is why the guard would not have caught
+    # it. Counted independently, the same bad input no longer balances.
+    targets = {"c": "w2", "d": "w3", "e": "w4"}
+    recovered = [
+        SubjectUniis(set_id="c", moiety_uniis=("KNOWN1",), substance_uniis=()),
+        SubjectUniis(set_id="c", moiety_uniis=("KNOWN1",), substance_uniis=()),
+    ]
+    summary = summarise_recovery(recovered, targets, known_uniis={"KNOWN1"})
+    assert summary.labels_found == 1
+    assert summary.labels_missing_from_dailymed == 2   # d and e, by name
+
+
+# --- the target list must not silently collapse -------------------------------
+
+
+def test_two_cache_rows_sharing_a_set_id_are_refused_rather_than_collapsed():
+    # `classify_wordings` counts ROWS and `orphan_label_targets` keys a dict by
+    # set_id, so a collision would make the two published populations disagree
+    # silently -- the same row-vs-label confusion the round was burned by, one
+    # function to the left. They agreed on the real corpus; nothing pinned it.
+    rows = [
+        {"set_id": "c", "text_key": "w2", "uniis": []},
+        {"set_id": "c", "text_key": "w3", "uniis": []},
+    ]
+    with pytest.raises(ValueError):
+        orphan_label_targets(rows)
+
+
+def test_a_row_with_no_set_id_is_refused_rather_than_keyed_on_empty_string():
+    # `record.get("set_id") or record.get("id") or ""` mints "" upstream, and
+    # every such row would collapse into one dict entry -- deleting wordings
+    # from the universe before the expensive pass even starts.
+    with pytest.raises(ValueError):
+        orphan_label_targets([{"set_id": "", "text_key": "w2", "uniis": []}])
+
+
+# --- reachability invariants that are not restatements ------------------------
+
+
+def test_a_keyed_wording_cannot_be_carried_by_fewer_keyed_labels_than_wordings():
+    with pytest.raises(ValueError):
+        WordingReachability(
+            distinct_wordings=10, keyed_wordings=10, orphan_wordings=0,
+            labels=10, keyed_labels=3,          # 3 labels cannot key 10 wordings
+            recoverable_unkeyed_labels=7, redundant_unkeyed_labels=0,
+        )
+
+
+def test_no_bucket_in_the_reachability_tally_may_be_negative():
+    with pytest.raises(ValueError):
+        WordingReachability(
+            distinct_wordings=7, keyed_wordings=10, orphan_wordings=-3,
+            labels=10, keyed_labels=10,
+            recoverable_unkeyed_labels=0, redundant_unkeyed_labels=0,
+        )
+
+
+# --- SPL shapes the fixture did not cover -------------------------------------
+
+
+def test_a_COMBINATION_product_offers_every_active_moiety_as_a_subject():
+    # Combination products are ordinary and a label may carry more than one
+    # subject (design spec 4.3). Each forms pairs independently, so this is a
+    # direct multiplier on the published pair count and was untested.
+    combo = SPL.replace(
+        b"</activeIngredient>",
+        b"""</activeIngredient>
+      <activeIngredient>
+        <activeIngredientSubstance>
+          <code code="SALTUNII02" codeSystem="2.16.840.1.113883.4.9"/>
+          <activeMoiety><activeMoiety>
+            <code code="MOIETYUNI2" codeSystem="2.16.840.1.113883.4.9"/>
+          </activeMoiety></activeMoiety>
+        </activeIngredientSubstance>
+      </activeIngredient>""",
+        1,
+    )
+    recovered = extract_subject_uniis(combo)
+    assert recovered.moiety_uniis == ("MOIETYUNI2", "MOIETYUNII")
+    assert recovered.substance_uniis == ("SALTUNII01", "SALTUNII02")
+
+
+def test_a_non_UNII_code_ALONGSIDE_a_real_one_does_not_poison_the_reading():
+    # The original test mutated EVERY code system at once, so it would still
+    # have passed if the filter rejected one specific system rather than
+    # accepting one. A dosage-form code sitting next to a real UNII is the shape
+    # that actually occurs.
+    with_dosage_form = SPL.replace(
+        b'<code code="SALTUNII01" codeSystem="2.16.840.1.113883.4.9"/>',
+        b'<code code="C42931" codeSystem="2.16.840.1.113883.3.26.1.1"/>'
+        b'<code code="SALTUNII01" codeSystem="2.16.840.1.113883.4.9"/>',
+    )
+    recovered = extract_subject_uniis(with_dosage_form)
+    assert "C42931" not in recovered.substance_uniis
+    assert recovered.moiety_uniis == ("MOIETYUNII",)

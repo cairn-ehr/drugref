@@ -15,6 +15,7 @@ from tools.spl_ddi_measure import (
     Yield,
     band_for,
     count_pairs,
+    form_candidate_pairs,
     frequency_profile,
     moiety_pairs,
     summarise_yield,
@@ -173,3 +174,92 @@ def test_frequency_profile_ranks_names_so_common_word_matches_are_visible():
     profile = frequency_profile(matches, "moiety")
     assert profile.most_common(1) == [("iron", 2)]
     assert profile["warfarin"] == 1
+
+
+# --- the shared pair rule ------------------------------------------------------
+#
+# `form_candidate_pairs` exists because the subject-recovery round needed the
+# round's own pair rule and could not call it: `spl_ddi_report._report_pairs`
+# printed instead of returning, so the probe re-implemented it by hand. A delta
+# measured with a re-implementation is only a delta while the copy stays
+# faithful, and nothing pinned that. The rule now lives here once and both
+# callers use it, so the two cannot drift apart.
+
+
+class _Entry:
+    """Minimal stand-in for `spl_entity_match.Entry` -- kind and display only."""
+
+    def __init__(self, kind: str, display: str):
+        self.kind = kind
+        self.display = display
+
+
+class _Match:
+    def __init__(self, *entries: _Entry):
+        self.entries = entries
+
+
+UNII_TO_MOIETY = {"U_WARF": "warfarin-uuid", "U_ASA": "aspirin-uuid"}
+NAME_TO_MOIETY = {"aspirin": "aspirin-uuid", "warfarin": "warfarin-uuid"}
+
+
+def test_a_pair_is_orientation_normalised_so_both_readings_are_one_pair():
+    # The count is compared directly against DrugCentral's, which is
+    # orientation-normalised; two labels naming each other must not read as two.
+    warfarin_names_aspirin = form_candidate_pairs(
+        [{"uniis": ["U_WARF"], "text_key": "w1"}],
+        {"w1": (_Match(_Entry("moiety", "aspirin")),)},
+        unii_to_moiety=UNII_TO_MOIETY,
+        moiety_uuid_by_name=NAME_TO_MOIETY,
+    )
+    aspirin_names_warfarin = form_candidate_pairs(
+        [{"uniis": ["U_ASA"], "text_key": "w2"}],
+        {"w2": (_Match(_Entry("moiety", "warfarin")),)},
+        unii_to_moiety=UNII_TO_MOIETY,
+        moiety_uuid_by_name=NAME_TO_MOIETY,
+    )
+    assert warfarin_names_aspirin.pairs == aspirin_names_warfarin.pairs
+    assert warfarin_names_aspirin.pairs == {("aspirin-uuid", "warfarin-uuid")}
+
+
+def test_a_label_naming_its_OWN_drug_is_tallied_not_silently_skipped():
+    # A section routinely names its own drug. That is a correct reading of the
+    # source, not a malformed row -- so it is excluded from pairs AND counted,
+    # because a bucket that is never printed cannot become nonzero unnoticed.
+    formed = form_candidate_pairs(
+        [{"uniis": ["U_WARF"], "text_key": "w1"}],
+        {"w1": (_Match(_Entry("moiety", "warfarin"), _Entry("moiety", "aspirin")),)},
+        unii_to_moiety=UNII_TO_MOIETY,
+        moiety_uuid_by_name=NAME_TO_MOIETY,
+    )
+    assert formed.pairs == {("aspirin-uuid", "warfarin-uuid")}
+    assert formed.self_pairs == 1
+
+
+def test_a_label_whose_subject_does_not_resolve_is_tallied_not_silently_skipped():
+    # This is the ONLY place a label carrying a UNII drugref does not hold
+    # becomes visible. The probe's hand-copy dropped this counter, which is
+    # exactly where the 200 keyed-but-unresolvable labels went missing.
+    formed = form_candidate_pairs(
+        [
+            {"uniis": ["U_UNKNOWN"], "text_key": "w1"},
+            {"uniis": [], "text_key": "w1"},
+            {"uniis": ["U_WARF"], "text_key": "w1"},
+        ],
+        {"w1": (_Match(_Entry("moiety", "aspirin")),)},
+        unii_to_moiety=UNII_TO_MOIETY,
+        moiety_uuid_by_name=NAME_TO_MOIETY,
+    )
+    assert formed.unresolved_subject_labels == 2
+    assert formed.resolved_subject_labels == 1
+
+
+def test_a_CLASS_occurrence_never_forms_a_pair():
+    # This slice is drug x drug only; a class endpoint would need #155 answered.
+    formed = form_candidate_pairs(
+        [{"uniis": ["U_WARF"], "text_key": "w1"}],
+        {"w1": (_Match(_Entry("class", "Diuretics"), _Entry("moiety", "aspirin")),)},
+        unii_to_moiety=UNII_TO_MOIETY,
+        moiety_uuid_by_name=NAME_TO_MOIETY,
+    )
+    assert formed.pairs == {("aspirin-uuid", "warfarin-uuid")}

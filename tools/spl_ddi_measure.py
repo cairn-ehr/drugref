@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import collections
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set as AbstractSet
 from dataclasses import dataclass
 
 from tools.spl_entity_match import Match
@@ -164,9 +164,94 @@ def moiety_pairs(
     return pairs
 
 
+@dataclass(frozen=True, kw_only=True)
+class PairFormation:
+    """The candidate pairs one corpus yields, with the two populations it skipped.
+
+    **Both skip counters are fields rather than local variables**, because each
+    one is a population the round has already lost a figure to:
+
+    * ``unresolved_subject_labels`` is the only place a label carrying a UNII
+      drugref does not hold becomes visible. The subject-recovery probe's
+      hand-copy of this rule dropped the counter, and that is exactly where the
+      200 keyed-but-unresolvable labels went missing from its reachability
+      split.
+    * ``self_pairs`` is ``db/049``'s pattern -- a label naming its own drug is a
+      correct reading of the source, so it is excluded from pairs and *counted*,
+      so the number cannot become nonzero unnoticed.
+    """
+
+    pairs: frozenset[tuple[str, str]]
+    self_pairs: int
+    resolved_subject_labels: int
+    unresolved_subject_labels: int
+
+
+def form_candidate_pairs(
+    rows: Iterable[Mapping],
+    matches_by_wording: Mapping[str, Sequence],
+    *,
+    unii_to_moiety: Mapping[str, str],
+    moiety_uuid_by_name: Mapping[str, str],
+) -> PairFormation:
+    """Form orientation-normalised drug x drug candidate pairs.
+
+    **This is the round's pair rule, and it lives here exactly once.** It used to
+    live inside ``spl_ddi_report._report_pairs``, which prints instead of
+    returning, so the subject-recovery probe re-implemented it by hand to measure
+    a delta against the published baseline. A delta measured with a
+    re-implementation is only a delta for as long as the copy stays faithful, and
+    nothing pinned that -- if the copy drifted, every recovery figure moved and
+    no test failed. Both callers now share this function, so they cannot drift.
+
+    ``rows`` are per-label mappings carrying ``uniis`` and ``text_key``. The two
+    registry mappings are passed rather than a whole ``Registry`` so the rule
+    stays a pure function over plain dicts and can be tested without a database.
+
+    A label may carry several subjects (combination products are ordinary), and
+    each forms pairs independently against every moiety its wording names.
+    """
+    pairs: set[tuple[str, str]] = set()
+    self_pairs = 0
+    resolved = 0
+    unresolved = 0
+
+    for row in rows:
+        subjects = {
+            unii_to_moiety[unii]
+            for unii in row["uniis"]
+            if unii in unii_to_moiety
+        }
+        if not subjects:
+            unresolved += 1
+            continue
+        resolved += 1
+        for match in matches_by_wording.get(row["text_key"], ()):
+            for entry in match.entries:
+                if entry.kind != "moiety":
+                    continue
+                other = moiety_uuid_by_name.get(entry.display)
+                if other is None:
+                    continue
+                for subject in subjects:
+                    if subject == other:
+                        self_pairs += 1
+                        continue
+                    pairs.add(
+                        (subject, other) if subject < other else (other, subject)
+                    )
+
+    return PairFormation(
+        pairs=frozenset(pairs),
+        self_pairs=self_pairs,
+        resolved_subject_labels=resolved,
+        unresolved_subject_labels=unresolved,
+    )
+
+
 def count_pairs(
-    candidate: set[tuple[str, str]],
-    held: set[tuple[str, str]],
+    candidate: AbstractSet[tuple[str, str]],
+    held: AbstractSet[tuple[str, str]],
     *,
     self_pairs_excluded: int,
 ) -> PairCount:

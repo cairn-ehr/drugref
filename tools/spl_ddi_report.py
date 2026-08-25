@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 from tools.spl_ddi_measure import (
     band_for,
+    form_candidate_pairs,
     count_pairs,
     frequency_profile,
     summarise_yield,
@@ -206,44 +207,34 @@ def _report_pairs(
     matches_by_wording: Mapping[str, tuple],
     registry: Registry,
 ) -> None:
-    """Form candidate drug-drug pairs and compare them with what drugref holds."""
-    candidate: set[tuple[str, str]] = set()
-    self_pairs = 0
-    resolved_subject_labels = 0
-    unresolved_subject_labels = 0
+    """Form candidate drug-drug pairs and compare them with what drugref holds.
 
-    for row in sections:
-        subjects = {
-            registry.unii_to_moiety[u]
-            for u in row["uniis"]
-            if u in registry.unii_to_moiety
-        }
-        if not subjects:
-            unresolved_subject_labels += 1
-            continue
-        resolved_subject_labels += 1
-        for match in matches_by_wording.get(row["text_key"], ()):  # type: ignore[arg-type]
-            for entry in match.entries:
-                if entry.kind != "moiety":
-                    continue
-                other = registry.moiety_uuid_by_name.get(entry.display)
-                if other is None:
-                    continue
-                for subject in subjects:
-                    if subject == other:
-                        self_pairs += 1
-                        continue
-                    candidate.add(
-                        (subject, other) if subject < other else (other, subject)
-                    )
+    **The rule itself lives in ``spl_ddi_measure.form_candidate_pairs``**, not
+    here. It used to live in this function, which prints and returns ``None`` --
+    so the subject-recovery round could not call it and re-implemented it by
+    hand to measure a delta against this baseline. Sharing it is what makes that
+    delta a delta rather than a second number computed a slightly different way.
+    """
+    formed = form_candidate_pairs(
+        sections,
+        matches_by_wording,
+        unii_to_moiety=registry.unii_to_moiety,
+        moiety_uuid_by_name=registry.moiety_uuid_by_name,
+    )
 
     held = registry.held_exact | registry.held_candidate
-    counted = count_pairs(candidate, held, self_pairs_excluded=self_pairs)
-    vs_exact = count_pairs(candidate, registry.held_exact, self_pairs_excluded=0)
+    counted = count_pairs(
+        formed.pairs, held, self_pairs_excluded=formed.self_pairs
+    )
+    vs_exact = count_pairs(
+        formed.pairs, registry.held_exact, self_pairs_excluded=0
+    )
 
     print("\n=== CANDIDATE DRUG-DRUG PAIRS ===")
-    print(f"  labels with a resolved subject   {resolved_subject_labels:>9,}")
-    print(f"  labels with NO resolvable subject {unresolved_subject_labels:>9,}")
+    print(f"  labels with a resolved subject   "
+          f"{formed.resolved_subject_labels:>9,}")
+    print(f"  labels with NO resolvable subject "
+          f"{formed.unresolved_subject_labels:>9,}")
     print(f"  self-pairs excluded              {counted.self_pairs_excluded:>9,}")
     print(f"  distinct candidate pairs         {counted.distinct:>9,}")
     print(f"  already held (exact OR class)    {counted.held:>9,}")

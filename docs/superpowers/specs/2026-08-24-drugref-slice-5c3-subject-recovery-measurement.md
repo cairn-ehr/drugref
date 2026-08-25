@@ -17,6 +17,14 @@ overstated — measured in the right unit it is 56% of the corpus, not 60% of th
 labels — and the recovery route the previous round named turned out to be one of
 **three**, only two of which are safe.
 
+**⇒ AND ITS OWN FIRST READING WAS WRONG THREE TIMES**, each caught by a
+different check and each recorded here rather than quietly corrected: a
+44-label row-vs-label over-count (§3), a subject rule that differed between the
+two arms of its own delta (§5), and a column that meant two things in two
+adjacent tables (§5). The pattern is one thing: **a figure compared against
+another figure computed a slightly different way.** Every rule that mattered now
+lives in exactly one function, and both callers call it.
+
 ---
 
 ## 1. Reproduction
@@ -38,21 +46,27 @@ uv run python -m tools.spl_recovery_probe resolve  --cache $CACHE \
     --recovered $CACHE/recovered.jsonl --dsn "$DSN"
 uv run python -m tools.spl_recovery_probe elements --downloads downloads/OPENFDA \
     --cache $CACHE
+uv run python -m tools.spl_recovery_probe quotes   --cache $CACHE --dsn "$DSN" \
+    --suppress-terms tools/spl_suppress_terms.txt
 uv run python -m tools.spl_recovery_probe yield    --cache $CACHE \
     --recovered $CACHE/recovered.jsonl --dsn "$DSN" \
     --suppress-terms tools/spl_suppress_terms.txt
 ```
 
 Probe code is **throwaway** and says so in its docstrings:
-`tools/spl_subject_recovery.py` (the pure functions) and
-`tools/spl_recovery_probe.py` (the runner). Nothing under `src/drugref/` imports
-either. 19 tests, on the parent round's terms: *the figures are worth exactly as
-much as the parser that produced them.*
+`tools/spl_subject_read.py` (reading one label), `tools/spl_subject_recovery.py`
+(tallying the corpus), `tools/spl_quote_budget.py` (the window rules),
+`tools/spl_quote_report.py` and `tools/spl_recovery_probe.py` (the runners).
+Nothing under `src/drugref/` imports any of them. **51 tests**, on the parent
+round's terms: *the figures are worth exactly as much as the parser that
+produced them.*
 
 **The parent round's headline pair figure reproduced exactly** — 20,554 distinct
-candidate pairs, 18,107 novel (88.1%) — through a *reimplementation* of its pair
-rule rather than a call into it. That agreement is what makes every delta below
-a delta rather than a second number computed a slightly different way.
+candidate pairs, 18,107 novel (88.1%). The first pass of this round got that
+agreement from a *reimplementation* of the parent's pair rule; the rule now
+lives once, in `spl_ddi_measure.form_candidate_pairs`, and both the parent
+report and this round's delta call it. A delta measured with a copy is only a
+delta while the copy stays faithful, and nothing pinned that.
 
 ---
 
@@ -70,13 +84,22 @@ before any rate is quoted"*. Applied here it cuts both ways.
 | unkeyed, but wording ALSO on a keyed label | **14,455** | recovery adds nothing |
 | unkeyed, wording reachable no other way | **26,401** | the real target |
 
+**⇒ THIS TABLE SPLITS 40,856, NOT THE PARENT'S 41,056, AND THE 200 IN BETWEEN
+ARE A DEFINITION.** The parent counted labels with no *resolvable* subject
+(68,550 − 27,494); every classifier in this round branches on **presence** of a
+`openfda.unii` (68,550 − 27,694). The 200 labels in the gap carry a UNII drugref
+does not hold — filed here as *keyed*, and rejected by a pair rule. So the
+orphan and target populations below are **floors**: up to 200 more labels, and
+the wordings only they carry, belong in the recoverable half. It is the
+under-counting direction, which is the one that quietly kills a design option.
+
 | | wordings | share |
 |---|---|---|
 | distinct wordings | 27,406 | |
 | reachable through a keyed label | 12,061 | 44.0% |
 | **ORPHAN — unkeyed labels only** | **15,345** | **56.0%** |
 
-**14,455 of the 41,056 are redundant**: another manufacturer reprinting a
+**14,455 of the 40,856 are redundant**: another manufacturer reprinting a
 wording drugref can already reach, and recovering them would rediscover
 statements it already has. That is the half that makes 60% an overstatement.
 
@@ -112,9 +135,26 @@ targeting only the 26,401 labels §2 identified as worth looking for:
 | **found in DailyMed** | **6,539** | **24.8%** |
 | ABSENT from DailyMed | 19,862 | 75.2% |
 | found but carrying no UNII | **0** | |
+| found, carrying a UNII drugref does not hold | **25** | a registry gap, not a source gap |
 | resolved against drugref | **6,514** | **99.6% of those found** |
 | — on the active MOIETY | 6,498 | |
 | — on the SALT only | 16 | [#67](https://github.com/cairn-ehr/drugref/issues/67) |
+
+**The 25 had no bucket until this round's review.** They incremented nothing —
+neither "no UNII" nor "resolved" — so they fell out of `labels_found` by
+subtraction and "99.6% of those found resolve" was true only if they did not
+exist. `RecoverySummary` now refuses to be constructed unless
+`without_any_unii + resolved + found_but_unresolvable == found`.
+
+**And `ABSENT from DailyMed` is now COUNTED, not derived.** It was
+`len(targets) - found`, which absorbs any upstream drop without residue — which
+is precisely why a sum guard would *not* have caught the 44-label over-count
+below: 6,583 + 19,818 balances `len(targets)` exactly. Counted as a set
+difference over what the scan actually wrote, the same bad input no longer adds
+up. The scan also now tallies every document it drops, and on this release all
+four drop counters are **zero**: no unreadable document, no missing `setId`, no
+pre-filter disagreement, no parse failure. *"The limit is the release, not the
+reading"* was an inference; it is now a measurement.
 
 **⇒ ORPHAN WORDINGS RESCUED: 4,671 — 30.4% of the 15,345 targeted.**
 
@@ -165,7 +205,17 @@ second corpus and it reaches nearly everything — so it had to be measured rath
 than dismissed.
 
 **And it could be measured properly, because route 2 produced a ground-truth
-set**: 6,317 labels whose true active moiety DailyMed's XML already gave.
+set**: 6,317 labels whose true active moiety DailyMed's XML already gave. That
+is the **overlap**, not all 6,498 route-2 moiety resolutions — 181 of those
+labels carry no usable `spl_product_data_elements` string to rank, so they can
+ground-truth nothing.
+
+**⇒ NO COMMITTED CODE PRODUCES THIS SECTION.** The analysis pass was ad-hoc and
+was never committed, so every figure in §4 — and the calibration set §7.3 calls
+permanent — is currently unreproducible. Recorded as
+[#158](https://github.com/cairn-ehr/drugref/issues/158) rather than quietly
+left. §6 had the same gap and it was closed instead, because its rule becomes a
+schema CHECK.
 
 | | share of 6,317 |
 |---|---|
@@ -211,32 +261,78 @@ claim that a route fails.
 The round's own pair rule, its own suppression list, its own held-pair
 baseline — the only variant whose exclusions were each measured.
 
-| | wordings with a subject | distinct pairs | novel | novel % |
+### ⇒ THE FIRST READING OF THIS TABLE WAS WRONG TOO, AND BY MORE THAN THE 44
+
+Two defects, both found in the review of this round's own PR, both in the same
+direction — **the delta was measured with a looser rule than the baseline it was
+compared against**:
+
+- **The subject rule differed between the two arms.** `augment_rows` handed the
+  pair counter the recovered moiety UNII **and** the salt UNII together, and
+  drugref registers a salt as its own moiety with its own live UNII claim
+  (`metoprolol` `GEB06NHM23` vs `metoprolol tartrate` `W5S57Y3A5L`). So a salt
+  product contributed **two** subjects and paired against every partner twice,
+  while the `openfda.unii` arm contributed one. Measured on the release, **56.7%
+  of resolvable DailyMed labels** gained an extra subject that way. It also
+  contradicted this document's own §3, where the salt route is 16 labels
+  counted apart precisely so it cannot be credited as recovery.
+- **"Wordings with a subject" meant two different things in two adjacent
+  columns** — any UNII present here, resolution required in §3's rescued figure.
+  That is the whole of the 22-wording gap between the published 16,754 and
+  12,061 + 4,671.
+
+Both are fixed: `subject_uniis` is the one subject rule and both stages call it,
+`form_candidate_pairs` is the one pair rule and both the parent report and this
+delta call it, and the column below is resolution in both rows. **The corrected
+table:**
+
+| | wordings with a resolved subject | distinct pairs | novel | novel % |
 |---|---|---|---|---|
-| 1. `openfda.unii` (published baseline) | 12,061 (44.0%) | 20,554 | 18,107 | 88.1% |
-| **2. + DailyMed XML (structural)** | **16,754 (61.1%)** | **31,618** | **28,269** | **89.4%** |
-| 3. + rank-0 name (heuristic) | 27,376 (99.9%) | 36,580 | 32,828 | 89.7% |
+| 1. `openfda.unii` (published baseline) | 11,939 (43.6%) | 20,554 | 18,107 | 88.1% |
+| **2. + DailyMed XML (structural)** | **16,610 (60.6%)** | **29,258** | **25,960** | **88.7%** |
+| 3. + rank-0 name (heuristic) | *withdrawn* | *withdrawn* | | |
 
-**Route 2 adds 11,064 pairs — +53.8% — of which 10,162 (91.8%) are novel**, a
-*higher* novelty rate than the baseline it extends. For scale, DrugCentral's
+**The arithmetic now closes exactly: 11,939 + 4,671 = 16,610**, with no residue.
+The baseline still reproduces the parent round's 20,554 / 18,107 (88.1%) —
+through a *call into* its rule now, not a copy of it.
+
+**Route 2 adds 8,704 pairs — +42.3% — of which 7,853 (90.2%) are novel**, still
+a *higher* novelty rate than the baseline it extends. For scale, DrugCentral's
 entire slice was justified on 7,501 pairs at 91% new: **the recovery half alone
-is bigger than that slice.**
+is still bigger than that slice**, though by 1,203 pairs rather than by 3,563.
 
-**⇒ EVERY PAIR FIGURE HERE IS A FLOOR, and the reason is a probe optimisation
-that the ingest must not inherit.** The scan targeted only the 26,401
-orphan-wording labels; the **14,455 unkeyed labels whose wording a keyed label
-also carries were never read**. They were skipped because they cannot rescue a
+**Route 3's row is withdrawn, not restated.** Its pair figures came through the
+same `augment_rows` path and are wrong by an unmeasured amount; re-deriving them
+needs the route-3 analysis code, which was never committed
+([#158](https://github.com/cairn-ehr/drugref/issues/158)). Its *precision*
+finding — 6.2% genuinely wrong at rank 0 — is unaffected, because it was
+measured against route 2's ground truth and never went through the pair
+counter. The decision it drove stands.
+
+**⇒ EVERY PAIR FIGURE HERE IS A FLOOR, and there are now two reasons.** The
+first is a probe optimisation the ingest must not inherit: the scan targeted
+only the 26,401 orphan-wording labels, and the **14,455 unkeyed labels whose
+wording a keyed label also carries were never read**. They were skipped because they cannot rescue a
 *wording* — but a label's SUBJECT is its own, and an unkeyed label sharing
 another's wording may be a different drug, which would form pairs nobody has
 counted. The saving was real (it removed 35% of the scan) and the design must
 still scan every unkeyed label, because the unit that governs a pair is the
 subject, not the wording.
 
-**Route 3's coverage is spectacular and its yield is not.** It takes wordings
-from 61.1% to 99.9% and adds only **4,962** further pairs — under half what
-route 2 added from a third as many wordings. The remaining labels talk about
-drugs already paired through other labels, so buying the last 39% of wordings
-with a 6.2% wrong-subject rate purchases progressively less.
+The second is §2's 200: labels carrying a UNII drugref does not hold are filed
+as *keyed* by every classifier here, so their wordings are excluded from the
+orphan half and their unkeyed twins are called redundant. Both reasons push the
+same way, which is why the design spec states the yield as `>=`.
+
+**Route 3's coverage is spectacular and its yield was not**, and its yield
+figures are now **withdrawn**: they came through the same blended-subject path
+as route 2's, and the code that would re-derive them was never committed
+([#158](https://github.com/cairn-ehr/drugref/issues/158)). What survives is the
+shape of the finding — it took wordings to 99.9% while adding well under half
+what route 2 added from a third as many wordings, because the remaining labels
+talk about drugs already paired through other labels. Buying the last stretch of
+wordings at a 6.2% wrong-subject rate purchases progressively less, and that is
+the sentence the owner's decision rested on.
 
 ---
 
@@ -247,36 +343,61 @@ owner on 2026-08-24: **bundle a quoted window only** — the matched span plus a
 bounded context, with the rest referenced by citation. That answer needs a
 window rule, and the obvious per-occurrence rules do not survive measurement.
 
-The corpus averages **~48 moiety occurrences per wording** and a mean section
-length of **3,663 characters**. Measured over 5,868 wordings:
+**⇒ THESE FIGURES ARE RE-DERIVED FROM COMMITTED CODE.** The round's first pass
+published this section with no producer in the repository — a schema CHECK
+resting on numbers nobody could re-run. The rules are now pure functions in
+`tools/spl_quote_budget.py` (10 tests) and the table below is printed by
+`spl_recovery_probe quotes` over **every wording naming ≥ 1 moiety (26,721)**,
+not the earlier unexplained 5,868-wording sample. **Coverage is MERGED distinct
+characters**: 48 windows of 120 characters is 5,760 against a mean section of
+3,898, so a rule that summed window lengths would report a fiction.
+
+The corpus averages **48.2 moiety occurrences per wording** over a mean section
+length of **3,898 characters**:
 
 | per-occurrence rule | mean % of section stored | median | ≥ 90% of section |
 |---|---|---|---|
-| the containing sentence | **80.4%** | 84.6% | 32.8% |
-| ±120 characters | 89.6% | 94.2% | 65.9% |
-| ±60 characters | 74.9% | 77.9% | 15.6% |
+| the containing sentence | **82.7%** | 87.2% | 41.4% |
+| ±120 characters | **89.0%** | 94.0% | 64.4% |
+| ±60 characters | 74.2% | 77.8% | 15.2% |
 
 **A per-occurrence window is not a quotation. It is the section, reassembled.**
-Any of these would make "we store a quoted window" and "we store the prose"
-the same act, and the second is the one the owner declined.
+Any of these would make "we store a quoted window" and "we store the prose" the
+same act, and the second is the one the owner declined. This is the conclusion
+the round drew and re-deriving it made it *stronger*, not weaker.
 
 **The bound must be per WORDING.** Measured:
 
-| rule | mean % stored | median | windows / wording | distinct moieties keeping a window |
+| rule | mean % stored | median | merged windows / wording | moieties covered |
 |---|---|---|---|---|
-| first occurrence per moiety, ±60 | 34.3% | 31.5% | 15.0 | all |
-| **+ cap at 25% of section chars** | **14.7%** | **15.5%** | **6.6** | 47.3% |
-| + hard cap at 600 chars | 18.2% | 12.6% | 3.7 | 47.3% |
+| first occurrence per moiety, ±60 | 33.7% | 31.1% | — | all |
+| **+ cap at 25% of section chars** | **20.4%** | **22.7%** | **5.1** | 71.6% |
+| + a further hard cap at 600 chars | 14.4% | 14.7% | — | — |
 
-**⇒ The proportional cap is the rule** (owner's call, 2026-08-24): ±60
-characters around the **first** occurrence of each distinct moiety, kept in
-pair-priority order until **25% of the section's characters** are spent. It
-stores **14.7% of a section on average**, it is proportional so a short section
-is not over-quoted nor a long one under-quoted, and it must be a **constraint
-rather than a convention** — the failure mode is silent, additive, and only
-visible in aggregate.
+**⇒ AND THE SHIPPED RULE'S OWN FIGURE MOVED: 20.4%, NOT THE 14.7% FIRST
+PUBLISHED.** The per-occurrence rows re-derive to within ~1 point, so the corpus
+and the matcher agree; the capped row does not, and the earlier figure cannot be
+audited because its code was never committed. Two definitional differences are
+visible in the neighbouring columns — this table counts **merged** windows (5.1,
+against 6.6 unmerged) and counts a moiety as covered if its first occurrence
+falls in *any* stored window (71.6%, against 47.3%). Published as measured.
 
-The 52.7% of distinct moieties that lose a window lose **only the window**.
+**⇒ The proportional cap is still the rule** (owner's call, 2026-08-24): ±60
+characters around the **first** occurrence of each distinct moiety, taken in
+document order until **25% of the section's characters** are spent. It stores
+**20.4% of a section on average** — a fifth, against four-fifths for the
+per-occurrence rules it replaces — it is proportional so a short section is not
+over-quoted nor a long one under-quoted, and it must be a **constraint rather
+than a convention**: the failure mode is silent, additive, and only visible in
+aggregate.
+
+**Document order, not "pair priority".** The first pass said pair-priority
+order; that would make the stored bytes depend on which pairs the registry
+happens to resolve, and a licensing constraint whose result moves with the
+vocabulary is not a constraint. Document order is reproducible from the section
+alone.
+
+The 28.4% of distinct moieties that lose a window lose **only the window**.
 Their occurrence, offsets and citation are stored regardless, because those are
 clear under either reading of rule 6.
 
@@ -285,11 +406,16 @@ clear under either reading of rule 6.
 ## 7. What the design round carries forward
 
 1. **Recovery ships, and it is structural.** Routes 1 and 2 only:
-   `openfda.unii` and DailyMed's `activeIngredient` block. 31,618 pairs, 28,269
-   novel. Both read a field that distinguishes an active ingredient from an
-   excipient *structurally*, so neither can key a statement to lactose.
+   `openfda.unii` and DailyMed's `activeIngredient` block. **29,258 pairs,
+   25,960 novel (88.7%)**. Both read a field that distinguishes an active
+   ingredient from an excipient *structurally*, so neither can key a statement
+   to lactose. **The subject is the moiety where the moiety resolves and the
+   salt only where it does not** — one rule, `subject_uniis`, because the two
+   stages of this round once disagreed about it.
 2. **Route 3 does not ship** (owner's call, 2026-08-24), and it is recorded
-   rather than forgotten: 6.2% genuinely wrong at rank 0, for +4,962 pairs.
+   rather than forgotten: 6.2% genuinely wrong at rank 0. Its pair figures are
+   withdrawn pending [#158](https://github.com/cairn-ehr/drugref/issues/158);
+   the precision finding that drove the decision is unaffected.
 3. **The 6,317-label overlap is a permanent calibration set.** Any future
    heuristic route has ground truth to be measured against before it ships, and
    this round is the precedent for using it.
@@ -299,7 +425,10 @@ clear under either reading of rule 6.
 5. **The quote budget is a constraint**: ±60 chars, first occurrence per
    moiety, 25% of section characters, enforced in the schema.
 6. **Salt-grain resolution is [#67](https://github.com/cairn-ehr/drugref/issues/67)
-   reached from a third side.** 17 labels resolve on the salt alone, and 41.6%
+   reached from a third side, and it is now also a MEASUREMENT hazard.** Because
+   drugref registers a salt as its own moiety, blending the salt into the
+   subject set silently doubles a label's pairs — which is exactly what this
+   round's first reading did. 16 labels resolve on the salt alone, and 41.6%
    of the name route's "errors" are salt spellings. Three sources now want the
    same missing relation.
 
@@ -312,7 +441,7 @@ clear under either reading of rule 6.
   way — in the parent round's own summary. 60% of labels is 56% of wordings, and
   the two mean opposite things about whether the work is worth doing.
 - **A perfect resolution rate and a poor coverage rate are separate facts.**
-  DailyMed resolves 99.6% of what it holds and holds 24.9% of what was asked
+  DailyMed resolves 99.6% of what it holds and holds 24.8% of what was asked
   for. Reporting either alone describes a different source.
 - **Split salt-grain errors out of precision figures.** The same measurement
   reads 47.8% wrong or 6.2% wrong depending on whether "right drug, wrong salt"
@@ -325,3 +454,19 @@ clear under either reading of rule 6.
 - **A recovery probe that reads the wrong substance produces a confident number
   pointing the wrong way**, so both parsing traps are pinned as tests: an
   inactive ingredient is never the subject, and the salt is not the moiety.
+- **⇒ A DELTA IS ONLY A DELTA WHILE BOTH ARMS USE ONE RULE, AND "both arms use
+  one rule" is a property of the CODE, not of the intent.** This round wrote
+  down that principle in a docstring and then broke it twice in the same file —
+  a subject rule that differed between stages, and a column that meant two
+  things in two tables. Neither was visible in any output; both were found by
+  re-deriving the published arithmetic from the other direction. If two numbers
+  must agree, they must come from one function, and a test must say so.
+- **A count derived by SUBTRACTION absorbs every upstream drop without
+  residue.** `len(targets) - found` balanced perfectly through the 44-label
+  over-count. Count the complement independently and the same bad input stops
+  adding up — that, not the sum guard, is what catches this class.
+- **A guard that restates how its own call site computes cannot fail there.**
+  Both `WordingReachability` identities hold by set algebra at their only
+  caller, and would survive a swapped branch that inverts every published
+  figure. Recorded on the same terms `drugcentral_run.Measurement` already
+  states for its own.

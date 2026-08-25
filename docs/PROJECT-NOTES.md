@@ -4176,8 +4176,14 @@ quoted"*). Split properly it cuts both ways:
 - **14,455 of those labels are REDUNDANT** — another manufacturer reprinting a wording a keyed label already
   carries. Recovering them rediscovers statements drugref already has. So 60% overstates the loss.
 - **But in WORDINGS the loss is 56.0%** — 15,345 of 27,406 are reachable only through unkeyed labels, and the
-  published 20,554 pairs came from **just 12,061 wordings**. So 60% also understates it, on the axis that
+  published 20,554 pairs came from **just 11,939 wordings**. So 60% also understates it, on the axis that
   matters.
+
+**⇒ MIND THE DENOMINATOR: 41,056 AND 40,856 ARE DIFFERENT POPULATIONS, 200 APART.** 41,056 is
+`68,550 − 27,494`, labels with no *resolvable* subject. 40,856 is `68,550 − 27,694`, labels with no UNII at
+all — and that is what the probe's classifiers actually split, because they branch on presence. The 200 in
+between carry a UNII drugref does not hold. `14,455 + 26,401 = 40,856`, not 41,056, and the round's first
+write-up mixed the two in one sentence.
 
 **And the orphan half is not inferior material**: it names a known moiety in **97.2%** of wordings against the
 keyed half's 97.8%, at **higher** density (49.3 moiety occurrences per wording against 44.0) and across
@@ -4185,17 +4191,29 @@ slightly more distinct drugs (1,862 against 1,846).
 
 ### The three subject routes, and why only two ship
 
-| route | mechanism | wordings with a subject | pairs | novel |
+| route | mechanism | wordings with a **resolved** subject | pairs | novel |
 |---|---|---|---|---|
-| 1. `openfda.unii` | structural | 12,061 (44.0%) | 20,554 | 88.1% |
-| **2. + DailyMed XML** | **structural** | **16,754 (61.1%)** | **31,618** | **89.4%** |
-| 3. + rank-0 name | heuristic | 27,376 (99.9%) | 36,580 | 89.7% |
+| 1. `openfda.unii` | structural | 11,939 (43.6%) | 20,554 | 88.1% |
+| **2. + DailyMed XML** | **structural** | **16,610 (60.6%)** | **29,258** | **88.7%** |
+| 3. + rank-0 name | heuristic | *withdrawn — see [#158](https://github.com/cairn-ehr/drugref/issues/158)* | | |
 
-**Route 2 adds 11,064 pairs (+53.8%), 10,162 of them novel (91.8%)** — a *higher* novelty rate than the
-baseline it extends, and **on its own bigger than DrugCentral's entire slice** (7,501 pairs at 91%). Of the
-26,401 labels targeted, **6,539 are in DailyMed (24.8%)** and **6,514 of those resolve (99.6%)** — zero were
-found carrying no UNII. The limit is the release, not the reading: DailyMed publishes current in-use Human Rx
-only.
+**Route 2 adds 8,704 pairs (+42.3%), 7,853 of them novel (90.2%)** — a *higher* novelty rate than the
+baseline it extends, and **on its own still bigger than DrugCentral's entire slice** (7,501 pairs at 91%),
+though by 1,203 rather than 3,563. Of the 26,401 labels targeted, **6,539 are in DailyMed (24.8%)**, **6,514
+of those resolve (99.6%)**, zero carry no UNII and **25 carry a UNII drugref does not hold**. The limit is
+the release, not the reading — and that is now measured, not inferred: all four of the scan's drop counters
+(unreadable, no `setId`, pre-filter disagreement, parse failure) are **zero**.
+
+**⇒ THE FIRST READING OF THIS TABLE WAS WRONG, AND IT PUBLISHED 31,618 WHERE THE RULE GIVES 29,258.**
+`augment_rows` fed the pair counter the recovered moiety UNII **and** the salt UNII together, and drugref
+registers a salt as its own moiety with its own live UNII claim — so a salt product contributed two subjects
+and paired twice, on **56.7%** of resolvable DailyMed labels, while the `openfda.unii` arm contributed one.
+The delta was measured with a looser rule than its own baseline, and it contradicted the round's own route
+table, where the salt route is 16 labels counted apart. Separately the "wordings with a subject" column meant
+*any UNII present* here and *resolves against drugref* in the rescued-wording figure beside it — the whole of
+the 22-wording gap between the published 16,754 and `12,061 + 4,671`. Corrected, **`11,939 + 4,671 = 16,610`
+closes exactly.** `subject_uniis` is now the one subject rule and `spl_ddi_measure.form_candidate_pairs` the
+one pair rule, both called by both arms.
 
 **Route 3 was found this round and rejected.** `openfda` is present on 100% of unkeyed records and is simply
 EMPTY, but `spl_product_data_elements` is populated on 40,633 of 40,856 (99.5%) — one flattened uppercase
@@ -4211,24 +4229,29 @@ Measured against route 2's output as ground truth (6,317 labels): the true moiet
 **Splitting salt spellings out of the error is what makes it honest** — rank 0 reads 47.8% wrong or 6.2%
 wrong depending on whether *right drug, wrong grain* counts as a miss, and only one of those supports a
 decision. Excipients enter at rank 1 (`silicon dioxide` 421, `lactose monohydrate` 412, `magnesium stearate`
-271), exactly as SPL's generation order predicts. **Route 3 buys +4,962 pairs for a 6.2% wrong-subject rate
+271), exactly as SPL's generation order predicts. **Route 3's pair yield is withdrawn (#158); it was rejected
+on its 6.2% wrong-subject rate
 and does not ship** — but the **6,317-label overlap is a permanent calibration set**, and any future
 heuristic route has ground truth to be measured against before it ships.
 
 ### ⇒ A PER-OCCURRENCE QUOTED WINDOW IS NOT A QUOTE — IT IS THE SECTION, REASSEMBLED
 
 The owner's #154 answer needed a window rule, and the obvious ones do not survive measurement. The corpus
-averages **~48 moiety occurrences per wording** over a mean section of **3,663 characters**:
+averages **48.2 moiety occurrences per wording** over a mean section of **3,898 characters** (re-derived
+from committed code — `tools/spl_quote_budget.py`, `probe quotes`, over all 26,721 wordings naming a moiety;
+the round's first pass published this section with no producer at all):
 
 | per-occurrence rule | mean % of section stored | median | ≥90% of section |
 |---|---|---|---|
-| the containing sentence | **80.4%** | 84.6% | 32.8% |
-| ±120 characters | 89.6% | 94.2% | 65.9% |
+| the containing sentence | **82.7%** | 87.2% | 41.4% |
+| ±120 characters | 89.0% | 94.0% | 64.4% |
 | ±60 characters | 74.9% | 77.9% | 15.6% |
 
 **The bound must be per WORDING**, and the shipped rule is **±60 chars around the FIRST occurrence of each
-distinct moiety, in pair-priority order, until 25% of the section's characters are spent** — measured at
-**14.7% of a section stored on average**, 6.6 windows per wording, a window kept for 47.3% of distinct
+distinct moiety, in document order, until 25% of the section's characters are spent** — measured at
+**20.4% of a section stored on average** (NOT the 14.7% first published — that figure's code was never
+committed and cannot be audited; the per-occurrence rows re-derive to within ~1 point, this one did not),
+5.1 merged windows per wording, covering 71.6% of distinct
 moieties. The other 52.7% lose only the window: occurrence, offsets and citation are stored regardless,
 because those are clear under either reading of rule 6. **It is a schema constraint, not a convention** — the
 failure mode is silent, additive and visible only in aggregate.
