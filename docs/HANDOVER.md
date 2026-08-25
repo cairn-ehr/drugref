@@ -13,73 +13,82 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-ddi-mining-measure`, from `main` at `20380ac`** (PR #150 merged 2026-08-23);
-**this round is open as [PR #156](https://github.com/cairn-ehr/drugref/pull/156) and is not merged.** Migrations
-through **`db/050`** — **this round added none.** The suite total lives in PROJECT-NOTES § "How to run / test"
-and **nowhere else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of
-the session.
+**Branch `claude/spl-ddi-design`, from `main` at `c601e39`** (PR #156 merged 2026-08-24); **this round is
+open as [PR #157](https://github.com/cairn-ehr/drugref/pull/157) and is not merged.** Migrations through
+**`db/050`** — **this round added none.** The suite total lives in PROJECT-NOTES § "How to run / test" and
+**nowhere else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the
+session.
 
-**⇒ JUST FINISHED — the slice 5c.3 SPL source MEASUREMENT round. No migration, no ingest, no design spec.**
-[Measurement record](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-mining-measurement.md); full account
-and **every figure**: PROJECT-NOTES § "The 5c.3 SPL measurement round". Do not re-derive them from here.
+**⇒ JUST FINISHED — the slice 5c.3 DESIGN round. The spec exists; no migration, no ingest, no schema.**
+[Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md) ·
+[subject-recovery measurement](superpowers/specs/2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md).
+Full account and **every figure**: PROJECT-NOTES § "The 5c.3 subject-recovery round and the design spec". Do
+not re-derive them from here.
 
-**Three brainstorm decisions scope the slice**, and the design round should not re-litigate them without
-reason: it produces **both** drug × class rules and drug × drug exemplars, **kept separate with shared
-provenance**; extraction is **deterministic entity recognition with NO relation extraction** (deciding a
-sentence means "contraindicated" is a clinical reading — *ingest preserves evidence; curation creates clinical
-judgement*); and the corpus is measured **in full**, both corpora, never sampled.
+**⇒ FOUR OWNER DECISIONS SCOPE THE SLICE. The implementation round must not re-open them without a reason.**
 
-**⇒ MEASURING FIRST CHANGED THE SHAPE FOR THE THIRD ROUND RUNNING, AND THIS TIME IT CHANGED THE CORPUS.** The
-round opened committed to DailyMed's 18 GB Rx release. **openFDA carries the same section under an explicit
-CC0 1.0 dedication, at 1.73 GB, with `drug_interactions` pre-split as a field and an `openfda.unii` bridge**
-(`moiety_uuid` is UUIDv5-on-UNII, so the subject resolves for free). Both were taken in the end — DailyMed as
-the cross-check, which is what turns "openFDA's field looks right" into a measured claim.
+1. **[#154](https://github.com/cairn-ehr/drugref/issues/154) is ANSWERED — bundle a QUOTED WINDOW only**,
+   neither reference-only nor the full prose.
+2. **Drug × drug only.** The class half is deferred to its own slice.
+3. **Structural subject routes only.** The rank-0 name heuristic does not ship.
+4. **The quote budget is proportional** — 25% of the section's characters.
 
-**⇒ RULE 6 IS NOT SETTLED, AND IT GATES THE SCHEMA — [#154](https://github.com/cairn-ehr/drugref/issues/154).**
-NLM disclaims (*"cannot guarantee the copyright status for any item"*) over labeling *"submitted to the FDA by
-companies"* — the DIRIL shape exactly — while **openFDA dedicates the same bytes CC0**. Derived facts, offsets
-and `set_id` citations are clear under either reading; **verbatim prose is not**. **Recommendation: reference
-the prose, do not bundle it** — it satisfies both readings, costs nothing that matters, and matches `db/045`'s
-citation-only SPL references. **This is a posture call for the owner, not a defect, and it needs an explicit
-answer before the design round sets a column.**
+**⇒ THE COUNTERWEIGHT WAS QUOTED IN THE WRONG UNIT, AND IT WAS UNDERSTATED.** The mining round published the
+loss as **41,056 labels (60%)**. Split properly it cuts both ways: **14,455 of those labels are REDUNDANT**
+(another manufacturer reprinting a wording a keyed label already carries), but **in WORDINGS the loss is
+56.0%** — 15,345 of 27,406 — and the published 20,554 pairs came from **just 11,939 wordings**. And the orphan
+half is not inferior material: **97.2%** of it names a known moiety against the keyed half's 97.8%, at
+**higher** density (49.3 occurrences per wording against 44.0).
 
-**⇒ THE HEADLINE, and it re-opens [#102](https://github.com/cairn-ehr/drugref/issues/102) in new terms.** The
-potency band is **a property of the (inhibitor, substrate) PAIR, not of the inhibitor** — FDA's own footnote 20
-bands ciprofloxacin *moderate* and then **names tizanidine** as the substrate against which it behaves strong,
-so the label and the table never disagreed. **That retires options 1 and 2 of #102**, which both hang the band
-on the class. And the band is **not rare**: it looked like 0.8% through drugref's stored class names, but the
-prose carries `band + CYP<n> + role` **15,708 times in 15.5% of wordings**, and a band near a role word in
-**25.4%** — against the **2,212** occurrences FDA-CYP's names actually matched, **roughly 7×**. The cause is
-word order (labels write *"strong CYP1A2 inhibitors"*, drugref stores *"CYP1A2 strong inhibitor"*).
+**⇒ RECOVERY SHIPS, AND IT IS STILL BIGGER THAN DRUGCENTRAL'S WHOLE SLICE.** DailyMed's `activeIngredient`
+block adds **8,704 pairs (+42.3%), 7,853 novel (90.2%)** — a *higher* novelty rate than the baseline it
+extends, against the 7,501 at 91% that justified DrugCentral. Of 26,401 labels targeted, **6,539 are in
+DailyMed (24.8%)**, **6,514 resolve (99.6%)** and **25 carry a UNII drugref lacks**. The limit is the
+release, not the reading — now measured, not inferred: all four of the scan's drop counters are zero.
+⇒ **Total: at least 29,258 pairs, 25,960 (88.7%) novel.**
 
-**⇒ AND THE CLASS VOCABULARY DOES NOT FIT — [#155](https://github.com/cairn-ehr/drugref/issues/155).** Split
-by whether the matched class **has any members**, **32.3% of all class occurrences name an EMPTY class**.
-MED-RT's PK axis is the worst: **97.2% empty**, because its 59 concepts are pharmacokinetic *properties*
-(`Clearance`, `Half-Life`, `Cytochromes`) of which only 6 have a member — matching them recognises ordinary
-English and mints false positives carrying real class UUIDs. MeSH is the opposite (112 empty of 115,583).
+**⇒ A THIRD ROUTE WAS FOUND AND REJECTED, AND ITS CALIBRATION SET IS THE KEEPER.** `openfda` is present on
+100% of unkeyed records and is simply EMPTY, but `spl_product_data_elements` is populated on 99.5% — one
+flattened uppercase string of product name, active ingredients, moieties **and excipients, undelimited**.
+Against route 2 as ground truth the true moiety is among the names **98.9%** of the time, but the field
+averages **7.69** matches per label and rank 0 is **genuinely wrong 6.2%** (47.8% before salt spellings are
+split out — only one supports a decision). **The 6,317-label overlap is a permanent calibration set.** §4's
+producing code was never committed, so it is owed as
+[#158](https://github.com/cairn-ehr/drugref/issues/158); route 3's pair yield is withdrawn until then.
 
-**The pair yield justifies the slice on its own: 20,554 distinct candidate pairs, 18,107 (88.1%) novel**,
-against the 7,501 at 91% that justified DrugCentral — **nearly 3×, at the same novelty rate.** ⇒ **That figure
-is the SUPPRESSION variant, and it is the one to quote**: the round's first pass published a range whose low
-end deleted **`lithium`, the corpus's most-matched moiety**, along with `alcohol` and `iron`, while keeping
-`serotonin` — because it excluded dictionary words on an *unmeasured* guess ("`lead` is a verb"). Measured,
-three of the four suspects are the **head of a longer term** (`lead to`, `prothrombin time`, `serotonin
-syndrome`) which longest-match-wins already handles once drugref holds the longer term, and `alcohol` was a
-**true positive all along**. See PROJECT-NOTES for the distributions. **The counterweight: 41,056 labels (60%)
-are discarded before a pair can form** for want of a resolvable subject.
+**⇒ A PER-OCCURRENCE QUOTED WINDOW IS NOT A QUOTE — IT IS THE SECTION, REASSEMBLED** (sentence **82.7%**,
+±120 chars **89.0%**). The shipped rule stores **20.4%** — *not* the 14.7% first published, whose code was
+never committed. Now reproducible: `tools/spl_quote_budget.py` + `probe quotes`, because a schema CHECK
+rests on it. Full table: measurement record §6.
+
+**⇒ THE ROUND GOT ITS OWN ARITHMETIC WRONG THREE TIMES AND ITS TESTS PASSED EVERY TIME.** (1) A 44-label
+over-count: it tallied the scan's ROWS, and DailyMed ships successive versions of one label sharing a
+`set_id`. (2) The delta's two arms used **different subject rules** — the recovered arm blended the salt UNII
+in, and drugref registers a salt as its own moiety, so a salt product paired twice (56.7% of resolvable
+DailyMed labels): that alone published **31,618** where the rule gives **29,258**. (3) "Wordings with a
+subject" meant *any UNII* in one table and *resolves* in the next. **None was visible in any output; each was
+found by re-deriving the published arithmetic from the other direction**, in the PR review, not by the tests.
+⇒ *A figure that only ever agrees with itself is not checked, and a delta is only a delta while both arms
+share one function.* Now: `subject_uniis` is the sole subject rule, `form_candidate_pairs` the sole pair rule
+(`spl_ddi_report` calls it too), `labels_missing_from_dailymed` is counted not subtracted, **51 tests**.
 
 ## ⇒ DO THIS NEXT
 
-**The 5c.3 DESIGN round** — brainstorm is done, measurement is done, and the spec does not exist yet. It opens
-with **four inherited answers and one blocking question**. The blocking one is **#154**: ask the owner whether
-SPL prose may be bundled, because the answer decides whether the schema stores text or a citation. The four:
-the corpus is openFDA (pinned by `export_date` + per-partition SHA-256); the band is pair-scoped and belongs on
-the **assertion**, not the class; MED-RT's PK axis is not an endpoint vocabulary; and the moiety grain is ready
-now while the class grain is where every unsolved problem lives.
+**Write `db/051` and the SPL ingest**, from the design spec. It is fully specified — five tables, two views,
+one gap view, the parser/orchestrator split, and the source-admission **trio** (`ingest_run` source CHECK,
+writer CHECK, `ids.py` + `provenance.py`) whose failure mode is silent. Three things the spec insists on:
 
-**If 5c.3's design is not the choice, `5c.5` pregnancy & lactation is still spiked-not-designed** — LactMed
-alone puts 1,679 moieties outside MED-RT's thin lactation floor, and it is gated on a **clinician review that
-has not happened** (a 23-row worklist ships with the spike results).
+- **The quote budget is a CONSTRAINT** (a deferred trigger over `sum(char_end - char_start)` per wording),
+  and its test must be shown it can FAIL — `db/050`'s finding was that every guard in a slice passed vacuously.
+- **The ingest must scan the 14,455 redundant unkeyed labels the probe skipped.** A label's SUBJECT is its own
+  even when its wording is shared, so their pairs are uncounted. ⇒ **Every pair figure is a FLOOR; the floor
+  check asserts `>=`, not `==`.**
+- **The matcher must be the SHIPPED resolver's rule** — exact, case-insensitive, contiguous,
+  longest-match-wins. The measured yield rests on it.
+
+**If 5c.3's implementation is not the choice, `5c.5` pregnancy & lactation is still spiked-not-designed** —
+LactMed puts 1,679 moieties outside MED-RT's thin lactation floor, gated on a **clinician review that has not
+happened** (a 23-row worklist ships with the spike results).
 
 ## Parallel project sequencing
 
@@ -89,28 +98,31 @@ still gates #112/#105.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). New this
-round: **[#154](https://github.com/cairn-ehr/drugref/issues/154)** (rule 6 for SPL prose — the owner's call,
-and it gates the design round) and **[#155](https://github.com/cairn-ehr/drugref/issues/155)** (MED-RT's PK
-axis is not a drug-class vocabulary). **#102 was re-opened in new terms** rather than re-filed. Still standing:
-#148, #149, #151, #152, #153, #146, #128/#129 and #132–#135 (FDA-CYP residue), #124, #121/#123, #104, #94.
-Before production: re-run every parser on current releases, resolve #17, and the three rule-6 deeds (#6, #25,
-GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md).
+**[#154](https://github.com/cairn-ehr/drugref/issues/154) is now ANSWERED and closed** by the owner's quoted-
+window determination. Still standing: **#155** (MED-RT's PK axis is not a drug-class vocabulary) and
+**#102 re-opened in new terms** (the band is pair-scoped), both of which the deferred class half inherits;
+**#67** (salt↔base equivalence) is now wanted by **three** sources and is the one blocking a grain, not a
+nicety. Also: #148, #149, #151, #152, #153, #146, #128/#129 and #132–#135 (FDA-CYP residue), #124, #121/#123,
+#104, #94. Before production: re-run every parser on current releases, resolve #17, and the three rule-6
+deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never use it for reviewer accounts or GUI service data — pytest recreates it, and see #153 before
   running two sessions against it at once.
-- **`drugref_spl`** is this round's measurement database and is the one to reuse: it is the **only** database
-  holding every vocabulary at once (`TEMPLATE drugref_dc049` → `migrate` to `050` → `ingest fda-cyp` →
-  `ingest onchigh`). Neither predecessor was enough — `drugref_5c2g` has FDA-CYP but no DrugCentral,
-  `drugref_dc049` has DrugCentral but neither FDA-CYP nor the ONC floor. Rebuild command: measurement record §2.
+- **`drugref_spl`** is the measurement database for both 5c.3 rounds and is the one to reuse: it is the
+  **only** database holding every vocabulary at once (`TEMPLATE drugref_dc049` → `migrate` to `050` →
+  `ingest fda-cyp` → `ingest onchigh`). Rebuild command: mining measurement record §2.
 - **`drugref_dc049`** and **`drugref_dc101`** are the DrugCentral round's databases; `dc049` still predates
   `db/050`, so migrate it before re-measuring anything against it.
 - Corpora on disk: `downloads/OPENFDA/` (14 partitions, `export_date` 2026-08-22) and `downloads/DAILYMED/`
   (6 Human Rx parts, `last-modified` 2026-08-21, 17.6 GB). **`downloads/` is gitignored, so every SHA-256 is
-  recorded in the measurement record §2 instead** — re-fetch and verify against that table, not against a
+  recorded in the mining measurement record §2** — re-fetch and verify against that table, not against a
   manifest file that disappears with the bytes it describes.
+- The probe cache (`sections.jsonl`, `texts.jsonl`, `recovered.jsonl`, `elements.jsonl`) is **scratch and is
+  gone**; `tools/spl_recovery_probe.py` rebuilds it in minutes, and its `extract` stage reproduced the mining
+  round's census exactly.
 - The verification database and its migration state live once in PROJECT-NOTES § "How to run / test"; do not
   copy that volatile map here.
