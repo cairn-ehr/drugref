@@ -4464,14 +4464,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2086 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2118 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 2005
-# passed in 60.15 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-27 at 2118
+# passed in 57.35 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4494,8 +4494,20 @@ git config core.hooksPath .githooks
 # deleting lithium; and the 5c.3 SUBJECT-RECOVERY round added 19, again with no
 # migration and no ingest: 2067 -> 2086, all on throwaway probe code under
 # tools/ -- and one of those 19 exists because the round's OWN tally was wrong
-# by 44 labels while its other 18 tests passed, see that section's headline).
-# THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
+# by 44 labels while its other 18 tests passed, see that section's headline;
+# and that round's REVIEW-FIX half added 32 more, 2086 -> 2118, when the delta
+# whose two arms used different subject rules was corrected).
+# THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
+# SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
+# DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,
+# so the number was measured, published, and still not landed here -- the file
+# read 2086 while the suite was at 2118 for the whole of the merged PR #157 and
+# was caught by the START-OF-SESSION check the fifth occurrence added. A commit
+# message is not a home: it cannot be edited after the fact and nobody greps it.
+# That is SEVEN occurrences of one failure mode against a comment rewritten
+# three times to prevent it. Issue 146 is still the only real fix and is still
+# not written.
+# THE SIXTH-AND-A-HALF CASE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
 # ROADMAP or its own section heading -- which is the exact act that created the sixth
