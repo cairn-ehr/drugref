@@ -27,7 +27,10 @@ test_local_writer, test_gap_views. This module is about the contract those tests
 import psycopg
 import pytest
 
-from drugref import classes, composition, conditions, db, indications, interactions, local
+from drugref import (
+    classes, composition, conditions, db, indications, interactions, local,
+    spl_evidence,
+)
 from drugref.ingest import onchigh_run
 from drugref.ingest.pbs import PbsItem
 
@@ -67,6 +70,16 @@ EXPECTED_TABLES = {
     # live in the assertion table itself rather than a separate worklist.
     "interactions.DRUGCENTRAL_TABLES": (
         interactions.DRUGCENTRAL_TABLES, ("drugcentral_ddi_assertion",)),
+    # Slice 5c.3 (db/051): FIVE tables, and unlike every other entry here the
+    # ORDER is load-bearing rather than incidental. spl_wording_quote,
+    # spl_entity_occurrence and spl_label all reference spl_wording, and
+    # spl_label_subject references spl_label -- so a parent-first order is
+    # refused by the foreign key, exactly as local.LOCAL_PRODUCT_TABLES' is.
+    # Restated here independently, so dropping one from the writer fails.
+    "spl_evidence.SPL_TABLES": (
+        spl_evidence.SPL_TABLES,
+        ("spl_wording_quote", "spl_entity_occurrence", "spl_label_subject",
+         "spl_label", "spl_wording")),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
         interactions.MESH_CONTRAINDICATION_TABLES,
         ("moiety_condition_contraindication", "moiety_contraindication",
@@ -118,6 +131,38 @@ def test_the_local_clear_lists_children_before_parents():
     local_product, so a parent-first list is refused by the foreign key."""
     tables = local.LOCAL_PRODUCT_TABLES
     assert tables.index("local_product") == len(tables) - 1
+
+
+def test_the_spl_clear_lists_children_before_parents():
+    """db/051's five tables form TWO levels, and both orderings are enforced.
+
+    spl_wording_quote, spl_entity_occurrence and spl_label all reference
+    spl_wording; spl_label_subject references spl_label. Asserted against the
+    LIVE CATALOG rather than restated from the migration, because a foreign key
+    added in a later migration would silently make a correct order wrong -- and
+    the only way that shows up otherwise is an ingest that stops being able to
+    rebuild.
+    """
+    tables = spl_evidence.SPL_TABLES
+    assert tables.index("spl_wording") == len(tables) - 1
+    assert tables.index("spl_label_subject") < tables.index("spl_label")
+
+
+@pytest.mark.usefixtures("conn")
+def test_every_spl_foreign_key_points_LATER_in_the_clear_order(conn):
+    """The catalog's own answer to the question the tuple above encodes."""
+    position = {table: index for index, table in enumerate(spl_evidence.SPL_TABLES)}
+    edges = conn.execute(
+        "SELECT c.conrelid::regclass::text, c.confrelid::regclass::text "
+        "  FROM pg_constraint c "
+        " WHERE c.contype = 'f' "
+        "   AND c.conrelid::regclass::text LIKE 'drugref.spl%' "
+        "   AND c.confrelid::regclass::text LIKE 'drugref.spl%'").fetchall()
+    assert edges, "no SPL foreign keys found -- this test would pass vacuously"
+    for child, parent in edges:
+        child_table = child.split(".")[-1]
+        parent_table = parent.split(".")[-1]
+        assert position[child_table] < position[parent_table], (child, parent)
 
 
 # ---- the shared helper -------------------------------------------------------
