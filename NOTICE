@@ -109,3 +109,35 @@ Seed data attributions:
   selects an excluded row whose `source_id` is free-form prose rather than a heading,
   or whose `ddi_risk` is anything other than a band from that closed vocabulary, is NOT
   covered by it and needs the same redaction `description` gets.
+
+- SPL section 34073-7 (DRUG INTERACTIONS) — the structured product labeling every US
+  prescription drug carries, read from two publishers of the same documents. The bulk
+  `drug/label` export from the U.S. Food and Drug Administration's openFDA
+  (https://open.fda.gov/) is dedicated to the public domain under CC0 1.0
+  (https://creativecommons.org/publicdomain/zero/1.0/); the same labels are published by
+  the U.S. National Library of Medicine as DailyMed (https://dailymed.nlm.nih.gov/),
+  which disclaims — "cannot guarantee the copyright status for any item" — over labeling
+  "submitted to the FDA by companies". Because the two publishers take opposite positions
+  on the same bytes, the determination was made PER COLUMN rather than per source:
+
+    * entity occurrences and their character offsets are FACTS and are not copyrightable
+      (Feist), and are stored for every recognised drug name;
+    * a `set_id` / `version` / `effective_time` citation is a citation and not a copy,
+      and is stored for every label;
+    * the section text IN FULL is NOT STORED, under either publisher's reading. The
+      wording is identified only by the SHA-256 of its normalised text, and the table
+      that holds that digest has no prose column at all;
+    * a BOUNDED QUOTED WINDOW is stored — ±60 characters around the first occurrence of
+      each distinct drug named, in document order, to a hard cap of 25% of the section's
+      characters. The cap is enforced by a deferred database constraint trigger rather
+      than by convention, because the failure mode of an intended-only bound here is
+      silent and additive. Measured over the 2026-08-22 openFDA export, 20.5% of a
+      section is stored on average.
+
+  DailyMed is read only for the ACTIVE-INGREDIENT structure of labels whose subject drug
+  openFDA does not identify: element names, HL7 classCodes and UNII codes. No prose is
+  read from it, and the section text drugref quotes comes from the CC0 export.
+
+  Nothing derived from this source states that two drugs INTERACT. It states that a
+  label's interactions section names both of them, which is a weaker claim and is kept
+  in its own read path for that reason.
