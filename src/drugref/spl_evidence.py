@@ -218,6 +218,40 @@ def write_quotes(conn: psycopg.Connection, rows: Iterable[QuoteRow], *,
                  ingest_run_id=ingest_run_id, source=source)
 
 
+def analyze_source_tables(conn: psycopg.Connection) -> None:
+    """`ANALYZE` this source's five tables. **NOT optional, and not a tidy-up.**
+
+    ⇒ MEASURED, NOT REASONED: without it, the orchestrator's own read-backs do
+    not finish. On the real releases the self-pair count -- a three-way join of
+    spl_label_subject, spl_label and 1.3 million spl_entity_occurrence rows --
+    ran for **25 minutes at 100% CPU and was still going** when it was cancelled.
+    With statistics it is seconds.
+
+    THE CAUSE, and it is a property of bulk loading rather than of these queries:
+    every table here is written by `COPY` inside the same transaction that then
+    queries it, so at planning time `pg_class.reltuples` still says the tables are
+    empty. The planner therefore costs a nested loop over what it believes are a
+    handful of rows, and picks one over 1.3 million.
+
+    IT IS ALSO WHY THE FIRST DIAGNOSIS WAS WRONG. The obvious suspect was the
+    foreign-key checks on the child `COPY` -- freshly loaded parent, no stats, RI
+    seq scans. That was measured and REFUTED: 20,000 child rows against an
+    unanalyzed 68,550-row parent insert in 175 ms, because PostgreSQL's RI
+    triggers use a plan pinned to the parent's primary key rather than a
+    re-planned query. The cost was never in the write; it was in the read-back
+    that follows it.
+
+    Runs INSIDE the transaction, which PostgreSQL permits, so the statistics
+    describe the projection this run is about to publish and are rolled back with
+    it if the run is refused.
+    """
+    # The table list has ONE home -- SPL_TABLES -- and this reads it rather than
+    # restating it, so a table added to the source cannot be left unanalyzed and
+    # quietly reintroduce the stall.
+    tables = ", ".join(f"drugref.{table}" for table in SPL_TABLES)
+    conn.execute(f"ANALYZE {tables}")
+
+
 def load_registry(conn: psycopg.Connection) -> tuple[dict[str, str], dict[str, str]]:
     """`(display_name -> moiety_uuid, UNII -> moiety_uuid)`, in ONE statement.
 

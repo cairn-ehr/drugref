@@ -322,6 +322,14 @@ def ingest_spl(
             progress=(lambda done, total: say(f"  {done:,}/{total:,}"))
             if progress else None)
 
+        # EVERY READ-BACK BELOW QUERIES A TABLE THIS TRANSACTION JUST BULK-LOADED,
+        # so the planner would otherwise cost them as if the tables were empty.
+        # Measured: without this the self-pair count ran 25 minutes at 100% CPU
+        # and had not finished. See `analyze_source_tables` for the measurement,
+        # and for the diagnosis it replaced.
+        say("analysing the projection so the read-backs can be planned")
+        spl_evidence.analyze_source_tables(conn)
+
         # ---- RECONCILE AGAINST WHAT ACTUALLY LANDED, INSIDE THE TRANSACTION --
         # Every identity on SplSummary is computed in Python from Python
         # counters, so they can only prove this module is self-consistent. These

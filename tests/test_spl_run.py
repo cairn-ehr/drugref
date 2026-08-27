@@ -560,6 +560,33 @@ def test_exact_ddi_pair_is_UNCHANGED_by_this_slice(conn, corpus):
 # --------------------------------------------------------------------------
 
 @pytest.mark.usefixtures("_clean")
+def test_the_projection_is_ANALYZED_before_its_own_read_backs(conn, corpus):
+    """⇒ WITHOUT THIS THE INGEST DOES NOT FINISH ON THE REAL CORPUS.
+
+    Every read-back in the orchestrator queries a table the same transaction just
+    bulk-loaded, so the planner costs them as if those tables were empty and
+    picks a nested loop over 1.3 million occurrence rows. Measured on the real
+    releases: the self-pair count ran 25 minutes at 100% CPU and had not
+    finished.
+
+    A performance property cannot be asserted as a timing on a fixture this
+    small, so what is pinned is the CAUSE: after an ingest, PostgreSQL must have
+    real row estimates for every table this source owns. `reltuples` is -1 on a
+    table that has never been analyzed, which is exactly the state that produced
+    the stall.
+    """
+    _seed_registry(conn)
+    _ingest(conn, corpus)
+    estimates = dict(conn.execute(
+        "SELECT relname, reltuples FROM pg_class "
+        " WHERE relnamespace = 'drugref'::regnamespace "
+        "   AND relname = ANY(%s)", (list(spl_evidence.SPL_TABLES),)).fetchall())
+    assert set(estimates) == set(spl_evidence.SPL_TABLES)
+    for table, reltuples in estimates.items():
+        assert reltuples >= 0, f"{table} was never analysed (reltuples={reltuples})"
+
+
+@pytest.mark.usefixtures("_clean")
 def test_a_re_ingest_REPLACES_rather_than_accumulates(conn, corpus):
     """The per-source rebuild, which is what makes 'rebuildable projection' true.
 
