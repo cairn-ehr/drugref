@@ -59,7 +59,7 @@ from collections.abc import Sequence
 
 import drugref
 from drugref import (cli_curate, cli_drugcentral, cli_fda_cyp, cli_interactions,
-                     cli_policy, cli_signing, cli_status, curation, db,
+                     cli_policy, cli_signing, cli_spl, cli_status, curation, db,
                      interactions, migration_guard, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
@@ -427,6 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     cli_fda_cyp.add_parser(sources)
     cli_drugcentral.add_parser(sources)
+    cli_spl.add_parser(sources)
 
     chain = sources.add_parser(
         "chain", help="run several feeds in dependency order from one directory")

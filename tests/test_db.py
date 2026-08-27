@@ -326,6 +326,33 @@ def test_apply_migrations_is_idempotent(conn):
         # before this one was appended. Named explicitly for the same
         # information_schema.tables reason as every other view above.
         "gap_unresolved_ddi_endpoint",
+        # db/051 (slice 5c.3): SPL section 34073-7 drug-interaction evidence.
+        # FIVE tables at three grains, and the grains are the design: spl_wording
+        # is one row per DISTINCT wording (the corpus is 2.50 labels to one, and
+        # counting labels multiplies every downstream figure by that factor);
+        # spl_label is one row per label INCLUDING those whose subject never
+        # resolved, because that population is the recovery register;
+        # spl_label_subject is separate from spl_label because a combination
+        # product carries several subjects; spl_entity_occurrence holds the
+        # derived facts and offsets; and spl_wording_quote holds the ONLY prose
+        # this slice stores -- a bounded window under a deferred-trigger budget.
+        #
+        # NOTE spl_wording has NO PROSE COLUMN, and its absence is pinned
+        # separately in tests/test_spl_schema.py: a `text` column there would
+        # make the quote budget unenforceable in one edit.
+        "spl_wording", "spl_label", "spl_label_subject",
+        "spl_entity_occurrence", "spl_wording_quote",
+        # db/051 sections 7 and 8: TWO read views at TWO grains, each named for
+        # its own -- spl_ddi_pair's count(*) IS the pair count, spl_ddi_evidence
+        # carries a row per citation -- plus the recovery register. Named
+        # explicitly for the same information_schema.tables reason as every other
+        # view above.
+        #
+        # gap_unresolved_spl_subject is DELIBERATELY NOT a nineteenth gap kind:
+        # unlike every other gap_* view listed here it feeds no _GAP_SOURCES
+        # entry, because a curator cannot answer "not in the current DailyMed
+        # release". db/051 section 8 argues it; tests/test_spl_run.py pins it.
+        "spl_ddi_evidence", "spl_ddi_pair", "gap_unresolved_spl_subject",
     }
 
 

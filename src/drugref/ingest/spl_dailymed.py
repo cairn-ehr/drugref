@@ -39,7 +39,9 @@ import io
 import re
 import xml.etree.ElementTree as ET
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import (
+    Callable, Iterable, Iterator, Mapping, Sequence, Set as AbstractSet,
+)
 from dataclasses import dataclass
 
 #: The HL7 v3 namespace every SPL document uses.
@@ -273,6 +275,87 @@ def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
         if current is None or (row.version or -1) > (current.version or -1):
             best[row.set_id] = row
     return best
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScanResult:
+    """What one pass over the DailyMed release found, AND EVERY DOCUMENT IT DROPPED.
+
+    **The drop counters are fields rather than local variables, and that is the
+    whole point of this type.** A document silently skipped here is republished
+    three stages later as `absent_from_dailymed` -- a fact about the READING sold
+    as a fact about the RELEASE, and the design spec turns that route's population
+    into a commitment. Measured on the 2026-08-21 Human Rx release, all four are
+    ZERO, which is what lets "the limit is the release, not the reading" be a
+    measurement rather than an inference.
+
+    `found` is keyed by `set_id` and already de-duplicated by `dedupe_by_set_id`,
+    because DailyMed ships successive versions of one label as separate documents
+    sharing a `set_id` and counting rows over-counts labels.
+    """
+
+    documents_read: int
+    found: Mapping[str, SubjectUniis]
+    #: No `setId` in the raw bytes at all -- the cheap pre-filter found nothing.
+    dropped_no_set_id_bytes: int
+    #: Unparseable, or no `setId` in the parsed tree. A READING failure.
+    dropped_unreadable: int
+    #: The byte pre-filter matched a DIFFERENT setId than the document's own -- an
+    #: SPL `<relatedDocument>` names the label it replaces, so writing the tree's
+    #: value under a regex-selected target would attach a subject to the wrong
+    #: wording.
+    dropped_prefilter_disagreed: int
+
+    @property
+    def total_dropped(self) -> int:
+        return (self.dropped_no_set_id_bytes + self.dropped_unreadable
+                + self.dropped_prefilter_disagreed)
+
+
+def scan_release(
+    parts: Sequence[str], targets: AbstractSet[str], *,
+    progress: Callable[[str], None] | None = None,
+) -> ScanResult:
+    """Read the release once, keeping only the labels `targets` names.
+
+    THE EXPENSIVE PASS: 17.6 GB of nested zips. It is done ONCE, and the cheap
+    byte pre-filter runs before any tree is built, because building a tree for
+    every document to discover most are unwanted costs far more than one regex.
+
+    **The pre-filter is never the authority.** `extract_subject_uniis` re-reads the
+    `setId` from the tree and the two are compared here; a disagreement is counted
+    and the document dropped rather than filed under the target the regex picked.
+    """
+    found: list[SubjectUniis] = []
+    documents_read = 0
+    no_set_id_bytes = unreadable = disagreed = 0
+
+    for part in parts:
+        if progress is not None:
+            progress(str(part))
+        for _document_id, xml_bytes in iter_release_labels(part):
+            documents_read += 1
+            pre_filter = set_id_in_bytes(xml_bytes)
+            if pre_filter is None:
+                no_set_id_bytes += 1
+                continue
+            if pre_filter not in targets:
+                continue
+            recovered = extract_subject_uniis(xml_bytes)
+            if recovered is None:
+                unreadable += 1
+                continue
+            if recovered.set_id != pre_filter:
+                disagreed += 1
+                continue
+            found.append(recovered)
+
+    return ScanResult(
+        documents_read=documents_read,
+        found=dedupe_by_set_id(found),
+        dropped_no_set_id_bytes=no_set_id_bytes,
+        dropped_unreadable=unreadable,
+        dropped_prefilter_disagreed=disagreed)
 
 
 def iter_release_labels(

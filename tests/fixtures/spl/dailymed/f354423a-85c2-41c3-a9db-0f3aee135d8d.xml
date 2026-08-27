@@ -1,0 +1,812 @@
+<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="urn:hl7-org:v3"><setId root="f354423a-85c2-41c3-a9db-0f3aee135d8d" />
+   <versionNumber value="23" />
+   <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="100" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ELEXACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ELEXACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="50" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TEZACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>TEZACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="75" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3NXW29V3WO" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="OP1R32D61U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MICROCRYSTALLINE CELLULOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="0WZ8WG20P6" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE 2910 (6 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="9XZ8H6N6OH" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYDROXYPROPYL CELLULOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="15FIX9V2JP" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TITANIUM DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="7SEV7J4R1U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TALC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EX438O2MRT" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERRIC OXIDE YELLOW</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="1K09F3G675" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERRIC OXIDE RED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="150" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="OP1R32D61U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MICROCRYSTALLINE CELLULOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="R12CBM0EIZ" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CARNAUBA WAX</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="L06K8R7DQK" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FD&amp;C BLUE NO. 2</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="G2M7P15E5P" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYETHYLENE GLYCOL 3350</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="532B59J990" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYVINYL ALCOHOL, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="7SEV7J4R1U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TALC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="15FIX9V2JP" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TITANIUM DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="5138Q19F1X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>AMMONIA</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="XM0M87F357" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERROSOFERRIC OXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6DC9Q167V3" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>PROPYLENE GLYCOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="46N107B71O" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SHELLAC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="50" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ELEXACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ELEXACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="25" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TEZACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>TEZACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="37.5" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3NXW29V3WO" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="OP1R32D61U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MICROCRYSTALLINE CELLULOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="0WZ8WG20P6" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE 2910 (6 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="9XZ8H6N6OH" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYDROXYPROPYL CELLULOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="15FIX9V2JP" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TITANIUM DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="7SEV7J4R1U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TALC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EX438O2MRT" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERRIC OXIDE YELLOW</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="1K09F3G675" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERRIC OXIDE RED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="75" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="OP1R32D61U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MICROCRYSTALLINE CELLULOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="R12CBM0EIZ" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CARNAUBA WAX</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="L06K8R7DQK" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FD&amp;C BLUE NO. 2</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="G2M7P15E5P" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYETHYLENE GLYCOL 3350</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="532B59J990" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYVINYL ALCOHOL, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="7SEV7J4R1U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TALC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="15FIX9V2JP" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TITANIUM DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="5138Q19F1X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>AMMONIA</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="XM0M87F357" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FERROSOFERRIC OXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6DC9Q167V3" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>PROPYLENE GLYCOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="46N107B71O" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SHELLAC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="80" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ELEXACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ELEXACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="40" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TEZACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>TEZACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="60" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3NXW29V3WO" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3OWL53L36A" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MANNITOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="96K6UQ3ZD4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SUCRALOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="59.5" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="96K6UQ3ZD4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SUCRALOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3OWL53L36A" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MANNITOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="100" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ELEXACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="RRN67GMB0V" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ELEXACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="50" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TEZACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="8RW88Y506K" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>TEZACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="75" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3NXW29V3WO" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE, UNSPECIFIED</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3OWL53L36A" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MANNITOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="96K6UQ3ZD4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SUCRALOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="75" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>IVACAFTOR</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="1Y740ILL1Z" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>IVACAFTOR</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="ETJ7Z6XBU4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SILICON DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="M28OL1HH48" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CROSCARMELLOSE SODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="6N003M473W" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYPROMELLOSE ACETATE SUCCINATE 06081224 (3 MPA.S)</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="96K6UQ3ZD4" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SUCRALOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="368GB5141J" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SODIUM LAURYL SULFATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3OWL53L36A" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MANNITOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              </document>

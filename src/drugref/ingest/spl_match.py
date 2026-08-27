@@ -101,10 +101,22 @@ class Vocabulary:
 
     `max_tokens` bounds the n-gram window at match time, so the scan costs
     O(tokens x max_tokens) rather than O(tokens^2).
+
+    `max_tokens_by_first` bounds it AGAIN, per starting token, and that is what
+    makes a full-corpus run finish: one long registry name -- and drugref holds
+    several of a dozen words -- would otherwise make every one of ~19 million
+    token positions in the corpus try a dozen n-grams, almost all of them
+    starting at ordinary English words that begin no drug name at all. A token
+    absent from this map begins nothing and is skipped in one lookup.
+
+    It is an OPTIMISATION AND NOTHING ELSE: the entries it can reach at any
+    position are exactly the entries `max_tokens` alone could reach, because a
+    key's first token is in the map with at least that key's own length.
     """
 
     by_key: Mapping[tuple[str, ...], tuple[Entry, ...]]
     max_tokens: int
+    max_tokens_by_first: Mapping[str, int]
 
 
 @dataclass(frozen=True)
@@ -189,6 +201,7 @@ def build_vocabulary(entries: Iterable[Entry]) -> Vocabulary:
     order.
     """
     by_key: dict[tuple[str, ...], list[Entry]] = {}
+    by_first: dict[str, int] = {}
     longest = 0
     for entry in entries:
         key = tuple(fold(entry.key).split())
@@ -198,8 +211,11 @@ def build_vocabulary(entries: Iterable[Entry]) -> Vocabulary:
                 "a key of () would match at every position")
         by_key.setdefault(key, []).append(entry)
         longest = max(longest, len(key))
+        by_first[key[0]] = max(by_first.get(key[0], 0), len(key))
     return Vocabulary(
-        by_key={k: tuple(v) for k, v in by_key.items()}, max_tokens=longest)
+        by_key={k: tuple(v) for k, v in by_key.items()},
+        max_tokens=longest,
+        max_tokens_by_first=by_first)
 
 
 def find_matches(text: str, vocab: Vocabulary) -> tuple[Match, ...]:
@@ -233,7 +249,10 @@ def _longest_at(
     tokens: Sequence[Token], index: int, vocab: Vocabulary
 ) -> Match | None:
     """The longest vocabulary entry starting exactly at `tokens[index]`."""
-    longest_possible = min(vocab.max_tokens, len(tokens) - index)
+    from_here = vocab.max_tokens_by_first.get(tokens[index].text, 0)
+    if not from_here:
+        return None
+    longest_possible = min(from_here, len(tokens) - index)
     for size in range(longest_possible, 0, -1):
         key = tuple(t.text for t in tokens[index:index + size])
         entries = vocab.by_key.get(key)

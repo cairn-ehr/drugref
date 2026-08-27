@@ -1,0 +1,67 @@
+[
+  {
+    "effective_time": "20260616",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "038cf2ba-ad08-4981-a3cc-bff0e4ba5dfb",
+    "uniis": [
+      "4S9CL2DY2H",
+      "P8Y54F701R"
+    ],
+    "version": "6"
+  },
+  {
+    "effective_time": "20260622",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "a2cc631e-13a6-40c2-acf9-065ccedfb90a",
+    "uniis": [
+      "0UB3OA67O7"
+    ],
+    "version": "7"
+  },
+  {
+    "effective_time": "20260619",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "c401f1a8-cc37-461b-bfef-f2e156629bf8",
+    "uniis": [
+      "ISQ9I6J12J"
+    ],
+    "version": "21"
+  },
+  {
+    "effective_time": "20260605",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "024bb9f2-8c26-4d9d-a33b-eb3c0a7c59ed",
+    "uniis": [
+      "O1FF4DIV0D"
+    ],
+    "version": "6"
+  },
+  {
+    "effective_time": "20260623",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "2ec8f18f-297c-405f-b191-a40767366bad",
+    "uniis": [],
+    "version": "7"
+  },
+  {
+    "effective_time": "20260623",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "6422dcc3-959a-4590-9ca8-9dcb58e68253",
+    "uniis": [],
+    "version": "17"
+  },
+  {
+    "effective_time": "20260622",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "f354423a-85c2-41c3-a9db-0f3aee135d8d",
+    "uniis": [],
+    "version": "23"
+  },
+  {
+    "effective_time": "20260618",
+    "product_type": "HUMAN PRESCRIPTION DRUG",
+    "set_id": "79943fe6-1249-4074-9aed-c53937820d0f",
+    "uniis": [],
+    "version": "2"
+  }
+]

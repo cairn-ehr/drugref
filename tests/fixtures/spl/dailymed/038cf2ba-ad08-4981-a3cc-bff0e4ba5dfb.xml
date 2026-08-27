@@ -1,0 +1,208 @@
+<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="urn:hl7-org:v3"><setId root="038cf2ba-ad08-4981-a3cc-bff0e4ba5dfb" />
+   <versionNumber value="6" />
+   <ingredient classCode="ACTIB">
+                           <quantity>
+                              <numerator value="2" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="4S9CL2DY2H" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BRIMONIDINE TARTRATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="E6GNX3HHTE" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>BRIMONIDINE</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="ACTIM">
+                           <quantity>
+                              <numerator value="5" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="P8Y54F701R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>TIMOLOL MALEATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="5JKY92S7BR" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TIMOLOL ANHYDROUS</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="F5UM2KM3W7" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BENZALKONIUM CHLORIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="593YOG76RN" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, MONOBASIC, MONOHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="70WT22SF4B" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, DIBASIC, HEPTAHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="059QF0KO0R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>WATER</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="QTT17582CB" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>HYDROCHLORIC ACID</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="55X04QC32I" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM HYDROXIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="ACTIB">
+                           <quantity>
+                              <numerator value="2" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="4S9CL2DY2H" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BRIMONIDINE TARTRATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="E6GNX3HHTE" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>BRIMONIDINE</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="ACTIM">
+                           <quantity>
+                              <numerator value="5" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="P8Y54F701R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>TIMOLOL MALEATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="5JKY92S7BR" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TIMOLOL ANHYDROUS</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="F5UM2KM3W7" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BENZALKONIUM CHLORIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="593YOG76RN" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, MONOBASIC, MONOHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="70WT22SF4B" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, DIBASIC, HEPTAHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="059QF0KO0R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>WATER</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="QTT17582CB" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>HYDROCHLORIC ACID</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="55X04QC32I" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM HYDROXIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="ACTIB">
+                           <quantity>
+                              <numerator value="2" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="4S9CL2DY2H" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BRIMONIDINE TARTRATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="E6GNX3HHTE" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>BRIMONIDINE</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="ACTIM">
+                           <quantity>
+                              <numerator value="5" unit="mg" />
+                              <denominator value="1" unit="mL" />
+                           </quantity>
+                           <ingredientSubstance>
+                              <code code="P8Y54F701R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>TIMOLOL MALEATE</name>
+                              <activeMoiety>
+                                 <activeMoiety>
+                                    <code code="5JKY92S7BR" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TIMOLOL ANHYDROUS</name>
+                                 </activeMoiety>
+                              </activeMoiety>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="F5UM2KM3W7" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>BENZALKONIUM CHLORIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="593YOG76RN" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, MONOBASIC, MONOHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="70WT22SF4B" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM PHOSPHATE, DIBASIC, HEPTAHYDRATE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="059QF0KO0R" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>WATER</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="QTT17582CB" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>HYDROCHLORIC ACID</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        <ingredient classCode="IACT">
+                           <ingredientSubstance>
+                              <code code="55X04QC32I" codeSystem="2.16.840.1.113883.4.9" />
+                              <name>SODIUM HYDROXIDE</name>
+                           </ingredientSubstance>
+                        </ingredient>
+                        </document>

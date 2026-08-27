@@ -204,8 +204,99 @@ def iter_sections(
             yield seen, extract_section(record)
 
 
+@dataclass(frozen=True)
+class LabelIdentity:
+    """One label, WITHOUT its prose -- the shape the orchestrator holds 68,550 of.
+
+    Splitting this from the wording text is not tidiness. The corpus is 2.50
+    labels to one wording, so keeping the section on every label would hold ~260
+    MB of duplicated prose in memory to say 27,406 distinct things -- and, more
+    importantly, **it keeps the two units the 2026-08-13 evaluation conflated
+    physically apart**: labels are counted in one structure, wordings in another.
+    """
+
+    set_id: str
+    version: str
+    effective_time: str | None
+    product_type: str | None
+    uniis: tuple[str, ...]
+    text_key: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class Corpus:
+    """One pass over openFDA, split by unit and forced to add up.
+
+    `records` is the DENOMINATOR and is carried because "68,550 of 262,032" says
+    something "68,550" alone does not -- a reader that silently skipped a
+    partition would otherwise look identical to one that read them all.
+    """
+
+    records: int
+    labels: tuple[LabelIdentity, ...]
+    #: text_key -> the NORMALISED text. The only place prose lives, one copy per
+    #: distinct wording.
+    wordings: Mapping[str, str]
+    #: text_key -> how many labels carry it. The de-duplication factor.
+    label_counts: Mapping[str, int]
+
+    def __post_init__(self) -> None:
+        if len(self.labels) > self.records:
+            raise ValueError(
+                f"{len(self.labels)} sections from {self.records} records: a "
+                "label cannot carry the section more than once")
+        if len(self.wordings) > len(self.labels):
+            raise ValueError(
+                f"{len(self.wordings)} distinct wordings from "
+                f"{len(self.labels)} labels: de-duplication cannot ADD wordings")
+        if self.wordings.keys() != self.label_counts.keys():
+            raise ValueError(
+                "the wording texts and the label counts describe different "
+                "wordings; one of the two passes dropped a key")
+        tallied = sum(self.label_counts.values())
+        if tallied != len(self.labels):
+            raise ValueError(
+                f"the per-wording label counts sum to {tallied}, but "
+                f"{len(self.labels)} labels were read -- every label carries "
+                "exactly one wording")
+
+
+def read_corpus(partitions: Sequence[str | pathlib.Path]) -> Corpus:
+    """Read every openFDA partition once and split the result by unit.
+
+    Refuses nothing: the floor check is `check_something_was_read`, deliberately
+    separate so the orchestrator can run it BEFORE opening a run row, and so a
+    caller measuring a corpus is not forced through a guard about clearing a
+    projection it is not going to clear.
+    """
+    labels: list[LabelIdentity] = []
+    wordings: dict[str, str] = {}
+    label_counts: dict[str, int] = {}
+    records = 0
+    for records, section in iter_sections(partitions):
+        if section is None:
+            continue
+        key = section.text_key
+        labels.append(LabelIdentity(
+            set_id=section.set_id,
+            # NOT NULL in db/051, and measured populated on 100% of the corpus.
+            # `or ""` would hide a release that stopped publishing it behind a
+            # blank key -- the exact shape db/050 refuses on `upstream_key`, and
+            # the table's CHECK refuses it here too.
+            version=section.version,
+            effective_time=section.effective_time,
+            product_type=section.product_type,
+            uniis=section.uniis,
+            text_key=key))
+        if key not in wordings:
+            wordings[key] = section.normalised_text
+        label_counts[key] = label_counts.get(key, 0) + 1
+    return Corpus(records=records, labels=tuple(labels),
+                  wordings=wordings, label_counts=label_counts)
+
+
 def check_something_was_read(
-    sections: Sequence[LabelSection], *, records: int
+    sections: Sequence[object], *, records: int
 ) -> None:
     """Refuse a corpus in which no label carries the section.
 

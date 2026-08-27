@@ -1,0 +1,102 @@
+<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="urn:hl7-org:v3"><setId root="79943fe6-1249-4074-9aed-c53937820d0f" />
+   <versionNumber value="2" />
+   <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator unit="mg" value="40" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="FYS6T7F842" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ADALIMUMAB</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="FYS6T7F842" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ADALIMUMAB</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="0.04" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="7FLD91C86K" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>EDETATE DISODIUM</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="0.63" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="4QD397987E" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HISTIDINE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="2.51" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="1D5Q932XM6" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HISTIDINE HCL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="0.16" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="AE28F7PNPL" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>METHIONINE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="0.16" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="6OZP39ZG8H" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYSORBATE 80</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <quantity>
+                                    <numerator unit="mg" value="68" />
+                                    <denominator unit="mL" value="0.8" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="C151H8M554" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SUCROSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="059QF0KO0R" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>WATER</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator unit="mL" value="70" />
+                                    <denominator unit="mL" value="100" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="ND2M416302" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ISOPROPYL ALCOHOL</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="ND2M416302" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ISOPROPYL ALCOHOL</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              </document>
