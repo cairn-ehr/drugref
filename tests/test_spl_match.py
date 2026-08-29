@@ -230,3 +230,105 @@ def test_moiety_occurrences_are_in_document_order_with_their_offsets():
     occurrences = spl_match.moiety_occurrences(
         spl_match.find_matches(text, _vocab("warfarin", "rifampin")))
     assert [(o.char_start, o.char_end) for o in occurrences] == [(0, 8), (14, 22)]
+
+
+# --------------------------------------------------------------------------
+# THE TYPE'S OWN INVARIANTS, and the two rules no fixture reached
+# --------------------------------------------------------------------------
+
+def test_an_entry_whose_kind_and_uuid_DISAGREE_is_refused():
+    """⇒ THE MATCHER RECOGNISED THE NAME AND THEN YIELDED NOTHING FOR IT.
+
+    `moiety_occurrences` skips `entry.moiety_uuid is None`, which ABSORBS a
+    malformed moiety entry rather than reporting it: the drug matches, and then
+    contributes no occurrence, no pair and no evidence, invisibly. Only a
+    corpus-wide floor could ever notice, and only if the whole vocabulary were
+    affected.
+    """
+    with pytest.raises(ValueError, match="yields nothing for it"):
+        spl_match.Entry(kind="moiety", key="warfarin", display="warfarin")
+    with pytest.raises(ValueError, match="yields nothing for it"):
+        spl_match.Entry(kind="suppress", key="lead to", display="lead to",
+                        moiety_uuid="not-none")
+    with pytest.raises(ValueError, match="is not one of"):
+        spl_match.Entry(kind="invented", key="x", display="x")
+
+
+def test_entries_are_KEYWORD_ONLY_so_kind_and_key_cannot_transpose():
+    """Three same-typed strings in a row. `Entry("warfarin", "moiety", ...)`
+    used to construct cleanly, folding a vocabulary key of "warfarin" under a
+    kind of "warfarin" -- `spl_evidence`'s stated rule, not applied here."""
+    with pytest.raises(TypeError):
+        spl_match.Entry("moiety", "warfarin", "warfarin")
+
+
+def test_a_shorter_name_NESTED_AT_A_NON_INITIAL_POSITION_is_not_counted_twice():
+    """⇒ THE RULE THE PAIR FLOOR RESTS ON, AND NO FIXTURE CONTAINED IT.
+
+    `index = hit.token_end` -> `index = index + 1` left the whole suite green.
+    The test named for this nests `ferrous` inside `ferrous sulfate` only at
+    token position 0, where advancing by a single token skips the nested name
+    anyway. Nothing anywhere nested a shorter name at a LATER position, which is
+    where the mutant double-counts -- and rule 3 of this module's docstring says
+    double-counting inflates the pair yield directly.
+    """
+    vocab = spl_match.build_vocabulary([
+        spl_match.Entry(kind="moiety", key="calcium carbonate",
+                        display="calcium carbonate", moiety_uuid="u1"),
+        spl_match.Entry(kind="moiety", key="carbonate", display="carbonate",
+                        moiety_uuid="u2")])
+    matches = spl_match.find_matches("avoid calcium carbonate here", vocab)
+    assert [(m.entry.display, m.char_start, m.char_end) for m in matches] == [
+        ("calcium carbonate", 6, 23)]
+
+
+def test_suppression_consumes_a_span_nested_at_a_non_initial_position():
+    """The same rule, on the half that matters clinically: a suppression term
+    only works if it CONSUMES the span the short name sits inside."""
+    vocab = spl_match.build_vocabulary([
+        spl_match.Entry(kind="suppress", key="serotonin syndrome",
+                        display="serotonin syndrome"),
+        spl_match.Entry(kind="moiety", key="syndrome", display="syndrome",
+                        moiety_uuid="u1")])
+    matches = spl_match.find_matches("risk of serotonin syndrome here", vocab)
+    assert spl_match.moiety_occurrences(matches) == ()
+
+
+def test_the_vocabulary_reaches_a_long_name_WHATEVER_ORDER_it_was_built_in():
+    """⇒ `max_tokens_by_first` IS AN OPTIMISATION ONLY IF THIS HOLDS.
+
+    `max(by_first.get(key[0], 0), len(key))` -> `= len(key)` left every test
+    green, and the mutant is order-dependent: with the long name first,
+    `by_first["warfarin"]` ends at 1 and "warfarin sodium clathrate" becomes
+    unreachable. `build_vocabulary` is fed `load_registry`'s dict over 19,438
+    names in arbitrary order, so a regression here silently drops multi-token
+    registry names depending on dict ordering.
+    """
+    entries = [
+        spl_match.Entry(kind="moiety", key="warfarin sodium clathrate",
+                        display="warfarin sodium clathrate", moiety_uuid="u1"),
+        spl_match.Entry(kind="moiety", key="warfarin", display="warfarin",
+                        moiety_uuid="u2")]
+    for ordered in (entries, entries[::-1]):
+        vocab = spl_match.build_vocabulary(ordered)
+        matches = spl_match.find_matches(
+            "give warfarin sodium clathrate now", vocab)
+        assert [m.entry.display for m in matches] == [
+            "warfarin sodium clathrate"], ordered
+
+
+def test_a_vocabulary_whose_derived_maps_LIE_is_refused():
+    """`max_tokens` and `max_tokens_by_first` are derived from `by_key` and
+    stored beside it. A hand-built vocabulary with a short reach under-matches
+    SILENTLY -- fewer matches, no error -- and "matched nothing" is exactly what
+    this slice's floors spend a 19.3 GB scan to detect."""
+    entry = spl_match.Entry(kind="moiety", key="calcium carbonate",
+                            display="calcium carbonate", moiety_uuid="u1")
+    good = spl_match.build_vocabulary([entry])
+
+    with pytest.raises(ValueError, match="can never be reached"):
+        spl_match.Vocabulary(by_key=good.by_key, max_tokens=good.max_tokens,
+                             max_tokens_by_first={})
+    with pytest.raises(ValueError, match="longest key holds"):
+        spl_match.Vocabulary(by_key=good.by_key, max_tokens=1,
+                             max_tokens_by_first=good.max_tokens_by_first)

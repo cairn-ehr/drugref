@@ -19,9 +19,10 @@ ground truth to be measured against before it ships.
 **THE ROUTES ARE EXCLUSIVE BY CONSTRUCTION**, and `db/051`'s
 `spl_label_subject_complete` CHECK depends on it: one label, one route, and **the
 salt is never a second subject beside the moiety**. Blending them published
-31,618 pairs where the exclusive rule gives 29,258 -- drugref registers a salt as
-its own moiety with its own live UNII claim, so a salt product paired against
-every partner twice, on 56.7% of resolvable DailyMed labels.
+31,618 pairs where the exclusive rule gave 29,258 in the SAME comparison --
+drugref registers a salt as its own moiety with its own live UNII claim, so a
+salt product paired against every partner twice, on 56.7% of resolvable DailyMed
+labels.
 """
 from __future__ import annotations
 
@@ -38,16 +39,21 @@ from drugref.ingest import spl_dailymed
 SUBJECT_ROUTES = (
     # openFDA's own `openfda.unii` block. 27,494 labels.
     "openfda_unii",
-    # SPL `<activeMoiety>` under an ACTIVE ingredient in DailyMed's XML. 6,498.
+    # SPL `<activeMoiety>` under an ACTIVE ingredient in DailyMed's XML. 10,555.
     "dailymed_active_moiety",
     # The SALT only -- issue 67, counted apart so it cannot hide inside the
     # recovery figure: it needs a salt-to-base step drugref does not have, so
-    # folding it in would promise a route that is not built. 16 labels.
+    # folding it in would promise a route that is not built. 23 labels.
     "dailymed_active_substance",
-    # The label is not in the current DailyMed Human Rx release. 19,862 -- and it
+    # The label is not in the current DailyMed Human Rx release. 30,386 -- and it
     # may be in tomorrow's, which is why *absence is a population, not a bug*.
     "absent_from_dailymed",
-    # Present, read, and still unkeyable.
+    # Present, read, and still unkeyable. **92 labels.** The design round
+    # predicted 14,680 here, because its probe filed 14,455 labels it had never
+    # READ into a bucket whose definition is "present, read, and still
+    # unkeyable". Scanned for real, the recovery register is 99.7% a RELEASE gap
+    # and 0.3% a registry gap -- the opposite of what that table would have
+    # anyone plan for. See the 2026-08-27 results record, section 3.
     "unresolved",
 )
 
@@ -116,11 +122,17 @@ def resolve_subject(
        together would republish a fact about a RELEASE as a fact about drugref's
        registry coverage.
 
-    Note that step 2 also catches the **200 labels carrying a UNII drugref does
-    not hold**: they offer a UNII, it resolves to nothing, and they therefore have
-    no subject. The subject-recovery probe's classifiers branched on PRESENCE and
-    filed them as keyed, which is one of the two reasons this slice's pair count
-    is a floor rather than a target.
+    Note that step 1 branches on RESOLUTION, not presence, which is what catches
+    the **200 labels carrying a UNII drugref does not hold**: they offer a UNII,
+    it resolves to nothing, and step 1 therefore declines them. They do NOT stop
+    there -- they fall through to DailyMed like any other unkeyed label, and many
+    of them get a subject that way. The subject-recovery probe's classifiers
+    branched on PRESENCE and filed them as already keyed, which is one of the two
+    reasons this slice's pair count is a floor rather than a target.
+
+    (The sentence this replaces said they "therefore have no subject", which
+    contradicted the fall-through two lines below it and described the probe's
+    classification rather than this function's.)
     """
     openfda_hit = _resolved(openfda_uniis, known_uniis)
     if openfda_hit:

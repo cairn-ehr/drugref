@@ -15,6 +15,10 @@ are the ones the 5c.3 measurement rounds actually hit:
   records, so a presence check reports full coverage;
 * reformatting is not a new statement, so the wording key normalises whitespace.
 """
+import json
+
+import zipfile
+
 import pytest
 
 from drugref.ingest import spl
@@ -168,3 +172,31 @@ def test_a_corpus_carrying_no_section_is_REFUSED_not_ingested_as_empty():
 
 def test_the_floor_check_passes_on_a_corpus_that_did_carry_sections():
     spl.check_something_was_read([spl.extract_section(_record())], records=10)
+
+
+def test_a_partition_with_no_results_key_is_REFUSED_not_read_as_empty(tmp_path):
+    """⇒ THE ONE QUIET BRANCH IN AN OTHERWISE LOUD READER.
+
+    `(member,) = archive.namelist()` raises on a repacked zip and `json.load`
+    raises on a truncated one, but `document.get("results", [])` turned a
+    changed export shape -- or a half-written download -- into zero records and
+    no complaint. `--openfda` is a glob, so a partial directory is accepted, and
+    `check_something_was_read` only fires when EVERY partition yields nothing.
+    The missing records would land in the denominator and lower every rate.
+    """
+    path = tmp_path / "drug-label-0001-of-0001.json.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("drug-label-0001-of-0001.json",
+                         json.dumps({"meta": {"results": {"total": 0}}}))
+    with pytest.raises(ValueError, match="carries no 'results' key"):
+        list(spl.iter_partition_records(path))
+
+
+def test_a_partition_with_an_EMPTY_results_list_is_read_as_empty(tmp_path):
+    """The control, and the distinction that matters: openFDA saying "no records"
+    is a fact about the export; a missing key is a fact about the download."""
+    path = tmp_path / "drug-label-0001-of-0001.json.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("drug-label-0001-of-0001.json",
+                         json.dumps({"results": []}))
+    assert list(spl.iter_partition_records(path)) == []

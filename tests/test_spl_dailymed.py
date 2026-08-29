@@ -20,6 +20,9 @@ confident number pointing the wrong way:
 4. DailyMed ships successive VERSIONS of one label sharing a `set_id`, so
    counting documents over-counts labels.
 """
+import io
+import zipfile
+
 import pytest
 
 from drugref.ingest import spl_dailymed as dm
@@ -246,3 +249,171 @@ def test_the_cheap_byte_prefilter_accepts_both_quote_styles():
     assert dm.set_id_in_bytes(b"<setId root='SET-9'/>") == "SET-9"
     assert dm.set_id_in_bytes(b'<setId  root = "SET-9" />') == "SET-9"
     assert dm.set_id_in_bytes(b"<setId/>") is None
+
+
+# --------------------------------------------------------------------------
+# THE READER ITSELF -- `iter_release_labels` and `scan_release`
+# --------------------------------------------------------------------------
+#
+# ⇒ NEITHER FUNCTION HAD A DIRECT TEST. Six mutations survived them, including
+# never incrementing `documents_read` and dropping the `.xml` filter entirely.
+# The end-to-end fixture could not see any of it: every fixture part held
+# well-formed member zips with exactly one XML and one matching setId, so all
+# three drop counters were pinned at zero BY CONSTRUCTION. The suite reproduced
+# the release's measured zeros without ever showing a counter could move, which
+# is db/050's vacuous-guard finding at the one place the design's
+# `absent_from_dailymed` commitment rests on.
+
+def _part(tmp_path, members, *, name="dm_spl_release_human_rx_part1.zip"):
+    """A release part: a zip of member zips, each holding whatever `members` says.
+
+    `members` maps an outer member name to a dict of inner name -> bytes, so a
+    test can build the shapes the real release is NOT known to contain -- a
+    member with no XML, one with several, a plain file that is not a zip at all.
+    """
+    path = tmp_path / name
+    with zipfile.ZipFile(path, "w") as outer:
+        for outer_name, inner_files in members.items():
+            if inner_files is None:                    # not a member zip at all
+                outer.writestr(outer_name, b"not a zip")
+                continue
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as inner:
+                for inner_name, payload in inner_files.items():
+                    inner.writestr(inner_name, payload)
+            outer.writestr(outer_name, buffer.getvalue())
+    return str(path)
+
+
+def test_iter_release_labels_yields_the_sole_xml_of_each_member(tmp_path):
+    """The control. Every refusal below could otherwise be a reader that yields
+    nothing at all."""
+    part = _part(tmp_path, {"a.zip": {"a.xml": _document("", set_id="SET-1"),
+                                      "a.jpg": b"\xff\xd8"}})
+    assert [name for name, _ in dm.iter_release_labels(part)] == ["a.zip"]
+
+
+def test_a_member_the_reader_declines_is_REPORTED_not_silently_skipped(tmp_path):
+    """⇒ THE HOLE. These three branches were bare `continue`s inside the
+    generator, upstream of every counter `scan_release` keeps -- so a declined
+    member reached neither `documents_read` nor any `ScanResult` field, and
+    `check_scan_dropped_nothing` could not refuse what it could not see. Each
+    one reappears three stages later as `absent_from_dailymed`.
+    """
+    part = _part(tmp_path, {
+        "good.zip": {"a.xml": _document("", set_id="SET-1")},
+        "manifest.txt": None,                          # not a member zip
+        "images_only.zip": {"a.jpg": b"\xff\xd8"},     # no XML
+        "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"},
+    })
+    skips = []
+    read = [name for name, _ in dm.iter_release_labels(part, on_skip=(
+        lambda member, reason: skips.append((member, reason))))]
+
+    assert read == ["good.zip"]
+    assert sorted(skips) == [
+        ("ambiguous.zip", "several_xml_members"),
+        ("images_only.zip", "no_xml_member"),
+        ("manifest.txt", "not_a_member_zip")]
+
+
+def test_a_member_with_SEVERAL_xml_files_is_refused_not_arbitrarily_picked(
+        tmp_path):
+    """`xml_names[0]` is zip member order, and this module's own
+    `dedupe_by_set_id` argues at length that member order is not a rule. Reading
+    the wrong document would attach a subject to the wrong wording silently."""
+    part = _part(tmp_path, {"m.zip": {"first.xml": _document("", set_id="SET-1"),
+                                      "second.xml": _document("", set_id="SET-2")}})
+    assert list(dm.iter_release_labels(part)) == []
+
+
+def test_scan_release_counts_every_member_of_the_part(tmp_path):
+    """The counters have to MOVE, not merely exist. This is the fixture the
+    end-to-end corpus structurally could not be."""
+    part = _part(tmp_path, {
+        "hit.zip": {"a.xml": _document("", set_id="SET-1")},
+        "miss.zip": {"a.xml": _document("", set_id="SET-99")},  # not targeted
+        "nosetid.zip": {"a.xml": b'<document xmlns="urn:hl7-org:v3"/>'},
+        # Carries a targeted setId in its BYTES so it passes the cheap
+        # pre-filter, then fails to parse -- the one path that reaches
+        # `dropped_unreadable`, and the reason the pre-filter is never the
+        # authority.
+        "truncated.zip": {"a.xml": b'<document xmlns="urn:hl7-org:v3">'
+                                   b'<setId root="SET-1"/>'},
+        "manifest.txt": None,
+        "images_only.zip": {"a.jpg": b"\xff\xd8"},
+        "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"},
+    })
+    scan = dm.scan_release([part], {"SET-1"})
+
+    assert set(scan.found) == {"SET-1"}
+    assert scan.documents_read == 4           # only members that yielded an XML
+    assert scan.dropped_no_set_id_bytes == 1
+    assert scan.dropped_unreadable == 1
+    assert scan.dropped_no_xml_member == 1
+    assert scan.dropped_several_xml_members == 1
+    assert scan.skipped_not_a_member_zip == 1
+    assert scan.total_dropped == 4            # the non-zip member is NOT a drop
+
+
+def test_scan_release_drops_a_document_whose_tree_DISAGREES_with_the_prefilter(
+        tmp_path):
+    """An SPL `<relatedDocument>` names the label it replaces, so the byte regex
+    can select a setId the document's own tree does not carry.
+
+    The `<relatedDocument>` is written FIRST here on purpose: `set_id_in_bytes`
+    takes the first `<setId root=` in the file, and the whole reason the tree is
+    re-read is that document order is not guaranteed to put the document's own
+    setId first. A fixture that relied on it would be asserting the assumption
+    rather than the guard.
+    """
+    body = ('<relatedDocument><setId root="SET-TARGET"/></relatedDocument>'
+            '<setId root="SET-REAL"/>')
+    xml = f'<document xmlns="urn:hl7-org:v3">{body}</document>'.encode()
+    scan = dm.scan_release([_part(tmp_path, {"m.zip": {"a.xml": xml}})],
+                           {"SET-TARGET"})
+    assert scan.dropped_prefilter_disagreed == 1
+    assert scan.found == {}
+
+
+def test_a_document_declaring_an_ENTITY_is_refused_rather_than_expanded():
+    """⇒ SPL IS THIRD-PARTY CONTENT: NLM publishes labeling "submitted to the
+    FDA by companies", and `ET.fromstring` expands internal entities.
+
+    Measured before the guard: five levels of nesting expand to 100 KB in under
+    3 ms, each further level multiplying by ten. External entities are already
+    refused by the expat build, so there is no XXE -- the exposure is memory, and
+    a document a few lines long can exhaust it. Valid SPL declares no entities,
+    so the whole class is refused rather than bounded.
+
+    `None` files it under `dropped_unreadable`, which `check_scan_dropped_nothing`
+    refuses the run over -- before the run row exists.
+    """
+    bomb = (b'<!DOCTYPE d [<!ENTITY a "AAAAAAAAAA">'
+            b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>'
+            b'<document xmlns="urn:hl7-org:v3"><setId root="SET-1"/>'
+            b'<x>&b;</x></document>')
+    assert dm.extract_subject_uniis(bomb) is None
+
+
+def test_the_literal_text_ENTITY_IN_A_COMMENT_does_not_drop_a_valid_label():
+    """⇒ THE GUARD IS MATCHED ON THE DOCTYPE, NOT ON `<!ENTITY` ANYWHERE.
+
+    An entity declaration is only legal inside a DOCTYPE's internal subset; the
+    literal text `<!ENTITY` is legal anywhere a comment is. Measured: `<!-- <!ENTITY
+    a "x" -->` parses cleanly, so the first version of this guard -- a bare byte
+    search for `<!ENTITY` -- would have dropped a valid document. And because a
+    drop here is COUNTED, one false positive anywhere in 41,056 documents would
+    abort the entire ingest.
+    """
+    commented = (b'<!-- <!ENTITY a "x" -->'
+                 b'<document xmlns="urn:hl7-org:v3"><setId root="SET-1"/></document>')
+    found = dm.extract_subject_uniis(commented)
+    assert found is not None and found.set_id == "SET-1"
+
+
+def test_an_ordinary_document_is_still_read_after_the_entity_guard():
+    """The control: a guard that refused everything would look identical in the
+    drop counters, and `absent_from_dailymed` would absorb the whole release."""
+    found = dm.extract_subject_uniis(_document("", set_id="SET-1"))
+    assert found is not None and found.set_id == "SET-1"

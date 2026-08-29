@@ -174,17 +174,34 @@ def extract_section(
 def iter_partition_records(path: str | pathlib.Path) -> Iterator[dict]:
     """Yield every record from one openFDA `*.json.zip` partition.
 
-    Each partition is a single JSON document holding 20,000 records under
-    `results`. At ~633 MB uncompressed that is comfortably loadable one partition
-    at a time, so this deliberately does NOT pull in a streaming JSON parser --
-    one fewer dependency to licence-check (CLAUDE.md rule 6) for a gain the
-    measurement says is not needed.
+    Each partition is a single JSON document holding up to ~20,000 records under
+    `results` (14 partitions carry 262,032 records between them, so the figure is
+    a ceiling openFDA chooses rather than a count). At ~633 MB uncompressed that
+    is comfortably loadable one partition at a time, so this deliberately does
+    NOT pull in a streaming JSON parser -- one fewer dependency to licence-check
+    (CLAUDE.md rule 6) for a gain the measurement says is not needed.
+
+    **A DOCUMENT WITH NO `results` KEY IS REFUSED, NOT READ AS EMPTY.** This was
+    `document.get("results", [])`, which is the one quiet branch in an otherwise
+    loud reader: `(member,) = archive.namelist()` raises on a repacked zip and
+    `json.load` raises on a truncated one, but a partition whose shape openFDA
+    changed -- or a half-written download -- yielded zero records and said
+    nothing. `--openfda` is a GLOB, so a partially-downloaded directory is
+    accepted silently, and `check_something_was_read` only fires when EVERY
+    partition produces nothing.
     """
     with zipfile.ZipFile(path) as archive:
         (member,) = archive.namelist()
         with archive.open(member) as handle:
             document = json.load(handle)
-    yield from document.get("results", [])
+    if "results" not in document:
+        raise ValueError(
+            f"openFDA partition {pathlib.Path(path).name} carries no 'results' "
+            f"key (top-level keys: {sorted(document)!r}). Either the download is "
+            "incomplete or the export's shape changed; reading it as zero "
+            "records would put the difference into the section denominator and "
+            "quietly lower every rate this ingest reports.")
+    yield from document["results"]
 
 
 def iter_sections(
@@ -216,7 +233,12 @@ class LabelIdentity:
     """
 
     set_id: str
-    version: str
+    #: `str | None`, not `str`: openFDA omits `version` on some records and
+    #: `LabelSection.version` is already nullable. It reaches `COPY` as NULL
+    #: and db/051 refuses it with NOT NULL -- loudly, which is the intent --
+    #: but the annotation used to say `str`, and since nothing type-checks
+    #: this repo the annotation is the only statement of intent there is.
+    version: str | None
     effective_time: str | None
     product_type: str | None
     uniis: tuple[str, ...]

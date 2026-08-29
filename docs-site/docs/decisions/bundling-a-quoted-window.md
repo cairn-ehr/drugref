@@ -75,8 +75,15 @@ regardless, because those columns are clear under either publisher's reading. A 
 for one of them has the `set_id` and can fetch the label from either publisher.
 
 **It is re-decidable without re-ingesting.** The share is one constant in one pure module and one expression
-in one trigger, and a test drives both over a range of lengths and compares them — so a future determination
-that says 15%, or 0%, is a migration and a re-run rather than an argument about what the code actually does.
+in one trigger, and a test reads the trigger's own definition back out of the database catalog and compares it
+against the constant — so a future determination that says 15%, or 0%, is a migration and a re-run rather than
+an argument about what the code actually does.
+
+That test used to run the expression with the share *retyped inside the test*, which made it a third home for
+the number rather than a check on the other two: changing the trigger alone left it, and every other test over
+the budget, passing. It was corrected in the review of the ingest round. The point is worth keeping in a record
+of decisions, because the decision here is not merely *25%* — it is *25% enforced where it cannot be quietly
+disagreed with*, and a guard nothing has watched refuse is not yet enforcement.
 
 **The cost is that the quoted context is not always the sentence.** ±60 characters can begin mid-clause. That
 was accepted deliberately: the alternative that reads best is the one that stores 82.7% of the document.

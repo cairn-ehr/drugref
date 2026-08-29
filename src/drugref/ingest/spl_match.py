@@ -12,9 +12,12 @@ section name, and exactly where*.
 
 **THE RULE IS THE SHIPPED RESOLVER'S, NOT A MORE GENEROUS VARIANT** -- exact,
 case-insensitive, contiguous, whole-token, longest-match-wins, `fold`-normalised.
-The measured 29,258-pair floor rests on that rule, and a matcher that skipped
+`spl_checks.MEASURED_PAIR_FLOOR` rests on that rule, and a matcher that skipped
 words would produce spans it cannot quote back to a reader, which the 25% quote
-budget is computed over.
+budget is computed over. The floor itself was measured with a vocabulary that
+ALSO held 8,534 class entries; dropping them moved the drug x drug yield by +193
+pairs, so it is a floor this matcher clears with room rather than a figure this
+matcher produced -- see `KIND_CLASS`.
 
 Three rules govern matching, and each exists to stop a specific way of inflating
 the yield:
@@ -51,17 +54,36 @@ _TOKEN = re.compile(r"[A-Za-z0-9]+")
 #: The shipped negative vocabulary, as a package data file.
 SUPPRESSION_DATA = "spl_suppression_terms.txt"
 
-#: The two entry kinds. A `suppress` entry names a longer term that is not an
-#: entity at all; see `Entry`.
+#: The entry kinds. A `suppress` entry names a longer term that is not an entity
+#: at all; see `Entry`.
 KIND_MOIETY = "moiety"
 KIND_SUPPRESS = "suppress"
+#: A drug CLASS name. **The shipped ingest offers none**, and that exclusion is
+#: measured rather than assumed: `tools/spl_class_vocabulary_delta.py` adds the
+#: 8,534 class entries back and reproduces the design round's 20,554 pairs over
+#: 26,721 wordings exactly, because longest-match-wins had class names consuming
+#: 11,169 moiety spans. Deferring them RAISED the drug x drug yield by 193 pairs.
+#: The kind is named here so that tool builds the same type the matcher does --
+#: and so `Entry`'s check below can say a class entry carries no `moiety_uuid`
+#: rather than treating the whole kind as malformed.
+KIND_CLASS = "class"
+
+#: Every kind `Entry` admits. Only `KIND_MOIETY` carries a `moiety_uuid`.
+ENTRY_KINDS = (KIND_MOIETY, KIND_SUPPRESS, KIND_CLASS)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Entry:
     """One name offered to the matcher.
 
-    `kind` is `moiety` or `suppress`.
+    **KEYWORD-ONLY**, on `spl_evidence`'s stated rule: three same-typed strings
+    in a row means `Entry("warfarin", "moiety", "warfarin")` -- kind and key
+    transposed -- constructs cleanly and folds a vocabulary key of "warfarin"
+    under a kind of "warfarin", which `moiety_occurrences` then skips silently.
+
+    `kind` is one of `ENTRY_KINDS`. The shipped ingest offers `moiety` and
+    `suppress`; `class` exists for the measurement tool that quantifies what
+    excluding classes bought.
 
     A **suppress** entry names a longer term that is not an entity: `prothrombin
     time` is a lab test, `serotonin syndrome` is an adverse event, `lead to` is a
@@ -85,6 +107,26 @@ class Entry:
     display: str
     moiety_uuid: str | None = None
 
+    def __post_init__(self) -> None:
+        """`kind` and `moiety_uuid` are a MUTUAL-CONSISTENCY PAIR, not two fields.
+
+        A `moiety` entry with no uuid matched, and then contributed no
+        occurrence, no pair and no evidence -- `moiety_occurrences` skips
+        `entry.moiety_uuid is None`, which ABSORBS the malformed entry rather
+        than reporting it. The drug is recognised and then silently vanishes, and
+        only a corpus-wide floor could ever notice. Same shape as `db/051`'s
+        `spl_label_subject_complete`, which this slice already uses twice.
+        """
+        if self.kind not in ENTRY_KINDS:
+            raise ValueError(
+                f"entry kind {self.kind!r} is not one of {ENTRY_KINDS}")
+        if (self.kind == KIND_MOIETY) != (self.moiety_uuid is not None):
+            raise ValueError(
+                f"entry {self.key!r} is a {self.kind!r} carrying "
+                f"moiety_uuid={self.moiety_uuid!r}: a moiety entry names a "
+                "moiety and a suppression entry does not, or the matcher "
+                "recognises the name and then yields nothing for it")
+
 
 @dataclass(frozen=True)
 class Token:
@@ -99,8 +141,11 @@ class Token:
 class Vocabulary:
     """Folded names indexed by their token tuple.
 
-    `max_tokens` bounds the n-gram window at match time, so the scan costs
-    O(tokens x max_tokens) rather than O(tokens^2).
+    `max_tokens` is the longest key in the vocabulary, kept for callers that want
+    the bound as a single number. **It is NOT what bounds the scan** -- the
+    sentence here used to say it was, carried over unchanged from
+    `tools/spl_entity_match.py`, where it is true. `_longest_at` reads only
+    `max_tokens_by_first`, and nothing under `src/` reads `max_tokens` at all.
 
     `max_tokens_by_first` bounds it AGAIN, per starting token, and that is what
     makes a full-corpus run finish: one long registry name -- and drugref holds
@@ -117,6 +162,32 @@ class Vocabulary:
     by_key: Mapping[tuple[str, ...], tuple[Entry, ...]]
     max_tokens: int
     max_tokens_by_first: Mapping[str, int]
+
+    def __post_init__(self) -> None:
+        """Both maps are DERIVED from `by_key`, and stored beside it.
+
+        `build_vocabulary` computes them correctly; nothing said so. A vocabulary
+        built by hand -- a future test, a second builder -- with a short
+        `max_tokens_by_first` UNDER-MATCHES SILENTLY, returning fewer matches
+        with no error, and "matched nothing" is precisely the failure this
+        slice's floors exist to catch at enormous expense. O(19,000) once,
+        against a 19.3 GB scan.
+        """
+        if not self.by_key:
+            return
+        longest = max(len(key) for key in self.by_key)
+        if self.max_tokens != longest:
+            raise ValueError(
+                f"max_tokens is {self.max_tokens} but the longest key holds "
+                f"{longest} token(s)")
+        for key in self.by_key:
+            reach = self.max_tokens_by_first.get(key[0], 0)
+            if reach < len(key):
+                raise ValueError(
+                    f"max_tokens_by_first[{key[0]!r}] is {reach}, so the "
+                    f"{len(key)}-token key {key!r} can never be reached: the "
+                    "map is an optimisation only while it reaches every entry "
+                    "max_tokens alone would")
 
 
 @dataclass(frozen=True)

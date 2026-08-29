@@ -13,12 +13,20 @@ pass is 19.3 GB long:
   4. scan DailyMed once, and REFUSE if it dropped anything for a reading reason;
   5. only now open the run, clear this source's rows and write.
 
-**EVERY REFUSAL HAPPENS BEFORE THE RUN ROW EXISTS**, which is stricter than
-`drugcentral_run`'s ordering and for the same reason it gives: a refusal must
-leave the database exactly as it was, and an `ingest_run` with `finished_at NULL`
-is not "exactly as it was". Here the scan takes tens of minutes, so a run row
-opened before it would sit unfinished for the whole of a pass that might yet
-refuse.
+**EVERY REFUSAL IN STEPS 1-4 HAPPENS BEFORE THE RUN ROW EXISTS**, which is
+stricter than `drugcentral_run`'s ordering and for the same reason it gives: a
+refusal must leave the database exactly as it was, and an `ingest_run` with
+`finished_at NULL` is not "exactly as it was". Here the scan takes tens of
+minutes, so a run row opened before it would sit unfinished for the whole of a
+pass that might yet refuse.
+
+**THE CHECKS IN STEP 5 ARE DELIBERATELY AFTER IT**, and the claim above used to
+be written without that qualification, which made it false: `reconcile`,
+`check_floors` and the deferred quote-budget trigger all read rows that must
+already have been written, so they cannot precede the run. A refusal there rolls
+the projection back and leaves an `ingest_run` row with `finished_at NULL` --
+the record that a run was ATTEMPTED and refused, which `ingest_run_incomplete`
+reports and `test_a_refused_floor_rolls_the_WHOLE_run_back` asserts by name.
 
 THE DATA DEPENDENCY IS REAL: the subject bridge is `identity_claim` UNIIs and the
 matcher is `substance_moiety.display_name`, so `unii` and `chebi` must have run.
@@ -60,10 +68,14 @@ __all__ = ["MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR", "SplSummary",
 log = logging.getLogger(__name__)
 
 #: How many wordings are matched, quoted and written per `COPY`. It bounds peak
-#: memory: the corpus averages 48.2 moiety occurrences per wording, so a chunk of
+#: memory: the corpus averages ~48 moiety occurrences per wording, so a chunk of
 #: 2,000 holds ~96,000 rows rather than the ~1.3 million a whole-corpus list
-#: would. Purely an internal batching choice -- no figure depends on it, and a
-#: test drives a corpus smaller than one chunk and one spanning several.
+#: would. Purely an internal batching choice -- no figure depends on it, which is
+#: why the average is stated to an order of magnitude and not to a decimal.
+#: `test_the_corpus_is_written_IDENTICALLY_when_it_spans_several_chunks` drives
+#: a corpus spanning several chunks and asserts the counts do not move; before
+#: it existed, widening the stride past the chunk size silently dropped one
+#: wording per chunk with the whole suite green.
 WORDING_CHUNK = 2_000
 
 
@@ -147,11 +159,15 @@ def _evidence_for_wording(
             char_end=occurrence.char_end, moiety_uuid=occurrence.moiety_uuid,
             match_ambiguous=occurrence.ambiguous)
         for occurrence in occurrences]
+    # `from_window` cuts the text itself rather than taking a pre-cut string
+    # beside two offsets. The offsets and the cut then cannot disagree, and the
+    # window is checked against the length of the text it was measured on --
+    # which is the only place the raw-versus-normalised mistake is visible,
+    # because Python slicing clamps an over-long window silently.
     quote_rows = [
-        spl_evidence.QuoteRow(text_key=text_key, ordinal=ordinal,
-                              char_start=window.char_start,
-                              char_end=window.char_end, quote_text=quote_text)
-        for ordinal, window, quote_text in spl_quote.quotes_for(
+        spl_evidence.QuoteRow.from_window(
+            text_key=text_key, ordinal=ordinal, window=window, text=text)
+        for ordinal, window, _quote_text in spl_quote.quotes_for(
             text,
             [(o.moiety_uuid, o.char_start, o.char_end) for o in occurrences])]
     return occurrence_rows, quote_rows
@@ -253,7 +269,12 @@ def ingest_spl(
     # single snapshot at any isolation level, and everything that can refuse
     # below needs it. `substance_moiety` rows are immortal, so a uuid read here
     # is still a valid foreign-key target when the write happens an hour later.
-    names, known_uniis = spl_evidence.load_registry(conn)
+    # NAMED fields, not a positional unpack: the two mappings are the same type,
+    # and swapping them would build the matcher out of UNII codes and resolve
+    # every subject against display names -- a failure only `check_floors` would
+    # notice, twelve minutes later.
+    registry = spl_evidence.load_registry(conn)
+    names, known_uniis = registry.by_name, registry.by_unii
     if not names or not known_uniis:
         raise ValueError(
             f"spl: the registry holds {len(names)} moiety name(s) and "
@@ -263,6 +284,28 @@ def ingest_spl(
             "unii` and `ingest chebi` first.")
     vocab = build_vocabulary(names)
     say(f"  registry: {len(names):,} moiety names, {len(known_uniis):,} UNIIs")
+    # Reported rather than merely counted. A UNII two moieties claim resolves
+    # first-wins, so every subject derived from it names ONE of them and the
+    # other silently never appears -- `identity_claim` permits this by design, so
+    # the operator has to be able to see how often it happened.
+    if registry.name_collisions or registry.unii_collisions:
+        say(f"  registry collisions (first-wins): "
+            f"{registry.name_collisions:,} display name(s), "
+            f"{registry.unii_collisions:,} UNII(s)")
+
+    # ⇒ CLOSE THE SNAPSHOT BEFORE THE EXPENSIVE PASS.
+    # `load_registry` is the first statement on a non-autocommit connection, so
+    # it OPENED a transaction, and nothing below commits until `open_run` on the
+    # far side of the DailyMed scan and the checksum. Measured, that is ~12.5
+    # minutes of `idle in transaction` on a connection holding a snapshot: it
+    # pins `xmin` database-wide, so autovacuum can reclaim nothing in ANY table
+    # for the duration, and where `idle_in_transaction_session_timeout` is set
+    # the backend is killed at the END of the most expensive step in the ingest.
+    # Rolling back is safe and costs nothing -- the registry is already
+    # materialised in Python above (`fetchall`), and `substance_moiety` rows are
+    # immortal, which is the same fact the comment above leans on. Rollback
+    # rather than commit because nothing was written and a read needs no commit.
+    conn.rollback()
 
     # ---- 3 & 4. the expensive pass, and its refusal --------------------------
     targets = spl_subject.dailymed_targets(

@@ -9,8 +9,8 @@ orchestrator (`ingest/spl_run.py`) owns the transaction.
 **WHY `COPY` AND NOT `INSERT ... ON CONFLICT DO NOTHING`**, which every sibling
 writer in this repo uses. Two reasons, and the second is the load-bearing one:
 
-* **Volume.** One ingest writes ~1.3 million occurrence rows (26,721 wordings
-  naming a moiety at 48.2 occurrences each). A per-row round trip there costs
+* **Volume.** One ingest writes ~1.3 million occurrence rows (26,760 wordings
+  naming a moiety at ~48 occurrences each). A per-row round trip there costs
   more than the rest of the ingest -- the same argument
   `questions.register_from_gaps` already makes for `executemany`.
 * **A collision here is a DEFECT, not a repeat.** The sibling writers absorb a
@@ -34,10 +34,18 @@ from __future__ import annotations
 import operator
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING
 
 import psycopg
 
 from drugref import db
+
+if TYPE_CHECKING:                       # pragma: no cover
+    # Import-time-free: this module is the WRITER and `spl_quote` is a pure
+    # parser, so the dependency may exist for a reader and a type checker but
+    # never at runtime. A module-level import would make that direction a matter
+    # of luck rather than of statement.
+    from drugref.ingest import spl_quote
 
 #: WHAT THIS SOURCE OWNS, AND THE ORDER IT MUST BE CLEARED IN.
 #:
@@ -89,6 +97,33 @@ class SubjectRow:
     moiety_uuid: str | None
     route: str
 
+    def __post_init__(self) -> None:
+        """The SAME rule `spl_subject.Subject` already validates, twelve lines
+        upstream, and `db/051`'s `spl_label_subject_complete` CHECK enforces.
+
+        `_subject_rows` reads a validated `Subject` and writes this, so the
+        invariant was checked and then thrown away between the two. Restating it
+        here is not duplication -- it is the difference between failing on the
+        row that is wrong and failing at COMMIT after 68,550 labels, with no
+        `set_id` in the error.
+        """
+        # Imported here rather than at module scope: `spl_subject` is a pure
+        # parser and this module is the writer, so the writer depends on the
+        # vocabulary and never the other way round. A module-level import would
+        # make that direction a matter of luck.
+        from drugref.ingest.spl_subject import RESOLVING_ROUTES, SUBJECT_ROUTES
+
+        if self.route not in SUBJECT_ROUTES:
+            raise ValueError(
+                f"route {self.route!r} is not one of {SUBJECT_ROUTES}; "
+                "db/051's spl_label_subject_route CHECK would refuse it")
+        if (self.route in RESOLVING_ROUTES) != (self.moiety_uuid is not None):
+            raise ValueError(
+                f"subject row for {self.set_id} v{self.version} takes route "
+                f"{self.route!r} with moiety_uuid={self.moiety_uuid!r}: a "
+                "resolving route names a moiety and a non-resolving one does "
+                "not, which is db/051's spl_label_subject_complete")
+
 
 @dataclass(frozen=True, kw_only=True)
 class OccurrenceRow:
@@ -103,13 +138,61 @@ class OccurrenceRow:
 
 @dataclass(frozen=True, kw_only=True)
 class QuoteRow:
-    """One bounded quoted window -- the only prose this slice stores."""
+    """One bounded quoted window -- the only prose this slice stores.
+
+    **BUILD THESE WITH `from_window`, not by hand.** The three row-local rules --
+    the span is a span, the text is the cut those offsets name, and the cut does
+    not run past the wording -- are all properties of one window against one
+    string, both of which the caller has in hand. Leaving them to `db/051` meant
+    a transposition surfaced as a CHECK violation partway through a 2,000-wording
+    `COPY`, tens of minutes into the run, naming no `text_key`.
+    """
 
     text_key: str
     ordinal: int
     char_start: int
     char_end: int
     quote_text: str
+
+    def __post_init__(self) -> None:
+        if self.ordinal < 0 or self.char_start < 0:
+            raise ValueError(
+                f"quote row {self.text_key}#{self.ordinal} has a negative "
+                f"ordinal or offset")
+        if self.char_end <= self.char_start:
+            raise ValueError(
+                f"quote {self.char_start}:{self.char_end} for {self.text_key} "
+                "is not a span -- db/051's spl_wording_quote_span")
+        if len(self.quote_text) != self.char_end - self.char_start:
+            raise ValueError(
+                f"quote {self.char_start}:{self.char_end} for {self.text_key} "
+                f"names {self.char_end - self.char_start} characters but "
+                f"carries {len(self.quote_text)} -- db/051's "
+                "spl_wording_quote_length, and the usual cause is cutting the "
+                "RAW text while offsetting the NORMALISED one")
+
+    @classmethod
+    def from_window(cls, *, text_key: str, ordinal: int,
+                    window: "spl_quote.Window", text: str) -> "QuoteRow":
+        """Cut `window` out of the text it was measured against.
+
+        The cut happens HERE so `length(quote_text) = char_end - char_start` and
+        `char_end <= char_length` hold BY CONSTRUCTION rather than at COMMIT.
+
+        The explicit range check is not redundant with `__post_init__`: Python
+        slicing CLAMPS silently, so a window running past the end of `text`
+        yields a short string, and the two would then agree with each other
+        about the wrong characters. This is the one mistake the schema's offsets
+        are most exposed to, so it is refused where the text is still in scope.
+        """
+        if window.char_end > len(text):
+            raise ValueError(
+                f"window {window.char_start}:{window.char_end} runs past the "
+                f"{len(text)}-character wording {text_key}: the offsets and the "
+                "text describe different strings (raw versus normalised)")
+        return cls(text_key=text_key, ordinal=ordinal,
+                   char_start=window.char_start, char_end=window.char_end,
+                   quote_text=text[window.char_start:window.char_end])
 
 
 def clear_source_spl(conn: psycopg.Connection, source: str) -> None:
@@ -164,6 +247,17 @@ def _copy(conn: psycopg.Connection, row_type: type, rows: Iterable, *,
     """
     table = _TABLE_FOR_ROW[row_type.__name__]
     columns = [field.name for field in fields(row_type)]
+    # `attrgetter("a")` returns the VALUE; `attrgetter("a", "b")` returns a
+    # tuple. With one column, `(run, source, *read(row))` would splat a string
+    # into its characters and COPY one column per letter. Unreachable today --
+    # every row type has at least three fields -- so this is refused rather than
+    # handled, because the day someone adds a single-field row type is the day
+    # that becomes a silent corruption.
+    if len(columns) < 2:
+        raise ValueError(
+            f"{row_type.__name__} declares {len(columns)} column(s); _copy's "
+            "attrgetter returns a bare value rather than a tuple below two, "
+            "which would COPY one column per character")
     read = operator.attrgetter(*columns)
     written = 0
     statement = (f"COPY drugref.{table} (ingest_run, source, {', '.join(columns)}) "
@@ -252,8 +346,45 @@ def analyze_source_tables(conn: psycopg.Connection) -> None:
     conn.execute(f"ANALYZE {tables}")
 
 
-def load_registry(conn: psycopg.Connection) -> tuple[dict[str, str], dict[str, str]]:
-    """`(display_name -> moiety_uuid, UNII -> moiety_uuid)`, in ONE statement.
+@dataclass(frozen=True, kw_only=True)
+class Registry:
+    """The two lookups this ingest resolves through, AND WHAT THEY DISCARDED.
+
+    **NAMED, not a bare 2-tuple, because the two halves are the same type.**
+    `names, known_uniis = load_registry(conn)` type-checks just as well the wrong
+    way round, and a transposition would build the matcher out of UNII codes and
+    resolve every subject against display names -- caught only by `check_floors`
+    at the very end of a full 12.5-minute ingest, if at all.
+
+    **A DATACLASS AND NOT A `NamedTuple`, WHICH IS NOT A STYLE CHOICE.** This was
+    a `NamedTuple` for one round, and a `NamedTuple` is still unpackable: the two
+    committed tools that read the registry kept `names, uniis =
+    load_registry(conn)` and began raising `ValueError: too many values to
+    unpack` on their first line of real work -- silently, because neither tool
+    has a test. A type that cannot be destructured at all fails at EVERY call
+    site the moment the shape changes, instead of only at the ones whose arity
+    happens to stop matching.
+
+    **The collision counts exist because `load_registry` used to say they were
+    "the caller's to report" and no caller reported them.** `identity_claim` is
+    unique on (moiety_uuid, scheme, value) and deliberately NOT across moieties,
+    so two moieties may legitimately claim one UNII; first-wins then attaches
+    every subject derived from it to whichever moiety sorted first. Deterministic,
+    and reproducibly wrong is still wrong -- so the number of discarded entries
+    is carried out where the summary can print it.
+    """
+
+    by_name: dict[str, str]
+    by_unii: dict[str, str]
+    #: display names claimed by more than one moiety, and UNIIs likewise. Each
+    #: counts DISCARDED entries, not colliding keys: three moieties on one UNII
+    #: is two discards.
+    name_collisions: int
+    unii_collisions: int
+
+
+def load_registry(conn: psycopg.Connection) -> Registry:
+    """`Registry(display_name -> moiety_uuid, UNII -> moiety_uuid, collisions)`.
 
     ONE STATEMENT, NOT TWO, for the reason `drugcentral_run.load_registry`
     records: a single statement always sees a single snapshot at any isolation
@@ -269,9 +400,12 @@ def load_registry(conn: psycopg.Connection) -> tuple[dict[str, str], dict[str, s
     LIVE CLAIMS ONLY (`superseded_by IS NULL`): a corrected-away identifier must
     not resurrect a resolution.
 
-    **First-wins on a collision, and the collision is the caller's to report.**
-    Both mappings are built in one pass in sorted order, so which entry wins is a
-    property of the data rather than of the plan.
+    **First-wins on a collision, and the collision is COUNTED here.** Both
+    mappings are built in one pass in sorted order, so which entry wins is a
+    property of the data rather than of the plan -- and the count of what lost
+    rides out on `Registry` so the orchestrator can report it. It used to say the
+    collision was "the caller's to report"; the sole caller reported only the
+    post-de-duplication sizes, so the number was unobservable anywhere.
     """
     rows = conn.execute(
         "  SELECT 'display_name' AS lookup, display_name AS key, "
@@ -285,7 +419,17 @@ def load_registry(conn: psycopg.Connection) -> tuple[dict[str, str], dict[str, s
 
     by_name: dict[str, str] = {}
     by_unii: dict[str, str] = {}
+    name_collisions = unii_collisions = 0
     for lookup, key, moiety_uuid in rows:
-        target = by_name if lookup == "display_name" else by_unii
-        target.setdefault(key, moiety_uuid)
-    return by_name, by_unii
+        if lookup == "display_name":
+            if key in by_name:
+                name_collisions += 1
+            else:
+                by_name[key] = moiety_uuid
+        elif key in by_unii:
+            unii_collisions += 1
+        else:
+            by_unii[key] = moiety_uuid
+    return Registry(by_name=by_name, by_unii=by_unii,
+                    name_collisions=name_collisions,
+                    unii_collisions=unii_collisions)

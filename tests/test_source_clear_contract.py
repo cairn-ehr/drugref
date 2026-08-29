@@ -137,11 +137,11 @@ def test_the_spl_clear_lists_children_before_parents():
     """db/051's five tables form TWO levels, and both orderings are enforced.
 
     spl_wording_quote, spl_entity_occurrence and spl_label all reference
-    spl_wording; spl_label_subject references spl_label. Asserted against the
-    LIVE CATALOG rather than restated from the migration, because a foreign key
-    added in a later migration would silently make a correct order wrong -- and
-    the only way that shows up otherwise is an ingest that stops being able to
-    rebuild.
+    spl_wording; spl_label_subject references spl_label. This asserts the ORDER
+    the writer declares; `test_every_spl_foreign_key_points_LATER_in_the_clear
+    _order` below is the one that checks it against the LIVE CATALOG, which is
+    what catches a foreign key added by a later migration. The docstring here
+    used to claim the catalog check as its own.
     """
     tables = spl_evidence.SPL_TABLES
     assert tables.index("spl_wording") == len(tables) - 1

@@ -41,7 +41,9 @@ _AXIS_TAG = re.compile(r"\s*\[[A-Za-z0-9-]+\]\s*$")
 
 
 def class_variants(class_name: str) -> tuple[str, ...]:
-    """The measurement round's class spellings: the stored name, plus a plural.
+    """The measurement round's class spellings: the stored name, plus its other
+    number -- a plural for a singular name, and the SINGULAR for a name already
+    ending in 's', which is the dominant case here ('Diuretics' -> 'Diuretic').
 
     Deliberately small and mechanical, exactly as it was there -- nothing here
     rewrites word order or expands 'Cytochrome P450' to 'CYP', because those are
@@ -72,7 +74,7 @@ def load_class_entries(dsn: str) -> list[spl_match.Entry]:
 
 
 def count(corpus: spl.Corpus, vocab: spl_match.Vocabulary,
-          uniis: dict[str, str], names: dict[str, str]) -> tuple[int, int, int]:
+          uniis: dict[str, str]) -> tuple[int, int, int]:
     """`(moiety occurrences, wordings naming one, distinct openFDA-arm pairs)`.
 
     The pair arm is `openfda_unii` ONLY, because that is the arm the
@@ -97,7 +99,6 @@ def count(corpus: spl.Corpus, vocab: spl_match.Vocabulary,
                 if subject == other:
                     continue
                 pairs.add((subject, other) if subject < other else (other, subject))
-    del names
     return occurrences, with_moiety, len(pairs)
 
 
@@ -113,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"reading {len(partitions)} partition(s) ...", flush=True)
     corpus = spl.read_corpus(partitions)
     with psycopg.connect(args.dsn) as conn:
-        names, uniis = spl_evidence.load_registry(conn)
+        registry = spl_evidence.load_registry(conn)
+    names, uniis = registry.by_name, registry.by_unii
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings, "
           f"{len(names):,} moiety names")
 
@@ -125,9 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {len(class_entries):,} class entries added for the second arm")
 
     print("\nmatching, drug x drug only (SHIPPED) ...", flush=True)
-    a = count(corpus, shipped, uniis, names)
+    a = count(corpus, shipped, uniis)
     print("matching, drugs AND classes (the measurement round) ...", flush=True)
-    b = count(corpus, with_classes, uniis, names)
+    b = count(corpus, with_classes, uniis)
 
     print(f"\n{'':<34}{'shipped':>12}{'+classes':>12}{'delta':>10}")
     for label, x, y in zip(

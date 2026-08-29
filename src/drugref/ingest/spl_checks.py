@@ -125,7 +125,7 @@ class SplSummary:
             f"{self.wordings_with_a_moiety:,} wordings; {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
-            f"{self.self_pairs:,} self-pairs excluded")
+            f"{self.self_pairs:,} self-pair evidence rows excluded")
 
 
 def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
@@ -134,9 +134,14 @@ def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
     A document dropped here is republished by `spl_label_subject` as
     `absent_from_dailymed` -- a fact about this code sold as a fact about the
     release, and the design spec turns that route's population into a
-    commitment. Measured on the 2026-08-21 Human Rx release: all three counters
-    are ZERO, which is what lets *"the limit is the release, not the reading"*
-    be a measurement rather than an inference.
+    commitment. Measured on the 2026-08-21 Human Rx release: the four counters
+    that existed at that run are ZERO, which is what lets *"the limit is the
+    release, not the reading"* be a measurement rather than an inference. Two
+    more were ADDED afterwards -- the skips they count were upstream of every
+    counter, so the old sentence was true of the documents that reached the
+    counters rather than of the release -- and those two are UNMEASURED on a real
+    release. They are refused over anyway; see `ScanResult` for why, and for why
+    issue #162's three remaining skips are deliberately not folded in yet.
 
     Raised BEFORE the run is opened, so a release this reader cannot handle
     leaves the previous projection standing.
@@ -147,7 +152,9 @@ def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
             f"for a reading reason ({scan.dropped_no_set_id_bytes} with no "
             f"setId in the bytes, {scan.dropped_unreadable} unreadable, "
             f"{scan.dropped_prefilter_disagreed} where the byte pre-filter "
-            "named a different setId than the document). They would be "
+            f"named a different setId than the document, "
+            f"{scan.dropped_no_xml_member} member zip(s) with no XML, "
+            f"{scan.dropped_several_xml_members} with several). They would be "
             "republished as 'absent from DailyMed', which is a fact about this "
             "reader rather than about the release. Fix the reader before "
             "quoting any recovery figure.")
@@ -208,8 +215,33 @@ def read_pairs(conn: psycopg.Connection, run_id: int) -> tuple[int, int, int]:
     `self_pairs` counts what the view excludes: a label naming its own drug is a
     CORRECT reading of the source rather than a malformed row, so it is dropped
     in the read path and counted here -- db/049's rule, so the number cannot
-    become nonzero unnoticed.
+    become nonzero unnoticed. It is an EVIDENCE-grain count, not a pair-grain
+    one: the join yields a row per (subject row x occurrence row), so two
+    subjects naming one drug across three wordings is six, not one. Named in the
+    summary as "self-pair evidence rows excluded" for that reason.
+
+    ⇒ `pairs` AND `novel` ARE DELIBERATELY UNSCOPED, AND THE PRECONDITION IS
+    CHECKED RATHER THAN ASSUMED. `reconcile` above scopes every count and
+    explains at length why, so the asymmetry needs its own reason: `spl_ddi_pair`
+    GROUPs without `ingest_run`, so a scoped variant would have to re-derive the
+    pair grain from `spl_ddi_evidence` -- a SECOND HOME for the definition of a
+    pair, in the one place whose number the floors assert. Counting the published
+    view is the point. What makes that safe is that `clear_source_spl` has
+    emptied this source inside the same transaction, so every SPL row visible
+    here is this run's -- and that is now verified instead of relied upon.
     """
+    (foreign_labels,) = conn.execute(
+        "SELECT count(*) FROM drugref.spl_label WHERE ingest_run <> %s",
+        (run_id,)).fetchone()
+    if foreign_labels:
+        raise ValueError(
+            f"spl: {foreign_labels:,} SPL label row(s) belong to a run other "
+            f"than {run_id}. The pair counts below read the published view, "
+            "which is not scoped to a run, and that is only correct because "
+            "clear_source_spl emptied this source in this transaction. Another "
+            "run's rows would silently inflate the pair and novelty figures the "
+            "floors assert.")
+
     (pairs,) = conn.execute(
         "SELECT count(*) FROM drugref.spl_ddi_pair").fetchone()
     (novel,) = conn.execute(

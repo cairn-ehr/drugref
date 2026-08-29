@@ -31,3 +31,8 @@ docs-site/site/
 # Coding-agent scratch: per-plan ledgers, task briefs and review packages written
 # while a plan is being executed. Disposable by design -- git history is the record.
 .superpowers/
+
+# Editor and mutation-testing backups. `commit-push` stages everything, and a
+# `.bak` beside an applied migration is one `git add -A` from being committed.
+*.bak
+*.orig

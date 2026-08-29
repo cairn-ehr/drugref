@@ -20,8 +20,13 @@ have run first.
 
 THE MEASURED FLOORS ARE ON BY DEFAULT HERE, and that is the point of putting them
 at the CLI rather than in the orchestrator's signature: this is the production
-path, so a real run asserts `>= 29,258` pairs without anyone remembering to, and
-a deliberately partial corpus has to say `--no-pair-floor` out loud.
+path, so a real run asserts the measured pair floor without anyone remembering
+to, and a deliberately partial corpus has to say `--no-pair-floor` out loud.
+
+**THE FLOOR FIGURES ARE INTERPOLATED INTO --help, NEVER RETYPED.** They were
+written out as literals here, which put a number a user reads on screen one edit
+away from disagreeing with the constant it describes, with nothing to catch it --
+the same defect the quote budget had in three places.
 """
 import pathlib
 
@@ -68,7 +73,8 @@ def add_parser(sources) -> None:
              "'openfda-2026-08-22+dailymed-2026-08-21'")
     parser.add_argument(
         "--no-pair-floor", action="store_true",
-        help="skip the measured >= 29,258-pair / >= 25,960-novel floor check. "
+        help=f"skip the measured >= {spl_run.MEASURED_PAIR_FLOOR:,}-pair / "
+             f">= {spl_run.MEASURED_NOVEL_FLOOR:,}-novel floor check. "
              "For a deliberately partial corpus ONLY -- on the full releases a "
              "shortfall means the matcher, the subject rule or the corpus "
              "changed, and that is what the check is for")

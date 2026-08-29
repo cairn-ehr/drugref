@@ -20,6 +20,7 @@ import pathlib
 import uuid
 import zipfile
 
+import psycopg
 import pytest
 
 from drugref import spl_evidence
@@ -244,6 +245,41 @@ def _ingest(conn, corpus, **overrides):
 # --------------------------------------------------------------------------
 # The whole path
 # --------------------------------------------------------------------------
+
+@pytest.mark.usefixtures("_clean")
+def test_the_expensive_pass_runs_with_NO_SNAPSHOT_HELD(conn, corpus, monkeypatch):
+    """⇒ PINNED BY ITS CAUSE, because the cost is invisible to a fixture.
+
+    `load_registry` is the first statement on a non-autocommit connection, so it
+    opens a transaction; `open_run` is on the far side of the DailyMed scan and
+    the 19.3 GB checksum. Measured on the real releases that gap is ~12.5
+    minutes, during which a production node would show this backend as `idle in
+    transaction` -- pinning `xmin` database-wide so autovacuum reclaims nothing
+    in any table, and offering itself to `idle_in_transaction_session_timeout` at
+    the far end of the most expensive step in the ingest.
+
+    A fixture corpus of three wordings scans in milliseconds, so NO end-to-end
+    assertion can see this: the defect is duration, not result. What is
+    observable is the CAUSE -- whether a snapshot is held when the expensive pass
+    starts -- so that is what this asserts, the same reasoning `analyze_source
+    _tables` is pinned by `pg_class.reltuples` rather than by a stopwatch.
+    """
+    seen = []
+    real_scan = spl_dailymed.scan_release
+
+    def watching_scan(*args, **kwargs):
+        seen.append(conn.info.transaction_status)
+        return real_scan(*args, **kwargs)
+
+    _seed_registry(conn)
+    monkeypatch.setattr(spl_run.spl_dailymed, "scan_release", watching_scan)
+    _ingest(conn, corpus)
+
+    assert seen == [psycopg.pq.TransactionStatus.IDLE], (
+        "the DailyMed scan ran inside an open transaction: the registry read "
+        "before it must be rolled back, or the snapshot is held for the whole "
+        "scan and checksum")
+
 
 @pytest.mark.usefixtures("_clean")
 def test_the_fixture_corpus_ingests_and_reconciles(conn, corpus):
@@ -664,6 +700,41 @@ def test_an_autocommit_connection_is_refused(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
+@pytest.mark.parametrize("chunk", [1, 2])
+def test_the_corpus_is_written_IDENTICALLY_when_it_spans_several_chunks(
+        conn, corpus, monkeypatch, chunk):
+    """⇒ `WORDING_CHUNK` SAID A TEST DID THIS, AND NO TEST MENTIONED IT.
+
+    `range(0, len(keys), WORDING_CHUNK)` -> `range(0, len(keys), WORDING_CHUNK +
+    1)` -- the classic stride-wider-than-the-slice bug, which silently drops one
+    wording per chunk -- left the whole suite green. The fixture corpus is three
+    wordings against a chunk of 2,000, so the loop was only ever entered once and
+    the chunk boundary was never crossed.
+
+    Chunking is an internal batching choice, so the assertion is that it changes
+    NOTHING: the same corpus written a wording or two at a time must produce
+    exactly the counts it produces in a single chunk.
+
+    BOTH chunk sizes are needed, and that is not belt-and-braces. The stride bug
+    drops `keys[chunk]` -- a different wording for each size -- and one of the
+    three fixture wordings (`OTHER_WORDING`) names no moiety, so dropping THAT
+    one moves no counter. Parametrising guarantees at least one size drops a
+    wording that actually contributes.
+    """
+    _seed_registry(conn)
+    whole = _ingest(conn, corpus)
+
+    monkeypatch.setattr(spl_run, "WORDING_CHUNK", chunk)
+    chunked = _ingest(conn, corpus)
+
+    assert chunked.occurrences == whole.occurrences
+    assert chunked.quotes == whole.quotes
+    assert chunked.quoted_chars == whole.quoted_chars
+    assert chunked.wordings_with_a_moiety == whole.wordings_with_a_moiety
+    assert chunked.pairs == whole.pairs
+
+
+@pytest.mark.usefixtures("_clean")
 def test_the_measured_pair_floor_is_asserted_when_it_is_given(conn, corpus):
     """The floor asserts `>=`, and this fixture cannot reach the real one -- so
     the check is shown REFUSING rather than assumed to work on a corpus that
@@ -671,6 +742,22 @@ def test_the_measured_pair_floor_is_asserted_when_it_is_given(conn, corpus):
     _seed_registry(conn)
     with pytest.raises(ValueError, match="below the measured floor"):
         _ingest(conn, corpus, pair_floor=spl_run.MEASURED_PAIR_FLOOR)
+
+
+@pytest.mark.usefixtures("_clean")
+def test_the_measured_NOVEL_floor_is_asserted_when_it_is_given(conn, corpus):
+    """The pair floor's twin, and the reason it exists separately.
+
+    ⇒ THIS PINS THE CONSTANT, not just the branch. `MEASURED_NOVEL_FLOOR` could
+    be set to 1 with every other test in the suite green: the unit tests above
+    pass their own floor values, and the CLI test compares the wiring against
+    the constant itself, which is tautological in the constant's value. Only a
+    real ingest that CANNOT clear the published figure notices that the figure
+    moved -- which is exactly how the pair floor is pinned four lines up.
+    """
+    _seed_registry(conn)
+    with pytest.raises(ValueError, match="novel pairs, below the measured"):
+        _ingest(conn, corpus, novel_floor=spl_run.MEASURED_NOVEL_FLOOR)
 
 
 @pytest.mark.usefixtures("_clean")
@@ -690,27 +777,115 @@ def test_a_refused_floor_rolls_the_WHOLE_run_back(conn, corpus):
     assert unfinished == 1
 
 
-def test_a_scan_that_dropped_a_document_for_a_READING_reason_is_refused():
+def _scan(**overrides):
+    """A clean `ScanResult`. Every counter is spelled, none defaulted.
+
+    `ScanResult` gives its drop counters NO defaults on purpose -- a counter that
+    defaults to zero is one a future field can be forgotten out of, which is the
+    exact way `dropped_no_xml_member` and `dropped_several_xml_members` failed to
+    exist for a whole slice. The convenience belongs in the test, not the type.
+    """
+    fields = dict(documents_read=10, found={}, dropped_no_set_id_bytes=0,
+                  dropped_unreadable=0, dropped_prefilter_disagreed=0,
+                  dropped_no_xml_member=0, dropped_several_xml_members=0,
+                  skipped_not_a_member_zip=0)
+    return spl_dailymed.ScanResult(**(fields | overrides))
+
+
+@pytest.mark.parametrize("counter", [
+    "dropped_no_set_id_bytes", "dropped_unreadable", "dropped_prefilter_disagreed",
+    "dropped_no_xml_member", "dropped_several_xml_members",
+])
+def test_a_scan_that_dropped_a_document_for_a_READING_reason_is_refused(counter):
     """A drop here is republished as `absent_from_dailymed` -- a fact about this
-    code sold as a fact about the release."""
-    scan = spl_dailymed.ScanResult(
-        documents_read=10, found={}, dropped_no_set_id_bytes=0,
-        dropped_unreadable=2, dropped_prefilter_disagreed=0)
+    code sold as a fact about the release.
+
+    Parametrised over EVERY counter rather than asserted on one, because the two
+    that were missing were missing precisely where no test looked.
+    """
     with pytest.raises(ValueError, match="republished as 'absent from DailyMed'"):
-        spl_checks.check_scan_dropped_nothing(scan)
+        spl_checks.check_scan_dropped_nothing(_scan(**{counter: 2}))
 
 
 def test_a_clean_scan_passes_the_drop_check():
     """The control: without it every refusal above could be an always-raising
     guard."""
-    spl_checks.check_scan_dropped_nothing(spl_dailymed.ScanResult(
-        documents_read=10, found={}, dropped_no_set_id_bytes=0,
-        dropped_unreadable=0, dropped_prefilter_disagreed=0))
+    spl_checks.check_scan_dropped_nothing(_scan())
+
+
+def test_a_member_that_was_never_a_label_is_NOT_counted_as_a_drop():
+    """An outer member that is not a zip -- a manifest, an index -- was never a
+    label container, so calling it a lost label would be the reader-versus-release
+    confusion running in the other direction. Counted, reported, not refused."""
+    spl_checks.check_scan_dropped_nothing(_scan(skipped_not_a_member_zip=3))
 
 
 # --------------------------------------------------------------------------
 # The summary type's own contract
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# THE FLOORS -- every one of them watched refusing
+# --------------------------------------------------------------------------
+#
+# ⇒ THE NOVEL FLOOR WAS COMPLETELY UNTESTED. Setting MEASURED_NOVEL_FLOOR to 1
+# left the suite green, and so did replacing its whole comparison with `if
+# False:` -- while `cli_spl` gates BOTH measured floors off the single
+# `--no-pair-floor` flag, so the shipped path asserted a floor no test had ever
+# seen refuse anything. The five structural floors were in the same position:
+# `if value == 0:` -> `if False:` passed, because no fixture ever produced a zero.
+
+def test_check_floors_ACCEPTS_a_summary_that_published_something():
+    """The control. Without it every refusal below could be an always-raising
+    guard -- which is the failure this whole section exists to rule out."""
+    spl_checks.check_floors(_summary(), pair_floor=15, novel_floor=14)
+
+
+@pytest.mark.parametrize("field,overrides", [
+    ("labels", {"labels": 0, "labels_by_route": {}, "dailymed_targets": 0,
+                "dailymed_found": 0}),
+    ("wordings", {"wordings": 0, "wordings_with_a_moiety": 0}),
+    ("resolved subjects", {"labels_by_route": {"unresolved": 10}}),
+    ("entity occurrences", {"occurrences": 0}),
+    ("candidate pairs", {"pairs": 0}),
+])
+def test_a_structural_floor_of_zero_is_REFUSED(field, overrides):
+    """An all-zeros run is perfectly self-consistent -- `stored == written` four
+    times over -- and `clear_source_spl` has already deleted the previous
+    release. Every reconciliation in the slice passes on it, so these five are
+    the only thing standing between an empty read and a reported success.
+
+    Each override keeps `SplSummary`'s OWN invariants satisfied -- zeroing
+    `labels` alone trips the route-sum contract first, which would make this a
+    test of the summary type rather than of the floor.
+    """
+    with pytest.raises(ValueError, match=f"published 0 {field}"):
+        spl_checks.check_floors(_summary(**overrides),
+                                pair_floor=None, novel_floor=None)
+
+
+def test_a_pair_count_below_the_MEASURED_floor_is_REFUSED():
+    with pytest.raises(ValueError, match="below the measured floor"):
+        spl_checks.check_floors(_summary(pairs=14), pair_floor=15,
+                                novel_floor=None)
+
+
+def test_a_NOVEL_pair_count_below_the_measured_floor_is_REFUSED():
+    """The floor `cli_spl` asserts on every production run and no test had ever
+    watched refuse. It is a separate figure from the pair floor -- novelty is
+    measured against `exact_ddi_pair` AND `ddi_candidate_pair` -- so a run can
+    clear the pair floor and fail this one."""
+    with pytest.raises(ValueError, match="novel pairs, below the measured"):
+        spl_checks.check_floors(_summary(pairs=15, novel_pairs=13),
+                                pair_floor=15, novel_floor=14)
+
+
+def test_the_measured_floors_are_OPTIONAL_and_the_structural_ones_are_not():
+    """A partial corpus has to be able to say so, which is why the two measured
+    floors are `None`-able. The structural five never are."""
+    spl_checks.check_floors(_summary(pairs=1, novel_pairs=1),
+                            pair_floor=None, novel_floor=None)
+
 
 def _summary(**overrides):
     fields = dict(

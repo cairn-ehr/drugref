@@ -824,7 +824,7 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
 > its own slice becomes a claim**, and this file has now made that mistake once; the account above is the one
 > home for what 5c.2g does.
 
-##### 5c.3 — SPL/DailyMed mining ✅ DONE (2026-08-27) — `db/051`, measured on the real releases
+##### 5c.3 — SPL/DailyMed mining ✅ DONE (2026-08-29) — `db/051` + `db/052`, measured and reviewed
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **The brainstorm, the source measurement,
 the subject-recovery measurement, the design spec AND the ingest are all done.**
 [What it produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md); full account:
@@ -848,6 +848,20 @@ findings the next round inherits:
 - Two performance findings filed rather than fixed: [#159](https://github.com/cairn-ehr/drugref/issues/159)
   (`finished_at − started_at` is not a duration, for any feed) and
   [#160](https://github.com/cairn-ehr/drugref/issues/160) (the subject `COPY`).
+
+**⇒ THE REVIEW ROUND ✅ DONE (2026-08-29) — `db/052`, comments only.** Full account: PROJECT-NOTES §
+"Slice 5c.3's review round". The bullet above about the quote-budget fixture **was the round's own headline,
+and the review found that same vacuity in five further places** — the worst being the guard enforcing the
+licensing determination the headline is about: the budget had three homes and the test named for pinning it
+was the third, so mutating `db/051`'s trigger to `ceil(0.35 * ...)` left every test in that file green.
+`spl_checks.reconcile` could be deleted without failing a test; `scan_release` had none at all; the 12.5-minute
+scan ran inside an open snapshot pinning `xmin` database-wide. All fixed, 53 tests added. `db/052` corrects the
+route census `db/051` had shipped into the **database catalog** from the design round rather than the
+measurement — its `unresolved` comment read 14,680 where the answer is 92. Five findings needing a real-release
+run were filed instead: **#162–#166**.
+
+⇒ *The lesson this slice keeps re-teaching, now three rounds deep: a guard is not a guard until something has
+watched it refuse. A round that publishes a vacuity finding is not thereby immune to it.*
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

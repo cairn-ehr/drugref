@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings")
 
     with psycopg.connect(args.dsn) as conn:
-        names, _uniis = spl_evidence.load_registry(conn)
+        names = spl_evidence.load_registry(conn).by_name
     print(f"  {len(names):,} registry names")
 
     # THE SAME VOCABULARY THE INGEST USES, suppression included. Deriving against

@@ -15,9 +15,15 @@ clearing.
 
 **THE RULE, MEASURED**: +/-60 characters around the FIRST occurrence of each
 distinct moiety, kept in DOCUMENT order, until 25% of the section's characters
-are spent. Measured over all 26,721 wordings naming a moiety: **20.4% of a
-section stored on average**, median 22.7%, 5.1 merged windows per wording,
-covering 71.6% of the distinct moieties named.
+are spent. Measured on the shipped ingest over all 26,760 wordings naming a
+moiety: **20.5% of a section stored on average**, 5.2 merged windows per
+wording, covering 74.5% of the distinct moieties named, and using 88.1% of the
+budget the determination allows.
+
+(The design round published 20.4% / 5.1 / 71.6% over 26,721 wordings. Those are
+the CLASS-vocabulary figures -- that matcher also held 8,534 class entries, whose
+names consumed 11,169 moiety spans. Both sets are real; these are the shipped
+writer's.)
 
 **WHY NOT THE OBVIOUS RULES** -- because a per-occurrence window is not a quote,
 it is the section reassembled. Over the same corpus:
@@ -53,9 +59,12 @@ from dataclasses import dataclass
 QUOTE_RADIUS = 60
 
 #: Share of a section's characters the stored windows may occupy. The owner's
-#: rule, and `db/051`'s trigger enforces exactly this constant -- pinned by a test
-#: that reads the Python value and the catalog's, because a budget spelled twice
-#: is two budgets that can disagree.
+#: rule, and `db/051`'s trigger enforces exactly this constant -- pinned by
+#: `test_the_budget_in_the_catalog_is_the_SAME_expression_as_the_python_one`,
+#: which reads the deployed trigger out of `pg_proc.prosrc` rather than restating
+#: the number, because a budget spelled twice is two budgets that can disagree.
+#: **Spell it here and in db/051 only.** Every rule below reaches it through
+#: `quote_budget`, so a third home cannot open by accident.
 QUOTE_SHARE = 0.25
 
 #: A sentence ends at . ! or ? followed by whitespace. Deliberately naive: SPL
@@ -74,7 +83,11 @@ class Window:
     char_end: int
 
     def __post_init__(self) -> None:
-        if self.char_start < 0 or self.char_end < self.char_start:
+        # `<=`, not `<`: a zero-length window is not a span, and `db/051`'s
+        # `spl_wording_quote_span` CHECK refuses `char_end = char_start`. The
+        # type used to admit exactly one state the schema would not, in a slice
+        # whose whole argument is that the two agree.
+        if self.char_start < 0 or self.char_end <= self.char_start:
             raise ValueError(
                 f"window {self.char_start}:{self.char_end} is not a span")
 
@@ -119,7 +132,21 @@ def stored_chars(windows: Iterable[Window]) -> int:
 
 def fixed_window(text_length: int, char_start: int, char_end: int, *,
                  radius: int = QUOTE_RADIUS) -> Window:
-    """The match plus `radius` characters either side, clamped to the text."""
+    """The match plus `radius` characters either side, clamped to the text.
+
+    CLAMPING THE CONTEXT IS THE RULE; clamping the MATCH is a bug being hidden.
+    A match reaching past the end of its own text means the offsets were measured
+    against a different string -- the raw-versus-normalised mistake `spl_checks
+    .reconcile` exists to catch -- and this function used to absorb it: given a
+    50-character text and a match at 60:70 it returned `Window(0, 50)`, a window
+    that does not contain the match, with no complaint. It is refused here
+    instead, where the two numbers that disagree are both in scope.
+    """
+    if char_end > text_length:
+        raise ValueError(
+            f"match {char_start}:{char_end} runs past the {text_length}-"
+            "character text it was measured against: the offsets and the text "
+            "describe different strings (raw versus normalised)")
     return Window(char_start=max(0, char_start - radius),
                   char_end=min(text_length, char_end + radius))
 
@@ -143,7 +170,6 @@ def budgeted_windows(
     occurrences: Sequence[tuple[str, int, int]],
     *,
     radius: int = QUOTE_RADIUS,
-    share: float = QUOTE_SHARE,
 ) -> tuple[Window, ...]:
     """**THE SHIPPED RULE.** First occurrence per moiety, +/-radius, to a budget.
 
@@ -166,8 +192,16 @@ def budgeted_windows(
     that still fits is taken, because a rule that halted at the first over-budget
     candidate would store less than the determination allows for no reason
     anybody chose.
+
+    **NO `share` OVERRIDE.** It used to take one, defaulting to `QUOTE_SHARE`,
+    and it computed `ceil(share * text_length)` inline -- a third home for the
+    budget, and the one the shipped writer actually ran. A caller passing
+    `share=0.9` built windows this module reported as fine and the trigger
+    refused at COMMIT, on the one rule in this slice that is a licensing
+    determination rather than a preference. The measurement probe that needed
+    other shares is `tools/spl_quote_budget.py`, which carries its own copy.
     """
-    budget = math.ceil(share * text_length)
+    budget = quote_budget(text_length)
     if budget <= 0:
         return ()
 
@@ -189,7 +223,6 @@ def quotes_for(
     occurrences: Sequence[tuple[str, int, int]],
     *,
     radius: int = QUOTE_RADIUS,
-    share: float = QUOTE_SHARE,
 ) -> tuple[tuple[int, Window, str], ...]:
     """`(ordinal, window, quote_text)` for one wording -- the writable rows.
 
@@ -201,7 +234,7 @@ def quotes_for(
     Passing the raw text here would cut characters the offsets do not name -- by a
     variable amount nobody can reconstruct after the fact.
     """
-    windows = budgeted_windows(len(text), occurrences, radius=radius, share=share)
+    windows = budgeted_windows(len(text), occurrences, radius=radius)
     return tuple(
         (ordinal, window, text[window.char_start:window.char_end])
         for ordinal, window in enumerate(windows))
