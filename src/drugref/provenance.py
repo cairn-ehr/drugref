@@ -26,7 +26,7 @@ import psycopg
 # apart -- and no code should ever write it.
 WRITERS = ("unii_run", "chebi", "medrt_run", "mesh_run", "mesh_rel_run", "pbs_run",
            "curation", "unattributed", "gsrs_run", "onchigh_run", "fda_cyp_run",
-           "drugcentral_run")
+           "drugcentral_run", "spl_run")
 
 
 def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,

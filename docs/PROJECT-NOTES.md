@@ -4201,7 +4201,7 @@ slightly more distinct drugs (1,862 against 1,846).
 baseline it extends, and **on its own still bigger than DrugCentral's entire slice** (7,501 pairs at 91%),
 though by 1,203 rather than 3,563. Of the 26,401 labels targeted, **6,539 are in DailyMed (24.8%)**, **6,514
 of those resolve (99.6%)**, zero carry no UNII and **25 carry a UNII drugref does not hold**. The limit is
-the release, not the reading — and that is now measured, not inferred: all four of the scan's drop counters
+the release, not the reading — and that is now measured, not inferred: all four of the scan's drop counters (there are now six, two added by the review round)
 (unreadable, no `setId`, pre-filter disagreement, parse failure) are **zero**.
 
 **⇒ THE FIRST READING OF THIS TABLE WAS WRONG, AND IT PUBLISHED 31,618 WHERE THE RULE GIVES 29,258.**
@@ -4282,6 +4282,261 @@ computed resolution straight from the cache — not the probe's own tests, every
   unkeyed labels were never read** — and a label's SUBJECT is its own even when its wording is shared, so
   their pairs are uncounted. The ingest must scan them; the design's floor check asserts `>=`, not `==`.
 
+## Slice 5c.3 — the SPL ddi ingest (2026-08-27) — `db/051`, measured on the real releases
+
+**The slice is BUILT.** [Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md)
+· [what it actually produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md).
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads both corpora (19.3 GB, ~12.5 min), resolves
+each label's subject, matches the shipped resolver's rule over every wording, stores a bounded quoted window
+and refuses on any of six grounds. **Read the figures in the results record, not here.**
+
+### What shipped
+
+`db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
+deferred constraint trigger. Six pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_match.py`,
+`spl_quote.py`, `spl_subject.py`, plus `spl_checks.py` for the guards), the writer `spl_evidence.py`, the
+orchestrator `ingest/spl_run.py` and `cli_spl.py`.
+
+**⇒ TWO VIEWS AT TWO GRAINS, EACH NAMED FOR ITS OWN.** The design said "two views" and named one. `spl_ddi_pair`
+is PAIR grain — `count(*)` **is** the pair count, directly comparable with `drugcentral_ddi_pair` — and
+`spl_ddi_evidence` is EVIDENCE grain, one row per citation (1,470,708 of them against 29,952 pairs, a factor of
+49). This project has published a figure in the wrong unit in three consecutive rounds; a consumer who counts
+the wrong view now gets a name that contradicts them.
+
+**⇒ `gap_unresolved_spl_subject` IS DELIBERATELY NOT A NINETEENTH QUESTION KIND**, and `db/051` §8 is the one
+place that says so, because every other `gap_*` view in this schema feeds `questions._GAP_SOURCES`. A curator
+cannot answer *"not in the current DailyMed release"* — db/012's test for whether the review gate may ask at all
+— and the measurement below shows that is **99.7%** of the register rather than a corner of it.
+
+### ⇒ THE DESIGN'S `unresolved` BUCKET SAID 14,680. IT IS 92.
+
+The design's route table filed **14,455 labels the probe had never read** into a bucket whose own definition is
+*"present, read, and still unkeyable"*. Scanned for real: **30,386 of the 41,056 targets are simply absent from
+the current DailyMed release**, and only **92 labels in the whole corpus are present in it and still
+unkeyable**. So the recovery register is **99.7% a RELEASE gap and 0.3% a REGISTRY gap** — the opposite of what
+a reader of that table would plan for, and it points a future recovery route at a fuller corpus rather than at
+registry coverage.
+
+⇒ **A population you did not read is not evidence about the population you did.** The design's own prose said
+the 14,455 were unscanned, two paragraphs below the table that counted them as scanned. Nothing checked the two
+against each other, because both were prose.
+
+### ⇒ DROPPING THE CLASS VOCABULARY MOVED THE DRUG × DRUG YIELD, BY 193 PAIRS
+
+The openFDA-only arm yields **20,747** here against the design's published **20,554**. Measured rather than
+asserted (`tools/spl_class_vocabulary_delta.py`, committed — this round already recorded what happens to a
+figure whose producer is not): adding the **8,534** class entries back reproduces the design's two figures
+**exactly**, 20,554 pairs over 26,721 wordings, against the shipped 20,747 over 26,760. Longest-match-wins had a
+class name consuming **11,169** moiety spans — `Serotonin Uptake Inhibitors` swallowing `serotonin`.
+
+⇒ **A vocabulary is part of a measurement's definition, not its scenery.** Deferring the class half did not
+merely postpone the class figures; it moved the drug × drug ones. **A future round that re-adds classes must
+expect the drug × drug yield to FALL, and must not read the fall as a regression.**
+
+### ⇒ THE INGEST DID NOT FINISH ON ITS FIRST RUN, AND THE FIRST DIAGNOSIS WAS WRONG
+
+It sat **25 minutes at 100% CPU** in the self-pair read-back and was cancelled. The obvious cause was foreign-key
+checks against a freshly bulk-loaded parent with no statistics — and that was **measured and refuted**: 20,000
+child rows against an unanalyzed 68,550-row parent insert in **175 ms**, because PostgreSQL's RI triggers use a
+plan pinned to the parent's primary key rather than a re-planned query.
+
+The real cause was the same missing statistics one table further on: **every read-back joins tables the same
+transaction just `COPY`'d**, so the planner costs them as if empty and picks a nested loop over 1.3 million
+occurrence rows. `spl_evidence.analyze_source_tables` now runs inside the transaction before them.
+
+⇒ **The guard is pinned by its CAUSE, not by a timing.** A performance property cannot be asserted as a
+stopwatch on a fixture, so `test_the_projection_is_ANALYZED_before_its_own_read_backs` asserts
+`pg_class.reltuples >= 0` for all five tables — which is exactly the state that produced the stall. Removing the
+`ANALYZE` fails it.
+
+### ⇒ THE FIRST FIXTURE COULD NOT SEE A WRONG QUOTE BUDGET, AND THAT WAS MEASURED
+
+With the end-to-end corpus as first written, setting `spl_quote.QUOTE_SHARE` from 0.25 to **0.95** left all 28
+tests passing: every wording named two moieties over 3,700 characters, so the budget never bound and the
+writer's share was unobservable. **That is db/050's "every guard in a slice passed vacuously" recurring inside
+the round that quotes db/050 about it.** The corpus now carries a wording naming every fixture substance in a
+short section, so the rule must SKIP windows — and the same mutation now fails **16** tests, because the writer
+exceeds the budget `db/051`'s trigger computes for itself in SQL.
+
+The same fixture was blind to raw-versus-normalised text: the synthetic wordings had no whitespace runs, so
+`raw == normalised` and every offset assertion passed whichever the ingest indexed. They are now wrapped and
+double-spaced, a test pins that premise, and mutating `read_corpus` to keep the raw text fails four.
+
+### THREE EXISTING GUARDS FIRED, AND ONE CAUGHT A REAL DEFECT
+
+`test_only_checksum_py_hashes_an_ingest_input` is the single-place pin for hashing an ingest input.
+`spl_run.py`'s first draft computed its own digest-of-digests over the two corpora with a **function-local**
+`import hashlib`, which the line-anchored grep could not see. It now calls the shared `checksum`, and **the test
+now also refuses any indented hashlib import** — the hole it fell through. `spl.py` keeps its own hashlib for
+`section_key`, which mints a content identity rather than checksumming a file; that exemption is checked with
+`ast` rather than asserted in a comment. The other two — the schema inventory and `provenance.WRITERS` — are
+the "exact inventory" tests doing exactly their job.
+
+### The fixture carries NO PROSE, and that is rule 6
+
+`tests/fixtures/spl/` holds label IDENTITY from openFDA's export and prose-free SPL **ingredient skeletons**
+extracted verbatim from DailyMed — facts, not expression. The section text is synthesised by the test, because
+the owner's #154 determination is a *bounded* quoted window and a section committed whole to a git repository
+is 100% of it, not 25%. `tools/spl_make_fixture.py` is the extractor. Everything else is real: the archives are
+zipped into both publishers' actual nested shapes at test time, so the readers, the `set_id` join, the
+classCode nesting and the salt/moiety split all run against structures nobody wrote for a test.
+
+### Traps and standing notes
+
+- **`overlaps` is a RESERVED SQL keyword** (the period-overlap operator). A plpgsql variable of that name fails
+  to parse with an error pointing at a line that is correct.
+- **`python -m drugref.cli` silently does nothing and exits 0** — the module has no `__main__` guard. Use the
+  `drugref` console script; `PYTHONUNBUFFERED=1` if you want to watch a long ingest through a redirect.
+- **The route table's ROW count is not its LABEL count.** 73,867 rows over 68,550 labels, because a combination
+  product carries several subjects on one route. Reporting rows would publish the combination rate as if it were
+  the resolution rate.
+- **`ingest_run.finished_at − started_at` is not a duration for ANY feed** — [#159](https://github.com/cairn-ehr/drugref/issues/159).
+- **The `spl_label_subject` `COPY` is disproportionately slow** — [#160](https://github.com/cairn-ehr/drugref/issues/160).
+- **A registry is allowed to be incomplete, and narrowing one is how a route gets tested.** The salt route and
+  `unresolved` have no natural example in the fixture; withholding a label's active-moiety UNII while keeping
+  its salt reaches the first, withholding both reaches the second. That is what #67 and the 200 unheld-UNII
+  labels actually are.
+
+## Slice 5c.3's review round (2026-08-29) — `db/052`, and the mutants the slice's own headline predicted
+
+The round that shipped `db/051` led with *"the end-to-end fixture could not see a wrong quote budget, and that
+was measured"*. A five-agent review of PR #161 found **the same vacuity class alive in five more places** — and
+the worst of them was the guard enforcing the licensing determination that headline is about. 53 tests added,
+2296 → 2349; one migration, `db/052`, comments only.
+
+### ⇒ THE QUOTE BUDGET HAD THREE HOMES, AND THE TEST NAMED FOR PINNING IT WAS THE THIRD
+
+`test_the_budget_in_the_catalog_is_the_SAME_expression_as_the_python_one` ran `SELECT ceil(0.25 * %s)` **with
+the 0.25 typed in the test**. It therefore compared Python against a literal a reviewer had retyped, never
+against `db/051`'s trigger. Measured: **mutating the trigger to `ceil(0.35 * wording_length)` left all 29 tests
+in that file green.** So did `ceil` → `floor` in the trigger; the same mutation in Python failed, which is
+exactly the one-sided shape the name denied. The third home was `budgeted_windows`' own inline
+`math.ceil(share * text_length)` — **the expression the shipped writer actually ran** — reachable through a
+`share=` keyword that let a caller in the shipped module build windows this module called fine and the trigger
+refused at COMMIT.
+
+Fixed: the test reads `pg_proc.prosrc`; `share=` is gone and every rule reaches the constant through
+`quote_budget`; the number now has exactly two homes. ⇒ *A test that restates the number it is checking cannot
+detect the disagreement it is named for.* `spl_subject.py`'s route check — which reads `pg_get_constraintdef`
+and compares both directions — was the model, and it was in the same slice the whole time.
+
+Two boundary mutants survived alongside it and now do not: `spent > allowed` → `>=`, and
+`q.char_end > wording_length` → `>=`. The second is not hypothetical — `fixed_window` clamps to the text
+length, so **every quote over a moiety named within 60 characters of a section's end has
+`char_end == char_length`**, and the mutated trigger would have refused in production what the suite called
+fine. The budget tests bracketed 24% accepted against 39% refused and never touched the edge between.
+
+### ⇒ `reconcile` COULD BE DELETED WITHOUT FAILING A TEST
+
+Three mutations — `if stored != written:` → `if False:`, `if past_end:` → `if False:`, and `>` → `>=` on the
+cross-table span check — each left the whole suite green. It is the **only** check in the slice comparing what
+Python believes it wrote against what the database holds, and its own docstring calls the second half *"THE ONE
+NO CONSTRAINT CAN EXPRESS"*. A `COPY` that silently dropped rows would have shipped. Both halves are now watched
+refusing.
+
+### ⇒ THE 12.5-MINUTE SCAN RAN INSIDE AN OPEN SNAPSHOT
+
+`load_registry` is the first statement on the non-autocommit connection `ingest_spl` requires, so it opens a
+transaction; `open_run` is on the far side of `scan_release` and a 19.3 GB checksum. Verified against the test
+database: a bare `SELECT` leaves the backend `idle in transaction` with a live `xact_start`. On a production
+node that pins `xmin` **database-wide** — autovacuum reclaims nothing in any table for the duration — and offers
+the connection to `idle_in_transaction_session_timeout` at the far end of the most expensive step in the ingest.
+`drugcentral_run` never had this window; 5c.3 inverted the ordering for a good reason (a run row must not sit
+unfinished across the scan) and the inversion left the snapshot open. One `conn.rollback()`, pinned by a test
+that asserts the CAUSE — `conn.info.transaction_status` at the moment the scan starts — because a fixture that
+scans in milliseconds cannot see a cost that is duration.
+
+### ⇒ THE READER'S SKIPS WERE UPSTREAM OF THE COUNTERS THAT EXIST TO SEE THEM
+
+`ScanResult`'s docstring says a silently-skipped document *"is republished three stages later as
+`absent_from_dailymed` — a fact about the READING sold as a fact about the RELEASE"*. Two branches in
+`iter_release_labels` did exactly that with a bare `continue` **inside the generator**, before
+`documents_read += 1` in `scan_release`: a member that is not a zip, and a member zip with no XML. Neither
+`documents_read` nor any drop counter could see them, so `check_scan_dropped_nothing` was structurally
+incapable of refusing. *"All counters measured zero"* was a measurement over the documents that reached the
+counters.
+
+`scan_release` and `iter_release_labels` had **no direct test at all**; six mutations survived them, including
+never incrementing `documents_read` and dropping the `.xml` filter entirely. All eight fixture XMLs were
+well-formed with exactly one matching `setId`, so the three counters were pinned at zero **by construction** —
+the suite reproduced the release's measured zeros without ever showing a counter could move.
+
+Fixed: `on_skip(member, reason)`, three new `ScanResult` fields, and a fixture that builds the shapes the real
+release is not known to contain. A member zip holding SEVERAL XMLs is now **refused rather than read from
+`xml_names[0]`** — member order is not a rule, which `dedupe_by_set_id` argues at length two hundred lines
+away. `skipped_not_a_member_zip` is counted but is **not** a drop: a manifest was never a label container, and
+calling it a lost label is the same reader-versus-release confusion running the other way.
+
+⇒ **THE TWO NEW DROP COUNTERS ARE UNMEASURED ON A REAL RELEASE, AND THAT IS STATED WHEREVER THE ZEROS ARE
+CLAIMED.** They are folded into `total_dropped`, so the first real run after this change **may refuse where the
+previous one succeeded** — a member zip this reader cannot read is a lost label, and the alternative was losing
+it silently, but until a release has been scanned with them in place that is an inference. This round's own
+review caught the module docstring having been widened from *"all four"* to *"every one"* without the re-run
+that would justify it. #162's three remaining skips are deliberately NOT folded in for the same reason.
+
+### The numbers db/051 shipped into the DATABASE CATALOG were the design's, not the measurement's
+
+`db/051` was written against the design round's route census and `COMMENT ON`'d it into the catalog, where
+`\d+` and every consumer reads it. The measurement then contradicted it and only `docs/` was updated. The
+`unresolved` comment said **14,680** where the answer is **92** — the figure this slice's own headline is
+about. `db/052` corrects them, plus a `COMMENT ON COLUMN` that named `drugref.ingest.spl_run.SUBJECT_ROUTES` as
+the vocabulary's second home: **that attribute does not exist** (the tuple is in `spl_subject`), so the pointer
+whose entire job is naming the other home did not resolve. A catalog comment is not a schema edit, so the
+correction is a new numbered file and `db/051` stays immutable.
+
+### ⇒ AND THE FIX ROUND'S OWN REVIEW FOUND THE SAME SHAPE AGAIN, TWICE
+
+Reviewing the fixes before committing them caught two defects **of the exact kind the fixes were written to
+remove**, which is the third consecutive round in this slice where that has happened:
+
+- **The new `Registry` type broke two committed tools, and the suite stayed green.** `spl_class_vocabulary
+  _delta.py` and `spl_suppress_derive.py` both kept `names, uniis = load_registry(conn)` against a type that
+  now has four fields, so both raised `ValueError: too many values to unpack` on their first line of real
+  work. Neither tool has a test. One of them is the measurement `spl_match`'s own docstring cites as the
+  evidence for deferring the class vocabulary — **the round added `KIND_CLASS` specifically so that tool would
+  keep working, and broke it one function away.** `Registry` is now a frozen dataclass rather than a
+  `NamedTuple`: a type that cannot be destructured at all fails at EVERY call site the moment its shape
+  changes, instead of only at the ones whose arity stops matching.
+- **The brand-new entity guard shipped an assertion that passed with the guard deleted.** `<! ENTITY` (with a
+  space) is not well-formed XML, so `ET.fromstring` raises anyway and the assertion never exercised the guard.
+  Worse, the guard itself was a bare byte search for `<!ENTITY`, which **matches inside a legal XML comment**:
+  `<!-- <!ENTITY a "x" --><d/>` parses cleanly, so one such comment anywhere in 41,056 documents would have
+  been counted as a drop and aborted the whole ingest. The guard now matches `<!DOCTYPE`, where an entity
+  declaration is the only thing that can legally live, and both the refusal and the non-refusal are watched.
+
+⇒ *A round that has just written five tests to kill five surviving mutants is not thereby immune to writing a
+sixth that survives. Review the fix the way the thing being fixed was reviewed.*
+
+### Traps and standing notes
+
+- **A `COMMENT ON` correction is a migration, not an edit.** `db/051` is applied and immutable; `db/052` carries
+  only `COMMENT ON` statements and changes no object's shape.
+- **`ScanResult`'s counters take no defaults, deliberately.** A counter defaulting to zero is one a future field
+  can be forgotten out of, which is precisely how two of them failed to exist for a whole slice. The
+  convenience lives in the test helper `_scan(**overrides)`.
+- **A schema test that drives the writer stops being a schema test once the row type validates.**
+  `QuoteRow` and `SubjectRow` now refuse the states db/051's CHECKs refuse, so the tests proving those CHECKs
+  work were rewritten to `INSERT` raw SQL. The CHECK's job is binding a FUTURE writer that will not use these
+  types; attacking the table directly is the only faithful way to show it holds.
+- **`Entry` gained a third kind, `KIND_CLASS`**, because `tools/spl_class_vocabulary_delta.py` legitimately
+  builds class entries and the new `(kind == moiety) == (moiety_uuid is not None)` check would otherwise have
+  refused the committed tool that measures what excluding classes bought.
+- **`_ENTITY_DECL`**: `ET.fromstring` expands internal entities and SPL is third-party content. Refused in the
+  bytes rather than through a parser callback — `xml.etree`'s C parser exposes no handle for it, and every
+  alternative means parsing the document first, which is the thing being avoided.
+- **`read_pairs` is deliberately UNSCOPED and now checks its precondition.** `spl_ddi_pair` GROUPs without
+  `ingest_run`, so a scoped variant would re-derive the pair grain — a second home for the definition of a
+  pair, in the one place the floors assert. It counts the published view instead, and verifies that no SPL
+  label row belongs to another run.
+- **Filed rather than fixed**: [#162](https://github.com/cairn-ehr/drugref/issues/162) three reader skips still
+  uncounted (each needs a real-release run to know whether folding it into `total_dropped` would start refusing
+  legitimate releases) · [#163](https://github.com/cairn-ehr/drugref/issues/163) the openFDA arm cannot tell
+  "no section" from "section present but blank" · [#164](https://github.com/cairn-ehr/drugref/issues/164)
+  db/051's unreachable NULL guard, in the comment block that forbids exactly that ·
+  [#165](https://github.com/cairn-ehr/drugref/issues/165) frozen dataclasses over live dicts, and
+  `Match.ambiguous` counting entries rather than moiety entries ·
+  [#166](https://github.com/cairn-ehr/drugref/issues/166) no size cap on nested release zips.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4297,6 +4552,15 @@ curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds U
 figures, do not re-derive them**; `curation.py` **has since crossed the cap at 523** (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
+**Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
+`ingest_run.finished_at − started_at` is not a duration for ANY feed**: both stamps are
+`transaction_timestamp()`, so seven of the nine runs on `drugref_spl051` read 1.3–24 ms while the SPL ingest
+takes 12.5 minutes. It touches every orchestrator's provenance, so it is its own round. ·
+**[#160](https://github.com/cairn-ehr/drugref/issues/160) the `spl_label_subject` `COPY` runs >4 min at 100%
+CPU for 73,867 rows**, against 1.0 s for the same row count in a synthetic probe against the same schema. Two
+causes are already ruled out (FK-against-unanalyzed-parent, measured at 175 ms; and the read-back planner
+problem, which was a different and now-fixed defect); three are untried and named in the issue.
+
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
 **Answered by measurement, still open** — **#19: the "41 vs 13" puzzle RESOLVES.** 41-of-739 was the TERMINOLOGY
@@ -4464,14 +4728,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2086 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2357 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-23 at 2005
-# passed in 60.15 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-08-29 at 2357
+# passed in 68.61 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4494,8 +4758,33 @@ git config core.hooksPath .githooks
 # deleting lithium; and the 5c.3 SUBJECT-RECOVERY round added 19, again with no
 # migration and no ingest: 2067 -> 2086, all on throwaway probe code under
 # tools/ -- and one of those 19 exists because the round's OWN tally was wrong
-# by 44 labels while its other 18 tests passed, see that section's headline).
-# THE SEVENTH OCCURRENCE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
+# by 44 labels while its other 18 tests passed, see that section's headline;
+# and that round's REVIEW-FIX half added 32 more, 2086 -> 2118, when the delta
+# whose two arms used different subject rules was corrected; and slice 5c.3's
+# IMPLEMENTATION round -- db/051 and the SPL ingest -- added 178: 2118 -> 2296,
+# the first round since db/049 to add a migration, and the first ever to add
+# tests for a licensing determination that can be shown REFUSING a write; and
+# the PR-161 REVIEW-FIX round -- db/052 -- added 53: 2296 -> 2349, almost all of
+# them written to kill a mutant that had SURVIVED, not to cover a new line: the
+# quote budget read out of pg_proc.prosrc instead of retyped, reconcile watched
+# refusing at all, scan_release and iter_release_labels given their first direct
+# tests, every floor including the novel one shown refusing, and cli_spl.py given
+# its first test of any kind; and that round's OWN review added 8 more, 2349 ->
+# 2357, when it found the new Registry type had broken two committed tools that
+# no test exercised -- including the one the matcher's docstring cites as its
+# evidence -- and that the brand-new entity guard carried an assertion which
+# passed with the guard deleted).
+# THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
+# SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
+# DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,
+# so the number was measured, published, and still not landed here -- the file
+# read 2086 while the suite was at 2118 for the whole of the merged PR #157 and
+# was caught by the START-OF-SESSION check the fifth occurrence added. A commit
+# message is not a home: it cannot be edited after the fact and nobody greps it.
+# That is SEVEN occurrences of one failure mode against a comment rewritten
+# three times to prevent it. Issue 146 is still the only real fix and is still
+# not written.
+# THE SIXTH-AND-A-HALF CASE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
 # ROADMAP or its own section heading -- which is the exact act that created the sixth

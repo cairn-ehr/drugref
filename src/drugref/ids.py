@@ -75,6 +75,15 @@ _SOURCE_CANONICAL = {
     # ingest_run's source CHECK to match, and provenance.WRITERS gains
     # 'drugcentral_run'; the three are a trio.
     "DRUGCENTRAL": "DRUGCENTRAL",
+    # Slice 5c.3. 'SPL' survives the upper-case fall-through unchanged, as
+    # 'DRUGCENTRAL', 'FDA-CYP', 'GSRS' and 'DRUGREF' do -- and is listed for the
+    # same reason: the entry records that the luck was CHECKED rather than
+    # assumed. db/051 widens ingest_run's source CHECK to match, and
+    # provenance.WRITERS gains 'spl_run'; the three are a TRIO whose failure mode
+    # when one lands without the others is SILENT -- this table would fold the
+    # source to a spelling the CHECK does not admit, and a per-source rebuild
+    # would then delete nothing and report success.
+    "SPL": "SPL",
 }
 
 # The key prefix each canonical authority contributes to a class UUID.

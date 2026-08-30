@@ -824,10 +824,49 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
 > its own slice becomes a claim**, and this file has now made that mistake once; the account above is the one
 > home for what 5c.2g does.
 
-##### 5c.3 — SPL/DailyMed mining
+##### 5c.3 — SPL/DailyMed mining ✅ DONE (2026-08-29) — `db/051` + `db/052`, measured and reviewed
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **The brainstorm, the source measurement,
-the subject-recovery measurement and the DESIGN SPEC are all DONE (2026-08-24); what remains is writing
-`db/051` and the ingest.** Two candidate sources
+the subject-recovery measurement, the design spec AND the ingest are all done.**
+[What it produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md); full account:
+PROJECT-NOTES § "Slice 5c.3 — the SPL ddi ingest". **Read the numbers there, not here.**
+
+**⇒ THE IMPLEMENTATION ROUND ✅ DONE (2026-08-27) — `db/051`, five tables, two views, one gap view.**
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads 19.3 GB in ~12.5 minutes and publishes
+**29,952 distinct candidate pairs, 26,598 (88.8%) novel** — clearing the design's `>= 29,258` / `>= 25,960`
+floor, with the census reproducing exactly and the three counts that had no licence to move unmoved. Four
+findings the next round inherits:
+
+- **The design's `unresolved` bucket said 14,680 and it is 92.** It had filed 14,455 labels the probe never read
+  into a bucket defined by having been read. The recovery register is **99.7% a RELEASE gap** (30,386 labels
+  absent from the current DailyMed release) and **0.3% a registry gap** — so a future recovery route should
+  target a fuller corpus, not registry coverage.
+- **Deferring the class half MOVED the drug × drug yield**, by +193 pairs on the openFDA arm: longest-match-wins
+  had class names consuming 11,169 moiety spans. Re-adding classes reproduces the design's 20,554 exactly.
+  **A round that re-adds them must expect the drug × drug yield to fall and must not read that as a regression.**
+- **The end-to-end fixture could not see a wrong quote budget** until a wording where the budget BINDS was added
+  — db/050's vacuous-guard finding, recurring inside the round that quotes db/050 about it.
+- Two performance findings filed rather than fixed: [#159](https://github.com/cairn-ehr/drugref/issues/159)
+  (`finished_at − started_at` is not a duration, for any feed) and
+  [#160](https://github.com/cairn-ehr/drugref/issues/160) (the subject `COPY`).
+
+**⇒ THE REVIEW ROUND ✅ DONE (2026-08-29) — `db/052`, comments only.** Full account: PROJECT-NOTES §
+"Slice 5c.3's review round". The bullet above about the quote-budget fixture **was the round's own headline,
+and the review found that same vacuity in five further places** — the worst being the guard enforcing the
+licensing determination the headline is about: the budget had three homes and the test named for pinning it
+was the third, so mutating `db/051`'s trigger to `ceil(0.35 * ...)` left every test in that file green.
+`spl_checks.reconcile` could be deleted without failing a test; `scan_release` had none at all; the 12.5-minute
+scan ran inside an open snapshot pinning `xmin` database-wide. All fixed, 53 tests added. `db/052` corrects the
+route census `db/051` had shipped into the **database catalog** from the design round rather than the
+measurement — its `unresolved` comment read 14,680 where the answer is 92. Five findings needing a real-release
+run were filed instead: **#162–#166**.
+
+⇒ *The lesson this slice keeps re-teaching, now three rounds deep: a guard is not a guard until something has
+watched it refuse. A round that publishes a vacuity finding is not thereby immune to it.*
+
+**What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
+#102), the potency band, the word-order gap, and salt-grain resolution (#67).
+
+Two candidate sources
 were licence-checked during 5c.2 and measured on 2026-08-13 — full account: PROJECT-NOTES § "The 5c.3 source
 evaluation". **Its missing potency vocabulary was 5c.2g's job, and it landed.**
 
@@ -855,7 +894,7 @@ extraction**; and the corpus is measured in full, never sampled. Four findings t
   whose exclusions were each measured; the round's first pass published a range whose low end deleted
   `lithium`, the corpus's most-matched moiety. The class half is where every unsolved problem lives (#155).
 
-**⇒ THE DESIGN ROUND ✅ DONE (2026-08-24) — the spec exists, `db/051` is designed but NOT written.**
+**⇒ THE DESIGN ROUND ✅ DONE (2026-08-24) — the spec, on which the round above built.**
 [Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md), resting on
 [the subject-recovery measurement](superpowers/specs/2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md).
 Full account and every figure: PROJECT-NOTES § "The 5c.3 subject-recovery round and the design spec".

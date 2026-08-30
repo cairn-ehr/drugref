@@ -74,6 +74,8 @@ nav:
       - Signing the curated overlay: decisions/signing-the-curated-overlay.md
       - The ONC high-priority floor is facts, not text: decisions/the-onc-high-priority-floor.md
       - The candidate tier carries an upstream severity: decisions/upstream-severity-is-data.md
+      - A label naming two drugs is evidence, not an assertion: decisions/evidence-is-not-an-assertion.md
+      - A bounded quoted window is bundled, not the section: decisions/bundling-a-quoted-window.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

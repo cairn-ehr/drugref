@@ -17,6 +17,7 @@ blocker](../decisions/licensing-is-a-blocker.md).
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
 | **FDA CYP/transporter table** | FDA's own examples of CYP and transporter substrates, inhibitors and inducers, by potency band | Public domain (US FDA website policy) |
 | **DrugCentral `ddi`** — the NDF-RT half only | Drug–drug interaction pairs at moiety grain, each carrying the VA's own severity band | CC BY-SA 4.0 over DrugCentral's compilation; the ingested rows are a US federal work (VHA NDF-RT) |
+| **SPL section 34073-7** (openFDA `drug/label` + DailyMed) | Which known drugs each US prescription label's DRUG INTERACTIONS section *names*, with character offsets, a citation and a bounded quoted window | CC0 1.0 as published by openFDA; NLM disclaims copyright status over the same labeling, so clearance was decided per column |
 
 The GSRS *software*, which drugref neither uses nor redistributes, is separately licensed
 Apache-2.0; only the public data dump is bundled.
@@ -38,6 +39,8 @@ copyrighted book) and Lexicomp Online (a commercial compendium) are excluded. Be
 its own: every ingest re-reads the reference row and **aborts** unless its recorded authors
 and title still match, so a re-published dump that renumbered its references stops rather
 than bundling an excluded one.
+
+SPL is the source whose licence question had to be answered **per column rather than per source**, because its two publishers take opposite positions on the same bytes: openFDA dedicates the bulk `drug/label` export CC0 1.0, while NLM/DailyMed disclaims — *"cannot guarantee the copyright status for any item"* — over labeling submitted to the FDA by companies. Entity occurrences and character offsets are facts and are clear under either reading; a `set_id`/`version` citation is a citation, not a copy; **the section text in full is never stored**; and a **bounded quoted window** — ±60 characters around the first occurrence of each named drug, to a hard cap of 25% of the section — is bundled under drugref's own determination and enforced by a database trigger rather than by convention. Measured on the 2026-08-22 release, 20.5% of a section is stored on average. See [bundling a quoted window](../decisions/bundling-a-quoted-window.md).
 
 Upstream attributions are recorded in the repository's
 [`NOTICE`](https://github.com/cairn-ehr/drugref/blob/main/NOTICE) file.

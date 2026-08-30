@@ -1,0 +1,132 @@
+<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="urn:hl7-org:v3"><setId root="2ec8f18f-297c-405f-b191-a40767366bad" />
+   <versionNumber value="7" />
+   <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="0.25" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="C291HFX4DY" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>NORGESTIMATE</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="C291HFX4DY" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>NORGESTIMATE</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="ACTIB">
+                                 <quantity>
+                                    <numerator value="0.035" unit="mg" />
+                                    <denominator value="1" unit="1" />
+                                 </quantity>
+                                 <ingredientSubstance>
+                                    <code code="423D2T571U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ETHINYL ESTRADIOL</name>
+                                    <activeMoiety>
+                                       <activeMoiety>
+                                          <code code="423D2T571U" codeSystem="2.16.840.1.113883.4.9" />
+                                          <name>ETHINYL ESTRADIOL</name>
+                                       </activeMoiety>
+                                    </activeMoiety>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="L06K8R7DQK" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FD&amp;C BLUE NO. 2</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="H3R47K3TBD" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>FD&amp;C BLUE NO. 1</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="WZB9127XOA" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>RED 40</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="35SW5USQ3G" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>CI 47005</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="15FIX9V2JP" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TITANIUM DIOXIDE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="532B59J990" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYVINYL ALCOHOL</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="7SEV7J4R1U" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TALC</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="G2M7P15E5P" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYETHYLENE GLYCOL 3350</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="1DI56QDM62" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>SOYBEAN LECITHIN</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="EWQ57Q8I5X" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>LACTOSE MONOHYDRATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="70097M6I30" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>MAGNESIUM STEARATE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="O8232NY3SJ" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>ZEA MAYS (CORN) STARCH</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                           <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="VH2XOU12IE" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>POLYDEXTROSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="3NXW29V3WO" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>HYDROXYPROPYL METHYLCELLULOSE</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="XHX3C3X673" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>TRIACETIN</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                              <ingredient classCode="IACT">
+                                 <ingredientSubstance>
+                                    <code code="Q662QK8M3B" codeSystem="2.16.840.1.113883.4.9" />
+                                    <name>PEG-180</name>
+                                 </ingredientSubstance>
+                              </ingredient>
+                           </document>

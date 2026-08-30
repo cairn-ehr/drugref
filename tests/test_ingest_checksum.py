@@ -14,6 +14,7 @@ commit message:
 """
 import hashlib
 import pathlib
+import ast
 import re
 
 import drugref.ingest
@@ -79,7 +80,51 @@ def test_only_checksum_py_hashes_an_ingest_input():
     imports_hashlib = re.compile(r"^(?:import hashlib|from hashlib import)", re.M)
     hashers = [p for p in sorted(INGEST.rglob("*.py"))
                if imports_hashlib.search(p.read_text())]
-    assert [p.name for p in hashers] == ["checksum.py"]
+    # spl.py is the ONE exemption, and it is the same exemption db.py already
+    # has one directory up: it hashes CONTENT to mint an identity
+    # (`section_key` -- the SHA-256 of a normalised section, which is
+    # spl_wording's primary key and is pinned by a CHECK on its shape), not an
+    # INPUT FILE to record what a run read. Those are different questions with
+    # different meanings, and `checksum` has no business answering the first --
+    # it opens paths and streams bytes.
+    #
+    # THE DISTINCTION IS WHAT THIS TEST IS ABOUT, so it is CHECKED rather than
+    # asserted in a comment: spl.py may reach hashlib from `section_key` and from
+    # nowhere else. `section_key` takes a `str` and returns the wording's
+    # identity; it opens nothing. spl_run.py -- the orchestrator that DOES
+    # checksum both corpora, all 19.3 GB of them -- calls `checksum` and appears
+    # nowhere in this list, which is the property being pinned.
+    #
+    # Checked with `ast` rather than by grepping for `open(`, because spl.py is a
+    # STREAMING PARSER and legitimately opens zip members to read records: "does
+    # it open files" is the wrong question, "does it hash anywhere but
+    # section_key" is the right one.
+    assert [p.name for p in hashers] == ["checksum.py", "spl.py"]
+    assert _functions_reaching_hashlib(INGEST / "spl.py") == {"section_key"}
+
+    # AND NO MODULE MAY REACH hashlib WITHOUT SAYING SO AT THE TOP. A
+    # function-local import evades the grep above completely; it is not a style
+    # preference here, it is the hole this test fell through once.
+    for path in sorted(INGEST.rglob("*.py")):
+        for line in path.read_text().splitlines():
+            if line.startswith((" ", "\t")) and line.strip().startswith(
+                    ("import hashlib", "from hashlib import")):
+                raise AssertionError(
+                    f"{path.name} imports hashlib inside a function, which hides "
+                    "it from this module's single-place pin")
+
+
+def _functions_reaching_hashlib(path) -> set[str]:
+    """The names of the top-level functions in `path` that name `hashlib`."""
+    tree = ast.parse(path.read_text())
+    reaching = set()
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name) and inner.id == "hashlib":
+                reaching.add(node.name)
+    return reaching
 
 
 def test_a_changed_byte_anywhere_changes_the_digest(tmp_path):
