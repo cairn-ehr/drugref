@@ -13,8 +13,9 @@
 
 ## ⇒ NEXT
 
-**On `main` at `58d441c`** plus this round's branch. Migrations through **`db/052`** — this round added **NO
-migration**. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**
+**Branch `claude/spl-reader-skip-census`, from `main` at `58d441c`**; **this round is open as
+[PR #167](https://github.com/cairn-ehr/drugref/pull/167) and is not merged.** Migrations through **`db/052`** —
+this round added **NO migration**. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**
 ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the session.
 
 **⇒ JUST FINISHED — THE READER-SKIP CENSUS, CLOSING [#162](https://github.com/cairn-ehr/drugref/issues/162).**
