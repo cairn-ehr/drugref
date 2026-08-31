@@ -23,7 +23,7 @@ from collections.abc import Mapping
 
 import psycopg
 
-from drugref.ingest import spl_dailymed, spl_subject
+from drugref.ingest import spl_release, spl_subject
 
 #: THE MEASURED PAIR FLOOR, on the 2026-08-22 openFDA and 2026-08-21 DailyMed
 #: releases. **A FLOOR, NOT A TARGET, and the check asserts `>=`.**
@@ -128,7 +128,7 @@ class SplSummary:
             f"{self.self_pairs:,} self-pair evidence rows excluded")
 
 
-def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
+def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
     """Refuse a scan that lost documents for a READING reason.
 
     A document dropped here is republished by `spl_label_subject` as
@@ -136,12 +136,20 @@ def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
     release, and the design spec turns that route's population into a
     commitment. Measured on the 2026-08-21 Human Rx release: the four counters
     that existed at that run are ZERO, which is what lets *"the limit is the
-    release, not the reading"* be a measurement rather than an inference. Two
-    more were ADDED afterwards -- the skips they count were upstream of every
-    counter, so the old sentence was true of the documents that reached the
-    counters rather than of the release -- and those two are UNMEASURED on a real
-    release. They are refused over anyway; see `ScanResult` for why, and for why
-    issue #162's three remaining skips are deliberately not folded in yet.
+    release, not the reading"* be a measurement rather than an inference.
+
+    ⇒ AND SO ARE ALL THE OTHERS, NOW MEASURED. Two counters were added after that
+    run -- the skips they count were upstream of every counter, so the old
+    sentence was true of the documents that REACHED the counters rather than of
+    the release -- and they shipped UNMEASURED, refusing over a condition nobody
+    had looked for. `tools/spl_skip_census.py` has since read all 54,813
+    documents of that release -- the record is
+    `docs/superpowers/specs/2026-08-31-drugref-spl-reader-skip-census.md` --
+    giving `no_xml_member` 0, `several_xml_members` 0 and
+    `not_a_member_zip` 0. Issue #162's three cases were measured in the same pass
+    and are counted here now; case 3 is NOT a drop, because the release carries
+    `COLR` ten times and refusing over it would have aborted the ingest on the
+    corpus this slice was built on. See `ScanResult` for each verdict.
 
     Raised BEFORE the run is opened, so a release this reader cannot handle
     leaves the previous projection standing.
@@ -154,7 +162,12 @@ def check_scan_dropped_nothing(scan: spl_dailymed.ScanResult) -> None:
             f"{scan.dropped_prefilter_disagreed} where the byte pre-filter "
             f"named a different setId than the document, "
             f"{scan.dropped_no_xml_member} member zip(s) with no XML, "
-            f"{scan.dropped_several_xml_members} with several). They would be "
+            f"{scan.dropped_several_xml_members} with several, "
+            f"{scan.dropped_untrustworthy_prefilter} judged 'not a target' by a "
+            f"setId that may not be their own, "
+            f"{scan.dropped_junk_version} with an unreadable versionNumber, "
+            f"{scan.dropped_unknown_class_code_unii} carrying a UNII under an "
+            f"unrecognised HL7 classCode). They would be "
             "republished as 'absent from DailyMed', which is a fact about this "
             "reader rather than about the release. Fix the reader before "
             "quoting any recovery figure.")

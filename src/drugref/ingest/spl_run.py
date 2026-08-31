@@ -55,7 +55,8 @@ import psycopg
 
 from drugref import provenance, spl_evidence
 from drugref.ingest import (
-    spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_subject,
+    spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release,
+    spl_subject,
 )
 from drugref.ingest.checksum import checksum
 from drugref.ingest.spl_checks import (
@@ -313,12 +314,15 @@ def ingest_spl(
           "text_key": label.text_key} for label in corpus.labels),
         known_uniis=known_uniis)
     say(f"scanning {len(parts)} DailyMed part(s) for {len(targets):,} labels")
-    scan = spl_dailymed.scan_release(
+    scan = spl_release.scan_release(
         [str(part) for part in parts], targets,
         progress=(lambda part: say(f"  {part}")) if progress else None)
     spl_checks.check_scan_dropped_nothing(scan)
     say(f"  read {scan.documents_read:,} documents, found {len(scan.found):,} "
         "of the labels looked for")
+    reported = spl_release.describe_reported_skips(scan)
+    if reported:
+        say(f"  {reported}")
 
     # ONE digest over BOTH corpora, through the shared helper -- not a second
     # hashing idiom of this module's own. `checksum` already streams over several

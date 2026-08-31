@@ -24,7 +24,9 @@ import psycopg
 import pytest
 
 from drugref import spl_evidence
-from drugref.ingest import spl, spl_checks, spl_dailymed, spl_quote, spl_run
+from drugref.ingest import (
+    spl, spl_checks, spl_dailymed, spl_quote, spl_release, spl_run,
+)
 
 FIXTURE = pathlib.Path("tests/fixtures/spl")
 LABELS = json.loads((FIXTURE / "openfda_labels.json").read_text())
@@ -265,14 +267,14 @@ def test_the_expensive_pass_runs_with_NO_SNAPSHOT_HELD(conn, corpus, monkeypatch
     _tables` is pinned by `pg_class.reltuples` rather than by a stopwatch.
     """
     seen = []
-    real_scan = spl_dailymed.scan_release
+    real_scan = spl_release.scan_release
 
     def watching_scan(*args, **kwargs):
         seen.append(conn.info.transaction_status)
         return real_scan(*args, **kwargs)
 
     _seed_registry(conn)
-    monkeypatch.setattr(spl_run.spl_dailymed, "scan_release", watching_scan)
+    monkeypatch.setattr(spl_run.spl_release, "scan_release", watching_scan)
     _ingest(conn, corpus)
 
     assert seen == [psycopg.pq.TransactionStatus.IDLE], (
@@ -788,13 +790,18 @@ def _scan(**overrides):
     fields = dict(documents_read=10, found={}, dropped_no_set_id_bytes=0,
                   dropped_unreadable=0, dropped_prefilter_disagreed=0,
                   dropped_no_xml_member=0, dropped_several_xml_members=0,
-                  skipped_not_a_member_zip=0)
-    return spl_dailymed.ScanResult(**(fields | overrides))
+                  skipped_not_a_member_zip=0,
+                  dropped_untrustworthy_prefilter=0, dropped_junk_version=0,
+                  dropped_unknown_class_code_unii=0,
+                  skipped_unknown_class_code=0)
+    return spl_release.ScanResult(**(fields | overrides))
 
 
 @pytest.mark.parametrize("counter", [
     "dropped_no_set_id_bytes", "dropped_unreadable", "dropped_prefilter_disagreed",
     "dropped_no_xml_member", "dropped_several_xml_members",
+    "dropped_untrustworthy_prefilter", "dropped_junk_version",
+    "dropped_unknown_class_code_unii",
 ])
 def test_a_scan_that_dropped_a_document_for_a_READING_reason_is_refused(counter):
     """A drop here is republished as `absent_from_dailymed` -- a fact about this

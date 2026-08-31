@@ -13,78 +13,72 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-ddi-ingest`, from `main` at `dc6a504`** (PR #157 merged 2026-08-25); **this round is open
-as [PR #161](https://github.com/cairn-ehr/drugref/pull/161) and is not merged.** Migrations through **`db/052`**
-— the ingest round added `db/051`, its review round added `db/052` (comments only). The suite total lives in
-PROJECT-NOTES § "How to run / test" and **nowhere else**
+**On `main` at `58d441c`** plus this round's branch. Migrations through **`db/052`** — this round added **NO
+migration**. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**
 ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the session.
 
-**⇒ JUST FINISHED — PR #161 WAS REVIEWED AND THE FINDINGS ARE FIXED.** Full account: PROJECT-NOTES §
-"Slice 5c.3's review round". The slice is built and measured
-([design](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md) ·
-[results](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md) · every figure in
-PROJECT-NOTES § "Slice 5c.3 — the SPL ddi ingest"): 19.3 GB in ~12.5 min, **29,952 pairs, 26,598 (88.8%)
-novel**, clearing the `>= 29,258` / `>= 25,960` floor.
+**⇒ JUST FINISHED — THE READER-SKIP CENSUS, CLOSING [#162](https://github.com/cairn-ehr/drugref/issues/162).**
+Full account: PROJECT-NOTES § "The reader-skip census round" ·
+[measurement record](superpowers/specs/2026-08-31-drugref-spl-reader-skip-census.md). One 163.6 s pass over all
+**54,813** documents, no database and no target set, settled every open reader question at once.
 
-**⇒ THE ROUND'S OWN HEADLINE CAME TRUE FIVE MORE TIMES.** #161 led with *"the fixture could not see a wrong
-quote budget"*. The review found that class of vacuity in five further places — **including the guard enforcing
-the licensing determination that headline is about**:
+**⇒ THE STANDING RISK IS RETIRED.** *"The two new counters are unmeasured on a real release, and the next real
+run may refuse where the last succeeded"* — they are **ZERO**, and so is the third. **And it was already
+answerable from two published numbers nobody had compared**: the results record says 54,813 documents read, and
+the six parts hold exactly 54,813 outer members; a skipped member yields no document, so the two being equal
+already implied all three counters were zero. ⇒ *Before measuring, check whether the measurement has already
+been published in two halves.*
 
-- **The quote budget had THREE homes, and the test named for pinning it was the third.** It ran
-  `SELECT ceil(0.25 * %s)` with the literal typed in the test, so mutating `db/051`'s trigger to `ceil(0.35 *
-  ...)` left all 29 tests in that file green. It now reads `pg_proc.prosrc`; the `share=` override that was the
-  third home is gone. ⇒ *A test that restates the number it is checking cannot detect the disagreement it is
-  named for.*
-- **`spl_checks.reconcile` could be DELETED without failing a test** — three mutations, all green, on the only
-  check comparing Python's belief against what the database holds.
-- **The 12.5-minute scan ran inside an open snapshot**, pinning `xmin` database-wide: `load_registry` opens a
-  transaction and nothing closed it until `open_run`. One `conn.rollback()`, pinned by a test asserting the
-  CAUSE, because a fixture that scans in milliseconds cannot see a cost that is duration.
-- **`scan_release`/`iter_release_labels` had no direct test**, and two skips sat *inside the generator*, before
-  `documents_read` — so `check_scan_dropped_nothing` could not refuse them. *"All counters measured zero"* was
-  a measurement over the documents that reached the counters. **The two new counters are still unmeasured on a
-  real release, and the next real run may refuse where the last succeeded.**
-- **The novel-pair floor was never watched refusing anything**, while `cli_spl` asserts it on every real run.
+**⇒ #162'S OWN PROPOSED FIX WOULD HAVE ABORTED THE INGEST ON ITS OWN CORPUS.** It said *"fold 2 and 3 into
+`total_dropped`"*. The release carries **`COLR` ten times**, so case 3 folded in makes `total_dropped` = 10 and
+the guard aborts before the run row exists. The shipped guard is therefore keyed on **the condition that
+harms** — an unknown classCode **carrying a UNII** — and the release settles that too: all ten `COLR`
+ingredients are named WHITE/RED/BLUE/YELLOW and **carry no `<code>` element at all**, so none could contribute
+a subject even if admitted as active. `COLR` is now ruled on, not merely tolerated. Cases 1 and 2 measured zero
+at **outcome AND cause** and are now drops.
 
-**⇒ AND REVIEWING THE FIXES CAUGHT THE SAME SHAPE TWICE MORE — the third consecutive round in this slice.**
-The new `Registry` type broke two committed tools that no test exercises (one of them the measurement
-`spl_match`'s docstring cites as its evidence), and the brand-new entity guard shipped an assertion that
-passed with the guard deleted — over a regex that would have matched inside a legal XML comment and aborted
-the whole ingest. Both fixed; `Registry` is now a dataclass so it cannot be destructured at all.
-⇒ *Review the fix the way the thing being fixed was reviewed.*
+**⇒ A COUNTER NOBODY REPORTS IS A SILENT SKIP WITH EXTRA STEPS.** `skipped_not_a_member_zip` was documented as
+*"counted and reported"* for a whole slice and was reported **nowhere** — no `say()`, no summary field.
+`skipped_unknown_class_code` would have inherited exactly that, which would have made admitting `COLR` a way of
+HIDING it. `spl_release.describe_reported_skips` now prints both, and is empty when there is nothing to say.
 
-**⇒ `db/051` SHIPPED THE DESIGN'S NUMBERS INTO THE DATABASE CATALOG.** Its `COMMENT ON` for `unresolved` said
-**14,680** where the answer is **92** — the very figure this slice's headline corrects — and a column comment
-named `spl_run.SUBJECT_ROUTES`, **which does not exist**. `db/052` fixes both. A catalog comment is not a
-schema edit, so it is a new file and `db/051` stays immutable.
+**⇒ VERIFIED WITH THE SHIPPED CODE, NOT ONLY THE PROBE** — `drugref_spl162`, **10 min 43 s** against the
+published ~12.5 min. It did not abort, so every new drop counter is zero as measured by the code that ships.
+`spl_ddi_pair` **29,952** (26,598 novel) · `spl_label_subject` **73,867** · `spl_wording_quote` **138,187** ·
+`spl_entity_occurrence` **1,297,944** — all reproducing 2026-08-27 exactly.
 
-**⇒ STILL TRUE.** The `unresolved` bucket is 92, not 14,680 (the design filed 14,455 labels its probe never
-read into a bucket meaning *"read"*); the register is **99.7% a RELEASE gap**. And **deferring the class half
-RAISED the yield by 193 pairs** — a round re-adding classes must expect it to FALL, not read that as a
-regression.
+**⇒ THE POPULATION TRAP, NOW A CONCRETE NUMBER.** `skipped_unknown_class_code` is **0** while the census counts
+`COLR` **10**. Both right: the shipped counters are scoped to the 10,670 documents the scan reads a subject
+from, the census is release-wide over 54,813. **Do not read one as a check on the other.**
+
+**⇒ AND THE SUITE-COUNT DRIFT HAPPENED AN EIGHTH TIME, INSIDE THIS ROUND.** The count was written off a
+`--collect-only` taken before the round's last test existed. Caught by re-reading it off the run that verified
+green. ⇒ *Even a number measured in the same session goes stale if it is measured before the work stops.*
+
+**⇒ `spl_release.py` WAS SPLIT OUT OF `spl_dailymed.py`** (rule 4: 491 lines, +100 needed). Verbatim move
+first, whole suite green, *then* the counters — refactor risk and behaviour change never mixed in one step.
+411 and 275 lines now.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **Merge PR #161.** Reviewed, fixed, suite green. Every previous 5c.3 round's review found a real defect in
-   its own published arithmetic and this one was no exception — but the arithmetic held; what did not was the
-   guarding of it.
-2. **[#162](https://github.com/cairn-ehr/drugref/issues/162) — three DailyMed reader skips are still
-   uncounted**, each becoming `absent_from_dailymed`. Needs a run against the real 17.6 GB release to know
-   whether folding them into `total_dropped` would start refusing legitimate releases: a measurement, not an
-   edit. #163–#166 are the review's other deferrals and are all smaller.
-3. **[#160](https://github.com/cairn-ehr/drugref/issues/160) — the `spl_label_subject` `COPY`** runs >4 min at
+1. **[#160](https://github.com/cairn-ehr/drugref/issues/160) — the `spl_label_subject` `COPY`** runs >4 min at
    100% CPU for 73,867 rows against 1.0 s in a synthetic probe on the same schema. Two causes are ruled out in
    the issue; three are untried (COPY vs INSERT, ICU text collation on `set_id`/`version`, drop-and-rebuild
-   indexes). Small, self-contained, and it is the whole of the ingest's cost.
-4. **[#159](https://github.com/cairn-ehr/drugref/issues/159) — `finished_at − started_at` is not a duration for
+   indexes). Small, self-contained, and it is the whole of the ingest's cost — **`drugref_spl162` is a fresh
+   verification database to measure against, built this round.**
+2. **[#163](https://github.com/cairn-ehr/drugref/issues/163)–[#166](https://github.com/cairn-ehr/drugref/issues/166)**,
+   the review's other deferrals, all smaller than #162 was: the openFDA absent-versus-blank conflation,
+   `db/051`'s unreachable NULL guard, frozen dataclasses over live dicts, and no size cap on nested zips.
+3. **[#159](https://github.com/cairn-ehr/drugref/issues/159) — `finished_at − started_at` is not a duration for
    ANY feed.** One line to change and a decision to make about a column already on disk for nine feeds.
-5. **`5c.5` pregnancy & lactation is still spiked-not-designed** — LactMed puts 1,679 moieties outside MED-RT's
+4. **`5c.5` pregnancy & lactation is still spiked-not-designed** — LactMed puts 1,679 moieties outside MED-RT's
    thin lactation floor, gated on a **clinician review that has not happened** (a 23-row worklist ships with
    the spike results).
-6. **The class half of 5c.3**, which is where every unsolved problem lives (#155, #102, the word-order gap) —
-   and see the yield warning above before measuring anything.
+5. **The class half of 5c.3**, which is where every unsolved problem lives (#155, #102, the word-order gap).
+   **Deferring the class half RAISED the drug × drug yield by 193 pairs**, so a round re-adding classes must
+   expect it to FALL and must not read that as a regression.
 
 ## Parallel project sequencing
 
@@ -97,9 +91,9 @@ unscheduled; class-grain content (#98) still gates #112/#105.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md).
-**New: #159 and #160** (performance, from the ingest round) and **#162–#166** (from its review round —
-uncounted reader skips, the openFDA absent-versus-blank conflation, db/051's unreachable NULL guard, frozen
-dataclasses over live dicts, and no size cap on nested zips).
+**#162 is CLOSED by this round.** Still new: **#159 and #160** (performance, from the ingest round) and
+**#163–#166** (from the review round — the openFDA absent-versus-blank conflation, db/051's unreachable NULL
+guard, frozen dataclasses over live dicts, and no size cap on nested zips).
 Still standing: **#155** (MED-RT's PK axis is not a drug-class vocabulary) and **#102 re-opened in new terms**
 (the band is pair-scoped), both of which the deferred class half inherits; **#67** (salt↔base equivalence) is
 wanted by **three** sources and is the one blocking a grain, not a nicety; **#158** (route 3's calibration set)
@@ -112,8 +106,9 @@ and the three rule-6 deeds (#6, #25, GSRS).
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never use it for reviewer accounts or GUI service data — pytest recreates it, and see #153 before
   running two sessions against it at once.
-- **`drugref_spl051`** is THIS round's verification database and the one to re-measure against: `TEMPLATE
-  drugref_spl` → `migrate` (applies `db/051`) → `ingest spl`. Full command: results record §1. **Never patch a
+- **`drugref_spl162`** is THIS round's verification database and the one to re-measure against: `TEMPLATE
+  drugref_spl` → `migrate` → `ingest spl`, 10 min 43 s, reproducing every published figure. Full command:
+  results record §1. **`drugref_spl051`** is the ingest round's and is still on disk. **Never patch a
   verification database — rebuild it under a new name.**
 - **`drugref_spl`** remains the pre-`db/051` measurement database both design rounds used, and is the template
   above. **`drugref_dc049`** and **`drugref_dc101`** are the DrugCentral round's; `dc049` predates `db/050`.

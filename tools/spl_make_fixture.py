@@ -42,7 +42,7 @@ import json
 import pathlib
 import xml.etree.ElementTree as ET
 
-from drugref.ingest import spl, spl_dailymed
+from drugref.ingest import spl, spl_dailymed, spl_release
 
 _SPL_NS = "urn:hl7-org:v3"
 _NS = f"{{{_SPL_NS}}}"
@@ -83,7 +83,7 @@ def structural_skeleton(xml_bytes: bytes) -> bytes | None:
 def read_dailymed(part: pathlib.Path, wanted: int) -> dict[str, bytes]:
     """The first `wanted` labels of one release part that declare an ingredient."""
     skeletons: dict[str, bytes] = {}
-    for _document_id, xml_bytes in spl_dailymed.iter_release_labels(str(part)):
+    for _document_id, xml_bytes in spl_release.iter_release_labels(str(part)):
         set_id = spl_dailymed.set_id_in_bytes(xml_bytes)
         if set_id is None or set_id in skeletons:
             continue

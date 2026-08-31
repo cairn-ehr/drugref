@@ -26,6 +26,7 @@ import zipfile
 import pytest
 
 from drugref.ingest import spl_dailymed as dm
+from drugref.ingest import spl_release as rel
 
 UNII_SYSTEM = dm.UNII_CODE_SYSTEM
 
@@ -290,7 +291,7 @@ def test_iter_release_labels_yields_the_sole_xml_of_each_member(tmp_path):
     nothing at all."""
     part = _part(tmp_path, {"a.zip": {"a.xml": _document("", set_id="SET-1"),
                                       "a.jpg": b"\xff\xd8"}})
-    assert [name for name, _ in dm.iter_release_labels(part)] == ["a.zip"]
+    assert [name for name, _ in rel.iter_release_labels(part)] == ["a.zip"]
 
 
 def test_a_member_the_reader_declines_is_REPORTED_not_silently_skipped(tmp_path):
@@ -307,7 +308,7 @@ def test_a_member_the_reader_declines_is_REPORTED_not_silently_skipped(tmp_path)
         "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"},
     })
     skips = []
-    read = [name for name, _ in dm.iter_release_labels(part, on_skip=(
+    read = [name for name, _ in rel.iter_release_labels(part, on_skip=(
         lambda member, reason: skips.append((member, reason))))]
 
     assert read == ["good.zip"]
@@ -324,7 +325,7 @@ def test_a_member_with_SEVERAL_xml_files_is_refused_not_arbitrarily_picked(
     the wrong document would attach a subject to the wrong wording silently."""
     part = _part(tmp_path, {"m.zip": {"first.xml": _document("", set_id="SET-1"),
                                       "second.xml": _document("", set_id="SET-2")}})
-    assert list(dm.iter_release_labels(part)) == []
+    assert list(rel.iter_release_labels(part)) == []
 
 
 def test_scan_release_counts_every_member_of_the_part(tmp_path):
@@ -344,7 +345,7 @@ def test_scan_release_counts_every_member_of_the_part(tmp_path):
         "images_only.zip": {"a.jpg": b"\xff\xd8"},
         "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"},
     })
-    scan = dm.scan_release([part], {"SET-1"})
+    scan = rel.scan_release([part], {"SET-1"})
 
     assert set(scan.found) == {"SET-1"}
     assert scan.documents_read == 4           # only members that yielded an XML
@@ -370,7 +371,7 @@ def test_scan_release_drops_a_document_whose_tree_DISAGREES_with_the_prefilter(
     body = ('<relatedDocument><setId root="SET-TARGET"/></relatedDocument>'
             '<setId root="SET-REAL"/>')
     xml = f'<document xmlns="urn:hl7-org:v3">{body}</document>'.encode()
-    scan = dm.scan_release([_part(tmp_path, {"m.zip": {"a.xml": xml}})],
+    scan = rel.scan_release([_part(tmp_path, {"m.zip": {"a.xml": xml}})],
                            {"SET-TARGET"})
     assert scan.dropped_prefilter_disagreed == 1
     assert scan.found == {}
