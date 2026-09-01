@@ -51,9 +51,12 @@ measurement**:
 | **`COPY spl_label_subject`** | **73,867** | **630 s** | **`active`, no wait event** |
 | `COPY spl_entity_occurrence` + `spl_wording_quote` | 1,436,131 | ~35 s | `active` |
 
-⇒ **THE CONTROL WAS ALREADY INSIDE THE RUN.** 1,297,944 occurrence rows landed
-in 35 s while 73,867 subject rows took 630 s — **17.6× more rows, 18× less
+⇒ **THE CONTROL WAS ALREADY INSIDE THE RUN.** 1,436,131 occurrence + quote rows
+landed in 35 s while 73,867 subject rows took 630 s — **19.4× more rows, 18× less
 time**, in the same transaction, through the same writer, from the same client.
+(The 35 s row covers BOTH tables and ~28 chunked `COPY`s, because 1 Hz
+`pg_stat_activity` polling cannot separate them; the subject side genuinely is
+one statement, which only sharpens the comparison.)
 Two of the three causes issue 160 listed as untried die on that one line: it is
 not the row volume, and it is not `COPY` (every one of these is a `COPY`).
 
@@ -140,9 +143,20 @@ reduction.
 
 `spl_evidence.analyze_loaded_table`, called from the orchestrator immediately
 after each parent is loaded and **before anything that references it** is
-loaded. The plan is cached for the session at first use, so this is the only
-moment it can be got right; `analyze_source_tables` at the end of the run — which
-exists for the read-backs and is still needed for them — is far too late.
+loaded. The plan is chosen at first use, which is inside the load, so this is
+the only moment it can be got right; `analyze_source_tables` at the end of the
+run — which exists for the read-backs and is still needed for them — arrives
+after the `COPY` has already been paid for at the bad plan's price.
+
+⇒ **AND NOT "CACHED FOR THE SESSION", WHICH §4 CLAIMED IN ITS FIRST DRAFT.** The
+review round measured it: in ONE session and ONE transaction, 3,000 child rows at
+first use against an unanalyzed 68,550-row parent took **4,874 ms**; an `ANALYZE`
+of the parent *after* that; the next two batches took **15.7 ms** and **14.0 ms**.
+RI plans are SPI plans and participate in relcache invalidation, so `ANALYZE`
+invalidates them — analysing afterwards repairs the plan, it just cannot refund
+the rows already written. The rule and every measurement in this record stand;
+the mechanism sentence bolted onto them did not, and it was §5's own failure
+mode committed in the act of writing §5.
 
 End to end on the real releases, `drugref_spl160fix`, same machine, same day:
 
@@ -161,8 +175,17 @@ End to end on the real releases, `drugref_spl160fix`, same machine, same day:
 Pinned by `test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded`,
 which asserts the **cause** rather than a duration (a fixture corpus of three
 wordings cannot show a 630-second stall), exactly as the read-back `ANALYZE` is
-pinned by `reltuples >= 0`. Removing **either** `ANALYZE` fails it — both mutants
-were run and both were killed.
+pinned by `reltuples > 0`. Removing **either** `ANALYZE` fails it, and so does
+moving one earlier or consolidating both into `analyze_source_tables`; all four
+mutants were run and all four were killed.
+
+⇒ **THE PREDICATE IS `> 0` AND THE FIRST DRAFT'S `>= 0` WAS NOT STRONG ENOUGH.**
+`reltuples` is -1 on a never-analysed table and **0.0 on one analysed while still
+empty** — and 0.0 is not a weaker form of the bug, it is the bug, since an empty
+parent has `relpages = 0` exactly as an unanalyzed one does. Under `>= 0` two
+mutants lived: analysing a parent *before* its own write, and replacing both calls
+with one `analyze_source_tables` after `clear_source_spl` — the tidy-up a future
+reader is most likely to attempt.
 
 ### The census, so a second one cannot arrive quietly
 
@@ -197,8 +220,14 @@ The measurement was real. **The reason given for it is false**, and it is the
 half that got quoted forward: the plan is *pinned*, but to whatever was chosen at
 **first use**, which is inside the load and before any `ANALYZE`. Pinned is not
 the same as pinned to the primary key. The 175 ms result did not generalise
-because a parent whose only index is its primary key — every other parent in this
-schema — has no wrong plan available to pin.
+because *that* parent had no wrong plan available to pin.
+
+⇒ **AND NOT BECAUSE "EVERY OTHER PARENT HAS ONLY A PRIMARY KEY", WHICH THIS
+RECORD FIRST WROTE AND WHICH IS FALSE.** Measured in review: **26** of this
+schema's foreign-key parents carry a non-primary-key index. The property that
+makes a parent dangerous is the narrower one §4 censuses — an index whose LEADING
+key columns are a *proper subset* of the referenced columns — and it is why the
+census, not the prose, is the thing that guards this.
 
 ⇒ **A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY THE MEASUREMENT
 WAS TAKEN.** The explanation was reasoning written in the voice of the

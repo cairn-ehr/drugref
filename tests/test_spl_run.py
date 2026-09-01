@@ -256,11 +256,13 @@ def test_the_expensive_pass_runs_with_NO_SNAPSHOT_HELD(conn, corpus, monkeypatch
 
     `load_registry` is the first statement on a non-autocommit connection, so it
     opens a transaction; `open_run` is on the far side of the DailyMed scan and
-    the 19.3 GB checksum. Measured on the real releases that gap is ~12.5
-    minutes, during which a production node would show this backend as `idle in
-    transaction` -- pinning `xmin` database-wide so autovacuum reclaims nothing
-    in any table, and offering itself to `idle_in_transaction_session_timeout` at
-    the far end of the most expensive step in the ingest.
+    the 19.3 GB checksum. Measured on the real releases that gap is ~50 s -- it
+    was read as ~12.5 minutes for one round, which was the WHOLE ingest's figure
+    describing a part of it. During that gap a production node would show this
+    backend as `idle in transaction`, pinning `xmin` database-wide so autovacuum
+    reclaims nothing in any table, and offering itself to
+    `idle_in_transaction_session_timeout` at the far end of the most expensive
+    step in the ingest.
 
     A fixture corpus of three wordings scans in milliseconds, so NO end-to-end
     assertion can see this: the defect is duration, not result. What is
@@ -635,22 +637,47 @@ def _reltuples(conn, table):
     return estimate
 
 
+def _in_source_fk_edges(conn):
+    """`{child table: (parent table, ...)}` for the FKs INSIDE this source.
+
+    Restricted to parents in `SPL_TABLES`, because those are the ones this one
+    transaction bulk-loads and therefore the ones that can be unanalyzed when the
+    check fires. A parent outside the source -- `ingest_run`, `substance_moiety`
+    -- was loaded by some earlier committed run and already carries statistics.
+
+    Read from `pg_constraint` rather than restated, so a foreign key added to
+    `db/051`'s successor is covered without anyone remembering to come here.
+    """
+    edges: dict[str, list[str]] = {}
+    for child, parent in conn.execute(
+            "SELECT child.relname, parent.relname "
+            "  FROM pg_constraint c "
+            "  JOIN pg_class child  ON child.oid  = c.conrelid "
+            "  JOIN pg_class parent ON parent.oid = c.confrelid "
+            " WHERE c.contype = 'f' "
+            "   AND c.connamespace = 'drugref'::regnamespace").fetchall():
+        if child in spl_evidence.SPL_TABLES and parent in spl_evidence.SPL_TABLES:
+            edges.setdefault(child, []).append(parent)
+    return {child: tuple(sorted(parents)) for child, parents in edges.items()}
+
+
 @pytest.mark.usefixtures("_clean")
 def test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded(
         conn, corpus, monkeypatch):
     """⇒ ISSUE 160, AND THE ANALYZE ONE TEST UP IS TOO LATE TO PREVENT IT.
 
     Measured on the real releases (2026-09-01, `drugref_spl160`): the `COPY` of
-    73,867 rows into `spl_label_subject` ran **630 s at 96% server CPU**, while
-    the `COPY` of 1,297,944 rows into `spl_entity_occurrence` -- 17.6x more rows,
-    same transaction, same client -- took **35 s**. Row volume is therefore not
-    the cause, and neither is `COPY`.
+    73,867 rows into `spl_label_subject` ran **630 s at 96% of one core**, while
+    the 1,436,131 rows of `spl_entity_occurrence` + `spl_wording_quote` -- 19.4x
+    more rows, same transaction, same client -- took **35 s**. Row volume is
+    therefore not the cause, and neither is `COPY`.
 
     THE CAUSE, taken from a stack sample of the backend rather than guessed: 100%
     of samples sat in `RI_FKey_check_ins`, the foreign-key check fired as an
     after-row trigger. Its query is `... WHERE ingest_run = $1 AND source = $2
     AND set_id = $3 AND version = $4 FOR KEY SHARE`, and the planner may satisfy
-    that with ANY index on the parent whose leading column is one of those four.
+    that with ANY index on the parent whose LEADING RUN of key columns lies among
+    those four -- the same criterion `_fk_exposure` below censuses.
     `spl_label` carries two: `spl_label_pkey` on all four, and
     `spl_label_by_wording` on `(ingest_run, source, text_key)`. With the parent
     freshly `COPY`d and never analysed -- `relpages = 0`, `reltuples = -1` --
@@ -666,38 +693,67 @@ def test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded(
     `ANALYZE` has run. Pinned is not the same as pinned to the primary key.
 
     A duration cannot be asserted on a fixture this small, so what is pinned is
-    the CAUSE, exactly as the read-back test above pins `reltuples >= 0`: at the
-    moment a child is written, its foreign-key parent must already carry
-    statistics. Removing either `ANALYZE` from the orchestrator fails this.
+    the CAUSE: at the moment a child is written, its foreign-key parent must
+    already carry statistics DESCRIBING ITS ROWS.
+
+    ⇒ **AND THE PREDICATE IS `> 0`, NOT `>= 0`, WHICH IS NOT A STYLE CHOICE.**
+    `reltuples` is -1 on a table that was never analysed and **0.0 on one that
+    was analysed WHILE STILL EMPTY** -- and 0.0 is not a lesser version of the
+    bug, it IS the bug: an empty parent has `relpages = 0` exactly as an
+    unanalyzed one does, so it pins the same catastrophic plan. Measured with
+    `plan_cache_mode = force_generic_plan` on a replica of `spl_label`'s shape:
+    analysed-while-empty then loaded to 68,550 rows plans onto
+    `spl_label_by_wording` with a filter; analysed AFTER loading plans onto
+    `spl_label_pkey`. `>= 0` let two mutants live -- moving an `ANALYZE` to
+    before its own table's write, and replacing both calls with a single
+    `analyze_source_tables` right after `clear_source_spl`, which is the tidy-up
+    a future reader is most likely to attempt.
+
+    ⇒ **THE EDGES ARE DERIVED FROM THE CATALOG, NOT LISTED HERE.** An earlier
+    version of this test named three writers by hand and claimed to cover "every"
+    foreign key; there are four, and one of the three watches was inert because
+    two of them keyed on the same parent. Hooking `_copy` -- the single chokepoint
+    every writer goes through -- and reading the edges out of `pg_constraint`
+    means a child table added to the orchestrator is covered the day it is added,
+    which is the one thing a hand-written list cannot promise.
     """
-    seen = {}
+    edges = _in_source_fk_edges(conn)
+    observed: dict[tuple[str, str], float] = {}
+    real_copy = spl_evidence._copy
 
-    def watch(name, parent):
-        real = getattr(spl_evidence, name)
+    def watching_copy(*args, **kwargs):
+        # `_copy(conn, row_type, rows, ...)`: the child table is the row type's,
+        # via the writer's own one home for that mapping.
+        child = spl_evidence._TABLE_FOR_ROW[args[1].__name__]
+        for parent in edges.get(child, ()):
+            # FIRST use only -- the RI plan is chosen when the first child row
+            # of this load is checked, so a later chunk's reading is too late to
+            # be the thing under test.
+            observed.setdefault((child, parent), _reltuples(conn, parent))
+        return real_copy(*args, **kwargs)
 
-        def watching(*args, **kwargs):
-            seen.setdefault(parent, _reltuples(conn, parent))
-            return real(*args, **kwargs)
-
-        monkeypatch.setattr(spl_evidence, name, watching)
-
-    # Every foreign key inside this source that points at a table the SAME
-    # transaction bulk-loads. spl_label_subject -> spl_label is the one issue 160
-    # measured; the other two are here because the trap is structural and a
-    # future index on spl_wording would make them behave identically.
-    watch("write_labels", "spl_wording")
-    watch("write_label_subjects", "spl_label")
-    watch("write_occurrences", "spl_wording")
+    monkeypatch.setattr(spl_evidence, "_copy", watching_copy)
 
     _seed_registry(conn)
     _ingest(conn, corpus)
 
-    assert set(seen) == {"spl_wording", "spl_label"}
-    for parent, reltuples in seen.items():
-        assert reltuples >= 0, (
-            f"{parent} still had no statistics when a table referencing it was "
-            f"loaded (reltuples={reltuples}); its foreign-key check plan is "
-            "chosen at that moment and cannot be corrected afterwards")
+    # THE GATE: every in-source foreign key whose parent this transaction also
+    # bulk-loads. A new child table adds an entry here and forces somebody to
+    # decide -- and unlike the census below it cannot be closed by editing this
+    # literal, because the assertion underneath is derived from what actually ran.
+    assert set(observed) == {
+        ("spl_label", "spl_wording"),
+        ("spl_label_subject", "spl_label"),
+        ("spl_entity_occurrence", "spl_wording"),
+        ("spl_wording_quote", "spl_wording"),
+    }
+    for (child, parent), reltuples in sorted(observed.items()):
+        assert reltuples > 0, (
+            f"{parent} carried no row statistics when {child}, which references "
+            f"it, was loaded (reltuples={reltuples}; -1 is never analysed, 0 is "
+            "analysed while still empty, and both pin the same wrong "
+            "foreign-key check plan). That plan is chosen at this moment, so an "
+            "ANALYZE later in the run cannot buy back what this COPY pays.")
 
 
 def _fk_exposure(conn):
@@ -707,9 +763,29 @@ def _fk_exposure(conn):
     An FK check reads `WHERE p1 = $1 AND ... AND pn = $n`, so the planner can use
     any parent index whose LEADING columns are among p1..pn. If that leading run
     is shorter than the whole key, the index condition matches more than one row
-    and the remainder are discarded by a filter. Written in Python rather than
-    SQL because `pg_index.indkey` is an `int2vector` that casts to a ZERO-based
-    array, and an off-by-one there would silently report the wrong census.
+    and the remainder are discarded by a filter.
+
+    **WRITTEN IN PYTHON FOR THE `indnkeyatts` SLICE**, which is the one step that
+    can produce a FALSE NEGATIVE -- the direction that matters for a gate.
+    `indkey` runs over key columns AND `INCLUDE` columns; an INCLUDE column that
+    happens to be one of p1..pn would extend `leading` to the full key length and
+    silently declare a genuinely exposed index safe. INCLUDE columns cannot serve
+    an index condition, so the slice to `indnkeyatts` is load-bearing rather than
+    tidy. (An earlier version of this docstring blamed a zero-based `int2vector`
+    off-by-one instead. Nothing here subscripts the array -- it iterates and
+    compares values -- so that hazard does not exist and the real one was
+    unnamed.)
+
+    **IT OVER-REPORTS, DELIBERATELY.** `indisunique`, `indpred` and `indisvalid`
+    are not consulted, so a unique index on a shorter prefix, or a partial index
+    the RI query can never match, is flagged even though it pins one row. A gate
+    that fails loudly and makes somebody look is the right error to make; the
+    reverse would hand back a 630-second `COPY`. Expression-leading indexes
+    (`indkey` entry 0) and single-column keys are correctly never flagged.
+
+    ⇒ **ONE DIRECTION ONLY: the INSERT side.** This censuses parent indexes, which
+    is what `RI_FKey_check_ins` uses. The DELETE side (`RI_FKey_noaction_del`,
+    which `clear_source_spl` fires) scans the CHILD and is not covered here.
     """
     exposed = []
     constraints = conn.execute(
@@ -737,12 +813,20 @@ def _fk_exposure(conn):
 def test_ONE_foreign_key_in_the_schema_can_be_planned_onto_a_LOOSE_index(conn):
     """The census behind the test above, so a SECOND exposure cannot arrive quietly.
 
-    Measured over all 138 foreign keys in schema `drugref` on 2026-09-01: exactly
-    ONE is exposed, and it is issue 160's. This is a GATE, not a defect report --
-    the loose index is wanted, and the mitigation is that the parent is analysed
-    before the child is loaded. A new entry here means another orchestrator has
-    to make that same guarantee, and the point of the assertion is to force
-    somebody to decide rather than to inherit a 630-second `COPY`.
+    Measured over all 138 foreign keys schema `drugref` held on 2026-09-01:
+    exactly ONE is exposed, and it is issue 160's. **What this test guards is the
+    exposure LIST, not that count** -- the number is a dated measurement, and a
+    migration that adds a foreign key moves it without weakening anything.
+
+    This is a GATE, not a defect report -- the loose index is wanted, and the
+    mitigation is that the parent is analysed before the child is loaded. A new
+    entry here means another orchestrator has to make that same guarantee, and
+    the point of the assertion is to force somebody to decide rather than to
+    inherit a 630-second `COPY`.
+
+    Note the exposure is a property of a PARENT'S INDEXES, so the edit that
+    creates one is `CREATE INDEX` in a migration -- nowhere near an orchestrator,
+    and by somebody with no reason to be thinking about foreign-key check plans.
     """
     assert _fk_exposure(conn) == [
         ("drugref.spl_label_subject", "drugref.spl_label",
@@ -773,15 +857,32 @@ def test_a_re_ingest_REPLACES_rather_than_accumulates(conn, corpus):
 # The refusals -- each SHOWN firing
 # --------------------------------------------------------------------------
 
-def test_ANALYZING_a_table_this_source_does_not_own_is_refused(conn):
+def test_ANALYZING_a_table_this_source_does_not_own_is_refused():
     """`ANALYZE` interpolates its identifier, so the name must be a constant.
 
     The same rule `_copy` and `db.clear_source_tables` already state, shown
     firing rather than asserted in a comment: a table name reaching this from
     anywhere but `SPL_TABLES` is refused before it is spliced into SQL.
+
+    NO `conn` FIXTURE, and that is the assertion: the refusal happens before any
+    SQL is built, so a connection is not needed to show it. Taking one would gate
+    this on `DRUGREF_TEST_DSN` and skip the guard on exactly the machines least
+    likely to have a database -- someone else's first checkout.
     """
     with pytest.raises(ValueError, match="not among this source's tables"):
-        spl_evidence.analyze_loaded_table(conn, "substance_moiety")
+        spl_evidence.analyze_loaded_table(None, "substance_moiety")
+
+
+def test_ANALYZING_an_EMPTY_list_of_tables_is_refused():
+    """`ANALYZE` with no table list means EVERY table in the database.
+
+    Unreachable from either call site today -- one passes a 1-tuple, the other
+    `SPL_TABLES` -- so it is refused rather than handled, on `_copy`'s stated
+    grounds for its own unreachable refusal: the day it becomes reachable is the
+    day the ingest takes a lock on every table in the database until COMMIT.
+    """
+    with pytest.raises(ValueError, match="no tables"):
+        spl_evidence._analyze(None, ())
 
 
 @pytest.mark.usefixtures("_clean")

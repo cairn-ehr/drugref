@@ -18,20 +18,26 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
-- **ANALYSE A BULK-LOADED TABLE BEFORE LOADING ANYTHING THAT REFERENCES IT** (issue 160, 2026-09-01, and it
+- **ANALYSE A BULK-LOADED TABLE BEFORE LOADING ANYTHING THAT REFERENCES IT** — *and the guard for it says
+  `reltuples > 0`, never `>= 0`, because 0.0 means "analysed while still empty", which pins the same wrong plan*
+  (issue 160, 2026-09-01, and it
   cost 630 seconds of every SPL ingest). A foreign-key check is a QUERY, and the planner may satisfy it with
   any parent index whose leading columns its equality quals cover — so a parent carrying a second index whose
   key is a *proper subset* of the referenced columns offers a plan that matches the whole table and filters.
   On a freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) the good and the catastrophic plan **cost the
-  same**, and the choice is a coin toss. **The RI plan is cached at first use, inside the load**, so an
-  `ANALYZE` at the end of the run cannot repair it. Measured: 493,539 ms → 1,352 ms for one `COPY`, bought by
-  112 ms of `ANALYZE`. Censused across all 138 foreign keys in the schema and pinned by two tests; full account
-  in § "The COPY-cost round".
+  same**, and the choice is a coin toss. **The plan is chosen at first use, inside the load**, so by the time
+  an end-of-run `ANALYZE` exists the `COPY` has already been paid for at the bad plan's price. Measured:
+  493,539 ms → 1,352 ms for one `COPY`, bought by 112 ms of `ANALYZE`. Censused across all 138 foreign keys in
+  the schema and pinned by two tests, against four mutants; full account in § "The COPY-cost round".
   ⇒ **And its meta-rule: A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY THE EXPLANATION IS
   LOAD-BEARING WHEN IT IS QUOTED FORWARD.** This cause was ruled out for a round by a docstring whose 175 ms
   measurement was real and whose stated reason was invented. **Where a cost is concentrated in one statement,
   sample the process before designing an experiment about it** — the three hypotheses on the issue were all
   wrong, and eight seconds of `sample` named the fourth.
+  ⇒ **And the meta-rule that round then broke while writing it: A ROUND IS MOST LIKELY TO COMMIT THE FAILURE IT
+  IS CURRENTLY NAMING.** Its own fix docstring invented a second mechanism ("the plan is CACHED for the rest of
+  the session") one paragraph after retracting the first. **Reasoning is not measurement even when it sits in
+  the same sentence as one, and least of all in the paragraph that just said so.**
 - **CODE MUST EXPLAIN ITS OWN CONTRACT.** The repository-wide house rules now live in
   [`CONTRIBUTING.md`](../CONTRIBUTING.md): docstrings are mandatory; behavioural numbers are named constants;
   dynamically typed code carries complete type hints; and pure reusable logic belongs in focused modules where
@@ -4357,6 +4363,12 @@ checks against a freshly bulk-loaded parent with no statistics — and that was 
 child rows against an unanalyzed 68,550-row parent insert in **175 ms**, because PostgreSQL's RI triggers use a
 plan pinned to the parent's primary key rather than a re-planned query.
 
+> **⚠ THE REASON IN THAT LAST SENTENCE IS FALSE, and issue #160 cost a round to it.** The measurement was real;
+> the explanation was invented and quoted forward. The plan is pinned to whatever was chosen at FIRST USE, not
+> to the primary key, and the 175 ms did not generalise because that parent had no wrong plan available to pin.
+> Left standing here because this section records what the round believed; corrected in § "The COPY-cost
+> round", which is where the current state lives.
+
 The real cause was the same missing statistics one table further on: **every read-back joins tables the same
 transaction just `COPY`'d**, so the planner costs them as if empty and picks a nested loop over 1.3 million
 occurrence rows. `spl_evidence.analyze_source_tables` now runs inside the transaction before them.
@@ -4453,7 +4465,7 @@ Python believes it wrote against what the database holds, and its own docstring 
 NO CONSTRAINT CAN EXPRESS"*. A `COPY` that silently dropped rows would have shipped. Both halves are now watched
 refusing.
 
-### ⇒ THE 12.5-MINUTE SCAN RAN INSIDE AN OPEN SNAPSHOT
+### ⇒ THE SCAN RAN INSIDE AN OPEN SNAPSHOT (called 12.5 minutes then; measured at ~50 s in #160)
 
 `load_registry` is the first statement on the non-autocommit connection `ingest_spl` requires, so it opens a
 transaction; `open_run` is on the far side of `scan_release` and a 19.3 GB checksum. Verified against the test
@@ -4725,7 +4737,7 @@ windows, `source_checksum` `5d6a894b30ce…`, all five route tallies. 12 min 51 
 **⇒ THE CONTROL FOR ISSUE 160 WAS ALREADY INSIDE THAT RUN, AND NOBODY HAD LOOKED.** Polling
 `pg_stat_activity` once a second — which times each statement **without modifying the code under
 measurement** — gave: `COPY spl_label_subject`, 73,867 rows, **630 s**; `COPY spl_entity_occurrence` +
-`spl_wording_quote`, 1,436,131 rows, **35 s**; `COPY spl_label`, 68,550 rows, **6 s**. *17.6× more rows in 18×
+`spl_wording_quote`, 1,436,131 rows, **35 s**; `COPY spl_label`, 68,550 rows, **6 s**. *19.4× more rows in 18×
 less time, same transaction, same writer, same client.* Two of the three causes the issue listed as untried die
 on that one line: not the row volume, and not `COPY`.
 
@@ -4746,10 +4758,12 @@ with `ANALYZE spl_wording; ANALYZE spl_label` (11.8 + 99.8 ms) inserted. End to 
 with every count, both checksums and all five routes identical.
 
 **⇒ THE RULE, AND IT IS NOT "ANALYZE AT THE END":** *a table is analysed as soon as it is loaded and **before
-anything that references it** is loaded.* The RI plan is cached at first use — inside the load — so
+anything that references it** is loaded.* The plan is chosen at first use — inside the load — so
 `analyze_source_tables` at the end of the run, which exists for the read-backs and is still needed for them,
-**cannot repair a plan already pinned**. `spl_evidence.analyze_loaded_table` carries the mechanism and the
-numbers.
+**arrives after the `COPY` has already paid for the bad plan**. ⇒ *Not* because a plan is cached for the
+session: the review round measured that an `ANALYZE` after first use DOES re-plan (4,874 ms → 15.7 ms in one
+transaction), so the reason is ordering in time, not plan lifetime. `spl_evidence.analyze_loaded_table`
+carries the mechanism and the numbers.
 
 **⇒ AND THE REFUTATION THAT CLOSED THE RIGHT DOOR FOR A ROUND.** `analyze_source_tables`'s docstring said the
 foreign key had been *"measured and REFUTED: 20,000 child rows against an unanalyzed 68,550-row parent insert
@@ -4776,6 +4790,56 @@ nowhere near the orchestrator.** `test_ONE_foreign_key_in_the_schema_can_be_plan
 the census; `test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded` pins the cause (a
 fixture of three wordings cannot show a 630-second stall), and **both mutants — each `ANALYZE` deleted in turn
 — were run and killed.**
+
+### ⇒ AND ITS REVIEW ROUND, WHICH IS THE HALF WORTH READING
+
+The fix was correct, complete and correctly ordered, and **no code defect was found**. Everything below is a
+sentence that was wrong or a guard that did not guard — and the round had just finished writing down the rule
+about exactly that.
+
+**⇒ THE ROUND COMMITTED ITS OWN META-RULE'S ERROR WHILE WRITING IT DOWN.** `analyze_loaded_table`'s docstring
+said the RI plan is *"CACHED for the rest of the session, so analysing afterwards cannot repair it"*. **Measured
+and false.** In ONE session and ONE transaction, on a replica of `spl_label`'s shape at 68,550 parent rows:
+3,000 child rows at first use against the unanalyzed parent took **4,874 ms**; then `ANALYZE` of the parent;
+then the next 3,000 took **15.7 ms** and the next **14.0 ms**. RI plans are SPI plans and participate in
+relcache invalidation, so `ANALYZE` invalidates them — analysing afterwards **does** repair the plan; it simply
+cannot refund the rows already written. The rule stands and the ablation stands; only the mechanism sentence
+bolted onto them was invented — one paragraph after the paragraph retracting an invented mechanism from the
+same docstring. ⇒ **A ROUND IS MOST LIKELY TO COMMIT THE FAILURE IT IS CURRENTLY NAMING**, because the failure
+is on its mind as a thing to *describe*, not as a thing to *avoid*.
+
+**⇒ THE GUARD ADMITTED THE EXACT STATE IT EXISTED TO FORBID.** `reltuples >= 0` is satisfied by **0.0**, which
+is what `ANALYZE` of a still-EMPTY table writes — and 0.0 is not a milder form of the bug, it *is* the bug: an
+empty parent carries `relpages = 0` exactly as a never-analysed one does, so it pins the same catastrophic plan.
+Two mutants lived under `>= 0`: analysing a parent **before** its own write, and replacing both calls with one
+`analyze_source_tables` after `clear_source_spl` — the tidy-up a future reader is likeliest to attempt. It is
+`> 0` now, and **four** mutants are run against it rather than two; all four are killed.
+⇒ **A GUARD WRITTEN AS "HAS STATISTICS" WHEN IT MEANS "HAS STATISTICS DESCRIBING ITS ROWS" IS OFF BY THE BUG.**
+
+**⇒ AND ITS COVERAGE WAS HAND-LISTED, SO ITS "EVERY" WAS FALSE.** The test named three writers and claimed every
+in-source foreign key. There are **four** — `spl_wording_quote → spl_wording` was missing — and one of the three
+watches was **inert**, because two keyed on the same parent and `setdefault` kept the first. So the headline
+`assert set(seen) == …` would have passed with `write_occurrences` never called at all. The edges are now read
+from `pg_constraint` at the `_copy` chokepoint, which every writer goes through, so a child table added to the
+orchestrator is covered the day it is added. ⇒ **A HAND-WRITTEN LIST CANNOT SAY "EVERY"; ONLY THE CATALOG CAN.**
+
+**Two more sentences that were measured false**, both in this round's own prose: *"a parent whose ONLY index is
+its primary key -- which is every other parent in this schema"* — **26** of the schema's FK parents carry a
+non-primary-key index, and the property that matters is the narrower one the census encodes; and *"the
+statistics … are rolled back with it if the run is refused"* — `pg_statistic` rows do roll back, but
+`pg_class.relpages`/`reltuples` **survive** (`vac_update_relstats` writes them in place), which the measurement
+record itself relied on two sections earlier when it gave each ablation variant a fresh clone.
+
+**Filed rather than fixed:** **#174** — `ANALYZE` on a table the ingest role does not own emits a **WARNING**,
+skips, and **returns success**, and psycopg discards notices unless a handler is installed (which nothing in
+`src/` installs, a discard `drugcentral_run.py:211` already documents from an earlier round). Under an
+admin-migrates/app-role-ingests split the whole #160 fix reverts at runtime, invisibly, and the ingest still
+reports success — `reconcile`, `read_pairs` and `check_floors` check counts, not plans.
+
+**And rule 4 broke, as #172 predicted it would.** `spl_evidence.py` went 494 → **512**, because each of the three
+false sentences cost more lines to correct than it did to assert. Left at 512 and recorded on #172 rather than
+shaved back under the cap: trading measured content for assertion-without-evidence is the failure this whole
+round is about. ⇒ **A LINE CAP IS A BUDGET FOR CODE, NOT FOR EVIDENCE.**
 
 **One measurement trap worth keeping.** macOS `ps -o pcpu` reports a **lifetime average**, not an interval, so
 a backend that burned a core an hour ago still reads high and one burning it now can read low. The attribution
@@ -4809,8 +4873,14 @@ check being planned onto `spl_label_by_wording` while the parent had no statisti
 costing 112 ms, and the ingest fell to 2 min 09 s. The issue's own ruling-out of the foreign key ("175 ms")
 measured a real thing and explained it wrongly — § "The COPY-cost round".
 
-**Filed by the COPY-cost round (2026-09-01)** — **[#172](https://github.com/cairn-ehr/drugref/issues/172)
-`spl_evidence.py` is at 494/500**, the same shape as #130 (`cli.py` at exactly 500/500) one edit earlier, and
+**Filed by the COPY-cost round and its review (2026-09-01)** —
+**[#174](https://github.com/cairn-ehr/drugref/issues/174) `ANALYZE` is skipped with a WARNING, not an error,
+when the ingest role does not own the table**, and psycopg discards the warning: the #160 fix reverts at
+runtime, invisibly, under an admin-migrates/app-ingests role split while the ingest still reports success. Two
+halves to it — a postcondition in `_analyze`, and a notice handler in `db.connect` so server warnings stop going
+to `/dev/null` across every orchestrator. ·
+**[#172](https://github.com/cairn-ehr/drugref/issues/172) `spl_evidence.py` is at 512/500** — filed at 494 and
+**breached by the review round exactly as it predicted**, the same shape as #130 (`cli.py` at exactly 500/500) one edit earlier, and
 unlike `cli.py` this module has **no cap test**, so the breach would arrive silently. Not split in that round
 deliberately: the census round's `spl_release.py` precedent is *verbatim move first, suite green, then the
 behaviour change*, and splitting here would have mixed refactor risk into a fix whose whole value is that
@@ -4983,14 +5053,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2446 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2447 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2446
-# passed in 68.59 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2447
+# passed in 91.41 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -5051,11 +5121,15 @@ git config core.hooksPath .githooks
 # the run that VERIFIES green, not off an earlier count -- and issue 146 (a test
 # that reads this line and counts the suite) is still the only real fix.
 # AND THE COPY-COST ROUND -- issue #160, no migration -- added 3: 2443 -> 2446,
-# being the FK-parent-analysed-before-its-child pin (whose two mutants, each
-# ANALYZE deleted in turn, were both run and both killed), the whole-schema
-# census of which foreign keys can be planned onto a loose index, and the
-# ANALYZE identifier refusal. Read off the run that VERIFIED GREEN AFTER THE
-# LAST EDIT -- 2446 in 68.59 s -- which is the eighth occurrence's lesson.
+# being the FK-parent-analysed-before-its-child pin, the whole-schema census of
+# which foreign keys can be planned onto a loose index, and the ANALYZE
+# identifier refusal. ITS OWN REVIEW ROUND then added 1: 2446 -> 2447, the
+# empty-table-list refusal -- and rewrote the first of those three, because
+# `reltuples >= 0` let two mutants live (it is `> 0` now: 0.0 means analysed
+# WHILE EMPTY, which is the bug, not a milder version of it). FOUR mutants are
+# now run against it, not two, and all four are killed. Read off the run that
+# VERIFIED GREEN AFTER THE LAST EDIT -- 2447 in 91.41 s -- which is the eighth
+# occurrence's lesson.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
 # DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,

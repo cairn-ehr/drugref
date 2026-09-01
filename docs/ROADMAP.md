@@ -901,12 +901,23 @@ tie landed on `spl_label_by_wording`, matching all 68,550 parent rows once per c
 costing 112 ms bought **365×**. **None of the three causes the issue named was right**, and the foreign key had
 been ruled out a round earlier by a docstring whose measurement was real and whose stated reason was invented.
 
-⇒ *The rule: **analyse a bulk-loaded table before loading anything that references it** — the RI plan is cached
-at first use, inside the load, so the `ANALYZE` at the end of a run cannot repair it. Censused: of all 138
-foreign keys in the schema, exactly one parent offers a loose plan, and it is this one.*
+⇒ *The rule: **analyse a bulk-loaded table before loading anything that references it** — the plan is chosen at
+first use, inside the load, so the `ANALYZE` at the end of a run arrives after the `COPY` has already paid for
+it. Censused: of all 138 foreign keys in the schema, exactly one parent offers a loose plan, and it is this one.
+The guard says `reltuples > 0`, never `>= 0`: 0.0 means "analysed while still empty", which pins the same wrong
+plan.*
 
 ⇒ *And its meta-rule: **a refutation is a measurement plus an explanation, and only the explanation gets quoted
 forward.** Where a cost sits in one statement, sample the process before designing an experiment about it.*
+
+**⇒ ITS REVIEW ROUND ✅ DONE (2026-09-01) — no code defect, four false sentences.** The fix was correct,
+complete and correctly ordered. But the round's own docstring invented a second mechanism ("the plan is CACHED
+for the rest of the session") **one paragraph after retracting the first** — measured false: after an `ANALYZE`,
+the same session and transaction re-plans, 4,874 ms → 15.7 ms. The guard admitted `reltuples = 0.0`, the exact
+state it forbade, and two mutants lived under it. The coverage list said "every" over three of four foreign
+keys and one of its three watches was inert. Filed: **#174** (`ANALYZE` skipped with a WARNING psycopg
+discards). `spl_evidence.py` breached rule 4 at **512/500**, as #172 predicted.
+⇒ ***A round is most likely to commit the failure it is currently naming.***
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

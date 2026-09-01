@@ -273,7 +273,7 @@ def ingest_spl(
     # NAMED fields, not a positional unpack: the two mappings are the same type,
     # and swapping them would build the matcher out of UNII codes and resolve
     # every subject against display names -- a failure only `check_floors` would
-    # notice, twelve minutes later.
+    # notice, at the very end of the run.
     registry = spl_evidence.load_registry(conn)
     names, known_uniis = registry.by_name, registry.by_unii
     if not names or not known_uniis:
@@ -298,10 +298,12 @@ def ingest_spl(
     # `load_registry` is the first statement on a non-autocommit connection, so
     # it OPENED a transaction, and nothing below commits until `open_run` on the
     # far side of the DailyMed scan and the checksum. Measured 2026-09-01, that
-    # is ~50 s of `idle in transaction` -- and because nothing closes the
-    # transaction after `open_run` either, the SNAPSHOT would be held all the way
-    # to the final COMMIT, which is the whole 2 min 09 s run (12.5 minutes before
-    # issue 160). A connection holding a snapshot that long:
+    # window is ~50 s of `idle in transaction` -- the scan plus the 19.3 GB
+    # checksum, not the whole run, and not the 262,032-record openFDA read, which
+    # happens above `load_registry`. (`open_run` DOES end this transaction:
+    # `provenance.open_run` commits, and says so. The rollback below is what makes
+    # the window ~0 rather than ~50 s; it is not what makes the window finite.)
+    # A connection holding a snapshot even that long:
     # pins `xmin` database-wide, so autovacuum can reclaim nothing in ANY table
     # for the duration, and where `idle_in_transaction_session_timeout` is set
     # the backend is killed at the END of the most expensive step in the ingest.
@@ -352,11 +354,13 @@ def ingest_spl(
         stored_wordings = spl_evidence.write_wordings(
             conn, wording_rows, ingest_run_id=run_id, source=spl.SOURCE)
         # ⇒ ANALYSE A PARENT BEFORE LOADING ANYTHING THAT REFERENCES IT (issue
-        # 160). Each foreign-key check below is planned the FIRST time it fires
-        # and then cached for the session, so a parent with no statistics pins a
-        # bad plan for the whole load and the ANALYZE at the end of this function
-        # is far too late to undo it. Measured: 630 s against 4 s for one COPY.
-        # `analyze_loaded_table` carries the mechanism and the numbers.
+        # 160). Each foreign-key check below is planned the FIRST time it fires,
+        # so a parent with no statistics at that moment pins a bad plan and the
+        # whole load pays it -- and the ANALYZE at the end of this function
+        # arrives after the COPY has already been paid for, not in time to save
+        # it. Measured on the real releases: 493,539 ms for the subject COPY
+        # without these two calls, 1,352 ms with them, bought by 112 ms of
+        # ANALYZE. `analyze_loaded_table` carries the mechanism.
         spl_evidence.analyze_loaded_table(conn, "spl_wording")
 
         stored_labels = spl_evidence.write_labels(
