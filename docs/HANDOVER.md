@@ -13,7 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-copy-cost`, from `main` at `1272d02`** (PR #167 merged). Migrations through **`db/052`** —
+**Branch `claude/spl-copy-cost`, from `main` at `1272d02`**; **this round is open as
+[PR #173](https://github.com/cairn-ehr/drugref/pull/173) and is not merged.** Migrations through **`db/052`** —
 this round added **NO migration**. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
 else** ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the session.
 
