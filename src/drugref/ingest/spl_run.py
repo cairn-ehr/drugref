@@ -231,6 +231,7 @@ def ingest_spl(
     `MEASURED_NOVEL_FLOOR` at the CLI, which is the production path -- so a real
     run checks by default and a partial-corpus run has to say so out loud.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.
     # Under autocommit each statement is its own transaction, so `conn.rollback()`
     # rolls back nothing and a failure between the clear and `finish_run` leaves
@@ -341,7 +342,7 @@ def ingest_spl(
         run_id = provenance.open_run(conn, source=spl.SOURCE,
                                      upstream_release=release,
                                      source_checksum=digest,
-                                     writer=spl.WRITER)
+                                     writer=spl.WRITER, clock=clock)
 
         spl_evidence.clear_source_spl(conn, spl.SOURCE)
 

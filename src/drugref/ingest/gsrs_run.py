@@ -73,6 +73,7 @@ class GsrsSummary:
 def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
                 upstream_release: str) -> GsrsSummary:
     """Ingest one GSRS public dump into drugref.substance_composition."""
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # 1. PARSE FIRST, before any run row exists. The pass is ~8 s over 2.05 GB and
     #    touches no database; a crash here must leave no trace to explain.
     edges: dict[tuple[str, str, str], bool | None] = {}
@@ -107,7 +108,8 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
     #    so everything after it is the work and rolls back together on failure.
     run_id = provenance.open_run(conn, source=SOURCE,
                                  upstream_release=upstream_release,
-                                 source_checksum=source_checksum, writer=WRITER)
+                                 source_checksum=source_checksum, writer=WRITER,
+                                 clock=clock)
 
     by_unii = composition.moiety_uuid_by_unii(conn)
     composition.clear_source_composition(conn, SOURCE)

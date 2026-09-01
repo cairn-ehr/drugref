@@ -202,6 +202,7 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
     trace at all. Everything after it is the work, which this function commits on
     success and rolls back -- via the `except` clause below -- on any failure.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.
     # Under autocommit each statement is its own transaction, so `conn.rollback()`
     # in the `except` rolls back nothing and a failure anywhere between the clear
@@ -245,7 +246,7 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
         run_id = provenance.open_run(conn, source=drugcentral.SOURCE,
                                      upstream_release=release,
                                      source_checksum=digest,
-                                     writer=drugcentral.WRITER)
+                                     writer=drugcentral.WRITER, clock=clock)
 
         # The work transaction. NO ISOLATION BUMP: `load_registry` is a single
         # statement, and a single statement sees a single snapshot at any isolation

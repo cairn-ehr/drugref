@@ -41,9 +41,10 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path,
     so leave no trace of a crash during it. Everything but the checksum read is covered.
     The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     log.info("ChEBI enrichment starting (release=%s)", upstream_release)
     try:
-        added = _enrich_from_chebi(conn, chebi_path, upstream_release)
+        added = _enrich_from_chebi(conn, chebi_path, upstream_release, clock)
     except Exception:
         conn.rollback()
         log.exception("ChEBI enrichment failed (release=%s); transaction rolled back",
@@ -54,11 +55,12 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path,
     return added
 
 
-def _enrich_from_chebi(conn: psycopg.Connection, chebi_path,
-                       upstream_release: str) -> int:
+def _enrich_from_chebi(conn: psycopg.Connection, chebi_path, upstream_release: str,
+                       clock: provenance.RunClock) -> int:
     """The body of one ChEBI enrichment (see enrich_from_chebi for the contract)."""
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(chebi_path), writer=WRITER)
+                                 source_checksum=checksum(chebi_path), writer=WRITER,
+                                 clock=clock)
 
     added = 0
     with open(chebi_path, newline="", encoding="utf-8") as fh:

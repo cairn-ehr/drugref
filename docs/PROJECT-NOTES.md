@@ -4847,6 +4847,92 @@ here ("96% of a core, and the backend's whole lifetime CPU is this statement") c
 time between two `ps` samples. **`pcpu` cannot answer "who is burning the CPU right now", which is the only
 question that matters here.**
 
+## The ingest-duration round (2026-09-02) — issue #159, `db/053`
+
+[Measurement record](superpowers/specs/2026-09-02-drugref-ingest-run-duration.md). One dataclass and one
+required argument in `provenance.py`, one line at the top of each of eleven orchestrators, one migration, one
+CLI column. **No projection changed and no published figure moved** — the SPL ingest reproduced all of them
+from an empty database.
+
+**⇒ WHAT WAS WRONG, AND WHY IT WAS WRONG FOR EVERY FEED AT ONCE.** `started_at DEFAULT now()` and
+`finish_run`'s `now()` are both `transaction_timestamp()`, and `open_run` COMMITS (db/025's design), so the two
+stamps belong to two DIFFERENT transactions. The subtraction measured **the gap between two transaction start
+times** — the interval between `open_run`'s INSERT and the work transaction's first statement, which is the
+time the orchestrator spent NOT touching the database. Eight of nine feeds read 1.3–24 ms; the ninth,
+`mesh_rel_run` at 48.32 s, was reporting how long it takes to parse 750 MB of MeSH before its first write.
+
+**⇒ THE ISSUE'S OWN HEADLINE EXAMPLE HAD ALREADY EVAPORATED, AND NOBODY LOOKED.** #159 was filed from
+`drugref_spl051`, where `spl_run` read **49.85 s** and the issue explained it correctly. Five days later the
+COPY-cost round put a `conn.rollback()` in front of the DailyMed scan — to close a ~50 s `idle in transaction`
+window — which moved `open_run` to the far side of the scan and collapsed that figure to **0.0026 s**.
+Measured on both databases that round built. The issue, the suite and that round's own review all read past it.
+⇒ **A NUMBER IN A FILED ISSUE IS A MEASUREMENT WITH NO OWNER**: the round that moves it is not the round that
+reads it, so re-measure an issue's premise before designing against it. Eight of nine figures were unchanged
+here; the ninth was gone.
+
+**⇒ WHAT SHIPPED.** `provenance.RunClock` / `start_clock()` — a frozen dataclass over `time.monotonic()`
+(monotonic so an NTP step mid-ingest cannot produce a negative duration; **a TYPE rather than a `float`**
+because `open_run` cannot tell `time.monotonic()` from `time.time()` by looking, Python enforces no annotation
+at runtime, and the two differ by 56 years). `open_run` takes a required keyword-only `clock` and writes
+`started_at = clock_timestamp() - make_interval(secs => %s)`: **only the ELAPSED INTERVAL crosses from the
+client, never a client timestamp**, so both ends of the subtraction are the server's clock and an ingest driven
+from a host whose clock is out still records a true duration. `finish_run` writes `clock_timestamp()`, its
+no-commit contract untouched — so the duration **excludes the caller's final COMMIT**, which is 3.8 s for SPL
+(the deferred quote-budget trigger over 138,187 windows) and is named in the column comment rather than left to
+be found.
+
+**⇒ THE VERIFICATION IS THE RATIO, MEASURED NINE TIMES.** A fresh `drugref_dur159` (NOT a template — a
+template carries nine rows written under the old meaning), all nine feeds, `/usr/bin/time -p` against
+`finished_at - started_at` read back afterwards: `ingest chain` (five feeds) **137.46 s recorded / 137.82 s
+wall = 99.7%**, `drugcentral` 19.64 / 20.00, `onchigh` 3.87 / 4.26, `fda-cyp` 4.11 / 4.44, `spl` **135.86 /
+140.06 = 97.0%**. The residual is the interpreter start plus argparse plus `db.connect`, **measured at
+0.29–0.34 s** (two mis-quoted invocations that died in argparse), and for SPL the final COMMIT on top.
+`spl_run` went **0.0026 s → 135.86 s**, a factor of 51,657.
+
+**⇒ `mesh_rel_run` IS THE INTERNAL CROSS-CHECK.** Its old number, 48.32 s, is now a SUBSET of its new one,
+56.81 s: the parse is 48 s and the writes are 9 s. Nothing about that orchestrator changed. Had the diagnosis
+been wrong the two numbers would bear no such relation.
+
+**⇒ THE CHECK FOUND TWO LIVE OCCURRENCES OF THE IDIOM THE ROUND WAS REMOVING — IN THE SUITE.** `db/053` adds
+`CHECK (finished_at IS NULL OR finished_at >= started_at)`, and five tests failed the moment it existed, all
+with a row that **finished 3.8 ms before it started**: two helpers (`test_ingest_observability._run`, one
+INSERT in `test_releases.py`) stamped `finished_at = now()` while letting `started_at` take the default db/053
+had just changed to `clock_timestamp()`. ⇒ **MIXING `now()` AND `clock_timestamp()` IN ONE TRANSACTION PRODUCES
+A NEGATIVE DURATION**, and without the constraint both helpers would have gone on producing one silently. A
+constraint added "for completeness" caught the round's own blind spot.
+
+**⇒ OLD ROWS ARE REFUSED AT THE OPERATOR SURFACE, NOT ONLY IN A COMMENT.** Nothing rewrites rows written
+before db/053 and nothing could — what would be needed was never recorded — so `drugref status` prints
+`pre-db/053` instead of a runtime for them, reading the watershed out of the migration ledger
+(`db.migration_applied_at`, which shares `migration_applied`'s three-digit prefix guard through a new
+`_ledger_pattern`). Subtracting two transaction stamps still yields a number, and **a number is what an
+operator believes**. Both paths verified without patching any verification database: `drugref_spl160fix` with
+db/053 unapplied (unknown watershed ⇒ everything refused, the safe direction), and `drugref_dur159mixed` — a
+fresh clone of it, then `migrate` — which is the production upgrade path: **db/053 applied cleanly over nine
+pre-existing rows and the CHECK validated all nine**, as it had to, since `open_run`'s transaction always
+commits before the work's begins.
+
+**⇒ THE DERIVED CONTRACT AND THE MUTANT IT CANNOT KILL.**
+`test_every_module_that_opens_a_run_takes_a_clock` greps the tree for `provenance.open_run(` and requires
+`provenance.start_clock()` in the same module — **eleven modules, derived rather than counted by hand**, one
+round after a hand-listed coverage named three writers where four edges existed. It passed unchanged against
+the mutant that moves `start_clock()` down to the line above `open_run`, which measures nothing. Only
+`test_a_run_records_the_work_done_before_it_opened` kills it, by injecting a delay into work `ingest_unii` does
+BEFORE `open_run`: 59.5 ms recorded against the 250 ms required. ⇒ **A DERIVED CHECK OUTLIVES A HAND-LISTED
+ONE ONLY FOR WHAT IT DERIVES.**
+
+### Traps and standing notes
+
+- **`now()` IS NOT A CLOCK.** It is `transaction_timestamp()`. Two `now()`s in one transaction are equal by
+  definition; two across a commit boundary measure the boundary. `clock_timestamp()` is the clock.
+- **The clock is taken in the PUBLIC entry point**, not in the private `_ingest` body, for the five
+  orchestrators that have both — the public function is where the command begins. It is threaded in as a
+  parameter.
+- **The window is the ORCHESTRATOR, not the command**: it starts at the orchestrator's first line (so
+  `~0.3 s` of interpreter start and argparse sit outside it) and ends before the final COMMIT.
+- **`cli.py` is 489 lines** after this round's four added lines — under rule 4's ~500 cap, with little room.
+  The next block added there needs a `cli_*.py` split, not another paragraph.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4863,10 +4949,11 @@ figures, do not re-derive them**; `curation.py` **has since crossed the cap at 5
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
 **Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
-`ingest_run.finished_at − started_at` is not a duration for ANY feed**: both stamps are
-`transaction_timestamp()`, so seven of the nine runs on `drugref_spl051` read 1.3–24 ms while the SPL ingest
-took 12.5 minutes then and 2 min 09 s now. It touches every orchestrator's provenance, so it is its own
-round. ·
+`ingest_run.finished_at − started_at` is not a duration for ANY feed** — **CLOSED 2026-09-02 by `db/053`**, and
+its own headline figure had already evaporated before anyone read it: the 49.85 s it cited for `spl_run` became
+0.0026 s when the COPY-cost round moved `open_run` past the DailyMed scan. Both stamps are clock readings now
+and the nine recorded durations account for 97–99.7% of each command's wall clock —
+§ "The ingest-duration round". ·
 **[#160](https://github.com/cairn-ehr/drugref/issues/160) the `spl_label_subject` `COPY` runs >4 min at 100%
 CPU for 73,867 rows** — **CLOSED 2026-09-01, and by NONE of the three causes it named.** It was the foreign-key
 check being planned onto `spl_label_by_wording` while the parent had no statistics; the fix is two `ANALYZE`s
@@ -5053,14 +5140,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2447 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2467 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2447
-# passed in 91.41 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-02 at 2467
+# passed in 102.18 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -5127,8 +5214,18 @@ git config core.hooksPath .githooks
 # empty-table-list refusal -- and rewrote the first of those three, because
 # `reltuples >= 0` let two mutants live (it is `> 0` now: 0.0 means analysed
 # WHILE EMPTY, which is the bug, not a milder version of it). FOUR mutants are
-# now run against it, not two, and all four are killed. Read off the run that
-# VERIFIED GREEN AFTER THE LAST EDIT -- 2447 in 91.41 s -- which is the eighth
+# now run against it, not two, and all four are killed.
+# AND THE INGEST-DURATION ROUND -- issue #159, db/053 -- added 20: 2447 -> 2467,
+# being 5 on provenance (the two stamps read off the clock, the RunClock type
+# refusing a bare float, the derived eleven-module clock contract, and the one
+# test that kills the mutant the derived contract cannot see) and 15 on db/053
+# and the operator surface (the default, the CHECK shown refusing AND admitting
+# NULL, three catalog comments asserted against the catalog, the pure duration
+# formatter's five cases, the ledger watershed reader, and the status line).
+# TWO of the 2447 that already existed had to CHANGE: the CHECK caught two test
+# helpers stamping finished_at = now() against a clock_timestamp() default, i.e.
+# finishing 3.8 ms before they started. Read off the run that
+# VERIFIED GREEN AFTER THE LAST EDIT -- 2467 in 102.18 s -- which is the eighth
 # occurrence's lesson.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
@@ -5245,7 +5342,7 @@ ran in CI and `ruff` was not even a project dependency.
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
   035's, 029's `curated_target_unresolved` by 035's, and 012's/027's `gap_unreviewed_expansion_root` by 035's; the
-  five severity CHECKs in 020/029/032 are 035's foreign keys.
+  five severity CHECKs in 020/029/032 are 035's foreign keys; and **025's `ingest_run_incomplete` comment is 053's** (issue #159), which also gave `ingest_run.started_at` its `clock_timestamp()` default, both columns a `COMMENT ON COLUMN`, and the table its finishes-after-it-starts CHECK.
 - **Migrations are immutable once applied — and immutability starts at MERGE.** `apply_migrations` records each file's
   checksum and raises if an applied file changed, so altering a MERGED migration (*including* re-issuing a `COMMENT ON`) means
   a new `db/NNN_*.sql`. One still on an unmerged branch may be edited — the ledger binds a *database*, not the repo — as
@@ -5377,6 +5474,13 @@ ran in CI and `ruff` was not even a project dependency.
   unaffected). **A verification database is never patched — rebuild it, under a new name**: for a drifted ledger
   `apply_migrations` refuses permanently, and the drifted copy is often the only control for what the edit changed
   (`drugref_5c1` is exactly that). Expect a drift whenever a migration is edited; expect to keep both sides.
+- **`drugref_dur159` is the ingest-duration round's verification database** (2026-09-02, issue #159): built
+  from **nothing** rather than from a template — `createdb` → `migrate` → `ingest chain` + `onchigh` +
+  `fda-cyp` + `drugcentral` + `spl`, all nine feeds, because a template carries nine `ingest_run` rows written
+  under the OLD meaning and the whole point was to measure new ones. **`drugref_dur159mixed` is its
+  counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
+  only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
+  `drugref status` refusing to call their stamps a duration. Keep both.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

@@ -297,7 +297,10 @@ def test_the_upstream_snapshot_round_trips(conn, institutional_key, a_graded_rul
     conn.execute(
         "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, "
         "writer, finished_at) "
-        "VALUES ('UNII', '2026.08.01', 'abc123', 'unii_run', now())")
+        # clock_timestamp() rather than now(): see db/053's CHECK and the note in
+        # tests/test_ingest_observability.py's _run -- now() is the transaction's start
+        # and lands BEFORE the started_at this INSERT is defaulting.
+        "VALUES ('UNII', '2026.08.01', 'abc123', 'unii_run', clock_timestamp())")
     curation.record_interaction_judgement(
         conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
         severity="major", evidence_grade="established", reviewed_by="a curator",

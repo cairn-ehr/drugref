@@ -60,7 +60,7 @@ from collections.abc import Sequence
 import drugref
 from drugref import (cli_curate, cli_drugcentral, cli_fda_cyp, cli_interactions,
                      cli_policy, cli_signing, cli_spl, cli_status, curation, db,
-                     interactions, migration_guard, signatures)
+                     interactions, migration_guard, provenance, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -236,11 +236,18 @@ def _handle_status(conn, args) -> int:
     # The fifth prints "0" deliberately: its lines are COUNTS of rules that should not
     # exist, not lists that happen to be empty, and "0" is what an operator diffs.
     loaded = conn.execute(
-        "SELECT source, writer, upstream_release, finished_at "
+        "SELECT source, writer, upstream_release, finished_at, started_at "
         "FROM drugref.loaded_release").fetchall()
     print("loaded releases:" if loaded else "loaded releases: none")
-    for row in loaded:
-        print("  {:<8} {:<14} {:<12} {}".format(*(str(c) for c in row)))
+    # THE RUNTIME COLUMN IS ISSUE 159, and it is deliberately not a subtraction done
+    # here: provenance.format_run_duration refuses to print one for a run written
+    # before db/053, whose two stamps are transaction timestamps whose difference is a
+    # plausible-looking number and not a duration. The watershed is read once.
+    watershed = db.migration_applied_at(conn, "053") if loaded else None
+    for source, writer, release, finished_at, started_at in loaded:
+        print("  {:<8} {:<14} {:<12} {} {}".format(
+            source, writer, release, finished_at,
+            provenance.format_run_duration(started_at, finished_at, watershed)))
 
     incomplete = conn.execute(
         "SELECT ingest_run_id, source, writer, upstream_release, started_at "

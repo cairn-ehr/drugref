@@ -281,14 +281,45 @@ def migration_applied(conn: psycopg.Connection, number: str) -> bool:
     are silent, so the check is loud instead: a guard passing a bad prefix fails the
     suite rather than misleading an operator.
     """
+    return conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM drugref.schema_migration "
+        "WHERE filename LIKE %s)", (_ledger_pattern(number),)).fetchone()[0]
+
+
+def _ledger_pattern(number: str) -> str:
+    """PURE: the LIKE pattern matching `db/<number>_*.sql`, validated.
+
+    ONE HOME for the rule the docstring above spends four paragraphs on, because there
+    are now two readers of it and the failure is silent in both. Written down twice it
+    would be two chances to keep the `\\_` escape and the three-digit check -- the
+    argument that collapsed the per-source clear, the MeSH reader and the checksum into
+    one place each (#40, #43), on a smaller rule.
+    """
     if not (len(number) == 3 and number.isdigit()):
         raise ValueError(
             f"migration number must be the three-digit prefix as written in db/ "
             f"(e.g. '038'), not {number!r}: anything else matches no ledger row and "
             f"would report every migration unapplied")
-    return conn.execute(
-        "SELECT EXISTS (SELECT 1 FROM drugref.schema_migration "
-        "WHERE filename LIKE %s)", (f"{number}\\_%",)).fetchone()[0]
+    return f"{number}\\_%"
+
+
+def migration_applied_at(conn: psycopg.Connection, number: str):
+    """WHEN `db/<number>_*.sql` was applied here, or None if it has not been.
+
+    THE WATERSHED READER (issue 159). `migration_applied` answers whether, which is
+    what `migration_guard` needs; a column whose MEANING a migration changed needs
+    when, so that rows written on either side of it can be told apart. db/053 and the
+    Python that writes the two stamps ship in one commit, so this ledger row is the
+    only durable record on a running database of which rows carry the new meaning.
+
+    None is the safe answer and is why this returns a timestamp rather than raising:
+    on a database that predates the migration, NO row carries the new meaning, and a
+    reader comparing against None must fall through to "cannot say".
+    """
+    row = conn.execute(
+        "SELECT applied_at FROM drugref.schema_migration WHERE filename LIKE %s",
+        (_ledger_pattern(number),)).fetchone()
+    return row[0] if row else None
 
 
 def migration_dir() -> pathlib.Path:

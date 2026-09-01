@@ -132,6 +132,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     the module constants above are the only correct values and are not exposed as
     knobs a caller could get wrong.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
         # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
@@ -146,7 +147,8 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     try:
         run_id = provenance.open_run(conn, source=SOURCE,
                                      upstream_release=upstream_release,
-                                     source_checksum=source_checksum, writer=WRITER)
+                                     source_checksum=source_checksum, writer=WRITER,
+                                     clock=clock)
 
         local.clear_source_products(conn, SOURCE)
         # Index drugref's LABEL, not its INN claims (#26). Since the gate

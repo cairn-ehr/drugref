@@ -832,7 +832,7 @@ PROJECT-NOTES § "Slice 5c.3 — the SPL ddi ingest". **Read the numbers there, 
 
 **⇒ THE IMPLEMENTATION ROUND ✅ DONE (2026-08-27) — `db/051`, five tables, two views, one gap view.**
 `drugref ingest spl --openfda <dir> --dailymed <parts...>` reads 19.3 GB in **2 min 09 s** (12.5 minutes
-until issue 160 was fixed on 2026-09-01) and publishes
+until issue 160 was fixed on 2026-09-01; the run itself now REPORTS that, see issue 159) and publishes
 **29,952 distinct candidate pairs, 26,598 (88.8%) novel** — clearing the design's `>= 29,258` / `>= 25,960`
 floor, with the census reproducing exactly and the three counts that had no licence to move unmoved. Four
 findings the next round inherits:
@@ -918,6 +918,24 @@ state it forbade, and two mutants lived under it. The coverage list said "every"
 keys and one of its three watches was inert. Filed: **#174** (`ANALYZE` skipped with a WARNING psycopg
 discards). `spl_evidence.py` breached rule 4 at **512/500**, as #172 predicted.
 ⇒ ***A round is most likely to commit the failure it is currently naming.***
+
+**⇒ THE INGEST-DURATION ROUND ✅ DONE (2026-09-02) — issue #159, `db/053`, no projection changed.**
+[Measurement record](superpowers/specs/2026-09-02-drugref-ingest-run-duration.md); full account: PROJECT-NOTES
+§ "The ingest-duration round". **Read the numbers there, not here.** `ingest_run.finished_at − started_at`
+measured the gap between two `transaction_timestamp()`s — the time an orchestrator spent NOT touching the
+database — so eight of nine feeds reported 1.3–24 ms and the ninth reported how long it takes to parse 750 MB
+of MeSH. Both stamps are clock readings now, and `open_run` backdates `started_at` to the orchestrator's first
+line by sending the server an ELAPSED INTERVAL rather than a client timestamp, so the window covers the parse,
+scan and checksum done before any run row exists. Verified on a `drugref_dur159` built from nothing, all nine
+feeds: the recorded durations account for **97.0–99.7%** of each command's wall clock, `spl_run` going
+**0.0026 s → 135.86 s**. `drugref status` prints the runtime, and **refuses** to print one for a row written
+before `db/053` — subtracting two transaction stamps still yields a number, and a number is what an operator
+believes.
+
+⇒ *The rule: **`now()` is not a clock** — it is `transaction_timestamp()`, so two of them in one transaction
+are equal by definition and two across a commit boundary measure the boundary. And: **a number in a filed issue
+is a measurement with no owner.** #159's headline figure was rewritten by the COPY-cost round five days after
+it was filed; the issue, the suite and that round's own review all read past it.*
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

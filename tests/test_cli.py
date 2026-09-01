@@ -83,6 +83,38 @@ def test_ingest_unii_end_to_end(_migrated, monkeypatch, capsys):
         ).fetchall() == [("UNII", "unii_run", "2026-07")]
 
 
+def test_status_prints_how_long_each_loaded_release_took(_migrated, monkeypatch,
+                                                         capsys):
+    """The operator surface issue 159 is actually about.
+
+    An operator asking "how long does a refresh cost" reads this line, and before this
+    round it did not carry the number at all -- and the column it would have been
+    computed from said 1.3-24 ms for every feed. A real ingest through the CLI, then
+    the answer read back off `status`.
+
+    ASSERTED AS "a runtime is printed", not as a value: the fixture ingest takes
+    whatever it takes on the machine running the suite, and a test that pinned the
+    duration would be pinning the hardware. What it does pin is that the line does NOT
+    say `pre-db/053` -- the refusal is correct for rows this round cannot vouch for and
+    would be a silent no-op for the ones it can.
+    """
+    monkeypatch.setenv("DRUGREF_DSN", _migrated)
+    import psycopg
+    with psycopg.connect(_migrated) as c:
+        c.execute("TRUNCATE drugref.identity_claim, drugref.substance_moiety, "
+                  "drugref.moiety_admission, drugref.open_question, "
+                  "drugref.ingest_run RESTART IDENTITY CASCADE")
+        c.commit()
+
+    assert cli.main(["ingest", "unii", "--release", "2026-07", "--unii", str(FIX)]) == 0
+    capsys.readouterr()
+    assert cli.main(["status"]) == 0
+
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if "unii_run" in ln)
+    assert "pre-db/053" not in line
+    assert line.rstrip().endswith("s")
+
+
 def test_status_says_none_for_both_halves_of_a_fresh_database(capsys):
     """SYMMETRY BETWEEN THE TWO BLOCKS. Unfinished runs already printed "none" while
     loaded releases printed a bare header, so `drugref status` on a just-migrated
