@@ -213,3 +213,31 @@ def a_contradicted_pair(conn, a_moiety, ingest_run_id):
         "VALUES (%s, %s, 'may_treat', 'MED-RT', %s)",
         (a_moiety, condition, ingest_run_id))
     return {"moiety": a_moiety, "condition": condition}
+
+
+def clean_scan(**overrides):
+    """A `ScanResult` with every counter at zero, in ONE home.
+
+    ⇒ THIS HELPER WAS WRITTEN TWICE, and the two copies had to be edited in step
+    every time a counter was added -- the same two-homes shape `ScanResult`'s own
+    module argues against for vocabularies. It lives here so a new counter is
+    spelled once.
+
+    Every field is spelled and none is defaulted, because `ScanResult` refuses
+    defaults on purpose: a counter added to the type must break every
+    construction site loudly rather than quietly reading zero. That is the
+    property this helper must not undo, so it does not use `dataclasses.fields`
+    to fill the gaps -- doing so would restore exactly the silence the type
+    exists to prevent.
+    """
+    from drugref.ingest import spl_release
+
+    fields = dict(
+        documents_read=10, found={}, dropped_no_set_id_bytes=0,
+        dropped_unreadable=0, dropped_prefilter_disagreed=0,
+        dropped_no_xml_member=0, dropped_several_xml_members=0,
+        dropped_unreadable_member_zip=0, skipped_not_a_member_zip=0,
+        dropped_untrustworthy_prefilter=0, dropped_junk_version=0,
+        dropped_unknown_class_code_unii=0, skipped_unknown_class_code=0,
+        unknown_class_codes=frozenset())
+    return spl_release.ScanResult(**(fields | overrides))

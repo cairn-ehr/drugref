@@ -12,11 +12,15 @@ Measurement: .../2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md
 WHAT IT BUYS, MEASURED BY THE SHIPPED INGEST (Human Rx release of 2026-08-21):
 of **41,056** labels targeted, **10,670 are in DailyMed (26.0%)** and **10,578 of
 those resolve (99.1%)** -- on its own bigger than DrugCentral's entire slice.
-*The limit is the release, not the reading*: the four drop counters that EXISTED
+*The limit is the release, not the reading*: the three drop counters that EXISTED
 at that run measured zero. `dropped_no_xml_member` and `dropped_several_xml
 _members` were added afterwards, by the review round that found the two skips
-they count were upstream of every counter -- and they have NOT yet been measured
-against a real release. See `ScanResult`.
+they count were upstream of every counter, and shipped UNMEASURED; the skip
+census of 2026-08-31 has since read all 54,813 documents of that release and
+measured every DROP counter in the reader at zero (the two REPORTED counters are
+a separate question, and the release carries `COLR` ten times). See
+`spl_release.ScanResult`, where the counters live -- this module reads ONE label
+and never opens a zip.
 
 (The design-round probe reported 6,539 found of 26,401 targeted. It targeted a
 smaller set and, as the 2026-08-27 results record sets out, filed 14,455 labels
@@ -43,13 +47,9 @@ and each has a test named after it:
 """
 from __future__ import annotations
 
-import io
 import re
 import xml.etree.ElementTree as ET
-import zipfile
-from collections.abc import (
-    Callable, Iterable, Iterator, Mapping, Sequence, Set as AbstractSet,
-)
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 #: The HL7 v3 namespace every SPL document uses.
@@ -61,11 +61,33 @@ _SPL_NS = "{urn:hl7-org:v3}"
 UNII_CODE_SYSTEM = "2.16.840.1.113883.4.9"
 
 #: HL7 classCodes for an ACTIVE ingredient. `IACT` -- inactive -- is deliberately
-#: absent, and its absence is what keeps excipients out. `INGR` (generic
-#: ingredient) and `CNTM` (container component) are seen in the release and also
-#: excluded: neither declares the ingredient active, and guessing would key an
-#: interaction statement to whatever the package is made of.
+#: absent, and its absence is what keeps excipients out: guessing would key an
+#: interaction statement to whatever the package is made of. Every code ruled on
+#: as NOT active lives in `_DOCUMENTED_INACTIVE_CLASS_CODES` below and is listed
+#: there only, so the two sets stay a partition rather than two prose accounts.
 _ACTIVE_CLASS_CODES = frozenset({"ACTIB", "ACTIM", "ACTIR", "ACTI"})
+
+#: HL7 classCodes SEEN IN THE RELEASE AND RULED ON AS NOT-ACTIVE. Kept apart from
+#: `_ACTIVE_CLASS_CODES` so that "unknown" can mean *"nobody has ruled on this
+#: code"* -- which is the only reading that makes issue #162 case 3 actionable,
+#: and the difference between a guard and a tripwire. `INGR` (generic ingredient)
+#: and `CNTM` (container component) are here because neither DECLARES the
+#: ingredient active, not because either was found harmless.
+#:
+#: ⇒ THE ONE HOME. `tools/spl_skip_census.py` reads this set at call time rather
+#: than retyping it; a copy there went one round out of date the moment `COLR`
+#: was added below, and reported a code this module had already ruled on as
+#: unruled.
+#:
+#: **`COLR` was added on measurement, and it is why case 3 is not a drop.** The
+#: skip census of the 2026-08-21 Human Rx release found `COLR` ten times across
+#: three labels -- the ONLY code outside the vocabulary in all 54,813 documents.
+#: Issue #162 proposed folding case 3 into `total_dropped`; done literally, that
+#: would have aborted the ingest on the very release it was measured against.
+#: All ten name a colour (WHITE, RED, BLUE, YELLOW) and NONE carries a `<code>`
+#: element, so not one of them could have contributed a subject even if the code
+#: were admitted as active.
+_DOCUMENTED_INACTIVE_CLASS_CODES = frozenset({"IACT", "INGR", "CNTM", "COLR"})
 
 #: The two routes this module can put a subject on, in the order they are tried.
 #: THE SECOND HOME of two of `db/051`'s five route values -- admitted on the same
@@ -106,6 +128,22 @@ class SubjectUniis:
     moiety_uniis: tuple[str, ...]
     substance_uniis: tuple[str, ...]
     version: int | None = None
+    #: `<versionNumber>` was PRESENT and did not parse -- issue #162 case 2.
+    #: NOT the same as `version is None`, which is also true of a label carrying
+    #: no version element at all, and only one of those two is a label whose
+    #: tie-break was destroyed. `dedupe_by_set_id` then falls back to
+    #: `(None or -1)`, i.e. to zip-member order -- the thing that function argues
+    #: at length is not a rule.
+    version_was_unreadable: bool = False
+    #: HL7 classCodes on this label that are in NEITHER shipped vocabulary --
+    #: issue #162 case 3. Reported rather than refused over; see
+    #: `unknown_class_code_uniis` for the half that IS refused over.
+    unknown_class_codes: tuple[str, ...] = ()
+    #: The UNIIs carried by those ingredients. **This is the condition that
+    #: HARMS**: an unknown code contributes nothing unless it carries a UNII, so
+    #: this -- not the bare presence of an unknown code -- is what could have
+    #: cost the label a subject.
+    unknown_class_code_uniis: tuple[str, ...] = ()
 
     @property
     def has_any_unii(self) -> bool:
@@ -122,6 +160,43 @@ def set_id_in_bytes(xml_bytes: bytes) -> str | None:
     """The `setId` root attribute, read from the raw bytes. A PRE-FILTER only."""
     match = _SET_ID.search(xml_bytes)
     return match.group(1).decode() if match else None
+
+
+#: SPL's `<relatedDocument>` names the label THIS one replaces, and carries a
+#: `setId` of its own. `_SET_ID` takes the FIRST match in the bytes, so a
+#: document that put its `<relatedDocument>` first would be pre-filtered under
+#: the name of the label being REPLACED.
+_RELATED_DOCUMENT = re.compile(rb"<(?:\w+:)?relatedDocument\b")
+
+
+def prefilter_is_trustworthy(xml_bytes: bytes) -> bool:
+    """Whether `set_id_in_bytes` can only have picked this document's OWN setId.
+
+    ⇒ ISSUE #162 CASE 1. `scan_release` compares the pre-filter against the tree
+    only for documents whose pre-filtered name IS a target. A document whose
+    pre-filter named some OTHER label is skipped before any comparison happens,
+    and the label it really was is filed `absent_from_dailymed` -- so the
+    module's *"the pre-filter is never the authority"* held for the in-targets
+    case alone. This is the cheap byte test that closes the other half: no tree
+    is built, and the bytes are already in memory for `set_id_in_bytes`.
+
+    MEASURED: on all 54,813 documents of the 2026-08-21 Human Rx release, a
+    `<relatedDocument>` NEVER precedes the document's own `<setId>` -- so the
+    ordering this guards was, and is, an assumption that happens to hold. It is
+    now a guarded one.
+    """
+    set_id = _SET_ID.search(xml_bytes)
+    if set_id is None:
+        # Nothing was selected, so nothing can have been MIS-selected -- the
+        # question this function answers does not arise. `scan_release` counts
+        # such a document under `dropped_no_set_id_bytes` and never reaches here,
+        # so this is the contract for a future caller rather than a live branch.
+        return True
+    # `endpos` matters: this runs on EVERY non-target document -- some 44,000 of
+    # them per release -- and only the bytes BEFORE the selected setId can
+    # change the answer. Searching the whole document instead would scan the
+    # full 17.6 GB a second time to reach the same verdict.
+    return _RELATED_DOCUMENT.search(xml_bytes, 0, set_id.start()) is None
 
 
 def _unii_of(element: ET.Element | None) -> str | None:
@@ -217,7 +292,16 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
 
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except (ET.ParseError, LookupError, ValueError):
+        # ⇒ NOT `ET.ParseError` ALONE, and the difference is a whole aborted run.
+        # An XML declaration naming an encoding Python has no codec for raises
+        # `LookupError` ("unknown encoding: ..."), not `ParseError`; a
+        # declaration its decoder refuses outright raises `ValueError`. Both are
+        # "this reader could not read it" -- which is exactly `dropped_unreadable`
+        # -- and letting them propagate instead aborts the whole 17.6 GB scan
+        # with a message naming no member, no part and no setId. SPL is
+        # third-party content (see `_DOCTYPE` below for the same reasoning
+        # applied to entity expansion), so the encoding is attacker-chosen.
         return None
 
     set_id_element = root.find(f"{_SPL_NS}setId")
@@ -227,14 +311,19 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
 
     version_element = root.find(f"{_SPL_NS}versionNumber")
     version = None
+    version_was_unreadable = False
     if version_element is not None:
         try:
             version = int(version_element.get("value") or "")
         except ValueError:
-            # A junk version is not a reason to lose the label: it simply loses
-            # its tie-break, and `dedupe_by_set_id` never lets it displace a
-            # versioned row.
+            # A junk version does not lose the label HERE -- it loses its
+            # tie-break, and `dedupe_by_set_id` never lets it displace a
+            # versioned row. It is REPORTED so that `scan_release` can refuse
+            # the run rather than silently attach the wrong version's subject.
             version = None
+            version_was_unreadable = True
+
+    unknown_codes, unknown_uniis = _unknown_class_code_findings(root)
 
     moiety_uniis: set[str] = set()
     substance_uniis: set[str] = set()
@@ -249,7 +338,46 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
         moiety_uniis=tuple(sorted(moiety_uniis)),
         substance_uniis=tuple(sorted(substance_uniis)),
         version=version,
+        version_was_unreadable=version_was_unreadable,
+        unknown_class_codes=unknown_codes,
+        unknown_class_code_uniis=unknown_uniis,
     )
+
+
+def _unknown_class_code_findings(
+    root: ET.Element,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`(codes, uniis)` for ingredients whose classCode nobody has ruled on.
+
+    Both vocabularies are READ here rather than restated, so the ACTIVE half can
+    never disagree with the set `_active_substance_elements` applies -- a
+    vocabulary with two homes is the defect this slice has now found five times.
+    The two functions still apply DIFFERENT sets on purpose (that one consults
+    only `_ACTIVE_CLASS_CODES`) and different element rules: it also honours the
+    `<activeIngredientSubstance>` spelling, which this one does not inspect.
+
+    ⇒ AN `<ingredient>` WITH NO `classCode` AT ALL IS AN UNKNOWN CODE, spelled
+    `""`. That is deliberate rather than incidental: the attribute is what
+    distinguishes an excipient from the subject drug (trap 1), so an ingredient
+    that declines to say which it is has told us nothing, and an untyped
+    ingredient CARRYING A UNII is exactly the shape that could silently cost a
+    label its subject. Measured zero on the 2026-08-21 release -- the census
+    histogram has no `<none>` row -- and it is refused rather than assumed
+    inactive, on `dropped_unknown_class_code_unii`'s own reasoning.
+    """
+    ruled_on = _ACTIVE_CLASS_CODES | _DOCUMENTED_INACTIVE_CLASS_CODES
+    codes: set[str] = set()
+    uniis: set[str] = set()
+    for ingredient in root.iter(f"{_SPL_NS}ingredient"):
+        code = ingredient.get("classCode") or ""
+        if code in ruled_on:
+            continue
+        codes.add(code)
+        for substance in ingredient.findall(f"{_SPL_NS}ingredientSubstance"):
+            unii = _unii_of(substance)
+            if unii:
+                uniis.add(unii)
+    return tuple(sorted(codes)), tuple(sorted(uniis))
 
 
 def subject_uniis(
@@ -298,6 +426,15 @@ def subject_route(
     return None
 
 
+def _tie_break(row: SubjectUniis) -> int:
+    """The de-duplication sort key. An unversioned row ranks below every version.
+
+    `-1` rather than `0`, because SPL version numbers are non-negative and a
+    label at version 0 must still outrank one carrying no version at all.
+    """
+    return row.version if row.version is not None else -1
+
+
 def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     """One row per label, keeping the HIGHEST `version`. **ONE POLICY.**
 
@@ -315,177 +452,9 @@ def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     best: dict[str, SubjectUniis] = {}
     for row in rows:
         current = best.get(row.set_id)
-        if current is None or (row.version or -1) > (current.version or -1):
+        # NOT `(row.version or -1)`: version 0 is a version, and `or` would
+        # collapse it into the no-version sentinel, handing the tie-break back to
+        # zip-member order -- the one thing this function exists to refuse.
+        if current is None or _tie_break(row) > _tie_break(current):
             best[row.set_id] = row
     return best
-
-
-@dataclass(frozen=True, kw_only=True)
-class ScanResult:
-    """What one pass over the DailyMed release found, AND EVERY DOCUMENT IT DROPPED.
-
-    **The drop counters are fields rather than local variables, and that is the
-    whole point of this type.** A document silently skipped here is republished
-    three stages later as `absent_from_dailymed` -- a fact about the READING sold
-    as a fact about the RELEASE, and the design spec turns that route's population
-    into a commitment. Measured on the 2026-08-21 Human Rx release, the four
-    counters that existed at that run are ZERO, which is what lets "the limit is
-    the release, not the reading" be a measurement rather than an inference.
-
-    ⇒ **THE TWO ADDED BELOW ARE NOT YET MEASURED ON A REAL RELEASE**, and saying
-    so is the whole point of this paragraph. They are folded into `total_dropped`,
-    so `check_scan_dropped_nothing` refuses over them -- which means the first
-    real run after this change may refuse where the previous one succeeded. That
-    is the intended direction (a member zip this reader cannot read is a lost
-    label, and the alternative was losing it silently), but it is an inference
-    until a release has been scanned with them in place. Issue #162 carries the
-    three remaining skips, which are NOT folded in for exactly this reason.
-
-    ⇒ TWO OF THESE COUNTERS DID NOT EXIST, AND THE HOLE WAS EXACTLY THE ONE THIS
-    TYPE'S FIRST PARAGRAPH DESCRIBES. `iter_release_labels` skipped an outer
-    member that was not a zip, and an inner zip carrying no `.xml`, with a bare
-    `continue` INSIDE THE GENERATOR -- before `documents_read` was incremented by
-    the loop below, so neither `documents_read` nor any drop counter could see
-    them, and `check_scan_dropped_nothing` was structurally incapable of
-    refusing. "All counters measured zero" was a measurement over the documents
-    that reached the counters.
-
-    `found` is keyed by `set_id` and already de-duplicated by `dedupe_by_set_id`,
-    because DailyMed ships successive versions of one label as separate documents
-    sharing a `set_id` and counting rows over-counts labels.
-    """
-
-    documents_read: int
-    found: Mapping[str, SubjectUniis]
-    #: No `setId` in the raw bytes at all -- the cheap pre-filter found nothing.
-    dropped_no_set_id_bytes: int
-    #: Unparseable, or no `setId` in the parsed tree. A READING failure.
-    dropped_unreadable: int
-    #: The byte pre-filter matched a DIFFERENT setId than the document's own -- an
-    #: SPL `<relatedDocument>` names the label it replaces, so writing the tree's
-    #: value under a regex-selected target would attach a subject to the wrong
-    #: wording.
-    dropped_prefilter_disagreed: int
-    #: An inner member zip holding no `.xml` at all. A label container this reader
-    #: could not read: a DROP.
-    dropped_no_xml_member: int
-    #: An inner member zip holding SEVERAL `.xml` members. Also a drop, and NOT
-    #: resolved by taking the first: which one `namelist()` returns first is zip
-    #: member order, and this module's `dedupe_by_set_id` already argues at length
-    #: that member order is not a rule. Reading the wrong one would attach a
-    #: subject to the wrong wording silently, which is strictly worse than
-    #: refusing.
-    dropped_several_xml_members: int
-    #: An outer member that is not a zip at all -- a release-level manifest or
-    #: index, say. Counted and reported but NOT a drop, because such a member was
-    #: never a label container and calling it a lost label would be the same
-    #: reader-versus-release confusion in the other direction.
-    skipped_not_a_member_zip: int
-
-    @property
-    def total_dropped(self) -> int:
-        return (self.dropped_no_set_id_bytes + self.dropped_unreadable
-                + self.dropped_prefilter_disagreed
-                + self.dropped_no_xml_member + self.dropped_several_xml_members)
-
-
-def scan_release(
-    parts: Sequence[str], targets: AbstractSet[str], *,
-    progress: Callable[[str], None] | None = None,
-) -> ScanResult:
-    """Read the release once, keeping only the labels `targets` names.
-
-    THE EXPENSIVE PASS: 17.6 GB of nested zips. It is done ONCE, and the cheap
-    byte pre-filter runs before any tree is built, because building a tree for
-    every document to discover most are unwanted costs far more than one regex.
-
-    **The pre-filter is never the authority.** `extract_subject_uniis` re-reads the
-    `setId` from the tree and the two are compared here; a disagreement is counted
-    and the document dropped rather than filed under the target the regex picked.
-
-    The reader's own skips -- members it never opened -- are counted through
-    `iter_release_labels`'s `on_skip`, so `ScanResult` accounts for every member
-    of every part rather than only for the documents that reached this loop.
-    """
-    found: list[SubjectUniis] = []
-    documents_read = 0
-    no_set_id_bytes = unreadable = disagreed = 0
-    skips = {"not_a_member_zip": 0, "no_xml_member": 0, "several_xml_members": 0}
-
-    def note_skip(_member: str, reason: str) -> None:
-        skips[reason] += 1
-
-    for part in parts:
-        if progress is not None:
-            progress(str(part))
-        for _document_id, xml_bytes in iter_release_labels(part, on_skip=note_skip):
-            documents_read += 1
-            pre_filter = set_id_in_bytes(xml_bytes)
-            if pre_filter is None:
-                no_set_id_bytes += 1
-                continue
-            if pre_filter not in targets:
-                continue
-            recovered = extract_subject_uniis(xml_bytes)
-            if recovered is None:
-                unreadable += 1
-                continue
-            if recovered.set_id != pre_filter:
-                disagreed += 1
-                continue
-            found.append(recovered)
-
-    return ScanResult(
-        documents_read=documents_read,
-        found=dedupe_by_set_id(found),
-        dropped_no_set_id_bytes=no_set_id_bytes,
-        dropped_unreadable=unreadable,
-        dropped_prefilter_disagreed=disagreed,
-        dropped_no_xml_member=skips["no_xml_member"],
-        dropped_several_xml_members=skips["several_xml_members"],
-        skipped_not_a_member_zip=skips["not_a_member_zip"])
-
-
-def iter_release_labels(
-    part_path: str, *, limit: int | None = None,
-    on_skip: Callable[[str, str], None] | None = None,
-) -> Iterator[tuple[str, bytes]]:
-    """Yield `(document_id, xml_bytes)` for every label in one release part.
-
-    Each outer member is itself a zip holding the XML plus the label's images;
-    only the SOLE `.xml` member is read, so the images never leave the archive --
-    which is both faster and the only part of the payload rule 6 has an opinion
-    about.
-
-    **`on_skip(member_name, reason)` IS HOW A SKIP BECOMES VISIBLE.** Every
-    branch below that declines a member calls it, because a `continue` here is
-    upstream of `scan_release`'s counters: a member dropped silently at this
-    level is invisible to `documents_read` AND to every field of `ScanResult`,
-    and reappears three stages later as `absent_from_dailymed`. `reason` is one
-    of `not_a_member_zip`, `no_xml_member`, `several_xml_members`.
-    """
-    def skip(member: str, reason: str) -> None:
-        if on_skip is not None:
-            on_skip(member, reason)
-
-    seen = 0
-    with zipfile.ZipFile(part_path) as outer:
-        for name in outer.namelist():
-            if not name.endswith(".zip"):
-                skip(name, "not_a_member_zip")
-                continue
-            with zipfile.ZipFile(io.BytesIO(outer.read(name))) as inner:
-                xml_names = [n for n in inner.namelist() if n.endswith(".xml")]
-                if not xml_names:
-                    skip(name, "no_xml_member")
-                    continue
-                if len(xml_names) > 1:
-                    # NOT `xml_names[0]`: see ScanResult.dropped_several_xml
-                    # _members. Picking by member order is the defect this
-                    # module refuses everywhere else.
-                    skip(name, "several_xml_members")
-                    continue
-                yield name, inner.read(xml_names[0])
-            seen += 1
-            if limit is not None and seen >= limit:
-                return

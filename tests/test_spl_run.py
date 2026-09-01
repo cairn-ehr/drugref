@@ -15,6 +15,7 @@ actual nested shapes at test time, so the readers, the `set_id` join, the
 classCode nesting and the salt/moiety split are all exercised against structures
 nobody wrote for a test.
 """
+import dataclasses
 import json
 import pathlib
 import uuid
@@ -23,8 +24,11 @@ import zipfile
 import psycopg
 import pytest
 
+from tests.conftest import clean_scan as _scan
 from drugref import spl_evidence
-from drugref.ingest import spl, spl_checks, spl_dailymed, spl_quote, spl_run
+from drugref.ingest import (
+    spl, spl_checks, spl_dailymed, spl_quote, spl_release, spl_run,
+)
 
 FIXTURE = pathlib.Path("tests/fixtures/spl")
 LABELS = json.loads((FIXTURE / "openfda_labels.json").read_text())
@@ -265,14 +269,14 @@ def test_the_expensive_pass_runs_with_NO_SNAPSHOT_HELD(conn, corpus, monkeypatch
     _tables` is pinned by `pg_class.reltuples` rather than by a stopwatch.
     """
     seen = []
-    real_scan = spl_dailymed.scan_release
+    real_scan = spl_release.scan_release
 
     def watching_scan(*args, **kwargs):
         seen.append(conn.info.transaction_status)
         return real_scan(*args, **kwargs)
 
     _seed_registry(conn)
-    monkeypatch.setattr(spl_run.spl_dailymed, "scan_release", watching_scan)
+    monkeypatch.setattr(spl_run.spl_release, "scan_release", watching_scan)
     _ingest(conn, corpus)
 
     assert seen == [psycopg.pq.TransactionStatus.IDLE], (
@@ -777,24 +781,11 @@ def test_a_refused_floor_rolls_the_WHOLE_run_back(conn, corpus):
     assert unfinished == 1
 
 
-def _scan(**overrides):
-    """A clean `ScanResult`. Every counter is spelled, none defaulted.
-
-    `ScanResult` gives its drop counters NO defaults on purpose -- a counter that
-    defaults to zero is one a future field can be forgotten out of, which is the
-    exact way `dropped_no_xml_member` and `dropped_several_xml_members` failed to
-    exist for a whole slice. The convenience belongs in the test, not the type.
-    """
-    fields = dict(documents_read=10, found={}, dropped_no_set_id_bytes=0,
-                  dropped_unreadable=0, dropped_prefilter_disagreed=0,
-                  dropped_no_xml_member=0, dropped_several_xml_members=0,
-                  skipped_not_a_member_zip=0)
-    return spl_dailymed.ScanResult(**(fields | overrides))
-
-
 @pytest.mark.parametrize("counter", [
     "dropped_no_set_id_bytes", "dropped_unreadable", "dropped_prefilter_disagreed",
     "dropped_no_xml_member", "dropped_several_xml_members",
+    "dropped_untrustworthy_prefilter", "dropped_junk_version",
+    "dropped_unknown_class_code_unii",
 ])
 def test_a_scan_that_dropped_a_document_for_a_READING_reason_is_refused(counter):
     """A drop here is republished as `absent_from_dailymed` -- a fact about this
@@ -892,6 +883,7 @@ def _summary(**overrides):
         records_read=100, labels=10, wordings=4,
         labels_by_route={"openfda_unii": 6, "unresolved": 4},
         dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
+        dailymed_reported_skips="",
         occurrences=40, wordings_with_a_moiety=3, quotes=12, quoted_chars=900,
         quotable_chars=1000, self_pairs=2, pairs=15, novel_pairs=14)
     return spl_checks.SplSummary(**(fields | overrides))
@@ -932,3 +924,49 @@ def test_the_summary_refuses_more_naming_wordings_than_wordings():
 def test_a_well_formed_summary_is_accepted():
     """The control, again: five refusals above prove nothing without it."""
     assert _summary().resolved_labels == 6
+
+
+# --------------------------------------------------------------------------
+# The reported skips: counted, printed, and now SURVIVING the call
+# --------------------------------------------------------------------------
+
+@pytest.mark.usefixtures("_clean")
+def test_a_reported_skip_REACHES_the_summary_not_only_the_terminal(
+        conn, corpus, monkeypatch):
+    """⇒ DELETING THE REPORT LINE USED TO LEAVE THE WHOLE SUITE GREEN.
+
+    `describe_reported_skips` is thoroughly unit-tested and nothing asserted
+    that anybody CALLS it. Worse, the only call went through `say()`, which is a
+    no-op whenever `progress` is None -- the default, and what every library
+    caller and every test uses -- so the counter survived in the scrollback of an
+    interactive run and nowhere else. That is the "counted and reported, reported
+    nowhere" defect this round exists to close, one level up from where it was
+    found.
+    """
+    real_scan = spl_release.scan_release
+
+    def scan_with_a_reported_skip(*args, **kwargs):
+        return dataclasses.replace(
+            real_scan(*args, **kwargs), skipped_unknown_class_code=7,
+            unknown_class_codes=frozenset({"ZZZZ"}))
+
+    _seed_registry(conn)
+    monkeypatch.setattr(spl_run.spl_release, "scan_release",
+                        scan_with_a_reported_skip)
+    summary = _ingest(conn, corpus)
+
+    assert "7" in summary.dailymed_reported_skips
+    assert "ZZZZ" in summary.dailymed_reported_skips, (
+        "the code is what a human has to rule on; the count alone is unactionable")
+    assert "ZZZZ" in str(summary)
+
+
+@pytest.mark.usefixtures("_clean")
+def test_a_clean_scan_adds_NO_skip_clause_to_the_summary(conn, corpus):
+    """The control. A clause printed on every run reading "none" is one nobody
+    reads, which is how the previous counter went unnoticed for a whole slice."""
+    _seed_registry(conn)
+    summary = _ingest(conn, corpus)
+
+    assert summary.dailymed_reported_skips == ""
+    assert "reported and NOT refused" not in str(summary)

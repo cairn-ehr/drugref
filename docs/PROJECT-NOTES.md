@@ -4293,9 +4293,11 @@ and refuses on any of six grounds. **Read the figures in the results record, not
 ### What shipped
 
 `db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
-deferred constraint trigger. Six pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_match.py`,
-`spl_quote.py`, `spl_subject.py`, plus `spl_checks.py` for the guards), the writer `spl_evidence.py`, the
-orchestrator `ingest/spl_run.py` and `cli_spl.py`.
+deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_release.py`,
+`spl_match.py`, `spl_quote.py`, `spl_subject.py`, plus `spl_checks.py` for the guards), the writer
+`spl_evidence.py`, the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
+`ScanResult`/`scan_release`/`iter_release_labels` — was split out of `spl_dailymed.py` on 2026-08-31 under
+rule 4; `spl_dailymed.py` reads ONE label's XML and never opens a zip.)
 
 **⇒ TWO VIEWS AT TWO GRAINS, EACH NAMED FOR ITS OWN.** The design said "two views" and named one. `spl_ddi_pair`
 is PAIR grain — `count(*)` **is** the pair count, directly comparable with `drugcentral_ddi_pair` — and
@@ -4537,6 +4539,160 @@ sixth that survives. Review the fix the way the thing being fixed was reviewed.*
   `Match.ambiguous` counting entries rather than moiety entries ·
   [#166](https://github.com/cairn-ehr/drugref/issues/166) no size cap on nested release zips.
 
+## The reader-skip census round (2026-08-31) — issue #162, no migration, `spl_release.py` split out
+
+**[Measurement record](superpowers/specs/2026-08-31-drugref-spl-reader-skip-census.md).** The round HANDOVER
+called *"a measurement, not an edit"*, and it stayed one: `tools/spl_skip_census.py` reads all six DailyMed
+parts in **163.6 s** with no database and no target set, and every verdict below is read off that pass.
+
+### ⇒ THE STANDING RISK IS RETIRED, AND IT WAS ALREADY ANSWERABLE FROM TWO PUBLISHED NUMBERS
+
+PR #161's review folded `dropped_no_xml_member` and `dropped_several_xml_members` into the total
+`check_scan_dropped_nothing` aborts over, while its own docstring conceded they were **UNMEASURED on a real
+release** — so `main` might have refused the very release the previous run read. **All three member-level
+counters are ZERO** (`not_a_member_zip` too), so it does not.
+
+**And the answer was already sitting in two published numbers nobody had put side by side.** The results record
+of 2026-08-27 states **54,813 documents read**; the six parts' central directories hold exactly **54,813 outer
+members**, every one a `.zip`. A member skipped for *any* of the three reasons yields no document, so the two
+being equal already implied all three counters were zero — derivable in seconds from the zip directories,
+without reading 17.6 GB. ⇒ *Before measuring, check whether the measurement has already been published in two
+halves.*
+
+### ⇒ THE FIX ISSUE #162 PROPOSED WOULD HAVE ABORTED THE INGEST ON ITS OWN CORPUS
+
+#162's suggested shape was *"count all three; fold 2 and 3 into `total_dropped`"*. Applied literally, **case 3
+refuses this release**: the release carries `COLR` **ten times**, `total_dropped` would have been 10, and the
+guard aborts before the run row exists. The slice would have lost its ingest to a guard added to protect it —
+which is exactly the risk #162 named when it said this needed a measurement rather than an edit, and exactly
+why #161 did not fix it.
+
+**What `COLR` is, established from the release rather than from an HL7 table.** All ten sit on three labels in
+part 3, name a colour (`WHITE`, `RED`, `BLUE`, `YELLOW`), and **none carries a `<code>` element at all** — so
+not one could have contributed a subject even if the code were admitted as active, because `_unii_of` requires
+a `<code>` whose `codeSystem` is FDA SRS. It is now in `_DOCUMENTED_INACTIVE_CLASS_CODES`: ruled on, not merely
+tolerated.
+
+So the shipped guard is keyed on **the condition that harms** rather than the cause imagined — the same lesson
+`db/038`'s detector round recorded:
+
+- an unknown classCode **carrying a UNII** is a DROP (a future ACTIVE code looks exactly like this, and with
+  only a 2.3% margin over the pair floor a small silent degradation passes every downstream check);
+- an unknown classCode **carrying no UNII** is REPORTED and not refused — `COLR`'s measured shape.
+
+### The census, in full (54,813 documents, Human Rx 2026-08-21)
+
+| branch | count | verdict |
+| --- | --- | --- |
+| `not_a_member_zip` | 0 | reported, not a drop |
+| `no_xml_member` · `several_xml_members` | 0 · 0 | drops — **were shipped unmeasured** |
+| #162 case 1 — pre-filter setId ≠ the document's own | 0 | now a drop |
+| #162 case 2 — unparseable `<versionNumber>` | 0 | now a drop |
+| #162 case 3 — classCode outside the vocabulary | **`COLR` × 10** | **reported, NOT a drop** |
+| `no_set_id_in_bytes` · `doctype` · `parse_error` · `no_set_id_in_tree` | 0 each | unchanged |
+| labels with no `<versionNumber>` at all | 0 | — |
+
+classCode histogram: `IACT` 635,954 · `ACTIB` 79,207 · `ACTIM` 21,075 · `ACTIR` 2,849 · `INGR` 1,827 ·
+`CNTM` 556 · **`COLR` 10**.
+
+### Case 1 is closed at its CAUSE, not only at its outcome
+
+`set_id_in_bytes` takes the FIRST `setId` in the bytes, and SPL's `<relatedDocument>` carries a `setId` of its
+own naming the label being replaced. `scan_release` compared pre-filter against tree **only for documents
+already in `targets`**, so a document mis-named OUT of `targets` was skipped before any comparison — the
+module's *"the pre-filter is never the authority"* held for the in-targets case alone. Both halves measured
+zero: the **outcome** (pre-filter ≠ tree setId, over every document rather than only targeted ones) and the
+**cause** (`<relatedDocument` before the first `<setId`). `spl_dailymed.prefilter_is_trustworthy` now tests the
+cause in bytes already in memory — no tree is built — and an untrustworthy non-target is a **drop** rather than
+a recovery, deliberately: recovery would be a policy invented against zero observations, while refusing
+surfaces the condition to a human who can decide it with real data in hand.
+
+### A counter nobody reports is a silent skip with extra steps
+
+`skipped_not_a_member_zip` has been documented as *"counted and reported"* since it was added and was
+**reported nowhere** — no `say()`, no summary field. `skipped_unknown_class_code` would have inherited exactly
+that, which would have made admitting `COLR` to the vocabulary a way of HIDING it rather than of ruling on it.
+`spl_release.describe_reported_skips` is the one line that prints them, empty when there is nothing to say
+because a line of zeroes on every run is a line nobody reads.
+
+### `spl_release.py` was split out of `spl_dailymed.py` (rule 4)
+
+`spl_dailymed.py` was at 491 lines and this round needed ~100 more. The seam was already there: one module
+reads ONE label's XML and never opens a zip; the other walks a release's nested zips and never looks at a drug.
+`ScanResult`, `scan_release` and `iter_release_labels` moved **verbatim** first, with the whole suite green
+before a single counter was added, so refactor risk and behaviour change were never mixed in one step.
+`spl_dailymed.py` is now 411 lines and `spl_release.py` 275.
+
+### Verified with the SHIPPED code on `drugref_spl162` (TEMPLATE `drugref_spl` → migrate → ingest spl)
+
+A census is a probe, and the counters that refuse a run are new code — so the ingest was re-run end to end.
+**10 min 43 s** against the ~12.5 min the ingest round published, so the per-document trustworthiness check
+costs nothing measurable (it is bounded with `endpos` to the bytes before the selected `setId`; searching whole
+documents would scan 17.6 GB a second time). **It did not abort**, so every new drop counter is zero on the
+real release as measured by the code that ships. No reported-skip line printed, so both report counters are
+zero for this run. Nothing that had no licence to move moved: `spl_ddi_pair` **29,952** (26,598 novel) ·
+`spl_label_subject` **73,867** · `spl_wording_quote` **138,187** · `spl_entity_occurrence` **1,297,944** ·
+routes `openfda_unii` 27,494 / `dailymed_active_moiety` 10,555 / `dailymed_active_substance` 23 /
+`absent_from_dailymed` 30,386 / `unresolved` 92 — every one reproducing 2026-08-27 exactly.
+
+### Traps and standing notes
+
+- **The shipped counters and the census count DIFFERENT POPULATIONS, and the run turned that from a caveat
+  into a number.** `skipped_unknown_class_code` is **0** while the census counts `COLR` **10 times**. Both are
+  right: the shipped counter is scoped to the documents the scan reads a subject from — **10,670 is the
+  DE-DUPLICATED label count**, and the document count behind it is higher by the labels shipping several
+  versions — and `COLR`'s three labels are not among the 41,056 targeted; the census is release-wide over all
+  54,813. Comparing them as
+  one number finds a discrepancy that is not there — the mistake the design round made when it filed 14,455
+  never-read labels into a bucket meaning *"read"*.
+- The census re-parses each tree because `extract_subject_uniis` folds three situations into one `None`.
+  `test_the_census_NEVER_disagrees_with_the_shipped_reader` pins that second parse as a REFINEMENT of the
+  shipped one and never a rival — this project has published seven wrong figures from partially-working probes.
+- Both class-code vocabularies are READ at call time, never restated, in the probe as well as the library: a
+  vocabulary with two homes is the defect this slice has now found **five** times — the fifth being this
+  round's own census tool, below.
+
+### ⇒ THE REVIEW OF THIS ROUND: SIX DEFECTS, ALL IN THE CODE THE CENSUS COULD NOT CHECK
+
+Spec §6a is the record. The measurement stood in full; every finding was in the **new code written in response
+to it**, which the census had no way to test because the census was written first.
+
+- **The vocabulary drifted into two homes inside one commit.** `COLR` went into
+  `spl_dailymed._DOCUMENTED_INACTIVE_CLASS_CODES` and *not* into `tools/spl_skip_census`'s retyped copy —
+  three lines beneath a comment explaining that a vocabulary with two homes is the defect this slice keeps
+  finding. Re-running the census would have reported `COLR` as unruled: **the instrument contradicting the
+  verdict it had produced.** Both sets are read at call time now, and
+  `test_the_INACTIVE_vocabulary_is_READ_not_retyped` moves each frozenset in turn.
+- **The census disagreed with the shipped reader on `<versionNumber/>`** (element present, no `value`): junk to
+  the reader — a drop that aborts the run — and "absent version" to the census, a benign context line. The
+  pinning test compared `version`, `None` on both sides, and never the junk verdict. Since the census's
+  `junk_version = 0` is the *sole* evidence licensing that drop, the instrument certifying the guard could not
+  see one of the conditions the guard refuses over.
+- **`total_dropped` could exceed `documents_read`.** The three document-level counters fell through instead of
+  `continue`-ing, so one document tripping two was two drops *and* stayed in `found`.
+- **Three shapes lost a label with every counter clean**: an unknown `encoding=` raises `LookupError`, not
+  `ET.ParseError`, and aborted the whole scan naming nothing; a corrupt member zip raised `BadZipFile` out of
+  the generator, likewise unnamed; and membership was decided by a `.zip` **suffix**, so `M.ZIP` was filed under
+  `not_a_member_zip` — the one member bucket that does not refuse.
+- **The counters could be mis-bound undetectably.** Every counter in the fixture was seeded with exactly **1**,
+  so swapping two at the construction site passed all 2402 tests. They are 1/2/3/4 now.
+
+⇒ **A CENSUS RETIRES A RISK ABOUT THE CORPUS; ONLY A TEST RETIRES ONE ABOUT THE READER.** Four of the six are
+conditions the 2026-08-21 release does not contain, so no amount of reading it could have surfaced them. This is
+the sharper form of the lesson the round already carried about guards: measuring the world tells you nothing
+about the code you wrote to measure it.
+
+Also fixed while in there: `dedupe_by_set_id`'s `(row.version or -1)` collapsed **version 0** into the
+no-version sentinel; the unknown classCodes are now **named** in both the refusal message and the reported-skip
+line (case 3 is reported precisely so a human can rule on the code, which requires knowing which code);
+`describe_reported_skips` rides on `SplSummary` rather than only through `say()`, which is a no-op whenever
+`progress` is None — every library caller and every test; `on_skip` is now **required** rather than defaulting
+to a silent discard; and `_scan` had been written twice, so it lives once in `tests/conftest.py`.
+
+Deferred as issues: **#168** (three more homes of one vocabulary and a second `iter_release_labels`, all
+pre-existing in `tools/`), **#169** (a `SkipReason` enum, when the 12th counter arrives), **#170** (SPL version
+spelled three ways), **#171** (a census crash on the last part discards every part already counted).
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4728,14 +4884,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2357 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2443 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-08-29 at 2357
-# passed in 68.61 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2443
+# passed in 125.44 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4773,7 +4929,28 @@ git config core.hooksPath .githooks
 # 2357, when it found the new Registry type had broken two committed tools that
 # no test exercised -- including the one the matcher's docstring cites as its
 # evidence -- and that the brand-new entity guard carried an assertion which
-# passed with the guard deleted).
+# passed with the guard deleted); and the READER-SKIP CENSUS round -- issue
+# #162, no migration -- added 45: 2357 -> 2402, being 18 on the census probe
+# itself (which measures the SHIPPED reader, pinned by a test that the probe's
+# second parse never disagrees with `extract_subject_uniis`), 24 on the three
+# newly-counted reader skips and the line that finally REPORTS the two that
+# refuse nothing, and 3 more parametrised cases on the existing guard test whose
+# docstring already claimed it covered EVERY counter; and that round's OWN
+# REVIEW-FIX half added 41: 2402 -> 2443, nearly all of them written against a
+# defect the census could not have found because the 2026-08-21 release does not
+# contain it -- the two vocabularies pinned to each other by monkeypatching EACH
+# frozenset in turn, `<versionNumber/>` added to the census-versus-reader
+# parametrize list (which had compared only `version`, `None` on both sides,
+# while the two disagreed on the junk verdict that actually decides), the
+# uppercase `M.ZIP` that lost a real label through the one bucket that does not
+# refuse, the corrupt member zip and the unknown `encoding=` that each aborted
+# the whole scan naming nothing, and the drop/report split made structural.
+# ⇒ AND THE EIGHTH OCCURRENCE WAS CAUGHT MID-ROUND, BY THIS ROUND, AGAINST
+# ITSELF: 2401 was written here off a `--collect-only` taken BEFORE the round's
+# last test existed, and the full run said 2402. Even a number measured in the
+# same session goes stale if it is measured before the work stops. Read it off
+# the run that VERIFIES green, not off an earlier count -- and issue 146 (a test
+# that reads this line and counts the suite) is still the only real fix.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
 # DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,

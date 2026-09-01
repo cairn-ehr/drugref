@@ -824,7 +824,7 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
 > its own slice becomes a claim**, and this file has now made that mistake once; the account above is the one
 > home for what 5c.2g does.
 
-##### 5c.3 — SPL/DailyMed mining ✅ DONE (2026-08-29) — `db/051` + `db/052`, measured and reviewed
+##### 5c.3 — SPL/DailyMed mining ✅ DONE (2026-08-31) — `db/051` + `db/052`, measured, reviewed, skips censused
 `ONSIDES`-*method*, MIT precedent — a full ingest slice of its own. **The brainstorm, the source measurement,
 the subject-recovery measurement, the design spec AND the ingest are all done.**
 [What it produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md); full account:
@@ -860,8 +860,33 @@ route census `db/051` had shipped into the **database catalog** from the design 
 measurement — its `unresolved` comment read 14,680 where the answer is 92. Five findings needing a real-release
 run were filed instead: **#162–#166**.
 
-⇒ *The lesson this slice keeps re-teaching, now three rounds deep: a guard is not a guard until something has
-watched it refuse. A round that publishes a vacuity finding is not thereby immune to it.*
+**⇒ THE READER-SKIP CENSUS ✅ DONE (2026-08-31) — issue #162, no migration.**
+[Measurement record](superpowers/specs/2026-08-31-drugref-spl-reader-skip-census.md); full account:
+PROJECT-NOTES § "The reader-skip census round". **Read the numbers there, not here.** One 163.6 s pass over all
+54,813 documents settled both open questions at once. The two counters the review round shipped **unmeasured
+into a guard that aborts the ingest** are ZERO, so `main` does not refuse — and that was already derivable from
+two published numbers nobody had compared (54,813 documents read against 54,813 outer members). **#162's own
+suggested fix would have aborted the ingest on its own corpus**: the release carries `COLR` ten times, so
+folding case 3 into `total_dropped` refuses the release it was measured against. The guard is therefore keyed
+on the condition that HARMS — an unknown classCode carrying a UNII — and all ten `COLR` ingredients carry no
+`<code>` element at all. Cases 1 and 2 measured zero at outcome AND at cause and are now drops.
+`spl_release.py` was split out of `spl_dailymed.py` (rule 4: 491 lines, +100 needed) by a verbatim move with
+the suite green before any counter was added.
+
+**⇒ AND ITS OWN REVIEW FOUND SIX DEFECTS, ALL IN THE CODE THE CENSUS COULD NOT CHECK** — spec §6a. The
+classCode vocabulary drifted into two homes inside one commit, so the census would have called `COLR` unruled
+after the ingest ruled on it; the census disagreed with the shipped reader on `<versionNumber/>`; and three
+shapes lost a label with every counter clean (`LookupError` from an unknown `encoding=`, a corrupt member zip,
+and membership decided by a `.zip` suffix). Deferred: **#168–#171**.
+
+⇒ *The lesson this slice keeps re-teaching, now five rounds deep: a guard is not a guard until something has
+watched it refuse — and a counter nobody REPORTS is a silent skip with extra steps. `skipped_not_a_member_zip`
+was documented as "counted and reported" for a whole slice and was reported nowhere.*
+
+⇒ *And the new one: **a census retires a risk about the CORPUS; only a test retires one about the READER.**
+Four of the six defects are conditions the 2026-08-21 release simply does not contain, so no amount of reading
+it could have found them — and every counter in the reader's fixture was seeded with exactly 1, so two could be
+swapped and all 2402 tests still passed.*
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
