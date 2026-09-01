@@ -873,9 +873,20 @@ on the condition that HARMS — an unknown classCode carrying a UNII — and all
 `spl_release.py` was split out of `spl_dailymed.py` (rule 4: 491 lines, +100 needed) by a verbatim move with
 the suite green before any counter was added.
 
-⇒ *The lesson this slice keeps re-teaching, now four rounds deep: a guard is not a guard until something has
+**⇒ AND ITS OWN REVIEW FOUND SIX DEFECTS, ALL IN THE CODE THE CENSUS COULD NOT CHECK** — spec §6a. The
+classCode vocabulary drifted into two homes inside one commit, so the census would have called `COLR` unruled
+after the ingest ruled on it; the census disagreed with the shipped reader on `<versionNumber/>`; and three
+shapes lost a label with every counter clean (`LookupError` from an unknown `encoding=`, a corrupt member zip,
+and membership decided by a `.zip` suffix). Deferred: **#168–#171**.
+
+⇒ *The lesson this slice keeps re-teaching, now five rounds deep: a guard is not a guard until something has
 watched it refuse — and a counter nobody REPORTS is a silent skip with extra steps. `skipped_not_a_member_zip`
 was documented as "counted and reported" for a whole slice and was reported nowhere.*
+
+⇒ *And the new one: **a census retires a risk about the CORPUS; only a test retires one about the READER.**
+Four of the six defects are conditions the 2026-08-21 release simply does not contain, so no amount of reading
+it could have found them — and every counter in the reader's fixture was seeded with exactly 1, so two could be
+swapped and all 2402 tests still passed.*
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

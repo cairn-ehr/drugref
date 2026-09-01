@@ -21,6 +21,7 @@ all.
 """
 import pytest
 
+from tests.conftest import clean_scan as _scan
 from drugref.ingest import spl_checks, spl_dailymed as dm, spl_release as rel
 
 UNII_SYSTEM = dm.UNII_CODE_SYSTEM
@@ -272,17 +273,6 @@ def _part(tmp_path, members, *, name="dm_spl_release_human_rx_part1.zip") -> str
     return str(path)
 
 
-def _scan(**overrides):
-    """A clean `ScanResult`. Every counter spelled, none defaulted -- see
-    `tests/test_spl_run.py::_scan` for why the type refuses defaults."""
-    fields = dict(
-        documents_read=10, found={}, dropped_no_set_id_bytes=0,
-        dropped_unreadable=0, dropped_prefilter_disagreed=0,
-        dropped_no_xml_member=0, dropped_several_xml_members=0,
-        skipped_not_a_member_zip=0, dropped_untrustworthy_prefilter=0,
-        dropped_junk_version=0, dropped_unknown_class_code_unii=0,
-        skipped_unknown_class_code=0)
-    return rel.ScanResult(**(fields | overrides))
 
 
 def test_trustworthiness_only_reads_the_bytes_BEFORE_the_selected_setId():
@@ -292,3 +282,257 @@ def test_trustworthiness_only_reads_the_bytes_BEFORE_the_selected_setId():
     full scan would be the wrong answer's only possible cause."""
     xml = _document(body="<x/>" * 50_000 + _related_document("SET-OLD"))
     assert dm.prefilter_is_trustworthy(xml) is True
+
+
+# --------------------------------------------------------------------------
+# The review round: what the counters were, and were not, able to say
+# --------------------------------------------------------------------------
+
+def test_every_counter_DECLARES_its_verdict_in_its_name():
+    """⇒ THE DROP/REPORT SPLIT IS STRUCTURAL, NOT A LIST TO REMEMBER.
+
+    `total_dropped` sums by the `dropped_` prefix, so a counter that names
+    neither verdict would be silently ignored by the guard -- the twelfth-counter
+    version of the hole this whole module exists to close. A hand-written sum
+    was the earlier design, and a field could simply be left out of it.
+    """
+    import dataclasses
+
+    for field in dataclasses.fields(rel.ScanResult):
+        if field.name in {"documents_read", "found", "unknown_class_codes"}:
+            continue
+        assert field.name.startswith(("dropped_", "skipped_")), (
+            f"{field.name} declares no verdict, so `total_dropped` ignores it")
+
+
+@pytest.mark.parametrize("counter,summed", [
+    ("dropped_no_set_id_bytes", True), ("dropped_unreadable", True),
+    ("dropped_prefilter_disagreed", True), ("dropped_no_xml_member", True),
+    ("dropped_several_xml_members", True),
+    ("dropped_unreadable_member_zip", True),
+    ("dropped_untrustworthy_prefilter", True), ("dropped_junk_version", True),
+    ("dropped_unknown_class_code_unii", True),
+    ("skipped_not_a_member_zip", False), ("skipped_unknown_class_code", False),
+])
+def test_the_prefix_decides_whether_a_counter_is_SUMMED(counter, summed):
+    """Each counter moved ALONE, so the sum cannot be right by cancellation."""
+    assert _scan(**{counter: 1}).total_dropped == (1 if summed else 0)
+
+
+def test_one_document_tripping_TWO_conditions_is_ONE_drop(tmp_path):
+    """⇒ `total_dropped` COUNTS DOCUMENTS, and it did not.
+
+    The three document-level counters used to fall through instead of
+    `continue`-ing, so a document that was both junk-versioned and carrying a
+    UNII under an unknown code was reported as TWO drops -- and appended to
+    `found` anyway, as a result the type said had been dropped.
+    """
+    part = _part(tmp_path, {"m.zip": {"a.xml": _document(
+        _ingredient("ZZZZ", "UNII-Z"), version="four")}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert scan.documents_read == 1
+    assert scan.total_dropped == 1
+    assert scan.total_dropped <= scan.documents_read
+    assert scan.found == {}, "a dropped document must not survive as a result"
+
+
+def test_an_unknown_code_with_NO_unii_still_keeps_the_document(tmp_path):
+    """The control for the test above: `skipped_*` reports and does NOT drop, so
+    the document is kept. `COLR` is the whole reason that distinction exists."""
+    part = _part(tmp_path, {"m.zip": {"a.xml": _document(
+        _ingredient("ZZZZ", unii=None))}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert scan.skipped_unknown_class_code == 1
+    assert set(scan.found) == {"SET-1"}
+
+
+def test_the_unknown_codes_are_NAMED_not_merely_counted(tmp_path):
+    """⇒ CASE 3 IS REPORTED SO A HUMAN CAN RULE ON THE CODE -- which requires
+    knowing WHICH code. The reader collected the codes, sorted them, and threw
+    them away before anything printed; the operator was told "1 document
+    carrying an unrecognised classCode" and left to re-read 17.6 GB to find it.
+    """
+    part = _part(tmp_path, {"m.zip": {"a.xml": _document(
+        _ingredient("ZZZZ", unii=None))}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert scan.unknown_class_codes == frozenset({"ZZZZ"})
+    assert "ZZZZ" in rel.describe_reported_skips(scan)
+
+
+def test_an_ingredient_with_NO_classCode_at_all_is_an_unknown_code():
+    """The attribute is what separates an excipient from the subject drug, so an
+    ingredient that declines to say which it is has told us nothing. Measured
+    zero on the release -- the census histogram has no `<none>` row -- and it is
+    refused rather than assumed inactive."""
+    xml = _document(
+        '<ingredient><ingredientSubstance>'
+        f'<code code="UNII-Q" codeSystem="{UNII_SYSTEM}"/>'
+        "</ingredientSubstance></ingredient>")
+    recovered = dm.extract_subject_uniis(xml)
+
+    assert recovered.unknown_class_codes == ("",)
+    assert recovered.unknown_class_code_uniis == ("UNII-Q",)
+
+
+def test_a_missing_classCode_is_spelled_out_rather_than_printed_as_a_gap():
+    """`""` in a message reads as a formatting bug, not as a finding."""
+    assert rel.name_the_codes(frozenset({""})) == "<none>"
+    assert rel.name_the_codes(frozenset({"ZZZZ", ""})) == "<none>, ZZZZ"
+
+
+def test_the_refusal_message_NAMES_the_unrecognised_code():
+    """The message ends "fix the reader"; a bare count hands over nothing to fix
+    it with."""
+    with pytest.raises(ValueError, match="ZZZZ"):
+        spl_checks.check_scan_dropped_nothing(_scan(
+            dropped_unknown_class_code_unii=1,
+            unknown_class_codes=frozenset({"ZZZZ"})))
+
+
+# --------------------------------------------------------------------------
+# The member level: three ways a label was lost with every counter clean
+# --------------------------------------------------------------------------
+
+def test_a_member_zip_named_in_UPPERCASE_is_still_a_label_container(tmp_path):
+    """⇒ THE PR'S OWN HEADLINE DEFECT, REPRODUCED INSIDE THE FIX.
+
+    Membership was decided by `name.endswith(".zip")`, so `M.ZIP` was filed
+    under `not_a_member_zip` -- the ONE member bucket that does not refuse the
+    run -- and a real targeted label was republished as `absent_from_dailymed`
+    with `total_dropped` reading zero. It is decided on the BYTES now.
+    """
+    part = _part(tmp_path, {"M.ZIP": {"a.xml": _document(set_id="SET-1")}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert set(scan.found) == {"SET-1"}
+    assert scan.skipped_not_a_member_zip == 0
+
+
+def test_an_xml_named_in_UPPERCASE_is_found_rather_than_called_missing(tmp_path):
+    """Same defect one level in: the member DID hold an XML, and the reason
+    reported for declining it said it did not."""
+    part = _part(tmp_path, {"m.zip": {"A.XML": _document(set_id="SET-1")}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert set(scan.found) == {"SET-1"}
+    assert scan.dropped_no_xml_member == 0
+
+
+def test_a_member_whose_bytes_are_NOT_A_READABLE_ZIP_is_counted_and_dropped(
+        tmp_path):
+    """⇒ THE ONE SHAPE THAT MAKES A MEMBER UNREADABLE HAD NO COUNTER.
+
+    `ScanResult` argues that a member zip this reader cannot read is a lost
+    label and must be a drop -- and a member whose bytes are corrupt raised
+    `BadZipFile` straight out of the generator, naming no member, no part and no
+    setId, after tens of minutes of scanning.
+    """
+    import io
+    import zipfile as zf
+
+    # A REAL member zip whose directory is intact but whose payload is not: the
+    # end-of-central-directory record still identifies it as a zip, `namelist()`
+    # still reports one `.xml`, and only `read()` discovers the CRC is wrong.
+    # That is what a truncated or corrupted download actually looks like -- and
+    # it is the shape that used to raise straight out of the generator.
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w", zf.ZIP_STORED) as inner:
+        inner.writestr("a.xml", b"A" * 200)
+    corrupt = buffer.getvalue().replace(b"A" * 200, b"B" * 200)
+    assert zf.is_zipfile(io.BytesIO(corrupt)), "the fixture must still BE a zip"
+
+    path = tmp_path / "part1.zip"
+    with zf.ZipFile(path, "w") as outer:
+        outer.writestr("broken.zip", corrupt)
+
+    scan = rel.scan_release([str(path)], {"SET-1"})
+
+    assert scan.dropped_unreadable_member_zip == 1
+    assert scan.total_dropped == 1
+
+
+def test_a_DIRECTORY_entry_is_not_reported_as_a_declined_member(tmp_path):
+    """It was never a container, so counting it pads the one counter that is
+    supposed to mean "a release-level manifest or index"."""
+    import zipfile as zf
+    path = tmp_path / "part1.zip"
+    with zf.ZipFile(path, "w") as outer:
+        outer.writestr("labels/", b"")
+
+    scan = rel.scan_release([str(path)], {"SET-1"})
+
+    assert scan.skipped_not_a_member_zip == 0
+    assert scan.total_dropped == 0
+
+
+# --------------------------------------------------------------------------
+# Reading one document: the two shapes that aborted the whole scan
+# --------------------------------------------------------------------------
+
+def test_an_UNKNOWN_ENCODING_is_an_unreadable_document_not_a_crash():
+    """⇒ `ET.ParseError` IS NOT WHAT expat RAISES HERE.
+
+    An XML declaration naming a codec Python does not have raises `LookupError`,
+    which the reader did not catch -- so one such document among 54,813 aborted
+    the entire 17.6 GB scan with a message naming nothing. SPL is third-party
+    content, so the encoding is chosen by the submitter.
+    """
+    assert dm.extract_subject_uniis(
+        b'<?xml version="1.0" encoding="no-such-codec"?><d/>') is None
+
+
+def test_an_unknown_encoding_reaches_the_drop_counter_it_belongs_to(tmp_path):
+    """It is a READING failure, so it must land on `dropped_unreadable` and
+    refuse the run -- not vanish, and not raise."""
+    part = _part(tmp_path, {"m.zip": {"a.xml":
+        b'<?xml version="1.0" encoding="no-such-codec"?>'
+        b'<document xmlns="urn:hl7-org:v3"><setId root="SET-1"/></document>'}})
+
+    scan = rel.scan_release([part], {"SET-1"})
+
+    assert scan.dropped_unreadable == 1
+    assert scan.total_dropped == 1
+
+
+# --------------------------------------------------------------------------
+# The de-duplication tie-break, and the pre-filter's namespace handling
+# --------------------------------------------------------------------------
+
+def test_version_ZERO_still_outranks_a_label_with_no_version_at_all():
+    """`(row.version or -1)` collapsed version 0 into the no-version sentinel,
+    so the two tied and zip-member order decided -- the one thing
+    `dedupe_by_set_id` exists to refuse."""
+    versioned = dm.extract_subject_uniis(_document(version="0"))
+    unversioned = dm.extract_subject_uniis(_document(version=None))
+
+    assert dm.dedupe_by_set_id([versioned, unversioned])["SET-1"] is versioned
+    assert dm.dedupe_by_set_id([unversioned, versioned])["SET-1"] is versioned
+
+
+def test_a_NAMESPACE_PREFIXED_relatedDocument_is_seen_too():
+    """Real SPL in the wild uses prefixes. Both patterns carry `(?:\\w+:)?`, and
+    every other fixture in this file emits unprefixed elements -- so removing
+    the alternation from either one passed the whole suite."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hl7:document xmlns:hl7="urn:hl7-org:v3">'
+        '<hl7:relatedDocument><hl7:setId root="SET-OLD"/></hl7:relatedDocument>'
+        '<hl7:setId root="SET-MINE"/></hl7:document>').encode()
+
+    assert dm.set_id_in_bytes(xml) == "SET-OLD"
+    assert dm.prefilter_is_trustworthy(xml) is False
+
+
+def test_a_document_with_no_setId_at_all_cannot_have_been_MIS_selected():
+    """The contract for a caller that does not pre-check: nothing was selected,
+    so nothing was mis-selected. `scan_release` counts these under
+    `dropped_no_set_id_bytes` and never reaches this branch."""
+    assert dm.prefilter_is_trustworthy(b"<document/>") is True

@@ -65,6 +65,13 @@ class SplSummary:
     dailymed_targets: int
     dailymed_documents_read: int
     dailymed_found: int
+    #: ⇒ THE READER'S REPORTED SKIPS, ON THE RETURNED VALUE RATHER THAN ONLY IN
+    #: SCROLLBACK. `describe_reported_skips` prints these through `say()`, which
+    #: is a no-op whenever `progress` is None -- the default, and what every
+    #: library caller and every test uses. A counter that survives only in the
+    #: terminal of an interactive run is the "counted and reported, reported
+    #: nowhere" defect one level up, so they are carried here too.
+    dailymed_reported_skips: str
     occurrences: int
     wordings_with_a_moiety: int
     quotes: int
@@ -125,7 +132,11 @@ class SplSummary:
             f"{self.wordings_with_a_moiety:,} wordings; {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
-            f"{self.self_pairs:,} self-pair evidence rows excluded")
+            f"{self.self_pairs:,} self-pair evidence rows excluded"
+            # Only when there IS something to say: a clause printed on every run
+            # reading "none" is one nobody reads.
+            + (f"; DailyMed {self.dailymed_reported_skips}"
+               if self.dailymed_reported_skips else ""))
 
 
 def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
@@ -134,7 +145,7 @@ def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
     A document dropped here is republished by `spl_label_subject` as
     `absent_from_dailymed` -- a fact about this code sold as a fact about the
     release, and the design spec turns that route's population into a
-    commitment. Measured on the 2026-08-21 Human Rx release: the four counters
+    commitment. Measured on the 2026-08-21 Human Rx release: the three counters
     that existed at that run are ZERO, which is what lets *"the limit is the
     release, not the reading"* be a measurement rather than an inference.
 
@@ -146,10 +157,15 @@ def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
     documents of that release -- the record is
     `docs/superpowers/specs/2026-08-31-drugref-spl-reader-skip-census.md` --
     giving `no_xml_member` 0, `several_xml_members` 0 and
-    `not_a_member_zip` 0. Issue #162's three cases were measured in the same pass
-    and are counted here now; case 3 is NOT a drop, because the release carries
-    `COLR` ten times and refusing over it would have aborted the ingest on the
-    corpus this slice was built on. See `ScanResult` for each verdict.
+    `not_a_member_zip` 0.
+
+    ⇒ ISSUE #162 CASE 3 IS SPLIT, NOT EXEMPTED, and the distinction is the whole
+    fix. An unknown classCode CARRYING A UNII is a drop and refuses this run: it
+    is the only shape that could have cost a label its subject, and a future
+    ACTIVE code looks exactly like it. The same code carrying no UNII is reported
+    only -- because the release carries `COLR` ten times, and refusing over that
+    would have aborted the ingest on the corpus this slice was built on. Cases 1
+    and 2 measured zero and are drops. See `ScanResult` for each verdict.
 
     Raised BEFORE the run is opened, so a release this reader cannot handle
     leaves the previous projection standing.
@@ -163,11 +179,17 @@ def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
             f"named a different setId than the document, "
             f"{scan.dropped_no_xml_member} member zip(s) with no XML, "
             f"{scan.dropped_several_xml_members} with several, "
+            f"{scan.dropped_unreadable_member_zip} that could not be read at "
+            f"all, "
             f"{scan.dropped_untrustworthy_prefilter} judged 'not a target' by a "
             f"setId that may not be their own, "
             f"{scan.dropped_junk_version} with an unreadable versionNumber, "
             f"{scan.dropped_unknown_class_code_unii} carrying a UNII under an "
-            f"unrecognised HL7 classCode). They would be "
+            f"unrecognised HL7 classCode "
+            # NAMED, not merely counted: this message ends "fix the reader", and
+            # a count of unrecognised codes hands over nothing to fix it with.
+            f"[{spl_release.name_the_codes(scan.unknown_class_codes)}]). "
+            "They would be "
             "republished as 'absent from DailyMed', which is a fact about this "
             "reader rather than about the release. Fix the reader before "
             "quoting any recovery figure.")

@@ -83,7 +83,12 @@ def structural_skeleton(xml_bytes: bytes) -> bytes | None:
 def read_dailymed(part: pathlib.Path, wanted: int) -> dict[str, bytes]:
     """The first `wanted` labels of one release part that declare an ingredient."""
     skeletons: dict[str, bytes] = {}
-    for _document_id, xml_bytes in spl_release.iter_release_labels(str(part)):
+    # `on_skip` is required rather than defaulted, so declining to count is a
+    # decision written here: this builds a test fixture from whatever labels the
+    # part happens to yield, and a member it cannot read costs the fixture
+    # nothing. An INGEST discarding the same skip is the defect issue #162 is about.
+    for _document_id, xml_bytes in spl_release.iter_release_labels(
+            str(part), on_skip=lambda _member, _reason: None):
         set_id = spl_dailymed.set_id_in_bytes(xml_bytes)
         if set_id is None or set_id in skeletons:
             continue

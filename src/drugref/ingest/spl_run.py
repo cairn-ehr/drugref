@@ -399,6 +399,7 @@ def ingest_spl(
             dailymed_targets=len(targets),
             dailymed_documents_read=scan.documents_read,
             dailymed_found=len(scan.found),
+            dailymed_reported_skips=reported,
             occurrences=occurrences,
             wordings_with_a_moiety=with_moiety,
             quotes=quotes,

@@ -12,11 +12,15 @@ Measurement: .../2026-08-24-drugref-slice-5c3-subject-recovery-measurement.md
 WHAT IT BUYS, MEASURED BY THE SHIPPED INGEST (Human Rx release of 2026-08-21):
 of **41,056** labels targeted, **10,670 are in DailyMed (26.0%)** and **10,578 of
 those resolve (99.1%)** -- on its own bigger than DrugCentral's entire slice.
-*The limit is the release, not the reading*: the four drop counters that EXISTED
+*The limit is the release, not the reading*: the three drop counters that EXISTED
 at that run measured zero. `dropped_no_xml_member` and `dropped_several_xml
 _members` were added afterwards, by the review round that found the two skips
-they count were upstream of every counter -- and they have NOT yet been measured
-against a real release. See `ScanResult`.
+they count were upstream of every counter, and shipped UNMEASURED; the skip
+census of 2026-08-31 has since read all 54,813 documents of that release and
+measured every DROP counter in the reader at zero (the two REPORTED counters are
+a separate question, and the release carries `COLR` ten times). See
+`spl_release.ScanResult`, where the counters live -- this module reads ONE label
+and never opens a zip.
 
 (The design-round probe reported 6,539 found of 26,401 targeted. It targeted a
 smaller set and, as the 2026-08-27 results record sets out, filed 14,455 labels
@@ -57,16 +61,23 @@ _SPL_NS = "{urn:hl7-org:v3}"
 UNII_CODE_SYSTEM = "2.16.840.1.113883.4.9"
 
 #: HL7 classCodes for an ACTIVE ingredient. `IACT` -- inactive -- is deliberately
-#: absent, and its absence is what keeps excipients out. `INGR` (generic
-#: ingredient) and `CNTM` (container component) are seen in the release and also
-#: excluded: neither declares the ingredient active, and guessing would key an
-#: interaction statement to whatever the package is made of.
+#: absent, and its absence is what keeps excipients out: guessing would key an
+#: interaction statement to whatever the package is made of. Every code ruled on
+#: as NOT active lives in `_DOCUMENTED_INACTIVE_CLASS_CODES` below and is listed
+#: there only, so the two sets stay a partition rather than two prose accounts.
 _ACTIVE_CLASS_CODES = frozenset({"ACTIB", "ACTIM", "ACTIR", "ACTI"})
 
 #: HL7 classCodes SEEN IN THE RELEASE AND RULED ON AS NOT-ACTIVE. Kept apart from
 #: `_ACTIVE_CLASS_CODES` so that "unknown" can mean *"nobody has ruled on this
 #: code"* -- which is the only reading that makes issue #162 case 3 actionable,
-#: and the difference between a guard and a tripwire.
+#: and the difference between a guard and a tripwire. `INGR` (generic ingredient)
+#: and `CNTM` (container component) are here because neither DECLARES the
+#: ingredient active, not because either was found harmless.
+#:
+#: ⇒ THE ONE HOME. `tools/spl_skip_census.py` reads this set at call time rather
+#: than retyping it; a copy there went one round out of date the moment `COLR`
+#: was added below, and reported a code this module had already ruled on as
+#: unruled.
 #:
 #: **`COLR` was added on measurement, and it is why case 3 is not a drop.** The
 #: skip census of the 2026-08-21 Human Rx release found `COLR` ten times across
@@ -176,8 +187,10 @@ def prefilter_is_trustworthy(xml_bytes: bytes) -> bool:
     """
     set_id = _SET_ID.search(xml_bytes)
     if set_id is None:
-        # Nothing was selected, so nothing can have been mis-selected. The
-        # document is already counted by `dropped_no_set_id_bytes`.
+        # Nothing was selected, so nothing can have been MIS-selected -- the
+        # question this function answers does not arise. `scan_release` counts
+        # such a document under `dropped_no_set_id_bytes` and never reaches here,
+        # so this is the contract for a future caller rather than a live branch.
         return True
     # `endpos` matters: this runs on EVERY non-target document -- some 44,000 of
     # them per release -- and only the bytes BEFORE the selected setId can
@@ -279,7 +292,16 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
 
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except (ET.ParseError, LookupError, ValueError):
+        # ⇒ NOT `ET.ParseError` ALONE, and the difference is a whole aborted run.
+        # An XML declaration naming an encoding Python has no codec for raises
+        # `LookupError` ("unknown encoding: ..."), not `ParseError`; a
+        # declaration its decoder refuses outright raises `ValueError`. Both are
+        # "this reader could not read it" -- which is exactly `dropped_unreadable`
+        # -- and letting them propagate instead aborts the whole 17.6 GB scan
+        # with a message naming no member, no part and no setId. SPL is
+        # third-party content (see `_DOCTYPE` below for the same reasoning
+        # applied to entity expansion), so the encoding is attacker-chosen.
         return None
 
     set_id_element = root.find(f"{_SPL_NS}setId")
@@ -327,9 +349,21 @@ def _unknown_class_code_findings(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """`(codes, uniis)` for ingredients whose classCode nobody has ruled on.
 
-    Both vocabularies are READ here rather than restated, so this can never
-    disagree with the set `_active_substance_elements` applies -- a vocabulary
-    with two homes is the defect this slice has now found four times.
+    Both vocabularies are READ here rather than restated, so the ACTIVE half can
+    never disagree with the set `_active_substance_elements` applies -- a
+    vocabulary with two homes is the defect this slice has now found five times.
+    The two functions still apply DIFFERENT sets on purpose (that one consults
+    only `_ACTIVE_CLASS_CODES`) and different element rules: it also honours the
+    `<activeIngredientSubstance>` spelling, which this one does not inspect.
+
+    ⇒ AN `<ingredient>` WITH NO `classCode` AT ALL IS AN UNKNOWN CODE, spelled
+    `""`. That is deliberate rather than incidental: the attribute is what
+    distinguishes an excipient from the subject drug (trap 1), so an ingredient
+    that declines to say which it is has told us nothing, and an untyped
+    ingredient CARRYING A UNII is exactly the shape that could silently cost a
+    label its subject. Measured zero on the 2026-08-21 release -- the census
+    histogram has no `<none>` row -- and it is refused rather than assumed
+    inactive, on `dropped_unknown_class_code_unii`'s own reasoning.
     """
     ruled_on = _ACTIVE_CLASS_CODES | _DOCUMENTED_INACTIVE_CLASS_CODES
     codes: set[str] = set()
@@ -392,6 +426,15 @@ def subject_route(
     return None
 
 
+def _tie_break(row: SubjectUniis) -> int:
+    """The de-duplication sort key. An unversioned row ranks below every version.
+
+    `-1` rather than `0`, because SPL version numbers are non-negative and a
+    label at version 0 must still outrank one carrying no version at all.
+    """
+    return row.version if row.version is not None else -1
+
+
 def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     """One row per label, keeping the HIGHEST `version`. **ONE POLICY.**
 
@@ -409,6 +452,9 @@ def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     best: dict[str, SubjectUniis] = {}
     for row in rows:
         current = best.get(row.set_id)
-        if current is None or (row.version or -1) > (current.version or -1):
+        # NOT `(row.version or -1)`: version 0 is a version, and `or` would
+        # collapse it into the no-version sentinel, handing the tie-break back to
+        # zip-member order -- the one thing this function exists to refuse.
+        if current is None or _tie_break(row) > _tie_break(current):
             best[row.set_id] = row
     return best

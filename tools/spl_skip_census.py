@@ -1,16 +1,19 @@
 # tools/spl_skip_census.py
 """Count every branch of the DailyMed reader that declines a document.
 
-⇒ WHY THIS TOOL EXISTS. `spl_checks.check_scan_dropped_nothing` aborts an ingest
-whose scan dropped anything, and the review of PR #161 folded two BRAND-NEW
-counters into the total it refuses over -- `dropped_no_xml_member` and
-`dropped_several_xml_members`. Its own docstring concedes they are "UNMEASURED
-on a real release", which means the shipped ingest may now refuse the very
-release the last run read successfully. Three sibling branches (issue #162)
-count nothing at all, and each reappears three stages later as
-`absent_from_dailymed` -- a fact about this reader sold as a fact about the
-release, on the route whose population the design spec turns into a commitment.
+⇒ WHY THIS TOOL EXISTS (in the past tense: it has since done its job).
+`spl_checks.check_scan_dropped_nothing` aborts an ingest whose scan dropped
+anything, and the review of PR #161 folded two BRAND-NEW counters into the total
+it refuses over -- `dropped_no_xml_member` and `dropped_several_xml_members` --
+while conceding in its own docstring that they were "NOT YET MEASURED ON A REAL
+RELEASE". The shipped ingest might therefore have refused the very release the
+last run read successfully. Three sibling branches (issue #162) counted nothing
+at all, and each reappeared three stages later as `absent_from_dailymed` -- a
+fact about this reader sold as a fact about the release, on the route whose
+population the design spec turns into a commitment.
 
+This pass is what let all five be counted: every one measured zero except an
+unknown classCode with no UNII under it, which the release carries ten times.
 Both questions are answered by the SAME pass over the release, so this tool
 makes it once:
 
@@ -27,9 +30,10 @@ makes it once:
   rule on.
 
 ⇒ IT MEASURES THE SHIPPED READER, NOT A SECOND ONE. Member-level skips come from
-`spl_dailymed.iter_release_labels` itself. The document level needs finer
-granularity than `extract_subject_uniis` exposes -- which returns one `None` for
-three different situations -- so this module parses the tree again, and
+`spl_release.iter_release_labels` itself, and the classCode vocabulary and the
+`<versionNumber>` rule are read from `spl_dailymed` at call time. The document
+level needs finer granularity than `extract_subject_uniis` exposes -- it returns
+one `None` for three different situations -- so this module parses again, and
 `tests/test_spl_skip_census.py::test_the_census_NEVER_disagrees_with_the_shipped
 _reader` pins that second parse as a REFINEMENT of the shipped one rather than a
 rival to it. A probe that quietly measures itself is how seven wrong figures got
@@ -47,19 +51,26 @@ import time
 import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
+from typing import Literal
 
 from drugref.ingest import spl_dailymed as dm
 from drugref.ingest import spl_release
 
-#: HL7 classCodes the shipped module's own docstring records as SEEN IN THE
-#: RELEASE AND DELIBERATELY EXCLUDED. They are listed here rather than treated as
-#: unknown so that the census's "unknown" set means *"nobody has ruled on this
-#: code"* -- which is the only reading that makes issue #162 case 3 actionable.
-#: The ACTIVE codes are NOT restated here: they are read from
-#: `spl_dailymed._ACTIVE_CLASS_CODES` at call time, because a vocabulary with two
-#: homes is the defect this slice has now found four times.
-DOCUMENTED_INACTIVE_CLASS_CODES = frozenset({"IACT", "INGR", "CNTM"})
+# ⇒ A VOCABULARY CONSTANT USED TO LIVE HERE, AND IT WENT OUT OF DATE IMMEDIATELY.
+#
+# A copy of the shipped module's not-active class codes was retyped here, three
+# lines under a comment explaining that the ACTIVE codes are read at call time
+# "because a vocabulary with two homes is the defect this slice has now found
+# four times". It became the fifth: `COLR` was added to the shipped set and not
+# to the copy, so re-running this census on the very release that ruled on
+# `COLR` reported it as unruled -- the instrument contradicting the verdict it
+# had produced. BOTH vocabularies are read from `spl_dailymed` at call time now;
+# see `codes_outside_the_vocabulary`.
+
+
+#: The three situations `extract_subject_uniis` folds into a single `None`.
+UnreadableReason = Literal["doctype", "parse_error", "no_set_id"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -77,9 +88,11 @@ class DocumentVerdict:
     prefilter_set_id: str | None
     #: The `setId` the document's own tree carries. The authority.
     tree_set_id: str | None
-    #: `None` when the document was read. One of `doctype`, `parse_error`,
-    #: `no_set_id` otherwise.
-    unreadable_reason: str | None
+    #: `None` when the document was read, otherwise WHY not. Typed as a `Literal`
+    #: rather than `str` because `census_part` dispatches on these three spellings
+    #: through an `elif` chain: a typo there counts nothing, silently, in the tool
+    #: whose entire job is noticing what nothing counts.
+    unreadable_reason: UnreadableReason | None
     #: `<versionNumber value=...>` exactly as written, or `None` if the element
     #: is absent. Kept raw because a bare count cannot tell a typo from a broken
     #: document, and that is the distinction the fix for issue #162 case 2 turns on.
@@ -148,24 +161,40 @@ def classify_document(xml_bytes: bytes) -> DocumentVerdict:
 
 def _unreadable_reason_and_root(
     xml_bytes: bytes,
-) -> tuple[str | None, ET.Element | None]:
+) -> tuple[UnreadableReason | None, ET.Element | None]:
     """The shipped refuse-then-parse sequence, with the reason kept."""
     if dm._DOCTYPE.search(xml_bytes):
         return "doctype", None
     try:
         return None, ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except (ET.ParseError, LookupError, ValueError):
+        # The SAME tuple the shipped reader catches. Narrower here would make
+        # the census CRASH on a document the ingest files as `dropped_unreadable`
+        # -- and a census that dies on the branch it exists to count reports
+        # nothing for it.
         return "parse_error", None
 
 
 def _version_of(root: ET.Element) -> tuple[str | None, int | None]:
-    """`(raw, parsed)` for `<versionNumber>`, by the shipped parsing rule."""
+    """`(raw, parsed)` for `<versionNumber>`, by the shipped parsing rule.
+
+    ⇒ THE SHIPPED RULE KEYS ON THE ELEMENT, NOT ON THE ATTRIBUTE, and an earlier
+    draft of this function keyed on the attribute. `extract_subject_uniis` does
+    `int(element.get("value") or "")` the moment the ELEMENT exists, so
+    `<versionNumber/>` with no `value` raises `ValueError` and is JUNK there --
+    a drop that refuses the whole run. Returning `(None, None)` for it here
+    called the same document "absent version", a benign context line. The census
+    would have reported zero for a condition the ingest aborts on, which is
+    exactly the "probe that quietly measures itself" this tool exists to avoid.
+    `raw` is therefore `""` -- present but empty -- rather than `None`, so
+    `version_is_junk` can tell the element apart from its absence.
+    """
     element = root.find(f"{dm._SPL_NS}versionNumber")
     if element is None:
         return None, None
-    raw = element.get("value")
+    raw = element.get("value") or ""
     try:
-        return raw, int(raw or "")
+        return raw, int(raw)
     except ValueError:
         return raw, None
 
@@ -173,47 +202,75 @@ def _version_of(root: ET.Element) -> tuple[str | None, int | None]:
 def codes_outside_the_vocabulary(counts: Mapping[str, int]) -> set[str]:
     """The classCodes nobody has ruled on -- issue #162 case 3's real question.
 
-    Reads `spl_dailymed._ACTIVE_CLASS_CODES` AT CALL TIME rather than copying it,
-    so this census can never disagree with the vocabulary the ingest applies.
+    ⇒ BOTH shipped vocabularies are read AT CALL TIME rather than copied, so this
+    census cannot disagree with the ingest about what "unknown" means. The
+    not-active half used to be a local copy, and it was wrong within one commit;
+    `test_the_INACTIVE_vocabulary_is_READ_not_retyped` now moves each frozenset
+    in turn and watches the answer follow it.
     """
-    known = frozenset(dm._ACTIVE_CLASS_CODES) | DOCUMENTED_INACTIVE_CLASS_CODES
+    known = (frozenset(dm._ACTIVE_CLASS_CODES)
+             | frozenset(dm._DOCUMENTED_INACTIVE_CLASS_CODES))
     return {code for code in counts if code not in known}
 
 
 @dataclass(frozen=True, kw_only=True)
-class Census:
-    """Every declining branch, counted over one part or over a whole release."""
+class SkipCensus:
+    """Every declining branch, counted over one part or over a whole release.
 
-    documents_read: int = 0
+    ⇒ NO DEFAULTS ON THE COUNTERS, deliberately, and it is the same call
+    `spl_release.ScanResult` makes. `merge` and `census_part` build their totals
+    through `_COUNTER_FIELDS` and splat them in, so a counter added to this class
+    but forgotten there would silently take a default of 0 -- in every merged
+    total AND in the JSON a spec later quotes. Without defaults it is a
+    `TypeError` at both construction sites the moment the field is added, and
+    `test_every_census_counter_is_actually_MERGED` pins the two lists together.
+
+    Named `SkipCensus` rather than `Census` because `tools/spl_label_extract.py`
+    already has an unrelated `Census` in the same package.
+    """
+
+    documents_read: int
     #: Member-level, straight from `iter_release_labels`'s own `on_skip`.
-    not_a_member_zip: int = 0
-    no_xml_member: int = 0
-    several_xml_members: int = 0
-    #: Document-level, all currently UNCOUNTED by `ScanResult`.
-    doctype_refused: int = 0
-    parse_error: int = 0
-    no_set_id_in_tree: int = 0
-    no_set_id_in_bytes: int = 0
-    prefilter_disagreed: int = 0
-    junk_version: int = 0
-    absent_version: int = 0
+    not_a_member_zip: int
+    no_xml_member: int
+    several_xml_members: int
+    unreadable_member_zip: int
+    #: Document-level, RELEASE-WIDE -- so these are a superset of the
+    #: target-scoped counters `ScanResult` carries, not a check on them. All are
+    #: counted by `ScanResult` too except `absent_version`, which has no
+    #: counterpart there because a label with no version element at all keeps its
+    #: tie-break; only a BROKEN one loses it.
+    doctype_refused: int
+    parse_error: int
+    no_set_id_in_tree: int
+    no_set_id_in_bytes: int
+    prefilter_disagreed: int
+    #: ⇒ THE CAUSE, beside the outcome. `prefilter_disagreed` is what the reader
+    #: SEES; this is the byte ordering that produces it -- a `<relatedDocument>`
+    #: ahead of the document's own `<setId>`, read through the shipped
+    #: `prefilter_is_trustworthy`. The spec claimed both were measured while only
+    #: the outcome was instrumented, so the "two measurements" it reports could
+    #: not be reproduced by the command it gives for reproducing them.
+    untrustworthy_prefilter: int
+    junk_version: int
+    absent_version: int
     class_code_counts: Mapping[str, int] = field(default_factory=Counter)
     #: Present only on a whole-release census.
-    by_part: Mapping[str, "Census"] = field(default_factory=dict)
+    by_part: Mapping[str, "SkipCensus"] = field(default_factory=dict)
 
     @property
     def unknown_class_codes(self) -> set[str]:
         return codes_outside_the_vocabulary(self.class_code_counts)
 
 
-_COUNTER_FIELDS = (
-    "documents_read", "not_a_member_zip", "no_xml_member", "several_xml_members",
-    "doctype_refused", "parse_error", "no_set_id_in_tree", "no_set_id_in_bytes",
-    "prefilter_disagreed", "junk_version", "absent_version",
-)
+#: Every `int` counter on `SkipCensus`, DERIVED rather than retyped -- the same
+#: reasoning as the vocabulary above, applied to a field list. A counter added to
+#: the class joins every merge and both JSON payloads by existing.
+_COUNTER_FIELDS = tuple(
+    f.name for f in fields(SkipCensus) if f.type in ("int", int))
 
 
-def merge(censuses: Iterable[Census]) -> Census:
+def merge(censuses: Iterable[SkipCensus]) -> SkipCensus:
     """Add censuses together. Pure, so a release total is a fold over its parts."""
     totals = dict.fromkeys(_COUNTER_FIELDS, 0)
     codes: Counter[str] = Counter()
@@ -221,14 +278,14 @@ def merge(censuses: Iterable[Census]) -> Census:
         for name in _COUNTER_FIELDS:
             totals[name] += getattr(census, name)
         codes.update(census.class_code_counts)
-    return Census(**totals, class_code_counts=codes)
+    return SkipCensus(**totals, class_code_counts=codes)
 
 
 def census_part(
     part_path: str, *, progress: Callable[[int], None] | None = None,
-) -> Census:
+) -> SkipCensus:
     """Walk one release part through the SHIPPED reader and count every branch."""
-    skips = {"not_a_member_zip": 0, "no_xml_member": 0, "several_xml_members": 0}
+    skips = dict.fromkeys(spl_release.SKIP_REASONS, 0)
 
     def note_skip(_member: str, reason: str) -> None:
         skips[reason] += 1
@@ -249,6 +306,9 @@ def census_part(
             totals["no_set_id_in_tree"] += 1
         if verdict.prefilter_disagreed:
             totals["prefilter_disagreed"] += 1
+        if not dm.prefilter_is_trustworthy(xml_bytes):
+            # The CAUSE of the line above, through the shipped predicate.
+            totals["untrustworthy_prefilter"] += 1
         if verdict.version_is_junk:
             totals["junk_version"] += 1
         elif verdict.version_raw is None and verdict.unreadable_reason is None:
@@ -257,14 +317,14 @@ def census_part(
         if progress is not None and totals["documents_read"] % 2000 == 0:
             progress(totals["documents_read"])
 
-    return Census(**{**totals, **skips}, class_code_counts=codes)
+    return SkipCensus(**{**totals, **skips}, class_code_counts=codes)
 
 
 def census_release(
     parts: Sequence[str], *, progress: Callable[[str, int], None] | None = None,
-) -> Census:
+) -> SkipCensus:
     """Census every part, keeping the per-part breakdown beside the total."""
-    by_part: dict[str, Census] = {}
+    by_part: dict[str, SkipCensus] = {}
     for part in parts:
         by_part[part] = census_part(
             part,
@@ -273,7 +333,7 @@ def census_release(
     return replace(merge(by_part.values()), by_part=by_part)
 
 
-def _report(census: Census) -> str:
+def _report(census: SkipCensus) -> str:
     """The measurement, in the shape the two decisions actually need."""
     lines = [
         "=== SPL reader skip census ===",
@@ -283,9 +343,11 @@ def _report(census: Census) -> str:
         f"not_a_member_zip   REPORTED   {census.not_a_member_zip:>9,}",
         f"no_xml_member      *DROPS*    {census.no_xml_member:>9,}",
         f"several_xml_members *DROPS*   {census.several_xml_members:>9,}",
+        f"unreadable_member_zip *DROPS* {census.unreadable_member_zip:>9,}",
         "",
-        "-- document-level (issue #162, all currently UNCOUNTED) --",
+        "-- document-level (issue #162), RELEASE-WIDE --",
         f"prefilter_disagreed  (case 1) {census.prefilter_disagreed:>9,}",
+        f"  its cause: relatedDocument first {census.untrustworthy_prefilter:>5,}",
         f"junk_version         (case 2) {census.junk_version:>9,}",
         f"unknown class codes  (case 3) {sorted(census.unknown_class_codes)}",
         "",
@@ -307,7 +369,7 @@ def _report(census: Census) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("parts", nargs="+", help="DailyMed release part zips")
     parser.add_argument("--json", dest="json_out",
                         help="also write the census as JSON to this path")
@@ -333,9 +395,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                        for name in _COUNTER_FIELDS}
                 for part, part_census in census.by_part.items()},
         }
-        with open(args.json_out, "w") as handle:
-            json.dump(payload, handle, indent=2)
-    return 0
+        try:
+            with open(args.json_out, "w") as handle:
+                json.dump(payload, handle, indent=2)
+        except OSError as error:
+            # Named, and AFTER the report is printed, so a bad --json path costs
+            # the record but never the 163-second measurement itself.
+            print(f"could not write {args.json_out}: {error}", file=sys.stderr)
+            return 2
+
+    # ⇒ THE EXIT CODE ANSWERS THE QUESTION THE TOOL WAS RUN TO ANSWER: would
+    # `check_scan_dropped_nothing` refuse this release? Returning 0 either way
+    # made a census that counted thousands of drops indistinguishable, to any
+    # caller or CI step, from one that counted none.
+    return 1 if _would_refuse(census) else 0
+
+
+def _would_refuse(census: SkipCensus) -> bool:
+    """Whether these figures would abort an ingest.
+
+    The DROPPING branches only -- `not_a_member_zip` and an unknown classCode
+    with no UNII are reported and never refuse, so counting them here would
+    report a refusal the ingest would not make.
+    """
+    return any((census.no_xml_member, census.several_xml_members,
+                census.unreadable_member_zip, census.doctype_refused,
+                census.parse_error, census.no_set_id_in_tree,
+                census.no_set_id_in_bytes, census.prefilter_disagreed,
+                census.junk_version))
 
 
 if __name__ == "__main__":

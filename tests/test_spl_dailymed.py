@@ -265,6 +265,10 @@ def test_the_cheap_byte_prefilter_accepts_both_quote_styles():
 # is db/050's vacuous-guard finding at the one place the design's
 # `absent_from_dailymed` commitment rests on.
 
+def _ignore_skips(_member: str, _reason: str) -> None:
+    """`on_skip` is REQUIRED, so a test that does not care says so explicitly."""
+
+
 def _part(tmp_path, members, *, name="dm_spl_release_human_rx_part1.zip"):
     """A release part: a zip of member zips, each holding whatever `members` says.
 
@@ -291,7 +295,8 @@ def test_iter_release_labels_yields_the_sole_xml_of_each_member(tmp_path):
     nothing at all."""
     part = _part(tmp_path, {"a.zip": {"a.xml": _document("", set_id="SET-1"),
                                       "a.jpg": b"\xff\xd8"}})
-    assert [name for name, _ in rel.iter_release_labels(part)] == ["a.zip"]
+    assert [name for name, _ in rel.iter_release_labels(
+        part, on_skip=_ignore_skips)] == ["a.zip"]
 
 
 def test_a_member_the_reader_declines_is_REPORTED_not_silently_skipped(tmp_path):
@@ -325,36 +330,54 @@ def test_a_member_with_SEVERAL_xml_files_is_refused_not_arbitrarily_picked(
     the wrong document would attach a subject to the wrong wording silently."""
     part = _part(tmp_path, {"m.zip": {"first.xml": _document("", set_id="SET-1"),
                                       "second.xml": _document("", set_id="SET-2")}})
-    assert list(rel.iter_release_labels(part)) == []
+    assert list(rel.iter_release_labels(part, on_skip=_ignore_skips)) == []
 
 
 def test_scan_release_counts_every_member_of_the_part(tmp_path):
     """The counters have to MOVE, not merely exist. This is the fixture the
-    end-to-end corpus structurally could not be."""
+    end-to-end corpus structurally could not be.
+
+    ⇒ EVERY COUNT IS DISTINCT, AND THAT IS THE POINT OF THE FIXTURE. When each
+    counter was seeded with exactly ONE member, every pairwise swap at the
+    construction site was invisible: binding `dropped_no_xml_member` to the
+    several-XML tally and vice versa passed the entire 2402-test suite. Counts
+    of 1/2/3/4 make the assertions identify the counters rather than merely
+    count them, so a mis-bound field fails here instead of shipping.
+    """
     part = _part(tmp_path, {
         "hit.zip": {"a.xml": _document("", set_id="SET-1")},
         "miss.zip": {"a.xml": _document("", set_id="SET-99")},  # not targeted
+        # ONE with no setId in the bytes at all.
         "nosetid.zip": {"a.xml": b'<document xmlns="urn:hl7-org:v3"/>'},
-        # Carries a targeted setId in its BYTES so it passes the cheap
-        # pre-filter, then fails to parse -- the one path that reaches
+        # TWO that carry a targeted setId in their BYTES so they pass the cheap
+        # pre-filter, then fail to parse -- the one path that reaches
         # `dropped_unreadable`, and the reason the pre-filter is never the
         # authority.
-        "truncated.zip": {"a.xml": b'<document xmlns="urn:hl7-org:v3">'
-                                   b'<setId root="SET-1"/>'},
+        **{f"truncated{n}.zip": {"a.xml": b'<document xmlns="urn:hl7-org:v3">'
+                                          b'<setId root="SET-1"/>'}
+           for n in range(2)},
+        # THREE member zips holding no XML at all.
+        **{f"images_only{n}.zip": {"a.jpg": b"\xff\xd8"} for n in range(3)},
+        # FOUR holding several, which is refused rather than arbitrarily picked.
+        **{f"ambiguous{n}.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"}
+           for n in range(4)},
         "manifest.txt": None,
-        "images_only.zip": {"a.jpg": b"\xff\xd8"},
-        "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"},
     })
     scan = rel.scan_release([part], {"SET-1"})
 
     assert set(scan.found) == {"SET-1"}
-    assert scan.documents_read == 4           # only members that yielded an XML
+    assert scan.documents_read == 5           # only members that yielded an XML
     assert scan.dropped_no_set_id_bytes == 1
-    assert scan.dropped_unreadable == 1
-    assert scan.dropped_no_xml_member == 1
-    assert scan.dropped_several_xml_members == 1
+    assert scan.dropped_unreadable == 2
+    assert scan.dropped_no_xml_member == 3
+    assert scan.dropped_several_xml_members == 4
     assert scan.skipped_not_a_member_zip == 1
-    assert scan.total_dropped == 4            # the non-zip member is NOT a drop
+    assert scan.total_dropped == 10           # the non-zip member is NOT a drop
+    # ⇒ AND THE DROPS CANNOT EXCEED THE DOCUMENTS. Member-level drops are not
+    # documents at all, so this is the one assertion that would catch a
+    # document-level counter fired twice on one document.
+    assert (scan.dropped_no_set_id_bytes + scan.dropped_unreadable
+            <= scan.documents_read)
 
 
 def test_scan_release_drops_a_document_whose_tree_DISAGREES_with_the_prefilter(

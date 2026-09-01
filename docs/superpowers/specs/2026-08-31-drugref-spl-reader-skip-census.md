@@ -114,12 +114,20 @@ the label this one replaces and carries a `setId` of its own, so a document that
 and `scan_release` compared pre-filter against tree **only for documents already in
 `targets`**. A document mis-named out of `targets` was skipped before any comparison.
 
-Two measurements, not one:
+Two measurements, not one — and the review of this PR found the tool instrumented only
+the first, so the command in §1 could not reproduce the pair it reports. It counts both now
+(`untrustworthy_prefilter`, read through the shipped `prefilter_is_trustworthy`):
 
 * the **outcome** — pre-filter setId ≠ tree setId, over every document rather than only
   targeted ones: **0 of 54,813**;
 * the **cause** — `<relatedDocument` appearing before the first `<setId` in the bytes:
   **0 of 54,813**.
+
+⇒ They are not independent, and saying so is the honest form: the cause *produces* the
+outcome, so outcome-zero already implies cause-zero. Counting both is worth it because the
+cause is what `prefilter_is_trustworthy` actually tests, so the census now exercises the
+shipped predicate rather than a paraphrase of it — but this is one measurement confirmed
+twice, not two. §3's lesson applied to §5's own evidence.
 
 `spl_dailymed.prefilter_is_trustworthy` now tests the cause in the bytes already in memory
 (no tree is built), and a non-target whose pre-filter is untrustworthy is a **drop**. It is
@@ -157,11 +165,48 @@ the bytes before the selected `setId` (`endpos`) buys.
 
 ⇒ **AND THE POPULATION DIFFERENCE IS NOW A CONCRETE NUMBER, NOT A CAVEAT.**
 `skipped_unknown_class_code` is **0** while the census counts `COLR` **10 times**. Both are
-right: the shipped counter is scoped to the 10,670 documents the scan reads a subject from,
-and `COLR`'s three labels are not among the 41,056 targeted. Anyone comparing the two as if
+right: the shipped counter is scoped to the documents the scan reads a subject from — the
+10,670 figure is the DE-DUPLICATED label count, and the document count behind it is higher
+by the number of labels shipping several versions — and `COLR`'s three labels are not among
+the 41,056 targeted. Anyone comparing the two as if
 they were one number will find a discrepancy that is not there — which is exactly the
 mistake the design round made when it filed 14,455 never-read labels into a bucket meaning
 *"read"*.
+
+---
+
+## 6a. ⇒ WHAT THE REVIEW OF THIS PR FOUND, AND WHY IT BELONGS IN THE RECORD
+
+The measurement above stood. The **new code shipped alongside it** did not, and the pattern
+is worth naming: every finding was in the half the census could not check, because the
+census had already been written when that code was added.
+
+* **The vocabulary went into two homes and drifted within one commit.** `COLR` was added to
+  `spl_dailymed._DOCUMENTED_INACTIVE_CLASS_CODES` and not to the census's retyped copy —
+  three lines under a comment explaining that a vocabulary with two homes is the defect this
+  slice keeps finding. Re-running the census would have reported `COLR` as unruled: the
+  instrument contradicting the verdict it produced. Both sets are read at call time now.
+* **The census disagreed with the shipped reader on `<versionNumber/>`.** The reader keys on
+  the ELEMENT (`int(get("value") or "")`), the census keyed on the ATTRIBUTE, so a
+  valueless element was a run-aborting drop to one and a benign context line to the other.
+  `test_the_census_NEVER_disagrees_with_the_shipped_reader` compared `version` — `None` on
+  both sides — and never the junk verdict, which is the half that decides anything.
+* **`total_dropped` could exceed `documents_read`.** The three document-level counters fell
+  through instead of `continue`-ing, so one document tripping two was two drops *and* was
+  kept in `found`.
+* **Three ways a label was lost with every counter clean**: an unknown `encoding=` raises
+  `LookupError`, not `ET.ParseError`, and aborted the whole scan; a member whose bytes are a
+  corrupt zip raised `BadZipFile` out of the generator naming nothing; and membership was
+  decided by a `.zip` suffix, so `M.ZIP` was filed under the one member bucket that does not
+  refuse — the round's own headline defect, reproduced inside the fix.
+* **The counters could be mis-bound undetectably.** Every counter in the fixture was seeded
+  with exactly 1, so swapping two at the construction site passed all 2402 tests. The counts
+  are 1/2/3/4 now.
+
+⇒ **The lesson is narrower than "test more".** A census answers what the release contains.
+It cannot answer whether the code written *in response to it* is right, and four of the six
+findings are conditions the 2026-08-21 release simply does not contain. Measurement retires
+a risk about the corpus; only a test retires one about the reader.
 
 ---
 
@@ -169,8 +214,9 @@ mistake the design round made when it filed 14,455 never-read labels into a buck
 
 * The shipped counters are scoped to **targeted** documents — the population whose subject
   the scan actually reads. The census figures above are **release-wide**. They are not the
-  same population and will not be the same number; `COLR` sits on three labels that may or
-  may not be targeted. Comparing them as though they were one number is the mistake the
+  same population and will not be the same number. `COLR`'s three labels are **not**
+  targeted — §6 establishes it: the shipped counter reads 0 where the census reads 10, and a
+  targeted label carrying `COLR` would have moved both. Comparing them as though they were one number is the mistake the
   design round made when it filed 14,455 never-read labels into a bucket meaning *"read"*.
 * Nothing here touches the three DailyMed reader skips' *downstream* effect on the recovery
   register, which remains 99.7% a RELEASE gap.
