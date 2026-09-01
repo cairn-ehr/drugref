@@ -297,8 +297,11 @@ def ingest_spl(
     # ⇒ CLOSE THE SNAPSHOT BEFORE THE EXPENSIVE PASS.
     # `load_registry` is the first statement on a non-autocommit connection, so
     # it OPENED a transaction, and nothing below commits until `open_run` on the
-    # far side of the DailyMed scan and the checksum. Measured, that is ~12.5
-    # minutes of `idle in transaction` on a connection holding a snapshot: it
+    # far side of the DailyMed scan and the checksum. Measured 2026-09-01, that
+    # is ~50 s of `idle in transaction` -- and because nothing closes the
+    # transaction after `open_run` either, the SNAPSHOT would be held all the way
+    # to the final COMMIT, which is the whole 2 min 09 s run (12.5 minutes before
+    # issue 160). A connection holding a snapshot that long:
     # pins `xmin` database-wide, so autovacuum can reclaim nothing in ANY table
     # for the duration, and where `idle_in_transaction_session_timeout` is set
     # the backend is killed at the END of the most expensive step in the ingest.
@@ -348,6 +351,13 @@ def ingest_spl(
             for text_key in sorted(corpus.wordings)]
         stored_wordings = spl_evidence.write_wordings(
             conn, wording_rows, ingest_run_id=run_id, source=spl.SOURCE)
+        # ⇒ ANALYSE A PARENT BEFORE LOADING ANYTHING THAT REFERENCES IT (issue
+        # 160). Each foreign-key check below is planned the FIRST time it fires
+        # and then cached for the session, so a parent with no statistics pins a
+        # bad plan for the whole load and the ANALYZE at the end of this function
+        # is far too late to undo it. Measured: 630 s against 4 s for one COPY.
+        # `analyze_loaded_table` carries the mechanism and the numbers.
+        spl_evidence.analyze_loaded_table(conn, "spl_wording")
 
         stored_labels = spl_evidence.write_labels(
             conn,
@@ -357,6 +367,7 @@ def ingest_spl(
                 product_type=label.product_type, text_key=label.text_key)
              for label in corpus.labels),
             ingest_run_id=run_id, source=spl.SOURCE)
+        spl_evidence.analyze_loaded_table(conn, "spl_label")
 
         subject_rows, by_route = _subject_rows(
             corpus.labels, scan.found, known_uniis)

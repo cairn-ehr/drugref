@@ -831,7 +831,8 @@ the subject-recovery measurement, the design spec AND the ingest are all done.**
 PROJECT-NOTES § "Slice 5c.3 — the SPL ddi ingest". **Read the numbers there, not here.**
 
 **⇒ THE IMPLEMENTATION ROUND ✅ DONE (2026-08-27) — `db/051`, five tables, two views, one gap view.**
-`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads 19.3 GB in ~12.5 minutes and publishes
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads 19.3 GB in **2 min 09 s** (12.5 minutes
+until issue 160 was fixed on 2026-09-01) and publishes
 **29,952 distinct candidate pairs, 26,598 (88.8%) novel** — clearing the design's `>= 29,258` / `>= 25,960`
 floor, with the census reproducing exactly and the three counts that had no licence to move unmoved. Four
 findings the next round inherits:
@@ -854,8 +855,8 @@ findings the next round inherits:
 and the review found that same vacuity in five further places** — the worst being the guard enforcing the
 licensing determination the headline is about: the budget had three homes and the test named for pinning it
 was the third, so mutating `db/051`'s trigger to `ceil(0.35 * ...)` left every test in that file green.
-`spl_checks.reconcile` could be deleted without failing a test; `scan_release` had none at all; the 12.5-minute
-scan ran inside an open snapshot pinning `xmin` database-wide. All fixed, 53 tests added. `db/052` corrects the
+`spl_checks.reconcile` could be deleted without failing a test; `scan_release` had none at all; the ~50-second
+scan ran inside an open snapshot pinning `xmin` database-wide for the whole run. All fixed, 53 tests added. `db/052` corrects the
 route census `db/051` had shipped into the **database catalog** from the design round rather than the
 measurement — its `unresolved` comment read 14,680 where the answer is 92. Five findings needing a real-release
 run were filed instead: **#162–#166**.
@@ -887,6 +888,25 @@ was documented as "counted and reported" for a whole slice and was reported nowh
 Four of the six defects are conditions the 2026-08-21 release simply does not contain, so no amount of reading
 it could have found them — and every counter in the reader's fixture was seeded with exactly 1, so two could be
 swapped and all 2402 tests still passed.*
+
+**⇒ THE COPY-COST ROUND ✅ DONE (2026-09-01) — issue #160, no migration, the ingest 12m51s → 2m09s.**
+[Measurement record](superpowers/specs/2026-09-01-drugref-spl-copy-fk-plan.md); full account: PROJECT-NOTES
+§ "The COPY-cost round". **Read the numbers there, not here.** The round opened by re-running the ingest end to
+end, which the census round owed because its verification predated its own review's fixes: **every published
+figure reproduced exactly.** That run also carried issue 160's control — 73,867 subject rows took **630 s**
+while 1,297,944 occurrence rows took **35 s** in the same transaction — which kills row volume and `COPY`
+itself as causes. A stack sample of the backend put **100% of samples in the foreign-key check**: with the
+parent freshly `COPY`d and never analysed, the good and the catastrophic plan cost an identical `8.44`, and the
+tie landed on `spl_label_by_wording`, matching all 68,550 parent rows once per child row. Two `ANALYZE`s
+costing 112 ms bought **365×**. **None of the three causes the issue named was right**, and the foreign key had
+been ruled out a round earlier by a docstring whose measurement was real and whose stated reason was invented.
+
+⇒ *The rule: **analyse a bulk-loaded table before loading anything that references it** — the RI plan is cached
+at first use, inside the load, so the `ANALYZE` at the end of a run cannot repair it. Censused: of all 138
+foreign keys in the schema, exactly one parent offers a loose plan, and it is this one.*
+
+⇒ *And its meta-rule: **a refutation is a measurement plus an explanation, and only the explanation gets quoted
+forward.** Where a cost sits in one statement, sample the process before designing an experiment about it.*
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

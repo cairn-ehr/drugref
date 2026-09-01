@@ -18,6 +18,20 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **ANALYSE A BULK-LOADED TABLE BEFORE LOADING ANYTHING THAT REFERENCES IT** (issue 160, 2026-09-01, and it
+  cost 630 seconds of every SPL ingest). A foreign-key check is a QUERY, and the planner may satisfy it with
+  any parent index whose leading columns its equality quals cover — so a parent carrying a second index whose
+  key is a *proper subset* of the referenced columns offers a plan that matches the whole table and filters.
+  On a freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) the good and the catastrophic plan **cost the
+  same**, and the choice is a coin toss. **The RI plan is cached at first use, inside the load**, so an
+  `ANALYZE` at the end of the run cannot repair it. Measured: 493,539 ms → 1,352 ms for one `COPY`, bought by
+  112 ms of `ANALYZE`. Censused across all 138 foreign keys in the schema and pinned by two tests; full account
+  in § "The COPY-cost round".
+  ⇒ **And its meta-rule: A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY THE EXPLANATION IS
+  LOAD-BEARING WHEN IT IS QUOTED FORWARD.** This cause was ruled out for a round by a docstring whose 175 ms
+  measurement was real and whose stated reason was invented. **Where a cost is concentrated in one statement,
+  sample the process before designing an experiment about it** — the three hypotheses on the issue were all
+  wrong, and eight seconds of `sample` named the fourth.
 - **CODE MUST EXPLAIN ITS OWN CONTRACT.** The repository-wide house rules now live in
   [`CONTRIBUTING.md`](../CONTRIBUTING.md): docstrings are mandatory; behavioural numbers are named constants;
   dynamically typed code carries complete type hints; and pure reusable logic belongs in focused modules where
@@ -4286,7 +4300,8 @@ computed resolution straight from the cache — not the probe's own tests, every
 
 **The slice is BUILT.** [Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md)
 · [what it actually produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md).
-`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads both corpora (19.3 GB, ~12.5 min), resolves
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads both corpora (19.3 GB, **2 min 09 s** since
+issue 160; ~12.5 min before it), resolves
 each label's subject, matches the shipped resolver's rule over every wording, stores a bounded quoted window
 and refuses on any of six grounds. **Read the figures in the results record, not here.**
 
@@ -4393,7 +4408,9 @@ classCode nesting and the salt/moiety split all run against structures nobody wr
   product carries several subjects on one route. Reporting rows would publish the combination rate as if it were
   the resolution rate.
 - **`ingest_run.finished_at − started_at` is not a duration for ANY feed** — [#159](https://github.com/cairn-ehr/drugref/issues/159).
-- **The `spl_label_subject` `COPY` is disproportionately slow** — [#160](https://github.com/cairn-ehr/drugref/issues/160).
+- **A parent must be ANALYSEd before the child that references it is loaded** — [#160](https://github.com/cairn-ehr/drugref/issues/160),
+  CLOSED 2026-09-01. Without it the subject `COPY` ran 630 s; with it, ~2 s, and the whole ingest 12m51s → 2m09s.
+  § "The COPY-cost round" has the cause and the census.
 - **A registry is allowed to be incomplete, and narrowing one is how a route gets tested.** The salt route and
   `unresolved` have no natural example in the fixture; withholding a label's active-moiety UNII while keeping
   its salt reaches the first, withholding both reaches the second. That is what #67 and the 200 unheld-UNII
@@ -4693,6 +4710,79 @@ Deferred as issues: **#168** (three more homes of one vocabulary and a second `i
 pre-existing in `tools/`), **#169** (a `SkipReason` enum, when the 12th counter arrives), **#170** (SPL version
 spelled three ways), **#171** (a census crash on the last part discards every part already counted).
 
+## The COPY-cost round (2026-09-01) — issue #160, no migration, the ingest 12m51s → 2m09s
+
+[Measurement record](superpowers/specs/2026-09-01-drugref-spl-copy-fk-plan.md). Two calls added to the
+orchestrator and one function to the writer; **no migration, no schema change, no figure moved.**
+
+**⇒ FIRST, THE RE-VERIFICATION THE LAST ROUND OWED.** The census round's end-to-end run predated its own
+review's fixes to the reader, so the shipped code had never been run against the real releases in its current
+form. It was, on `drugref_spl160`, and **every published figure reproduced exactly** — 68,550 labels of 262,032
+records, 27,406 wordings, 29,952 pairs (26,598 novel), 73,867 subjects, 1,297,944 occurrences, 138,187 quoted
+windows, `source_checksum` `5d6a894b30ce…`, all five route tallies. 12 min 51 s against the census round's
+10 min 43 s, on a machine with other work on it.
+
+**⇒ THE CONTROL FOR ISSUE 160 WAS ALREADY INSIDE THAT RUN, AND NOBODY HAD LOOKED.** Polling
+`pg_stat_activity` once a second — which times each statement **without modifying the code under
+measurement** — gave: `COPY spl_label_subject`, 73,867 rows, **630 s**; `COPY spl_entity_occurrence` +
+`spl_wording_quote`, 1,436,131 rows, **35 s**; `COPY spl_label`, 68,550 rows, **6 s**. *17.6× more rows in 18×
+less time, same transaction, same writer, same client.* Two of the three causes the issue listed as untried die
+on that one line: not the row volume, and not `COPY`.
+
+**⇒ THE CAUSE CAME FROM A STACK SAMPLE, NOT FROM THE HYPOTHESIS LIST.** `sample <backend> 8`:
+**6,748 of 6,748 samples** under `RI_FKey_check_ins` — the foreign-key check, fired as an after-row trigger —
+and inside it in heap fetches and visibility checks, with `ReleaseAndReadBuffer` walking page to page. **A
+FOREIGN-KEY CHECK IS A QUERY**, and the planner may satisfy `WHERE ingest_run=$1 AND source=$2 AND set_id=$3
+AND version=$4 FOR KEY SHARE` with **any** parent index whose leading columns those quals cover. `spl_label`
+carries two — `spl_label_pkey` on all four, `spl_label_by_wording` on `(ingest_run, source, text_key)`. On a
+freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) **both plans cost an identical `8.44`**, and the tie
+landed on `spl_label_by_wording`, whose index condition matches **all 68,550 rows** — `ingest_run` and `source`
+are constant for the whole load — and discards 68,549 in a filter, once per child row.
+
+**⇒ THE FIX IS 112 ms AND BUYS 365×.** One-variable ablation, full scale, each variant in its own fresh clone
+so B does not inherit the `relpages` A's rollback leaves behind: **493,539 ms** as shipped against **1,352 ms**
+with `ANALYZE spl_wording; ANALYZE spl_label` (11.8 + 99.8 ms) inserted. End to end on the real releases,
+`drugref_spl160fix`: the subject `COPY` **630 s → ~2 s** and the whole ingest **12 min 51 s → 2 min 09 s**,
+with every count, both checksums and all five routes identical.
+
+**⇒ THE RULE, AND IT IS NOT "ANALYZE AT THE END":** *a table is analysed as soon as it is loaded and **before
+anything that references it** is loaded.* The RI plan is cached at first use — inside the load — so
+`analyze_source_tables` at the end of the run, which exists for the read-backs and is still needed for them,
+**cannot repair a plan already pinned**. `spl_evidence.analyze_loaded_table` carries the mechanism and the
+numbers.
+
+**⇒ AND THE REFUTATION THAT CLOSED THE RIGHT DOOR FOR A ROUND.** `analyze_source_tables`'s docstring said the
+foreign key had been *"measured and REFUTED: 20,000 child rows against an unanalyzed 68,550-row parent insert
+in 175 ms, **because PostgreSQL's RI triggers use a plan pinned to the parent's primary key rather than a
+re-planned query**"*. The measurement was real; **the reason is false**, and it is the half that got quoted
+forward. The plan is pinned — to whatever was chosen at FIRST USE, before any `ANALYZE`. *Pinned is not the
+same as pinned to the primary key*, and the 175 ms did not generalise because a parent whose only index is its
+primary key has no wrong plan available to pin. ⇒ **A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY
+THE MEASUREMENT WAS TAKEN** — reasoning in the voice of the measurement beside it, in a docstring, which is the
+most durable place in this repo to put a wrong sentence. The same round that wrote it had caught and removed
+exactly this in its own `+13%` paragraph.
+
+**⇒ AND ALL THREE OF THE ISSUE'S OWN CANDIDATES WERE WRONG** — `COPY` vs `INSERT`, ICU collation on
+`set_id`/`version`, drop-and-rebuild indexes. No amount of ablating them would have reached the fourth. **Where
+a cost is concentrated in one statement, sample the process before designing an experiment about it**: eight
+seconds of `sample` beat a list of three hypotheses that had stood for five days.
+
+**The exposure is censused, not assumed.** Over all **138 foreign keys in schema `drugref`**, exactly **one**
+parent carries an index whose leading columns are a proper subset of the referenced columns:
+`spl_label_subject → spl_label` via `spl_label_by_wording`, 2 of 4. Every other parent in the schema has only
+its primary key, which is why no other feed has shown this — and why the `ANALYZE` guarantee is made for every
+parent rather than for the one that failed: **the exposure is created by adding an index to a parent, an edit
+nowhere near the orchestrator.** `test_ONE_foreign_key_in_the_schema_can_be_planned_onto_a_LOOSE_index` pins
+the census; `test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded` pins the cause (a
+fixture of three wordings cannot show a 630-second stall), and **both mutants — each `ANALYZE` deleted in turn
+— were run and killed.**
+
+**One measurement trap worth keeping.** macOS `ps -o pcpu` reports a **lifetime average**, not an interval, so
+a backend that burned a core an hour ago still reads high and one burning it now can read low. The attribution
+here ("96% of a core, and the backend's whole lifetime CPU is this statement") came from diffing cumulative CPU
+time between two `ps` samples. **`pcpu` cannot answer "who is burning the CPU right now", which is the only
+question that matters here.**
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4711,11 +4801,20 @@ is a real ongoing cost and a decision · **#82/#104** both change the operator s
 **Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
 `ingest_run.finished_at − started_at` is not a duration for ANY feed**: both stamps are
 `transaction_timestamp()`, so seven of the nine runs on `drugref_spl051` read 1.3–24 ms while the SPL ingest
-takes 12.5 minutes. It touches every orchestrator's provenance, so it is its own round. ·
+took 12.5 minutes then and 2 min 09 s now. It touches every orchestrator's provenance, so it is its own
+round. ·
 **[#160](https://github.com/cairn-ehr/drugref/issues/160) the `spl_label_subject` `COPY` runs >4 min at 100%
-CPU for 73,867 rows**, against 1.0 s for the same row count in a synthetic probe against the same schema. Two
-causes are already ruled out (FK-against-unanalyzed-parent, measured at 175 ms; and the read-back planner
-problem, which was a different and now-fixed defect); three are untried and named in the issue.
+CPU for 73,867 rows** — **CLOSED 2026-09-01, and by NONE of the three causes it named.** It was the foreign-key
+check being planned onto `spl_label_by_wording` while the parent had no statistics; the fix is two `ANALYZE`s
+costing 112 ms, and the ingest fell to 2 min 09 s. The issue's own ruling-out of the foreign key ("175 ms")
+measured a real thing and explained it wrongly — § "The COPY-cost round".
+
+**Filed by the COPY-cost round (2026-09-01)** — **[#172](https://github.com/cairn-ehr/drugref/issues/172)
+`spl_evidence.py` is at 494/500**, the same shape as #130 (`cli.py` at exactly 500/500) one edit earlier, and
+unlike `cli.py` this module has **no cap test**, so the breach would arrive silently. Not split in that round
+deliberately: the census round's `spl_release.py` precedent is *verbatim move first, suite green, then the
+behaviour change*, and splitting here would have mixed refactor risk into a fix whose whole value is that
+nothing else moved. The seam and the cap test are named in the issue.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -4884,14 +4983,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2443 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2446 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2443
-# passed in 125.44 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2446
+# passed in 68.59 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4951,6 +5050,12 @@ git config core.hooksPath .githooks
 # same session goes stale if it is measured before the work stops. Read it off
 # the run that VERIFIES green, not off an earlier count -- and issue 146 (a test
 # that reads this line and counts the suite) is still the only real fix.
+# AND THE COPY-COST ROUND -- issue #160, no migration -- added 3: 2443 -> 2446,
+# being the FK-parent-analysed-before-its-child pin (whose two mutants, each
+# ANALYZE deleted in turn, were both run and both killed), the whole-schema
+# census of which foreign keys can be planned onto a loose index, and the
+# ANALYZE identifier refusal. Read off the run that VERIFIED GREEN AFTER THE
+# LAST EDIT -- 2446 in 68.59 s -- which is the eighth occurrence's lesson.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
 # DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,

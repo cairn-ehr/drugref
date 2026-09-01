@@ -327,13 +327,23 @@ def analyze_source_tables(conn: psycopg.Connection) -> None:
     empty. The planner therefore costs a nested loop over what it believes are a
     handful of rows, and picks one over 1.3 million.
 
-    IT IS ALSO WHY THE FIRST DIAGNOSIS WAS WRONG. The obvious suspect was the
-    foreign-key checks on the child `COPY` -- freshly loaded parent, no stats, RI
-    seq scans. That was measured and REFUTED: 20,000 child rows against an
-    unanalyzed 68,550-row parent insert in 175 ms, because PostgreSQL's RI
-    triggers use a plan pinned to the parent's primary key rather than a
-    re-planned query. The cost was never in the write; it was in the read-back
-    that follows it.
+    ⇒ AND IT IS NOT ENOUGH ON ITS OWN -- `analyze_loaded_table` is the other half.
+    An earlier version of this docstring stated, as measured fact, that the
+    foreign-key checks on the child `COPY` were REFUTED as a suspect "because
+    PostgreSQL's RI triggers use a plan pinned to the parent's primary key rather
+    than a re-planned query". **The second half of that sentence is false, and it
+    cost issue 160 a round.** The plan is pinned, but to whatever was chosen at
+    FIRST USE -- which is during the load, before this function has run. Measured
+    2026-09-01 on `drugref_spl160`: the `COPY` into `spl_label_subject` spent
+    **630 s at 96% server CPU**, 100% of a stack sample inside `RI_FKey_check_ins`,
+    because with `relpages = 0` the pinned plan was an index scan on
+    `spl_label_by_wording` matching all 68,550 parent rows. See
+    `analyze_loaded_table`, and `tests/test_spl_run.py`'s
+    `test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded`.
+
+    The 175 ms refutation itself was real but did not generalise: a parent whose
+    ONLY index is its primary key -- which is every other parent in this schema --
+    has no wrong plan available to pin.
 
     Runs INSIDE the transaction, which PostgreSQL permits, so the statistics
     describe the projection this run is about to publish and are rolled back with
@@ -342,8 +352,56 @@ def analyze_source_tables(conn: psycopg.Connection) -> None:
     # The table list has ONE home -- SPL_TABLES -- and this reads it rather than
     # restating it, so a table added to the source cannot be left unanalyzed and
     # quietly reintroduce the stall.
-    tables = ", ".join(f"drugref.{table}" for table in SPL_TABLES)
-    conn.execute(f"ANALYZE {tables}")
+    _analyze(conn, SPL_TABLES)
+
+
+def analyze_loaded_table(conn: psycopg.Connection, table: str) -> None:
+    """`ANALYZE` one table the transaction has just finished bulk-loading.
+
+    **THE RULE: a table is analysed as soon as it is loaded, and BEFORE anything
+    that references it is loaded.** Not as a tidy-up, and not only at the end.
+
+    A foreign-key check runs `SELECT 1 FROM parent WHERE p1 = $1 AND ... AND
+    pn = $n FOR KEY SHARE`, and the planner may satisfy that with ANY parent
+    index whose leading columns are among p1..pn. `spl_label` carries two --
+    `spl_label_pkey` on all four columns, and `spl_label_by_wording` on
+    `(ingest_run, source, text_key)` -- and on a freshly `COPY`d parent
+    (`relpages = 0`, `reltuples = -1`) the two plans cost an IDENTICAL 8.44. The
+    tie was broken towards `spl_label_by_wording`, whose index condition matches
+    all 68,550 rows and discards 68,549 of them in a filter, once per child row.
+
+    That plan is then CACHED for the rest of the session, so analysing afterwards
+    cannot repair it: the only moment this can be got right is before the first
+    child row is written. Measured 2026-09-01 on the real releases: 630 s for the
+    73,867-row child `COPY` without this, against 1,297,944 occurrence rows in
+    35 s in the same transaction -- so the cost was never row volume and never
+    `COPY`.
+
+    Only ONE foreign key in the whole schema is exposed to this today (138
+    checked, censused by `test_ONE_foreign_key_in_the_schema_can_be_planned_onto
+    _a_LOOSE_index`), but the guarantee is made for every parent rather than for
+    the one that failed, because the exposure is created by adding an index to a
+    parent -- an edit nowhere near this file.
+    """
+    _analyze(conn, (table,))
+
+
+def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
+    """`ANALYZE` the named tables of this source, refusing any it does not own.
+
+    Identifiers cannot be bind parameters, so they are interpolated -- and are
+    therefore checked against `SPL_TABLES` first, which is `_copy`'s and
+    `db.clear_source_tables`'s stated rule: the name must come from a module
+    constant, never from input.
+    """
+    names = tuple(tables)
+    unknown = [table for table in names if table not in SPL_TABLES]
+    if unknown:
+        raise ValueError(
+            f"{unknown} is not among this source's tables {SPL_TABLES}; "
+            "ANALYZE interpolates its identifiers and may only name a table "
+            "this module owns")
+    conn.execute("ANALYZE " + ", ".join(f"drugref.{name}" for name in names))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -354,7 +412,8 @@ class Registry:
     `names, known_uniis = load_registry(conn)` type-checks just as well the wrong
     way round, and a transposition would build the matcher out of UNII codes and
     resolve every subject against display names -- caught only by `check_floors`
-    at the very end of a full 12.5-minute ingest, if at all.
+    at the very end of a full ingest -- 2 min 09 s since issue 160, and 12.5
+    minutes before it -- if at all.
 
     **A DATACLASS AND NOT A `NamedTuple`, WHICH IS NOT A STYLE CHOICE.** This was
     a `NamedTuple` for one round, and a `NamedTuple` is still unpackable: the two
