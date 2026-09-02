@@ -181,3 +181,170 @@ def test_serious_messages_keeps_an_UNRECOGNISED_severity():
     kept = server_messages.serious_messages([server_messages.read_diagnostic(
         diag("WARNUNG", primary="Zugriff verweigert"))])
     assert len(kept) == 1
+
+
+# --------------------------------------------------------------------------
+# The two handlers, and the failure mode a notice handler has by construction
+# --------------------------------------------------------------------------
+
+def test_log_server_message_publishes_one_record_at_the_messages_own_level(caplog):
+    """The always-on handler, driven directly rather than only through a database.
+
+    `db.connect` installs this on every connection, so it is the reason a server
+    message is visible at all -- and until this test its only coverage was a
+    DB-gated end-to-end one, which is the wrong place to learn that the logger
+    name or the level mapping moved.
+    """
+    with caplog.at_level(logging.DEBUG, logger="drugref.postgres"):
+        server_messages.log_server_message(diag("NOTICE", primary="chatter"))
+    record, = [r for r in caplog.records if r.name == "drugref.postgres"]
+    assert record.levelno == logging.INFO
+    assert "chatter" in record.getMessage()
+
+
+def test_a_diagnostic_the_reader_cannot_read_does_not_escape_the_handler(caplog):
+    """⇒ "RAISES NOTHING, EVER" HAD TO BECOME TRUE RATHER THAN STAY ASSERTED.
+
+    `read_diagnostic` is duck-typed on purpose, so it reads six attributes off
+    whatever psycopg hands over; a psycopg release or a wrapper that hands over
+    something else makes it raise. psycopg SWALLOWS what a handler raises, so the
+    observable result of that was the channel going dark with a green suite --
+    issue 174's own failure mode, in the module written to end it.
+    """
+    with caplog.at_level(logging.DEBUG, logger="drugref.postgres"):
+        server_messages.log_server_message(object())        # no fields at all
+    record, = [r for r in caplog.records if r.name == "drugref.postgres"]
+    assert record.levelno == logging.WARNING, (
+        "a message drugref could not read is a message it must not pretend to "
+        "have classified")
+    assert "could not read" in record.getMessage()
+
+
+def test_a_message_the_collector_cannot_read_is_collected_as_a_SERIOUS_one():
+    """The enforcing half of the same rule, and the direction that matters most.
+
+    A collector whose failure mode is an EMPTY LIST is the shape this module
+    exists to abolish: `analyze_tables` reads that list to decide whether the
+    server complained, so an unreadable message would be indistinguishable from
+    silence and the ANALYZE guard would pass.
+    """
+    conn = _RecordingConnection()
+    with server_messages.collect(conn) as messages:
+        handler, = conn.handlers
+        handler(object())                       # what psycopg would hand over
+    assert len(messages) == 1, "an unreadable message must not vanish from the list"
+    assert "could not read" in messages[0].primary
+    assert server_messages.serious_messages(messages) == tuple(messages), (
+        "and it must reach the guard as grounds to refuse, because 'we could not "
+        "read what the server said' is not evidence that it said nothing")
+
+
+class _RecordingConnection:
+    """The two methods `collect` uses, so its handler can be driven without a
+    database and without psycopg's own swallowing in the way."""
+
+    def __init__(self):
+        self.handlers = []
+
+    def add_notice_handler(self, handler):
+        self.handlers.append(handler)
+
+    def remove_notice_handler(self, handler):
+        self.handlers.remove(handler)
+
+
+# --------------------------------------------------------------------------
+# What "serious" means when the severity itself is unreadable
+# --------------------------------------------------------------------------
+
+def test_an_unclassifiable_severity_on_a_SUCCESS_sqlstate_is_not_a_complaint():
+    """⇒ THE FALSE-ABORT THE FAIL-LOUD RULE CREATED, closed with the field the
+    server sends for exactly this.
+
+    `Diagnostic.severity` is localised, so a German server's NOTICE reads
+    `HINWEIS`; where `severity_nonlocalized` is absent -- optional in the
+    protocol -- that reaches the mapping unrecognised and comes out as WARNING,
+    which is right for LOGGING and wrong for a REFUSAL. Before this, routine
+    chatter on a translated server aborted the ingest and blamed the role's
+    permissions for it.
+
+    SQLSTATE is not localised. Class `00` is `successful_completion`; PostgreSQL
+    sends `00000` with a plain NOTICE and `01000` with a WARNING -- measured on
+    PG 18.1 -- and the skipped ANALYZE this module was built for is `01000`. So
+    an unclassifiable severity asks the CODE instead of guessing.
+    """
+    hinweis = server_messages.read_diagnostic(
+        diag("HINWEIS", sqlstate="00000", primary="Tabelle existiert nicht"))
+    assert hinweis.level == logging.WARNING, "still loud in the LOG"
+    assert server_messages.serious_messages([hinweis]) == (), "but not a refusal"
+
+
+def test_an_unclassifiable_severity_on_a_WARNING_sqlstate_is_still_a_complaint():
+    """The direction that must not have been weakened: a translated WARNING keeps
+    its `01000`, so the skipped ANALYZE is caught on a German server too."""
+    warnung = server_messages.read_diagnostic(
+        diag("WARNUNG", sqlstate="01000", primary="Zugriff verweigert"))
+    assert len(server_messages.serious_messages([warnung])) == 1
+
+
+def test_an_unclassifiable_severity_with_NO_sqlstate_stays_loud():
+    """Neither field readable is not a reason to be quiet -- the module's whole
+    stance, at the one point where being quiet costs a refusal."""
+    nothing = server_messages.read_diagnostic(
+        diag("???", sqlstate=None, primary="unclassifiable"))
+    assert len(server_messages.serious_messages([nothing])) == 1
+
+
+def test_the_severity_mapping_cannot_be_amended_at_runtime():
+    """ONE HOME, and no importer may quietly move the number that gates a refusal.
+
+    `SEVERITY_LEVEL["WARNING"] = logging.DEBUG` would disarm `analyze_tables`
+    from any module that imported this one, silently and for the life of the
+    process.
+    """
+    with pytest.raises(TypeError):
+        server_messages.SEVERITY_LEVEL["WARNING"] = logging.DEBUG
+
+
+# --------------------------------------------------------------------------
+# The rendered line, whole rather than by containment
+# --------------------------------------------------------------------------
+
+def test_the_formatted_message_is_rendered_EXACTLY(caplog):
+    """⇒ CONTAINMENT COULD NOT SEE THE LABELS SWAP PLACES.
+
+    The previous assertions checked that five substrings were present, which
+    stays true when DETAIL renders the hint and HINT renders the detail. This
+    module's entire purpose is a line an operator can act on, so the line is
+    pinned whole.
+    """
+    message = server_messages.read_diagnostic(diag(
+        "WARNING", sqlstate="01000", primary='permission denied to analyze "t"',
+        detail="the role owns no such table", hint="GRANT MAINTAIN ON t TO app"))
+    assert str(message) == (
+        '[WARNING 01000] permission denied to analyze "t" -- '
+        'DETAIL: the role owns no such table -- '
+        'HINT: GRANT MAINTAIN ON t TO app')
+
+
+def test_a_message_with_only_a_DETAIL_does_not_grow_an_empty_HINT():
+    """One half present is the common shape, and neither label may be unconditional."""
+    message = server_messages.read_diagnostic(
+        diag("NOTICE", sqlstate="00000", primary="p", detail="d"))
+    assert str(message) == "[NOTICE 00000] p -- DETAIL: d"
+
+
+def test_a_message_with_only_a_HINT_does_not_grow_an_empty_DETAIL():
+    """The mirror of the above -- together they pin which label goes with which
+    field, which is what containment assertions cannot do."""
+    message = server_messages.read_diagnostic(
+        diag("NOTICE", sqlstate="00000", primary="p", hint="h"))
+    assert str(message) == "[NOTICE 00000] p -- HINT: h"
+
+
+def test_a_diagnostic_with_no_primary_text_renders_without_the_word_None():
+    """`message_primary` is typed optional by psycopg, and the fallback is the one
+    line of `read_diagnostic` nothing drove."""
+    message = server_messages.read_diagnostic(
+        diag("NOTICE", sqlstate="00000", primary=None))
+    assert str(message) == "[NOTICE 00000] "

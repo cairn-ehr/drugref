@@ -63,6 +63,19 @@ appear in the log rather than being discarded — and an ingest **refuses to con
 when the server says it skipped an `ANALYZE`, naming the role and quoting the server. A
 run that could not gather its statistics is not allowed to look like a run that did.
 
+Two server settings decide whether drugref can tell:
+
+| setting | default | if it is changed |
+| --- | --- | --- |
+| `client_min_messages` | `notice` | above `warning`, the server never sends the warning, so drugref cannot quote it |
+| `track_counts` | `on` | off, and `pg_stat_all_tables.analyze_count` cannot witness the work either |
+
+Either one alone is fine — drugref checks the statistics three independent ways and
+each covers where another is blind. **If both are changed, an ingest refuses before it
+starts**, rather than running on evidence it already knows it cannot collect. If you
+silence server messages for the ingest role (`ALTER ROLE … SET
+client_min_messages='error'`), leave `track_counts` alone.
+
 ## Reviewer service
 
 The desktop app never connects directly to PostgreSQL. Run the separately authenticated

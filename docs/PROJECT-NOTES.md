@@ -5032,12 +5032,32 @@ earlier: a rule written down but never given a home that executes.
 - **`analyze.py`** — `analyze_tables` runs the statement inside `server_messages.collect` and refuses unless
   the server actually did the work.
 
-### ⇒ TWO CHECKS, AND THEY ARE NOT ONE CHECK TWICE — each kills a mutant the other cannot see
+### ⇒ THREE CHECKS, AND NO TWO ARE ONE CHECK TWICE — each kills a mutant the others cannot see
 
 | check | fires when | blind to |
 | --- | --- | --- |
-| the server raised a WARNING or worse | always, including a **re-ingest** | a connection whose notices go nowhere |
-| `pg_class.reltuples` is still `-1` | statistics were **never** gathered | a re-ingest, where the last run left plausible numbers |
+| the server raised a WARNING or worse | always, incl. a **re-ingest**; the only one carrying a DIAGNOSIS | `client_min_messages` above `warning`, a pooler, a psycopg change |
+| `pg_class.reltuples` is still `-1` | statistics were **never** gathered; needs no message and no counter | a re-ingest, where the last run left plausible numbers |
+| `pg_stat_all_tables.analyze_count` did not move | always, incl. a **re-ingest**, with no message needed | `track_counts = off` |
+
+⇒ **THE THIRD CHECK EXISTS BECAUSE THE FIRST IS SWITCHABLE FROM OUTSIDE DRUGREF**, which this branch's own
+review measured. `client_min_messages` decides what the server SENDS, is `PGC_USERSET`, and is reachable from
+`ALTER ROLE`, `ALTER DATABASE`, `postgresql.conf`, a pooler's `server_settings` or a DSN `options=` (already
+flagged in HANDOVER as a live concern here). Above `warning` check 1 is silent; check 2 is blind on every run
+after the first; so **the guard was a no-op on every database past its first ingest, one `ALTER ROLE` away** —
+issue 174, inside the fix for issue 174. Reproduced: with `client_min_messages='error'` and statistics already
+present, `analyze_tables` returned with the ANALYZE having done nothing.
+
+⇒ **AND THE OBVIOUS WAY TO READ `analyze_count` IS BROKEN.** `stats_fetch_consistency` defaults to `cache`,
+which pins a relation's stats row at its **first** read for the rest of the transaction — so a before/after
+pair returns the same number twice and the delta is *always zero*. That does not fail loudly; it refuses every
+healthy run. `analyze_counts` calls `SELECT pg_stat_clear_snapshot()` before each read; deleting that one line
+fails **8** tests.
+
+⇒ **NO CHECK MAY BE SILENTLY UNAVAILABLE.** Check 3 needs `track_counts`, check 1 needs `client_min_messages`
+at `warning` or below. With **both** off nothing can see a skipped re-ingest, so `analyze_tables` refuses
+**before running the statement**. A quiet channel *alone* is not refused — the counter still proves the work,
+and refusing there would be its own wrong answer.
 
 `-1` is the sentinel and **`0` is not a milder version of it** — a table analysed while empty has statistics
 (the 160 review round already had to make this distinction when `reltuples >= 0` let two mutants live). The
@@ -5052,6 +5072,19 @@ close 174. There is a negative-control test asserting a bare `psycopg.connect` h
 ⇒ **A NOTICE HANDLER CAN NEVER BE AN ENFORCING SURFACE.** psycopg calls handlers inside its result processing
 and **swallows** whatever they raise (logging the traceback to its own logger). Enforcement therefore belongs
 to the caller that collected the messages, never to the handler.
+
+⇒ **AND A HANDLER THAT RAISES IS A HANDLER THAT VANISHED**, which is why both go through
+`read_diagnostic_safely`. `read_diagnostic` is duck-typed by design (six attributes off whatever psycopg hands
+over), so the day psycopg or a wrapper hands over something else, the unguarded version left the collector's
+list EMPTY — indistinguishable from a server that said nothing, with a green suite. The failure is now
+collected AS a loud message instead of being lost.
+
+⇒ **`serious_messages` ASKS THE SQLSTATE WHEN THE SEVERITY IS UNCLASSIFIABLE.** `UNKNOWN_SEVERITY_LEVEL` is
+right for a log line — loud is free there — and wrong for a refusal, which costs a run and misdiagnoses it. A
+German server sending `HINWEIS` (routine notices) aborted the ingest and blamed the role's permissions. SQLSTATE
+is not localised: class `00` is `successful_completion`, and the skipped ANALYZE is `01000`. Neither field
+readable is still loud. `SEVERITY_LEVEL` is a `MappingProxyType` for the same reason it gates a refusal at all:
+`SEVERITY_LEVEL["WARNING"] = logging.DEBUG` from any importer must not be able to disarm it.
 
 ### Verified at full scale, on both sides of the role split (`drugref_notice174`, 2026-09-02)
 
@@ -5078,16 +5111,23 @@ first sentence is "the SOLE writer of drugref's SPL rows". Issue 172 had already
 `Registry`/`load_registry`, **a READ path inside the sole writer**. It moved to `registry_read.py` — "Reads of
 the IDENTITY SPINE", whose own docstring invites exactly this ("the spine's other reads can land here as they
 are needed") — because it reads `substance_moiety` and `identity_claim` and nothing else. Verbatim move first,
-suite green, then nothing else. `spl_evidence.py` **518 → 428**, `registry_read.py` **91 → 181**; callers
+suite green, then nothing else. `spl_evidence.py` **518 → 428** by the move and **430** after the review round
+corrected two of its docstrings, `registry_read.py` **91 → 219**; callers
 repointed in `ingest/spl_run.py`, two `tools/` scripts and two test modules.
 
-⇒ **`500` HAD THREE HOMES AND GUARDED THREE FILES OF FORTY-ODD.** `test_cli.py` and `test_cli_signing.py` each
+⇒ **`500` HAD THREE HOMES AND GUARDED THREE FILES OF 76.** `test_cli.py` and `test_cli_signing.py` each
 pinned the one file its author had just written, which is how `spl_evidence.py` reached 518 with a green suite.
 Both are **deleted** and folded into `tests/test_module_size_cap.py`, which owns the number once and **sweeps
 every module under `src/drugref`**. Seven were already over (`questions.py` 797 … `ingest/spl_match.py` 524) and
 are a **checked ledger, not an allow-list**: a second test asserts each is *still* over, so a name left behind
 after a split fails rather than becoming a permanent exemption. Filed as
 [#177](https://github.com/cairn-ehr/drugref/issues/177).
+
+⇒ **AND "CHECKED IN BOTH DIRECTIONS" WAS HALF TRUE UNTIL THE REVIEW.** The ledger recorded each module's size
+and then never read the number — both tests used only the keys — so the seven **largest** modules in the
+package were exempt from rule 4 in the GROWING direction, permanently and by construction. A ledger whose
+values are decoration is an allow-list wearing a ledger's clothes. The recorded size is now each module's
+ceiling: a ledgered module may shrink and leave, and may not grow.
 
 ### Traps and standing notes
 
@@ -5143,9 +5183,9 @@ unless the server actually analysed — verified at full scale on both sides of 
 § "The notice-channel round". ·
 **[#172](https://github.com/cairn-ehr/drugref/issues/172) `spl_evidence.py` is at 512/500** — **CLOSED** at the
 seam the issue named: `Registry`/`load_registry`, a READ path inside the SOLE WRITER, moved to
-`registry_read.py` (**518 → 428**). The cap test it asked for became a **sweep** over every module under
+`registry_read.py` (**518 → 428**, 430 today). The cap test it asked for became a **sweep** over every module under
 `src/drugref` in `tests/test_module_size_cap.py`, replacing the two per-file cap tests that between them
-guarded three files of forty-odd — which is how 518 happened with a green suite. The seven modules already over
+guarded three files of 76 — which is how 518 happened with a green suite. The seven modules already over
 the cap are a checked ledger there, filed as
 **[#177](https://github.com/cairn-ehr/drugref/issues/177)**.
 
@@ -5316,14 +5356,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2515 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2538 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-09-02 at 2515
-# passed in 62.50 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-02 at 2538
+# passed in 70.96 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -5425,6 +5465,20 @@ git config core.hooksPath .githooks
 # `psycopg.connect` hears nothing), +9 on the module-size sweep -- MINUS the two
 # per-file cap tests it deletes and folds in (test_cli.py's and
 # test_cli_signing.py's), which is why 2475 + 42 - 2 = 2515.
+# ⇒ AND THE REVIEW OF THAT BRANCH TOOK IT TO 2538 (70.96 s), +23 with no
+# migration: +10 DB-gated on the ANALYZE guard's THIRD check and its precondition
+# (a skipped ANALYZE refused with `client_min_messages='error'`, the refusal
+# naming the silenced setting, the happy path that a missing
+# `pg_stat_clear_snapshot()` breaks, the counter moving inside one transaction,
+# the refusal when NOTHING can witness, the quiet-channel-alone case that must
+# NOT refuse, `never_analyzed` on a name matching no relation and on caller
+# order, the role in the no-statistics message, and the `schema=` argument
+# finally exercised outside `drugref`), +12 pure on `server_messages` (both
+# handlers driven directly, an unreadable diagnostic in each, the SQLSTATE-class
+# fallback in all three directions, the read-only severity map, and the rendered
+# line pinned WHOLE rather than by containment), +1 on the registry halves being
+# unwritable. The counts stayed at 9 on the size sweep -- the ratchet is a third
+# assertion inside an existing parametrised test, not a new one.
 # ⇒ THAT IS TWICE THAT A COMMIT MESSAGE HAS ABSORBED THIS NUMBER INSTEAD OF THIS
 # LINE, AND THE SECOND TIME WAS ON A BRANCH WHOSE OWN DIFF ADDED THE SENTENCE
 # SAYING A COMMIT MESSAGE IS NOT A HOME. Prose has now failed NINE times against

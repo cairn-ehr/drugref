@@ -213,13 +213,14 @@ It moved to `registry_read.py` — "Reads of the IDENTITY SPINE", whose own docs
 says *"it is small on purpose; the spine's other reads can land here as they are
 needed"*. It reads `substance_moiety` and `identity_claim` and nothing else, so it
 was always a spine read wearing an SPL coat. Verbatim move first, whole suite
-green, then nothing else: `spl_evidence.py` **518 → 428**, `registry_read.py`
-**91 → 181**. Callers repointed: `ingest/spl_run.py`, `tools/spl_suppress_derive.py`,
+green, then nothing else: `spl_evidence.py` **518 → 428** (**430** after §6
+corrected two docstrings), `registry_read.py`
+**91 → 219**. Callers repointed: `ingest/spl_run.py`, `tools/spl_suppress_derive.py`,
 `tools/spl_class_vocabulary_delta.py`, and two test modules.
 
 ⇒ **AND THE CAP BECAME A SWEEP INSTEAD OF THREE REMEMBERED FILES.** `500` was
 written down in `test_cli.py` and again in `test_cli_signing.py`, each pinning the
-one file its author had just written — three of forty-odd modules, which is how
+one file its author had just written — three of the package's 76 modules, which is how
 `spl_evidence.py` reached 518 with a green suite. Both are deleted and folded into
 `tests/test_module_size_cap.py`, which owns the number once and sweeps every module
 under `src/drugref`. Seven modules were already over the cap (`questions.py` at 797
@@ -230,7 +231,82 @@ after a split fails rather than becoming a permanent exemption. Filed as
 
 ---
 
-## 6. What this round did not do
+## 6. The review round: the guard was switchable from outside drugref
+
+The branch's own review found that §3's two checks left the defect intact on every
+database past its first ingest. Measured on the same PG 18.1, same role, same table:
+
+```
+after a privileged ANALYZE, reltuples = 500.0     <- the RE-INGEST half
+SET client_min_messages = 'error'; SET ROLE drugref_probe;
+analyze_tables(...)  ->  returned, no refusal      <- and the ANALYZE did nothing
+messages collected: []
+```
+
+`serious_messages` can only see what the server chose to **send**, and
+`client_min_messages` decides that. It is `PGC_USERSET`: `ALTER ROLE … SET
+client_min_messages='error'`, `ALTER DATABASE`, `postgresql.conf`, a pooler's
+`server_settings`, or a DSN `options=` — which `docs/HANDOVER.md` already flags as a
+live concern in this project — all reach it. Check 1 is then silent, check 2 is blind
+on any re-ingest, and **the guard is a no-op, one `ALTER ROLE` away**. That is issue
+174 restored inside the fix for issue 174, and §4's headline REFUSED row — which
+rests on *"only the collected WARNING could have fired"* — completes instead.
+
+### The third check, and the trap in it
+
+`pg_stat_all_tables.analyze_count` increments per **successful** ANALYZE, is
+non-localised, needs no message, and is readable inside the analysing transaction.
+A before/after delta is therefore blind to neither blind spot. Measured:
+
+| | privileged ANALYZE | ANALYZE the server skipped |
+| --- | --- | --- |
+| `analyze_count` | 0 → 1 | 1 → 1 |
+
+⇒ **AND THE OBVIOUS IMPLEMENTATION IS BROKEN.** `stats_fetch_consistency` defaults to
+`cache`, which pins a relation's stats row at its **first** read for the rest of the
+transaction — so a before/after pair returns the same number twice and the delta is
+*always zero*. That does not fail loudly; it refuses every healthy run. It was made
+once while writing `analyze_counts`, and it takes `SELECT pg_stat_clear_snapshot()`
+before each read. Removing that one line fails **8** tests in
+`tests/test_analyze_guard.py`.
+
+### And no check may be silently unavailable
+
+Check 3 needs `track_counts`; check 1 needs `client_min_messages` at `warning` or
+below. When **both** are off, nothing can see a skipped re-ingest — so
+`analyze_tables` refuses **before running the statement**, rather than proceeding on
+evidence it already knows it cannot collect. A quiet channel *alone* is not refused:
+the counter can still prove the work happened, and refusing there would be its own
+wrong answer.
+
+### Also from that review
+
+* **A notice handler that raises is a notice handler that vanished.** psycopg swallows
+  what a handler raises, and `read_diagnostic` is duck-typed — six attributes off
+  whatever psycopg hands over. The collector's handler therefore went through
+  `read_diagnostic_safely`, which reports the failure **as a loud message** rather
+  than losing it: a collector whose failure mode is an empty list is exactly the shape
+  this module exists to abolish.
+* **`serious_messages` asks the SQLSTATE when the severity is unclassifiable.**
+  `UNKNOWN_SEVERITY_LEVEL` is right for a log line, where loud is free, and wrong for a
+  refusal, which costs a run. A German server sending `HINWEIS` (routine notices, class
+  `00000`) aborted the ingest and blamed the role's permissions. SQLSTATE is not
+  localised; class `00` is `successful_completion` and the skipped ANALYZE is `01000`.
+* **`SEVERITY_LEVEL` is a `MappingProxyType`.** It gates a refusal, so
+  `SEVERITY_LEVEL["WARNING"] = logging.DEBUG` from any importer must not be able to
+  disarm it.
+* **The size-cap ledger became a ratchet.** Its recorded sizes were never read — both
+  tests used only the keys — so the seven **largest** modules were exempt from rule 4
+  in the growing direction, permanently. A ledger whose values are decoration is an
+  allow-list wearing a ledger's clothes.
+* **`tests/test_spl_tools_smoke.py`'s source scan could match nothing and pass**, and
+  did for `tools/spl_make_fixture.py`. It now asserts how much it must find.
+* Two tools this round already edited moved to `db.connect`; the four that did not are
+  [#179](https://github.com/cairn-ehr/drugref/issues/179).
+
+---
+
+## 7. What this round did not do
 
 * **`has_table_privilege(…, 'MAINTAIN')` as a PRECONDITION** was considered and
   rejected. It would name the cause before spending the `ANALYZE`, but it is a

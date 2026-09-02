@@ -37,6 +37,8 @@ import contextlib
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Final
 
 import psycopg
 
@@ -65,7 +67,12 @@ log = logging.getLogger("drugref.postgres")
 #: (PostgreSQL 18 no longer emits the per-table "will create implicit index"
 #: notice that would have made the same run hundreds of lines and forced the
 #: opposite choice.)
-SEVERITY_LEVEL: dict[str, int] = {
+#: READ-ONLY, because this dict gates a refusal and not only a log line.
+#: `SEVERITY_LEVEL["WARNING"] = logging.DEBUG` from any importing module would
+#: disarm `analyze.analyze_tables` for the life of the process, silently. There is
+#: no type checker in this project, so the proxy is the enforcement and `Final` is
+#: the documentation.
+SEVERITY_LEVEL: Final[MappingProxyType[str, int]] = MappingProxyType({
     "DEBUG": logging.DEBUG,
     "LOG": logging.INFO,
     "INFO": logging.INFO,
@@ -74,7 +81,7 @@ SEVERITY_LEVEL: dict[str, int] = {
     "ERROR": logging.ERROR,
     "FATAL": logging.CRITICAL,
     "PANIC": logging.CRITICAL,
-}
+})
 
 #: WHAT AN UNRECOGNISED SEVERITY COSTS, and why it is not DEBUG.
 #:
@@ -85,7 +92,7 @@ SEVERITY_LEVEL: dict[str, int] = {
 #: the message must be as loud as a warning and never quieter: the alternative
 #: hides exactly the message this module exists to stop hiding, on exactly the
 #: servers whose operators can least afford it.
-UNKNOWN_SEVERITY_LEVEL = logging.WARNING
+UNKNOWN_SEVERITY_LEVEL: Final[int] = logging.WARNING
 
 
 def message_level(severity: str | None) -> int:
@@ -187,23 +194,79 @@ def serious_messages(
     guard that tested for the one severity it had measured would let the three
     worse ones through.
 
-    An UNRECOGNISED severity is kept, for `UNKNOWN_SEVERITY_LEVEL`'s reason: a
-    message we cannot classify must not be dropped by the one check that would
-    have caught it on a translated server.
+    ⇒ **AN UNRECOGNISED SEVERITY ASKS THE SQLSTATE RATHER THAN THE LEVEL**, and
+    that is not the same rule as the logging one. `UNKNOWN_SEVERITY_LEVEL` makes an
+    unclassifiable message as loud as a warning, which is right for a LOG LINE --
+    loud is free there -- and wrong for a REFUSAL, which costs a run and
+    misdiagnoses it. A German server whose `severity_nonlocalized` is absent sends
+    routine notices as `HINWEIS`; under a level-only filter every one of them
+    aborted an ingest and blamed the ingest role's permissions.
+
+    SQLSTATE is NOT localised. Class `00` is `successful_completion` -- measured on
+    PG 18.1, a plain NOTICE arrives as `00000` and a WARNING as `01000`, and the
+    skipped ANALYZE of issue 174 is `01000` -- so the unclassifiable case has a
+    non-localised field to consult and does not have to guess.
+
+    A message with NEITHER a recognised severity NOR a usable SQLSTATE is still
+    kept: two unreadable fields are not a reason to be quiet, at the one point
+    where being quiet means a skipped ANALYZE passes.
     """
-    return tuple(m for m in messages if m.level >= logging.WARNING)
+    return tuple(m for m in messages if _is_serious(m))
+
+
+def _is_serious(message: ServerMessage) -> bool:
+    """PURE: whether one message is grounds for a caller to refuse."""
+    if message.severity in SEVERITY_LEVEL:
+        return message.level >= logging.WARNING
+    if message.sqlstate and len(message.sqlstate) >= 2:
+        return message.sqlstate[:2] != "00"
+    return True
+
+
+#: The severity a message drugref could not parse is reported under.
+#:
+#: Deliberately NOT one of the protocol's eight, so it takes the unknown branch of
+#: `message_level` and the fail-loud branch of `_is_serious`: an unreadable message
+#: is as loud as a warning in the log AND grounds for a refusal, which is the only
+#: safe reading of "the server said something and we do not know what".
+UNREADABLE_SEVERITY: Final[str] = "UNREADABLE"
+
+
+def read_diagnostic_safely(diag) -> ServerMessage:
+    """`read_diagnostic`, but it cannot raise -- WHICH IS THE WHOLE POINT.
+
+    ⇒ **A NOTICE HANDLER THAT RAISES IS A NOTICE HANDLER THAT VANISHED.** psycopg
+    calls handlers inside its result processing and SWALLOWS whatever they raise
+    (`_connection_base.py`: `except Exception: logger.exception(...)`), so an
+    exception here does not surface anywhere drugref looks. `read_diagnostic` is
+    duck-typed on purpose -- six attributes read off whatever psycopg hands over --
+    so the day a psycopg release, a pooler or a wrapper hands over something else,
+    the unguarded version made the channel go dark with a green suite. That is
+    issue 174's own failure mode, inside the module written to end it.
+
+    The failure is reported as a MESSAGE rather than lost, so a collector's list
+    grows a loud entry instead of staying empty: `analyze_tables` reads that list
+    to decide whether the server complained, and "empty" must never be able to mean
+    "something arrived and we could not read it".
+    """
+    try:
+        return read_diagnostic(diag)
+    except Exception as exc:                                  # noqa: BLE001
+        return ServerMessage(
+            severity=UNREADABLE_SEVERITY, sqlstate=None,
+            primary=f"drugref could not read a message the server sent: {exc!r}")
 
 
 def log_server_message(diag) -> None:
     """The handler `db.connect` installs: publish one server message, at its level.
 
-    RAISES NOTHING, ever, and not by accident. psycopg calls notice handlers
-    inside its result processing and swallows whatever they raise (it logs the
-    traceback to its own logger and carries on), so a handler is a REPORTING
-    surface and can never be an ENFORCING one. Enforcement belongs to the caller
-    that collected the messages -- see `collect` and `analyze.analyze_tables`.
+    RAISES NOTHING, ever -- now enforced by `read_diagnostic_safely` rather than
+    asserted about a duck-typed read. psycopg swallows whatever a handler raises,
+    so a handler is a REPORTING surface and can never be an ENFORCING one;
+    enforcement belongs to the caller that collected the messages -- see `collect`
+    and `analyze.analyze_tables`.
     """
-    message = read_diagnostic(diag)
+    message = read_diagnostic_safely(diag)
     log.log(message.level, "%s", message)
 
 
@@ -225,12 +288,20 @@ def collect(conn: psycopg.Connection) -> Iterator[list[ServerMessage]]:
 
     The list is safe to read as soon as the statement returns: psycopg dispatches
     notices while processing that statement's result, which
-    tests/test_analyze_guard.py asserts rather than assumes.
+    tests/test_analyze_guard.py asserts rather than assumes. THE ONE SHAPE THAT
+    BREAKS THAT is an outer `conn.pipeline()` spanning the block -- `execute` then
+    queues rather than fetches, and the sync happens after the `finally` below has
+    removed the handler, so the list comes back empty. Nothing in this project uses
+    pipeline mode (`grep -rn "pipeline()" src/ tools/` is empty); a caller that
+    starts must collect INSIDE its own pipeline, not around one.
     """
     messages: list[ServerMessage] = []
 
     def handler(diag) -> None:
-        messages.append(read_diagnostic(diag))
+        # `read_diagnostic_safely`, for the reason its own docstring gives: this
+        # list is EVIDENCE, and a reader that raised would leave it empty --
+        # indistinguishable from a server that said nothing.
+        messages.append(read_diagnostic_safely(diag))
 
     conn.add_notice_handler(handler)
     try:

@@ -401,8 +401,10 @@ def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
     THIS FUNCTION OWNS ONE RULE ONLY: which tables an SPL writer may name. The
     statement itself, and the proof that the server actually ran it, belong to
     `analyze.analyze_tables` -- which every future source's writer will want too,
-    and which is where the empty-list refusal now lives so that the two modules
-    that can build an `ANALYZE` do not each carry a copy of it.
+    and which is where the empty-list refusal now lives so that a second module
+    which starts building an `ANALYZE` cannot carry a second copy of it. After
+    this split exactly ONE module composes the statement; the point of moving the
+    rule was to keep it that way.
 
     `SPL_TABLES` is the whitelist, on `_copy`'s and `db.clear_source_tables`'s
     stated rule: a table name reaching SQL must come from a module constant,

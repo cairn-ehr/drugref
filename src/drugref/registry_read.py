@@ -25,8 +25,10 @@ sole writer is the boundary this file exists to keep, and the line count made th
 argument unavoidable: rule 4 caps a module at ~500 lines and `spl_evidence.py`
 reached 518 when the issue-174 ANALYZE guard landed. It reads `substance_moiety`
 and `identity_claim` and nothing else, so it was always a spine read wearing an
-SPL coat. `tests/test_spl_evidence_cap.py` is the gate that stops the next block
-landing there instead.
+SPL coat. `tests/test_module_size_cap.py` is the gate that stops the next block
+landing there instead -- and it sweeps every module under `src/drugref` rather than
+the one file an author last worried about, which is how `spl_evidence.py` reached
+518 with a green suite.
 
 WHAT IT IS FOR. `drugref interactions <uuid>` printed "no curated grade" both for a drug
 drugref knows and has not graded -- the ordinary case, since the overlay is small by
@@ -37,7 +39,9 @@ direction is UNDER-WARNING: an absent answer reading as "checked, nothing found"
 one thing `cli_interactions.py`'s own docstring says the command exists to avoid.
 """
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 import psycopg
 
@@ -139,13 +143,28 @@ class Registry:
     is carried out where the summary can print it.
     """
 
-    by_name: dict[str, str]
-    by_unii: dict[str, str]
+    #: READ-ONLY MAPPINGS, not `dict`, and `frozen=True` is not what does it.
+    #: A frozen dataclass stops `registry.by_name = x` and does nothing about
+    #: `registry.by_name["ASPIRIN"] = other`. `drugcentral_resolve.Registry` --
+    #: same repo, same "these fields are all the same type" argument -- has wrapped
+    #: its three mappings in `MappingProxyType` since it was written; this type
+    #: was promoted out of a writer module into a shared read module by issue 172
+    #: and consumed by two packages and two committed tools, which is the
+    #: direction that argues for closing the gap rather than leaving it.
+    by_name: Mapping[str, str]
+    by_unii: Mapping[str, str]
     #: display names claimed by more than one moiety, and UNIIs likewise. Each
     #: counts DISCARDED entries, not colliding keys: three moieties on one UNII
     #: is two discards.
     name_collisions: int
     unii_collisions: int
+
+    def __post_init__(self) -> None:
+        # The annotation is documentation; with no type checker in this project
+        # the proxy is the only half that enforces anything.
+        for field_name in ("by_name", "by_unii"):
+            object.__setattr__(self, field_name,
+                               MappingProxyType(dict(getattr(self, field_name))))
 
 
 def load_registry(conn: psycopg.Connection) -> Registry:

@@ -21,15 +21,23 @@ every `ANALYZE` is skipped, the 630 s comes back, **and the run still reports
 success** -- `reconcile`, `read_pairs` and `check_floors` all count rows, and the
 row counts are identical.
 
-⇒ TWO CHECKS, AND THEY ARE NOT THE SAME CHECK TWICE. Each is shown below killing
-a mutant the other cannot see:
+⇒ THREE CHECKS, AND NO TWO OF THEM ARE THE SAME CHECK TWICE. Each is shown below
+killing a mutant the others cannot see:
 
 * the **server's own warning**, collected around the statement, is the only one
-  that fires on a RE-INGEST, where a previous privileged run already left
-  `reltuples >= 0` (test 2);
-* the **`reltuples = -1` postcondition** is the only one that fires when no
-  message arrives at all -- a connection whose notices go nowhere, which is
-  precisely the state this repo was in until this round (test 3).
+  that carries a DIAGNOSIS -- PostgreSQL writes the sentence naming the cause;
+* the **`reltuples = -1` postcondition** is the only one that needs neither a
+  message nor a counter -- a connection whose notices go nowhere, which is
+  precisely the state this repo was in until this round;
+* the **`analyze_count` delta** is the only one that fires on a RE-INGEST without
+  depending on a message arriving.
+
+⇒ AND THE THIRD IS HERE BECAUSE THE FIRST TURNED OUT TO BE SWITCHABLE FROM OUTSIDE
+DRUGREF. `client_min_messages` decides what the server SENDS and any role may set
+it; above `warning` the WARNING is never transmitted, and `reltuples` is blind on
+every run after the first. With the first two checks alone this guard was a no-op
+on every database past its first ingest -- issue 174, inside the fix for issue 174,
+found by the review of the branch that fixed it.
 
 The probe role and the probe table are created INSIDE the test transaction and
 die with it: `CREATE ROLE` and `SET ROLE` are both transactional. The role name
@@ -187,9 +195,9 @@ def test_an_empty_table_list_is_refused_before_any_SQL_is_built():
     """A bare `ANALYZE` means EVERY table in the database, locked until COMMIT.
 
     NO `conn` FIXTURE, and that is the assertion: the refusal happens before the
-    statement is composed, so it needs no database -- and `spl_evidence._analyze`
-    delegates here, which is what keeps the rule in ONE place now that two modules
-    can build the statement.
+    statement is composed and before any evidence channel is read, so it needs no
+    database -- and `spl_evidence._analyze` delegates here, which is what keeps the
+    rule in ONE place if a second module ever starts building the statement.
     """
     with pytest.raises(ValueError, match="no tables"):
         analyze.analyze_tables(None, ())
@@ -263,14 +271,24 @@ def test_the_collector_stops_collecting_when_its_block_ends(conn):
 
 
 def test_the_collector_is_removed_even_when_the_block_raises(conn):
-    """`analyze_tables` raises from inside the block on the failing path, which is
-    the path that runs when something is actually wrong."""
+    """The `finally`, against ANY exception leaving the block.
+
+    NOT because `analyze_tables` raises from inside it -- it does not; every one of
+    its refusals is composed after the `with` has already exited. The statement
+    inside CAN raise (`UndefinedTable` on a name that reaches no relation), and a
+    handler left installed after that would append to a list nobody reads for the
+    life of the connection, one more list per ANALYZE.
+    """
+    before = list(conn._notice_handlers)
     with pytest.raises(ZeroDivisionError):
         with server_messages.collect(conn):
             1 / 0
-    assert conn._notice_handlers == [], (
+    assert conn._notice_handlers == before, (
         "reading psycopg's private list deliberately: it is the only way to show "
-        "the handler is GONE rather than merely unused, and a leak here is silent")
+        "the handler is GONE rather than merely unused, and a leak here is silent. "
+        "Compared against what the connection arrived with rather than against [], "
+        "so this keeps testing the collector if the fixture ever opens through "
+        "db.connect -- which installs a handler of its own")
 
 
 def test_db_connect_gives_every_connection_the_channel(_migrated, caplog):
@@ -303,4 +321,187 @@ def test_a_connection_psycopg_opened_directly_has_no_channel(_migrated, caplog):
         with psycopg.connect(_migrated) as conn:
             conn.execute("DO $$ BEGIN RAISE WARNING 'discarded'; END $$")
             conn.rollback()
-    assert caplog.records == []
+    # Filtered to this logger rather than asserting the whole list empty: any
+    # future logging inside psycopg.connect would fail a bare `== []` for a reason
+    # this test is not about.
+    assert [r for r in caplog.records if r.name == "drugref.postgres"] == []
+
+
+# --------------------------------------------------------------------------
+# The channel the WARNING half depends on, and the counter that does not
+# --------------------------------------------------------------------------
+
+def test_a_SKIPPED_analyze_is_refused_even_when_the_server_was_told_to_be_QUIET(
+        conn, probe_role, probe_table):
+    """⇒ THE HOLE THE FIRST REVIEW OF THIS GUARD FOUND, and it reopened issue 174.
+
+    `serious_messages` can only see what the server chose to SEND, and
+    `client_min_messages` decides that. It is `PGC_USERSET` -- any role may set
+    it, and so may `ALTER ROLE`, `ALTER DATABASE`, `postgresql.conf`, a pooler's
+    `server_settings` or a DSN `options=` (which docs/HANDOVER.md already flags as
+    a live concern in this project). Set it above `warning` and the WARNING is
+    never transmitted.
+
+    That alone would be survivable if the postcondition covered it. It does not:
+    `reltuples` is blind on a RE-INGEST, which is every run after the first. So
+    before `analyze_count` landed, this exact configuration made the guard a
+    no-op on every database past its first ingest -- measured, not feared.
+    """
+    analyze.analyze_tables(conn, (probe_table,))          # the privileged first run
+    conn.execute("SET client_min_messages = 'error'")
+    conn.execute(f'SET ROLE "{probe_role}"')
+    assert analyze.never_analyzed(conn, (probe_table,)) == (), (
+        "precondition: the postcondition cannot fire on a re-ingest")
+    with server_messages.collect(conn) as heard:
+        conn.execute("DO $$ BEGIN RAISE WARNING 'is anyone listening'; END $$")
+    assert heard == [], (
+        "precondition: with client_min_messages above 'warning' the server sends "
+        "nothing, so the WARNING check cannot fire either")
+
+    with pytest.raises(RuntimeError, match="did not move"):
+        analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("RESET ROLE")
+
+
+def test_the_counter_check_names_the_role_and_the_silenced_channel(
+        conn, probe_role, probe_table):
+    """The refusal that fires with no server message must carry the diagnosis
+    the server would have given, because nothing else will.
+
+    An operator seeing "the statistics did not move" needs to know WHOSE
+    permission was missing AND that the server was told not to explain itself --
+    otherwise the obvious next step is to go looking for a message that was
+    never sent.
+    """
+    analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("SET client_min_messages = 'error'")
+    conn.execute(f'SET ROLE "{probe_role}"')
+    with pytest.raises(RuntimeError) as raised:
+        analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("RESET ROLE")
+    message = str(raised.value)
+    assert probe_role in message
+    assert "client_min_messages" in message and "error" in message
+
+
+def test_the_counter_check_does_not_fire_on_an_ANALYZE_that_really_ran(
+        conn, probe_table):
+    """The control the counter check needs, and the one a stats SNAPSHOT breaks.
+
+    `pg_stat_all_tables` is read through a per-transaction snapshot whose default
+    `stats_fetch_consistency` is `cache`: the FIRST read of a table's row pins it
+    for the rest of the transaction, so a before/after pair taken without
+    `pg_stat_clear_snapshot()` returns the same number twice and the delta is
+    always zero. That mistake does not fail loudly -- it refuses every healthy
+    run -- which is why the happy path is asserted here as well as the fault.
+    """
+    analyze.analyze_tables(conn, (probe_table,))
+    analyze.analyze_tables(conn, (probe_table,))          # a re-ingest, twice over
+    analyze.analyze_tables(conn, (probe_table,))
+
+
+def test_analyze_counts_reads_a_MOVING_number_inside_one_transaction(
+        conn, probe_table):
+    """The property the whole counter check rests on, asserted rather than assumed.
+
+    `pg_stat_all_tables.analyze_count` is cumulative and non-transactional, so it
+    advances where the caller can see it without the ANALYZE having committed.
+    """
+    before = analyze.analyze_counts(conn, (probe_table,))
+    conn.execute(f"ANALYZE drugref.{probe_table}")
+    after = analyze.analyze_counts(conn, (probe_table,))
+    assert after[probe_table] == before[probe_table] + 1
+
+
+def test_a_server_that_can_neither_count_nor_speak_is_REFUSED_before_the_statement(
+        conn, probe_table, monkeypatch):
+    """⇒ NO CHECK MAY BE SILENTLY UNAVAILABLE. The two checks that can see a
+    skipped RE-INGEST are the server's warning and the analyze counter; with
+    `track_counts` off the counter is gone, and with `client_min_messages` above
+    `warning` the message is gone. Together they leave only the postcondition,
+    which is blind on exactly the run this guard exists for.
+
+    `track_counts` needs a server restart to change, so it is simulated at OUR
+    seam -- `analyze_counts` returning None is precisely the observable state of
+    a server that counts nothing.
+    """
+    monkeypatch.setattr(analyze, "analyze_counts",
+                        lambda conn, tables, **kwargs: None)
+    conn.execute("SET client_min_messages = 'error'")
+    with pytest.raises(RuntimeError, match="cannot prove"):
+        analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("RESET client_min_messages")
+
+
+def test_a_quiet_channel_alone_is_not_refused_while_the_counter_still_works(
+        conn, probe_table):
+    """The other side of the precondition, so it is a diagnosis and not a mood.
+
+    A deployment that silences notices is not thereby broken -- the counter can
+    still prove the work happened. Refusing here would make the guard fire on a
+    configuration it can in fact see through, which is its own kind of wrong
+    answer.
+    """
+    conn.execute("SET client_min_messages = 'error'")
+    analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("RESET client_min_messages")
+    assert _reltuples(conn, probe_table) == 500
+
+
+# --------------------------------------------------------------------------
+# The reads the two postconditions are built from
+# --------------------------------------------------------------------------
+
+def test_never_analyzed_does_not_report_a_name_that_matches_no_relation(conn):
+    """The rule this module's docstring states in bold, pinned.
+
+    `ANALYZE` raises `UndefinedTable` on such a name long before the
+    postcondition runs, so a row missing here means the caller passed something
+    that never reached the statement -- and inventing a second diagnosis for it
+    would only compete with psycopg's. Unreachable from `analyze_tables`, which
+    is exactly why it needs a direct test: the guard cannot cover it.
+    """
+    assert analyze.never_analyzed(conn, ("no_such_table_anywhere",)) == ()
+
+
+def test_never_analyzed_answers_in_the_CALLERS_order(conn, probe_table):
+    """"Returned in the caller's order so the refusal message is stable" --
+    the sentence, as a test. A set-ordered answer would make the same fault
+    print its table names differently on different runs.
+    """
+    conn.execute("CREATE TABLE drugref.zzz_probe_a (id int primary key)")
+    conn.execute("CREATE TABLE drugref.aaa_probe_b (id int primary key)")
+    conn.execute("ANALYZE drugref.zzz_probe_a")
+    asked = ("aaa_probe_b", "zzz_probe_a", probe_table)
+    assert analyze.never_analyzed(conn, asked) == ("aaa_probe_b", probe_table)
+
+
+def test_the_no_statistics_refusal_names_the_role_too(conn, probe_role,
+                                                      probe_table, monkeypatch):
+    """The path that runs when the channel is DARK names the role, for the reason
+    the path that quotes the server does -- and more urgently, because here the
+    server's own sentence is not available to name it instead.
+    """
+    monkeypatch.setattr(server_messages, "serious_messages", lambda messages: ())
+    conn.execute(f'SET ROLE "{probe_role}"')
+    with pytest.raises(RuntimeError) as raised:
+        analyze.analyze_tables(conn, (probe_table,))
+    conn.execute("RESET ROLE")
+    assert "no statistics" in str(raised.value)
+    assert probe_role in str(raised.value)
+
+
+def test_the_schema_argument_names_a_table_OUTSIDE_drugref(conn):
+    """⇒ `DEFAULT_SCHEMA` IS A PARAMETER FOR THIS, so the claim is exercised.
+
+    The constant's docstring says the parameter exists so a probe table can be
+    named without the tests reaching around the function they are testing. That
+    was true of the design and false of the suite until this test: every other
+    probe here lives in `drugref` and takes the default.
+    """
+    conn.execute("CREATE SCHEMA probe_schema")
+    conn.execute("CREATE TABLE probe_schema.t (id int primary key)")
+    conn.execute("INSERT INTO probe_schema.t SELECT generate_series(1, 7)")
+    assert analyze.never_analyzed(conn, ("t",), schema="probe_schema") == ("t",)
+    analyze.analyze_tables(conn, ("t",), schema="probe_schema")
+    assert analyze.never_analyzed(conn, ("t",), schema="probe_schema") == ()
