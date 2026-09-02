@@ -145,6 +145,16 @@ def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,
     clock and the subtraction survives an ingest run from a host whose clock is
     minutes out. Sending a client timestamp instead would fold that skew straight into
     every published duration.
+
+    `duration_measured = true` IS THIS FUNCTION'S SIGNATURE ON THE ROW (db/054, #176),
+    and it is the only place in the project that writes it. The column DEFAULTS TO
+    FALSE, so every other path -- a `curation` row, a direct INSERT, an ingest driven by
+    code older than db/053 -- says so about itself without anyone remembering to. Before
+    db/054 a reader inferred the same thing by comparing `started_at` against when
+    db/053 was applied, which asks WHEN a row was written rather than WHICH CODE wrote
+    it; the two come apart in both directions, and the backdating in the line above is
+    itself one of them -- a correct new row can be dated before the migration that made
+    it correct. `format_run_duration` reads this flag and nothing else.
     """
     if not isinstance(clock, RunClock):
         raise TypeError(
@@ -153,8 +163,9 @@ def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,
             "apart from the other, and the two differ by decades (#159)")
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run "
-        "(source, upstream_release, source_checksum, writer, started_at) "
-        "VALUES (%s, %s, %s, %s, clock_timestamp() - make_interval(secs => %s)) "
+        "(source, upstream_release, source_checksum, writer, started_at, "
+        " duration_measured) "
+        "VALUES (%s, %s, %s, %s, clock_timestamp() - make_interval(secs => %s), true) "
         "RETURNING ingest_run_id",
         (source, upstream_release, source_checksum, writer,
          clock.elapsed())).fetchone()[0]
@@ -186,61 +197,69 @@ def finish_run(conn: psycopg.Connection, run_id: int) -> None:
                  "WHERE ingest_run_id = %s", (run_id,))
 
 
-# THE WATERSHED MIGRATION, SPELLED ONCE. The number is read by cli.py (to look the
-# ledger row up) and printed by the refusal below, and a vocabulary written down twice
-# is two things that can disagree -- db/020's source trio and WRITERS above are the same
-# lesson. Renumbering db/053 while a hard-coded "pre-db/053" stayed behind would leave
-# the message naming a migration nobody can look up.
-WATERSHED_MIGRATION = "053"
-PRE_WATERSHED = f"pre-db/{WATERSHED_MIGRATION}"
+# THE REFUSAL, SPELLED ONCE. `cli_status` prints an explanatory line whenever any row
+# shows it, so the word reaches an operator from two places and a second spelling would
+# be two things that can disagree -- db/020's source trio and WRITERS above are the same
+# lesson, on the smallest possible vocabulary.
+#
+# IT NO LONGER NAMES A MIGRATION, and that is the point of #176 rather than a wording
+# change. "pre-db/053" was a claim about WHEN the row was written, which was never the
+# question and was wrong in both directions; "unmeasured" is a claim about the row
+# itself, which is what `duration_measured` records.
+UNMEASURED = "unmeasured"
 
 
-def format_run_duration(*, started_at, finished_at, watershed) -> str:
+def format_run_duration(*, started_at, finished_at, duration_measured) -> str:
     """PURE: what `drugref status` prints as one run's runtime.
 
-    KEYWORD-ONLY, for the reason open_run already gives for `writer` and `clock`:
-    three interchangeable datetimes in a row is an argument-order slip waiting to
-    happen, and two of the three wrong orders were SILENT -- (finished, started,
-    watershed) printed a negative runtime, and (started, watershed, finished) printed
-    "pre-db/053" forever. Neither is visible to a caller, and this is the one function
+    KEYWORD-ONLY, for the reason open_run already gives for `writer` and `clock`, and
+    the argument survived db/054 with one of its two silent slips replaced rather than
+    removed. `(finished, started, measured)` still prints a NEGATIVE runtime; the third
+    argument stopped being a datetime only to become a bool, which Python will accept
+    and compare in either of the first two positions, so `(started, measured, finished)`
+    raises nothing either. Neither is visible to a caller, and this is the one function
     whose whole job is refusing to publish a number it cannot vouch for.
 
-    `watershed` is when db/053 was applied here (db.migration_applied_at), or None on a
-    database that predates it.
+    `duration_measured` is the row's own `drugref.ingest_run.duration_measured`
+    (db/054): true exactly when `provenance.open_run` wrote the row, false for every
+    other path.
 
-    WHY THIS IS NOT A SUBTRACTION. Rows written before db/053 hold two TRANSACTION
-    timestamps, and subtracting them still yields a number -- 0.0026 s for an SPL
-    ingest that took 2 min 16 s. A number is what an operator believes, so the fix
-    would otherwise survive as a wrong answer on every database not re-ingested since,
-    which is all of them. Refusing to print one is the whole point: "pre-db/053" sends
-    a reader to the column comment, where the meaning is written down.
+    WHY THIS IS NOT A SUBTRACTION. A row whose stamps were not written by the current
+    open_run/finish_run pair still subtracts to a number -- 0.0026 s for an SPL ingest
+    that took 2 min 16 s -- and a number is what an operator believes. Refusing to print
+    one is the whole point: "unmeasured" sends a reader to the column comment, where the
+    meaning is written down.
 
-    An unknown watershed is treated as "everything is old" -- both on a database that
-    predates db/053 and on one with no ledger at all (a hand-replayed schema, a partial
-    restore). That errs in the direction that says less rather than the one that says
-    something false, and `drugref status` prints WHY rather than leaving a reader to
-    guess which of the two it is.
+    ⇒ WHY IT ASKS THE ROW AND NOT THE CLOCK (#176). Until db/054 this took a
+    `watershed` -- when db/053 was applied on that database -- and compared `started_at`
+    against it. That asks WHEN the row was written; the question is WHICH CODE wrote it,
+    and the two come apart in both directions, one of them silently:
 
-    WHAT THIS TEST CANNOT ANSWER, AND #176 IS OPEN ABOUT IT. Comparing `started_at`
-    against `applied_at` asks WHEN; the question is WHICH CODE WROTE THE ROW, and no
-    column records that. Two cases come apart, one of them silently:
-
-      * an OLDER client writing to a db/053 database takes the new clock_timestamp()
+      * an OLDER client writing to a db/053 database took the new clock_timestamp()
         default for started_at and old finish_run's now() for finished_at, so the CHECK
-        does not fire, the row is dated after the watershed, and a two-second run is
+        did not fire, the row was dated after the watershed, and a two-second run was
         published as "0.0s" -- issue 159's own failure mode, reproduced;
-      * a genuinely new row whose backdated start precedes the migration (an ingest in
-        its pre-open phase while db/053 was applied) is refused although both its
-        stamps are correct.
+      * a genuinely new row whose backdated start preceded the migration (an ingest in
+        its pre-open phase while db/053 was applied) was refused although both its
+        stamps were correct.
 
-    A boolean set by open_run would make each row self-identifying and needs no clock
-    comparison; that is #176. What is NOT acceptable meanwhile is a comment claiming
-    the failure cannot happen, which is why it is written down here.
+    The flag decides both, and neither `db.migration_applied_at` nor the migration
+    number survives here: a row written before db/054 answers false, which is the same
+    answer the watershed gave it and the safe one.
+
+    WHAT THE FLAG STILL CANNOT SAY is whether a MEASURED duration is a plausible one --
+    db/053's CHECK covers the impossible half (finishing before starting) and nothing
+    covers a server clock that stepped FORWARD mid-run. That is a different question
+    from this one and is not pretended at here.
     """
+    # "unfinished" OUTRANKS the flag, in both directions. A run in flight was opened
+    # by open_run, so its flag is true and there is still nothing to subtract; a row
+    # from an older client that never came back is not "unmeasured" either -- what an
+    # operator needs to know first is that it never finished.
     if finished_at is None:
         return "unfinished"
-    if watershed is None or started_at < watershed:
-        return PRE_WATERSHED
+    if not duration_measured:
+        return UNMEASURED
     # ROUND ONCE. The `< 60` decision used to be taken on `round(seconds, 1)` while
     # the minutes branch re-rounded the UNROUNDED remainder with `{:02.0f}` -- two
     # roundings of one quantity, which is one rule kept in two places -- so every

@@ -4955,7 +4955,8 @@ STRUCTURE.**
    neither the CHECK nor the refusal fires, and a two-second run publishes as `0.0s` — reproduced. ⇒ **A
    TIMESTAMP CANNOT ANSWER A QUESTION ABOUT CODE PROVENANCE.** A boolean set by `open_run` can. Not taken here
    because it rewrites the round's central mechanism after its measurements were verified; what WAS taken is
-   removing every claim that the failure cannot happen.
+   removing every claim that the failure cannot happen. **CLOSED 2026-09-03 by `db/054`** — § "The watershed
+   round".
 
 Also in that round: `RunClock.__post_init__` (the `isinstance` check guarded the wrapper, not the value —
 `RunClock(time.time())` committed a run dated 2083 and then lost the whole ingest to the CHECK); a
@@ -5225,6 +5226,89 @@ reordered `--lf` run **2561 passed**; `uv run ruff check .` clean. The gate was 
 the number was updated — `states 2538 tests; this run collected 2561 (+23)` — which is the only way to know it
 is not a third gate that never fires.
 
+## The watershed round (2026-09-03) — issue #176, `db/054`, suite 2566 → 2571
+
+**⇒ THE GUARD BUILT TO STOP A WRONG NUMBER WAS STANDING BESIDE THE WRONG NUMBER SAYING NOTHING.** `db/053`
+changed what `ingest_run`'s two stamps MEAN and gave a reader nothing to tell the two meanings apart except a
+clock: `format_run_duration` compared `started_at` against **when `db/053` was applied on that database**
+(`db.migration_applied_at`). That asks **WHEN** a row was written; the question is **WHICH CODE** wrote it, and
+nothing on the row recorded that. It is decidable only because, in the normal case, old code and an unmigrated
+database coincide — and when they come apart it is silent. `db/054` puts a `duration_measured boolean NOT NULL
+DEFAULT false` on the row, set by `provenance.open_run` and by nothing else.
+
+**⇒ REPRODUCED VERBATIM FROM THE ISSUE, ON A REAL DATABASE (`drugref176`), BEFORE AND AFTER.** An older client
+INSERTs without naming `started_at` (taking `db/053`'s `clock_timestamp()` DEFAULT — the real insert time,
+comfortably *after* the watershed) and the old `finish_run` writes its work transaction's `now()`. Two seconds
+of `pg_sleep` recorded **666 µs**; `db/053`'s CHECK does not fire (the stamps are in the right order) and the
+watershed does not fire (`started_at >= applied_at`), so `drugref status` published **`0.0s`** — issue #159's
+own failure mode, one round after it was fixed. It now reads **`unmeasured`**, beside a genuine `unii_run` row
+recording **42.8 ms** and flagged measured. Nothing in `db.py` refuses a database whose schema is ahead of the
+code, so there was no other barrier.
+
+**⇒ AND THE MIRROR CASE, WHICH NO READER COULD HAVE SEEN.** `open_run` **backdates** `started_at` over the work
+an orchestrator does before any run row exists — `spl_run` reads openFDA, scans 17.6 GB of DailyMed and
+checksums 19.3 GB first — so a run whose pre-open phase began before the migration was **refused although both
+its stamps were correct**, and the operator was pointed at a column comment describing a defect their row did
+not have. The first real measurement the fix exists to produce, discarded. Pinned by
+`test_a_run_backdated_before_the_migration_still_reports_its_runtime`, which reads the ledger to prove the
+backdated row really does land on the far side of `db/053`'s `applied_at` — without that read it would pass on
+any machine and prove nothing about the boundary it is there for.
+
+**⇒ NO ROW WAS BACKFILLED, AND THE TEMPTATION IS WORTH NAMING BECAUSE IT LOOKS FREE.**
+`UPDATE … SET duration_measured = true WHERE started_at >= <db/053 applied_at>` would have preserved every
+runtime `drugref status` prints today — by **STORING** the exact inference this column exists to remove,
+permanently, for rows an older client may have written. **Computed wrongly, a wrong answer can be corrected by
+the next round; written into a column, it becomes a fact nobody can distinguish from a measured one.** The cost
+of not backfilling is bounded and self-healing: each writer's next ingest records a measured duration. Project
+owner's decision, taken with both options on the table.
+
+**⇒ THE REFUSAL STOPPED NAMING A MIGRATION.** `pre-db/053` was a claim about *when* a row was written, which was
+never the question and was wrong in both directions; `provenance.UNMEASURED` (`"unmeasured"`) is a claim about
+the row. `cli_status` prints the explanation **only when a row actually shows it** — a note printed on every run
+is a note an operator learns to skip, on the day it means something — and the two renderings are asserted to
+**DIFFER**, which is issue 111's standing rule for the class-grain block one file over. Mutating the condition
+to `if loaded:` was observed failing that assertion.
+
+**⇒ `db.migration_applied_at` WENT WITH ITS ONLY CALLER (43 lines).** It existed solely to answer the question
+the column now answers. Its three tests went too, and `tests/test_db.py`'s guarded-call-site ledger — where
+`"053"` was carried as the one *non*-`migration_guard` entry — now carries `"054"` for the real guard below,
+so **all six entries are guard sites again**.
+
+**⇒ THE NEW READ IS GUARDED, AND THE GUARD WAS OBSERVED FIRING.** `db/054` widens a view a block reads, which is
+the standing rule `cli.py` states — and the state it produces is not exotic: **every deployment between pulling
+this code and running `drugref migrate`** has `loaded_release` in its `db/025` shape, present and one column
+short (`UndefinedColumn`, the sibling `WRONG_SHAPE` exists for). Removing the `guarded` wrapper produced exactly
+the raw psycopg traceback it prevents. Through the real CLI it reads as **one sentence** naming the column, and
+the `consequence` string had to be **rephrased after reading that output** — `guard_message` appends "until it
+is fixed", so a consequence ending in a relative clause rendered as *"…the first thing `drugref status` is asked
+for until it is fixed"*.
+
+**⇒ THREE CATALOG COMMENTS RE-ISSUED, AND THE VERBATIM CHECK CAUGHT ITSELF READING NOTHING.** `COMMENT ON`
+overwrites rather than merges, so `db/053`'s two column comments and `db/025`'s view comment are rebuilt from
+their ancestors with the edits named in the file — the trap being `db/038`, which silently reverted `db/036` by
+rebuilding from the wrong one. The clause that had to **go** is `finished_at`'s *"a real duration only for rows
+written since db/053"*: that is the **weaker** test, and issue 176's older client passes it while writing the
+stamp the old way. ⇒ **The diff script written to prove the re-issues verbatim first reported all three
+IDENTICAL — because it scanned to the first `;`, and `db/053`'s `started_at` comment contains one INSIDE the
+string literal, so both sides truncated at the same place.** A reading identical on both versions is not
+evidence; the quote-aware version showed the real deltas.
+
+**⇒ AND THE HAND-LISTED TALLY IN `migration_guard.py` WAS ALREADY WRONG BEFORE THIS ROUND.** Its docstring said
+*"THE WORDING LIVES HERE, ONCE, FOR ALL FIVE CALLERS. Two `cli.py` blocks, two in `cli_status.py` and the
+clinician path in `cli_interactions.py`"* — there were **six** when this round started and seven now. Replaced
+with the structural reason and a `grep` that cannot go stale, which is exactly what `db/053` did to `db/025`'s
+view comment. **This is the same defect the project has now found repeatedly, in the file whose subject is
+diagnoses that assert what they have not confirmed.**
+
+**⇒ THE SUITE-COUNT GATE CAUGHT ITS FIRST REAL DRIFT, TWICE IN ONE ROUND**, one round after it was written:
+`uv run pytest` said *"states 2566; this run collected 2569"* and later 2571, instead of a reviewer saying it a
+round later. **2566 → 2571**: +10 new (six on `db/054`'s schema and reader half, the guard shown firing, the two
+renderings, and two in `test_provenance` for the writer), −5 removed with the watershed they tested.
+
+**VERIFIED.** `uv run pytest` green at **2571**; CI's own shape (`-q --strict-markers -p no:randomly -rs -m "not
+livepage"`) green with **0 skipped, 1 deselected**; `uv run ruff check .` clean; and the whole thing driven
+end-to-end on `drugref176` — `migrate`, a real `ingest unii`, the issue's reproduction, and the guard's sentence.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5266,6 +5350,12 @@ seam the issue named: `Registry`/`load_registry`, a READ path inside the SOLE WR
 guarded three files of 76 — which is how 518 happened with a green suite. The seven modules already over
 the cap are a checked ledger there, filed as
 **[#177](https://github.com/cairn-ehr/drugref/issues/177)**.
+
+**[#176](https://github.com/cairn-ehr/drugref/issues/176) the ingest-duration watershed dates rows by TIME, not
+by WRITER** — **CLOSED 2026-09-03 by `db/054`**, with both directions reproduced: an older client publishing
+666 µs for a two-second run, and a correctly-backdated new row refused. `duration_measured` is on the row;
+`db.migration_applied_at` is gone with its only caller; **no row was backfilled** and the migration says why —
+§ "The watershed round".
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5434,7 +5524,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2566 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2571 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -5580,6 +5670,17 @@ git config core.hooksPath .githooks
 # argument test parametrised over a file, a node id and `.` (+2).
 # THREE THINGS ABOUT IT ARE LOAD-BEARING, and each is the shape of a trap this
 # repo has already paid for:
+# ⇒ AND THE GATE THEN CAUGHT ITS FIRST REAL DRIFT, TWICE IN ONE ROUND, WHICH IS
+# what it was built for: the db/054 round (issue 176) changed the suite and did
+# not touch this line, and `uv run pytest` said so instead of a reviewer saying
+# so a round later. 2566 -> 2571, +5 with a migration: +8 new (the default, the
+# view carrying the flag, the column comment, the finished_at re-issue checked
+# for what it DROPPED, the older-client reproduction, the refusal constant, the
+# db/054 guard shown FIRING, and the two renderings of the explanatory line) and
+# +2 in test_provenance (open_run's flag, and the backdated run the old
+# watershed refused), less 5 removed with the watershed they tested (the
+# straddling row, the no-ledger database, and the three `migration_applied_at`
+# tests, that function having gone with its only caller).
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

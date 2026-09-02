@@ -366,3 +366,74 @@ def test_a_run_records_the_work_done_before_it_opened(conn, _migrated, monkeypat
     recorded = conn.execute(
         "SELECT finished_at - started_at FROM drugref.ingest_run").fetchone()[0]
     assert recorded >= datetime.timedelta(seconds=0.25)
+
+
+# ---- the row says whether its own subtraction is a duration (#176) -----------
+#
+# WHAT WAS WRONG. db/053 changed what the two stamps MEAN, and a reader told the two
+# meanings apart by comparing `started_at` with when db/053 was applied here. That
+# asks WHEN the row was written; the question is WHICH CODE wrote it, and nothing on
+# the row recorded that. The two come apart in both directions -- an older client
+# publishing a confident wrong number, and a genuinely new row refused. db/054's
+# boolean is self-identifying, and these are the writer's half of it; the reader's
+# half is tests/test_ingest_run_duration.py.
+
+
+def test_open_run_records_that_it_measured_the_duration(conn, _migrated):
+    """`open_run` is the ONLY writer that sets the flag, which is what makes false the
+    safe default for every other path. The production change this catches is `open_run`
+    taking db/054's default like everyone else: every runtime `drugref status` prints
+    would then read "unmeasured" forever -- a gate that refuses everything, which is
+    the failure mode a refusal-based design has to be watched for."""
+    run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
+                                 source_checksum="sum", writer="unii_run",
+                                 clock=provenance.start_clock())
+    assert conn.execute(
+        "SELECT duration_measured FROM drugref.ingest_run WHERE ingest_run_id = %s",
+        (run_id,)).fetchone()[0] is True
+
+
+def test_a_run_backdated_before_the_migration_still_reports_its_runtime(conn,
+                                                                       _migrated):
+    """⇒ ISSUE 176'S OTHER HALF, and it is the one no reader could have seen.
+
+    `open_run` BACKDATES `started_at` over the work an orchestrator does before any run
+    row exists -- spl_run reads openFDA, scans 17.6 GB of DailyMed and checksums
+    19.3 GB first -- so a run whose pre-open phase began before db/053 was applied is
+    dated before the watershed although BOTH its stamps are correct server clock
+    readings. The old reader refused it and pointed the operator at a column comment
+    describing a defect their row did not have. That is a wrong statement about the
+    first real measurement the fix exists to produce.
+
+    The hour of backdating is what makes it reproducible: db/053 was applied by this
+    session's `_migrated` fixture minutes ago, so a row backdated an hour lands on the
+    far side of it with certainty rather than by timing. The LEDGER READ is what pins
+    that -- without it the test would pass on any machine and prove nothing about the
+    boundary it is here for.
+
+    THE SECONDS FIELD IS NOT PINNED. The test's own wall clock is inside the recorded
+    duration (the INSERT, its COMMIT and the UPDATE all land after the clock is
+    constructed), so `60m00s` and `60m01s` are both correct answers on a loaded
+    machine. What must hold is that the row is ACCEPTED and reports about an hour.
+    """
+    clock = provenance.RunClock(time.monotonic() - 3600)
+    run_id = provenance.open_run(conn, source="SPL", upstream_release="r1",
+                                 source_checksum="sum", writer="spl_run", clock=clock)
+    provenance.finish_run(conn, run_id)
+
+    started_at, finished_at, measured = conn.execute(
+        "SELECT started_at, finished_at, duration_measured FROM drugref.ingest_run "
+        "WHERE ingest_run_id = %s", (run_id,)).fetchone()
+    applied_at = conn.execute(
+        r"SELECT applied_at FROM drugref.schema_migration WHERE filename LIKE '053\_%'"
+    ).fetchone()[0]
+
+    assert started_at < applied_at, (
+        "the backdated start must land BEFORE db/053 was applied, or this row is not "
+        "the case #176 is about and the test proves nothing")
+    assert measured is True
+    printed = provenance.format_run_duration(
+        started_at=started_at, finished_at=finished_at, duration_measured=measured)
+    assert printed != provenance.UNMEASURED
+    assert printed.startswith("60m"), printed
+

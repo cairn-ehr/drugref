@@ -36,15 +36,22 @@ all. `raise_missing` therefore treats a failed probe as a FIFTH state: it says t
 diagnosis could not be completed and hands back what Postgres said about the ORIGINAL
 failure, which is strictly the thing the operator came for.
 
-THE WORDING LIVES HERE, ONCE, FOR ALL FIVE CALLERS. Two `cli.py` blocks, two in
-`cli_status.py` and the clinician path in `cli_interactions.py` differ only in which
-relation they read, which migration ships it, and what an operator loses meanwhile. Five
-states x five call sites written out by hand would be twenty-five sentences with
-twenty-five chances to disagree -- the shape this project has already paid for many
-times (db/006's vocabulary, db/037's ordering rule written twice, and issue 116 when the
-two drifted). `guarded` owns the exception tuple for the same reason: which psycopg
-errors mean "this database is the wrong shape" is one fact, and it was already written
-five times with two of them disagreeing.
+THE WORDING LIVES HERE, ONCE, FOR EVERY CALLER. They differ only in which relation they
+read, which migration ships it, and what an operator loses meanwhile. Five states
+written out by hand at each site would be five sentences per site with as many chances
+to disagree -- the shape this project has already paid for many times (db/006's
+vocabulary, db/037's ordering rule written twice, issue 116 when the two drifted).
+`guarded` owns
+the exception tuple for the same reason: which psycopg errors mean "this database is the
+wrong shape" is one fact, and it was already written once per site with two of them
+disagreeing.
+
+⇒ AND THE COUNT OF THOSE SITES IS DELIBERATELY NOT WRITTEN DOWN HERE. This paragraph
+said "ALL FIVE CALLERS. Two `cli.py` blocks, two in `cli_status.py` and the clinician
+path in `cli_interactions.py`" -- a hand-listed tally of a population that grows, which
+was already wrong at six when db/054 arrived to make it seven. That is the same defect
+db/053 removed from db/025's view comment and the same one this project has now found
+repeatedly; `grep -rn "migration_guard.guarded(" src/` answers it, and cannot go stale.
 """
 import contextlib
 from dataclasses import dataclass

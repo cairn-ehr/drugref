@@ -32,7 +32,7 @@ reason it covers the five above -- and it PASSES on the loaded-release SELECT be
 `loaded_release` and `ingest_run_incomplete` are operational views nothing curates, the
 same exception cli.py's docstring already draws for `_handle_status`.
 """
-from drugref import curated_read, curation, db, migration_guard, provenance
+from drugref import curated_read, curation, migration_guard, provenance
 
 
 def print_loaded_release_block(conn) -> None:
@@ -42,36 +42,55 @@ def print_loaded_release_block(conn) -> None:
     above, and the reason it exists.
 
     ⇒ THE RUNTIME IS NOT A SUBTRACTION DONE HERE. `provenance.format_run_duration`
-    owns it, and REFUSES to print one for a run written before db/053, whose two
-    stamps are transaction timestamps whose difference is a plausible-looking number
-    and not a duration at all (issue 159). Doing the arithmetic in this file would be
-    a second home for that rule, and the second home is always the one that forgets.
+    owns it, and REFUSES to print one for a row that does not say its two stamps were
+    measured -- rows written before db/053 hold two transaction timestamps whose
+    difference is a plausible-looking number and not a duration at all (issue 159).
+    Doing the arithmetic in this file would be a second home for that rule, and the
+    second home is always the one that forgets.
 
-    ⇒ THE WATERSHED IS READ ONCE, and only when there is something to date -- one
-    ledger lookup per command rather than one per row.
+    ⇒ THE ROW DECIDES, NOT THE CLOCK (issue 176, db/054). This block used to read the
+    ledger once per command for the moment db/053 was applied and hand it to the
+    formatter, which compared it against each `started_at`. That asks WHEN a row was
+    written when the question is WHICH CODE wrote it: an older client against a
+    migrated database cleared the watershed and published a two-second run as `0.0s`,
+    and a genuinely new row backdated over its orchestrator's pre-open parse was
+    refused although both its stamps were correct. `duration_measured` is on the row,
+    so there is no lookup left to do and no second question to get wrong.
 
-    ⇒ AND WHEN IT CANNOT BE READ, THIS SAYS SO. `db.migration_applied_at` answers None
-    both on a database that predates db/053 and on one with no ledger at all (a
-    hand-replayed schema, a partial restore), and every line then reads "pre-db/053".
-    Printing that on every row while leaving an operator to guess which of the two
-    they have is a wrong answer by omission -- the same fault, one level up, as
-    publishing a number nobody can vouch for.
+    ⇒ AND THE REFUSAL STILL SAYS WHY, ONCE. Printing "unmeasured" on every line while
+    leaving an operator to guess what would change it is a wrong answer by omission --
+    the same fault, one level up, as publishing a number nobody can vouch for. The line
+    is printed only when a row actually shows the refusal, so a fully re-ingested
+    database does not carry an explanation of a state it is not in.
     """
-    loaded = conn.execute(
-        "SELECT source, writer, upstream_release, finished_at, started_at "
-        "FROM drugref.loaded_release").fetchall()
+    # THE GUARD, WHICH IS NEW WITH db/054 AND IS AN `UndefinedColumn` ONE. Every
+    # deployment between pulling this code and running `drugref migrate` has
+    # `loaded_release` in its db/025 shape -- the view is present and one column
+    # short -- which is precisely the state `migration_guard.WRONG_SHAPE` catches, and
+    # exactly how db/035 and db/038 widened a view under a reader before.
+    with migration_guard.guarded(
+            conn, relations=("drugref.loaded_release",), migration="054",
+            # PHRASED TO SURVIVE WHAT THE GUARD APPENDS. `guard_message` closes three
+            # of its four branches with "until it is fixed" or "meanwhile", so a
+            # consequence ending in a relative clause reads as "... the first thing
+            # `drugref status` is asked for until it is fixed". Verified by running it.
+            consequence=("the loaded releases and their runtimes -- the first thing "
+                         "`drugref status` is asked for -- cannot be reported")):
+        loaded = conn.execute(
+            "SELECT source, writer, upstream_release, finished_at, started_at, "
+            "duration_measured FROM drugref.loaded_release").fetchall()
     print("loaded releases:" if loaded else "loaded releases: none")
-    watershed = db.migration_applied_at(
-        conn, provenance.WATERSHED_MIGRATION) if loaded else None
-    for source, writer, release, finished_at, started_at in loaded:
+    for source, writer, release, finished_at, started_at, measured in loaded:
         print("  {:<8} {:<14} {:<12} {} {}".format(
             source, writer, release, finished_at,
             provenance.format_run_duration(started_at=started_at,
                                            finished_at=finished_at,
-                                           watershed=watershed)))
-    if loaded and watershed is None:
-        print(f"  (no runtimes: db/{provenance.WATERSHED_MIGRATION} is unapplied here, "
-              "or this database has no schema_migration ledger)")
+                                           duration_measured=measured)))
+    if any(not row[-1] for row in loaded):
+        print(f"  ({provenance.UNMEASURED}: the row was not written by this version of "
+              "drugref -- a run from before db/053, an older client, or a direct "
+              "INSERT -- so its two stamps are not a duration and no number is "
+              "published for it. Re-ingest that source to record one.)")
 
 
 def print_class_grain_block(conn) -> None:

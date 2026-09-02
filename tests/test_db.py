@@ -741,17 +741,20 @@ def test_every_guarded_call_site_names_a_migration_that_exists(conn):
     the SIXTH entry below did not do until review caught it, so the docstring said
     "five" while six call sites existed.
 
-    "053" IS NOT A migration_guard SITE but a `db.migration_applied_at` one: it dates
-    the watershed that decides whether `drugref status` may print a runtime at all. A
-    number that named no file would silently make every run read "pre-db/053" forever,
-    which is the same class of wrong answer as the rest of this list.
+    ALL SIX ARE migration_guard SITES AGAIN. The sixth entry used to be "053", which was
+    a `db.migration_applied_at` one -- it dated the watershed deciding whether `drugref
+    status` might print a runtime at all. Issue 176 replaced that inference with a column
+    on the row, so the reader and the function it called are both gone and db/054's
+    guarded read of `loaded_release` takes its place. The list is unchanged in length and
+    changed in kind, which is worth saying out loud rather than leaving a reader to
+    diff it.
     """
     numbers = {"035": "curated_target_unresolved (cli.py)",
                "030": "signature_backdated (cli.py)",
                "037": "class-grain views (cli_status.py)",
                "038": "curated_unrankable_severity (cli_status.py)",
                "001": "substance_moiety (cli_interactions.py)",
-               "053": "ingest-duration watershed (cli.py, via migration_applied_at)"}
+               "054": "loaded_release.duration_measured (cli_status.py)"}
     shipped = {path.name.split("_")[0] for path in db.migration_dir().glob("*.sql")}
     for number, site in sorted(numbers.items()):
         assert number in shipped, f"{site} guards db/{number}, which is not in db/"

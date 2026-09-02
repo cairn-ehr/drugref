@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from drugref import cli, cli_chain
+from drugref import cli, cli_chain, provenance
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 
@@ -95,8 +95,14 @@ def test_status_prints_how_long_each_loaded_release_took(_migrated, monkeypatch,
     ASSERTED AS "a runtime is printed", not as a value: the fixture ingest takes
     whatever it takes on the machine running the suite, and a test that pinned the
     duration would be pinning the hardware. What it does pin is that the line does NOT
-    say `pre-db/053` -- the refusal is correct for rows this round cannot vouch for and
-    would be a silent no-op for the ones it can.
+    carry the refusal -- correct for rows nothing vouches for, and a silent no-op for
+    the ones `open_run` wrote.
+
+    ⇒ THE REFUSAL IS NAMED BY THE CONSTANT, NOT SPELLED HERE, and issue 176 is why the
+    difference is not pedantry: this assertion used to read `"pre-db/053" not in line`,
+    and db/054 deleted that string from the project. A literal that no longer exists
+    passes on every output there could ever be -- the assertion would have gone on
+    reporting success while testing nothing at all.
     """
     monkeypatch.setenv("DRUGREF_DSN", _migrated)
     import psycopg
@@ -111,7 +117,7 @@ def test_status_prints_how_long_each_loaded_release_took(_migrated, monkeypatch,
     assert cli.main(["status"]) == 0
 
     line = next(ln for ln in capsys.readouterr().out.splitlines() if "unii_run" in ln)
-    assert "pre-db/053" not in line
+    assert provenance.UNMEASURED not in line
     assert line.rstrip().endswith("s")
 
 
