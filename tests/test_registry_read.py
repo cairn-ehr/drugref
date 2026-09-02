@@ -19,8 +19,6 @@ So does a uuid from an older canonicalisation, or from another node.
 """
 import uuid
 
-import pytest
-
 from drugref import registry_read
 from tests.test_class_subject_read_path import _a_moiety
 
@@ -62,34 +60,6 @@ def test_asking_about_nothing_returns_nothing(conn):
     direction issue 120 is about.
     """
     assert registry_read.known_moieties(conn) == set()
-
-
-@pytest.fixture
-def an_uningested_registry(conn):
-    """A registry with nothing in it -- ESTABLISHED, not inherited from the run order.
-
-    ⇒ WHY THIS EXISTS. The test below asserts a GLOBAL precondition (the registry holds
-    no moieties) that it did not create. Half this suite's orchestrator tests commit --
-    `test_cli.py::test_ingest_unii_end_to_end` registers real moieties -- so the only
-    reason the assertion held was that twenty later modules happen to TRUNCATE in an
-    autouse fixture and this file happens to sort after several of them. Reproduce the
-    accident with `uv run pytest tests/test_cli.py tests/test_registry_read.py`, or with
-    `uv run pytest --lf` against a cache that hoists test_cli.py: the test fails, and it
-    fails for a reason that has nothing to do with what it is checking.
-
-    **THE TRUNCATE IS NOT COMMITTED, which is what makes it safe here.** TRUNCATE is
-    transactional in PostgreSQL, and the `conn` fixture rolls back after every test, so
-    every committed row this suite has accumulated is still there for the next module.
-    That is the difference between this fixture and the autouse ones in test_cli.py and
-    test_ingest_run.py, which commit because the code THEY exercise commits.
-
-    It has to be TRUNCATE rather than DELETE: the append-only floor's row-level triggers
-    refuse a DELETE outright, and not covering TRUNCATE is precisely the documented
-    bypass (see ROADMAP § "Floor hardening").
-    """
-    conn.execute("TRUNCATE drugref.identity_claim, drugref.substance_moiety, "
-                 "drugref.ingest_run RESTART IDENTITY CASCADE")
-    return conn
 
 
 def test_registry_is_empty_on_a_migrated_but_uningested_database(an_uningested_registry):

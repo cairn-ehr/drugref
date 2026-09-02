@@ -16,6 +16,7 @@ Three jobs, in the order the gate uses them:
 3. `suite_count_verdict(...)` -- combine the two into "ok" / "drift" / "partial", with
    the message that tells whoever hit it which line to edit.
 """
+import os.path
 import pathlib
 import re
 
@@ -27,7 +28,9 @@ import pytest
 NOTES = pathlib.Path(__file__).resolve().parent.parent / "docs" / "PROJECT-NOTES.md"
 
 #: The section of NOTES the line lives in, quoted in the drift message so the fix is a
-#: one-line edit rather than a hunt through 5,700 lines.
+#: one-line edit rather than a hunt through several thousand lines. NOT a line
+#: NUMBER: this file states no figure that lives anywhere else, which is the whole
+#: point of it (an earlier draft said "5,700 lines" and was already 170 out).
 SECTION = 'How to run / test'
 
 #: The phrase that marks the line. It is the comment's own self-description, so the
@@ -42,26 +45,35 @@ _STATED = re.compile(r"^#\s*(\d+)\s+tests\s+\(" + re.escape(MARKER), re.MULTILIN
 
 #: Where `tests/conftest.py` leaves this run's collected total for the gate to read.
 #: A stash key rather than a module global so it is scoped to the `Config` that
-#: produced it and cannot survive into another run in the same process.
+#: produced it and cannot survive into another run in the same process. The
+#: deselection counter it is built from is a module global for want of a `Config` on
+#: the `pytest_deselected` hook, and conftest resets it at the START of every
+#: collection so that a nested in-process run cannot inherit the outer run's total.
 COLLECTED_TESTS = pytest.StashKey[int]()
 
 #: pytest options that make a run collect FEWER tests than a bare `uv run pytest`,
 #: mapped to the value that means "not in use". These are DESTS on `config.option`,
-#: pinned against the installed pytest by
-#: `test_suite_count.py::test_every_ledgered_option_is_a_real_pytest_dest`.
+#: pinned against the installed pytest -- NAMES *AND* VALUES -- by two tests in
+#: `test_suite_count.py`. Both halves are needed: the names guard a renamed dest, and
+#: the values guard a changed default, which is the half a first draft of this file left
+#: open (a ledger written against `default=[]` when pytest parks `None` reports every
+#: bare run as narrowed, and the gate skips for ever).
 #:
-#: `-k` (keyword), `-m` (markexpr) and `--deselect` are DELIBERATELY ABSENT. They
-#: deselect rather than narrow collection, and conftest adds deselected items back, so
-#: the total is unchanged -- which matters because CI's own command line is
-#: `pytest -q -m "not livepage"`, and calling that narrowing would make this gate skip
-#: in the one place it must never skip.
+#: `-k` (keyword), `-m` (markexpr), `--deselect` and `--sw`/`--stepwise` are
+#: DELIBERATELY ABSENT. Every one of them DESELECTS rather than narrowing collection --
+#: `_pytest/stepwise.py` has no `pytest_ignore_collect` at all; its only collection hook
+#: ends in `config.hook.pytest_deselected(...)`, exactly like `-k` and `-m` -- and
+#: conftest adds deselected items back, so the total is unchanged. That matters because
+#: CI's own command line is `pytest -q -m "not livepage"`, and calling that narrowing
+#: would make this gate skip in the one place it must never skip.
 #:
-#: `--ff`/`--nf` are absent too: they REORDER a complete collection.
+#: `--ff`/`--nf` are absent too: they REORDER a complete collection. `--lf` is the one
+#: last-failed flag that IS here, because it alone prunes collection (via
+#: `LFPluginCollSkipfiles.pytest_ignore_collect`) rather than deselecting.
 COLLECTION_NARROWING_OPTIONS = {
     "ignore": None,
     "ignore_glob": None,
     "lf": False,
-    "stepwise": False,
 }
 
 
@@ -92,11 +104,40 @@ def stated_suite_count(text):
     return int(found[0])
 
 
-def collection_narrowing(file_or_dir, testpaths, options):
+def _same_path(base, arg):
+    """PURE string normalisation of one path argument -- NO filesystem, no `resolve()`.
+
+    `os.path.join` drops `base` when `arg` is already absolute, and `normpath` folds
+    `./` and a trailing slash away, so the four spellings of the same directory --
+    `tests`, `tests/`, `./tests` and `/abs/path/to/tests` -- all land on one string.
+    Kept string-only because this module promises to be a function of its arguments:
+    `Path.resolve()` would read the filesystem and follow symlinks, and would then
+    disagree with itself between a developer's checkout and CI's.
+    """
+    return os.path.normpath(os.path.join(str(base), str(arg).rstrip("/")))
+
+
+def collection_narrowing(file_or_dir, testpath_roots, options, invocation_dir):
     """PURE: the reasons this invocation collected less than the whole suite.
 
     An empty list means the run is comparable with the documented total. Anything else
     is a reason, phrased for a skip message.
+
+    `testpath_roots` are the ini `testpaths` already joined to `config.rootpath`;
+    `file_or_dir` are the raw path arguments, which pytest resolves against
+    `invocation_dir` (`config.invocation_params.dir`) rather than against the rootdir.
+    THE TWO BASES ARE DIFFERENT and passing one for both would misjudge every run
+    started from a subdirectory.
+
+    ⇒ WHY THE SPELLING OF A PATH MATTERS. A first draft compared the raw strings, so
+    `pytest ./tests` and the absolute path an IDE's "run all tests" button emits were
+    both reported as narrowing even though they collect the whole suite. Because the
+    verdict below checks "ok" BEFORE it consults this list, that mistake is invisible
+    while the number is right and fires only on the drift the gate exists for -- the
+    developer is told to "run the whole suite" by a run that did exactly that.
+
+    `pytest .` is still reported, and correctly: `.` is the rootdir, not testpaths, and
+    it can collect test files from outside `tests/` that the documented total excludes.
 
     `options` is `vars(config.option)`. Every ledgered name must be PRESENT in it: the
     obvious `options.get(name, neutral)` would turn a renamed pytest dest into a
@@ -106,8 +147,8 @@ def collection_narrowing(file_or_dir, testpaths, options):
     The asymmetry that makes an incomplete ledger survivable: a narrowing this does not
     know about produces FEWER collected tests than the file states, and the verdict
     below turns that into a LOUD failure. Under-detection is noisy; over-detection is
-    the silent one, which is why the negative control in the test file pins the two
-    command lines that must come back empty.
+    the silent one, which is why the test file drives BOTH halves of the ledger against
+    the installed pytest and pins the spellings that must come back empty.
     """
     unknown = sorted(set(COLLECTION_NARROWING_OPTIONS) - set(options))
     if unknown:
@@ -116,8 +157,9 @@ def collection_narrowing(file_or_dir, testpaths, options):
             f"dests on `config.option`; re-derive them from `vars(config.option)` "
             f"rather than defaulting them, or collection narrowing goes undetected.")
     reasons = []
-    roots = {str(path).rstrip("/") for path in testpaths}
-    extra = [arg for arg in file_or_dir if str(arg).rstrip("/") not in roots]
+    roots = {_same_path("", root) for root in testpath_roots}
+    extra = [arg for arg in file_or_dir
+             if _same_path(invocation_dir, arg) not in roots]
     if extra:
         reasons.append(
             f"path arguments {extra} rather than the whole of testpaths "

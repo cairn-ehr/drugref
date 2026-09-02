@@ -5190,19 +5190,30 @@ heads is full of other numerals — every past drift is recorded there as a pair
 
 ### What the round found on the way past: a test that passed for a reason it did not state
 
-**`test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database` was order-dependent, and
-had been since issue 120.** It asserts a GLOBAL precondition — the registry holds no moieties — that it never
-established. Half this suite commits: `test_cli.py::test_ingest_unii_end_to_end` registers real moieties, and
-the only reason the assertion held was that twenty later modules `TRUNCATE` in an autouse fixture and this file
-sorts after several of them. **Reproduce it in 1.4 s**:
-`uv run pytest tests/test_cli.py tests/test_registry_read.py`. Found because `--lf` hoists the files with cached
-failures to the front, which is a reordering the alphabetical accident does not survive — and **confirmed
+**TWO tests were order-dependent, and had been since issue 120.** Each asserts a GLOBAL precondition — the
+registry holds no moieties — that it never established:
+`test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database` and
+`test_cli_interactions.py::test_an_empty_registry_is_not_blamed_on_the_operators_typing`. Half this suite
+commits: `test_cli.py::test_ingest_unii_end_to_end` registers real moieties on its own connection with an
+explicit commit (INLINE in the test body — it has no autouse fixture, and an earlier draft of this section said
+it did). The only reason either assertion held was that other modules `TRUNCATE` in an autouse fixture and both
+files sort after some of them. **Reproduce each in under 3 s on a tree without the fixture**:
+`uv run pytest tests/test_cli.py tests/test_registry_read.py` and
+`uv run pytest tests/test_cli.py tests/test_cli_interactions.py`. The first was found because `--lf` hoists the
+files with cached failures to the front, a reordering the alphabetical accident does not survive; **confirmed
 pre-existing by re-running it on unmodified `main`** (2537 passed, 1 failed) before anything here was written.
+**THE SECOND WAS FOUND BY THE REVIEW OF THIS BRANCH**, after the first had been fixed — its docstring stated the
+false reason out loud ("THE `conn` FIXTURE IS THE EMPTY CASE, which is why this test needs no setup"), one
+directory listing away from the file the round had just repaired. That is the argument for the fixture living in
+`conftest.py` rather than in the module that first needed it.
 
 The fix is a fixture that TRUNCATEs **without committing**. TRUNCATE is transactional in PostgreSQL and the
 `conn` fixture rolls back after every test, so every committed row the suite has accumulated survives for the
-next module — unlike the autouse fixtures in `test_cli.py` and `test_ingest_run.py`, which commit because the
-code they exercise commits. It has to be TRUNCATE and not DELETE: the append-only floor's row-level triggers
+next module — unlike the autouse fixtures in `test_ingest_run.py` and its peers, which commit because the code
+they exercise commits. **The CASCADE reaches 43 of the schema's 66 tables**, not the three named in the
+statement, because everything FKs `ingest_run`; that is harmless only while the transaction is rolled back,
+which is why the fixture's teardown asks the server `pg_xact_status()` of its own wipe and fails loudly if the
+answer is `committed` rather than `aborted`. Observed firing against a test that calls `conn.commit()`. It has to be TRUNCATE and not DELETE: the append-only floor's row-level triggers
 refuse a DELETE outright, and not covering TRUNCATE is the documented bypass (ROADMAP § "Floor hardening").
 **The suite count is unchanged by this half** — one test moved onto a fixture, none added.
 
@@ -5423,7 +5434,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2561 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2566 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -5560,6 +5571,13 @@ git config core.hooksPath .githooks
 # the whole of the change: 2538 -> 2561, +23, being the gate itself (1), the pure
 # readers it rests on and their refusals (21), and the negative control pinning
 # the two command lines the gate must FIRE on (1).
+# ⇒ AND THE REVIEW OF THAT BRANCH TOOK IT TO 2566, +5, WITH NO MIGRATION -- every
+# one of the five closing a hole the gate had in ITSELF: the ledgered neutral
+# VALUES driven against the installed pytest (1), the two conftest hooks that
+# produce the number driven end-to-end under `pytester` including the counter
+# reset a nested run needs (2), `--sw` moved out of the narrowing ledger and into
+# the deselection control where it belongs (+1 there, -1 here), and the path
+# argument test parametrised over a file, a node id and `.` (+2).
 # THREE THINGS ABOUT IT ARE LOAD-BEARING, and each is the shape of a trap this
 # repo has already paid for:
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
@@ -5571,12 +5589,27 @@ git config core.hooksPath .githooks
 #     collects a subset on purpose, so the comparison is skipped there. A detector
 #     that were too eager would turn the gate into a PERMANENT skip, which is
 #     issues 74/66/76 exactly, so the negative control asserts that a bare
-#     `uv run pytest` and CI's command line both come back NOT narrowed -- and
-#     ci.yml's second step fails on any skip, which pins that branch shut there.
-#   - THE OPTION LEDGER REFUSES A NAME IT DOES NOT RECOGNISE. The natural
-#     `options.get(name, neutral)` would make a renamed pytest dest read as "not
-#     in use" forever; it raises instead, and a second test pins every name
-#     against the installed pytest's own `config.option`.
+#     `uv run pytest`, CI's command line, and all four spellings of the testpaths
+#     directory come back NOT narrowed -- and ci.yml's SECOND pytest step fails on
+#     any skip, which pins that branch shut there. ⇒ THE FIRST DRAFT OF THAT
+#     CONTROL WAS A TAUTOLOGY AND THE REVIEW CAUGHT IT: it built the options it
+#     tested FROM the ledger, so the comparison reduced to `neutral != neutral`.
+#     Two real holes were behind it -- `./tests` and an absolute path (what an
+#     IDE's "run all tests" emits) were reported as narrowed although they collect
+#     everything, and `--sw` was in the ledger although it DESELECTS, so a genuine
+#     drift under either came back as a skip. Both fixed; the path assertions are
+#     now derived from nothing the code under test provides.
+#   - THE OPTION LEDGER REFUSES A NAME IT DOES NOT RECOGNISE, AND ITS VALUES ARE
+#     PYTEST'S OWN. The natural `options.get(name, neutral)` would make a renamed
+#     pytest dest read as "not in use" forever; it raises instead, and a second
+#     test pins every name against the installed pytest's own `config.option`.
+#     ⇒ THE VALUE HALF WAS MISSING UNTIL THE REVIEW, and it is the half that goes
+#     quiet: with `"ignore": []` recorded where pytest parks `None`, every full run
+#     reports narrowing, every real drift returns a SKIP instead of a failure, and
+#     all twenty-two sibling tests stay green. Observed. A third test now compares
+#     the ledgered values with what `config.option` actually carries -- which also
+#     closes the `addopts` hole, since one `addopts = "--ignore=..."` line in
+#     pyproject.toml would have disabled the gate the same way.
 # The remaining hole is small and deliberate: a narrowing the ledger does not know
 # about collects FEWER tests than this line states, and the gate calls that DRIFT
 # -- loud and wrong, rather than silent and right. Under-detection is noisy;

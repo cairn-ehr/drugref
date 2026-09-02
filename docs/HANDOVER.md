@@ -33,30 +33,44 @@ was created by the round that *filed* #146 writing the count into three further 
 **pre-deselection** total (`conftest.pytest_collection_finish` + `pytest_deselected`): CI runs
 `-m "not livepage"`, so a selected-item count would differ between CI and a local run and the line could only
 ever have matched **one of the two** — a gate that fails in CI for a non-defect gets switched off. A **narrowed**
-run (path arguments, `--ignore`, `--lf`, `--sw`) skips — and the real danger is the opposite one, a detector so
-eager the gate becomes a **permanent skip**, which is 74/66/76 exactly, so a negative control asserts the bare
-and the CI command lines come back **not narrowed**, and ci.yml's second step fails on any skip. The ledger of
-narrowing options **refuses a name it does not recognise**: `options.get(name, neutral)` would make a renamed
-pytest dest read as *"not in use"* for ever. `-k`/`-m`/`--deselect` are deliberately **not** narrowing —
-deselections are counted back. **The remaining hole is chosen**: an unknown narrowing collects FEWER tests than
-stated and is reported as **drift** — loud and wrong, never silent and right.
+run (path arguments, `--ignore`, `--lf`) skips — and the real danger is the opposite one, a detector so eager
+the gate becomes a **permanent skip**, which is 74/66/76 exactly, so a negative control asserts the bare and the
+CI command lines and all four spellings of `tests` come back **not narrowed**, and ci.yml's *second* pytest step
+fails on any skip. The ledger of narrowing options **refuses a name it does not recognise** AND has its
+**values** pinned to the installed pytest's own defaults. `-k`/`-m`/`--deselect`/`--sw` are deliberately **not**
+narrowing — every one of them deselects, and deselections are counted back. **The remaining hole is chosen**: an
+unknown narrowing collects FEWER tests than stated and is reported as **drift** — loud and wrong, never silent
+and right.
 
 **⇒ THE GATE WAS OBSERVED FAILING BEFORE THE NUMBER WAS UPDATED** (`states 2538 tests; this run collected 2561
 (+23)`), which is the only way to know it is not a third gate that never fires.
 
-**⇒ AND IT FOUND A TEST THAT PASSED FOR A REASON IT DID NOT STATE.**
-`test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database` asserts a GLOBAL
-precondition — no moieties registered — that it never established, and had done so since issue 120: half this
-suite commits, and the assertion held only because twenty later modules `TRUNCATE` in an autouse fixture and
-that file sorts after several of them. **Reproduce in 1.4 s: `uv run pytest tests/test_cli.py
-tests/test_registry_read.py`.** Found because `--lf` hoists files with cached failures to the front;
-**confirmed pre-existing by re-running on unmodified `main`** before anything was written. Fixed with a fixture
-that TRUNCATEs **without committing** — TRUNCATE is transactional and the `conn` fixture rolls back, so no other
-module's committed state is disturbed. It has to be TRUNCATE, not DELETE: the append-only floor refuses a
-DELETE, and not covering TRUNCATE is the documented bypass.
+**⇒ AND IT FOUND TWO TESTS THAT PASSED FOR A REASON THEY DID NOT STATE.** Both assert a GLOBAL precondition —
+no moieties registered — that neither established, and both had since issue 120:
+`test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database` and
+`test_cli_interactions.py::test_an_empty_registry_is_not_blamed_on_the_operators_typing`, whose docstring stated
+the false reason out loud. Half this suite commits (`test_cli.py::test_ingest_unii_end_to_end` registers real
+moieties **inline**, not in an autouse fixture); the assertions held only because other modules `TRUNCATE` in an
+autouse fixture and both files sort after some of them. **Reproduce:
+`uv run pytest tests/test_cli.py tests/test_registry_read.py` and
+`uv run pytest tests/test_cli.py tests/test_cli_interactions.py`.** The first was found because `--lf` hoists
+files with cached failures to the front and **confirmed pre-existing on unmodified `main`**; the second by this
+branch's own review, after the first was fixed — which is why the fixture now lives in `conftest.py`. It
+TRUNCATEs **without committing** (transactional; the `conn` fixture rolls back), must be TRUNCATE and not DELETE
+(the append-only floor refuses a DELETE, and not covering TRUNCATE is the documented bypass), and its teardown
+asks the server `pg_xact_status()` of its own wipe rather than trusting prose — the CASCADE reaches **43 of the
+schema's 66 tables**.
 
-**⇒ VERIFIED.** `uv run pytest` green; CI's own shape (`-q --strict-markers -p no:randomly -rs -m
-"not livepage"`) green with **0 skipped**; the reordered `--lf` run green; `uv run ruff check .` clean.
+**⇒ THE REVIEW ROUND CLOSED FOUR HOLES IN THE GATE ITSELF** (+5 tests, 2561 → 2566, no migration). The
+"negative control" built its options **from** the ledger, so it was a tautology; behind it sat two real ones —
+`./tests` and absolute paths were reported as narrowed although they collect everything, and `--sw` was in the
+ledger although it deselects. A third test now drives the ledgered **values** against live `config.option`
+(which also closes the `addopts` hole), and two `pytester` tests drive the conftest hooks end-to-end, including
+the counter reset a nested run needs. Each was **observed failing** before its fix.
+
+**⇒ VERIFIED.** `uv run pytest` green at **2566**; CI's own shape (`-q --strict-markers -p no:randomly -rs -m
+"not livepage"`) green with **0 skipped, 1 deselected**; both order-dependence reproductions now green;
+`uv run ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 

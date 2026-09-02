@@ -43,20 +43,42 @@ def dsn_verdict(dsn, in_ci):
 # 146 rejected that as slow and fragile), so it cannot disagree with the run it belongs
 # to.
 
-#: Deselected items, accumulated across every plugin that deselects any. A module-level
-#: counter because `pytest_deselected` is not handed the `Config` -- it is folded into
-#: the stash below, which is where anything else reads it from.
+#: Deselected items in THIS collection, accumulated across every plugin that deselects
+#: any. A module-level counter because `pytest_deselected` is not handed the `Config`;
+#: it is folded into the stash below, which is where anything else reads it from, and
+#: it is reset at the start of every collection (see `pytest_collection`).
 _deselected = 0
 
 
+def pytest_collection(session):
+    """Reset the deselection counter at the START of each collection.
+
+    ⇒ WITHOUT THIS THE COUNTER IS MONOTONIC FOR THE LIFE OF THE INTERPRETER, because
+    it is a module global. A second in-process run -- which
+    `test_suite_count.py`'s two `pytester` tests are -- would read the first run's
+    deselections into its own total and report a number no invocation produced.
+
+    `pytest_collection` is a FIRSTRESULT hook: returning None (as this does) means
+    "carry on", and pytest's own implementation then does the collecting. Returning
+    anything else here would replace collection entirely.
+    """
+    global _deselected
+    _deselected = 0
+
+
 def pytest_deselected(items):
-    """Count what -k, -m, --deselect and --lf took out of the collection.
+    """Count what -k, -m, --deselect and --sw took out of the collection.
 
     ⇒ WHY THESE ARE ADDED BACK. CI runs `uv run pytest -q -m "not livepage"`, which
     deselects exactly one test, so the number CI could compare against would be one
     lower than the number a local `uv run pytest` produces -- and PROJECT-NOTES can
     only state one of them. Counting deselected items back in makes both runs measure
     the same thing: pytest's own "collected N items" figure, before any exclusion.
+
+    `--lf` IS NOT IN THAT LIST, and an earlier version of this docstring wrongly said
+    it was. `--lf` prunes collection via `LFPluginCollSkipfiles.pytest_ignore_collect`
+    -- the items never exist to be deselected -- which is why it is handled the other
+    way, as a ledgered narrowing option in tests/suite_count.py.
     """
     global _deselected
     _deselected += len(items)
@@ -110,6 +132,77 @@ def conn(_migrated):
     with psycopg.connect(_migrated) as c:
         yield c
         c.rollback()
+
+
+@pytest.fixture
+def an_uningested_registry(conn, _migrated):
+    """A registry with nothing in it -- ESTABLISHED, not inherited from the run order.
+
+    ⇒ WHY THIS EXISTS. Two tests assert a GLOBAL precondition -- that the registry holds
+    no moieties -- which neither of them creates:
+    `test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database`
+    and `test_cli_interactions.py::test_an_empty_registry_is_not_blamed_on_the_operators_typing`.
+    Half this suite's orchestrator tests commit -- `test_cli.py::test_ingest_unii_end_to_end`
+    registers real moieties on its own connection with an explicit commit -- so the only
+    reason either assertion held was that other modules TRUNCATE in an autouse fixture
+    and these two files happen to sort after some of them. (HOW MANY OTHER MODULES IS
+    NOT WRITTEN DOWN HERE. `grep -l TRUNCATE tests/*.py` answers it, and ROADMAP §
+    "Floor hardening" records that the same count, restated in prose, was wrong four
+    times running.) Both accidents reproduce in about two seconds ON A TREE WITHOUT
+    THIS FIXTURE:
+
+        uv run pytest tests/test_cli.py tests/test_registry_read.py
+        uv run pytest tests/test_cli.py tests/test_cli_interactions.py
+
+    In conftest rather than in one of those modules because pytest resolves conftest
+    fixtures BY NAME with no import at all, and a cross-file fixture import couples two
+    suites for no benefit -- the precedent recorded for the curated-overlay fixtures
+    below. The first version of this fixture lived in test_registry_read.py and the
+    review that read it found the identical bug one file away, which is the argument.
+
+    **THE TRUNCATE IS NOT COMMITTED, which is what makes it safe here.** TRUNCATE is
+    transactional in PostgreSQL -- rows AND the `RESTART IDENTITY` sequence reset are
+    both undone -- and the `conn` fixture rolls back after every test, so every
+    committed row this suite has accumulated is still there for the next module. That
+    is the difference between this fixture and the autouse ones in test_ingest_run.py
+    and friends, which commit because the code THEY exercise commits.
+
+    **CASCADE REACHES MOST OF THE SCHEMA, not the three tables named below**, because
+    everything FKs `ingest_run` -- 43 of 66 tables when this was measured, and the
+    direction of travel is upward. That is harmless only for as long as the transaction
+    is rolled back, which is why the teardown below stops being prose and checks.
+
+    It has to be TRUNCATE rather than DELETE: the append-only floor's row-level
+    triggers refuse a DELETE on `substance_moiety` and `identity_claim` outright (the
+    third table, `ingest_run`, carries no such trigger and is held only by the FKs), and
+    not covering TRUNCATE is precisely the documented bypass (ROADMAP § "Floor
+    hardening").
+    """
+    conn.execute("TRUNCATE drugref.identity_claim, drugref.substance_moiety, "
+                 "drugref.ingest_run RESTART IDENTITY CASCADE")
+    # The transaction id of the wipe, so the teardown can ask the server what became of
+    # it. Taken AFTER the TRUNCATE, which has already forced an xid to be assigned.
+    wipe_xid = conn.execute("SELECT pg_current_xact_id()").fetchone()[0]
+    yield conn
+    # ⇒ THE SAFETY ARGUMENT, AS A GATE RATHER THAN AS A PARAGRAPH. Everything above
+    # rests on one line in the `conn` fixture (`c.rollback()`), and psycopg's `with`
+    # block COMMITS on a clean exit -- so a future test in either module that calls
+    # `conn.commit()`, or a wrapper like tests/test_cli_signing.py's that lets a
+    # handler's own commit through, would make this wipe durable and take the whole
+    # schema's committed cross-module state with it. That failure would surface as order-
+    # dependent breakage somewhere else entirely, which is the exact diagnosis-
+    # resistant shape this fixture was added to eliminate. So end our own transaction
+    # and ask the server, on a second connection, whether it committed.
+    conn.rollback()
+    with psycopg.connect(_migrated) as probe:
+        status = probe.execute("SELECT pg_xact_status(%s)", (wipe_xid,)).fetchone()[0]
+    assert status == "aborted", (
+        f"the TRUNCATE in an_uningested_registry was {status}, not rolled back. It "
+        f"CASCADEs across most of the drugref schema, so a committed wipe destroys "
+        f"every row the orchestrator tests have accumulated and breaks unrelated "
+        f"modules later in the run -- somewhere else entirely, which is the hardest "
+        f"kind of failure to diagnose and the exact one this fixture exists to stop. "
+        f"Whatever committed this connection must not use this fixture.")
 
 
 @pytest.fixture
