@@ -14,6 +14,8 @@ from collections.abc import Mapping, Sequence
 import psycopg
 from psycopg import sql
 
+from drugref import server_messages
+
 # WHERE THE MIGRATIONS LIVE, in the two layouts this package is ever run from, and
 # why the answer cannot be a single constant. In a source checkout the .sql files sit
 # at the repository root in db/; in an INSTALLED WHEEL there is no repository, so
@@ -121,12 +123,29 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
     Raises a clear RuntimeError (not a bare KeyError) when neither a dsn argument
     nor the DRUGREF_DSN environment variable is provided, so a misconfigured caller
     gets an actionable message instead of an opaque traceback.
+
+    ⇒ EVERY CONNECTION OPENED HERE CAN HEAR THE SERVER TALK (issue 174). psycopg
+    delivers a NOTICE or a WARNING to registered handlers and to nothing else, so
+    until this line every one of them was discarded -- including
+    `WARNING: permission denied to analyze "t", skipping it`, which arrives beside
+    a SUCCESSFUL ANALYZE command tag and cost issue 160's fix its whole effect
+    under an admin-migrates/app-ingests role split. It is installed HERE, at the
+    one function every orchestrator, CLI command and migration opens its
+    connection through, because a channel that has to be remembered per call site
+    is the "gate that exists and never fires" of issues 74, 66 and 76.
+
+    REPORTING ONLY. psycopg swallows whatever a notice handler raises, so this can
+    never refuse anything; a statement that must PROVE the server did the work
+    collects the messages itself (`server_messages.collect`, used by
+    `analyze.analyze_tables`).
     """
     dsn = dsn or os.environ.get("DRUGREF_DSN")
     if not dsn:
         raise RuntimeError(
             "no database DSN: pass dsn= or set the DRUGREF_DSN environment variable")
-    return psycopg.connect(dsn)
+    conn = psycopg.connect(dsn)
+    conn.add_notice_handler(server_messages.log_server_message)
+    return conn
 
 
 def constraint_definition(conn: psycopg.Connection, table: str | None,

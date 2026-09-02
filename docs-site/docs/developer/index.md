@@ -41,6 +41,28 @@ uv run ruff check .
 Some PostgreSQL-backed tests recreate their target database. Never point the test suite
 at a database holding reviewer accounts, signing keys or work you intend to keep.
 
+### The role that runs an ingest
+
+If you split roles — an administrator applying migrations, a separate application role
+running the ingests — the ingest role must be able to `ANALYZE` the tables it writes.
+Grant it ownership, or `MAINTAIN`:
+
+```sql
+GRANT MAINTAIN ON ALL TABLES IN SCHEMA drugref TO drugref_app;   -- PostgreSQL 17+
+```
+
+This is not tidiness. Several ingests analyse a table immediately after bulk-loading it,
+because PostgreSQL plans a foreign-key check at first use — while the parent still looks
+empty — and pins that plan for the rest of the load. One measured run spent **630 s** on
+a single `COPY` for want of statistics that cost 112 ms to gather.
+
+PostgreSQL does not raise when a role may not analyse a table named in an explicit
+`ANALYZE`: it emits a warning, skips the table, and reports success. drugref installs a
+server-message handler on every connection — so warnings and notices from the database
+appear in the log rather than being discarded — and an ingest **refuses to continue**
+when the server says it skipped an `ANALYZE`, naming the role and quoting the server. A
+run that could not gather its statistics is not allowed to look like a run that did.
+
 ## Reviewer service
 
 The desktop app never connects directly to PostgreSQL. Run the separately authenticated

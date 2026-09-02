@@ -30,7 +30,7 @@ import argparse
 import pathlib
 import re
 
-from drugref import spl_evidence
+from drugref import registry_read
 from drugref.ingest import spl, spl_match, spl_run
 
 #: MED-RT and drugref tag a class with its axis -- 'Cytochrome P450 1A2
@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"reading {len(partitions)} partition(s) ...", flush=True)
     corpus = spl.read_corpus(partitions)
     with psycopg.connect(args.dsn) as conn:
-        registry = spl_evidence.load_registry(conn)
+        registry = registry_read.load_registry(conn)
     names, uniis = registry.by_name, registry.by_unii
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings, "
           f"{len(names):,} moiety names")

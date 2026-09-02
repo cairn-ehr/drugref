@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from drugref import spl_evidence
+from drugref import registry_read
 from drugref.ingest import spl, spl_match, spl_run
 
 
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings")
 
     with psycopg.connect(args.dsn) as conn:
-        names = spl_evidence.load_registry(conn).by_name
+        names = registry_read.load_registry(conn).by_name
     print(f"  {len(names):,} registry names")
 
     # THE SAME VOCABULARY THE INGEST USES, suppression included. Deriving against

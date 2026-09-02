@@ -1,7 +1,7 @@
 # tests/test_spl_tools_smoke.py
 """The SPL tools under `tools/` reach their first real call without breaking.
 
-⇒ WHY THIS FILE EXISTS. `spl_evidence.load_registry` was given a named return
+⇒ WHY THIS FILE EXISTS. `registry_read.load_registry` was given a named return
 type carrying collision counts. `tools/spl_class_vocabulary_delta.py` and
 `tools/spl_suppress_derive.py` both destructured its old 2-tuple, so both began
 raising `ValueError: too many values to unpack` on their first line of real
@@ -18,7 +18,7 @@ import importlib
 
 import pytest
 
-from drugref import spl_evidence
+from drugref import registry_read
 
 _SPL_TOOLS = [
     "tools.spl_class_vocabulary_delta",
@@ -40,7 +40,7 @@ def test_the_registry_type_cannot_be_DESTRUCTURED_by_a_tool():
     `names, uniis = load_registry(conn)` raises at EVERY call site the moment the
     shape changes, rather than only at the ones whose arity stops matching.
     """
-    registry = spl_evidence.Registry(
+    registry = registry_read.Registry(
         by_name={}, by_unii={}, name_collisions=0, unii_collisions=0)
     with pytest.raises(TypeError, match="cannot unpack non-iterable"):
         _first, _second = registry

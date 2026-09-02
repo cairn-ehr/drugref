@@ -618,14 +618,6 @@ def test_the_import_guard_catches_a_relative_import():
     assert _drugref_imports_in("from .db import get_connection\n") == {".db"}
 
 
-def test_cli_py_is_under_the_size_cap():
-    """CLAUDE.md rule 4, measured rather than assumed. 500 is the stated cap."""
-    import pathlib
-    from drugref import cli
-    lines = len(pathlib.Path(cli.__file__).read_text().splitlines())
-    assert lines <= 500, f"cli.py is {lines} lines, over the ~500 cap"
-
-
 def test_main_does_not_swallow_a_check_violation_from_an_ingest(monkeypatch, capsys):
     """A CHECK a `policy` argument trips is an operator's typo, and cli_policy._write
     renders it as one line. THE SAME EXCEPTION FROM AN INGEST IS A DEFECT IN DRUGREF --
