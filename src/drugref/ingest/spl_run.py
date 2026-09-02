@@ -16,9 +16,10 @@ pass is 19.3 GB long:
 **EVERY REFUSAL IN STEPS 1-4 HAPPENS BEFORE THE RUN ROW EXISTS**, which is
 stricter than `drugcentral_run`'s ordering and for the same reason it gives: a
 refusal must leave the database exactly as it was, and an `ingest_run` with
-`finished_at NULL` is not "exactly as it was". Here the scan takes tens of
-minutes, so a run row opened before it would sit unfinished for the whole of a
-pass that might yet refuse.
+`finished_at NULL` is not "exactly as it was". Here the scan is minutes long --
+2 min 09 s over 19.3 GB since issue 160 dropped it from 12 min 51 s; it read "tens
+of minutes" until that round and nobody updated it -- so a run row opened before it
+would sit unfinished for the whole of a pass that might yet refuse.
 
 **THE CHECKS IN STEP 5 ARE DELIBERATELY AFTER IT**, and the claim above used to
 be written without that qualification, which made it false: `reconcile`,

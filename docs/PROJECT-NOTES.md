@@ -4912,14 +4912,57 @@ fresh clone of it, then `migrate` — which is the production upgrade path: **db
 pre-existing rows and the CHECK validated all nine**, as it had to, since `open_run`'s transaction always
 commits before the work's begins.
 
-**⇒ THE DERIVED CONTRACT AND THE MUTANT IT CANNOT KILL.**
-`test_every_module_that_opens_a_run_takes_a_clock` greps the tree for `provenance.open_run(` and requires
+**⇒ THE DERIVED CONTRACT AND THE MUTANT IT COULD NOT KILL — REPLACED IN THE REVIEW ROUND.**
+`test_every_module_that_opens_a_run_takes_a_clock` grepped the tree for `provenance.open_run(` and required
 `provenance.start_clock()` in the same module — **eleven modules, derived rather than counted by hand**, one
 round after a hand-listed coverage named three writers where four edges existed. It passed unchanged against
-the mutant that moves `start_clock()` down to the line above `open_run`, which measures nothing. Only
-`test_a_run_records_the_work_done_before_it_opened` kills it, by injecting a delay into work `ingest_unii` does
-BEFORE `open_run`: 59.5 ms recorded against the 250 ms required. ⇒ **A DERIVED CHECK OUTLIVES A HAND-LISTED
-ONE ONLY FOR WHAT IT DERIVES.**
+the mutant that moves `start_clock()` down to the line above `open_run`, which measures nothing, **while its
+own docstring claimed to catch exactly that**. The one behavioural killer,
+`test_a_run_records_the_work_done_before_it_opened`, injects a delay into work `ingest_unii` does BEFORE
+`open_run` — the CHEAPEST feed — so the mutation stayed invisible in `spl_run` (108 lines and a 17.6 GB scan
+above its `open_run`) and `mesh_rel_run`, the two writers every figure in this section comes from. The grep
+also matched a **comment** in `onchigh_run.py`, so a module could have satisfied it with no call at all.
+
+Replaced by `test_every_orchestrator_starts_its_clock_on_its_very_first_line`, which **parses** each module and
+asserts `start_clock()` is the first executable statement (docstring aside) of every function that starts a
+clock — exact for all eleven, mutation-verified by moving `spl_run`'s call down and watching it fail. It also
+retires eleven copies of a `# FIRST:` comment as the thing holding the rule.
+⇒ **A DERIVED CHECK OUTLIVES A HAND-LISTED ONE ONLY FOR WHAT IT DERIVES — AND A GREP DERIVES TEXT, NOT
+STRUCTURE.**
+
+**⇒ THE REVIEW ROUND: THREE SHIPPED DEFECTS, ONE DEFERRED, AND WHAT EACH ONE TEACHES.** Full account in the
+[measurement record](superpowers/specs/2026-09-02-drugref-ingest-run-duration.md) § 8.
+
+1. **`drugref status` crashed mid-output on a ledger-less database.** The watershed read was unguarded on the
+   happy path, so a database built by replaying `db/*.sql` by hand — a shape `migration_guard`'s own docstring
+   names as reachable — printed one header, then a psycopg traceback, and skipped five of six blocks. ⇒ **A
+   READ ADDED TO A DIAGNOSTIC COMMAND IS A NEW WAY FOR THAT COMMAND TO FAIL**, and `status` is the command an
+   operator reaches for precisely when the database is the wrong shape. Fixed with `to_regclass`, deliberately
+   NOT `db.missing_relations` — that helper rolls back before probing, which is right for its own callers
+   (all inside `except UndefinedTable`, holding an already-aborted transaction) and would silently discard a
+   caller's open transaction here.
+2. **The `started_at` catalog comment refuted itself in nine words.** *"every one of the nine feeds reported
+   between 1.3 ms and 24 ms … and the one that reported anything else"*, while all four documents said *eight
+   of nine*. ⇒ **THE PROSE THAT SHIPS INTO `pg_description` NEEDS THE SAME REVIEW AS THE DDL AROUND IT** — it
+   is the only documentation a `\d+` reader gets, and correcting it after merge costs a whole migration.
+3. **`format_run_duration` printed `0m60s` / `1m60s` / `60m60s`** for any duration in `[N·60 − 0.5, N·60)`
+   — 0.83 % of runs over a minute — because the `< 60` branch tested `round(seconds, 1)` while the minutes
+   branch re-rounded the *unrounded* remainder. ⇒ **TWO ROUNDINGS OF ONE QUANTITY IS ONE RULE KEPT IN TWO
+   PLACES**, the defect this project keeps finding, in arithmetic instead of vocabulary.
+4. **Deferred as [#176](https://github.com/cairn-ehr/drugref/issues/176):** the watershed decides by **when** a
+   row was written when the question is **which code** wrote it. An older client on a migrated database takes
+   the new `clock_timestamp()` default for `started_at` and old `finish_run`'s `now()` for `finished_at`;
+   neither the CHECK nor the refusal fires, and a two-second run publishes as `0.0s` — reproduced. ⇒ **A
+   TIMESTAMP CANNOT ANSWER A QUESTION ABOUT CODE PROVENANCE.** A boolean set by `open_run` can. Not taken here
+   because it rewrites the round's central mechanism after its measurements were verified; what WAS taken is
+   removing every claim that the failure cannot happen.
+
+Also in that round: `RunClock.__post_init__` (the `isinstance` check guarded the wrapper, not the value —
+`RunClock(time.time())` committed a run dated 2083 and then lost the whole ingest to the CHECK); a
+`COMMENT ON CONSTRAINT` naming all three causes including a **backward server clock**, which the migration had
+denied outright; `gsrs_run`'s missing `except` (the only orchestrator of eleven without one, and db/053 gave
+`finish_run` a new way to raise); and the loaded-release block moved to `cli_status.py`, which took `cli.py`
+from 499 back to **477**.
 
 ### Traps and standing notes
 
@@ -4930,8 +4973,22 @@ ONE ONLY FOR WHAT IT DERIVES.**
   parameter.
 - **The window is the ORCHESTRATOR, not the command**: it starts at the orchestrator's first line (so
   `~0.3 s` of interpreter start and argparse sit outside it) and ends before the final COMMIT.
-- **`cli.py` is 489 lines** after this round's four added lines — under rule 4's ~500 cap, with little room.
-  The next block added there needs a `cli_*.py` split, not another paragraph.
+- **`cli.py` is 477 lines.** The runtime column took it to 499; the review round moved the whole loaded-release
+  block to `cli_status.py` (238) rather than shave comments, which rule 3 forbids. That module exists for
+  exactly this trade and this is its third block.
+- **A GREP DERIVES TEXT, NOT STRUCTURE.** `test_every_orchestrator_starts_its_clock_on_its_very_first_line`
+  parses each module with `ast` because the substring form matched a **comment** in `onchigh_run.py` and could
+  not see a `start_clock()` moved next to `open_run`. Reach for `ast` whenever the property is about WHERE
+  something is, not WHETHER it appears.
+- **`db.missing_relations` ROLLS BACK before probing** — correct for its own callers, which all arrive inside
+  `except UndefinedTable` holding an aborted transaction, and wrong for a happy-path probe, which would lose a
+  caller's open transaction. Use `to_regclass` directly there.
+- **Editing an APPLIED migration breaks every database carrying it**: `apply_migrations` is checksum-immutable
+  and raises. db/053 was corrected in review while still unmerged, which is the only window in which that is
+  free — after merge the same correction is a whole new migration.
+- **A `COMMENT ON CONSTRAINT` is the only documentation an operator gets when a CHECK fires.** db/053 shipped
+  three column comments and a view comment and forgot the constraint's, which is the one object a human meets
+  BY NAME, mid-ingest, with a rolled-back run behind them.
 
 ## The standing open-issue ledger
 

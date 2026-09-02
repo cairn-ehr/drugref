@@ -122,7 +122,7 @@ taken in the **public** entry and threaded in, because the public function is
 where the command begins.
 
 **`db/053`** — the `started_at` default (the direct-INSERT path `open_run` does
-not cover: a `curation` run, and two dozen tests), a
+not cover: a `curation` run, and 47 test modules), a
 `CHECK (finished_at IS NULL OR finished_at >= started_at)`, both column comments,
 and a re-issue of db/025's `ingest_run_incomplete` comment.
 
@@ -195,7 +195,7 @@ Nothing rewrites them and nothing could: what would be needed was never recorded
 So `drugref status` **refuses to print a runtime** for a run that started before
 db/053 was applied on that database, reading the watershed out of the migration
 ledger (`db.migration_applied_at`). Subtracting two transaction stamps still
-yields a number — 0.0026 s for a 2 min 09 s ingest — and a number is what an
+yields a number — 0.0026 s for a 2 min 20 s ingest — and a number is what an
 operator believes.
 
 Both paths verified, neither by patching a verification database:
@@ -259,3 +259,76 @@ against the 250 ms required.
 ⇒ **A FIX THAT LEAVES OLD ROWS BEHIND MUST SAY SO WHERE THEY ARE READ.** The
 column comment is necessary and not sufficient — the operator surface is
 `drugref status`, and it is the surface that has to refuse.
+
+
+---
+
+## 8. What the review of this round found, and what it changed
+
+The specs under `docs/superpowers/specs/` are immutable once merged; this section was
+added while the PR was still open, and records the round's own corrections rather than
+leaving the account above standing as if it had shipped clean.
+
+**Three defects shipped in the first pass, all now fixed.**
+
+1. **`drugref status` crashed mid-output on a database with no ledger.** The watershed
+   read (`db.migration_applied_at`) was unguarded on the happy path, so a database
+   built by replaying `db/*.sql` by hand — a shape `migration_guard`'s own docstring
+   names as reachable — printed `loaded releases:` and then a psycopg traceback, with
+   five of the command's six blocks never running. Reproduced end-to-end, fixed with a
+   `to_regclass` probe (NOT `db.missing_relations`, which rolls back and would have
+   silently discarded a caller's transaction on a happy path).
+2. **The `started_at` column comment refuted itself in nine words** — *"every one of
+   the nine feeds reported between 1.3 ms and 24 ms … and the one that reported
+   anything else"* — while HANDOVER, ROADMAP, PROJECT-NOTES and §2 of this document all
+   said *eight of nine*. It shipped into `pg_description`, where a `db/054` would have
+   been needed to correct it had the PR merged first.
+3. **`format_run_duration` printed impossible clock readings.** `0m60s`, `1m60s`,
+   `60m60s` for any duration in `[N·60 − 0.5, N·60)` — 0.83 % of runs over a minute —
+   because the `< 60` branch was decided on `round(seconds, 1)` while the minutes
+   branch re-rounded the *unrounded* remainder. ⇒ **TWO ROUNDINGS OF ONE QUANTITY IS
+   ONE RULE KEPT IN TWO PLACES**, the defect this project keeps finding, in arithmetic
+   rather than in vocabulary.
+
+**The derived contract was weaker than its own docstring claimed.**
+`test_every_module_that_opens_a_run_takes_a_clock` said it caught a contract "satisfied
+uselessly"; it greps for the *presence* of `start_clock()` and cannot. The one
+behavioural killer drives `ingest_unii` — whose pre-open work is a crosswalk, an
+allowlist and a checksum — so moving `start_clock()` down in `spl_run` (108 lines and a
+17.6 GB scan above its `open_run`) left the suite green while dropping the entire figure
+this round exists to publish. The grep also matched a **comment** in `onchigh_run.py`.
+Replaced by an AST test asserting `start_clock()` is the first executable statement of
+all eleven entry points, mutation-verified against `spl_run`.
+⇒ **A GREP DERIVES TEXT, NOT STRUCTURE.**
+
+**`RunClock` guarded the wrapper, not the value.** `RunClock(time.time())` — one
+keystroke from `start_clock()`, and exactly the confusion `open_run`'s error message
+describes — passed the `isinstance` check, committed a run dated 2083, and then threw
+the whole ingest away when `finish_run` tripped the CHECK on its last statement before
+the commit. `__post_init__` now rejects a reading in the future, which is the general
+predicate and makes `elapsed()`'s "never negative" true by construction.
+
+**Two claims in the catalog were false and are corrected.** The CHECK's *"can only be
+violated by a caller inventing one"* omitted a hand-built `RunClock` and a **backward
+server clock** — `RunClock`'s monotonic guarantee covers only the client-side window
+before `open_run`; the long span between the two stamps is two reads of a wall clock,
+and a backward step now costs the whole ingest rather than recording a negative
+interval. All three causes, and what an operator should do, are now in a
+`COMMENT ON CONSTRAINT` — the only new object here that reaches a human as an error
+message, and the only one that shipped without catalog text.
+
+**Stale hand-listed counts removed**, several of them written by this round: "the six
+orchestrators" (six live copies, in files this diff edits), "unlike medrt_run, mesh_run
+and mesh_rel_run" (seven writers now do pre-open work), "two dozen tests" (47 modules),
+"drugref's nine feeds" (nine is what was measured; eleven writers exist), and a cited
+grep whose stated output (one hit) was wrong (two — the file self-matches).
+
+**Deferred, with the reason.** [#176](https://github.com/cairn-ehr/drugref/issues/176):
+the watershed decides by **when** a row was written when the question is **which code**
+wrote it. An older client against a migrated database takes the new `clock_timestamp()`
+default for `started_at` and old `finish_run`'s `now()` for `finished_at`, so neither
+the CHECK nor the refusal fires and a two-second run publishes as `0.0s` — issue 159's
+own failure mode, reproduced. A boolean set by `open_run` would make each row
+self-identifying. Not done here because it rewrites this round's central mechanism after
+its measurements were verified; what was done instead is to stop anything claiming the
+failure cannot happen.

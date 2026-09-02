@@ -36,10 +36,14 @@ def enrich_from_chebi(conn: psycopg.Connection, *, chebi_path,
     re-raising. A caller with pending work has it committed at the provenance boundary,
     so callers must commit their own work before calling.
 
-    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
-    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
-    so leave no trace of a crash during it. Everything but the checksum read is covered.
-    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike MOST of the
+    other writers -- medrt_run, mesh_run, mesh_rel_run, gsrs_run, fda_cyp_run,
+    drugcentral_run and spl_run all do substantial work before opening a run, and so
+    leave no trace of a crash during it. (Stated structurally rather than as a tally:
+    this sentence named three when there were six writers and seven when there are
+    eleven, which is the hand-listed-count defect db/053 removes from db/025.)
+    Everything but the checksum read is covered.
+    The orchestrators are not uniform in this, and ingest_run_incomplete says so.
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     log.info("ChEBI enrichment starting (release=%s)", upstream_release)

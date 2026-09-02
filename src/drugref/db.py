@@ -315,9 +315,33 @@ def migration_applied_at(conn: psycopg.Connection, number: str):
     None is the safe answer and is why this returns a timestamp rather than raising:
     on a database that predates the migration, NO row carries the new meaning, and a
     reader comparing against None must fall through to "cannot say".
+
+    A DATABASE WITH NO LEDGER AT ALL TAKES THAT SAME ANSWER, and must. The ledger is
+    created by `apply_migrations` with CREATE TABLE IF NOT EXISTS rather than by any
+    db/*.sql, so -- as migration_guard's own docstring says -- "a database bootstrapped
+    by replaying the SQL by hand has every view and no ledger", and so does a partial
+    restore. Reading it unguarded made `drugref status` print its first header and then
+    a raw psycopg traceback, killing the five later blocks of a six-block command.
+    "Nothing here can be dated against db/<number>" is the same answer as "db/<number>
+    is unapplied", and the CALLER is required to say which out loud: silently
+    withholding every runtime with no reason given is the wrong-answer-by-omission this
+    whole round is about.
+
+    ORDER BY, unlike `migration_applied`'s EXISTS, because a LIKE on a three-digit
+    prefix can in principle match two files; an arbitrary row would make the watershed
+    depend on the planner.
     """
+    # `to_regclass` and NOT `missing_relations`, which ROLLS BACK before probing. That
+    # rollback is right for its own callers -- they all arrive inside `except
+    # UndefinedTable`, holding a transaction Postgres has already aborted -- but this
+    # is a HAPPY-PATH read, and a lookup that silently discarded its caller's open
+    # transaction would be a far worse surprise than the crash it is fixing.
+    if conn.execute(
+            "SELECT to_regclass('drugref.schema_migration')").fetchone()[0] is None:
+        return None
     row = conn.execute(
-        "SELECT applied_at FROM drugref.schema_migration WHERE filename LIKE %s",
+        "SELECT applied_at FROM drugref.schema_migration WHERE filename LIKE %s "
+        "ORDER BY filename LIMIT 1",
         (_ledger_pattern(number),)).fetchone()
     return row[0] if row else None
 

@@ -4,18 +4,21 @@
 WHAT WAS WRONG (issue 159). `started_at DEFAULT now()` and `finish_run`'s `now()` are
 both `transaction_timestamp()`, so `finished_at - started_at` measured the gap between
 two TRANSACTION START times. Measured on this project's own verification databases,
-every one of the nine feeds reported between 1.3 ms and 24 ms for a load, and the one
-feed that reported anything else -- mesh_rel_run at 48.3 s -- was reporting the time it
-spent parsing 750 MB of MeSH BEFORE its first write. The column an operator would size
+EIGHT of the nine feeds measured reported between 1.3 ms and 24 ms for a load, and the
+ninth -- mesh_rel_run at 48.3 s -- was reporting the time it spent parsing 750 MB of
+MeSH BEFORE its first write. The column an operator would size
 a rebuild from was wrong for every feed, and wrong in a way that reads as an answer.
 
 WHAT THIS FILE PINS, none of which the schema alone would hold:
 
 * the DEFAULT, which is the path a row takes when `open_run` is not the writer -- a
-  `curation` run, or any of the two dozen tests that INSERT directly;
+  `curation` run, or any of the many tests that INSERT directly (a tally here would
+  be one more number with no owner: it was written as "two dozen" and measured 47);
 * the CHECK, shown REFUSING, because a constraint nobody has watched fire is the
   "gate that exists and never fires" of issues 74/66/76;
-* three catalog comments, ASSERTED AGAINST THE CATALOG AND NEVER THE MIGRATION TEXT
+* four catalog comments -- three columns-and-a-view plus the CONSTRAINT's own, which
+  is the only new object an operator meets by name -- ASSERTED AGAINST THE CATALOG AND
+  NEVER THE MIGRATION TEXT
   (test_curated_interaction_comment.py's precedent: the file a grep could check is not
   the file that shipped once a later db/NNN replaces it). One of the three is a
   RE-ISSUE of db/025's, and this repo has already shipped a re-issue rebuilt from the
@@ -62,6 +65,12 @@ FINISHED_AT_CLAIMS = (
     "final COMMIT",             # what the stamp still does not cover
     "issue 159",
 )
+CONSTRAINT_CLAIMS = (
+    "clock_timestamp()",        # what a writer must use instead of now()
+    "monotonic",                # why the client-side guard does not cover this
+    "CLOCK STEPPED BACKWARDS",  # the cause the migration used to deny outright
+    "re-run",                   # what the operator should actually DO
+)
 INCOMPLETE_VIEW_CLAIMS = (
     "db/053",                   # the re-issue names why it re-issued
     "leaves no row here",       # db/025's real point, which must SURVIVE the re-issue
@@ -99,9 +108,11 @@ def test_started_at_defaults_to_the_clock_not_the_transaction(conn, _migrated):
 def test_a_run_may_not_finish_before_it_started(conn):
     """The CHECK, shown REFUSING rather than merely present.
 
-    Both stamps are now clock readings taken in that order, so this can only be
-    violated by a caller inventing one -- which is exactly the mistake a duration
-    column invites, and the reason the constraint is worth its line.
+    Both stamps are now clock readings taken in that order, so a violation means a
+    writer invented one (this test), a hand-built RunClock carried a time.time()
+    reading, or the DATABASE HOST's clock stepped backwards mid-run. The migration's
+    COMMENT ON CONSTRAINT names all three; an earlier draft of it named only the first
+    and denied the other two.
     """
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute(
@@ -126,6 +137,22 @@ def test_a_run_that_has_not_finished_is_still_admitted(conn):
 def test_started_at_comment_says_what_it_now_means(conn, _migrated):
     assert _missing_claims(_column_comment(conn, "started_at"),
                            STARTED_AT_CLAIMS) == []
+
+
+def test_the_constraint_says_what_to_do_about_it(conn, _migrated):
+    """THE ONLY NEW OBJECT THAT REACHES A HUMAN AS AN ERROR MESSAGE, and it shipped
+    without catalog text while three columns and a view got some.
+
+    An operator meets `ingest_run_finishes_after_it_starts` by name, mid-ingest, with
+    a rolled-back run behind them -- and the diagnosis lived only in the migration
+    file, which is not what anyone reads when psycopg raises. The comment must name
+    the cause the migration once denied outright (a backward server clock) and say
+    what to do, or it is decoration.
+    """
+    comment = conn.execute(
+        "SELECT obj_description(oid, 'pg_constraint') FROM pg_constraint "
+        "WHERE conname = 'ingest_run_finishes_after_it_starts'").fetchone()[0]
+    assert _missing_claims(comment, CONSTRAINT_CLAIMS) == []
 
 
 def test_finished_at_comment_says_what_it_excludes(conn, _migrated):
@@ -168,14 +195,51 @@ def _at(offset_seconds):
     return WATERSHED + datetime.timedelta(seconds=offset_seconds)
 
 
+def _fmt(started, finished, watershed=WATERSHED):
+    return provenance.format_run_duration(
+        started_at=started, finished_at=finished, watershed=watershed)
+
+
 def test_a_run_since_db053_prints_its_runtime():
-    assert provenance.format_run_duration(_at(1), _at(3.4), WATERSHED) == "2.4s"
+    assert _fmt(_at(1), _at(3.4)) == "2.4s"
 
 
 def test_a_long_run_prints_minutes_and_seconds():
-    """2 min 09 s is the SPL ingest's real runtime, and the number this whole issue
-    exists so that an operator can read."""
-    assert provenance.format_run_duration(_at(0), _at(129.4), WATERSHED) == "2m09s"
+    """2 min 16 s is what THIS round measured `ingest spl` at (135.86 s recorded,
+    140.06 s wall). The earlier 2 min 09 s that this test used to pin is the previous
+    round's figure for the CORPUS READ alone, and pinning it here would have carried a
+    borrowed number into the one column this issue exists to make trustworthy -- which
+    is the failure #159 is about, one level down."""
+    assert _fmt(_at(0), _at(135.86)) == "2m16s"
+
+
+def test_the_seconds_field_can_never_read_sixty():
+    """THE CARRY BOUNDARY, and it printed an impossible clock reading.
+
+    The `< 60` decision was taken on `round(seconds, 1)` while the minutes branch
+    re-rounded the UNROUNDED remainder with `{:02.0f}`, so anything in [N*60-0.5, N*60)
+    rendered as `0m60s`, `1m60s`, `60m60s`. That is 0.83 % of all durations over a
+    minute, on the single number an operator reads off `status`. Rounding ONCE and
+    deriving both branches from the rounded value is what closes it -- two roundings
+    of one quantity is the same shape of defect as one rule kept in two places.
+    """
+    assert _fmt(_at(0), _at(59.94)) == "59.9s"
+    assert _fmt(_at(0), _at(59.95)) == "1m00s"
+    assert _fmt(_at(0), _at(60)) == "1m00s"
+    assert _fmt(_at(0), _at(119.5)) == "2m00s"
+    assert _fmt(_at(0), _at(3659.7)) == "61m00s"
+
+
+def test_the_three_stamps_cannot_be_passed_in_the_wrong_order():
+    """KEYWORD-ONLY, for the reason `open_run` already makes about `writer` and
+    `clock`: three interchangeable datetimes in a row is an argument-order slip
+    waiting to happen, and two of the three wrong orders are SILENT --
+    (finished, started, watershed) printed a negative runtime and
+    (started, watershed, finished) printed `pre-db/053` forever. The function whose
+    whole job is refusing to publish a number it cannot vouch for should not be
+    reachable by a positional mistake."""
+    with pytest.raises(TypeError):
+        provenance.format_run_duration(_at(0), _at(1), WATERSHED)
 
 
 def test_a_run_from_before_db053_refuses_to_print_a_runtime():
@@ -186,18 +250,28 @@ def test_a_run_from_before_db053_refuses_to_print_a_runtime():
     number is what an operator believes. The fix would otherwise survive as a wrong
     answer on every database that is not re-ingested, which is all of them.
     """
-    assert provenance.format_run_duration(_at(-10), _at(-9.99), WATERSHED) \
-        == "pre-db/053"
+    assert _fmt(_at(-10), _at(-9.99)) == "pre-db/053"
+
+
+def test_the_watershed_is_read_off_the_row_that_starts_first():
+    """STRADDLING THE BOUNDARY, which no other test here does.
+
+    Both stamps of a pre-db/053 row sit before the watershed and both stamps of a
+    fresh one sit after it, so a formatter that tested `finished_at < watershed`
+    instead of `started_at` passed every other assertion in this file. Only a row
+    that STARTS before the watershed and FINISHES after it tells the two apart.
+    """
+    assert _fmt(_at(-10), _at(10)) == "pre-db/053"
 
 
 def test_a_database_without_db053_prints_no_runtime_at_all():
     """`status` runs on any database, including one that predates the migration. No
     watershed means nothing on it can be a duration -- which is the safe direction."""
-    assert provenance.format_run_duration(_at(1), _at(3), None) == "pre-db/053"
+    assert _fmt(_at(1), _at(3), None) == "pre-db/053"
 
 
 def test_an_unfinished_run_has_no_duration_to_print():
-    assert provenance.format_run_duration(_at(1), None, WATERSHED) == "unfinished"
+    assert _fmt(_at(1), None) == "unfinished"
 
 
 def test_the_ledger_reports_when_a_migration_was_applied(conn, _migrated):
@@ -207,6 +281,28 @@ def test_the_ledger_reports_when_a_migration_was_applied(conn, _migrated):
     applied_at = db.migration_applied_at(conn, "053")
     assert applied_at is not None
     assert db.migration_applied_at(conn, "999") is None
+
+
+def test_the_ledger_lookup_survives_a_database_that_has_no_ledger(conn, _migrated):
+    """`drugref status` CRASHED HERE, mid-output, and the crash was new this round.
+
+    migration_guard's own docstring names this database shape as reachable: the ledger
+    is created by `db.apply_migrations` with CREATE TABLE IF NOT EXISTS rather than by
+    any db/*.sql, so "a database bootstrapped by replaying the SQL by hand has every
+    view and no ledger", and so does a partial restore. Reading it unguarded on the
+    happy path of `status` printed the "loaded releases:" header and then a raw
+    psycopg traceback naming a relation the operator never asked about -- and the five
+    remaining blocks of a six-block command never ran. That is the misdiagnosis loop
+    issue 122 built migration_guard to end, re-created by one new line inside the very
+    command that module exists to protect.
+
+    None, not an exception: no ledger means nothing on this database can be dated
+    against db/053, which is the same answer as "db/053 is unapplied" and takes the
+    same safe path. `status` says WHY out loud rather than silently withholding.
+    """
+    conn.execute("DROP TABLE drugref.schema_migration")
+    assert db.migration_applied_at(conn, "053") is None
+    conn.rollback()
 
 
 def test_the_ledger_lookup_refuses_a_prefix_that_matches_nothing(conn, _migrated):

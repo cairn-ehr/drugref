@@ -932,10 +932,21 @@ feeds: the recorded durations account for **97.0–99.7%** of each command's wal
 before `db/053` — subtracting two transaction stamps still yields a number, and a number is what an operator
 believes.
 
+The branch was then **reviewed and corrected in place**, which found three shipped defects: `drugref status`
+crashed mid-output on a ledger-less database; db/053's `started_at` comment refuted itself in nine words
+(*"every one of the nine … and the one that reported anything else"*) while all four documents said *eight of
+nine*; and `format_run_duration` printed `1m60s` for 0.83 % of runs over a minute. The `start_clock()`-placement
+contract was a grep that matched a comment and could not kill its own worst mutant, and is now an `ast` check
+over all eleven entry points. Deferred as **[#176](https://github.com/cairn-ehr/drugref/issues/176)**: the
+watershed dates rows by **time** when the question is **which code wrote them**, so an older client on a
+migrated database publishes a confident `0.0s` for a two-second run.
+
 ⇒ *The rule: **`now()` is not a clock** — it is `transaction_timestamp()`, so two of them in one transaction
 are equal by definition and two across a commit boundary measure the boundary. And: **a number in a filed issue
 is a measurement with no owner.** #159's headline figure was rewritten by the COPY-cost round five days after
-it was filed; the issue, the suite and that round's own review all read past it.*
+it was filed; the issue, the suite and that round's own review all read past it — then this round's own first
+pass carried a borrowed `2 min 09 s` into an immutable migration, which is the same fault one level down. And:
+**a grep derives text, not structure**; **two roundings of one quantity is one rule kept in two places.***
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
