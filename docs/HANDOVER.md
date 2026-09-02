@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/notice-handler`, off `main` (the merge of PR #175), with an open PR.** **No migration** — the
-schema is unchanged and still ends at **`db/053`**, so every database built this round or last is still valid.
+**Branch `claude/notice-handler` off `main`; [PR #178](https://github.com/cairn-ehr/drugref/pull/178) is OPEN
+and closes #174 and #172. NO MIGRATION** — the schema still ends at **`db/053`**, so every database is valid.
 The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**
 ([#146](https://github.com/cairn-ehr/drugref/issues/146)); read it there at the START of the session.
 
