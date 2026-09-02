@@ -244,8 +244,15 @@ def format_run_duration(*, started_at, finished_at, duration_measured) -> str:
         stamps were correct.
 
     The flag decides both, and neither `db.migration_applied_at` nor the migration
-    number survives here: a row written before db/054 answers false, which is the same
-    answer the watershed gave it and the safe one.
+    number survives here.
+
+    WHAT db/054 COSTS, STATED RATHER THAN GLOSSED: a row written between db/053 and
+    db/054 BY THE CURRENT CLIENT holds two true clock readings, and the watershed
+    printed a real number for it. It answers false now, because nothing on disk records
+    which code wrote it and db/054 deliberately backfilled nothing -- inferring it once
+    at migration time would have STORED the guess this column exists to remove, for
+    exactly the old-client rows it cannot tell apart. The loss is bounded and
+    self-healing: that writer's next ingest records a measured duration.
 
     WHAT THE FLAG STILL CANNOT SAY is whether a MEASURED duration is a plausible one --
     db/053's CHECK covers the impossible half (finishing before starting) and nothing
