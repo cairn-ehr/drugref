@@ -10,6 +10,7 @@ import os
 import pytest
 import psycopg
 from drugref import db
+from tests.suite_count import COLLECTED_TESTS
 
 
 def dsn_verdict(dsn, in_ci):
@@ -29,6 +30,46 @@ def dsn_verdict(dsn, in_ci):
             "DRUGREF_TEST_DSN is not set. Most of this suite is DB-gated, so a "
             "CI run without a database would pass while testing none of it.")
     return "skip", "DRUGREF_TEST_DSN not set — skipping DB-gated test"
+
+
+# --- issue 146: how many tests this run collected ---------------------------------
+#
+# The suite count in docs/PROJECT-NOTES.md § "How to run / test" calls itself THE ONE
+# HOME FOR THIS NUMBER and has drifted from the real suite NINE times, against a comment
+# rewritten three times to prevent it. tests/test_suite_count.py turns it into a gate;
+# these two hooks are what give that gate something to measure.
+#
+# THE COUNT IS TAKEN IN-PROCESS rather than from a `--collect-only` subprocess (issue
+# 146 rejected that as slow and fragile), so it cannot disagree with the run it belongs
+# to.
+
+#: Deselected items, accumulated across every plugin that deselects any. A module-level
+#: counter because `pytest_deselected` is not handed the `Config` -- it is folded into
+#: the stash below, which is where anything else reads it from.
+_deselected = 0
+
+
+def pytest_deselected(items):
+    """Count what -k, -m, --deselect and --lf took out of the collection.
+
+    ⇒ WHY THESE ARE ADDED BACK. CI runs `uv run pytest -q -m "not livepage"`, which
+    deselects exactly one test, so the number CI could compare against would be one
+    lower than the number a local `uv run pytest` produces -- and PROJECT-NOTES can
+    only state one of them. Counting deselected items back in makes both runs measure
+    the same thing: pytest's own "collected N items" figure, before any exclusion.
+    """
+    global _deselected
+    _deselected += len(items)
+
+
+def pytest_collection_finish(session):
+    """Publish the run's collected total for tests/test_suite_count.py to read.
+
+    `pytest_collection_finish` runs AFTER `pytest_collection_modifyitems`, which is
+    where every deselection happens, so `len(session.items)` here is the selected
+    count and the counter above holds the rest.
+    """
+    session.config.stash[COLLECTED_TESTS] = len(session.items) + _deselected
 
 
 @pytest.fixture(scope="session")

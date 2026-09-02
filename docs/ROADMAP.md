@@ -989,6 +989,33 @@ the fix for issue 174, closed by a third check on a counter no setting of that k
 outright when nothing at all can witness the work ([#179](https://github.com/cairn-ehr/drugref/issues/179) is
 the tools half of the same channel).*
 
+**⇒ THE SUITE-COUNT GATE ROUND ✅ DONE (2026-09-02) — issue #146, no migration.**
+Full account: PROJECT-NOTES § "The suite-count gate round". **Read the number there, not here** — this line
+deliberately carries none, because restating it is five of the nine occurrences of it going stale. The suite
+count in PROJECT-NOTES § "How to run / test" calls itself THE ONE HOME FOR THIS NUMBER, had been rewritten
+three times to stop itself drifting, and drifted after each rewrite — nine times, twice into a commit message,
+once on the branch whose own diff added the sentence saying a commit message is not a home.
+`tests/test_suite_count.py` now reads that line and compares it with what `pytest` collected, so the round that
+changes the suite fails the suite it changed. Three things make it more than a comparison: the count is the
+**pre-deselection** total (CI runs `-m "not livepage"`, so a selected-item count would differ between CI and a
+local run and this line could only ever have matched one of them); a **narrowed** run skips, and a negative
+control pins that the bare and the CI command lines are *not* narrowed, because a too-eager detector would make
+this a permanent skip — issues 74/66/76 again; and the ledger of narrowing pytest options **refuses a name it
+does not recognise** rather than defaulting it to "not in use".
+
+**Found on the way past and fixed**: `test_registry_read.py`'s emptiness test asserted a global precondition
+(no moieties registered) that it never established, and had passed since issue 120 only because twenty later
+modules `TRUNCATE` and it sorts after several of them. Reproduce with
+`uv run pytest tests/test_cli.py tests/test_registry_read.py`; confirmed pre-existing on unmodified `main`. The
+fix TRUNCATEs **inside the test's transaction**, which the `conn` fixture then rolls back, so no other module's
+committed state is disturbed.
+
+⇒ *The rule: **prose that has failed nine times is not going to work on the tenth.** Every rewrite of that
+comment was a correct diagnosis with no mechanism attached — which is the notice-channel round's lesson
+("a comment in one module is not a channel") applied to a document instead of to a module. And: **a test that
+asserts a precondition it did not establish passes for a reason it does not state**, which the suite cannot
+distinguish from passing for the right one.*
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

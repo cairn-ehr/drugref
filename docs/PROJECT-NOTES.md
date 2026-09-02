@@ -5147,6 +5147,73 @@ ceiling: a ledgered module may shrink and leave, and may not grow.
   making every unexpected warning fatal everywhere is a much larger behaviour change and would need its own
   measurement of what the ingests emit (on the evidence above: nothing).
 
+## The suite-count gate round (2026-09-02) — issue #146, no migration, suite 2538 → 2561
+
+**The number in § "How to run / test" is now checked by a test instead of by a paragraph.** That comment calls
+itself THE ONE HOME FOR THIS NUMBER, has been rewritten three times to stop itself drifting, and drifted after
+each rewrite — nine times in all, twice into a commit message, once on the very branch whose diff added the
+sentence saying a commit message is not a home. This repo's own standing rule covers it: **a gate that is prose
+is a gate that does not fire** (issues 74/66/76). `tests/test_suite_count.py` is the gate; `tests/suite_count.py`
+holds the pure halves it rests on. **The number still lives in exactly one place** — the new files read it and
+never restate it, which is the property #146 asked for out loud, because occurrence six was created by the round
+that *filed* #146 writing the count into three further places.
+
+### The three decisions that are load-bearing, and the trap each avoids
+
+- **THE COUNT IS THE PRE-DESELECTION TOTAL, taken in-process.** `conftest.pytest_collection_finish` records
+  `len(session.items)` plus everything `pytest_deselected` saw. Adding deselections back is not tidiness: CI runs
+  `uv run pytest -q -m "not livepage"`, which deselects one test, so a selected-item count would be **2560 in CI
+  and 2561 locally** and this line could only ever have matched one of them — a gate that fails in CI for a
+  reason that is not a defect gets switched off. Both runs now measure pytest's own *"collected N items"*.
+  #146 rejected a `--collect-only` subprocess as slow and fragile; the hook costs nothing and cannot disagree
+  with the run it belongs to.
+- **A NARROWED RUN SKIPS, AND THE SKIP IS ITSELF PINNED BY A NEGATIVE CONTROL.** `pytest tests/test_x.py`
+  collects a subset on purpose and cannot be compared with a whole-suite figure. The danger is the other
+  direction: a narrowing detector that is **too eager** turns the gate into a permanent skip — issues 74/66/76
+  exactly, and nothing else in the suite would ever mention it again. So
+  `test_the_gate_fires_on_the_two_invocations_that_actually_run_it` asserts that a bare `uv run pytest` and CI's
+  `-m "not livepage"` both come back **not narrowed**, and `ci.yml`'s second step fails on any skip, which pins
+  that branch shut where it matters. `-k`, `-m` and `--deselect` are deliberately **absent** from the ledger of
+  narrowing options: they deselect rather than narrow, and deselections are counted back.
+- **THE OPTION LEDGER REFUSES A NAME IT DOES NOT RECOGNISE.** The natural `options.get(name, neutral)` would make
+  a renamed pytest dest read as *"not in use"* for ever — the ledger would go blind and say nothing. It raises
+  instead, and a second test pins every name against the installed pytest's own `vars(config.option)`.
+
+**The remaining hole is small and chosen.** A narrowing the ledger does not know about collects FEWER tests than
+the line states, and the gate calls that **drift** — loud and wrong, rather than silent and right.
+Under-detection is noisy; over-detection is the one that goes quiet.
+
+**And the reader refuses ambiguity.** `stated_suite_count` requires **exactly one** line matching
+`^# <count> tests (THE ONE HOME FOR THIS NUMBER`, and raises naming how many it found otherwise. A zero-match
+scan that passes is `test_spl_tools_smoke.py`'s defect from the round before, and the paragraph this number
+heads is full of other numerals — every past drift is recorded there as a pair.
+
+### What the round found on the way past: a test that passed for a reason it did not state
+
+**`test_registry_read.py::test_registry_is_empty_on_a_migrated_but_uningested_database` was order-dependent, and
+had been since issue 120.** It asserts a GLOBAL precondition — the registry holds no moieties — that it never
+established. Half this suite commits: `test_cli.py::test_ingest_unii_end_to_end` registers real moieties, and
+the only reason the assertion held was that twenty later modules `TRUNCATE` in an autouse fixture and this file
+sorts after several of them. **Reproduce it in 1.4 s**:
+`uv run pytest tests/test_cli.py tests/test_registry_read.py`. Found because `--lf` hoists the files with cached
+failures to the front, which is a reordering the alphabetical accident does not survive — and **confirmed
+pre-existing by re-running it on unmodified `main`** (2537 passed, 1 failed) before anything here was written.
+
+The fix is a fixture that TRUNCATEs **without committing**. TRUNCATE is transactional in PostgreSQL and the
+`conn` fixture rolls back after every test, so every committed row the suite has accumulated survives for the
+next module — unlike the autouse fixtures in `test_cli.py` and `test_ingest_run.py`, which commit because the
+code they exercise commits. It has to be TRUNCATE and not DELETE: the append-only floor's row-level triggers
+refuse a DELETE outright, and not covering TRUNCATE is the documented bypass (ROADMAP § "Floor hardening").
+**The suite count is unchanged by this half** — one test moved onto a fixture, none added.
+
+### Verified
+
+`uv run pytest` **2561 passed in 70.72 s**; CI's own shape
+(`-q --strict-markers -p no:randomly -rs -m "not livepage"`) **2560 passed, 1 deselected, 0 skipped**; the
+reordered `--lf` run **2561 passed**; `uv run ruff check .` clean. The gate was also observed **failing** before
+the number was updated — `states 2538 tests; this run collected 2561 (+23)` — which is the only way to know it
+is not a third gate that never fires.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5229,9 +5296,9 @@ exactly 500 against a HARD cap test, so the next line added to it breaks CI, and
 dictating where functions live rather than merely measuring size.
 
 **Filed by the DrugCentral rounds (2026-08-23)** — **[#146](https://github.com/cairn-ehr/drugref/issues/146)**
-the suite-count line in § "How to run / test" has drifted six times and is guarded by prose only; it wants a
-test that reads the stated number and counts the collected suite (filed by the re-measurement round, recorded
-here because this ledger is the ONE home and it had lived only in HANDOVER) ·
+the suite-count line in § "How to run / test" was guarded by prose only and had drifted **nine** times —
+**CLOSED 2026-09-02** by `tests/test_suite_count.py`, which reads the stated number and compares it with what
+`pytest` collected; § "The suite-count gate round" ·
 **[#148](https://github.com/cairn-ehr/drugref/issues/148)** `exact_ddi_pair` adds a THIRD population to the
 ungraded cross-source disagreement question — **635 of the 7,501 DrugCentral pairs are already reachable
 through MED-RT's class expansion and nothing compares them**, which is #97/#106 one tier down ·
@@ -5356,7 +5423,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2538 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2561 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -5422,7 +5489,8 @@ git config core.hooksPath .githooks
 # last test existed, and the full run said 2402. Even a number measured in the
 # same session goes stale if it is measured before the work stops. Read it off
 # the run that VERIFIES green, not off an earlier count -- and issue 146 (a test
-# that reads this line and counts the suite) is still the only real fix.
+# that reads this line and counts the suite) was the only real fix; it is now
+# tests/test_suite_count.py, which measures exactly that.
 # AND THE COPY-COST ROUND -- issue #160, no migration -- added 3: 2443 -> 2446,
 # being the FK-parent-analysed-before-its-child pin, the whole-schema census of
 # which foreign keys can be planned onto a loose index, and the ANALYZE
@@ -5483,8 +5551,37 @@ git config core.hooksPath .githooks
 # LINE, AND THE SECOND TIME WAS ON A BRANCH WHOSE OWN DIFF ADDED THE SENTENCE
 # SAYING A COMMIT MESSAGE IS NOT A HOME. Prose has now failed NINE times against
 # nine rounds, several of which had just finished reading it. Issue 146 -- a test
-# that reads this number and counts the collected suite -- is still the only real
-# fix and is still not written.
+# that reads this number and counts the collected suite -- was the only real fix,
+# and it was not written.
+# ⇒ A TENTH OCCURRENCE CANNOT NOW HAPPEN QUIETLY: ISSUE 146 IS WRITTEN.
+# tests/test_suite_count.py reads THIS line and compares it with what pytest
+# actually collected, so a round that adds tests and forgets this line fails the
+# suite it just changed instead of being caught by a human a round later. That is
+# the whole of the change: 2538 -> 2561, +23, being the gate itself (1), the pure
+# readers it rests on and their refusals (21), and the negative control pinning
+# the two command lines the gate must FIRE on (1).
+# THREE THINGS ABOUT IT ARE LOAD-BEARING, and each is the shape of a trap this
+# repo has already paid for:
+#   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
+#     deselects one test, so a selected-item count would be one lower in CI than
+#     it is locally and this line could only ever have matched one of the two.
+#     conftest's `pytest_deselected` adds them back, so both runs measure the same
+#     thing -- pytest's own "collected N items".
+#   - A NARROWED RUN SKIPS, AND THE SKIP IS ITSELF PINNED. `pytest tests/test_x.py`
+#     collects a subset on purpose, so the comparison is skipped there. A detector
+#     that were too eager would turn the gate into a PERMANENT skip, which is
+#     issues 74/66/76 exactly, so the negative control asserts that a bare
+#     `uv run pytest` and CI's command line both come back NOT narrowed -- and
+#     ci.yml's second step fails on any skip, which pins that branch shut there.
+#   - THE OPTION LEDGER REFUSES A NAME IT DOES NOT RECOGNISE. The natural
+#     `options.get(name, neutral)` would make a renamed pytest dest read as "not
+#     in use" forever; it raises instead, and a second test pins every name
+#     against the installed pytest's own `config.option`.
+# The remaining hole is small and deliberate: a narrowing the ledger does not know
+# about collects FEWER tests than this line states, and the gate calls that DRIFT
+# -- loud and wrong, rather than silent and right. Under-detection is noisy;
+# over-detection is the one that goes quiet, which is why only the first is
+# tolerated.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
 # DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,
@@ -5493,14 +5590,14 @@ git config core.hooksPath .githooks
 # was caught by the START-OF-SESSION check the fifth occurrence added. A commit
 # message is not a home: it cannot be edited after the fact and nobody greps it.
 # That is SEVEN occurrences of one failure mode against a comment rewritten
-# three times to prevent it. Issue 146 is still the only real fix and is still
-# not written.
+# three times to prevent it. Issue 146 was the only real fix and, at that point,
+# was still not written.
 # THE SIXTH-AND-A-HALF CASE DID NOT HAPPEN, AND THAT IS WORTH RECORDING TOO: the db/049
 # round read the collected count off `pytest --collect-only -q` at the START of its
 # documentation task, wrote it HERE, and deliberately did not restate it in HANDOVER,
 # ROADMAP or its own section heading -- which is the exact act that created the sixth
-# occurrence. Issue 146 (a test that reads this number and counts the suite) is still
-# the only thing that would make prose unnecessary, and it is still not written.
+# occurrence. Issue 146 (a test that reads this number and counts the suite) was still
+# the only thing that would make prose unnecessary, and was still not written.
 # THE SIXTH OCCURRENCE WAS CAUGHT IN REVIEW ON THIS BRANCH, and is issue 146: the
 # re-measurement round wrote 1828 into THREE more places (HANDOVER, ROADMAP and its
 # own section heading) while filing an issue about this line drifting. All three now
