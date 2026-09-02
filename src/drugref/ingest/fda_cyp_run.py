@@ -389,6 +389,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     reports success. FDA genuinely shrinking its table is a real event -- it
     just has to be a decision someone made, not one nobody saw.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # 1. PARSE FIRST, before any run row exists, so a crash here -- an unknown
     #    pathway token, a ragged row, a missing dateModified, a missing
     #    Footnotes section -- leaves no trace to explain (gsrs_run's ordering,
@@ -431,7 +432,8 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     # 2. Open the run. COMMITS in its own transaction (provenance.open_run) --
     #    everything from here is the work, and it rolls back together on failure.
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=source_checksum, writer=WRITER)
+                                 source_checksum=source_checksum, writer=WRITER,
+                                 clock=clock)
 
     try:
         # 3. The resolution index. Read ONCE, whole -- moieties_by_display_name is

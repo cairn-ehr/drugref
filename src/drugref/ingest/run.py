@@ -61,15 +61,20 @@ def ingest_unii(conn: psycopg.Connection, *, unii_path, crosswalk_path,
     re-raising. A caller with pending work has it committed at the provenance boundary,
     so callers must commit their own work before calling.
 
-    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
-    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
-    so leave no trace of a crash during it. Everything but the checksum read is covered.
-    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike MOST of the
+    other writers -- medrt_run, mesh_run, mesh_rel_run, gsrs_run, fda_cyp_run,
+    drugcentral_run and spl_run all do substantial work before opening a run, and so
+    leave no trace of a crash during it. (Stated structurally rather than as a tally:
+    this sentence named three when there were six writers and seven when there are
+    eleven, which is the hand-listed-count defect db/053 removes from db/025.)
+    Everything but the checksum read is covered.
+    The orchestrators are not uniform in this, and ingest_run_incomplete says so.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     log.info("UNII ingest starting (release=%s)", upstream_release)
     try:
         summary = _ingest_unii(conn, unii_path, crosswalk_path, allowlist_path,
-                               upstream_release)
+                               upstream_release, clock)
     except Exception:
         conn.rollback()
         log.exception("UNII ingest failed (release=%s); transaction rolled back",
@@ -80,13 +85,15 @@ def ingest_unii(conn: psycopg.Connection, *, unii_path, crosswalk_path,
 
 
 def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
-                 allowlist_path, upstream_release: str) -> UniiSummary:
+                 allowlist_path, upstream_release: str,
+                 clock: provenance.RunClock) -> UniiSummary:
     """The body of one UNII ingest (see ingest_unii for the transaction contract)."""
     crosswalk = gate.load_crosswalk(crosswalk_path)
     allowlist = gate.load_allowlist(allowlist_path)
 
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(unii_path), writer=WRITER)
+                                 source_checksum=checksum(unii_path), writer=WRITER,
+                                 clock=clock)
 
     # The admission projection is rebuilt, not appended to (db/011): clear it
     # before the loop so a signal upstream has stopped asserting disappears with

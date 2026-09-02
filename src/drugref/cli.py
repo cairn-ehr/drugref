@@ -16,12 +16,12 @@ pg_rewrite, which sees views and matviews and CANNOT see a query embedded in Pyt
 a handler with its own SELECT would be a reader of an append-only curated table that no
 test in this repository could notice.
 
-`_handle_status` IS THE EXCEPTION, and deliberately so: it embeds two SELECTs, against
-`drugref.loaded_release` and `drugref.ingest_run_incomplete`. Neither is curated,
-append-only data a silent Python reader could corrupt unnoticed -- they are
-operational views nothing governs that way -- so the pg_rewrite discipline above does
-not apply to them, and tests/test_cli.py drives them directly through a stub
-connection instead of a grep.
+`_handle_status` IS THE EXCEPTION, and deliberately so: it embeds a SELECT against
+`drugref.ingest_run_incomplete`, and cli_status.print_loaded_release_block embeds the
+matching one against `drugref.loaded_release`. Neither is curated, append-only data a
+silent Python reader could corrupt unnoticed -- they are operational views nothing
+governs that way -- so the pg_rewrite discipline above does not apply to them, and
+tests/test_cli.py drives them directly through a stub connection instead of a grep.
 
 THE EXCEPTION STOPS THERE, and a grep now says so. `_handle_status`' third block reads
 the CURATED overlay, so it goes through `curation.unresolved_targets` rather than a
@@ -235,12 +235,7 @@ def _handle_status(conn, args) -> int:
     # that got cut off rather than as an answer. Nothing loaded IS the answer there.
     # The fifth prints "0" deliberately: its lines are COUNTS of rules that should not
     # exist, not lists that happen to be empty, and "0" is what an operator diffs.
-    loaded = conn.execute(
-        "SELECT source, writer, upstream_release, finished_at "
-        "FROM drugref.loaded_release").fetchall()
-    print("loaded releases:" if loaded else "loaded releases: none")
-    for row in loaded:
-        print("  {:<8} {:<14} {:<12} {}".format(*(str(c) for c in row)))
+    cli_status.print_loaded_release_block(conn)
 
     incomplete = conn.execute(
         "SELECT ingest_run_id, source, writer, upstream_release, started_at "

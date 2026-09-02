@@ -10,13 +10,16 @@ THE ASYMMETRY IS THE DESIGN and is what these tests exist to hold:
   the work. A separate commit would let `finished` become true about data that is not
   there -- the same failure one line further down.
 """
+import ast
+import datetime
 import pathlib
+import time
 
 import psycopg
 import pytest
 
 from drugref import provenance
-from drugref.ingest import run
+from drugref.ingest import gate, run
 
 FIX = pathlib.Path(__file__).parent / "fixtures" / "unii_subset.tsv"
 DATA = pathlib.Path("src/drugref/data")
@@ -41,7 +44,8 @@ def test_open_run_commits_the_row_immediately(conn, _migrated):
     """Visible from ANOTHER connection before any work happens -- the property the
     whole issue turns on, and one a same-connection SELECT could not prove."""
     run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
-                                 source_checksum="sum", writer="unii_run")
+                                 source_checksum="sum", writer="unii_run",
+                                 clock=provenance.start_clock())
 
     with psycopg.connect(_migrated) as other:
         assert other.execute(
@@ -53,7 +57,8 @@ def test_finish_run_does_not_commit(conn, _migrated):
     """The stamp belongs to the work's transaction. If finish_run committed, a run
     could be marked finished and then have its work rolled back underneath it."""
     run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
-                                 source_checksum="sum", writer="unii_run")
+                                 source_checksum="sum", writer="unii_run",
+                                 clock=provenance.start_clock())
     provenance.finish_run(conn, run_id)
 
     with psycopg.connect(_migrated) as other:
@@ -148,3 +153,216 @@ def test_the_writer_vocabulary_matches_the_database(conn):
                      "(source, upstream_release, source_checksum, writer) "
                      "VALUES ('UNII', 'r1', 'sum', %s)", (writer,))
     conn.rollback()
+
+
+# ---- the duration the two stamps are supposed to bound (#159) ----------------
+#
+# WHAT WAS WRONG, in one sentence: both stamps were `now()`, which is
+# `transaction_timestamp()`, so `finished_at - started_at` measured the gap between
+# two TRANSACTION START TIMES and never the work between them. Measured on the
+# project's own verification databases, EIGHT of the nine feeds measured reported
+# between 1.3 ms and 24 ms; the ninth was mesh_rel_run, which parses 750 MB of MeSH
+# BETWEEN
+# open_run and its first write and so reported 48.3 s of exactly the wrong thing: the
+# time the orchestrator spent NOT touching the database.
+#
+# THE ISSUE'S OWN HEADLINE EXAMPLE EVAPORATED UNDER IT. #159 was written from
+# `drugref_spl051`, where spl_run reported 49.85 s; the COPY-cost round then added a
+# `conn.rollback()` before the DailyMed scan, which moved `open_run` onto the far side
+# of it, and on the two databases built 2026-09-01 spl_run reports 2.6 ms. Nobody
+# looked. These tests are what would have noticed.
+
+
+def test_finish_run_stamps_the_clock_not_the_transaction(conn, _migrated):
+    """`finished_at` must be read from the clock, not from the transaction's start.
+
+    THE PRODUCTION CHANGE THIS CATCHES: `finish_run` writing `now()`. Under it this
+    assertion is exactly 0 -- the stamp and `now()` are the same value by definition,
+    however long the work took -- so any positive lower bound fails.
+
+    The sleep is inside the WORK transaction, which is the one whose start `now()`
+    would report: `open_run` commits, so the statement below opens a fresh one.
+    """
+    run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
+                                 source_checksum="sum", writer="unii_run",
+                                 clock=provenance.start_clock())
+    conn.execute("SELECT pg_sleep(0.25)")
+    provenance.finish_run(conn, run_id)
+
+    ahead_of_transaction_start = conn.execute(
+        "SELECT finished_at - now() FROM drugref.ingest_run WHERE ingest_run_id = %s",
+        (run_id,)).fetchone()[0]
+    assert ahead_of_transaction_start >= datetime.timedelta(seconds=0.25)
+
+
+def test_open_run_dates_the_row_from_the_clock_it_is_handed(conn, _migrated):
+    """`started_at` must date the RUN, not the INSERT that records it.
+
+    THE PRODUCTION CHANGE THIS CATCHES: `open_run` letting the column default fill
+    itself in, which dates the row from the statement rather than from the orchestrator
+    entry -- and so silently drops every parse, scan and checksum an orchestrator does
+    before opening its run. mesh_rel_run does 48 s of it; spl_run does the DailyMed
+    scan and a 19.3 GB checksum.
+
+    The interval is measured SERVER-SIDE on both ends -- `clock_timestamp()` minus a
+    client-measured elapsed -- so nothing here compares a client clock with a server
+    one.
+    """
+    clock = provenance.start_clock()
+    time.sleep(0.25)
+    run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
+                                 source_checksum="sum", writer="unii_run", clock=clock)
+
+    backdated_by = conn.execute(
+        "SELECT clock_timestamp() - started_at FROM drugref.ingest_run "
+        "WHERE ingest_run_id = %s", (run_id,)).fetchone()[0]
+    assert backdated_by >= datetime.timedelta(seconds=0.25)
+
+
+def test_open_run_refuses_a_bare_clock_reading(conn, _migrated):
+    """A `float` is not a RunClock, and the difference is 56 years.
+
+    `start_clock` wraps `time.monotonic()`, whose zero is arbitrary and
+    process-relative. Handing `open_run` a `time.time()` reading instead type-checks
+    under any annotation Python enforces at runtime (none), and would record a run
+    that began in 1970 -- a wrong DURATION rather than a crash, which is the failure
+    mode this whole issue is about. So the type is checked rather than annotated.
+    """
+    with pytest.raises(TypeError, match="RunClock"):
+        provenance.open_run(conn, source="UNII", upstream_release="r1",
+                            source_checksum="sum", writer="unii_run",
+                            clock=time.time())
+
+
+def test_a_clock_cannot_be_built_from_a_wall_clock_reading():
+    """THE HOLE THE isinstance CHECK LEFT: it guards the WRAPPER, not the value.
+
+    `RunClock(time.time())` is one keystroke from `start_clock()` and is exactly the
+    confusion open_run's error message describes -- and it used to pass, because a
+    frozen dataclass with a public constructor and no validation accepts any float.
+    What that produced was not an error but a run dated 2083 that open_run COMMITTED,
+    followed by the whole ingest being thrown away when finish_run tripped db/053's
+    CHECK on its last statement before the commit: hours of SPL work discarded for an
+    argument error detectable on the orchestrator's first line, and a future-dated row
+    left in ingest_run_incomplete forever.
+
+    Rejected on the general predicate -- a monotonic reading cannot be in the future --
+    rather than by sniffing for epoch scale, so `elapsed()`'s "never negative" becomes
+    true by construction instead of by docstring.
+    """
+    with pytest.raises(ValueError, match="future"):
+        provenance.RunClock(time.time())
+    with pytest.raises(TypeError):
+        provenance.RunClock("now")
+    # The sanctioned constructor, and a hand-built PAST reading, both still work: this
+    # must reject the wrong epoch, not every clock it did not make itself.
+    assert provenance.start_clock().elapsed() >= 0
+    assert provenance.RunClock(time.monotonic() - 5).elapsed() >= 5
+
+
+def _clock_starters():
+    """Every (file, function) in src/ whose body calls `start_clock()` anywhere.
+
+    PARSED, NOT GREPPED, and the difference is not pedantry: the substring form of
+    this test matched `onchigh_run.py` on a COMMENT (line 58 names
+    `provenance.open_run(writer=WRITER)` in prose), so a module could have satisfied
+    it with no call at all. `provenance.py` is excluded because `open_run`'s TypeError
+    message quotes `start_clock()` as text.
+    """
+    for path in _sources():
+        if path.name == "provenance.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.FunctionDef) and "start_clock" in ast.dump(node):
+                yield path, node
+
+
+def test_every_orchestrator_starts_its_clock_on_its_very_first_line(_migrated):
+    """THE INVARIANT THE WHOLE ROUND RESTS ON, held structurally at last.
+
+    ⇒ WHAT THE OLD GREP COULD NOT SEE. It asserted that a module calling `open_run`
+    also contains the text `start_clock()` -- which is satisfied by a clock started on
+    the line ABOVE `open_run`, measuring nothing. Its own docstring claimed to catch
+    that ("what it CAN be is satisfied uselessly, and that is what this greps for");
+    it did not, and could not. The only behavioural killer,
+    test_a_run_records_the_work_done_before_it_opened, drives `ingest_unii` alone --
+    so moving `start_clock()` down in spl_run.py, 108 lines and a 17.6 GB DailyMed
+    scan above its `open_run`, silently dropped the entire figure this issue exists to
+    publish and left the suite green.
+
+    ⇒ WHAT THIS ASSERTS INSTEAD. In every function that starts a clock, that call is
+    the FIRST executable statement -- docstring aside. It is exact, it is derived from
+    the tree rather than hand-listed, and it costs no runtime. It also replaces eleven
+    copies of a `# FIRST:` comment as the thing actually holding the rule, in a repo
+    whose CLAUDE.md counts four rounds lost to one rule kept in two places.
+
+    The positive control is not decoration: a broken parse or a renamed helper makes
+    the population empty and every assertion below vacuously true.
+    """
+    starters = list(_clock_starters())
+    assert len(starters) >= 11, (
+        f"only {len(starters)} clock-starting functions found; the parse, not the "
+        "tree, is wrong")
+    late = []
+    for path, node in starters:
+        body = node.body
+        # Skip the docstring, which is an Expr wrapping a bare string constant.
+        first = body[1] if (isinstance(body[0], ast.Expr)
+                            and isinstance(body[0].value, ast.Constant)) else body[0]
+        if "start_clock" not in ast.dump(first):
+            late.append(f"{path.name}:{node.name}")
+    assert late == [], (
+        f"{late} start their clock after doing work; every second of that work is "
+        "missing from the duration the operator reads off `drugref status`")
+
+
+def test_only_provenance_turns_the_two_stamps_into_a_duration():
+    """THE MIRROR OF THE ONE-WRITER CONTRACT, on the side this round is about.
+
+    The write side has had two grep guards since #16; the READ side had none, in a
+    round whose entire subject is a wrong read. Rows written before db/053 hold two
+    transaction timestamps whose difference is a plausible number and not a duration,
+    and `format_run_duration` is the one place that knows it. The next exporter,
+    report or `tools/` script to write the subtraction itself would get that number
+    back with nothing failing -- the schema's only defence is a column COMMENT, and no
+    query reads a comment.
+
+    ⇒ provenance.py IS EXCLUDED RATHER THAN EXPECTED. It holds the needle only in
+    PROSE -- the docstrings explaining what the subtraction used to mean -- and
+    asserting that prose stays put would pin an explanation rather than a contract.
+    What this pins is that no OTHER module writes the subtraction at all.
+    """
+    subtractors = [p for p in _sources()
+                   if p.name != "provenance.py"
+                   and "finished_at - started_at" in p.read_text()]
+    assert [p.name for p in subtractors] == []
+
+
+def test_a_run_records_the_work_done_before_it_opened(conn, _migrated, monkeypatch):
+    """The duration must cover what the orchestrator did BEFORE `open_run`.
+
+    THE MUTANT THIS KILLS, and it is the only test here that kills it: moving
+    `start_clock()` down to the line above `open_run`. Every other assertion in this
+    module still holds under that mutant -- both stamps are still clock readings, the
+    row is still committed early -- and the published number is still wrong for the
+    two feeds it matters for, because mesh_rel_run parses 750 MB of MeSH and spl_run
+    scans 17.6 GB of DailyMed before their runs exist.
+
+    The delay is injected into `gate.load_crosswalk`, which `ingest_unii` calls BEFORE
+    `open_run`. A sleep anywhere after `open_run` would pass under the mutant too, and
+    so would prove nothing.
+    """
+    real = gate.load_crosswalk
+
+    def slow_crosswalk(*args, **kwargs):
+        time.sleep(0.25)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr("drugref.ingest.gate.load_crosswalk", slow_crosswalk)
+
+    run.ingest_unii(conn, unii_path=FIX, crosswalk_path=XW, allowlist_path=AL,
+                    upstream_release="2026-07")
+
+    recorded = conn.execute(
+        "SELECT finished_at - started_at FROM drugref.ingest_run").fetchone()[0]
+    assert recorded >= datetime.timedelta(seconds=0.25)

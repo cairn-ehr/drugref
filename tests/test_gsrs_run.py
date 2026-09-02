@@ -211,6 +211,39 @@ def test_re_ingest_replaces_rather_than_accumulates(conn, registry):
     assert total == second.rows_written
 
 
+def test_a_failure_in_the_writes_rolls_back_and_names_the_release(conn, registry,
+                                                                  monkeypatch, caplog):
+    """GSRS WAS THE ONE ORCHESTRATOR OF ELEVEN WITH NO `except` AT ALL.
+
+    The gap was harmless while `finish_run` was a bare `UPDATE ... = now()` that could
+    not fail. db/053 gave it a CHECK to trip, so the last statement before the commit
+    can now raise -- and without a handler a programmatic caller got back a connection
+    in an ABORTED transaction, with nothing in the log saying which source or release
+    died. fda_cyp_run's own comment records paying exactly that cost as the previous
+    last-orchestrator-to-be-fixed.
+
+    The run row must SURVIVE the rollback -- that is open_run's early commit doing its
+    job -- while the work must not, which is the partition ingest_run_incomplete
+    exists to report.
+    """
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated failure in the writes")
+
+    monkeypatch.setattr("drugref.questions.register_from_gaps", boom)
+
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        gsrs_run.ingest_gsrs(conn, dump_path=FIXTURE, upstream_release="2026-02-26")
+
+    assert "GSRS" in caplog.text and "2026-02-26" in caplog.text
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.substance_composition").fetchone()[0] == 0
+    # SCOPED TO THIS WRITER: the `registry` fixture opens a run of its own, so a bare
+    # count would be asserting about somebody else's row.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.ingest_run_incomplete "
+        "WHERE writer = 'gsrs_run'").fetchone()[0] == 1
+
+
 def test_gsrs_is_a_declared_writer_and_source():
     from drugref import ids as ids_module
     from drugref import provenance

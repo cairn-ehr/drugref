@@ -21,7 +21,12 @@ def _run(conn, source, writer, release="r1", finished=False):
         "VALUES (%s, %s, 'sum', %s) RETURNING ingest_run_id",
         (source, release, writer)).fetchone()[0]
     if finished:
-        conn.execute("UPDATE drugref.ingest_run SET finished_at = now() "
+        # clock_timestamp(), NOT now(), and db/053's CHECK is what says so. `now()` is
+        # transaction_timestamp(), which is EARLIER than the clock_timestamp() the
+        # column defaulted `started_at` to a statement ago -- so this row finished
+        # before it started, by the few milliseconds between the two statements. A
+        # helper that mimics a finished run has to mimic the clock the writer uses.
+        conn.execute("UPDATE drugref.ingest_run SET finished_at = clock_timestamp() "
                      "WHERE ingest_run_id = %s", (run_id,))
     return run_id
 

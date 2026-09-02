@@ -117,10 +117,14 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     re-raising. A caller with pending work has it committed at the provenance boundary,
     so callers must commit their own work before calling.
 
-    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike medrt_run,
-    mesh_run and mesh_rel_run, which parse their whole release before opening a run and
-    so leave no trace of a crash during it. Everything but the checksum read is covered.
-    The six orchestrators are not uniform in this, and ingest_run_incomplete says so.
+    THE WINDOW OPENS EARLY HERE: the parse streams AFTER open_run, unlike MOST of the
+    other writers -- medrt_run, mesh_run, mesh_rel_run, gsrs_run, fda_cyp_run,
+    drugcentral_run and spl_run all do substantial work before opening a run, and so
+    leave no trace of a crash during it. (Stated structurally rather than as a tally:
+    this sentence named three when there were six writers and seven when there are
+    eleven, which is the hand-listed-count defect db/053 removes from db/025.)
+    Everything but the checksum read is covered.
+    The orchestrators are not uniform in this, and ingest_run_incomplete says so.
 
     ONLY AU/PBS today (review round, finding 8): `jurisdiction`/`source` used to be
     parameters here, but db/009's CHECK constraints admit no other value, and
@@ -132,6 +136,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     the module constants above are the only correct values and are not exposed as
     knobs a caller could get wrong.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     path = pathlib.Path(items_csv_path)
     if source_checksum is None:
         # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
@@ -146,7 +151,8 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     try:
         run_id = provenance.open_run(conn, source=SOURCE,
                                      upstream_release=upstream_release,
-                                     source_checksum=source_checksum, writer=WRITER)
+                                     source_checksum=source_checksum, writer=WRITER,
+                                     clock=clock)
 
         local.clear_source_products(conn, SOURCE)
         # Index drugref's LABEL, not its INN claims (#26). Since the gate

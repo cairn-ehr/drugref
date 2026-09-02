@@ -16,9 +16,10 @@ pass is 19.3 GB long:
 **EVERY REFUSAL IN STEPS 1-4 HAPPENS BEFORE THE RUN ROW EXISTS**, which is
 stricter than `drugcentral_run`'s ordering and for the same reason it gives: a
 refusal must leave the database exactly as it was, and an `ingest_run` with
-`finished_at NULL` is not "exactly as it was". Here the scan takes tens of
-minutes, so a run row opened before it would sit unfinished for the whole of a
-pass that might yet refuse.
+`finished_at NULL` is not "exactly as it was". Here the scan is minutes long --
+2 min 09 s over 19.3 GB since issue 160 dropped it from 12 min 51 s; it read "tens
+of minutes" until that round and nobody updated it -- so a run row opened before it
+would sit unfinished for the whole of a pass that might yet refuse.
 
 **THE CHECKS IN STEP 5 ARE DELIBERATELY AFTER IT**, and the claim above used to
 be written without that qualification, which made it false: `reconcile`,
@@ -231,6 +232,7 @@ def ingest_spl(
     `MEASURED_NOVEL_FLOOR` at the CLI, which is the production path -- so a real
     run checks by default and a partial-corpus run has to say so out loud.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.
     # Under autocommit each statement is its own transaction, so `conn.rollback()`
     # rolls back nothing and a failure between the clear and `finish_run` leaves
@@ -273,7 +275,7 @@ def ingest_spl(
     # NAMED fields, not a positional unpack: the two mappings are the same type,
     # and swapping them would build the matcher out of UNII codes and resolve
     # every subject against display names -- a failure only `check_floors` would
-    # notice, twelve minutes later.
+    # notice, at the very end of the run.
     registry = spl_evidence.load_registry(conn)
     names, known_uniis = registry.by_name, registry.by_unii
     if not names or not known_uniis:
@@ -297,8 +299,13 @@ def ingest_spl(
     # ⇒ CLOSE THE SNAPSHOT BEFORE THE EXPENSIVE PASS.
     # `load_registry` is the first statement on a non-autocommit connection, so
     # it OPENED a transaction, and nothing below commits until `open_run` on the
-    # far side of the DailyMed scan and the checksum. Measured, that is ~12.5
-    # minutes of `idle in transaction` on a connection holding a snapshot: it
+    # far side of the DailyMed scan and the checksum. Measured 2026-09-01, that
+    # window is ~50 s of `idle in transaction` -- the scan plus the 19.3 GB
+    # checksum, not the whole run, and not the 262,032-record openFDA read, which
+    # happens above `load_registry`. (`open_run` DOES end this transaction:
+    # `provenance.open_run` commits, and says so. The rollback below is what makes
+    # the window ~0 rather than ~50 s; it is not what makes the window finite.)
+    # A connection holding a snapshot even that long:
     # pins `xmin` database-wide, so autovacuum can reclaim nothing in ANY table
     # for the duration, and where `idle_in_transaction_session_timeout` is set
     # the backend is killed at the END of the most expensive step in the ingest.
@@ -336,7 +343,7 @@ def ingest_spl(
         run_id = provenance.open_run(conn, source=spl.SOURCE,
                                      upstream_release=release,
                                      source_checksum=digest,
-                                     writer=spl.WRITER)
+                                     writer=spl.WRITER, clock=clock)
 
         spl_evidence.clear_source_spl(conn, spl.SOURCE)
 
@@ -348,6 +355,15 @@ def ingest_spl(
             for text_key in sorted(corpus.wordings)]
         stored_wordings = spl_evidence.write_wordings(
             conn, wording_rows, ingest_run_id=run_id, source=spl.SOURCE)
+        # ⇒ ANALYSE A PARENT BEFORE LOADING ANYTHING THAT REFERENCES IT (issue
+        # 160). Each foreign-key check below is planned the FIRST time it fires,
+        # so a parent with no statistics at that moment pins a bad plan and the
+        # whole load pays it -- and the ANALYZE at the end of this function
+        # arrives after the COPY has already been paid for, not in time to save
+        # it. Measured on the real releases: 493,539 ms for the subject COPY
+        # without these two calls, 1,352 ms with them, bought by 112 ms of
+        # ANALYZE. `analyze_loaded_table` carries the mechanism.
+        spl_evidence.analyze_loaded_table(conn, "spl_wording")
 
         stored_labels = spl_evidence.write_labels(
             conn,
@@ -357,6 +373,7 @@ def ingest_spl(
                 product_type=label.product_type, text_key=label.text_key)
              for label in corpus.labels),
             ingest_run_id=run_id, source=spl.SOURCE)
+        spl_evidence.analyze_loaded_table(conn, "spl_label")
 
         subject_rows, by_route = _subject_rows(
             corpus.labels, scan.found, known_uniis)

@@ -1,11 +1,13 @@
 # src/drugref/cli_status.py
-"""`drugref status`'s LATER BLOCKS, split out of cli.py -- the class grain (db/035) and
-the unrankable-severity fault (db/038, issue 116).
+"""`drugref status`'s BLOCKS, split out of cli.py -- the loaded releases and their
+runtimes (issue 159), the class grain (db/035) and the unrankable-severity fault
+(db/038, issue 116).
 
-TWO BLOCKS SINCE db/038, and the file docstring said "the CLASS-GRAIN BLOCK" while it
-held one. The module name was always the general one, so the second block belongs here
-rather than in a `cli_unrankable.py` that would exist only because this sentence was
-written too narrowly.
+THREE BLOCKS NOW, and the file docstring has twice been written too narrowly for what
+the module holds: it said "the CLASS-GRAIN BLOCK" while holding one, then "LATER BLOCKS"
+and "TWO BLOCKS" while the first block came here too. The module name was always the
+general one; a `cli_unrankable.py` or a `cli_releases.py` would exist only because a
+sentence was drawn too tight.
 
 WHY A MODULE RATHER THAN ANOTHER 50 LINES OF cli.py. cli.py was 483 lines before this
 round and the class grain's block plus its guard took it past CLAUDE.md rule 4's ~500
@@ -16,16 +18,60 @@ ones recording WHY the guard below exists -- which is exactly the knowledge this
 lost once already. `cli_chain`, `cli_curate`, `cli_policy`, `cli_signing` and
 `cli_signing_release` are the same split for the same reason; this is the sixth.
 
-NO SQL LIVES HERE, deliberately, and that is not incidental to the file's existence.
-The read is `curation.class_grain_counts`, because two of the three views this block
-reports on derive from `curated_class_interaction`, and cli.py's module docstring makes
-the rule: a handler must not embed SQL against curated, append-only tables, since the
-sweep that finds readers works through `pg_rewrite` and cannot see a query living in a
-Python string. This module is a VOICE, not a reader --
-`test_the_cli_embeds_no_sql_against_a_curated_table` covers it for the same reason it
-covers the five modules above.
+NO SQL AGAINST A CURATED TABLE LIVES HERE, and the qualifier is the whole rule -- an
+earlier version of this paragraph said "NO SQL LIVES HERE, deliberately", which stopped
+being true the moment the loaded-release block arrived with its `SELECT` against
+`drugref.loaded_release`. The class-grain read goes through
+`curation.class_grain_counts` because two of its three views derive from
+`curated_class_interaction`,
+and cli.py's module docstring makes the rule: a handler must not embed SQL against
+curated, append-only tables, since the sweep that finds readers works through
+`pg_rewrite` and cannot see a query living in a Python string.
+`test_the_cli_embeds_no_sql_against_a_curated_table` covers this module for the same
+reason it covers the five above -- and it PASSES on the loaded-release SELECT because
+`loaded_release` and `ingest_run_incomplete` are operational views nothing curates, the
+same exception cli.py's docstring already draws for `_handle_status`.
 """
-from drugref import curated_read, curation, migration_guard
+from drugref import curated_read, curation, db, migration_guard, provenance
+
+
+def print_loaded_release_block(conn) -> None:
+    """THE FIRST BLOCK: which upstream release each writer last landed, and how long it
+    took. Moved here from cli.py when issue 159's runtime column took that file to
+    499 of rule 4's ~500 lines -- the same trade this module's docstring argues for
+    above, and the reason it exists.
+
+    ⇒ THE RUNTIME IS NOT A SUBTRACTION DONE HERE. `provenance.format_run_duration`
+    owns it, and REFUSES to print one for a run written before db/053, whose two
+    stamps are transaction timestamps whose difference is a plausible-looking number
+    and not a duration at all (issue 159). Doing the arithmetic in this file would be
+    a second home for that rule, and the second home is always the one that forgets.
+
+    ⇒ THE WATERSHED IS READ ONCE, and only when there is something to date -- one
+    ledger lookup per command rather than one per row.
+
+    ⇒ AND WHEN IT CANNOT BE READ, THIS SAYS SO. `db.migration_applied_at` answers None
+    both on a database that predates db/053 and on one with no ledger at all (a
+    hand-replayed schema, a partial restore), and every line then reads "pre-db/053".
+    Printing that on every row while leaving an operator to guess which of the two
+    they have is a wrong answer by omission -- the same fault, one level up, as
+    publishing a number nobody can vouch for.
+    """
+    loaded = conn.execute(
+        "SELECT source, writer, upstream_release, finished_at, started_at "
+        "FROM drugref.loaded_release").fetchall()
+    print("loaded releases:" if loaded else "loaded releases: none")
+    watershed = db.migration_applied_at(
+        conn, provenance.WATERSHED_MIGRATION) if loaded else None
+    for source, writer, release, finished_at, started_at in loaded:
+        print("  {:<8} {:<14} {:<12} {} {}".format(
+            source, writer, release, finished_at,
+            provenance.format_run_duration(started_at=started_at,
+                                           finished_at=finished_at,
+                                           watershed=watershed)))
+    if loaded and watershed is None:
+        print(f"  (no runtimes: db/{provenance.WATERSHED_MIGRATION} is unapplied here, "
+              "or this database has no schema_migration ledger)")
 
 
 def print_class_grain_block(conn) -> None:

@@ -73,6 +73,7 @@ class GsrsSummary:
 def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
                 upstream_release: str) -> GsrsSummary:
     """Ingest one GSRS public dump into drugref.substance_composition."""
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # 1. PARSE FIRST, before any run row exists. The pass is ~8 s over 2.05 GB and
     #    touches no database; a crash here must leave no trace to explain.
     edges: dict[tuple[str, str, str], bool | None] = {}
@@ -107,33 +108,49 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
     #    so everything after it is the work and rolls back together on failure.
     run_id = provenance.open_run(conn, source=SOURCE,
                                  upstream_release=upstream_release,
-                                 source_checksum=source_checksum, writer=WRITER)
+                                 source_checksum=source_checksum, writer=WRITER,
+                                 clock=clock)
 
-    by_unii = composition.moiety_uuid_by_unii(conn)
-    composition.clear_source_composition(conn, SOURCE)
+    # 3. The work, and it MUST roll back as one. This was the only orchestrator of the
+    #    eleven with no failure handling at all -- the other ten wrap exactly this span
+    #    -- and db/053 made the gap newly reachable: `finish_run` used to be a bare
+    #    `UPDATE ... = now()` that could not fail, and now writes a stamp a CHECK can
+    #    refuse. Without this, a programmatic caller was handed back a connection in an
+    #    aborted transaction with nothing logged, and the operator got a psycopg
+    #    traceback naming neither GSRS nor the release -- the cost fda_cyp_run's own
+    #    comment records paying, as the last orchestrator to be fixed before this one.
+    try:
+        by_unii = composition.moiety_uuid_by_unii(conn)
+        composition.clear_source_composition(conn, SOURCE)
 
-    rows_written = 0
-    composites: set[str] = set()
-    unresolved = 0
-    activity_by_composite: dict[str, set[bool | None]] = {}
-    for (substance_unii, component_unii, relation), activity in edges.items():
-        component_moiety = by_unii.get(component_unii)
-        if component_moiety is None:
-            unresolved += 1
-            continue
-        if composition.add_composition(
-                conn, substance_unii=substance_unii,
-                component_moiety=component_moiety, relation=relation,
-                is_active_component=activity, ingest_run_id=run_id):
-            rows_written += 1
-        composites.add(substance_unii)
-        activity_by_composite.setdefault(substance_unii, set()).add(activity)
+        rows_written = 0
+        composites: set[str] = set()
+        unresolved = 0
+        activity_by_composite: dict[str, set[bool | None]] = {}
+        for (substance_unii, component_unii, relation), activity in edges.items():
+            component_moiety = by_unii.get(component_unii)
+            if component_moiety is None:
+                unresolved += 1
+                continue
+            if composition.add_composition(
+                    conn, substance_unii=substance_unii,
+                    component_moiety=component_moiety, relation=relation,
+                    is_active_component=activity, ingest_run_id=run_id):
+                rows_written += 1
+            composites.add(substance_unii)
+            activity_by_composite.setdefault(substance_unii, set()).add(activity)
 
-    unruled = sum(1 for values in activity_by_composite.values() if values == {None})
+        unruled = sum(1 for values in activity_by_composite.values()
+                      if values == {None})
 
-    questions.register_from_gaps(conn, run_id)
-    provenance.finish_run(conn, run_id)
-    conn.commit()
+        questions.register_from_gaps(conn, run_id)
+        provenance.finish_run(conn, run_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        log.exception("GSRS ingest failed for release %s; rolled back",
+                      upstream_release)
+        raise
 
     summary = GsrsSummary(records_with_unii=records_with_unii,
                           edge_statements_read=edge_statements_read,

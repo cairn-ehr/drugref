@@ -315,35 +315,111 @@ def write_quotes(conn: psycopg.Connection, rows: Iterable[QuoteRow], *,
 def analyze_source_tables(conn: psycopg.Connection) -> None:
     """`ANALYZE` this source's five tables. **NOT optional, and not a tidy-up.**
 
-    ⇒ MEASURED, NOT REASONED: without it, the orchestrator's own read-backs do
-    not finish. On the real releases the self-pair count -- a three-way join of
-    spl_label_subject, spl_label and 1.3 million spl_entity_occurrence rows --
-    ran for **25 minutes at 100% CPU and was still going** when it was cancelled.
-    With statistics it is seconds.
+    ⇒ MEASURED, NOT REASONED: without it the orchestrator's own read-backs do not
+    finish -- the self-pair count ran **25 minutes at 100% CPU and was still
+    going**. THE CAUSE is a property of bulk loading, not of these queries: every
+    table here is `COPY`d inside the transaction that then queries it, so at
+    planning time `reltuples` still says they are empty and the planner picks a
+    nested loop over 1.3 million rows.
 
-    THE CAUSE, and it is a property of bulk loading rather than of these queries:
-    every table here is written by `COPY` inside the same transaction that then
-    queries it, so at planning time `pg_class.reltuples` still says the tables are
-    empty. The planner therefore costs a nested loop over what it believes are a
-    handful of rows, and picks one over 1.3 million.
+    ⇒ AND IT IS NOT ENOUGH ON ITS OWN -- `analyze_loaded_table` is the other half.
+    An earlier version of this docstring ruled the foreign-key checks out "because
+    PostgreSQL's RI triggers use a plan pinned to the parent's primary key rather
+    than a re-planned query". **That reason is false, and it cost issue 160 a
+    round.** The plan is pinned, but to whatever was chosen at FIRST USE -- during
+    the load, before this function has run. Measured 2026-09-01 on
+    `drugref_spl160`: the `COPY` into `spl_label_subject` spent **630 s at 96% of
+    one core**, 100% of a stack sample inside `RI_FKey_check_ins`, because with
+    `relpages = 0` the pinned plan was an index scan on `spl_label_by_wording`
+    matching all 68,550 parent rows.
 
-    IT IS ALSO WHY THE FIRST DIAGNOSIS WAS WRONG. The obvious suspect was the
-    foreign-key checks on the child `COPY` -- freshly loaded parent, no stats, RI
-    seq scans. That was measured and REFUTED: 20,000 child rows against an
-    unanalyzed 68,550-row parent insert in 175 ms, because PostgreSQL's RI
-    triggers use a plan pinned to the parent's primary key rather than a
-    re-planned query. The cost was never in the write; it was in the read-back
-    that follows it.
+    The 175 ms refutation itself was real but did not generalise: its parent
+    offered no wrong plan to pin. That is NOT the same as "every other parent has
+    only a primary key" -- 26 of this schema's foreign-key parents carry a
+    non-primary-key index. The property that matters is narrower: an index whose
+    LEADING key columns are a PROPER SUBSET of the referenced columns.
 
     Runs INSIDE the transaction, which PostgreSQL permits, so the statistics
-    describe the projection this run is about to publish and are rolled back with
-    it if the run is refused.
+    describe the projection this run is about to publish. ⇒ **THE ROLLBACK IS
+    ONLY HALF A ROLLBACK, which this docstring used to claim in full.** Measured:
+    `pg_statistic` rows DO disappear with a refused run, but
+    `pg_class.relpages`/`reltuples` SURVIVE it -- `vac_update_relstats` writes
+    them with a non-transactional in-place update. Harmless here, and the
+    measurement record leans on it (each ablation variant needed its own fresh
+    clone so the second would not inherit the first's `relpages`).
     """
     # The table list has ONE home -- SPL_TABLES -- and this reads it rather than
     # restating it, so a table added to the source cannot be left unanalyzed and
     # quietly reintroduce the stall.
-    tables = ", ".join(f"drugref.{table}" for table in SPL_TABLES)
-    conn.execute(f"ANALYZE {tables}")
+    _analyze(conn, SPL_TABLES)
+
+
+def analyze_loaded_table(conn: psycopg.Connection, table: str) -> None:
+    """`ANALYZE` one table the transaction has just finished bulk-loading.
+
+    **THE RULE: a table is analysed as soon as it is loaded, and BEFORE anything
+    that references it is loaded.** Not as a tidy-up, and not only at the end.
+
+    A foreign-key check runs `SELECT 1 FROM parent WHERE p1 = $1 AND ... AND
+    pn = $n FOR KEY SHARE`, and the planner may satisfy that with ANY parent index
+    whose leading columns are among p1..pn. `spl_label` carries two, and on a
+    freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) they cost an
+    IDENTICAL 8.44 -- so the tie fell to `spl_label_by_wording`, whose index
+    condition matches all 68,550 rows and filters 68,549 away, once per child row.
+
+    ⇒ **WHY HERE AND NOT AT THE END: the cost is spent before the late `ANALYZE`
+    exists to fix anything.** The plan is chosen at FIRST USE, inside the load, so
+    by the time `analyze_source_tables` runs the child `COPY` has already been
+    paid for at the bad plan's price. One-variable ablation, full scale,
+    2026-09-01: **493,539 ms** with only the end-of-run `ANALYZE`, **1,352 ms**
+    with the parent analysed first, bought by 112 ms.
+
+    ⇒ **AND NOT BECAUSE "THE PLAN IS CACHED FOR THE SESSION", WHICH THIS DOCSTRING
+    ONCE SAID AND WHICH IS FALSE.** RI plans are SPI plans and participate in
+    relcache invalidation, so an `ANALYZE` invalidates them: measured in one
+    session and one transaction, 3,000 child rows at first use against an
+    unanalyzed 68,550-row parent took 4,874 ms, and after an `ANALYZE` the next
+    two batches took 15.7 ms and 14.0 ms. Analysing afterwards DOES repair the
+    plan; it cannot refund the rows already written. The rule survives, the
+    invented mechanism did not -- and it was the same error, in the same
+    docstring, as the one corrected above.
+
+    Row volume and `COPY` are both ruled out by the run's own control: 1,436,131
+    rows into `spl_entity_occurrence` + `spl_wording_quote` landed in 35 s in the
+    same transaction -- 19.4x the rows in 18x less time.
+
+    Exactly ONE foreign key in the schema is exposed today (138 checked), but the
+    guarantee is made for EVERY parent, because the exposure is created by adding
+    an index to a parent -- an edit nowhere near this file.
+    """
+    _analyze(conn, (table,))
+
+
+def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
+    """`ANALYZE` the named tables of this source, refusing any it does not own.
+
+    Identifiers cannot be bind parameters, so they are interpolated -- and are
+    therefore checked against `SPL_TABLES` first, which is `_copy`'s and
+    `db.clear_source_tables`'s stated rule: the name must come from a module
+    constant, never from input.
+
+    AN EMPTY LIST IS REFUSED rather than passed through, because bare `ANALYZE`
+    means EVERY table in the database -- taking a lock on each until COMMIT.
+    Unreachable from either caller today, and refused for `_copy`'s reason: the
+    day it becomes reachable is not the day to discover what it does.
+    """
+    names = tuple(tables)
+    if not names:
+        raise ValueError(
+            "no tables to ANALYZE; a bare ANALYZE would analyse every table in "
+            "the database, which is never what this module means")
+    unknown = [table for table in names if table not in SPL_TABLES]
+    if unknown:
+        raise ValueError(
+            f"{unknown} is not among this source's tables {SPL_TABLES}; "
+            "ANALYZE interpolates its identifiers and may only name a table "
+            "this module owns")
+    conn.execute("ANALYZE " + ", ".join(f"drugref.{name}" for name in names))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -354,7 +430,8 @@ class Registry:
     `names, known_uniis = load_registry(conn)` type-checks just as well the wrong
     way round, and a transposition would build the matcher out of UNII codes and
     resolve every subject against display names -- caught only by `check_floors`
-    at the very end of a full 12.5-minute ingest, if at all.
+    at the very end of a full ingest -- 2 min 09 s since issue 160, and 12 min 51 s
+    when that was measured -- if at all.
 
     **A DATACLASS AND NOT A `NamedTuple`, WHICH IS NOT A STYLE CHOICE.** This was
     a `NamedTuple` for one round, and a `NamedTuple` is still unpackable: the two

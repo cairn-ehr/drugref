@@ -220,11 +220,12 @@ def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
     approved. Applies identically whether the mismatch is on a moiety or a
     class subject (Task 10).
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     path = pathlib.Path(path)
     try:
         run_id = provenance.open_run(
             conn, source=SOURCE, upstream_release=upstream_release,
-            source_checksum=checksum(path), writer=WRITER)
+            source_checksum=checksum(path), writer=WRITER, clock=clock)
 
         entries = onchigh.parse(path)
 

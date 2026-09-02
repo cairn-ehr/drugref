@@ -18,6 +18,26 @@ Each came out of a debt round, each is pinned by a test, and each states a bet t
 least once. **Moved here from HANDOVER.md** in the #64 review round: they are durable by definition, and a rule
 worth keeping does not belong in the file whose history is deliberately disposable.
 
+- **ANALYSE A BULK-LOADED TABLE BEFORE LOADING ANYTHING THAT REFERENCES IT** — *and the guard for it says
+  `reltuples > 0`, never `>= 0`, because 0.0 means "analysed while still empty", which pins the same wrong plan*
+  (issue 160, 2026-09-01, and it
+  cost 630 seconds of every SPL ingest). A foreign-key check is a QUERY, and the planner may satisfy it with
+  any parent index whose leading columns its equality quals cover — so a parent carrying a second index whose
+  key is a *proper subset* of the referenced columns offers a plan that matches the whole table and filters.
+  On a freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) the good and the catastrophic plan **cost the
+  same**, and the choice is a coin toss. **The plan is chosen at first use, inside the load**, so by the time
+  an end-of-run `ANALYZE` exists the `COPY` has already been paid for at the bad plan's price. Measured:
+  493,539 ms → 1,352 ms for one `COPY`, bought by 112 ms of `ANALYZE`. Censused across all 138 foreign keys in
+  the schema and pinned by two tests, against four mutants; full account in § "The COPY-cost round".
+  ⇒ **And its meta-rule: A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY THE EXPLANATION IS
+  LOAD-BEARING WHEN IT IS QUOTED FORWARD.** This cause was ruled out for a round by a docstring whose 175 ms
+  measurement was real and whose stated reason was invented. **Where a cost is concentrated in one statement,
+  sample the process before designing an experiment about it** — the three hypotheses on the issue were all
+  wrong, and eight seconds of `sample` named the fourth.
+  ⇒ **And the meta-rule that round then broke while writing it: A ROUND IS MOST LIKELY TO COMMIT THE FAILURE IT
+  IS CURRENTLY NAMING.** Its own fix docstring invented a second mechanism ("the plan is CACHED for the rest of
+  the session") one paragraph after retracting the first. **Reasoning is not measurement even when it sits in
+  the same sentence as one, and least of all in the paragraph that just said so.**
 - **CODE MUST EXPLAIN ITS OWN CONTRACT.** The repository-wide house rules now live in
   [`CONTRIBUTING.md`](../CONTRIBUTING.md): docstrings are mandatory; behavioural numbers are named constants;
   dynamically typed code carries complete type hints; and pure reusable logic belongs in focused modules where
@@ -4286,7 +4306,8 @@ computed resolution straight from the cache — not the probe's own tests, every
 
 **The slice is BUILT.** [Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md)
 · [what it actually produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md).
-`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads both corpora (19.3 GB, ~12.5 min), resolves
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads both corpora (19.3 GB, **2 min 09 s** since
+issue 160; ~12.5 min before it), resolves
 each label's subject, matches the shipped resolver's rule over every wording, stores a bounded quoted window
 and refuses on any of six grounds. **Read the figures in the results record, not here.**
 
@@ -4342,6 +4363,12 @@ checks against a freshly bulk-loaded parent with no statistics — and that was 
 child rows against an unanalyzed 68,550-row parent insert in **175 ms**, because PostgreSQL's RI triggers use a
 plan pinned to the parent's primary key rather than a re-planned query.
 
+> **⚠ THE REASON IN THAT LAST SENTENCE IS FALSE, and issue #160 cost a round to it.** The measurement was real;
+> the explanation was invented and quoted forward. The plan is pinned to whatever was chosen at FIRST USE, not
+> to the primary key, and the 175 ms did not generalise because that parent had no wrong plan available to pin.
+> Left standing here because this section records what the round believed; corrected in § "The COPY-cost
+> round", which is where the current state lives.
+
 The real cause was the same missing statistics one table further on: **every read-back joins tables the same
 transaction just `COPY`'d**, so the planner costs them as if empty and picks a nested loop over 1.3 million
 occurrence rows. `spl_evidence.analyze_source_tables` now runs inside the transaction before them.
@@ -4393,7 +4420,9 @@ classCode nesting and the salt/moiety split all run against structures nobody wr
   product carries several subjects on one route. Reporting rows would publish the combination rate as if it were
   the resolution rate.
 - **`ingest_run.finished_at − started_at` is not a duration for ANY feed** — [#159](https://github.com/cairn-ehr/drugref/issues/159).
-- **The `spl_label_subject` `COPY` is disproportionately slow** — [#160](https://github.com/cairn-ehr/drugref/issues/160).
+- **A parent must be ANALYSEd before the child that references it is loaded** — [#160](https://github.com/cairn-ehr/drugref/issues/160),
+  CLOSED 2026-09-01. Without it the subject `COPY` ran 630 s; with it, ~2 s, and the whole ingest 12m51s → 2m09s.
+  § "The COPY-cost round" has the cause and the census.
 - **A registry is allowed to be incomplete, and narrowing one is how a route gets tested.** The salt route and
   `unresolved` have no natural example in the fixture; withholding a label's active-moiety UNII while keeping
   its salt reaches the first, withholding both reaches the second. That is what #67 and the 200 unheld-UNII
@@ -4436,7 +4465,7 @@ Python believes it wrote against what the database holds, and its own docstring 
 NO CONSTRAINT CAN EXPRESS"*. A `COPY` that silently dropped rows would have shipped. Both halves are now watched
 refusing.
 
-### ⇒ THE 12.5-MINUTE SCAN RAN INSIDE AN OPEN SNAPSHOT
+### ⇒ THE SCAN RAN INSIDE AN OPEN SNAPSHOT (called 12.5 minutes then; measured at ~50 s in #160)
 
 `load_registry` is the first statement on the non-autocommit connection `ingest_spl` requires, so it opens a
 transaction; `open_run` is on the far side of `scan_release` and a 19.3 GB checksum. Verified against the test
@@ -4693,6 +4722,274 @@ Deferred as issues: **#168** (three more homes of one vocabulary and a second `i
 pre-existing in `tools/`), **#169** (a `SkipReason` enum, when the 12th counter arrives), **#170** (SPL version
 spelled three ways), **#171** (a census crash on the last part discards every part already counted).
 
+## The COPY-cost round (2026-09-01) — issue #160, no migration, the ingest 12m51s → 2m09s
+
+[Measurement record](superpowers/specs/2026-09-01-drugref-spl-copy-fk-plan.md). Two calls added to the
+orchestrator and one function to the writer; **no migration, no schema change, no figure moved.**
+
+**⇒ FIRST, THE RE-VERIFICATION THE LAST ROUND OWED.** The census round's end-to-end run predated its own
+review's fixes to the reader, so the shipped code had never been run against the real releases in its current
+form. It was, on `drugref_spl160`, and **every published figure reproduced exactly** — 68,550 labels of 262,032
+records, 27,406 wordings, 29,952 pairs (26,598 novel), 73,867 subjects, 1,297,944 occurrences, 138,187 quoted
+windows, `source_checksum` `5d6a894b30ce…`, all five route tallies. 12 min 51 s against the census round's
+10 min 43 s, on a machine with other work on it.
+
+**⇒ THE CONTROL FOR ISSUE 160 WAS ALREADY INSIDE THAT RUN, AND NOBODY HAD LOOKED.** Polling
+`pg_stat_activity` once a second — which times each statement **without modifying the code under
+measurement** — gave: `COPY spl_label_subject`, 73,867 rows, **630 s**; `COPY spl_entity_occurrence` +
+`spl_wording_quote`, 1,436,131 rows, **35 s**; `COPY spl_label`, 68,550 rows, **6 s**. *19.4× more rows in 18×
+less time, same transaction, same writer, same client.* Two of the three causes the issue listed as untried die
+on that one line: not the row volume, and not `COPY`.
+
+**⇒ THE CAUSE CAME FROM A STACK SAMPLE, NOT FROM THE HYPOTHESIS LIST.** `sample <backend> 8`:
+**6,748 of 6,748 samples** under `RI_FKey_check_ins` — the foreign-key check, fired as an after-row trigger —
+and inside it in heap fetches and visibility checks, with `ReleaseAndReadBuffer` walking page to page. **A
+FOREIGN-KEY CHECK IS A QUERY**, and the planner may satisfy `WHERE ingest_run=$1 AND source=$2 AND set_id=$3
+AND version=$4 FOR KEY SHARE` with **any** parent index whose leading columns those quals cover. `spl_label`
+carries two — `spl_label_pkey` on all four, `spl_label_by_wording` on `(ingest_run, source, text_key)`. On a
+freshly `COPY`d parent (`relpages = 0`, `reltuples = -1`) **both plans cost an identical `8.44`**, and the tie
+landed on `spl_label_by_wording`, whose index condition matches **all 68,550 rows** — `ingest_run` and `source`
+are constant for the whole load — and discards 68,549 in a filter, once per child row.
+
+**⇒ THE FIX IS 112 ms AND BUYS 365×.** One-variable ablation, full scale, each variant in its own fresh clone
+so B does not inherit the `relpages` A's rollback leaves behind: **493,539 ms** as shipped against **1,352 ms**
+with `ANALYZE spl_wording; ANALYZE spl_label` (11.8 + 99.8 ms) inserted. End to end on the real releases,
+`drugref_spl160fix`: the subject `COPY` **630 s → ~2 s** and the whole ingest **12 min 51 s → 2 min 09 s**,
+with every count, both checksums and all five routes identical.
+
+**⇒ THE RULE, AND IT IS NOT "ANALYZE AT THE END":** *a table is analysed as soon as it is loaded and **before
+anything that references it** is loaded.* The plan is chosen at first use — inside the load — so
+`analyze_source_tables` at the end of the run, which exists for the read-backs and is still needed for them,
+**arrives after the `COPY` has already paid for the bad plan**. ⇒ *Not* because a plan is cached for the
+session: the review round measured that an `ANALYZE` after first use DOES re-plan (4,874 ms → 15.7 ms in one
+transaction), so the reason is ordering in time, not plan lifetime. `spl_evidence.analyze_loaded_table`
+carries the mechanism and the numbers.
+
+**⇒ AND THE REFUTATION THAT CLOSED THE RIGHT DOOR FOR A ROUND.** `analyze_source_tables`'s docstring said the
+foreign key had been *"measured and REFUTED: 20,000 child rows against an unanalyzed 68,550-row parent insert
+in 175 ms, **because PostgreSQL's RI triggers use a plan pinned to the parent's primary key rather than a
+re-planned query**"*. The measurement was real; **the reason is false**, and it is the half that got quoted
+forward. The plan is pinned — to whatever was chosen at FIRST USE, before any `ANALYZE`. *Pinned is not the
+same as pinned to the primary key*, and the 175 ms did not generalise because a parent whose only index is its
+primary key has no wrong plan available to pin. ⇒ **A REFUTATION IS A MEASUREMENT PLUS AN EXPLANATION, AND ONLY
+THE MEASUREMENT WAS TAKEN** — reasoning in the voice of the measurement beside it, in a docstring, which is the
+most durable place in this repo to put a wrong sentence. The same round that wrote it had caught and removed
+exactly this in its own `+13%` paragraph.
+
+**⇒ AND ALL THREE OF THE ISSUE'S OWN CANDIDATES WERE WRONG** — `COPY` vs `INSERT`, ICU collation on
+`set_id`/`version`, drop-and-rebuild indexes. No amount of ablating them would have reached the fourth. **Where
+a cost is concentrated in one statement, sample the process before designing an experiment about it**: eight
+seconds of `sample` beat a list of three hypotheses that had stood for five days.
+
+**The exposure is censused, not assumed.** Over all **138 foreign keys in schema `drugref`**, exactly **one**
+parent carries an index whose leading columns are a proper subset of the referenced columns:
+`spl_label_subject → spl_label` via `spl_label_by_wording`, 2 of 4. Every other parent in the schema has only
+its primary key, which is why no other feed has shown this — and why the `ANALYZE` guarantee is made for every
+parent rather than for the one that failed: **the exposure is created by adding an index to a parent, an edit
+nowhere near the orchestrator.** `test_ONE_foreign_key_in_the_schema_can_be_planned_onto_a_LOOSE_index` pins
+the census; `test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded` pins the cause (a
+fixture of three wordings cannot show a 630-second stall), and **both mutants — each `ANALYZE` deleted in turn
+— were run and killed.**
+
+### ⇒ AND ITS REVIEW ROUND, WHICH IS THE HALF WORTH READING
+
+The fix was correct, complete and correctly ordered, and **no code defect was found**. Everything below is a
+sentence that was wrong or a guard that did not guard — and the round had just finished writing down the rule
+about exactly that.
+
+**⇒ THE ROUND COMMITTED ITS OWN META-RULE'S ERROR WHILE WRITING IT DOWN.** `analyze_loaded_table`'s docstring
+said the RI plan is *"CACHED for the rest of the session, so analysing afterwards cannot repair it"*. **Measured
+and false.** In ONE session and ONE transaction, on a replica of `spl_label`'s shape at 68,550 parent rows:
+3,000 child rows at first use against the unanalyzed parent took **4,874 ms**; then `ANALYZE` of the parent;
+then the next 3,000 took **15.7 ms** and the next **14.0 ms**. RI plans are SPI plans and participate in
+relcache invalidation, so `ANALYZE` invalidates them — analysing afterwards **does** repair the plan; it simply
+cannot refund the rows already written. The rule stands and the ablation stands; only the mechanism sentence
+bolted onto them was invented — one paragraph after the paragraph retracting an invented mechanism from the
+same docstring. ⇒ **A ROUND IS MOST LIKELY TO COMMIT THE FAILURE IT IS CURRENTLY NAMING**, because the failure
+is on its mind as a thing to *describe*, not as a thing to *avoid*.
+
+**⇒ THE GUARD ADMITTED THE EXACT STATE IT EXISTED TO FORBID.** `reltuples >= 0` is satisfied by **0.0**, which
+is what `ANALYZE` of a still-EMPTY table writes — and 0.0 is not a milder form of the bug, it *is* the bug: an
+empty parent carries `relpages = 0` exactly as a never-analysed one does, so it pins the same catastrophic plan.
+Two mutants lived under `>= 0`: analysing a parent **before** its own write, and replacing both calls with one
+`analyze_source_tables` after `clear_source_spl` — the tidy-up a future reader is likeliest to attempt. It is
+`> 0` now, and **four** mutants are run against it rather than two; all four are killed.
+⇒ **A GUARD WRITTEN AS "HAS STATISTICS" WHEN IT MEANS "HAS STATISTICS DESCRIBING ITS ROWS" IS OFF BY THE BUG.**
+
+**⇒ AND ITS COVERAGE WAS HAND-LISTED, SO ITS "EVERY" WAS FALSE.** The test named three writers and claimed every
+in-source foreign key. There are **four** — `spl_wording_quote → spl_wording` was missing — and one of the three
+watches was **inert**, because two keyed on the same parent and `setdefault` kept the first. So the headline
+`assert set(seen) == …` would have passed with `write_occurrences` never called at all. The edges are now read
+from `pg_constraint` at the `_copy` chokepoint, which every writer goes through, so a child table added to the
+orchestrator is covered the day it is added. ⇒ **A HAND-WRITTEN LIST CANNOT SAY "EVERY"; ONLY THE CATALOG CAN.**
+
+**Two more sentences that were measured false**, both in this round's own prose: *"a parent whose ONLY index is
+its primary key -- which is every other parent in this schema"* — **26** of the schema's FK parents carry a
+non-primary-key index, and the property that matters is the narrower one the census encodes; and *"the
+statistics … are rolled back with it if the run is refused"* — `pg_statistic` rows do roll back, but
+`pg_class.relpages`/`reltuples` **survive** (`vac_update_relstats` writes them in place), which the measurement
+record itself relied on two sections earlier when it gave each ablation variant a fresh clone.
+
+**Filed rather than fixed:** **#174** — `ANALYZE` on a table the ingest role does not own emits a **WARNING**,
+skips, and **returns success**, and psycopg discards notices unless a handler is installed (which nothing in
+`src/` installs, a discard `drugcentral_run.py:211` already documents from an earlier round). Under an
+admin-migrates/app-role-ingests split the whole #160 fix reverts at runtime, invisibly, and the ingest still
+reports success — `reconcile`, `read_pairs` and `check_floors` check counts, not plans.
+
+**And rule 4 broke, as #172 predicted it would.** `spl_evidence.py` went 494 → **512**, because each of the three
+false sentences cost more lines to correct than it did to assert. Left at 512 and recorded on #172 rather than
+shaved back under the cap: trading measured content for assertion-without-evidence is the failure this whole
+round is about. ⇒ **A LINE CAP IS A BUDGET FOR CODE, NOT FOR EVIDENCE.**
+
+**One measurement trap worth keeping.** macOS `ps -o pcpu` reports a **lifetime average**, not an interval, so
+a backend that burned a core an hour ago still reads high and one burning it now can read low. The attribution
+here ("96% of a core, and the backend's whole lifetime CPU is this statement") came from diffing cumulative CPU
+time between two `ps` samples. **`pcpu` cannot answer "who is burning the CPU right now", which is the only
+question that matters here.**
+
+## The ingest-duration round (2026-09-02) — issue #159, `db/053`
+
+[Measurement record](superpowers/specs/2026-09-02-drugref-ingest-run-duration.md). One dataclass and one
+required argument in `provenance.py`, one line at the top of each of eleven orchestrators, one migration, one
+CLI column. **No projection changed and no published figure moved** — the SPL ingest reproduced all of them
+from an empty database.
+
+**⇒ WHAT WAS WRONG, AND WHY IT WAS WRONG FOR EVERY FEED AT ONCE.** `started_at DEFAULT now()` and
+`finish_run`'s `now()` are both `transaction_timestamp()`, and `open_run` COMMITS (db/025's design), so the two
+stamps belong to two DIFFERENT transactions. The subtraction measured **the gap between two transaction start
+times** — the interval between `open_run`'s INSERT and the work transaction's first statement, which is the
+time the orchestrator spent NOT touching the database. Eight of nine feeds read 1.3–24 ms; the ninth,
+`mesh_rel_run` at 48.32 s, was reporting how long it takes to parse 750 MB of MeSH before its first write.
+
+**⇒ THE ISSUE'S OWN HEADLINE EXAMPLE HAD ALREADY EVAPORATED, AND NOBODY LOOKED.** #159 was filed from
+`drugref_spl051`, where `spl_run` read **49.85 s** and the issue explained it correctly. Five days later the
+COPY-cost round put a `conn.rollback()` in front of the DailyMed scan — to close a ~50 s `idle in transaction`
+window — which moved `open_run` to the far side of the scan and collapsed that figure to **0.0026 s**.
+Measured on both databases that round built. The issue, the suite and that round's own review all read past it.
+⇒ **A NUMBER IN A FILED ISSUE IS A MEASUREMENT WITH NO OWNER**: the round that moves it is not the round that
+reads it, so re-measure an issue's premise before designing against it. Eight of nine figures were unchanged
+here; the ninth was gone.
+
+**⇒ WHAT SHIPPED.** `provenance.RunClock` / `start_clock()` — a frozen dataclass over `time.monotonic()`
+(monotonic so an NTP step mid-ingest cannot produce a negative duration; **a TYPE rather than a `float`**
+because `open_run` cannot tell `time.monotonic()` from `time.time()` by looking, Python enforces no annotation
+at runtime, and the two differ by 56 years). `open_run` takes a required keyword-only `clock` and writes
+`started_at = clock_timestamp() - make_interval(secs => %s)`: **only the ELAPSED INTERVAL crosses from the
+client, never a client timestamp**, so both ends of the subtraction are the server's clock and an ingest driven
+from a host whose clock is out still records a true duration. `finish_run` writes `clock_timestamp()`, its
+no-commit contract untouched — so the duration **excludes the caller's final COMMIT**, which is 3.8 s for SPL
+(the deferred quote-budget trigger over 138,187 windows) and is named in the column comment rather than left to
+be found.
+
+**⇒ THE VERIFICATION IS THE RATIO, MEASURED NINE TIMES.** A fresh `drugref_dur159` (NOT a template — a
+template carries nine rows written under the old meaning), all nine feeds, `/usr/bin/time -p` against
+`finished_at - started_at` read back afterwards: `ingest chain` (five feeds) **137.46 s recorded / 137.82 s
+wall = 99.7%**, `drugcentral` 19.64 / 20.00, `onchigh` 3.87 / 4.26, `fda-cyp` 4.11 / 4.44, `spl` **135.86 /
+140.06 = 97.0%**. The residual is the interpreter start plus argparse plus `db.connect`, **measured at
+0.29–0.34 s** (two mis-quoted invocations that died in argparse), and for SPL the final COMMIT on top.
+`spl_run` went **0.0026 s → 135.86 s**, a factor of 51,657.
+
+**⇒ `mesh_rel_run` IS THE INTERNAL CROSS-CHECK.** Its old number, 48.32 s, is now a SUBSET of its new one,
+56.81 s: the parse is 48 s and the writes are 9 s. Nothing about that orchestrator changed. Had the diagnosis
+been wrong the two numbers would bear no such relation.
+
+**⇒ THE CHECK FOUND TWO LIVE OCCURRENCES OF THE IDIOM THE ROUND WAS REMOVING — IN THE SUITE.** `db/053` adds
+`CHECK (finished_at IS NULL OR finished_at >= started_at)`, and five tests failed the moment it existed, all
+with a row that **finished 3.8 ms before it started**: two helpers (`test_ingest_observability._run`, one
+INSERT in `test_releases.py`) stamped `finished_at = now()` while letting `started_at` take the default db/053
+had just changed to `clock_timestamp()`. ⇒ **MIXING `now()` AND `clock_timestamp()` IN ONE TRANSACTION PRODUCES
+A NEGATIVE DURATION**, and without the constraint both helpers would have gone on producing one silently. A
+constraint added "for completeness" caught the round's own blind spot.
+
+**⇒ OLD ROWS ARE REFUSED AT THE OPERATOR SURFACE, NOT ONLY IN A COMMENT.** Nothing rewrites rows written
+before db/053 and nothing could — what would be needed was never recorded — so `drugref status` prints
+`pre-db/053` instead of a runtime for them, reading the watershed out of the migration ledger
+(`db.migration_applied_at`, which shares `migration_applied`'s three-digit prefix guard through a new
+`_ledger_pattern`). Subtracting two transaction stamps still yields a number, and **a number is what an
+operator believes**. Both paths verified without patching any verification database: `drugref_spl160fix` with
+db/053 unapplied (unknown watershed ⇒ everything refused, the safe direction), and `drugref_dur159mixed` — a
+fresh clone of it, then `migrate` — which is the production upgrade path: **db/053 applied cleanly over nine
+pre-existing rows and the CHECK validated all nine**, as it had to, since `open_run`'s transaction always
+commits before the work's begins.
+
+**⇒ THE DERIVED CONTRACT AND THE MUTANT IT COULD NOT KILL — REPLACED IN THE REVIEW ROUND.**
+`test_every_module_that_opens_a_run_takes_a_clock` grepped the tree for `provenance.open_run(` and required
+`provenance.start_clock()` in the same module — **eleven modules, derived rather than counted by hand**, one
+round after a hand-listed coverage named three writers where four edges existed. It passed unchanged against
+the mutant that moves `start_clock()` down to the line above `open_run`, which measures nothing, **while its
+own docstring claimed to catch exactly that**. The one behavioural killer,
+`test_a_run_records_the_work_done_before_it_opened`, injects a delay into work `ingest_unii` does BEFORE
+`open_run` — the CHEAPEST feed — so the mutation stayed invisible in `spl_run` (108 lines and a 17.6 GB scan
+above its `open_run`) and `mesh_rel_run`, the two writers every figure in this section comes from. The grep
+also matched a **comment** in `onchigh_run.py`, so a module could have satisfied it with no call at all.
+
+Replaced by `test_every_orchestrator_starts_its_clock_on_its_very_first_line`, which **parses** each module and
+asserts `start_clock()` is the first executable statement (docstring aside) of every function that starts a
+clock — exact for all eleven, mutation-verified by moving `spl_run`'s call down and watching it fail. It also
+retires eleven copies of a `# FIRST:` comment as the thing holding the rule.
+⇒ **A DERIVED CHECK OUTLIVES A HAND-LISTED ONE ONLY FOR WHAT IT DERIVES — AND A GREP DERIVES TEXT, NOT
+STRUCTURE.**
+
+**⇒ THE REVIEW ROUND: THREE SHIPPED DEFECTS, ONE DEFERRED, AND WHAT EACH ONE TEACHES.** Full account in the
+[measurement record](superpowers/specs/2026-09-02-drugref-ingest-run-duration.md) § 8.
+
+1. **`drugref status` crashed mid-output on a ledger-less database.** The watershed read was unguarded on the
+   happy path, so a database built by replaying `db/*.sql` by hand — a shape `migration_guard`'s own docstring
+   names as reachable — printed one header, then a psycopg traceback, and skipped five of six blocks. ⇒ **A
+   READ ADDED TO A DIAGNOSTIC COMMAND IS A NEW WAY FOR THAT COMMAND TO FAIL**, and `status` is the command an
+   operator reaches for precisely when the database is the wrong shape. Fixed with `to_regclass`, deliberately
+   NOT `db.missing_relations` — that helper rolls back before probing, which is right for its own callers
+   (all inside `except UndefinedTable`, holding an already-aborted transaction) and would silently discard a
+   caller's open transaction here.
+2. **The `started_at` catalog comment refuted itself in nine words.** *"every one of the nine feeds reported
+   between 1.3 ms and 24 ms … and the one that reported anything else"*, while all four documents said *eight
+   of nine*. ⇒ **THE PROSE THAT SHIPS INTO `pg_description` NEEDS THE SAME REVIEW AS THE DDL AROUND IT** — it
+   is the only documentation a `\d+` reader gets, and correcting it after merge costs a whole migration.
+3. **`format_run_duration` printed `0m60s` / `1m60s` / `60m60s`** for any duration in `[N·60 − 0.5, N·60)`
+   — 0.83 % of runs over a minute — because the `< 60` branch tested `round(seconds, 1)` while the minutes
+   branch re-rounded the *unrounded* remainder. ⇒ **TWO ROUNDINGS OF ONE QUANTITY IS ONE RULE KEPT IN TWO
+   PLACES**, the defect this project keeps finding, in arithmetic instead of vocabulary.
+4. **Deferred as [#176](https://github.com/cairn-ehr/drugref/issues/176):** the watershed decides by **when** a
+   row was written when the question is **which code** wrote it. An older client on a migrated database takes
+   the new `clock_timestamp()` default for `started_at` and old `finish_run`'s `now()` for `finished_at`;
+   neither the CHECK nor the refusal fires, and a two-second run publishes as `0.0s` — reproduced. ⇒ **A
+   TIMESTAMP CANNOT ANSWER A QUESTION ABOUT CODE PROVENANCE.** A boolean set by `open_run` can. Not taken here
+   because it rewrites the round's central mechanism after its measurements were verified; what WAS taken is
+   removing every claim that the failure cannot happen.
+
+Also in that round: `RunClock.__post_init__` (the `isinstance` check guarded the wrapper, not the value —
+`RunClock(time.time())` committed a run dated 2083 and then lost the whole ingest to the CHECK); a
+`COMMENT ON CONSTRAINT` naming all three causes including a **backward server clock**, which the migration had
+denied outright; `gsrs_run`'s missing `except` (the only orchestrator of eleven without one, and db/053 gave
+`finish_run` a new way to raise); and the loaded-release block moved to `cli_status.py`, which took `cli.py`
+from 499 back to **477**.
+
+### Traps and standing notes
+
+- **`now()` IS NOT A CLOCK.** It is `transaction_timestamp()`. Two `now()`s in one transaction are equal by
+  definition; two across a commit boundary measure the boundary. `clock_timestamp()` is the clock.
+- **The clock is taken in the PUBLIC entry point**, not in the private `_ingest` body, for the five
+  orchestrators that have both — the public function is where the command begins. It is threaded in as a
+  parameter.
+- **The window is the ORCHESTRATOR, not the command**: it starts at the orchestrator's first line (so
+  `~0.3 s` of interpreter start and argparse sit outside it) and ends before the final COMMIT.
+- **`cli.py` is 477 lines.** The runtime column took it to 499; the review round moved the whole loaded-release
+  block to `cli_status.py` (238) rather than shave comments, which rule 3 forbids. That module exists for
+  exactly this trade and this is its third block.
+- **A GREP DERIVES TEXT, NOT STRUCTURE.** `test_every_orchestrator_starts_its_clock_on_its_very_first_line`
+  parses each module with `ast` because the substring form matched a **comment** in `onchigh_run.py` and could
+  not see a `start_clock()` moved next to `open_run`. Reach for `ast` whenever the property is about WHERE
+  something is, not WHETHER it appears.
+- **`db.missing_relations` ROLLS BACK before probing** — correct for its own callers, which all arrive inside
+  `except UndefinedTable` holding an aborted transaction, and wrong for a happy-path probe, which would lose a
+  caller's open transaction. Use `to_regclass` directly there.
+- **Editing an APPLIED migration breaks every database carrying it**: `apply_migrations` is checksum-immutable
+  and raises. db/053 was corrected in review while still unmerged, which is the only window in which that is
+  free — after merge the same correction is a whole new migration.
+- **A `COMMENT ON CONSTRAINT` is the only documentation an operator gets when a CHECK fires.** db/053 shipped
+  three column comments and a view comment and forgot the constraint's, which is the one object a human meets
+  BY NAME, mid-ingest, with a rolled-back run behind them.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -4709,13 +5006,29 @@ figures, do not re-derive them**; `curation.py` **has since crossed the cap at 5
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
 **Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
-`ingest_run.finished_at − started_at` is not a duration for ANY feed**: both stamps are
-`transaction_timestamp()`, so seven of the nine runs on `drugref_spl051` read 1.3–24 ms while the SPL ingest
-takes 12.5 minutes. It touches every orchestrator's provenance, so it is its own round. ·
+`ingest_run.finished_at − started_at` is not a duration for ANY feed** — **CLOSED 2026-09-02 by `db/053`**, and
+its own headline figure had already evaporated before anyone read it: the 49.85 s it cited for `spl_run` became
+0.0026 s when the COPY-cost round moved `open_run` past the DailyMed scan. Both stamps are clock readings now
+and the nine recorded durations account for 97–99.7% of each command's wall clock —
+§ "The ingest-duration round". ·
 **[#160](https://github.com/cairn-ehr/drugref/issues/160) the `spl_label_subject` `COPY` runs >4 min at 100%
-CPU for 73,867 rows**, against 1.0 s for the same row count in a synthetic probe against the same schema. Two
-causes are already ruled out (FK-against-unanalyzed-parent, measured at 175 ms; and the read-back planner
-problem, which was a different and now-fixed defect); three are untried and named in the issue.
+CPU for 73,867 rows** — **CLOSED 2026-09-01, and by NONE of the three causes it named.** It was the foreign-key
+check being planned onto `spl_label_by_wording` while the parent had no statistics; the fix is two `ANALYZE`s
+costing 112 ms, and the ingest fell to 2 min 09 s. The issue's own ruling-out of the foreign key ("175 ms")
+measured a real thing and explained it wrongly — § "The COPY-cost round".
+
+**Filed by the COPY-cost round and its review (2026-09-01)** —
+**[#174](https://github.com/cairn-ehr/drugref/issues/174) `ANALYZE` is skipped with a WARNING, not an error,
+when the ingest role does not own the table**, and psycopg discards the warning: the #160 fix reverts at
+runtime, invisibly, under an admin-migrates/app-ingests role split while the ingest still reports success. Two
+halves to it — a postcondition in `_analyze`, and a notice handler in `db.connect` so server warnings stop going
+to `/dev/null` across every orchestrator. ·
+**[#172](https://github.com/cairn-ehr/drugref/issues/172) `spl_evidence.py` is at 512/500** — filed at 494 and
+**breached by the review round exactly as it predicted**, the same shape as #130 (`cli.py` at exactly 500/500) one edit earlier, and
+unlike `cli.py` this module has **no cap test**, so the breach would arrive silently. Not split in that round
+deliberately: the census round's `spl_release.py` precedent is *verbatim move first, suite green, then the
+behaviour change*, and splitting here would have mixed refactor risk into a fix whose whole value is that
+nothing else moved. The seam and the cap test are named in the issue.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -4884,14 +5197,14 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2443 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2467 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
 # 1540, 1564) BEFORE THE GUARD ROUND NOTICED, which is longer than any of the first
 # three, so the comment demonstrably is NOT enough on its own: a slice section may record
-# a suite delta, but it must ALSO land here -- verified green on 2026-09-01 at 2443
-# passed in 125.44 s (db/044 added 16: 1763 → 1779; the live-queue round added no
+# a suite delta, but it must ALSO land here -- verified green on 2026-09-02 at 2467
+# passed in 102.18 s (db/044 added 16: 1763 → 1779; the live-queue round added no
 # Python tests; db/045 and its registry-retention coverage added 8: 1779 → 1787;
 # db/046's catalog-comment guard added 3: 1787 → 1790; db/047's key-trust round added
 # 2: 1790 → 1792; db/048's GUI finalization added 2: 1792 → 1794; the DrugCentral
@@ -4951,6 +5264,26 @@ git config core.hooksPath .githooks
 # same session goes stale if it is measured before the work stops. Read it off
 # the run that VERIFIES green, not off an earlier count -- and issue 146 (a test
 # that reads this line and counts the suite) is still the only real fix.
+# AND THE COPY-COST ROUND -- issue #160, no migration -- added 3: 2443 -> 2446,
+# being the FK-parent-analysed-before-its-child pin, the whole-schema census of
+# which foreign keys can be planned onto a loose index, and the ANALYZE
+# identifier refusal. ITS OWN REVIEW ROUND then added 1: 2446 -> 2447, the
+# empty-table-list refusal -- and rewrote the first of those three, because
+# `reltuples >= 0` let two mutants live (it is `> 0` now: 0.0 means analysed
+# WHILE EMPTY, which is the bug, not a milder version of it). FOUR mutants are
+# now run against it, not two, and all four are killed.
+# AND THE INGEST-DURATION ROUND -- issue #159, db/053 -- added 20: 2447 -> 2467,
+# being 5 on provenance (the two stamps read off the clock, the RunClock type
+# refusing a bare float, the derived eleven-module clock contract, and the one
+# test that kills the mutant the derived contract cannot see) and 15 on db/053
+# and the operator surface (the default, the CHECK shown refusing AND admitting
+# NULL, three catalog comments asserted against the catalog, the pure duration
+# formatter's five cases, the ledger watershed reader, and the status line).
+# TWO of the 2447 that already existed had to CHANGE: the CHECK caught two test
+# helpers stamping finished_at = now() against a clock_timestamp() default, i.e.
+# finishing 3.8 ms before they started. Read off the run that
+# VERIFIED GREEN AFTER THE LAST EDIT -- 2467 in 102.18 s -- which is the eighth
+# occurrence's lesson.
 # THE SEVENTH OCCURRENCE HAPPENED, AND IT HAPPENED IN THE ONE PLACE THIS COMMENT
 # SAID WAS SAFE. The review-fix commit (26a2a7d) wrote "suite 2118 passed with
 # DRUGREF_TEST_DSN set" into its own COMMIT MESSAGE and did not touch this line,
@@ -5066,7 +5399,7 @@ ran in CI and `ruff` was not even a project dependency.
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
   035's, 029's `curated_target_unresolved` by 035's, and 012's/027's `gap_unreviewed_expansion_root` by 035's; the
-  five severity CHECKs in 020/029/032 are 035's foreign keys.
+  five severity CHECKs in 020/029/032 are 035's foreign keys; and **025's `ingest_run_incomplete` comment is 053's** (issue #159), which also gave `ingest_run.started_at` its `clock_timestamp()` default, both columns a `COMMENT ON COLUMN`, and the table its finishes-after-it-starts CHECK.
 - **Migrations are immutable once applied — and immutability starts at MERGE.** `apply_migrations` records each file's
   checksum and raises if an applied file changed, so altering a MERGED migration (*including* re-issuing a `COMMENT ON`) means
   a new `db/NNN_*.sql`. One still on an unmerged branch may be edited — the ledger binds a *database*, not the repo — as
@@ -5198,6 +5531,13 @@ ran in CI and `ruff` was not even a project dependency.
   unaffected). **A verification database is never patched — rebuild it, under a new name**: for a drifted ledger
   `apply_migrations` refuses permanently, and the drifted copy is often the only control for what the edit changed
   (`drugref_5c1` is exactly that). Expect a drift whenever a migration is edited; expect to keep both sides.
+- **`drugref_dur159` is the ingest-duration round's verification database** (2026-09-02, issue #159): built
+  from **nothing** rather than from a template — `createdb` → `migrate` → `ingest chain` + `onchigh` +
+  `fda-cyp` + `drugcentral` + `spl`, all nine feeds, because a template carries nine `ingest_run` rows written
+  under the OLD meaning and the whole point was to measure new ones. **`drugref_dur159mixed` is its
+  counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
+  only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
+  `drugref status` refusing to call their stamps a duration. Keep both.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

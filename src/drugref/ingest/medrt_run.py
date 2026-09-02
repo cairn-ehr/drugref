@@ -98,12 +98,13 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
     "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
     the three where the gap is wide: the parse runs FIRST (it is pure and takes no
     connection), so a crash while parsing still leaves no row at all -- a view cannot
-    report a run nobody opened. The six orchestrators are not uniform in this, and
+    report a run nobody opened. The orchestrators are not uniform in this, and
     ingest_run_incomplete's own comment says so.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     log.info("MED-RT ingest starting (release=%s)", upstream_release)
     try:
-        summary = _ingest_medrt(conn, medrt_path, upstream_release)
+        summary = _ingest_medrt(conn, medrt_path, upstream_release, clock)
     except Exception:
         conn.rollback()
         log.exception("MED-RT ingest failed (release=%s); transaction rolled back",
@@ -113,14 +114,15 @@ def ingest_medrt(conn: psycopg.Connection, *, medrt_path,
     return summary
 
 
-def _ingest_medrt(conn: psycopg.Connection, medrt_path,
-                  upstream_release: str) -> MedrtSummary:
+def _ingest_medrt(conn: psycopg.Connection, medrt_path, upstream_release: str,
+                  clock: provenance.RunClock) -> MedrtSummary:
     """The body of one MED-RT ingest. Separated so the public entry point above is
     just the transaction/logging boundary and this stays readable top to bottom."""
     parsed = medrt.parse(medrt_path)
 
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(medrt_path), writer=WRITER)
+                                 source_checksum=checksum(medrt_path), writer=WRITER,
+                                 clock=clock)
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
     #    builds the lookup every edge below needs.

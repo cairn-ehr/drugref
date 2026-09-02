@@ -174,12 +174,14 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
     "BEFORE THE WRITES" IS NOT "BEFORE THE COMMAND", and this orchestrator is one of
     the three where the gap is wide: the parse runs FIRST (it is pure and takes no
     connection), so a crash while parsing still leaves no row at all -- a view cannot
-    report a run nobody opened. The six orchestrators are not uniform in this, and
+    report a run nobody opened. The orchestrators are not uniform in this, and
     ingest_run_incomplete's own comment says so.
     """
+    clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     log.info("MeSH-keyed relation ingest starting (release=%s)", upstream_release)
     try:
-        summary = _ingest(conn, medrt_path, desc_path, supp_path, upstream_release)
+        summary = _ingest(conn, medrt_path, desc_path, supp_path, upstream_release,
+                          clock)
     except Exception:
         conn.rollback()
         log.exception("MeSH-keyed relation ingest failed (release=%s); rolled back",
@@ -240,8 +242,8 @@ def ingest_mesh_relations(conn: psycopg.Connection, *, medrt_path, desc_path,
     return summary
 
 
-def _ingest(conn, medrt_path, desc_path, supp_path,
-            upstream_release) -> MeshRelSummary:
+def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release,
+            clock: provenance.RunClock) -> MeshRelSummary:
     """The body of one MeSH-keyed relation ingest (see ingest_mesh_relations)."""
     parsed = medrt.parse(medrt_path)
     ci_assertions = parsed.mesh_contraindications
@@ -249,7 +251,8 @@ def _ingest(conn, medrt_path, desc_path, supp_path,
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(medrt_path, desc_path, supp_path), writer=WRITER)
+        source_checksum=checksum(medrt_path, desc_path, supp_path), writer=WRITER,
+        clock=clock)
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the
     #    condition objects (see _condition_closure).

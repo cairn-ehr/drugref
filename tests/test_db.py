@@ -727,7 +727,7 @@ def test_migration_applied_refuses_a_prefix_that_is_not_three_digits(conn, numbe
 
 
 def test_every_guarded_call_site_names_a_migration_that_exists(conn):
-    """The five literals the guards pass, checked against the files in `db/`.
+    """The six literals the guards pass, checked against the files in `db/`.
 
     `migration_applied` can only reject a MALFORMED prefix; a well-formed one naming a
     migration that does not exist -- "039" today, or a number left behind by a renamed
@@ -736,14 +736,22 @@ def test_every_guarded_call_site_names_a_migration_that_exists(conn):
     directory they refer to.
 
     LISTED HERE RATHER THAN DISCOVERED, because a test that grepped the call sites would
-    pass on the day someone deleted one. Adding a sixth guard means adding its number
-    here, which is the reminder this test exists to be.
+    pass on the day someone deleted one. Adding a further guard means adding its number
+    here, which is the reminder this test exists to be -- and which the round that added
+    the SIXTH entry below did not do until review caught it, so the docstring said
+    "five" while six call sites existed.
+
+    "053" IS NOT A migration_guard SITE but a `db.migration_applied_at` one: it dates
+    the watershed that decides whether `drugref status` may print a runtime at all. A
+    number that named no file would silently make every run read "pre-db/053" forever,
+    which is the same class of wrong answer as the rest of this list.
     """
     numbers = {"035": "curated_target_unresolved (cli.py)",
                "030": "signature_backdated (cli.py)",
                "037": "class-grain views (cli_status.py)",
                "038": "curated_unrankable_severity (cli_status.py)",
-               "001": "substance_moiety (cli_interactions.py)"}
+               "001": "substance_moiety (cli_interactions.py)",
+               "053": "ingest-duration watershed (cli.py, via migration_applied_at)"}
     shipped = {path.name.split("_")[0] for path in db.migration_dir().glob("*.sql")}
     for number, site in sorted(numbers.items()):
         assert number in shipped, f"{site} guards db/{number}, which is not in db/"
