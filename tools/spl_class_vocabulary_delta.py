@@ -30,7 +30,7 @@ import argparse
 import pathlib
 import re
 
-from drugref import spl_evidence
+from drugref import db, registry_read
 from drugref.ingest import spl, spl_match, spl_run
 
 #: MED-RT and drugref tag a class with its axis -- 'Cytochrome P450 1A2
@@ -60,10 +60,8 @@ def class_variants(class_name: str) -> tuple[str, ...]:
 
 def load_class_entries(dsn: str) -> list[spl_match.Entry]:
     """Every class name, as the measurement round offered them to the matcher."""
-    import psycopg
-
     entries: list[spl_match.Entry] = []
-    with psycopg.connect(dsn) as conn:
+    with db.connect(dsn) as conn:
         for (class_name,) in conn.execute(
                 "SELECT class_name FROM drugref.substance_class").fetchall():
             for variant in class_variants(class_name):
@@ -108,13 +106,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dsn", required=True)
     args = parser.parse_args(argv)
 
-    import psycopg
 
     partitions = sorted(args.openfda.glob("drug-label-*.json.zip"))
     print(f"reading {len(partitions)} partition(s) ...", flush=True)
     corpus = spl.read_corpus(partitions)
-    with psycopg.connect(args.dsn) as conn:
-        registry = spl_evidence.load_registry(conn)
+    # `db.connect`, not `psycopg.connect`: it installs `server_messages`' handler,
+    # so a NOTICE or WARNING the server sends here is published rather than
+    # discarded (issue 174). Only WARNING and worse become visible without a
+    # `logging.basicConfig` -- no tool sets one, which is issue 179.
+    with db.connect(args.dsn) as conn:
+        registry = registry_read.load_registry(conn)
     names, uniis = registry.by_name, registry.by_unii
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings, "
           f"{len(names):,} moiety names")

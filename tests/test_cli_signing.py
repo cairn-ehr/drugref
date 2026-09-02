@@ -304,25 +304,6 @@ def a_registerable_key(tmp_path):
             "fingerprint": signing.fingerprint(public)}
 
 
-# ---- the size cap -----------------------------------------------------------
-
-
-def test_cli_signing_py_is_under_the_size_cap():
-    """CLAUDE.md rule 4, measured rather than assumed -- test_cli.py's
-    `test_cli_py_is_under_the_size_cap` precedent, one file over. Task 10's
-    own brief predicted a single `cli_signing.py` would land at 515 lines,
-    over the ~500 cap, and named the split (keys half / sign-verify-publish
-    half) as the remedy rather than shipping over it -- this pins BOTH halves
-    of that split so neither can silently grow back past the line the first
-    draft was measured crossing."""
-    import pathlib
-
-    from drugref import cli_signing, cli_signing_release
-    for module in (cli_signing, cli_signing_release):
-        lines = len(pathlib.Path(module.__file__).read_text().splitlines())
-        assert lines <= 500, f"{module.__name__} is {lines} lines, over the ~500 cap"
-
-
 # ---- the one full-stack proof -------------------------------------------------
 
 

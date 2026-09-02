@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from drugref import spl_evidence
+from drugref import db, registry_read
 from drugref.ingest import spl, spl_match, spl_run
 
 
@@ -45,7 +45,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--top", type=int, default=40)
     args = parser.parse_args(argv)
 
-    import psycopg
 
     partitions = sorted(args.openfda.glob("drug-label-*.json.zip"))
     if not partitions:
@@ -54,8 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     corpus = spl.read_corpus(partitions)
     print(f"  {len(corpus.labels):,} labels, {len(corpus.wordings):,} wordings")
 
-    with psycopg.connect(args.dsn) as conn:
-        names = spl_evidence.load_registry(conn).by_name
+    # `db.connect`, not `psycopg.connect`: it installs `server_messages`' handler,
+    # so a NOTICE or WARNING the server sends here is published rather than
+    # discarded (issue 174). Only WARNING and worse become visible without a
+    # `logging.basicConfig` -- no tool sets one, which is issue 179.
+    with db.connect(args.dsn) as conn:
+        names = registry_read.load_registry(conn).by_name
     print(f"  {len(names):,} registry names")
 
     # THE SAME VOCABULARY THE INGEST USES, suppression included. Deriving against

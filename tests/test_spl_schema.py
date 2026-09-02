@@ -19,7 +19,7 @@ import uuid
 import psycopg
 import pytest
 
-from drugref import ids, provenance, spl_evidence
+from drugref import ids, provenance, registry_read, spl_evidence
 from drugref.ingest import spl, spl_checks, spl_quote, spl_subject
 
 SOURCE = spl.SOURCE
@@ -567,7 +567,7 @@ def test_the_registry_read_COUNTS_what_first_wins_discarded(conn, run_id):
             "(moiety_uuid, scheme, value, ingest_run) "
             "VALUES (%s, 'UNII', 'SHAREDUNII', %s)", (moiety_uuid, run_id))
 
-    registry = spl_evidence.load_registry(conn)
+    registry = registry_read.load_registry(conn)
 
     assert registry.name_collisions == 1
     assert registry.unii_collisions == 1
@@ -584,7 +584,7 @@ def test_a_registry_with_no_collisions_reports_none(conn, run_id):
     """The control: without it the counts above could be an always-incrementing
     counter."""
     _moiety(conn, run_id, "warfarin")
-    registry = spl_evidence.load_registry(conn)
+    registry = registry_read.load_registry(conn)
     assert registry.name_collisions == 0 and registry.unii_collisions == 0
 
 
@@ -599,7 +599,7 @@ def test_the_registry_halves_are_NAMED_because_they_are_the_same_type(conn,
         "INSERT INTO drugref.identity_claim "
         "(moiety_uuid, scheme, value, ingest_run) VALUES (%s, 'UNII', 'ABC', %s)",
         (moiety_uuid, run_id))
-    registry = spl_evidence.load_registry(conn)
+    registry = registry_read.load_registry(conn)
     assert registry.by_name["warfarin"] == moiety_uuid
     assert registry.by_unii["ABC"] == moiety_uuid
 

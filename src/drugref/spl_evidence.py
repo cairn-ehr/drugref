@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import psycopg
 
-from drugref import db
+from drugref import analyze, db
 
 if TYPE_CHECKING:                       # pragma: no cover
     # Import-time-free: this module is the WRITER and `spl_quote` is a pure
@@ -398,115 +398,33 @@ def analyze_loaded_table(conn: psycopg.Connection, table: str) -> None:
 def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
     """`ANALYZE` the named tables of this source, refusing any it does not own.
 
-    Identifiers cannot be bind parameters, so they are interpolated -- and are
-    therefore checked against `SPL_TABLES` first, which is `_copy`'s and
-    `db.clear_source_tables`'s stated rule: the name must come from a module
-    constant, never from input.
+    THIS FUNCTION OWNS ONE RULE ONLY: which tables an SPL writer may name. The
+    statement itself, and the proof that the server actually ran it, belong to
+    `analyze.analyze_tables` -- which every future source's writer will want too,
+    and which is where the empty-list refusal now lives so that a second module
+    which starts building an `ANALYZE` cannot carry a second copy of it. After
+    this split exactly ONE module composes the statement; the point of moving the
+    rule was to keep it that way.
 
-    AN EMPTY LIST IS REFUSED rather than passed through, because bare `ANALYZE`
-    means EVERY table in the database -- taking a lock on each until COMMIT.
-    Unreachable from either caller today, and refused for `_copy`'s reason: the
-    day it becomes reachable is not the day to discover what it does.
+    `SPL_TABLES` is the whitelist, on `_copy`'s and `db.clear_source_tables`'s
+    stated rule: a table name reaching SQL must come from a module constant,
+    never from input. That is a POLICY about ownership and it survives even
+    though `analyze_tables` now quotes its identifiers with `sql.Identifier`:
+    quoting stops an identifier being misread, it does not stop this source
+    analysing a table belonging to another.
+
+    ⇒ AND THE STATEMENT NOW REFUSES TO REPORT SUCCESS IT DID NOT EARN (issue
+    174). `ANALYZE` on a table this role does not own is a WARNING, not an error:
+    the table is skipped, the command tag comes back, and psycopg used to discard
+    the warning -- so under an admin-migrates/app-ingests split every `ANALYZE`
+    here silently did nothing while the ingest reported success, and issue 160's
+    630 s came back with it.
     """
     names = tuple(tables)
-    if not names:
-        raise ValueError(
-            "no tables to ANALYZE; a bare ANALYZE would analyse every table in "
-            "the database, which is never what this module means")
     unknown = [table for table in names if table not in SPL_TABLES]
     if unknown:
         raise ValueError(
             f"{unknown} is not among this source's tables {SPL_TABLES}; "
-            "ANALYZE interpolates its identifiers and may only name a table "
+            "ANALYZE names its tables directly and may only name one "
             "this module owns")
-    conn.execute("ANALYZE " + ", ".join(f"drugref.{name}" for name in names))
-
-
-@dataclass(frozen=True, kw_only=True)
-class Registry:
-    """The two lookups this ingest resolves through, AND WHAT THEY DISCARDED.
-
-    **NAMED, not a bare 2-tuple, because the two halves are the same type.**
-    `names, known_uniis = load_registry(conn)` type-checks just as well the wrong
-    way round, and a transposition would build the matcher out of UNII codes and
-    resolve every subject against display names -- caught only by `check_floors`
-    at the very end of a full ingest -- 2 min 09 s since issue 160, and 12 min 51 s
-    when that was measured -- if at all.
-
-    **A DATACLASS AND NOT A `NamedTuple`, WHICH IS NOT A STYLE CHOICE.** This was
-    a `NamedTuple` for one round, and a `NamedTuple` is still unpackable: the two
-    committed tools that read the registry kept `names, uniis =
-    load_registry(conn)` and began raising `ValueError: too many values to
-    unpack` on their first line of real work -- silently, because neither tool
-    has a test. A type that cannot be destructured at all fails at EVERY call
-    site the moment the shape changes, instead of only at the ones whose arity
-    happens to stop matching.
-
-    **The collision counts exist because `load_registry` used to say they were
-    "the caller's to report" and no caller reported them.** `identity_claim` is
-    unique on (moiety_uuid, scheme, value) and deliberately NOT across moieties,
-    so two moieties may legitimately claim one UNII; first-wins then attaches
-    every subject derived from it to whichever moiety sorted first. Deterministic,
-    and reproducibly wrong is still wrong -- so the number of discarded entries
-    is carried out where the summary can print it.
-    """
-
-    by_name: dict[str, str]
-    by_unii: dict[str, str]
-    #: display names claimed by more than one moiety, and UNIIs likewise. Each
-    #: counts DISCARDED entries, not colliding keys: three moieties on one UNII
-    #: is two discards.
-    name_collisions: int
-    unii_collisions: int
-
-
-def load_registry(conn: psycopg.Connection) -> Registry:
-    """`Registry(display_name -> moiety_uuid, UNII -> moiety_uuid, collisions)`.
-
-    ONE STATEMENT, NOT TWO, for the reason `drugcentral_run.load_registry`
-    records: a single statement always sees a single snapshot at any isolation
-    level, so this reads consistently without the transaction having to be
-    REPEATABLE READ -- and raising isolation for the whole run made a concurrent
-    write to any question row abort the entire ingest with SerializationFailure.
-
-    EVERY READ IS ORDERED, and that is not cosmetic. `identity_claim` is unique on
-    (moiety_uuid, scheme, value) and deliberately NOT across moieties, so two
-    moieties may legitimately claim one UNII. An unordered read would let the same
-    release resolve differently on two runs.
-
-    LIVE CLAIMS ONLY (`superseded_by IS NULL`): a corrected-away identifier must
-    not resurrect a resolution.
-
-    **First-wins on a collision, and the collision is COUNTED here.** Both
-    mappings are built in one pass in sorted order, so which entry wins is a
-    property of the data rather than of the plan -- and the count of what lost
-    rides out on `Registry` so the orchestrator can report it. It used to say the
-    collision was "the caller's to report"; the sole caller reported only the
-    post-de-duplication sizes, so the number was unobservable anywhere.
-    """
-    rows = conn.execute(
-        "  SELECT 'display_name' AS lookup, display_name AS key, "
-        "         moiety_uuid::text AS moiety_uuid "
-        "    FROM drugref.substance_moiety "
-        "   UNION ALL "
-        "  SELECT 'UNII', value, moiety_uuid::text "
-        "    FROM drugref.identity_claim "
-        "   WHERE scheme = 'UNII' AND superseded_by IS NULL "
-        "   ORDER BY lookup, key, moiety_uuid").fetchall()
-
-    by_name: dict[str, str] = {}
-    by_unii: dict[str, str] = {}
-    name_collisions = unii_collisions = 0
-    for lookup, key, moiety_uuid in rows:
-        if lookup == "display_name":
-            if key in by_name:
-                name_collisions += 1
-            else:
-                by_name[key] = moiety_uuid
-        elif key in by_unii:
-            unii_collisions += 1
-        else:
-            by_unii[key] = moiety_uuid
-    return Registry(by_name=by_name, by_unii=by_unii,
-                    name_collisions=name_collisions,
-                    unii_collisions=unii_collisions)
+    analyze.analyze_tables(conn, names)

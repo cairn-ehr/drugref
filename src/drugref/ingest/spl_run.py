@@ -54,7 +54,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 import psycopg
 
-from drugref import provenance, spl_evidence
+from drugref import provenance, registry_read, spl_evidence
 from drugref.ingest import (
     spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release,
     spl_subject,
@@ -276,7 +276,7 @@ def ingest_spl(
     # and swapping them would build the matcher out of UNII codes and resolve
     # every subject against display names -- a failure only `check_floors` would
     # notice, at the very end of the run.
-    registry = spl_evidence.load_registry(conn)
+    registry = registry_read.load_registry(conn)
     names, known_uniis = registry.by_name, registry.by_unii
     if not names or not known_uniis:
         raise ValueError(

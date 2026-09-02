@@ -948,6 +948,47 @@ it was filed; the issue, the suite and that round's own review all read past it 
 pass carried a borrowed `2 min 09 s` into an immutable migration, which is the same fault one level down. And:
 **a grep derives text, not structure**; **two roundings of one quantity is one rule kept in two places.***
 
+**⇒ THE NOTICE-CHANNEL ROUND ✅ DONE (2026-09-02) — issues #174 and #172, no migration.**
+[Measurement record](superpowers/specs/2026-09-02-drugref-analyze-notice-channel.md); full account:
+PROJECT-NOTES § "The notice-channel round". **Read the numbers there, not here.** PostgreSQL does not raise
+when the calling role may not analyse a table it names: it emits a WARNING, **skips the table**, and returns
+the `ANALYZE` command tag — and psycopg discards notices unless a handler is installed, which nothing in this
+repo had ever done. So under an admin-migrates/app-ingests role split every `ANALYZE` the COPY-cost round added
+silently did nothing, issue 160's **630 s** came back, **and the ingest still reported success**, because every
+check downstream counts rows and the row counts are identical. `db.connect` now installs a notice handler
+(`server_messages.py`, all eight protocol severities mapped once, reading the NON-LOCALISED severity), and
+`analyze.analyze_tables` refuses unless the server actually did the work — on the collected WARNING, on
+`pg_class.reltuples` still reading `-1`, **and** on `pg_stat_all_tables.analyze_count` not having moved: three
+checks that are not one check three times, since only the WARNING carries a diagnosis, only `reltuples` needs
+neither a message nor a counter, and only the counter sees a re-ingest with no message. Verified at full scale
+on both sides of
+the split on a `drugref_notice174` built from nothing: the owner run reproduced every published SPL figure in
+131.77 s, the split-role re-ingest **refused at 81.76 s with exit 2** leaving the projection untouched — with
+`spl_wording.reltuples` at 27,406, so only the WARNING could have fired — and `GRANT MAINTAIN`, the remedy the
+message names, made the identical command complete.
+
+**#172 closed on the way past**, at the seam it named: `Registry`/`load_registry` — a READ path inside the SOLE
+WRITER of the SPL projection — moved to `registry_read.py`, `spl_evidence.py` **518 → 428** by the move, **430**
+after the review round corrected two docstrings. The cap test the
+issue asked for became a **sweep**: `500` had lived in two test files that between them guarded three modules of
+76, which is how 518 happened with a green suite; `tests/test_module_size_cap.py` now owns the number
+once and checks every module under `src/drugref`, with the seven already over it as a **checked ledger**
+(a second test fails if a listed module comes back under the cap, **and** if one grows past its recorded size)
+— [#177](https://github.com/cairn-ehr/drugref/issues/177).
+
+⇒ *The rule: **a comment in one module is not a channel.** `drugcentral_run.py` had written this exact
+mechanism down — "psycopg discards notices unless a handler is installed, so the ingest reported success having
+silently lost its atomicity" — and one round later the same discard cost the SPL ingest its whole performance
+fix. A correct diagnosis with no mechanism attached does not protect the next round. And: **a guard must not
+depend on how its connection was opened** — the ANALYZE collector installs its own handler rather than trusting
+`db.connect`'s, or it would fire on the CLI path and nowhere else, which is issues 74/66/76 inside the fix for
+174. And, from the review of that very branch: **a check that can be switched off from outside drugref is not a
+check.** `client_min_messages` above `warning` silences the collected WARNING, `reltuples` is blind on every run
+after the first, so the two-check guard was a no-op on every database past its first ingest — issue 174 inside
+the fix for issue 174, closed by a third check on a counter no setting of that kind reaches, and by refusing
+outright when nothing at all can witness the work ([#179](https://github.com/cairn-ehr/drugref/issues/179) is
+the tools half of the same channel).*
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
