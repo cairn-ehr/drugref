@@ -287,7 +287,8 @@ def test_an_unknown_subject_with_a_known_partner_is_reported(conn, ingest_run_id
     assert str(known) not in out, "the known endpoint is not the operator's problem"
 
 
-def test_an_empty_registry_is_not_blamed_on_the_operators_typing(conn, capsys):
+def test_an_empty_registry_is_not_blamed_on_the_operators_typing(
+        an_uningested_registry, capsys):
     """⇒ #120'S OWN BANNER REPEATING #122'S DEFECT, in the round that fixed both.
 
     The banner offers three causes -- a class_uuid, a uuid from another node, a
@@ -297,11 +298,18 @@ def test_an_empty_registry_is_not_blamed_on_the_operators_typing(conn, capsys):
     question. A guard asserting the cause it imagined rather than the one it could
     confirm is the whole of issue 122, and this message was doing it.
 
-    THE `conn` FIXTURE IS THE EMPTY CASE, which is why this test needs no setup: the
-    session schema is migrated and this test ingests nothing.
+    ⇒ IT TAKES `an_uningested_registry`, NOT `conn`, AND THE DIFFERENCE IS THE POINT.
+    This docstring used to say "THE `conn` FIXTURE IS THE EMPTY CASE, which is why this
+    test needs no setup", and that was false. `test_cli.py::test_ingest_unii_end_to_end`
+    commits real moieties, so `uv run pytest tests/test_cli.py
+    tests/test_cli_interactions.py` failed here in 1.6 s; it passed in a full run only
+    because two modules sort between the two and TRUNCATE in an autouse fixture. A test
+    asserting a precondition it never established is issue 122's own defect, in the test
+    written to fix it -- and it survived the round that fixed the identical bug in
+    tests/test_registry_read.py one directory listing away.
     """
     assert cli_interactions._handle_interactions(
-        conn, _args(_NOT_IN_THE_REGISTRY)) == 2
+        an_uningested_registry, _args(_NOT_IN_THE_REGISTRY)) == 2
     out = capsys.readouterr().out
     assert "REGISTRY IS EMPTY" in out
     assert "transposed digit" not in out, (

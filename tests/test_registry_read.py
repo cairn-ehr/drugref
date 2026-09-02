@@ -62,7 +62,7 @@ def test_asking_about_nothing_returns_nothing(conn):
     assert registry_read.known_moieties(conn) == set()
 
 
-def test_registry_is_empty_on_a_migrated_but_uningested_database(conn):
+def test_registry_is_empty_on_a_migrated_but_uningested_database(an_uningested_registry):
     """The fact that stops #120's banner blaming the operator's typing.
 
     A migrated database with no ingest holds no moieties, so EVERY uuid is unknown and
@@ -71,7 +71,7 @@ def test_registry_is_empty_on_a_migrated_but_uningested_database(conn):
     cause it had not confirmed, which is the defect issue 122 is about, in the message
     issue 120 added.
     """
-    assert registry_read.registry_is_empty(conn) is True
+    assert registry_read.registry_is_empty(an_uningested_registry) is True
 
 
 def test_a_registry_with_one_moiety_is_not_empty(conn, ingest_run_id):

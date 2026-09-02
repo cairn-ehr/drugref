@@ -989,6 +989,47 @@ the fix for issue 174, closed by a third check on a counter no setting of that k
 outright when nothing at all can witness the work ([#179](https://github.com/cairn-ehr/drugref/issues/179) is
 the tools half of the same channel).*
 
+**⇒ THE SUITE-COUNT GATE ROUND ✅ DONE (2026-09-02) — issue #146, no migration.**
+Full account: PROJECT-NOTES § "The suite-count gate round". **Read the number there, not here** — this line
+deliberately carries none, because restating it is five of the nine occurrences of it going stale. The suite
+count in PROJECT-NOTES § "How to run / test" calls itself THE ONE HOME FOR THIS NUMBER, had been rewritten
+three times to stop itself drifting, and drifted after each rewrite — nine times, twice into a commit message,
+once on the branch whose own diff added the sentence saying a commit message is not a home.
+`tests/test_suite_count.py` now reads that line and compares it with what `pytest` collected, so the round that
+changes the suite fails the suite it changed. Three things make it more than a comparison: the count is the
+**pre-deselection** total (CI runs `-m "not livepage"`, so a selected-item count would differ between CI and a
+local run and this line could only ever have matched one of them); a **narrowed** run skips, and a negative
+control pins that the bare command line, CI's, and all four spellings of `tests` are *not* narrowed, because a
+too-eager detector would make this a permanent skip — issues 74/66/76 again; and the ledger of narrowing pytest
+options **refuses a name it does not recognise** rather than defaulting it to "not in use", with a second test
+holding its **values** against the installed pytest's own defaults.
+
+**The review of this branch closed four holes in the gate itself** (+5 tests, no migration). The first draft's
+negative control built its options **from** the ledger, so the option half was a tautology that could never
+fire; behind it sat two real over-detections (`./tests` and absolute path arguments, and `--sw`, which
+deselects rather than narrowing) that would each have turned a genuine drift into a skip, plus an unguarded
+neutral **value** — `"ignore": []` where pytest parks `None` disables the gate everywhere and was observed
+doing so with every sibling test green. The two `conftest.py` hooks that produce the number had no test at all
+and now have two `pytester` ones, which in turn required resetting the module-level deselection counter at the
+start of each collection.
+
+**Found on the way past and fixed**: **two** tests asserted a global precondition (no moieties registered) that
+neither established, and had passed since issue 120 only because other modules `TRUNCATE` and both files sort
+after some of them — `test_registry_read.py`'s emptiness test and
+`test_cli_interactions.py::test_an_empty_registry_is_not_blamed_on_the_operators_typing`, the second found by
+this branch's own review after the first was fixed. Reproduce with
+`uv run pytest tests/test_cli.py tests/test_registry_read.py` and
+`uv run pytest tests/test_cli.py tests/test_cli_interactions.py`; the first confirmed pre-existing on unmodified
+`main`. The fix is one shared `conftest.py` fixture that TRUNCATEs **inside the test's transaction**, which the
+`conn` fixture then rolls back, so no other module's committed state is disturbed — and whose teardown checks
+`pg_xact_status()` of its own wipe rather than asserting that in prose.
+
+⇒ *The rule: **prose that has failed nine times is not going to work on the tenth.** Every rewrite of that
+comment was a correct diagnosis with no mechanism attached — which is the notice-channel round's lesson
+("a comment in one module is not a channel") applied to a document instead of to a module. And: **a test that
+asserts a precondition it did not establish passes for a reason it does not state**, which the suite cannot
+distinguish from passing for the right one.*
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
@@ -1624,10 +1665,14 @@ wholesale each round, so their git history answers nothing (raised by the #62 re
   standing rule in `docs/HANDOVER.md`: keep the number away from `close`/`fix`/`resolve` in any inflection.
 - **Floor hardening** — close the `TRUNCATE` + table-owning-role bypass (row-level triggers don't cover them) via **RLS +
   privilege separation** — the full floor design §7 always envisioned (design §10 tension G). **Note the test-suite coupling**
-  (wrong three times now — three, seven, then nine, the last of them written directly beneath this instruction — so re-run the
-  grep): `grep -l TRUNCATE tests/*.py` finds **eleven**, one of them **`mesh_rel_fixtures.py`** — a shared helper rather than
-  a test module, holding the one truncate both MeSH-keyed test modules use — each `TRUNCATE`-ing the drugref tables in an
-  autouse fixture because their orchestrators commit internally and so escape the `conn` fixture's rollback. Those fixtures
+  — **THE COUNT USED TO LIVE HERE AND WAS WRONG FOUR TIMES**: three, seven, nine, then **eleven while the real figure was
+  twenty**, the last of them surviving a round that edited this very file and added a truncate to it. A number restated away
+  from anything that checks it rots — which is issue 146 exactly, one file over — so the number is gone and the measurement
+  is the instruction: **run `grep -l TRUNCATE tests/*.py` and read the answer off the suite.** What matters here is not the
+  count but the shape: most of those files `TRUNCATE` the drugref tables in an autouse fixture because their orchestrators
+  commit internally and so escape the `conn` fixture's rollback; `mesh_rel_fixtures.py` is a shared helper rather than a test
+  module, holding the one truncate both MeSH-keyed test modules use; and `conftest.py`'s `an_uningested_registry` is the one
+  that deliberately does **not** commit (issue 146's round). Those fixtures
   depend on precisely the bypass this item closes, so hardening the floor must land together with a replacement isolation
   strategy (a privileged test role, or per-test schemas) or the suite stops being able to reset itself.
 - **Production ingest** — batch-commit large real feeds; the verify-before-production checklist (ChEBI/UNII/MED-RT licence
