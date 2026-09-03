@@ -21,6 +21,7 @@ the ninth (mesh_rel_run, 48.3 s) was reporting the time it spent parsing 750 MB 
 BEFORE its first write, the complement of a duration. See start_clock below.
 """
 import dataclasses
+import datetime
 import time
 
 import psycopg
@@ -146,15 +147,13 @@ def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,
     minutes out. Sending a client timestamp instead would fold that skew straight into
     every published duration.
 
-    `duration_measured = true` IS THIS FUNCTION'S SIGNATURE ON THE ROW (db/054, #176),
-    and it is the only place in the project that writes it. The column DEFAULTS TO
-    FALSE, so every other path -- a `curation` row, a direct INSERT, an ingest driven by
-    code older than db/053 -- says so about itself without anyone remembering to. Before
-    db/054 a reader inferred the same thing by comparing `started_at` against when
-    db/053 was applied, which asks WHEN a row was written rather than WHICH CODE wrote
-    it; the two come apart in both directions, and the backdating in the line above is
-    itself one of them -- a correct new row can be dated before the migration that made
-    it correct. `format_run_duration` reads this flag and nothing else.
+    `duration_measured` IS DELIBERATELY NOT WRITTEN HERE (db/054, #176), and the
+    asymmetry with `finish_run` is the point. The flag claims that the two stamps are a
+    duration, which is a claim about BOTH of them -- and at this moment `finished_at`
+    does not exist. `finish_run` writes it, alongside the second stamp it is vouching
+    for. A row in flight therefore reads false, which costs nothing: `finished_at` is
+    NULL, `format_run_duration` answers "unfinished" before it consults the flag, and
+    `loaded_release` filters the row out. What it buys is in `finish_run`'s docstring.
     """
     if not isinstance(clock, RunClock):
         raise TypeError(
@@ -163,9 +162,8 @@ def open_run(conn: psycopg.Connection, *, source: str, upstream_release: str,
             "apart from the other, and the two differ by decades (#159)")
     run_id = conn.execute(
         "INSERT INTO drugref.ingest_run "
-        "(source, upstream_release, source_checksum, writer, started_at, "
-        " duration_measured) "
-        "VALUES (%s, %s, %s, %s, clock_timestamp() - make_interval(secs => %s), true) "
+        "(source, upstream_release, source_checksum, writer, started_at) "
+        "VALUES (%s, %s, %s, %s, clock_timestamp() - make_interval(secs => %s)) "
         "RETURNING ingest_run_id",
         (source, upstream_release, source_checksum, writer,
          clock.elapsed())).fetchone()[0]
@@ -192,8 +190,30 @@ def finish_run(conn: psycopg.Connection, run_id: int) -> None:
     does NOT cover is the caller's final COMMIT, which happens after it by
     construction -- stamping after the commit is the very thing the paragraph above
     forbids. Say "the work" and mean it, not "the command".
+
+    ⇒ `duration_measured = true` IS WRITTEN HERE, IN THE SAME STATEMENT AS THE STAMP IT
+    VOUCHES FOR (db/054, #176), and this is the only place in the project that writes
+    it. The flag's claim is about BOTH stamps, so it belongs where the SECOND one is
+    written: `open_run` could only ever have promised it about a value that did not
+    exist yet.
+
+    THAT PLACEMENT IS WHAT MAKES db/054's DEFAULT ARGUMENT HOLD. `DEFAULT false`
+    governs INSERTs, and `finished_at` arrives by UPDATE -- so a flag set at INSERT is
+    not protected by the default at all. Concretely: `open_run` commits its row so a
+    crashed ingest leaves a trace, and an operator tidying that abandoned row by hand
+    (`UPDATE ... SET finished_at = now()`) writes the second stamp with no measurement
+    behind it. db/053's CHECK passes, the row enters `loaded_release`, and a flag set at
+    INSERT would still read true -- publishing a confident runtime of hours for a run
+    that never finished, which is issue 159's own failure mode with db/054's guard
+    beside it saying nothing. Written here, the hand-rolled UPDATE does not name the
+    column and the row keeps its false.
+
+    EVERY OTHER PATH STILL LANDS FALSE BY DOING NOTHING -- a `curation` row, a direct
+    INSERT, and an ingest driven by a client older than db/053, whose own `finish_run`
+    writes `finished_at` without naming this column.
     """
-    conn.execute("UPDATE drugref.ingest_run SET finished_at = clock_timestamp() "
+    conn.execute("UPDATE drugref.ingest_run "
+                 "SET finished_at = clock_timestamp(), duration_measured = true "
                  "WHERE ingest_run_id = %s", (run_id,))
 
 
@@ -209,20 +229,29 @@ def finish_run(conn: psycopg.Connection, run_id: int) -> None:
 UNMEASURED = "unmeasured"
 
 
-def format_run_duration(*, started_at, finished_at, duration_measured) -> str:
+def format_run_duration(*, started_at: datetime.datetime,
+                        finished_at: datetime.datetime | None,
+                        duration_measured: bool) -> str:
     """PURE: what `drugref status` prints as one run's runtime.
 
-    KEYWORD-ONLY, for the reason open_run already gives for `writer` and `clock`, and
-    the argument survived db/054 with one of its two silent slips replaced rather than
-    removed. `(finished, started, measured)` still prints a NEGATIVE runtime; the third
-    argument stopped being a datetime only to become a bool, which Python will accept
-    and compare in either of the first two positions, so `(started, measured, finished)`
-    raises nothing either. Neither is visible to a caller, and this is the one function
-    whose whole job is refusing to publish a number it cannot vouch for.
+    KEYWORD-ONLY, for the reason open_run already gives for `writer` and `clock`: two
+    of the three argument-order slips used to be SILENT -- `(finished, started,
+    watershed)` printed a negative runtime, and `(started, watershed, finished)` printed
+    "pre-db/053" forever. db/054 REMOVED the second of those rather than relocating it:
+    the third argument is now a bool, so that order reaches the subtraction and raises
+    `TypeError` on `bool - datetime`. The guard stays for the first, which the types
+    cannot catch because both stamps are datetimes.
+
+    THE SLIP THAT SURVIVES BOTH IS A KEYWORD-VALUE ONE -- `started_at=finished_at,
+    finished_at=started_at`, which is what a row unpacked in the order a SELECT happened
+    to list would produce -- and it is refused below rather than published.
 
     `duration_measured` is the row's own `drugref.ingest_run.duration_measured`
-    (db/054): true exactly when `provenance.open_run` wrote the row, false for every
-    other path.
+    (db/054): true exactly when `provenance.finish_run` wrote that row's `finished_at`,
+    false for every other path. It is tested with `is not True` rather than for
+    truthiness, so a caller migrating off the old signature -- renaming `watershed=` to
+    `duration_measured=` while still passing the datetime -- is refused instead of
+    publishing a number on the strength of a non-empty object.
 
     WHY THIS IS NOT A SUBTRACTION. A row whose stamps were not written by the current
     open_run/finish_run pair still subtracts to a number -- 0.0026 s for an SPL ingest
@@ -259,13 +288,14 @@ def format_run_duration(*, started_at, finished_at, duration_measured) -> str:
     covers a server clock that stepped FORWARD mid-run. That is a different question
     from this one and is not pretended at here.
     """
-    # "unfinished" OUTRANKS the flag, in both directions. A run in flight was opened
-    # by open_run, so its flag is true and there is still nothing to subtract; a row
-    # from an older client that never came back is not "unmeasured" either -- what an
-    # operator needs to know first is that it never finished.
+    # "unfinished" OUTRANKS the flag, in both directions. A run in flight has no
+    # finished_at for finish_run to have vouched for, so its flag is false and there is
+    # still nothing to subtract; a row from an older client that never came back is not
+    # "unmeasured" either -- what an operator needs to know first is that it never
+    # finished.
     if finished_at is None:
         return "unfinished"
-    if not duration_measured:
+    if duration_measured is not True:
         return UNMEASURED
     # ROUND ONCE. The `< 60` decision used to be taken on `round(seconds, 1)` while
     # the minutes branch re-rounded the UNROUNDED remainder with `{:02.0f}` -- two
@@ -274,6 +304,16 @@ def format_run_duration(*, started_at, finished_at, duration_measured) -> str:
     # `0m60s`, `1m60s`, `60m60s`. That is 0.83 % of runs over a minute, on the single
     # figure this column exists to let an operator trust.
     seconds = (finished_at - started_at).total_seconds()
+    # A NEGATIVE INTERVAL CANNOT HAVE COME FROM THE DATABASE -- db/053's CHECK forbids
+    # `finished_at < started_at` on disk -- so one reaching here is proof the CALLER
+    # transposed the two stamps, which type-checks perfectly because both are
+    # timestamptz. This used to render as "-2.4s", a number nobody can act on, from the
+    # one function whose whole job is refusing exactly that.
+    if seconds < 0:
+        raise ValueError(
+            f"finished_at precedes started_at by {-seconds:.1f}s, which db/053's CHECK "
+            f"forbids on disk -- so the two stamps reached this function transposed "
+            f"(#176)")
     if seconds < 59.95:                       # i.e. rounds to at most "59.9s"
         return f"{seconds:.1f}s"
     minutes, secs = divmod(round(seconds), 60)

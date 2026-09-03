@@ -48,10 +48,13 @@ disagreeing.
 
 ⇒ AND THE COUNT OF THOSE SITES IS DELIBERATELY NOT WRITTEN DOWN HERE. This paragraph
 said "ALL FIVE CALLERS. Two `cli.py` blocks, two in `cli_status.py` and the clinician
-path in `cli_interactions.py`" -- a hand-listed tally of a population that grows, which
-was already wrong at six when db/054 arrived to make it seven. That is the same defect
+path in `cli_interactions.py`" -- a hand-listed tally of a population that grows, and
+it was already out of date before db/054 added another site. That is the same defect
 db/053 removed from db/025's view comment and the same one this project has now found
-repeatedly; `grep -rn "migration_guard.guarded(" src/` answers it, and cannot go stale.
+repeatedly; `grep -rn "migration_guard.guarded(" src/ | grep -v migration_guard.py`
+answers it, and cannot go stale. (The exclusion is not fussiness: without it the
+sentence you are reading is itself a hit, which is the same off-by-one db/053 had to
+disclaim about its own grep.)
 """
 import contextlib
 from dataclasses import dataclass
@@ -245,7 +248,7 @@ def raise_missing(conn: psycopg.Connection, exc: psycopg.Error, *,
     bug, and it should be loud in the suite rather than eloquent in production.
     """
     if isinstance(relations, str):
-        # A MISSING TRAILING COMMA, WHICH IS SILENT AND ABSURD. Four call sites pass a
+        # A MISSING TRAILING COMMA, WHICH IS SILENT AND ABSURD. Most call sites pass a
         # singleton tuple, and `relations=(X)` without the comma is just `X`; the splat
         # below then probes it CHARACTER BY CHARACTER, each one absent, and the operator
         # reads "d, r, u, g, r, e, f, ., s, ... are DROPPED, not pending". There is no
@@ -257,17 +260,39 @@ def raise_missing(conn: psycopg.Connection, exc: psycopg.Error, *,
         raise ValueError(
             "raise_missing needs at least one relation to probe: with none, the "
             "diagnosis would report that every relation exists without having looked")
+    raise RuntimeError(diagnose_message(
+        conn, exc, relations=relations, migration=migration,
+        consequence=consequence)) from exc
+
+
+def diagnose_message(conn: psycopg.Connection, exc: psycopg.Error, *,
+                     relations: tuple[str, ...], migration: str,
+                     consequence: str) -> str:
+    """The operator's sentence for a failed read, RETURNED rather than raised.
+
+    SPLIT OUT OF `raise_missing` FOR THE ONE CALLER THAT MUST NOT RAISE. Every guarded
+    block so far answers a wrong-shaped database by aborting, which is right where the
+    block is one of several and the reader has nothing to fall back on. The loaded-
+    release block is neither: it is the FIRST of `drugref status`' six, so raising
+    costs the other five, and db/025's columns are still there to be read -- so it
+    prints this sentence and carries on with the runtimes withheld
+    (`cli_status.print_loaded_release_block`).
+
+    THE WORDING STILL LIVES IN ONE PLACE, which is the whole point of this module: a
+    block that degrades must not therefore hand-roll its own diagnosis, or there would
+    be two sentences for one state and the second one would be the one that drifts.
+    `raise_missing` is now this function plus a `raise`.
+    """
     detail = _said(exc)
     try:
         absent = db.missing_relations(conn, *relations)
         applied = db.migration_applied(conn, migration)
     except psycopg.Error as probe_exc:
-        raise RuntimeError(undiagnosed_message(
-            detail=detail, probe_detail=_said(probe_exc),
-            consequence=consequence)) from exc
-    raise RuntimeError(guard_message(
+        return undiagnosed_message(
+            detail=detail, probe_detail=_said(probe_exc), consequence=consequence)
+    return guard_message(
         Diagnosis(absent=absent, migration_applied=applied, detail=detail),
-        migration=migration, consequence=consequence)) from exc
+        migration=migration, consequence=consequence)
 
 
 @contextlib.contextmanager

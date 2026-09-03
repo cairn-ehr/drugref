@@ -1,7 +1,7 @@
 # src/drugref/cli_status.py
 """`drugref status`'s BLOCKS, split out of cli.py -- the loaded releases and their
-runtimes (issue 159), the class grain (db/035) and the unrankable-severity fault
-(db/038, issue 116).
+runtimes (issue 159, and which of them may be published at all: db/054, issue 176), the
+class grain (db/035) and the unrankable-severity fault (db/038, issue 116).
 
 THREE BLOCKS NOW, and the file docstring has twice been written too narrowly for what
 the module holds: it said "the CLASS-GRAIN BLOCK" while holding one, then "LATER BLOCKS"
@@ -59,38 +59,115 @@ def print_loaded_release_block(conn) -> None:
 
     ⇒ AND THE REFUSAL STILL SAYS WHY, ONCE. Printing "unmeasured" on every line while
     leaving an operator to guess what would change it is a wrong answer by omission --
-    the same fault, one level up, as publishing a number nobody can vouch for. The line
-    is printed only when a row actually shows the refusal, so a fully re-ingested
-    database does not carry an explanation of a state it is not in.
+    the same fault, one level up, as publishing a number nobody can vouch for.
+    `_unmeasured_note` owns that sentence and the conditions on printing it.
+
+    ⇒ THIS BLOCK DEGRADES RATHER THAN ABORTS, alone among the guarded six, because it
+    is the FIRST of them -- see `_read_loaded_release` for the whole argument.
     """
-    # THE GUARD, WHICH IS NEW WITH db/054 AND IS AN `UndefinedColumn` ONE. Every
-    # deployment between pulling this code and running `drugref migrate` has
-    # `loaded_release` in its db/025 shape -- the view is present and one column
-    # short -- which is precisely the state `migration_guard.WRONG_SHAPE` catches, and
-    # exactly how db/035 and db/038 widened a view under a reader before.
-    with migration_guard.guarded(
-            conn, relations=("drugref.loaded_release",), migration="054",
-            # PHRASED TO SURVIVE WHAT THE GUARD APPENDS. `guard_message` closes three
-            # of its four branches with "until it is fixed" or "meanwhile", so a
-            # consequence ending in a relative clause reads as "... the first thing
-            # `drugref status` is asked for until it is fixed". Verified by running it.
-            consequence=("the loaded releases and their runtimes -- the first thing "
-                         "`drugref status` is asked for -- cannot be reported")):
-        loaded = conn.execute(
-            "SELECT source, writer, upstream_release, finished_at, started_at, "
-            "duration_measured FROM drugref.loaded_release").fetchall()
-    print("loaded releases:" if loaded else "loaded releases: none")
-    for source, writer, release, finished_at, started_at, measured in loaded:
+    rows, refusal = _read_loaded_release(conn)
+    print("loaded releases:" if rows else "loaded releases: none")
+    for source, writer, release, finished_at, started_at, measured in rows:
         print("  {:<8} {:<14} {:<12} {} {}".format(
             source, writer, release, finished_at,
             provenance.format_run_duration(started_at=started_at,
                                            finished_at=finished_at,
                                            duration_measured=measured)))
-    if any(not row[-1] for row in loaded):
-        print(f"  ({provenance.UNMEASURED}: the row was not written by this version of "
-              "drugref -- a run from before db/053, an older client, or a direct "
-              "INSERT -- so its two stamps are not a duration and no number is "
-              "published for it. Re-ingest that source to record one.)")
+    # ONE NOTE, AND THE SCHEMA-LEVEL ONE OUTRANKS IT. If the column is not there at all,
+    # saying "re-ingest that source" is advice that cannot work -- `drugref migrate` is
+    # the answer, and the guard's sentence already says so.
+    note = refusal if refusal is not None else _unmeasured_note(rows)
+    if note:
+        print(f"  ({note})")
+
+
+# The columns db/054 reads, and the db/025 subset that survives without it. Spelled
+# once each: the fallback exists to print the SAME listing minus the flag, and two
+# hand-kept column lists is how they come to differ.
+_DB054_COLUMNS = ("source, writer, upstream_release, finished_at, started_at, "
+                  "duration_measured")
+_DB025_COLUMNS = "source, writer, upstream_release, finished_at, started_at"
+
+# PHRASED TO SURVIVE WHAT THE GUARD APPENDS, checked by rendering all four branches.
+# `guard_message` closes three of them with a trailing clause ("until it is fixed",
+# "meanwhile", "until it is restored") and inlines the consequence mid-sentence in the
+# fourth -- so a consequence that ends in a clause of its own gets a second one glued to
+# it. An earlier draft here ended "... the listing itself is still below" and rendered
+# as "... still below until it is fixed".
+#
+# IT ALSO CLAIMS ONLY WHAT IS REALLY LOST. This block degrades rather than aborting, so
+# the listing IS printed; a consequence saying the loaded releases "cannot be reported"
+# would be the message contradicting the lines directly under it.
+_CONSEQUENCE = "no runtime can be published for any loaded release"
+
+
+def _read_loaded_release(conn):
+    """The rows in db/054's shape, and the operator's sentence if they had to be faked.
+
+    ⇒ WHY THIS DEGRADES WHERE EVERY OTHER GUARDED BLOCK ABORTS. The other five sites
+    are blocks 2-6 of `drugref status`, and `cli.main` renders a RuntimeError as one
+    line and exits 2 -- acceptable at the end of a report, and NOT at the start of one.
+    This block is the first, so raising here costs the operator the unfinished runs,
+    the orphaned curated targets, the backdated signatures, the class grain and the
+    unrankable severities as well. Before db/054 this same database printed all six
+    blocks: the watershed read None and every runtime said `pre-db/053`. Turning that
+    into a total failure would be a regression wearing a guard's clothes, and this
+    project has already recorded "status crashed mid-output ... killing the five later
+    blocks" as a defect ONE ROUND AGO.
+
+    ⇒ WHAT IS REFUSED IS THE NUMBER, NOT THE REPORT, which is this round's own rule
+    applied to itself. db/025's columns are still there, so the listing is read from
+    them and every row comes back with the flag FALSE -- the honest answer, since a
+    database without the column has nothing on the row that vouches for a subtraction.
+
+    ⇒ AND AN ABSENT VIEW STILL RAISES. There is nothing to degrade to, the listing
+    cannot be printed at all, and the sibling guards' behaviour is then the right one.
+    """
+    try:
+        return conn.execute(
+            f"SELECT {_DB054_COLUMNS} FROM drugref.loaded_release").fetchall(), None
+    except migration_guard.WRONG_SHAPE as exc:
+        # THE DIAGNOSIS IS THE GUARD'S OWN, not a sentence written here: one state must
+        # not have two wordings. `diagnose_message` also rolls the aborted transaction
+        # back (via `db.missing_relations`), which is what lets the retry below run.
+        message = migration_guard.diagnose_message(
+            conn, exc, relations=("drugref.loaded_release",), migration="054",
+            consequence=_CONSEQUENCE)
+        try:
+            older = conn.execute(
+                f"SELECT {_DB025_COLUMNS} FROM drugref.loaded_release").fetchall()
+        except migration_guard.WRONG_SHAPE:
+            raise RuntimeError(message) from exc
+        return [(*row, False) for row in older], message
+
+
+def _unmeasured_note(rows) -> str:
+    """PURE: what to say about rows that do not claim a measured duration, or "".
+
+    PRINTED ONLY WHEN A ROW ACTUALLY SHOWS THE REFUSAL, so a fully re-ingested database
+    does not carry an explanation of a state it is not in -- a note printed on every run
+    is a note an operator learns to skip on the day it means something.
+
+    ⇒ IT SAYS WHAT IS CONFIRMED AND OFFERS THE REST AS POSSIBILITIES. An earlier
+    wording led with "the row was not written by this version of drugref", which is
+    FALSE for the commonest row there will be for some time: db/054 backfilled nothing,
+    so on the day it is applied every row reads false, including one this code wrote
+    minutes earlier. Asserting the one cause it imagined rather than the one it could
+    confirm is migration_guard's founding defect, and it does not get to reappear in
+    the message this block prints.
+
+    THE ROW IS READ BY NAME, not by position. `row[-1]` was the same value the loop
+    above already binds, spelled a second way, and correct only while this happens to
+    be the last column -- so the day the SELECT gains a seventh, the loop breaks loudly
+    and this line goes quietly wrong instead.
+    """
+    if all(measured for *_, measured in rows):
+        return ""
+    return (f"{provenance.UNMEASURED}: nothing on the row vouches for the subtraction "
+            "of its two stamps, so no number is published for it. Most likely it "
+            "predates db/054, which backfilled no row; it may also be a run from "
+            "before db/053, an older client, or a row written by hand or by a curator. "
+            "Re-ingesting that source, where an ingest exists for it, records one.")
 
 
 def print_class_grain_block(conn) -> None:

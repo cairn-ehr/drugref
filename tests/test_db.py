@@ -727,7 +727,7 @@ def test_migration_applied_refuses_a_prefix_that_is_not_three_digits(conn, numbe
 
 
 def test_every_guarded_call_site_names_a_migration_that_exists(conn):
-    """The six literals the guards pass, checked against the files in `db/`.
+    """Every migration number the guards name, checked against the files in `db/`.
 
     `migration_applied` can only reject a MALFORMED prefix; a well-formed one naming a
     migration that does not exist -- "039" today, or a number left behind by a renamed
@@ -736,23 +736,34 @@ def test_every_guarded_call_site_names_a_migration_that_exists(conn):
     directory they refer to.
 
     LISTED HERE RATHER THAN DISCOVERED, because a test that grepped the call sites would
-    pass on the day someone deleted one. Adding a further guard means adding its number
-    here, which is the reminder this test exists to be -- and which the round that added
-    the SIXTH entry below did not do until review caught it, so the docstring said
-    "five" while six call sites existed.
+    pass on the day someone deleted one. Adding a guard that names a NEW migration means
+    adding it here, which is the reminder this test exists to be.
 
-    ALL SIX ARE migration_guard SITES AGAIN. The sixth entry used to be "053", which was
-    a `db.migration_applied_at` one -- it dated the watershed deciding whether `drugref
-    status` might print a runtime at all. Issue 176 replaced that inference with a column
-    on the row, so the reader and the function it called are both gone and db/054's
-    guarded read of `loaded_release` takes its place. The list is unchanged in length and
-    changed in kind, which is worth saying out loud rather than leaving a reader to
-    diff it.
+    ⇒ SIX LITERALS, SEVEN SITES, AND THE TWO NUMBERS ARE NOT THE SAME NUMBER. An earlier
+    version of this docstring called these "six sites", which was wrong twice: "038" is
+    passed by TWO of them (`cli_status.py`'s unrankable-severity block and
+    `cli_interactions.py`'s clinician path), and the dict named only the first. A key
+    per site is impossible -- a dict cannot hold "038" twice -- so what this list is, is
+    the set of MIGRATION NUMBERS the guards name, and each value names every site
+    passing it. Counting sites off it is the mistake; `grep -rn
+    "migration_guard.guarded(" src/ | grep -v migration_guard.py` is what counts those.
+
+    ⇒ AND THE REMINDER HAS A HOLE WORTH KNOWING: a new guard REUSING a listed number
+    adds no key, so nothing here changes and nothing fails. That is exactly how the
+    second "038" site arrived unnoticed. This test checks that every number a guard
+    names exists in `db/`; it is not, and cannot be, a census of the guards.
+
+    The "054" entry replaced a "053" one that was a `db.migration_applied_at` lookup --
+    it dated the watershed deciding whether `drugref status` might print a runtime at
+    all. Issue 176 replaced that inference with a column on the row, so the reader and
+    the function it called are both gone, and db/054's guarded read of `loaded_release`
+    takes its place: unchanged in length, changed in kind.
     """
     numbers = {"035": "curated_target_unresolved (cli.py)",
                "030": "signature_backdated (cli.py)",
                "037": "class-grain views (cli_status.py)",
-               "038": "curated_unrankable_severity (cli_status.py)",
+               "038": "curated_unrankable_severity (cli_status.py) AND "
+                      "curated_ddi_pair_effective (cli_interactions.py)",
                "001": "substance_moiety (cli_interactions.py)",
                "054": "loaded_release.duration_measured (cli_status.py)"}
     shipped = {path.name.split("_")[0] for path in db.migration_dir().glob("*.sql")}

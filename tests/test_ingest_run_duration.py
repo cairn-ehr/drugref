@@ -72,7 +72,9 @@ FINISHED_AT_CLAIMS = (
     "duration_measured",        # db/054: the flag, replacing "written since db/053"
 )
 DURATION_MEASURED_CLAIMS = (
-    "open_run",                 # the only writer that sets it, which is the mechanism
+    "finish_run",               # the only writer that sets it, which is the mechanism
+    "same update that writes",  # ...and that it lands beside the stamp it vouches for,
+                                # which is the half a DEFAULT cannot cover (UPDATEs)
     "issue 176",                # the round
     "defaults to false",        # what every other path gets, and why that is safe
     "0.0s",                     # the wrong answer this column exists to stop publishing
@@ -210,7 +212,7 @@ def test_a_row_open_run_did_not_write_does_not_claim_a_measured_duration(conn,
                                                                         _migrated):
     """THE DEFAULT, which is the whole safety argument for the column.
 
-    `duration_measured` is set by `provenance.open_run` and by nothing else, so every
+    `duration_measured` is set by `provenance.finish_run` and by nothing else, so every
     other path -- a `curation` row, a direct INSERT, an ingest driven by a client older
     than db/053 -- lands false without anyone having to remember. The production change
     this catches is db/054 shipping the column with `DEFAULT true`, or with no default
@@ -240,11 +242,20 @@ def test_the_flag_reaches_the_view_a_consumer_actually_reads(conn, _migrated):
         "AND NOT attisdropped").fetchall()]
     assert "duration_measured" in columns
 
+    kind = conn.execute(
+        "SELECT atttypid::regtype::text FROM pg_attribute "
+        "WHERE attrelid = 'drugref.loaded_release'::regclass "
+        "AND attname = 'duration_measured'").fetchone()[0]
+    assert kind == "boolean", (
+        "the NAME reaching the view is not enough: `format_run_duration` tests this "
+        "value with `is not True`, so a column arriving as text would make every "
+        "non-empty string -- including 'false' -- read as a measured duration")
+
 
 def test_the_duration_measured_comment_says_why_it_is_not_a_date(conn, _migrated):
     """A COMMENT ON is shipped data (the standing rule from PR #78's review), and this
     one carries the argument a consumer needs: what the column means, that nothing but
-    `open_run` sets it, what false does NOT mean, and why db/054 corrected no row on
+    `finish_run` sets it, what false does NOT mean, and why db/054 corrected no row on
     disk."""
     assert _missing_claims(_column_comment(conn, "duration_measured"),
                            DURATION_MEASURED_CLAIMS) == []
@@ -325,8 +336,13 @@ class _RowsConn:
 
     def __init__(self, rows):
         self._rows = rows
+        self.statements = []
 
-    def execute(self, *args, **kwargs):
+    def execute(self, sql, params=None):
+        # RECORDED, not discarded. What this block must NOT do is as load-bearing as
+        # what it prints -- see test_the_happy_path_reads_no_migration_ledger_at_all --
+        # and a stub that throws its input away can assert nothing about it.
+        self.statements.append(sql)
         return self
 
     def fetchall(self):
@@ -368,38 +384,173 @@ def test_the_refusal_explains_itself_exactly_when_a_row_shows_it(capsys):
     assert "Re-ingest" not in measured
     assert unmeasured != measured
 
+    # THE MIXED DATABASE, which is what every real one looks like the day after db/054:
+    # one source re-ingested, the rest not. Every assertion above holds with `_render`
+    # given a single row, so an implementation that tested only `rows[0]` -- or only
+    # `rows[-1]` -- would pass all of them and go silent on exactly this case.
+    mixed = _render(_row(True), _row(False), capsys=capsys)
+    assert "3.0s" in mixed and provenance.UNMEASURED in mixed
+    assert "Re-ingest" in mixed, (
+        "one unmeasured row among many still needs its explanation")
 
-def test_a_database_one_migration_short_gets_a_sentence_not_a_traceback(conn,
-                                                                        _migrated):
-    """THE GUARD ON THE NEW READ, SHOWN FIRING. db/054 widens a view a block reads,
-    which is the standing rule cli.py states -- and the state it produces is not
-    exotic: every deployment between pulling this code and running `drugref migrate`
-    has `loaded_release` in its db/025 shape, present and one column short. Unguarded,
-    `drugref status` prints its first header and then a raw psycopg traceback, and the
-    five remaining blocks of a six-block command never run. That is the misdiagnosis
-    issue 122 built migration_guard to end, and db/053's round re-created it once
-    already with one new line inside this very command.
+
+def test_a_view_one_column_short_degrades_at_the_DATABASE_rather_than_raising(
+        conn, _migrated, capsys):
+    """THE GUARD ON THE NEW READ, SHOWN FIRING AGAINST A REAL DATABASE. db/054 widens a
+    view a block reads, which is the standing rule cli.py states -- and the state it
+    produces is not exotic: every deployment between pulling this code and running
+    `drugref migrate` has `loaded_release` present and one column short.
+
+    Unguarded, `drugref status` printed a raw psycopg traceback and the five remaining
+    blocks of a six-block command never ran -- the misdiagnosis issue 122 built
+    migration_guard to end. GUARDED BY RAISING, it printed one sentence and those five
+    blocks still never ran, which is the same loss with better prose. So this block
+    degrades: the listing prints from db/025's columns, every runtime is withheld, and
+    the command continues.
 
     `ALTER VIEW ... RENAME COLUMN` reaches the older shape on controlled input inside
     the rolled-back fixture transaction -- this project's rule for a state the release
     cannot otherwise exercise, and the same device tests/test_class_grain_detectors.py
     uses for db/037's site. Nothing else reads the column, so no dependent view breaks.
 
-    THE BRANCH IS ASSERTED, not just the type, and it is NOT the "predates db/054" one:
-    `db.missing_relations` rolls back before probing, which undoes the rename, so the
-    guard sees the view present and db/054 applied and correctly answers "this is NOT a
-    missing migration". Asserting that is what makes this an observation rather than a
-    hope; `match="drugref migrate"` would have matched all four of `guard_message`'s
-    branches and discriminated nothing.
+    WHAT THIS TEST CAN AND CANNOT SHOW, stated rather than left to be discovered.
+    `db.missing_relations` rolls back before probing, and that rollback undoes the
+    rename AND any row this test inserted -- so what is proved here is that the block
+    RETURNS instead of raising and that the guard's own diagnosis is what reaches the
+    operator. It also lands in the "NOT a missing migration" branch, because after the
+    rollback db/054 is applied and the view is intact again.
+
+    The two things it cannot reach -- the listing still printing from db/025's columns,
+    and the branch an upgrading operator is actually in -- need a connection whose state
+    a rollback cannot undo, which is `_OneMigrationShortConn` below.
     """
     from drugref import cli_status
 
     conn.execute("ALTER VIEW drugref.loaded_release "
                  "RENAME COLUMN duration_measured TO before_db054")
-    with pytest.raises(RuntimeError, match="NOT a missing migration") as raised:
-        cli_status.print_loaded_release_block(conn)
-    assert "duration_measured" in str(raised.value), (
+
+    cli_status.print_loaded_release_block(conn)      # must NOT raise
+    out = capsys.readouterr().out
+
+    assert "duration_measured" in out, (
         "Postgres named the column; that is the one string that resolves this quickly")
+    assert "drugref migrate" in out or "NOT a missing migration" in out, (
+        "the guard's own diagnosis reaches the operator, not a sentence written here")
+
+
+def test_the_happy_path_reads_no_migration_ledger_at_all(capsys):
+    """⇒ WHAT REPLACED THE LEDGERLESS-DATABASE TEST db/054 DELETED, and the requirement
+    outlived it.
+
+    Until db/054 this block read `drugref.schema_migration` on every run to date the
+    watershed, and a database with every view and NO ledger -- a hand-replayed bootstrap
+    or a partial restore -- made `drugref status` print its first header and then a raw
+    psycopg traceback. `db.migration_applied_at` grew a `to_regclass` check for that,
+    and the test of it went with the function.
+
+    What makes it safe now is not a check but an ABSENCE: the happy path asks the row,
+    so there is no ledger read left to fail. An absence is exactly what no test states
+    on its own, and the db/053 round shipped that very crash from one new line inside
+    this very function -- so it is stated here. The ledger is still read on the FAILURE
+    path, inside the guard, where `undiagnosed_message` handles its absence.
+    """
+    from drugref import cli_status
+
+    conn = _RowsConn([_row(True)])
+    cli_status.print_loaded_release_block(conn)
+
+    assert conn.statements, "the block did read something"
+    assert not any("schema_migration" in sql for sql in conn.statements), (
+        f"the happy path reads the ledger again: {conn.statements}")
+
+
+class _OneMigrationShortConn:
+    """A database in db/025's shape: `loaded_release` present, `duration_measured` not,
+    db/054 not recorded applied. THE STATE EVERY DEPLOYMENT IS IN between pulling this
+    code and running `drugref migrate`.
+
+    ⇒ A STUB, BECAUSE THE FIXTURE CANNOT REACH THIS BRANCH -- the same reason
+    tests/test_migration_guard.py gives for `_LedgerlessConn`. `db.missing_relations`
+    rolls back before probing, so an `ALTER VIEW ... RENAME COLUMN` staged inside the
+    rolled-back `conn` fixture is UNDONE by the guard itself, and the diagnosis lands in
+    the "db/054 IS applied and the view is intact, so this is NOT a missing migration"
+    branch instead. That is a real branch and it is tested above -- but it is not the
+    one an upgrading operator meets, and until this stub existed the branch they DO meet
+    had no test at this call site. On a PR whose subject is a guard that was silently
+    wrong, that was the gap worth closing.
+    """
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.saw_ledger_probe = False
+
+    def rollback(self):
+        """`missing_relations` rolls back first; the aborted transaction is real."""
+
+    def execute(self, sql, params=None):
+        if "duration_measured" in sql:
+            raise psycopg.errors.UndefinedColumn(
+                'column "duration_measured" does not exist')
+        if "to_regclass" in sql:
+            self._answer = [("drugref.loaded_release",)]      # the view IS there
+            return self
+        if "schema_migration" in sql:
+            self.saw_ledger_probe = True
+            self._answer = [(False,)]                          # db/054 is NOT applied
+            return self
+        self._answer = self._rows                              # db/025's column list
+        return self
+
+    def fetchall(self):
+        return self._answer
+
+    def fetchone(self):
+        return self._answer[0]
+
+
+def _db025_row():
+    """One `loaded_release` row in db/025's shape -- the db/054 row without its flag."""
+    return _row(True)[:-1]
+
+
+def test_a_database_one_migration_short_still_gets_the_other_five_blocks(capsys):
+    """⇒ THE BLOCK DEGRADES; IT DOES NOT TAKE `drugref status` DOWN WITH IT.
+
+    This is the FIRST of six blocks, and `cli.main` renders a RuntimeError as one line
+    and exits 2 -- so a guard that raises here costs an operator the unfinished runs,
+    the orphaned curated targets, the backdated signatures, the class grain and the
+    unrankable severities as well. Before db/054 this exact database printed all six:
+    the watershed read None, every runtime said `pre-db/053`, and status carried on.
+    Turning that into a total failure would have been a regression dressed as a guard,
+    and PROJECT-NOTES records "status crashed mid-output ... killing the five later
+    blocks" as a defect the PREVIOUS round fixed.
+
+    So the refusal is scoped to what actually cannot be answered -- the RUNTIMES -- and
+    the listing an operator came for is still printed from db/025's columns, every row
+    reading `unmeasured`. That is this round's own principle applied to itself: refuse
+    the number, not the report.
+
+    THE DIAGNOSIS IS STILL THE GUARD'S, word for word, so the operator is told what to
+    run. And it is the branch they are actually in: "db/054 is NOT recorded applied ...
+    Run `drugref migrate`", which the DB-level test above structurally cannot reach.
+    """
+    conn = _OneMigrationShortConn([_db025_row()])
+    cli_status_out = _capture(conn, capsys)
+
+    assert "SPL" in cli_status_out, "the listing an operator came for still prints"
+    assert provenance.UNMEASURED in cli_status_out, "no runtime is published"
+    assert "3.0s" not in cli_status_out, (
+        "a runtime computed from an unmigrated row is exactly what db/054 refuses")
+    assert "NOT recorded applied" in cli_status_out, (
+        "the branch an upgrading operator is really in, not the assumption-refuted one")
+    assert "drugref migrate" in cli_status_out
+    assert conn.saw_ledger_probe, "the diagnosis was the guard's, not a hand-rolled one"
+
+
+def _capture(conn, capsys):
+    from drugref import cli_status
+    cli_status.print_loaded_release_block(conn)
+    return capsys.readouterr().out
 
 
 # ---- what `drugref status` may print, and what it must refuse to (#159, #176) ----
@@ -456,15 +607,39 @@ def test_the_seconds_field_can_never_read_sixty():
 
 def test_the_stamps_and_the_flag_cannot_be_passed_positionally():
     """KEYWORD-ONLY, for the reason `open_run` already makes about `writer` and
-    `clock`, and it survives db/054 with one of its two silent slips replaced rather
-    than removed. `(finished, started, measured)` still prints a NEGATIVE runtime, and
-    the third argument stopped being a datetime only to become a bool -- which Python
-    will happily accept in either of the first two positions and compare, so
-    `(started, measured, finished)` is a slip that raises nothing here either. The
-    function whose whole job is refusing to publish a number it cannot vouch for must
-    not be reachable by an argument-order mistake."""
+    `clock`: three arguments in a row is an argument-order slip waiting to happen, and
+    the two that mattered were SILENT -- `(finished, started, watershed)` printed a
+    negative runtime and `(started, watershed, finished)` printed "pre-db/053" forever.
+
+    WHAT db/054 CHANGED, stated as the improvement it is rather than as a surviving
+    defect: the third argument stopped being a datetime and became a bool, so
+    `(started, measured, finished)` no longer compares two plausible stamps -- it
+    reaches `finished_at - started_at` and raises `TypeError: unsupported operand
+    type(s) for -: 'bool' and 'datetime.datetime'`. That slip was REMOVED, not
+    relocated. The keyword-only guard still earns its place against the other one,
+    which the types cannot catch because both stamps are datetimes.
+    """
     with pytest.raises(TypeError):
         provenance.format_run_duration(_at(0), _at(1), True)
+
+
+def test_the_two_stamps_arriving_TRANSPOSED_are_refused_not_printed_negative():
+    """⇒ THE ONE SLIP THE TYPES CANNOT CATCH, and the function that exists to refuse
+    unvouchable numbers was publishing it.
+
+    Both stamps are `timestamptz`, so passing them the wrong way round -- by keyword,
+    from a row unpacked in the order the SELECT happened to list -- type-checks
+    perfectly and rendered `-2.4s`. A negative runtime is not a number an operator can
+    act on, and it cannot have come from the database: db/053's CHECK forbids
+    `finished_at < started_at` on disk. So a negative interval reaching here is proof
+    of a CALLER-SIDE transposition, which makes it exactly the thing this function is
+    for -- and it was the one case it waved through.
+
+    Loud rather than eloquent, following `RunClock.__post_init__` one module up: the
+    promise becomes true by construction instead of by docstring.
+    """
+    with pytest.raises(ValueError, match="transposed"):
+        _fmt(_at(3), _at(0))
 
 
 def test_a_row_that_does_not_claim_a_measured_duration_refuses_to_print_one():

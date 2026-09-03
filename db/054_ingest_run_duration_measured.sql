@@ -33,12 +33,14 @@
 --      not have. This direction is safe (it says less rather than something false) and
 --      is still a wrong statement about that row.
 --
--- ⇒ THE FIX IS TO MAKE THE ROW SAY WHAT IT IS. A boolean written by `open_run` is
--- self-identifying: pre-db/053 rows, old-client rows and direct INSERTs all come out
--- false, a row `open_run` wrote comes out true, and no clock comparison is involved. The
--- Python half is `provenance.open_run` (which sets it) and `provenance.format_run_duration`
--- (which reads it and no longer takes a watershed); `db.migration_applied_at`, which
--- existed only to answer the question this column now answers, goes with it.
+-- ⇒ THE FIX IS TO MAKE THE ROW SAY WHAT IT IS. A boolean written beside `finished_at`
+-- is self-identifying: pre-db/053 rows, old-client rows and direct INSERTs all come out
+-- false, a row this code finished comes out true, and no clock comparison is involved.
+-- The Python half is `provenance.finish_run` (which sets it, in the same UPDATE as the
+-- stamp it vouches for -- see that function for why not `open_run`) and
+-- `provenance.format_run_duration` (which reads it and no longer takes a watershed);
+-- `db.migration_applied_at`, which existed only to answer the question this column now
+-- answers, goes with it.
 --
 -- ⇒ NO ROW ON DISK IS BACKFILLED, and the temptation is worth naming because it looks
 -- free. `UPDATE ... SET duration_measured = true WHERE started_at >= <db/053 applied_at>`
@@ -51,8 +53,10 @@
 -- with both options on the table.)
 --
 -- WHAT THIS FILE DOES: the column and its comment (S1), the view a consumer actually
--- reads (S2), and a RE-ISSUE of db/053's two column comments, one sentence of which
--- this round makes false (S3).
+-- reads (S2), a RE-ISSUE of db/025's view comment (S2 as well, and the RISKIEST edit
+-- here -- overwriting an ancestor's catalog text is the one class this file spends
+-- lines warning about, so it is named rather than left to be found), and a RE-ISSUE of
+-- db/053's two column comments, one sentence of which this round makes false (S3).
 
 -- ---------------------------------------------------------------------------
 -- 1. The column
@@ -62,16 +66,29 @@
 -- column with an unreachable third state is a vocabulary nobody keeps.
 --
 -- DEFAULT false is what makes this safe without anyone remembering: every path that is
--- not `open_run` -- a `curation` row written by a curator, a direct INSERT, an ingest
--- driven by code older than db/053 -- lands false by doing nothing.
+-- not `finish_run` -- a `curation` row written by a curator, a direct INSERT, an ingest
+-- driven by code older than db/053 -- lands false by doing nothing. The default covers
+-- INSERTs; `finish_run`'s UPDATE is what covers the second stamp, which is why the flag
+-- is written there and not at the INSERT (see provenance.finish_run).
 ALTER TABLE drugref.ingest_run
     ADD COLUMN duration_measured boolean NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN drugref.ingest_run.duration_measured IS
     'Whether finished_at - started_at on THIS row is a real duration (issue 176). Set '
-    'true by provenance.open_run and by nothing else, and DEFAULTS TO FALSE, so every '
-    'other path -- a curation row, a direct INSERT, an ingest driven by code older than '
-    'db/053 -- says so about itself rather than being guessed at. '
+    'true by provenance.finish_run and by nothing else, IN THE SAME UPDATE THAT WRITES '
+    'finished_at, because the claim is about BOTH stamps and open_run could only ever '
+    'promise it about a value not yet written. It DEFAULTS TO FALSE, so every other '
+    'path -- a curation row, a direct INSERT, an ingest driven by code older than '
+    'db/053, and a row written between db/053 and db/054 by a client that predates this '
+    'column -- says so about itself rather than being guessed at. '
+    'WHY THE WRITER IS finish_run AND NOT open_run. DEFAULT false governs INSERTs, and '
+    'finished_at arrives by UPDATE, so a flag set at INSERT is not covered by the '
+    'default at all: open_run commits its row so a crashed ingest leaves a trace, and '
+    'an operator tidying that row by hand (UPDATE ... SET finished_at = now()) writes '
+    'the second stamp with no measurement behind it. The CHECK passes, the row enters '
+    'loaded_release, and a flag set at INSERT would still read true -- publishing hours '
+    'of runtime for a run that never finished. Written by finish_run, the hand-rolled '
+    'UPDATE does not name this column and the row keeps its false. '
     'WHY A COLUMN RATHER THAN A DATE. db/053 changed what the two stamps MEAN, and '
     'until db/054 a reader told the two meanings apart by comparing started_at against '
     'when db/053 was applied here. That asks WHEN the row was written; the question is '
@@ -103,7 +120,10 @@ COMMENT ON COLUMN drugref.ingest_run.duration_measured IS
 -- rebuilding a view or comment from the wrong ancestor is how db/038 silently reverted
 -- db/036 (tests/test_class_grain_comment.py is that whole story). db/025 is the only
 -- ancestor: `grep -rn "CREATE OR REPLACE VIEW drugref.loaded_release" db/` returns
--- exactly two hits, db/025 and this file.
+-- exactly two FILES, db/025 and this one -- on three lines, because the sentence you
+-- are reading quotes the pattern and is itself a hit. db/053 disclaimed the same
+-- off-by-one about its own grep; a count offered as reproducible has to survive being
+-- run, and this one is the reason to say "files" rather than "hits".
 --
 -- The ingest_run_id tie-break is not decoration. finished_at is a timestamp, two runs
 -- can share one, and a DISTINCT ON whose ORDER BY does not name a unique row keeps
@@ -166,7 +186,7 @@ COMMENT ON COLUMN drugref.ingest_run.started_at IS
     'and are not durations; this migration does not rewrite them, and could not -- '
     'what would be needed was never recorded. '
     'WHICH ROWS THOSE ARE IS NOT A QUESTION ABOUT THIS STAMP: since db/054 the '
-    'discriminator is duration_measured, a boolean open_run sets, because comparing '
+    'discriminator is duration_measured, a boolean finish_run sets, because comparing '
     'this column against a migration''s applied_at asks WHEN a row was written when '
     'the question is WHICH CODE wrote it (issue 176). Backdating is itself why: a '
     'correct new row can be dated before the migration that made it correct.';

@@ -1039,12 +1039,15 @@ an older client against a migrated database cleared both the CHECK and the water
 two-second run as `0.0s`, which is issue #159's own failure mode one round after it was fixed, and a correctly
 **backdated** new row (`open_run` dates a run from the orchestrator's first line, before the run row exists)
 was refused although both its stamps were right. `db/054` adds `duration_measured boolean NOT NULL DEFAULT
-false`, set by `provenance.open_run` and nothing else; the refusal stopped naming a migration
-(`pre-db/053` → `unmeasured`) and `db.migration_applied_at` went with its only caller. **No row was
-backfilled** — the inference the column removes would have become a stored fact indistinguishable from a
-measured one, and every writer's next ingest records a real duration instead. Reproduced verbatim from the
-issue on `drugref176` before and after, and the new guarded read shown firing as a sentence rather than a
-traceback.
+false`, set by `provenance.finish_run` and nothing else — **in the same UPDATE that writes `finished_at`**,
+because the flag's claim is about BOTH stamps and `DEFAULT false` governs only INSERTs, so a flag set at INSERT
+let a crashed run finished by hand publish a runtime it never measured (found in review). The refusal stopped
+naming a migration (`pre-db/053` → `unmeasured`) and `db.migration_applied_at` went with its only caller. **No
+row was backfilled** — the inference the column removes would have become a stored fact indistinguishable from
+a measured one, and every writer's next ingest records a real duration instead. The loaded-release block
+**degrades rather than aborting** on an unmigrated database: it is the FIRST of `status`' six blocks, so the
+guard that replaced a traceback with a sentence was still costing the other five until review caught it.
+Reproduced verbatim from the issue before and after, end-to-end on a database built from nothing.
 
 ⇒ *The rule: **a timestamp cannot answer a question about code provenance** — make the row say what it is. And
 its corollary, which is why no backfill: **a wrong answer that is COMPUTED can be corrected by the next round;
