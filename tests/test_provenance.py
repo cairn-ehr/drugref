@@ -316,6 +316,32 @@ def test_every_orchestrator_starts_its_clock_on_its_very_first_line(_migrated):
         "missing from the duration the operator reads off `drugref status`")
 
 
+def test_every_module_that_OPENS_a_run_also_FINISHES_it():
+    """⇒ THE PAIRING THE FLAG NOW RESTS ON (db/054, #176), made structural.
+
+    `finish_run` writes `duration_measured`, so an orchestrator that opens a run and
+    never finishes it does not merely leave `finished_at` NULL -- it records a row that
+    will read `unmeasured` in `drugref status` forever, even after a re-ingest that
+    takes the same path. Under the old placement the flag was already true at INSERT and
+    this mistake was invisible; under the new one it is a permanent wrong answer for
+    that feed, which is precisely the class #176 exists to remove.
+
+    A GREP, not an import, for the reason `test_only_provenance_writes_a_run_record`
+    gives one function up: what is under test is that the call is PRESENT in the module,
+    and importing twelve orchestrators to find out would test far more than that.
+
+    It cannot prove the two are paired on every PATH -- an early `return` between them
+    is still possible, and `ingest_run_incomplete` is the surface that reports it. What
+    it does prove is that no module opens runs and has no idea finish_run exists.
+    """
+    opens = {p.name for p in _sources() if "provenance.open_run(" in p.read_text()}
+    finishes = {p.name for p in _sources() if "provenance.finish_run(" in p.read_text()}
+    assert opens - finishes == set(), (
+        f"{sorted(opens - finishes)} open an ingest run and never finish it: every row "
+        "they write will read 'unmeasured' in `drugref status` permanently, because "
+        "finish_run is what records that the two stamps are a duration")
+
+
 def test_only_provenance_turns_the_two_stamps_into_a_duration():
     """THE MIRROR OF THE ONE-WRITER CONTRACT, on the side this round is about.
 
@@ -366,3 +392,130 @@ def test_a_run_records_the_work_done_before_it_opened(conn, _migrated, monkeypat
     recorded = conn.execute(
         "SELECT finished_at - started_at FROM drugref.ingest_run").fetchone()[0]
     assert recorded >= datetime.timedelta(seconds=0.25)
+
+
+# ---- the row says whether its own subtraction is a duration (#176) -----------
+#
+# WHAT WAS WRONG. db/053 changed what the two stamps MEAN, and a reader told the two
+# meanings apart by comparing `started_at` with when db/053 was applied here. That
+# asks WHEN the row was written; the question is WHICH CODE wrote it, and nothing on
+# the row recorded that. The two come apart in both directions -- an older client
+# publishing a confident wrong number, and a genuinely new row refused. db/054's
+# boolean is self-identifying, and these are the writer's half of it; the reader's
+# half is tests/test_ingest_run_duration.py.
+
+
+def _measured(conn, run_id):
+    return conn.execute(
+        "SELECT duration_measured FROM drugref.ingest_run WHERE ingest_run_id = %s",
+        (run_id,)).fetchone()[0]
+
+
+def test_the_flag_certifies_the_PAIR_so_finish_run_writes_it_and_open_run_does_not(
+        conn, _migrated):
+    """⇒ WHICH OF THE TWO WRITERS SIGNS THE ROW, and it is not the obvious one.
+
+    The flag says "these two stamps are a duration", and that is a claim about BOTH of
+    them. `open_run` can only vouch for `started_at`: `finished_at` does not exist yet
+    and is written by a separate UPDATE, minutes or hours later. A flag set at INSERT
+    is therefore a promise about a value nobody has written -- and db/054's own DEFAULT
+    argument does not cover it, because DEFAULT governs INSERTs and `finished_at`
+    arrives by UPDATE.
+
+    So the flag is written where the second stamp is, and the row claims a measured
+    duration only once one exists. In flight the row reads false, which costs nothing:
+    `finished_at` is NULL there, `format_run_duration` answers "unfinished" before it
+    consults the flag, and `loaded_release` filters the row out entirely.
+
+    The production change this catches is the flag moving back to `open_run`'s INSERT,
+    which reopens the hole in the next test.
+    """
+    run_id = provenance.open_run(conn, source="UNII", upstream_release="r1",
+                                 source_checksum="sum", writer="unii_run",
+                                 clock=provenance.start_clock())
+    assert _measured(conn, run_id) is False, (
+        "a run still in flight has no finished_at, so nothing can yet vouch for a "
+        "subtraction and the row must not claim one")
+
+    provenance.finish_run(conn, run_id)
+    assert _measured(conn, run_id) is True
+
+
+def test_a_crashed_run_finished_BY_HAND_does_not_claim_a_measured_duration(conn,
+                                                                          _migrated):
+    """⇒ THE HOLE A FLAG SET AT INSERT LEAVES OPEN, which is why the test above exists.
+
+    `open_run` commits its row deliberately, so a crashed ingest leaves it standing
+    with `finished_at` NULL for `ingest_run_incomplete` to report. The documented
+    remedy is to re-ingest -- but an operator tidying the register by hand instead
+    (`UPDATE ... SET finished_at = now()`) writes the second stamp with no measurement
+    behind it at all. db/053's CHECK passes (the stamps are in order), the row enters
+    `loaded_release`, and had `open_run` set the flag it would still read true: status
+    then publishes a confident runtime of hours for a run that never finished. That is
+    issue 159's own failure mode with db/054's guard standing beside it saying nothing
+    -- the sentence db/054's header uses about db/053, one round later.
+
+    Writing the flag in `finish_run` closes it without a trigger: the hand-written
+    UPDATE does not name the column, so the row keeps db/054's false and says so.
+    """
+    run_id = provenance.open_run(conn, source="SPL", upstream_release="r1",
+                                 source_checksum="sum", writer="spl_run",
+                                 clock=provenance.start_clock())
+    # The operator's tidy-up, verbatim: the second stamp and nothing else.
+    conn.execute("UPDATE drugref.ingest_run SET finished_at = clock_timestamp() "
+                 "WHERE ingest_run_id = %s", (run_id,))
+
+    started_at, finished_at, measured = conn.execute(
+        "SELECT started_at, finished_at, duration_measured FROM drugref.ingest_run "
+        "WHERE ingest_run_id = %s", (run_id,)).fetchone()
+    assert finished_at is not None, "the row is now in loaded_release's half"
+    assert measured is False
+    assert provenance.format_run_duration(
+        started_at=started_at, finished_at=finished_at,
+        duration_measured=measured) == provenance.UNMEASURED
+
+
+def test_a_run_backdated_before_the_migration_still_reports_its_runtime(conn,
+                                                                       _migrated):
+    """⇒ ISSUE 176'S OTHER HALF, and it is the one no reader could have seen.
+
+    `open_run` BACKDATES `started_at` over the work an orchestrator does before any run
+    row exists -- spl_run reads openFDA, scans 17.6 GB of DailyMed and checksums
+    19.3 GB first -- so a run whose pre-open phase began before db/053 was applied is
+    dated before the watershed although BOTH its stamps are correct server clock
+    readings. The old reader refused it and pointed the operator at a column comment
+    describing a defect their row did not have. That is a wrong statement about the
+    first real measurement the fix exists to produce.
+
+    The hour of backdating is what makes it reproducible: db/053 was applied by this
+    session's `_migrated` fixture minutes ago, so a row backdated an hour lands on the
+    far side of it with certainty rather than by timing. The LEDGER READ is what pins
+    that -- without it the test would pass on any machine and prove nothing about the
+    boundary it is here for.
+
+    THE SECONDS FIELD IS NOT PINNED. The test's own wall clock is inside the recorded
+    duration (the INSERT, its COMMIT and the UPDATE all land after the clock is
+    constructed), so `60m00s` and `60m01s` are both correct answers on a loaded
+    machine. What must hold is that the row is ACCEPTED and reports about an hour.
+    """
+    clock = provenance.RunClock(time.monotonic() - 3600)
+    run_id = provenance.open_run(conn, source="SPL", upstream_release="r1",
+                                 source_checksum="sum", writer="spl_run", clock=clock)
+    provenance.finish_run(conn, run_id)
+
+    started_at, finished_at, measured = conn.execute(
+        "SELECT started_at, finished_at, duration_measured FROM drugref.ingest_run "
+        "WHERE ingest_run_id = %s", (run_id,)).fetchone()
+    applied_at = conn.execute(
+        r"SELECT applied_at FROM drugref.schema_migration WHERE filename LIKE '053\_%'"
+    ).fetchone()[0]
+
+    assert started_at < applied_at, (
+        "the backdated start must land BEFORE db/053 was applied, or this row is not "
+        "the case #176 is about and the test proves nothing")
+    assert measured is True
+    printed = provenance.format_run_duration(
+        started_at=started_at, finished_at=finished_at, duration_measured=measured)
+    assert printed != provenance.UNMEASURED
+    assert printed.startswith("60m"), printed
+

@@ -311,7 +311,7 @@ def test_a_failed_ledger_probe_does_not_replace_the_diagnosis_with_its_own(monke
 def test_raise_missing_refuses_a_bare_string_of_relations():
     """A MISSING TRAILING COMMA IS SILENT, AND ITS OUTPUT IS ABSURD.
 
-    Four of the five call sites pass a singleton tuple. `relations=("drugref.x")` is
+    Most call sites pass a singleton tuple. `relations=("drugref.x")` is
     not a tuple -- it is the string -- and `db.missing_relations(conn, *relations)` then
     probes it one CHARACTER at a time, finds every one absent, and tells the operator
     that `d, r, u, g, r, e, f, ., x are DROPPED, not pending`.

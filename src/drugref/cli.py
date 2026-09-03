@@ -262,7 +262,10 @@ def _handle_status(conn, args) -> int:
     # yet to run `drugref migrate` got the traceback this guard exists to replace. THE
     # STANDING RULE: a migration widening a view a guarded block reads must widen the
     # guard in the same commit -- which is now `migration_guard.WRONG_SHAPE`, one tuple
-    # for all five sites, because the rule was prose and two sites had already lost it.
+    # for EVERY site, because the rule was prose and two sites had already lost it. The
+    # count of those sites is deliberately not written here: it said "five" while there
+    # were seven, which is the same hand-kept tally db/053 removed from db/025's view
+    # comment and #176 removed from migration_guard's own docstring.
     #
     # ISSUE 122: THE CAUSE IS CONFIRMED BEFORE IT IS ASSERTED. This block used to state
     # "predates db/035" as fact for every 42P01, including the case where db/035 IS

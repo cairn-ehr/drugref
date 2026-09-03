@@ -1030,6 +1030,35 @@ comment was a correct diagnosis with no mechanism attached — which is the noti
 asserts a precondition it did not establish passes for a reason it does not state**, which the suite cannot
 distinguish from passing for the right one.*
 
+**⇒ THE WATERSHED ROUND ✅ DONE (2026-09-03) — issue #176, `db/054`, no projection changed.**
+Full account: PROJECT-NOTES § "The watershed round". **Read the numbers there, not here.** `db/053` changed what
+`ingest_run`'s two stamps MEAN and left a reader nothing to tell the two meanings apart except a clock:
+`format_run_duration` compared `started_at` against **when db/053 was applied on that database**. That asks
+**when** a row was written; the question is **which code** wrote it, and nothing on the row recorded that — so
+an older client against a migrated database cleared both the CHECK and the watershed and published a
+two-second run as `0.0s`, which is issue #159's own failure mode one round after it was fixed, and a correctly
+**backdated** new row (`open_run` dates a run from the orchestrator's first line, before the run row exists)
+was refused although both its stamps were right. `db/054` adds `duration_measured boolean NOT NULL DEFAULT
+false`, set by `provenance.finish_run` and nothing else — **in the same UPDATE that writes `finished_at`**,
+because the flag's claim is about BOTH stamps and `DEFAULT false` governs only INSERTs, so a flag set at INSERT
+let a crashed run finished by hand publish a runtime it never measured (found in review). The refusal stopped
+naming a migration (`pre-db/053` → `unmeasured`) and `db.migration_applied_at` went with its only caller. **No
+row was backfilled** — the inference the column removes would have become a stored fact indistinguishable from
+a measured one, and every writer's next ingest records a real duration instead. The loaded-release block
+**degrades rather than aborting** on an unmigrated database: it is the FIRST of `status`' six blocks, so the
+guard that replaced a traceback with a sentence was still costing the other five until review caught it.
+Reproduced verbatim from the issue before and after, end-to-end on a database built from nothing.
+
+⇒ *The rule: **a timestamp cannot answer a question about code provenance** — make the row say what it is. And
+its corollary, which is why no backfill: **a wrong answer that is COMPUTED can be corrected by the next round;
+written into a column it becomes a fact nobody can tell from a measured one.** And, found on the way past:
+`migration_guard.py`'s docstring hand-listed "ALL FIVE CALLERS" and there were already six — **the hand-listed
+tally, in the module whose subject is diagnoses that assert what they have not confirmed**, replaced by a
+`grep` that cannot go stale, exactly as `db/053` did to `db/025`'s view comment. And: **a reading identical on
+both versions is not evidence** — the script written to prove the three re-issued catalog comments verbatim
+reported all three unchanged, because it scanned to the first `;` and `db/053`'s comment contains one inside
+its string literal.*
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
