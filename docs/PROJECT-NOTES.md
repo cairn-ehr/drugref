@@ -5400,6 +5400,32 @@ this round added; it published a number before) · then the view reduced to db/0
 un-applied → **all six blocks printed, the correct branch named, exit 0** · then restored → the measured row
 reports its runtime again, so the degrade is not sticky.
 
+## The tools-channel round (2026-10-23) — issue #179, no migration
+
+**⇒ THE SERVER-MESSAGE CHANNEL #174 BUILT WAS STILL DARK UNDER `tools/`, FOR TWO SEPARATE REASONS.** Three
+tools opened a bare `psycopg.connect` and so installed no notice handler at all — `spl_recovery_probe.py`
+(a diagnostic whose whole job is telling an operator what state the database is in), `spl_registry.py`,
+`drugcentral_ddi_spike.py`. And no tool configured logging, so even through `db.connect` the root logger had
+no handler and Python's last-resort handler printed only WARNING and worse: every NOTICE `SEVERITY_LEVEL`
+deliberately places at INFO — "… does not exist, skipping" among them — was dropped.
+
+**What shipped.** `server_messages.configure_logging(level="info")` is now the ONE home for the
+`"%(levelname)s %(name)s: %(message)s"` format; `cli.main` calls it with `--log-level`, and each of the nine
+`tools/*.py` `__main__` blocks calls it with the default (in the `__main__` block, not `main()`, so tests that
+drive `main(argv)` in-process are untouched). The three bare connects go through `db.connect`;
+`drugcentral_ddi_spike` keeps `import psycopg` for `IsolationLevel`. `spl_make_fixture.py`, named in the issue
+"if/when it connects", does not connect — it still configures logging, because the rule is per entry point.
+
+**The gate.** `tests/test_tools_server_channel.py` scans every `tools/*.py` for `psycopg.connect(` and every
+`__main__` file for `server_messages.configure_logging(`, plus a floor on how much the scans must find (≥ 20
+files, ≥ 9 entry points, ≥ 6 `db.connect` users) so a moved directory cannot leave it green and empty. The
+behaviour itself is tested in a **subprocess**: pytest puts handlers on the root logger and `basicConfig` is a
+no-op on a root that has one, so in-process the test could not tell a working helper from an empty one.
+
+**VERIFIED.** A real `DROP TABLE IF EXISTS` through `db.connect` + `configure_logging` printed
+`INFO drugref.postgres: [NOTICE 00000] table "no_such_table_179" does not exist, skipping`; every entry point
+runs `--help` cleanly; the suite went **2576 → 2611** (+35, all this file's parametrised cases).
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5450,6 +5476,11 @@ written by **`provenance.finish_run`** in the same UPDATE as `finished_at` (the 
 its only caller; **no row was backfilled** and the migration says why. The loaded-release block **degrades
 rather than aborting** on an unmigrated database, alone among the six guarded sites, because it is the first —
 § "The watershed round" and § "The review round".
+
+**[#179](https://github.com/cairn-ehr/drugref/issues/179) four tools deaf to the server, and none configured
+logging** — **CLOSED 2026-10-23**: the three bare `psycopg.connect` calls go through `db.connect`, every
+`tools/` entry point calls `server_messages.configure_logging`, and a source scan fails on a new bare connect
+or an entry point without the call — § "The tools-channel round".
 
 **[#182](https://github.com/cairn-ehr/drugref/issues/182) `db/054`'s no-backfill rule has no mechanism** —
 **OPEN, filed by the #181 review round.** The migration forbids `UPDATE … SET duration_measured = true WHERE
@@ -5626,7 +5657,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2576 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2611 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

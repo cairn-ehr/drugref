@@ -62,6 +62,7 @@ import pathlib
 import re
 from collections.abc import Iterator
 
+from drugref import server_messages
 from tools.spl_dailymed_crosscheck import iter_release_labels
 from tools.spl_subject_read import (
     SubjectUniis,
@@ -196,9 +197,10 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
 
 def _known_uniis(dsn: str) -> set[str]:
     """drugref's own UNII bridge -- the same one ``moiety_uuid`` is minted from."""
-    import psycopg
+    from drugref import db
 
-    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+    # db.connect, not psycopg.connect: it installs the notice handler (issue 179).
+    with db.connect(dsn) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT value FROM drugref.identity_claim "
             "WHERE scheme = 'UNII' AND superseded_by IS NULL"
@@ -492,4 +494,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     raise SystemExit(main())

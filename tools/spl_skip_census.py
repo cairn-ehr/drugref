@@ -54,6 +54,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from typing import Literal
 
+from drugref import server_messages
 from drugref.ingest import spl_dailymed as dm
 from drugref.ingest import spl_release
 
@@ -426,4 +427,5 @@ def _would_refuse(census: SkipCensus) -> bool:
 
 
 if __name__ == "__main__":
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     raise SystemExit(main())

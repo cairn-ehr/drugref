@@ -65,7 +65,7 @@ def load_registry(
     under-counts (amphetamine and adenosine are perfectly good drugs). The truth
     is between, and saying so is more honest than picking one.
     """
-    import psycopg
+    from drugref import db
 
     entries: list[Entry] = []
     moiety_uuid_by_name: dict[str, str] = {}
@@ -78,7 +78,7 @@ def load_registry(
         Entry(kind="suppress", key=term, display=term) for term in suppress_terms
     )
 
-    with psycopg.connect(dsn) as conn:
+    with db.connect(dsn) as conn:  # db.connect: the server is heard (issue 179)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT moiety_uuid, display_name FROM drugref.substance_moiety"

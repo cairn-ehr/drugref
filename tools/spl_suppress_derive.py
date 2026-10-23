@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from drugref import db, registry_read
+from drugref import db, registry_read, server_messages
 from drugref.ingest import spl, spl_match, spl_run
 
 
@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # `db.connect`, not `psycopg.connect`: it installs `server_messages`' handler,
     # so a NOTICE or WARNING the server sends here is published rather than
-    # discarded (issue 174). Only WARNING and worse become visible without a
-    # `logging.basicConfig` -- no tool sets one, which is issue 179.
+    # discarded (issue 174); `server_messages.configure_logging` in the
+    # `__main__` block makes the INFO-level ones visible (issue 179).
     with db.connect(args.dsn) as conn:
         names = registry_read.load_registry(conn).by_name
     print(f"  {len(names):,} registry names")
@@ -89,4 +89,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     raise SystemExit(main())

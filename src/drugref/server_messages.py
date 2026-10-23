@@ -53,6 +53,19 @@ import psycopg
 #: `drugref.server_messages` and invited the opposite reading.
 log = logging.getLogger("drugref.postgres")
 
+
+def configure_logging(level: str = "info") -> None:
+    """Give the root logger a stderr handler, so the messages above can be SEEN.
+
+    Publishing on `log` is half a channel: with no handler on the root logger,
+    Python prints only WARNING and worse (its last-resort handler), so every
+    NOTICE mapped to INFO below is dropped. Every entry point -- `cli.main` and
+    each `tools/` script -- calls this one function, so the format an operator
+    reads is written down once (issue 179).
+    """
+    logging.basicConfig(level=level.upper(),
+                        format="%(levelname)s %(name)s: %(message)s")
+
 #: HOW LOUD EACH OF THE PROTOCOL'S SEVERITIES IS, and the one home for that.
 #:
 #: All eight the wire protocol defines, not the two this project has happened to

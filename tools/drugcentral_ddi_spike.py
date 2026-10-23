@@ -65,6 +65,7 @@ import psycopg
 # re-measurement round's review found a hard-coded `ref_id == "2"` in the renderer,
 # unconnected to the set that filtered the rows, which is why the design spec §2
 # insists in bold on the one home.
+from drugref import db, server_messages
 from drugref.ingest.drugcentral import BUNDLEABLE_REF_IDS
 from drugref.ingest.drugcentral_resolve import (
     ROUTE_DISPLAY_NAME,
@@ -172,7 +173,7 @@ def load_registry(dsn: str) -> RegistrySide:
     Every read is ORDERED. See `drugref.ingest.drugcentral_resolve.first_wins` for
     why that is not cosmetic.
     """
-    with psycopg.connect(dsn) as conn:
+    with db.connect(dsn) as conn:  # db.connect: the server is heard (issue 179)
         conn.read_only = True
         conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
         with conn.cursor() as cur:
@@ -382,4 +383,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":                       # pragma: no cover - CLI entry point
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     raise SystemExit(main())

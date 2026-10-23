@@ -1059,6 +1059,12 @@ both versions is not evidence** — the script written to prove the three re-iss
 reported all three unchanged, because it scanned to the first `;` and `db/053`'s comment contains one inside
 its string literal.*
 
+**⇒ THE TOOLS-CHANNEL ROUND ✅ DONE (2026-10-23) — issue #179, no migration.**
+Full account: PROJECT-NOTES § "The tools-channel round". Three `tools/` scripts opened a bare
+`psycopg.connect` (no notice handler) and no tool configured logging (INFO-level NOTICEs dropped). They now
+connect through `db.connect`, every tool entry point calls the new `server_messages.configure_logging` —
+also `cli.main`'s, so the log format has one home — and a source scan fails on either regression.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

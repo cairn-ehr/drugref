@@ -60,7 +60,7 @@ from collections.abc import Sequence
 import drugref
 from drugref import (cli_curate, cli_drugcentral, cli_fda_cyp, cli_interactions,
                      cli_policy, cli_signing, cli_spl, cli_status, curation, db,
-                     interactions, migration_guard, signatures)
+                     interactions, migration_guard, server_messages, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -457,8 +457,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     diagnosable.
     """
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=args.log_level.upper(),
-                        format="%(levelname)s %(name)s: %(message)s")
+    server_messages.configure_logging(args.log_level)
     try:
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
