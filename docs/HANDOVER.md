@@ -33,10 +33,12 @@ through `db.connect`.
 must find, and tests the helper in a **subprocess** (pytest's root handlers make `basicConfig` a no-op
 in-process, so an in-process test could not fail).
 
-**⇒ VERIFIED.** `uv run pytest` green at **2611** (+35); `ruff check .` clean; a real `DROP TABLE IF EXISTS`
-printed `INFO drugref.postgres: [NOTICE 00000] table "no_such_table_179" does not exist, skipping`; every tool
-entry point runs `--help`. **No agent review round was run this time** — the change is mechanical; a reviewer
-may still want one.
+**⇒ VERIFIED, THEN REVIEWED.** Four agent reviewers (code, tests, comments, silent failures): no critical
+finding. Fixed in the same PR — the scans now **parse** source (substrings were fooled by aliases, `from psycopg
+import connect`, single-quoted guards, a call after `main()`), cover **`src/` too** (all but `db.py`),
+`configure_logging` falls back to **`$DRUGREF_LOG_LEVEL`** (tools had no way to show DEBUG; `drugref
+--log-level` honours it too), and four comments were corrected. `uv run pytest` green at **2706**; `ruff check
+.` clean; every touched tool runs `--help`.
 
 ## ⇒ DO THIS NEXT
 

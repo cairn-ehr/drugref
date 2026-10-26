@@ -199,7 +199,8 @@ def _known_uniis(dsn: str) -> set[str]:
     """drugref's own UNII bridge -- the same one ``moiety_uuid`` is minted from."""
     from drugref import db
 
-    # db.connect, not psycopg.connect: it installs the notice handler (issue 179).
+    # db.connect, not psycopg.connect: it installs the notice handler (issue 174;
+    # this call moved onto it in issue 179).
     with db.connect(dsn) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT value FROM drugref.identity_claim "

@@ -389,8 +389,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="drugref", description="drugref.org reference-data service")
     parser.add_argument("--dsn", help="PostgreSQL DSN (default: $DRUGREF_DSN)")
-    parser.add_argument("--log-level", default="info",
-                        choices=("debug", "info", "warning", "error"))
+    parser.add_argument("--log-level", default=None,
+                        choices=("debug", "info", "warning", "error"),
+                        help="default: $DRUGREF_LOG_LEVEL, else info")
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser(

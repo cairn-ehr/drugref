@@ -427,5 +427,6 @@ def _would_refuse(census: SkipCensus) -> bool:
 
 
 if __name__ == "__main__":
-    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
+    # No DB connection here: called for one log format per entry point (issue 179).
+    server_messages.configure_logging()
     raise SystemExit(main())

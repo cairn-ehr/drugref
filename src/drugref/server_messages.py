@@ -29,12 +29,14 @@ remembering. `analyze.py` is its first *enforcing* reader.
 
 **PURE WHERE IT CAN BE.** The severity mapping and the formatting are functions
 over plain values, tested without a database; only `read_diagnostic` touches a
-psycopg object, and only `collect` touches a connection.
+psycopg object, only `collect` touches a connection, and only `configure_logging`
+touches global state (the root logger, once, from an entry point).
 """
 from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -44,8 +46,8 @@ import psycopg
 
 #: The logger every server message is published on.
 #:
-#: NAMED FOR THE OPERATOR, not for this file. `cli.main` formats records as
-#: "%(levelname)s %(name)s: %(message)s", so a skipped ANALYZE reads
+#: NAMED FOR THE OPERATOR, not for this file. `configure_logging` (below) formats
+#: records as "%(levelname)s %(name)s: %(message)s", so a skipped ANALYZE reads
 #: `WARNING drugref.postgres: permission denied to analyze "spl_label", skipping
 #: it` -- which says, in one line, that the message came from the database rather
 #: than from drugref's own reasoning about it. `logging.getLogger(__name__)`,
@@ -54,17 +56,28 @@ import psycopg
 log = logging.getLogger("drugref.postgres")
 
 
-def configure_logging(level: str = "info") -> None:
-    """Give the root logger a stderr handler, so the messages above can be SEEN.
+def configure_logging(level: str | None = None) -> None:
+    """Give the root logger a stderr handler, so the messages on `log` can be SEEN.
 
     Publishing on `log` is half a channel: with no handler on the root logger,
     Python prints only WARNING and worse (its last-resort handler), so every
-    NOTICE mapped to INFO below is dropped. Every entry point -- `cli.main` and
-    each `tools/` script -- calls this one function, so the format an operator
-    reads is written down once (issue 179).
+    NOTICE `SEVERITY_LEVEL` (below) maps to INFO is dropped. `cli.main` and every
+    `tools/` `__main__` block call this one function -- including the tools that
+    open no connection, so every entry point prints one format (issue 179).
+
+    `level` is a `logging` level name ("info", "DEBUG", ...); an unknown one raises
+    ValueError. When it is None, `$DRUGREF_LOG_LEVEL` decides, then "info" -- the
+    tools take no `--log-level`, so the environment is how an operator asks for the
+    DEBUG-mapped server messages (`PGOPTIONS='-c client_min_messages=debug1'`).
+
+    A NO-OP IF THE ROOT LOGGER ALREADY HAS A HANDLER (that is `basicConfig`'s
+    rule): under pytest it changes nothing, which is why its tests run it in a
+    subprocess.
     """
+    level = level or os.environ.get("DRUGREF_LOG_LEVEL", "info")
     logging.basicConfig(level=level.upper(),
                         format="%(levelname)s %(name)s: %(message)s")
+
 
 #: HOW LOUD EACH OF THE PROTOCOL'S SEVERITIES IS, and the one home for that.
 #:
