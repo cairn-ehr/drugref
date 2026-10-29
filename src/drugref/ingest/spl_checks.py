@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
+from types import MappingProxyType
 
 import psycopg
 
@@ -61,6 +62,13 @@ class SplSummary:
     records_read: int
     labels: int
     wordings: int
+    #: ⇒ ISSUE #163: the openFDA records carrying no section, split into a
+    #: missing field and a present-but-blank one (`spl.field_state`). Neither
+    #: refuses; the ratio moving between releases is the signal.
+    records_field_absent: int
+    records_field_blank: int
+    #: Labels keyed on openFDA's per-document `id` for want of a `set_id`.
+    labels_keyed_on_document_id: int
     labels_by_route: Mapping[str, int]
     dailymed_targets: int
     dailymed_documents_read: int
@@ -82,6 +90,17 @@ class SplSummary:
     novel_pairs: int
 
     def __post_init__(self) -> None:
+        # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
+        # read-only view so no later `dict.update` can undo the checks below (#165).
+        object.__setattr__(self, "labels_by_route",
+                           MappingProxyType(dict(self.labels_by_route)))
+        accounted = self.labels + self.records_field_absent + self.records_field_blank
+        if accounted != self.records_read:
+            raise ValueError(
+                f"{self.labels} labels + {self.records_field_absent} absent + "
+                f"{self.records_field_blank} blank != {self.records_read} records "
+                "read -- every record either carries the section or is counted "
+                "as not")
         tallied = sum(self.labels_by_route.values())
         if tallied != self.labels:
             raise ValueError(
@@ -126,7 +145,10 @@ class SplSummary:
             for route in spl_subject.SUBJECT_ROUTES)
         return (
             f"{self.labels:,} labels of {self.records_read:,} records carrying "
-            f"{self.wordings:,} wordings -> {self.pairs:,} pairs "
+            f"{self.wordings:,} wordings ({self.records_field_absent:,} records "
+            f"without the field, {self.records_field_blank:,} with it blank, "
+            f"{self.labels_keyed_on_document_id:,} labels keyed on a document "
+            f"id) -> {self.pairs:,} pairs "
             f"({self.novel_pairs:,} novel); subjects: {routes}; "
             f"{self.occurrences:,} occurrences over "
             f"{self.wordings_with_a_moiety:,} wordings; {self.quotes:,} quoted "

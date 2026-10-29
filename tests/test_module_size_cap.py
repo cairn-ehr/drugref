@@ -54,7 +54,8 @@ CAP = 500
 #: added this file; the list exists so the gate could be switched on at all.
 #: Filed as issue 177 -- and see issue 172, which is the one of these that WAS
 #: split (`spl_evidence.py`, 518 -> 428 by the move and 430 today, `Registry`/`load_registry` moved to
-#: `registry_read.py`) and is therefore not on the list.
+#: `registry_read.py`) and is therefore not on the list. `ingest/spl_match.py` left
+#: the same way (524 -> 359, its suppression half moved to `spl_suppress.py`).
 OVER_CAP_TODAY = {
     "questions.py": 797,
     "ingest/fda_cyp.py": 707,
@@ -62,7 +63,6 @@ OVER_CAP_TODAY = {
     "signing.py": 605,
     "curation.py": 555,
     "release_verification.py": 540,
-    "ingest/spl_match.py": 524,
 }
 
 _PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"

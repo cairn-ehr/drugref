@@ -1069,7 +1069,7 @@ def test_check_floors_ACCEPTS_a_summary_that_published_something():
 
 @pytest.mark.parametrize("field,overrides", [
     ("labels", {"labels": 0, "labels_by_route": {}, "dailymed_targets": 0,
-                "dailymed_found": 0}),
+                "dailymed_found": 0, "records_field_absent": 90}),
     ("wordings", {"wordings": 0, "wordings_with_a_moiety": 0}),
     ("resolved subjects", {"labels_by_route": {"unresolved": 10}}),
     ("entity occurrences", {"occurrences": 0}),
@@ -1116,6 +1116,8 @@ def test_the_measured_floors_are_OPTIONAL_and_the_structural_ones_are_not():
 def _summary(**overrides):
     fields = dict(
         records_read=100, labels=10, wordings=4,
+        records_field_absent=80, records_field_blank=10,
+        labels_keyed_on_document_id=0,
         labels_by_route={"openfda_unii": 6, "unresolved": 4},
         dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
         dailymed_reported_skips="",
@@ -1205,3 +1207,14 @@ def test_a_clean_scan_adds_NO_skip_clause_to_the_summary(conn, corpus):
 
     assert summary.dailymed_reported_skips == ""
     assert "reported and NOT refused" not in str(summary)
+
+
+def test_the_summary_carries_the_openFDA_arms_ABSENT_and_BLANK_records():
+    """Issue #163, on the returned value and in its printed line: a release
+    where the section turns present-but-blank for a population moves every
+    published rate, and only these two figures say so."""
+    text = str(_summary())
+    assert "80 records without the field" in text
+    assert "10 with it blank" in text
+    with pytest.raises(ValueError, match="every record"):
+        _summary(records_field_blank=11)

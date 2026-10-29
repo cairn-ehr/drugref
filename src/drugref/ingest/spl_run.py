@@ -56,7 +56,7 @@ import psycopg
 
 from drugref import provenance, registry_read, spl_evidence
 from drugref.ingest import (
-    spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release,
+    spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release, spl_suppress,
     spl_subject,
 )
 from drugref.ingest.checksum import checksum
@@ -97,7 +97,7 @@ def build_vocabulary(
     reason to refuse a whole release. It is counted by the caller through the
     difference between `len(names)` and the vocabulary's size.
     """
-    terms = (spl_match.shipped_suppression_terms()
+    terms = (spl_suppress.shipped_suppression_terms()
              if suppression_terms is None else tuple(suppression_terms))
     entries = [spl_match.Entry(kind=spl_match.KIND_SUPPRESS, key=term,
                                display=term, moiety_uuid=None)
@@ -412,6 +412,9 @@ def ingest_spl(
             records_read=corpus.records,
             labels=len(corpus.labels),
             wordings=len(corpus.wordings),
+            records_field_absent=corpus.field_absent,
+            records_field_blank=corpus.field_blank,
+            labels_keyed_on_document_id=corpus.labels_keyed_on_document_id,
             labels_by_route=by_route,
             dailymed_targets=len(targets),
             dailymed_documents_read=scan.documents_read,

@@ -31,11 +31,22 @@ import io
 import zipfile
 from collections.abc import Callable, Iterator, Mapping, Sequence, Set as AbstractSet
 from dataclasses import dataclass, fields
+from types import MappingProxyType
 
 from drugref.ingest.spl_dailymed import (
     SubjectUniis, dedupe_by_set_id, extract_subject_uniis,
     prefilter_is_trustworthy, set_id_in_bytes,
 )
+
+#: ⇒ ISSUE #166: CEILINGS ON WHAT THIS READER WILL DECOMPRESS, checked against the
+#: archive's DECLARED size before `read()`, so a compression bomb is refused before
+#: it reaches memory. The declared size is a real bound: zipfile stops reading at
+#: it and raises `BadZipFile` (a counted drop) on a member that lied about it.
+#: Measured on the 2026-08-21 Human Rx release, the largest outer member is
+#: 15,700,018 bytes and the largest label XML 3,212,601; each ceiling is ten times
+#: that, rounded up to whole MiB. A member past either is not a label.
+MAX_OUTER_MEMBER_BYTES = 160 * 2**20
+MAX_LABEL_XML_BYTES = 32 * 2**20
 
 #: Every reason `iter_release_labels` can decline a member, in ONE place.
 #:
@@ -164,6 +175,10 @@ class ScanResult:
     #: carrying an unrecognised classCode" is a message ending "fix the reader"
     #: that hands over nothing to fix it with.
     unknown_class_codes: frozenset[str]
+
+    def __post_init__(self) -> None:
+        # `frozen=True` freezes the REFERENCE, not the caller's dict (#165).
+        object.__setattr__(self, "found", MappingProxyType(dict(self.found)))
 
     @property
     def total_dropped(self) -> int:
@@ -343,6 +358,11 @@ def iter_release_labels(
     refuse the run -- so a real label was republished as `absent_from_dailymed`
     with every counter reading clean. The `.xml` search inside is
     case-insensitive for the same reason.
+
+    ⇒ AN OVERSIZED MEMBER RAISES `ValueError` NAMING IT, rather than being
+    skipped: see `MAX_OUTER_MEMBER_BYTES`. It is not a reason in `SKIP_REASONS`
+    because it is not a label this reader failed to read -- it is a release that
+    is not what NLM ships, and the run stops before its row exists.
     """
     def skip(member: str, reason: str) -> None:
         on_skip(member, reason)
@@ -354,6 +374,7 @@ def iter_release_labels(
                 # is not a skip either, so reporting it would pad the count of
                 # members that "were never label containers".
                 continue
+            _refuse_oversized(outer.getinfo(name), MAX_OUTER_MEMBER_BYTES, name)
             try:
                 member_bytes = outer.read(name)
             except (zipfile.BadZipFile, RuntimeError, EOFError, OSError):
@@ -394,4 +415,15 @@ def _sole_xml_of(
             # everywhere else.
             skip(name, "several_xml_members")
             return None
+        _refuse_oversized(inner.getinfo(xml_names[0]), MAX_LABEL_XML_BYTES, name)
         return inner.read(xml_names[0])
+
+
+def _refuse_oversized(info: zipfile.ZipInfo, ceiling: int, member: str) -> None:
+    """Raise, naming the release member, if `info` declares more than `ceiling`."""
+    if info.file_size > ceiling:
+        raise ValueError(
+            f"release member {member!r}: {info.filename!r} declares "
+            f"{info.file_size:,} bytes, which exceeds the {ceiling:,}-byte "
+            "ceiling -- no real label is that large (issue #166); refusing "
+            "rather than decompressing it")

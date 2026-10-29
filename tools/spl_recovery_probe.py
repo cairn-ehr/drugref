@@ -60,10 +60,12 @@ import argparse
 import json
 import pathlib
 import re
+from collections import Counter
 from collections.abc import Iterator
+from dataclasses import fields
 
 from drugref import server_messages
-from tools.spl_dailymed_crosscheck import iter_release_labels
+from drugref.ingest.spl_release import ScanResult, iter_release_labels
 from tools.spl_subject_read import (
     SubjectUniis,
     dedupe_by_set_id,
@@ -136,10 +138,13 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     written_set_ids: set[str] = set()
     rows_written = scanned = no_set_id_bytes = parse_failed = 0
     no_set_id_tree = disagreed = 0
+    # Members the shipped reader declined, by reason (issue #168).
+    skips: Counter[str] = Counter()
     with out.open("w") as handle:
         for part in parts:
             print(f"  scanning {part} ...", flush=True)
-            for document_id, xml_bytes in iter_release_labels(part):
+            for document_id, xml_bytes in iter_release_labels(
+                    part, on_skip=lambda _member, reason: skips.update([reason])):
                 scanned += 1
                 match = _SET_ID.search(xml_bytes)
                 if match is None:
@@ -188,7 +193,16 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     print(f"  dropped: unreadable / no setId    {no_set_id_tree:>9,}")
     print(f"  dropped: pre-filter disagreed     {disagreed:>9,}")
     print(f"  dropped: parse failed             {parse_failed:>9,}")
-    if parse_failed or disagreed:
+    # A reason's verdict is READ off ScanResult's field names (`dropped_*` refuses,
+    # `skipped_*` is reported), never retyped here.
+    verdicts = {field.name for field in fields(ScanResult)}
+    member_drops = 0
+    for reason, count in sorted(skips.items()):
+        dropped = f"dropped_{reason}" in verdicts
+        member_drops += count if dropped else 0
+        label = "dropped" if dropped else "skipped"
+        print(f"  {label}: member {reason:<19}{count:>9,}")
+    if parse_failed or disagreed or member_drops:
         raise SystemExit(
             "documents were dropped for a READING reason; they would be "
             "republished as 'absent from DailyMed'. Fix before quoting."

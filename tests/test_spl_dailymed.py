@@ -333,6 +333,33 @@ def test_a_member_with_SEVERAL_xml_files_is_refused_not_arbitrarily_picked(
     assert list(rel.iter_release_labels(part, on_skip=_ignore_skips)) == []
 
 
+@pytest.mark.parametrize("ceiling, oversized", [
+    ("MAX_OUTER_MEMBER_BYTES", "big.zip"),   # the member zip itself
+    ("MAX_LABEL_XML_BYTES", "big.zip"),      # the XML nested inside it
+])
+def test_an_OVERSIZED_member_is_refused_BEFORE_it_is_decompressed(
+        tmp_path, monkeypatch, ceiling, oversized):
+    """Issue #166: a compression bomb in a nested member was decompressed whole
+    into memory. The check is on the DECLARED size, before `read()` -- and that
+    is a real bound, because zipfile stops at the declared size and raises
+    `BadZipFile` on a member that lies about it. REFUSED by name rather than
+    skipped: an uncounted skip here is republished as `absent_from_dailymed`."""
+    monkeypatch.setattr(rel, ceiling, 1000)
+    part = _part(tmp_path, {
+        "small.zip": {"a.xml": b"<a/>"},
+        oversized: {"b.xml": b"<b>" + b"x" * 2000 + b"</b>"}})
+    with pytest.raises(ValueError, match=f"{oversized}.*exceeds"):
+        list(rel.iter_release_labels(part, on_skip=_ignore_skips))
+
+
+def test_the_member_ceilings_clear_the_largest_REAL_member_by_an_order_of_magnitude():
+    """Measured on the 2026-08-21 Human Rx release: the largest outer member is
+    15,700,018 bytes and the largest label XML 3,212,601 (issue #166). A ceiling
+    the real release can reach would abort a good ingest."""
+    assert rel.MAX_OUTER_MEMBER_BYTES >= 10 * 15_700_018
+    assert rel.MAX_LABEL_XML_BYTES >= 10 * 3_212_601
+
+
 def test_scan_release_counts_every_member_of_the_part(tmp_path):
     """The counters have to MOVE, not merely exist. This is the fixture the
     end-to-end corpus structurally could not be.

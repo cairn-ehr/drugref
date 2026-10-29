@@ -116,3 +116,17 @@ def test_token_overlap_of_unrelated_text_is_low():
 
 def test_token_overlap_with_an_empty_side_is_zero_rather_than_a_crash():
     assert token_overlap("", "anything") == 0.0
+
+
+def test_no_tool_keeps_a_SECOND_release_walker():
+    """Issue #168: this module used to define its own `iter_release_labels`, and
+    `spl_recovery_probe` imported it from here. It predated the skip counters,
+    so every figure either tool published was measured by a reader nothing
+    shipped. Both now walk `spl_release`'s, by identity."""
+    from drugref.ingest import spl_release
+    from tools import spl_dailymed_crosscheck, spl_recovery_probe
+
+    for tool in (spl_dailymed_crosscheck, spl_recovery_probe):
+        walker = getattr(tool, "iter_release_labels",
+                         spl_release.iter_release_labels)
+        assert walker is spl_release.iter_release_labels, tool.__name__

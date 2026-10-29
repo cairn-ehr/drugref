@@ -13,37 +13,33 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/measured-floor` off `main`; PR OPEN against issue
-[#182](https://github.com/cairn-ehr/drugref/issues/182). THE SCHEMA NOW ENDS AT `db/056`.** PR #183 (#179, the
-tools channel) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**, and
-a test enforces that — `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/spl-followups` off `main`; PR OPEN closing #163, #165, #166, #168, #171. No migration — THE
+SCHEMA STILL ENDS AT `db/056`.** PR #184 (#182) is MERGED. The suite total lives in PROJECT-NOTES § "How to run /
+test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED — THE MEASURED-FLOOR ROUND, CLOSING [#182](https://github.com/cairn-ehr/drugref/issues/182)**
-(full account: PROJECT-NOTES § "The measured-floor round").
+**⇒ JUST FINISHED — THE SPL FOLLOW-UPS ROUND** (full account: PROJECT-NOTES § "The SPL follow-ups round").
 
-**⇒ WHAT SHIPPED.** `db/055` + `db/056` put a trigger floor under `ingest_run.duration_measured`, which `db/054`
-protected with prose only: no INSERT may set it; a written `finished_at` never returns to NULL; `false → true`
-only in the UPDATE writing the row's first `finished_at` (that is `provenance.finish_run`); once true, the flag
-and both stamps are frozen. The migrations state what they do not stop (a hand-forged `finish_run` on a run that
-is really open; a table owner's `DISABLE TRIGGER`).
+**⇒ WHAT SHIPPED.** The release walker refuses a member whose declared size exceeds a ceiling ≥ 10× the largest
+real one (measured: 15.7 MB outer, 3.2 MB XML) before decompressing it (#166). The crosscheck/probe tools walk the
+shipped reader and `spl_subject_read` reads the shipped classCode set (#168). The census emits each part as it
+finishes (#171). The frozen SPL types copy their mappings, and the matcher refuses an empty `Match`, a suppression
+term on a name's key, and an over-full `NextWordProfile` (#165). The openFDA arm counts absent vs blank records and
+document-id-keyed labels, reconciled against records (#163). **`spl_match.py`'s suppression half moved verbatim to
+`spl_suppress.py` (524 → 359), so it left #177's ledger.**
 
-**⇒ THE REVIEW ROUND.** Three agent reviewers on PR #184 found `db/055` still let a backfill through in two
-statements (reopen `finished_at` to NULL, then pose as `finish_run`). `db/056` closes it; it is a new file
-because `db/055` was already in the test DB's ledger, so `db/055`'s own header is true only with `db/056` applied.
-
-**⇒ VERIFIED.** `tests/test_ingest_run_measured_floor.py` shows every rule refusing, each matched on its own
-message, plus `finish_run` and an ordinary write to a measured row passing. `uv run pytest` green;
-`ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` green with the DB; `ruff check .` clean. One agent reviewer read the diff before
+the PR.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **#163–#166**, **#168–#171** — the small filed follow-ups.
-2. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — seven modules over rule 4's cap**, `questions.py`
-   at **797** down to `ingest/spl_match.py` at **524**, each a small self-contained round. Precedent is three
-   deep (`spl_release.py`, `cli_status.py`, `registry_read.py`); the rule is always the same — find the SEAM,
-   verbatim move, suite green, *then* behaviour. The ledger ratchets, so none of them may grow.
+1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — six modules over rule 4's cap**, `questions.py`
+   at **797** down to `release_verification.py` at **540**, each a small self-contained round. Precedent is four
+   deep (`spl_release.py`, `cli_status.py`, `registry_read.py`, `spl_suppress.py`); the rule is always the same —
+   find the SEAM, verbatim move, suite green, *then* behaviour. The ledger ratchets, so none of them may grow.
+2. **The SPL follow-ups left on their own triggers** — #164, #169, #170 (see the ledger); #170 is the one with
+   no trigger, just cost.
 3. **`5c.5` pregnancy & lactation is spiked-not-designed** — LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor, gated on a **clinician review that has not happened** (23-row worklist).
 4. **The class half of 5c.3** (#155, #102, word order); deferring it **RAISED** drug × drug yield by 193 pairs.
@@ -58,7 +54,8 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#179 is CLOSED
-(PR #183); #182 closes with this PR.** Open: **#177** (seven over the cap), **#163–#166**, **#168–#171**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+(PR #183); #182 is CLOSED (PR #184); #163, #165, #166, #168, #171 close with this PR.** Open: **#177** (six over
+the cap), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #151–#153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
