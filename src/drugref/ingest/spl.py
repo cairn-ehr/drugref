@@ -45,6 +45,7 @@ import re
 import zipfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 #: The authority, as `ingest_run.source` spells it. Paired with the CHECK db/051
 #: widens and with `ids._SOURCE_CANONICAL` -- see that module on why a source
@@ -206,8 +207,11 @@ def iter_partition_records(path: str | pathlib.Path) -> Iterator[dict]:
 
 def iter_sections(
     partitions: Sequence[str | pathlib.Path],
-) -> Iterator[tuple[int, LabelSection | None]]:
-    """Stream `(record_number, section-or-None)` across every partition in order.
+) -> Iterator[tuple[int, Mapping, LabelSection | None]]:
+    """Stream `(record_number, record, section-or-None)` across every partition.
+
+    The raw record rides along so a caller can say WHY a record carried no
+    section (`field_state`) and whether its key fell back to `id` (issue #163).
 
     The record count is yielded alongside because the DENOMINATOR is a published
     figure: "68,550 of 262,032" says something "68,550" alone does not, and a
@@ -218,7 +222,19 @@ def iter_sections(
     for partition in partitions:
         for record in iter_partition_records(partition):
             seen += 1
-            yield seen, extract_section(record)
+            yield seen, record, extract_section(record)
+
+
+def field_state(record: Mapping, *, field_name: str = INTERACTIONS_FIELD) -> str:
+    """Why a record carried no section: `"absent"` or `"blank"` (issue #163).
+
+    `"absent"` is a missing field or an explicit null; `"blank"` is a field that
+    IS present -- an empty list, or every entry blank. `extract_section` folds
+    both into `None` for denominator reasons; this keeps the two apart so a
+    release where one population moves into the other is visible. Only
+    meaningful for a record `extract_section` returned `None` for.
+    """
+    return "absent" if record.get(field_name) is None else "blank"
 
 
 @dataclass(frozen=True)
@@ -261,12 +277,28 @@ class Corpus:
     wordings: Mapping[str, str]
     #: text_key -> how many labels carry it. The de-duplication factor.
     label_counts: Mapping[str, int]
+    #: ⇒ ISSUE #163: the records carrying NO section, split by `field_state`.
+    #: Neither refuses; the ratio moving between releases is the signal.
+    field_absent: int
+    field_blank: int
+    #: Labels whose record had no `set_id`, keyed on openFDA's per-DOCUMENT `id`
+    #: instead. Such a label can never match DailyMed, so it would otherwise be
+    #: filed `absent_from_dailymed` uncounted.
+    labels_keyed_on_document_id: int
 
     def __post_init__(self) -> None:
-        if len(self.labels) > self.records:
+        # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
+        # read-only view so no later `dict.update` can undo the checks below (#165).
+        # (A read-only view cannot be pickled, so `deepcopy`/`asdict` raise --
+        # nothing serialises these types; convert to `dict` first if one must.)
+        for name in ("wordings", "label_counts"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+        object.__setattr__(self, "labels", tuple(self.labels))
+        if len(self.labels) + self.field_absent + self.field_blank != self.records:
             raise ValueError(
-                f"{len(self.labels)} sections from {self.records} records: a "
-                "label cannot carry the section more than once")
+                f"{len(self.labels)} sections + {self.field_absent} absent + "
+                f"{self.field_blank} blank != {self.records} records: every "
+                "record either carries the section once or is counted as not")
         if len(self.wordings) > len(self.labels):
             raise ValueError(
                 f"{len(self.wordings)} distinct wordings from "
@@ -295,9 +327,14 @@ def read_corpus(partitions: Sequence[str | pathlib.Path]) -> Corpus:
     wordings: dict[str, str] = {}
     label_counts: dict[str, int] = {}
     records = 0
-    for records, section in iter_sections(partitions):
+    no_section = {"absent": 0, "blank": 0}
+    keyed_on_document_id = 0
+    for records, record, section in iter_sections(partitions):
         if section is None:
+            no_section[field_state(record)] += 1
             continue
+        if not record.get("set_id") and section.set_id:
+            keyed_on_document_id += 1
         key = section.text_key
         labels.append(LabelIdentity(
             set_id=section.set_id,
@@ -314,7 +351,10 @@ def read_corpus(partitions: Sequence[str | pathlib.Path]) -> Corpus:
             wordings[key] = section.normalised_text
         label_counts[key] = label_counts.get(key, 0) + 1
     return Corpus(records=records, labels=tuple(labels),
-                  wordings=wordings, label_counts=label_counts)
+                  wordings=wordings, label_counts=label_counts,
+                  field_absent=no_section["absent"],
+                  field_blank=no_section["blank"],
+                  labels_keyed_on_document_id=keyed_on_document_id)
 
 
 def check_something_was_read(

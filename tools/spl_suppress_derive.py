@@ -13,7 +13,7 @@ and not a statistic. A run of this tool is an input to a human decision, and a
 term reaches `src/drugref/data/spl_suppression_terms.txt` only with the
 distribution printed here written beside it.
 
-The rules themselves are `drugref.ingest.spl_match.next_word_profiles` and
+The rules themselves are `drugref.ingest.spl_suppress.next_word_profiles` and
 `suppression_candidates` -- shipped and tested, because the vocabulary they
 justify ships. This module is only the runner: corpus in, table out.
 
@@ -29,7 +29,7 @@ import argparse
 import pathlib
 
 from drugref import db, registry_read, server_messages
-from drugref.ingest import spl, spl_match, spl_run
+from drugref.ingest import spl, spl_run, spl_suppress
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,14 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     # an unsuppressed vocabulary would re-propose every term already ruled on and
     # would measure a corpus the ingest does not read.
     vocab = spl_run.build_vocabulary(names)
-    profiles = spl_match.next_word_profiles(
+    profiles = spl_suppress.next_word_profiles(
         corpus.wordings.values(), vocab, min_occurrences=args.min_occurrences)
     print(f"\n{len(profiles)} single-token names at >= {args.min_occurrences:,} "
           "occurrences")
 
-    candidates = spl_match.suppression_candidates(
+    candidates = spl_suppress.suppression_candidates(
         profiles, min_dominance=args.min_dominance,
-        already=spl_match.shipped_suppression_terms())
+        already=spl_suppress.shipped_suppression_terms())
 
     print(f"\n=== {len(candidates)} CANDIDATES, ranked. NONE IS A DECISION ===")
     print("Read each one and ask the only question a distribution cannot: does")

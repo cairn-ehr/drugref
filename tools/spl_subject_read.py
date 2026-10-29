@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from drugref.ingest import spl_dailymed as dm
+
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
 
@@ -30,9 +32,9 @@ _SPL_NS = "{urn:hl7-org:v3}"
 #: element name alone harvests all of them as if they were substances.
 UNII_CODE_SYSTEM = "2.16.840.1.113883.4.9"
 
-#: HL7 classCodes for an ACTIVE ingredient. ``IACT`` -- inactive -- is
-#: deliberately absent, and its absence is what keeps excipients out.
-_ACTIVE_CLASS_CODES = frozenset({"ACTIB", "ACTIM", "ACTIR", "ACTI"})
+# The HL7 classCodes for an ACTIVE ingredient are NOT kept here: they are
+# `spl_dailymed._ACTIVE_CLASS_CODES`, read at call time (issue #168). A third
+# copy of that set is how `COLR` once drifted between two of them in one commit.
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,7 +106,7 @@ def _active_substance_elements(root: ET.Element) -> list[ET.Element]:
     """
     found = [*root.iter(f"{_SPL_NS}activeIngredientSubstance")]
     for ingredient in root.iter(f"{_SPL_NS}ingredient"):
-        if ingredient.get("classCode") not in _ACTIVE_CLASS_CODES:
+        if ingredient.get("classCode") not in dm._ACTIVE_CLASS_CODES:
             continue
         found.extend(ingredient.findall(f"{_SPL_NS}ingredientSubstance"))
     return found

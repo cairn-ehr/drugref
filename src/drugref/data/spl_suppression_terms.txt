@@ -2,7 +2,7 @@
 # the span and the short name inside never fires.
 #
 # SHIPPED SEED DATA for slice 5c.3 (db/051). Read by
-# drugref.ingest.spl_match.shipped_suppression_terms.
+# drugref.ingest.spl_suppress.shipped_suppression_terms.
 #
 # Every line here is justified by a MEASURED distribution over the 27,406
 # distinct section-34073-7 wordings, not by intuition. The round's first pass

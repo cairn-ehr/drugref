@@ -4315,7 +4315,8 @@ and refuses on any of six grounds. **Read the figures in the results record, not
 
 `db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
 deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_release.py`,
-`spl_match.py`, `spl_quote.py`, `spl_subject.py`, plus `spl_checks.py` for the guards), the writer
+`spl_match.py`, `spl_suppress.py` (split from `spl_match.py` 2026-10-29), `spl_quote.py`, `spl_subject.py`,
+plus `spl_checks.py` for the guards), the writer
 `spl_evidence.py`, the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
 `ScanResult`/`scan_release`/`iter_release_labels` — was split out of `spl_dailymed.py` on 2026-08-31 under
 rule 4; `spl_dailymed.py` reads ONE label's XML and never opens a zip.)
@@ -5496,6 +5497,54 @@ table owner can `DISABLE TRIGGER`, as `db/001` says of its own floor. An operato
 
 Tests: `tests/test_ingest_run_measured_floor.py`, +12. Suite **2706 → 2718**.
 
+## The SPL follow-ups round (2026-10-29) — issues #163, #165, #166, #168, #171, no migration
+
+Five of the eight small SPL follow-ups filed by the #161 and #167 reviews, plus one #177 split the work needed.
+
+- **#166 — nested zips had no size cap.** `spl_release.iter_release_labels` now checks each member's DECLARED
+  size before `read()`: `MAX_OUTER_MEMBER_BYTES` (160 MiB) for an outer member, `MAX_LABEL_XML_BYTES` (32 MiB)
+  for the label XML. **Measured on the 2026-08-21 Human Rx release** (all six parts): largest outer member
+  15,700,018 bytes, largest inner member — always the XML — 3,212,601; each ceiling is ≥ 10× that. The declared
+  size ALONE is not a bound (corrected in the PR #185 review): `ZipFile.read` inflates up to 1 GiB per call
+  before trimming to the declared size, so a 200 KB member declaring 100 bytes still put 200 MiB in memory before
+  its CRC failed. `_read_bounded` therefore reads through `open(...).read(ceiling)`, which deflate honours as a
+  maximum output length, and refuses bzip2/lzma members (which inflate each chunk whole) by name; the forgery
+  then fails its CRC as `BadZipFile`, already a counted drop. Past a ceiling, the walker **raises `ValueError` naming the member**. It
+  is not a new `SKIP_REASONS` entry: that would be the 12th counter, which #169 names as its own trigger.
+  The scan runs before `open_run`, so the database is untouched.
+- **#168 — duplicated vocabulary and a second walker.** `tools/spl_dailymed_crosscheck.py`'s own
+  `iter_release_labels` is deleted. It and `tools/spl_recovery_probe.py` walk `spl_release`'s, pinned by
+  identity. The probe AND the crosscheck now refuse on a member-level DROP, the verdict being
+  `spl_release.is_member_drop` — which FAILS SAFE (PR #185 review): only a reason with a `skipped_` field on
+  `ScanResult` is let through, and a test pins one field per `SKIP_REASONS` entry, since `scan_release` reads its
+  tally by hard-coded name and would not notice a new reason. `tools/spl_subject_read.py` reads
+  `spl_dailymed._ACTIVE_CLASS_CODES` at call time, pinned by monkeypatching the shipped set. Side effect: the
+  walker yields the outer member name, not the XML stem, so the probe's JSONL key is now `release_member`
+  (was `document_id`); nothing reads it back.
+- **#171 — census lost finished parts.** `census_release(on_part=…)`; `main` prints one `part-census {json}`
+  line to stderr per finished part, so a crash on part 6 leaves parts 1–5 on disk. Per-part catching was not
+  added.
+- **#165 — frozen types holding live dicts.** `Corpus.wordings`/`label_counts`, `ScanResult.found` and
+  `SplSummary.labels_by_route` are copied into `MappingProxyType` in `__post_init__`. `Vocabulary` refuses a
+  key with no entries, or one carrying a `suppress` entry alongside any other kind. Two names on one key are
+  still admitted and flagged ambiguous, and so is class+moiety, which `tools/spl_class_vocabulary_delta.py`
+  measures. `Match` refuses `entries=()`; `NextWordProfile` refuses `sum(following) > occurrences`.
+- **#163 — the openFDA arm could not tell absent from blank.** `spl.field_state` splits a record carrying no
+  section into `absent` (missing or null) vs `blank` (present: empty list or all-blank entries). `Corpus` and
+  `SplSummary` carry `field_absent`/`field_blank` and `labels_keyed_on_document_id` (the `set_id → id` fallback).
+  Both now reconcile `labels + absent + blank == records`, replacing `Corpus`'s weaker `labels <= records`.
+  Neither count refuses; they are printed in `SplSummary`'s line. **Not taken: refusing a NULL `version` earlier
+  and by name.** db/051's NOT NULL still refuses it loudly, inside the ingest transaction, and `read_corpus`
+  also serves measurement tools that do not care about `version`.
+- **The #177 split it needed.** #165 had to add lines to `spl_match.py`, which sat on the ratcheted ledger at
+  524. Its suppression half (`parse_suppression_terms`, `NextWordProfile`, `SuppressionCandidate`,
+  `next_word_profiles`, `suppression_candidates`, `shipped_suppression_terms`, `SUPPRESSION_DATA`) moved
+  **verbatim** to `ingest/spl_suppress.py`, suite green, then the behaviour changes went in.
+  `spl_match.py` 524 → 359 by the move (#165's checks then grew it) and is **off the ledger**; six modules remain on #177.
+
+**Left open deliberately:** #164 (fix the comment when a migration next touches that function, as the issue
+says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: parser, dedupe, census and tests).
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5554,11 +5603,16 @@ does not connect): the three bare `psycopg.connect` calls go through `db.connect
 or an entry point without the call — § "The tools-channel round".
 
 **[#182](https://github.com/cairn-ehr/drugref/issues/182) `db/054`'s no-backfill rule has no mechanism** —
-**FIXED by `db/055` + `db/056`, closes on merge** (filed by the #181 review round). The prose prohibition is now a
+**CLOSED by PR #184 (merged 2026-10-29), `db/055` + `db/056`** (filed by the #181 review round). The prose prohibition is now a
 trigger floor on `ingest_run`: no INSERT may set `duration_measured`; a written `finished_at` never returns to
 NULL; `false → true` only in the UPDATE writing the row's first `finished_at` (which is `finish_run`, and —
 given the previous rule — never a backfill of finished rows); once true, the flag and both stamps are frozen —
 § "The measured-floor round".
+
+**The SPL follow-ups (#163–#166, #168–#171, filed by the #161 and #167 reviews)** — **#163, #165, #166, #168,
+#171 FIXED by the SPL follow-ups round, close on merge** — § "The SPL follow-ups round". **Still open, each on
+its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budget` for a real reason), #169
+(the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor).
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5727,7 +5781,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2718 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2750 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

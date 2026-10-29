@@ -323,15 +323,28 @@ def census_part(
 
 def census_release(
     parts: Sequence[str], *, progress: Callable[[str, int], None] | None = None,
+    on_part: Callable[[str, SkipCensus], None] | None = None,
 ) -> SkipCensus:
-    """Census every part, keeping the per-part breakdown beside the total."""
+    """Census every part, keeping the per-part breakdown beside the total.
+
+    `on_part(part, census)` is called the moment each part completes (issue
+    #171): `by_part` is only returned after the LAST part, so a raise on part 6
+    of 6 would otherwise discard five parts of an expensive read.
+    """
     by_part: dict[str, SkipCensus] = {}
     for part in parts:
         by_part[part] = census_part(
             part,
             progress=None if progress is None
             else (lambda read, p=part: progress(p, read)))
+        if on_part is not None:
+            on_part(part, by_part[part])
     return replace(merge(by_part.values()), by_part=by_part)
+
+
+def _counters(census: SkipCensus) -> dict[str, int]:
+    """The counter fields of one census, as plain JSON-ready values."""
+    return {name: getattr(census, name) for name in _COUNTER_FIELDS}
 
 
 def _report(census: SkipCensus) -> str:
@@ -382,18 +395,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  [{time.monotonic() - started:7.1f}s] {part.split('/')[-1]} "
               f"{read:,} documents", file=sys.stderr, flush=True)
 
-    census = census_release(args.parts, progress=progress)
+    def emit_part(part: str, part_census: SkipCensus) -> None:
+        # One JSON line per finished part, so a crash on a later part still
+        # leaves this one's evidence on disk (issue #171).
+        print("part-census " + json.dumps({"part": part, **_counters(part_census)}),
+              file=sys.stderr, flush=True)
+
+    census = census_release(args.parts, progress=progress, on_part=emit_part)
     print(_report(census))
     print(f"\nread in {time.monotonic() - started:.1f}s", file=sys.stderr)
 
     if args.json_out:
         payload = {
-            **{name: getattr(census, name) for name in _COUNTER_FIELDS},
+            **_counters(census),
             "class_code_counts": dict(census.class_code_counts),
             "unknown_class_codes": sorted(census.unknown_class_codes),
             "by_part": {
-                part: {name: getattr(part_census, name)
-                       for name in _COUNTER_FIELDS}
+                part: _counters(part_census)
                 for part, part_census in census.by_part.items()},
         }
         try:

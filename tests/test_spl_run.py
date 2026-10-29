@@ -302,6 +302,38 @@ def test_the_fixture_corpus_ingests_and_reconciles(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
+def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
+        conn, corpus, tmp_path):
+    """Issue #163's signal, end to end (PR #185 review). `SplSummary` only checks
+    `absent + blank` against the records, so binding absent to blank -- or
+    dropping the id-keyed count -- at the construction site passed every test.
+    THREE DISTINCT COUNTS, so any swap between them is visible."""
+    def bare(set_id, **fields):
+        return {"version": "1", "effective_time": "20240101",
+                "openfda": {}} | ({"set_id": set_id} if set_id else {}) | fields
+    extra = [
+        bare("ABSENT-1"), bare("ABSENT-2"),
+        bare("ABSENT-3", drug_interactions=None),        # explicit null: absent
+        bare("BLANK-1", drug_interactions=[]),
+        bare("BLANK-2", drug_interactions=["  ", ""]),
+        bare(None, id="DOCUMENT-ONLY-1", drug_interactions=[WORDING]),
+    ]
+    openfda_dir, parts = corpus
+    archive = openfda_dir / "drug-label-0001-of-0001.json.zip"
+    with zipfile.ZipFile(archive) as existing:
+        payload = json.loads(existing.read("drug-label-0001-of-0001.json"))
+    payload["results"] += extra
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as rewritten:
+        rewritten.writestr("drug-label-0001-of-0001.json", json.dumps(payload))
+
+    _seed_registry(conn)
+    summary = _ingest(conn, (openfda_dir, parts))
+    assert (summary.records_field_absent, summary.records_field_blank,
+            summary.labels_keyed_on_document_id) == (3, 2, 1)
+    assert summary.records_read == len(LABELS) + len(extra)
+
+
+@pytest.mark.usefixtures("_clean")
 def test_every_route_the_corpus_can_reach_is_taken(conn, corpus):
     """The fixture was chosen half-keyed and half-unkeyed for exactly this.
 
@@ -1069,7 +1101,7 @@ def test_check_floors_ACCEPTS_a_summary_that_published_something():
 
 @pytest.mark.parametrize("field,overrides", [
     ("labels", {"labels": 0, "labels_by_route": {}, "dailymed_targets": 0,
-                "dailymed_found": 0}),
+                "dailymed_found": 0, "records_field_absent": 90}),
     ("wordings", {"wordings": 0, "wordings_with_a_moiety": 0}),
     ("resolved subjects", {"labels_by_route": {"unresolved": 10}}),
     ("entity occurrences", {"occurrences": 0}),
@@ -1116,6 +1148,8 @@ def test_the_measured_floors_are_OPTIONAL_and_the_structural_ones_are_not():
 def _summary(**overrides):
     fields = dict(
         records_read=100, labels=10, wordings=4,
+        records_field_absent=80, records_field_blank=10,
+        labels_keyed_on_document_id=0,
         labels_by_route={"openfda_unii": 6, "unresolved": 4},
         dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
         dailymed_reported_skips="",
@@ -1205,3 +1239,14 @@ def test_a_clean_scan_adds_NO_skip_clause_to_the_summary(conn, corpus):
 
     assert summary.dailymed_reported_skips == ""
     assert "reported and NOT refused" not in str(summary)
+
+
+def test_the_summary_carries_the_openFDA_arms_ABSENT_and_BLANK_records():
+    """Issue #163, on the returned value and in its printed line: a release
+    where the section turns present-but-blank for a population moves every
+    published rate, and only these two figures say so."""
+    text = str(_summary())
+    assert "80 records without the field" in text
+    assert "10 with it blank" in text
+    with pytest.raises(ValueError, match="every record"):
+        _summary(records_field_blank=11)

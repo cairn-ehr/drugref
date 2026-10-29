@@ -15,6 +15,7 @@ measures the SHIPPED reader rather than a second implementation that happens to
 agree: `test_the_census_NEVER_disagrees_with_the_shipped_reader` is the reason
 the rest of the file is trustworthy.
 """
+import json
 import zipfile
 
 import pytest
@@ -255,6 +256,38 @@ def test_census_release_totals_the_document_verdicts_across_parts(tmp_path):
     assert result.prefilter_disagreed == 1
     assert result.class_code_counts["ZZZZ"] == 1
     assert result.unknown_class_codes == {"ZZZZ"}
+
+
+def test_a_crash_on_the_LAST_part_keeps_every_part_already_counted(tmp_path):
+    """Issue #171: `by_part` lived in a local dict returned after the last part,
+    so a raise on part 6 of 6 discarded five parts of a 163-second read. Each
+    part's census now leaves through `on_part` the moment it completes."""
+    good = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})})
+    emitted = []
+
+    with pytest.raises(FileNotFoundError):
+        census.census_release(
+            [good, str(tmp_path / "missing.zip")],
+            on_part=lambda part, result: emitted.append((part, result)))
+
+    assert [(part, result.documents_read) for part, result in emitted] == [
+        (good, 1)]
+
+
+def test_main_writes_each_part_to_stderr_AS_IT_COMPLETES(tmp_path, capsys):
+    """The evidence survives a crash only if it left the process: one JSON line
+    per finished part, on stderr, before the next part is opened."""
+    good = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})})
+
+    with pytest.raises(FileNotFoundError):
+        census.main([good, str(tmp_path / "missing.zip")])
+
+    lines = [line for line in capsys.readouterr().err.splitlines()
+             if line.startswith("part-census ")]
+    assert len(lines) == 1
+    record = json.loads(lines[0].removeprefix("part-census "))
+    assert record["part"] == good
+    assert record["documents_read"] == 1
 
 
 # --------------------------------------------------------------------------

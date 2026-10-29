@@ -60,10 +60,11 @@ import argparse
 import json
 import pathlib
 import re
+from collections import Counter
 from collections.abc import Iterator
 
 from drugref import server_messages
-from tools.spl_dailymed_crosscheck import iter_release_labels
+from drugref.ingest.spl_release import is_member_drop, iter_release_labels
 from tools.spl_subject_read import (
     SubjectUniis,
     dedupe_by_set_id,
@@ -127,8 +128,9 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     **Every drop is counted.** ``labels_missing_from_dailymed`` is a set
     difference over what this stage wrote, so a document silently skipped here
     is republished downstream as a fact about the RELEASE -- "absent from
-    DailyMed" -- when it is a fact about the reading. Three counters keep the two
-    apart, and ``parse_failed`` is expected to be zero.
+    DailyMed" -- when it is a fact about the reading. Four document counters plus
+    the reader's member-level drops keep the two apart; any reading drop
+    refuses, and ``parse_failed`` is expected to be zero.
     """
     targets = orphan_label_targets(_cache_rows(cache))
     print(f"looking for {len(targets):,} labels across {len(parts)} release parts")
@@ -136,10 +138,13 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     written_set_ids: set[str] = set()
     rows_written = scanned = no_set_id_bytes = parse_failed = 0
     no_set_id_tree = disagreed = 0
+    # Members the shipped reader declined, by reason (issue #168).
+    skips: Counter[str] = Counter()
     with out.open("w") as handle:
         for part in parts:
             print(f"  scanning {part} ...", flush=True)
-            for document_id, xml_bytes in iter_release_labels(part):
+            for member, xml_bytes in iter_release_labels(
+                    part, on_skip=lambda _member, reason: skips.update([reason])):
                 scanned += 1
                 match = _SET_ID.search(xml_bytes)
                 if match is None:
@@ -171,7 +176,9 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
                     json.dumps(
                         {
                             "set_id": recovered.set_id,
-                            "document_id": document_id,
+                            # Was `document_id`: since #168 it holds the
+                            # outer member's name, which is not one.
+                            "release_member": member,
                             "version": recovered.version,
                             "moiety_uniis": list(recovered.moiety_uniis),
                             "substance_uniis": list(recovered.substance_uniis),
@@ -188,7 +195,15 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     print(f"  dropped: unreadable / no setId    {no_set_id_tree:>9,}")
     print(f"  dropped: pre-filter disagreed     {disagreed:>9,}")
     print(f"  dropped: parse failed             {parse_failed:>9,}")
-    if parse_failed or disagreed:
+    # A reason's verdict is `spl_release`'s, never retyped here -- and it fails
+    # safe: a reason with no `skipped_*` field counts as a drop.
+    member_drops = 0
+    for reason, count in sorted(skips.items()):
+        dropped = is_member_drop(reason)
+        member_drops += count if dropped else 0
+        label = "dropped" if dropped else "skipped"
+        print(f"  {label}: member {reason:<19}{count:>9,}")
+    if parse_failed or disagreed or member_drops:
         raise SystemExit(
             "documents were dropped for a READING reason; they would be "
             "republished as 'absent from DailyMed'. Fix before quoting."

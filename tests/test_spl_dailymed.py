@@ -21,6 +21,7 @@ confident number pointing the wrong way:
    counting documents over-counts labels.
 """
 import io
+import struct
 import zipfile
 
 import pytest
@@ -333,6 +334,94 @@ def test_a_member_with_SEVERAL_xml_files_is_refused_not_arbitrarily_picked(
     assert list(rel.iter_release_labels(part, on_skip=_ignore_skips)) == []
 
 
+@pytest.mark.parametrize("ceiling, oversized, never_opened", [
+    ("MAX_OUTER_MEMBER_BYTES", "big.zip", "big.zip"),  # the member zip itself
+    ("MAX_LABEL_XML_BYTES", "big.zip", "b.xml"),       # the XML nested inside it
+])
+def test_an_OVERSIZED_member_is_refused_BEFORE_it_is_decompressed(
+        tmp_path, monkeypatch, ceiling, oversized, never_opened):
+    """Issue #166: a compression bomb in a nested member was decompressed whole
+    into memory. REFUSED by name rather than skipped: an uncounted skip here is
+    republished as `absent_from_dailymed`.
+
+    The spy is the point: raising `ValueError` AFTER reading the member would
+    pass a test that only checked the exception (PR #185 review)."""
+    monkeypatch.setattr(rel, ceiling, 1000)
+    part = _part(tmp_path, {
+        "small.zip": {"a.xml": b"<a/>"},
+        oversized: {"b.xml": b"<b>" + b"x" * 2000 + b"</b>"}})
+    opened = []   # spied only AFTER `_part`, whose writes go through `open` too
+    real_open = zipfile.ZipFile.open
+    def spy(self, name, *args, **kwargs):
+        opened.append(getattr(name, "filename", name))
+        return real_open(self, name, *args, **kwargs)
+    monkeypatch.setattr(zipfile.ZipFile, "open", spy)
+    with pytest.raises(ValueError, match=f"{oversized}.*exceeds"):
+        list(rel.iter_release_labels(part, on_skip=_ignore_skips))
+    assert never_opened not in opened
+
+
+def _lying_member(payload: bytes, declared_size: int) -> bytes:
+    """A member zip whose one XML DEFLATES `payload` but declares `declared_size`
+    -- the header a compression bomb forges to slip under a size check."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as inner:
+        inner.writestr("a.xml", payload)
+    raw = bytearray(buffer.getvalue())
+    # file_size lives at offset 22 of the local header and 24 of the central one.
+    struct.pack_into("<I", raw, raw.find(b"PK\x03\x04") + 22, declared_size)
+    struct.pack_into("<I", raw, raw.find(b"PK\x01\x02") + 24, declared_size)
+    return bytes(raw)
+
+
+def test_a_member_LYING_about_its_size_is_never_decompressed_past_the_lie(
+        tmp_path, monkeypatch):
+    """⇒ THE DECLARED SIZE IS ONLY A BOUND IF THE READ IS. `ZipFile.read`
+    inflates up to 1 GiB per call before trimming to the declared size (PR #185
+    review: a 200 KB member declaring 100 bytes put 200 MiB in memory). Every
+    read must ask for no more than the member DECLARES (+1, to reach the CRC
+    check), and the forgery then fails its CRC and is counted as a drop."""
+    requested = []
+    real_read = zipfile.ZipExtFile.read
+    def spy(self, n=-1):
+        requested.append(n)
+        return real_read(self, n)
+    monkeypatch.setattr(zipfile.ZipExtFile, "read", spy)
+    bomb = _lying_member(b"\0" * 5_000_000, 100)
+    path = tmp_path / "part.zip"
+    with zipfile.ZipFile(path, "w") as outer:
+        outer.writestr("bomb.zip", bomb)
+    skips = []
+    labels = list(rel.iter_release_labels(
+        str(path), on_skip=lambda member, reason: skips.append((member, reason))))
+    assert labels == []
+    assert skips == [("bomb.zip", "unreadable_member_zip")]
+    # The honest outer member, then the lying XML: never the 5 MB it inflates to.
+    assert requested == [len(bomb) + 1, 100 + 1]
+
+
+
+def test_a_member_compressed_with_an_UNBOUNDED_method_is_refused(tmp_path):
+    """bzip2 and lzma inflate each input chunk with no output limit, so a read
+    capped at the ceiling does not cap memory for them. NLM ships deflate."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_BZIP2) as inner:
+        inner.writestr("a.xml", _document("", set_id="SET-1"))
+    path = tmp_path / "part.zip"
+    with zipfile.ZipFile(path, "w") as outer:
+        outer.writestr("m.zip", buffer.getvalue())
+    with pytest.raises(ValueError, match="m.zip.*compression"):
+        list(rel.iter_release_labels(str(path), on_skip=_ignore_skips))
+
+
+def test_the_member_ceilings_clear_the_largest_REAL_member_by_an_order_of_magnitude():
+    """Measured on the 2026-08-21 Human Rx release: the largest outer member is
+    15,700,018 bytes and the largest label XML 3,212,601 (issue #166). A ceiling
+    the real release can reach would abort a good ingest."""
+    assert rel.MAX_OUTER_MEMBER_BYTES >= 10 * 15_700_018
+    assert rel.MAX_LABEL_XML_BYTES >= 10 * 3_212_601
+
+
 def test_scan_release_counts_every_member_of_the_part(tmp_path):
     """The counters have to MOVE, not merely exist. This is the fixture the
     end-to-end corpus structurally could not be.
@@ -441,3 +530,27 @@ def test_an_ordinary_document_is_still_read_after_the_entity_guard():
     drop counters, and `absent_from_dailymed` would absorb the whole release."""
     found = dm.extract_subject_uniis(_document("", set_id="SET-1"))
     assert found is not None and found.set_id == "SET-1"
+
+
+# --------------------------------------------------------------------------
+# PR #185 review: a skip reason's verdict, in ONE place, failing safe
+# --------------------------------------------------------------------------
+
+def test_every_SKIP_REASON_has_exactly_one_home_on_ScanResult():
+    """`scan_release` reads its tally by hard-coded name, so a reason added to
+    `SKIP_REASONS` without a `ScanResult` field would be tallied and then
+    dropped on the floor -- nothing else fails."""
+    from dataclasses import fields
+    names = {field.name for field in fields(rel.ScanResult)}
+    for reason in rel.SKIP_REASONS:
+        homes = {f"dropped_{reason}", f"skipped_{reason}"} & names
+        assert len(homes) == 1, (reason, homes)
+
+
+def test_a_skip_reason_with_no_SKIPPED_field_is_a_drop():
+    """Fail SAFE: only a reason `ScanResult` declares reported-not-dropped is
+    let through. An unknown reason defaulting to "skipped" is exactly the
+    uncounted skip republished as `absent_from_dailymed` (#162, #166)."""
+    assert rel.is_member_drop("several_xml_members")
+    assert not rel.is_member_drop("not_a_member_zip")
+    assert rel.is_member_drop("a_reason_nobody_declared")

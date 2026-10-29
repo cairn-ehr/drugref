@@ -200,3 +200,47 @@ def test_a_partition_with_an_EMPTY_results_list_is_read_as_empty(tmp_path):
         archive.writestr("drug-label-0001-of-0001.json",
                          json.dumps({"results": []}))
     assert list(spl.iter_partition_records(path)) == []
+
+
+# --------------------------------------------------------------------------
+# Issue #163: the openFDA arm tells ABSENT from BLANK, and counts its fallback
+# --------------------------------------------------------------------------
+
+def _partition(tmp_path, records: list[dict]) -> str:
+    path = tmp_path / "drug-label-0001-of-0001.json.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("drug-label-0001-of-0001.json",
+                         json.dumps({"results": records}))
+    return str(path)
+
+
+def test_read_corpus_tells_an_ABSENT_section_from_a_BLANK_one(tmp_path):
+    """Both are folded out of the denominator, deliberately -- but a release in
+    which `drug_interactions` turned present-and-empty for some population would
+    otherwise move every published rate with nothing to say so. The DailyMed arm
+    already draws this line; the ratio moving between releases is the signal."""
+    no_field = _record()
+    del no_field["drug_interactions"]
+    records = [
+        _record(),                                  # carries the section
+        no_field,                                   # absent: no field
+        _record(drug_interactions=None),            # absent: explicit null
+        _record(drug_interactions=[]),              # blank: present, empty
+        _record(drug_interactions=["  ", "\n"]),    # blank: present, all blank
+    ]
+    corpus = spl.read_corpus([_partition(tmp_path, records)])
+    assert (len(corpus.labels), corpus.field_absent, corpus.field_blank) == (1, 2, 2)
+
+
+def test_a_label_keyed_on_its_DOCUMENT_id_is_counted(tmp_path):
+    """The `set_id -> id` fallback was the quiet one of the three: such a label
+    can never match DailyMed, and was filed `absent_from_dailymed` uncounted."""
+    records = [_record(), _record(set_id=None, id="doc-1")]
+    corpus = spl.read_corpus([_partition(tmp_path, records)])
+    assert corpus.labels_keyed_on_document_id == 1
+
+
+def test_a_Corpus_whose_record_buckets_do_not_add_up_is_refused():
+    with pytest.raises(ValueError, match="every record"):
+        spl.Corpus(records=3, labels=(), wordings={}, label_counts={},
+                   field_absent=1, field_blank=1, labels_keyed_on_document_id=0)

@@ -1072,6 +1072,14 @@ to NULL (`db/056`, closing the two-statement backfill the PR #184 review found),
 but the UPDATE writing the run's first `finished_at` (`finish_run`), and any change to the flag or either stamp
 once true.
 
+**⇒ THE SPL FOLLOW-UPS ROUND ✅ DONE (2026-10-29) — issues #163, #165, #166, #168, #171, no migration.**
+Full account: PROJECT-NOTES § "The SPL follow-ups round". The release walker refuses an oversized member before
+decompressing it. The tools walk the shipped reader and read the shipped classCode set. The census emits each
+part as it finishes. The frozen SPL types copy their mappings, and the matcher refuses a suppression term folding
+onto a name. The openFDA arm counts absent vs blank records and labels keyed on a document id. `spl_match.py`'s
+suppression half moved to `spl_suppress.py` (524 → 359 by the move, off #177's ledger). #164, #169, #170 stay open on their
+own triggers; the PR's review added #186, #187, #188.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

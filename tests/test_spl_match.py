@@ -17,7 +17,7 @@ has a test named after it.
 """
 import pytest
 
-from drugref.ingest import spl_match
+from drugref.ingest import spl_match, spl_suppress
 
 
 def _vocab(*names: str, suppress: tuple[str, ...] = ()) -> spl_match.Vocabulary:
@@ -189,14 +189,14 @@ def test_a_suppressed_span_is_not_a_moiety_occurrence():
 
 
 def test_the_suppression_file_ignores_comments_and_blank_lines():
-    terms = spl_match.parse_suppression_terms(
+    terms = spl_suppress.parse_suppression_terms(
         "# a comment\n\nlead to\n  prothrombin time  \n")
     assert terms == ("lead to", "prothrombin time")
 
 
 def test_the_shipped_suppression_vocabulary_loads_and_is_not_empty():
     """It is SEED DATA, not a convention: it ships in the package."""
-    terms = spl_match.shipped_suppression_terms()
+    terms = spl_suppress.shipped_suppression_terms()
     assert "lead to" in terms
     assert "serotonin syndrome" in terms
 

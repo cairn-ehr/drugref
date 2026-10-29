@@ -28,14 +28,15 @@ difference.
 """
 from __future__ import annotations
 
-import io
 import re
 import xml.etree.ElementTree as ET
-import zipfile
-from collections.abc import Iterator
+from collections import Counter
 from dataclasses import dataclass
 
 from drugref import server_messages
+# The SHIPPED walker, never a copy (issue #168): this module kept its own, which
+# predated the skip counters, so its figures were measured by an unshipped reader.
+from drugref.ingest.spl_release import is_member_drop, iter_release_labels
 
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
@@ -56,6 +57,9 @@ _DOC_CODE = re.compile(rb'<code[^>]*\scode="(34391-3|34390-5|[0-9]{4,6}-[0-9])"'
 class LabelScan:
     """The cheap pass's result for one label."""
 
+    #: The release MEMBER's name (`.../<x>.zip`), as `iter_release_labels`
+    #: yields it -- the XML file's stem only before #168 retired this tool's own
+    #: walker.
     document_id: str
     set_id: str | None
     doc_code: str | None
@@ -72,30 +76,6 @@ def scan_label(xml_bytes: bytes, document_id: str) -> LabelScan:
         doc_code=doc_match.group(1).decode() if doc_match else None,
         has_interactions=bool(_HAS_INTERACTIONS.search(xml_bytes)),
     )
-
-
-def iter_release_labels(
-    part_path: str, *, limit: int | None = None
-) -> Iterator[tuple[str, bytes]]:
-    """Yield ``(document_id, xml_bytes)`` for every label in one release part.
-
-    Each outer member is itself a zip holding the XML plus the label's images;
-    only the ``.xml`` member is read, so the images never leave the archive.
-    """
-    seen = 0
-    with zipfile.ZipFile(part_path) as outer:
-        for name in outer.namelist():
-            if not name.endswith(".zip"):
-                continue
-            with zipfile.ZipFile(io.BytesIO(outer.read(name))) as inner:
-                xml_names = [n for n in inner.namelist() if n.endswith(".xml")]
-                if not xml_names:
-                    continue
-                document_id = xml_names[0].rsplit("/", 1)[-1][: -len(".xml")]
-                yield document_id, inner.read(xml_names[0])
-            seen += 1
-            if limit is not None and seen >= limit:
-                return
 
 
 def extract_interactions_text(xml_bytes: bytes) -> str | None:
@@ -216,10 +196,13 @@ def main(argv: list[str] | None = None) -> int:
     containments: list[float] = []
     jaccards: list[float] = []
     sampled = 0
+    # Every member the reader declined, by reason: a skip is reported, never silent.
+    skips: Counter[str] = Counter()
 
     for part in args.parts:
         print(f"  scanning {part} ...", flush=True)
-        for document_id, xml_bytes in iter_release_labels(part):
+        for document_id, xml_bytes in iter_release_labels(
+                part, on_skip=lambda _member, reason: skips.update([reason])):
             total += 1
             scan = scan_label(xml_bytes, document_id)
             if scan.doc_code == RX_DOC_CODE:
@@ -250,6 +233,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"    of which prescription          {rx_with_section:>9,}")
     print(f"  set_id present in openFDA        {in_openfda:>9,}")
     print(f"  set_id MISSING from openFDA      {missing_from_openfda:>9,}")
+    member_drops = 0
+    for reason, count in sorted(skips.items()):
+        dropped = is_member_drop(reason)
+        member_drops += count if dropped else 0
+        verdict = "dropped" if dropped else "skipped"
+        print(f"  member {verdict}: {reason:<17}{count:>9,}")
+    if member_drops:
+        # The recovery probe refuses on the same drops: coverage quoted over
+        # fewer members than the release holds is not a coverage figure.
+        raise SystemExit(
+            "members were dropped for a READING reason; the coverage above "
+            "undercounts the release. Fix before quoting.")
 
     print("\n=== FIDELITY OF openFDA's drug_interactions FIELD ===")
     if not containments:

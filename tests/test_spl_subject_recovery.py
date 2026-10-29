@@ -589,3 +589,58 @@ def test_a_non_UNII_code_ALONGSIDE_a_real_one_does_not_poison_the_reading():
     recovered = extract_subject_uniis(with_dosage_form)
     assert "C42931" not in recovered.substance_uniis
     assert recovered.moiety_uniis == ("MOIETYUNII",)
+
+
+def test_the_ACTIVE_vocabulary_is_READ_from_the_shipped_reader_not_retyped(
+        monkeypatch):
+    """Issue #168: this tool kept a THIRD copy of `spl_dailymed`'s active
+    classCode set -- the shape that let `COLR` drift between two copies within
+    one commit. Pinned by MOVING the shipped frozenset and watching this
+    reader follow it."""
+    from drugref.ingest import spl_dailymed as dm
+
+    novel = (
+        SPL.replace(b"<activeIngredient>", b'<ingredient classCode="ZZZZ">')
+        .replace(b"</activeIngredient>", b"</ingredient>")
+        .replace(b"activeIngredientSubstance", b"ingredientSubstance")
+    )
+    assert extract_subject_uniis(novel).moiety_uniis == ()
+
+    monkeypatch.setattr(
+        dm, "_ACTIVE_CLASS_CODES", frozenset({*dm._ACTIVE_CLASS_CODES, "ZZZZ"}))
+    assert extract_subject_uniis(novel).moiety_uniis == ("MOIETYUNII",)
+
+
+def test_the_probe_REFUSES_over_a_member_the_shipped_reader_dropped(tmp_path):
+    """Issue #168: on the shipped walker, a member-level DROP (an inner zip with
+    no XML -- a lost label) refuses the probe like a document-level one, while a
+    REPORTED skip (an outer member that was never a zip) does not. The verdict
+    is read off `ScanResult`'s field names, not retyped in the tool."""
+    import io
+    import json
+    import zipfile
+
+    from tools import spl_recovery_probe
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "sections.jsonl").write_text(
+        json.dumps({"set_id": "set-abc", "text_key": "k1", "uniis": []}) + "\n")
+
+    def part(name: str, members: dict[str, bytes]) -> str:
+        path = tmp_path / name
+        with zipfile.ZipFile(path, "w") as outer:
+            for member_name, payload in members.items():
+                outer.writestr(member_name, payload)
+        return str(path)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as inner:
+        inner.writestr("only-an-image.jpg", b"\xff\xd8")
+
+    reported = part("reported.zip", {"MANIFEST.txt": b"not a zip"})
+    spl_recovery_probe.scan(cache, [reported], tmp_path / "a.jsonl")
+
+    dropped = part("dropped.zip", {"a.zip": buffer.getvalue()})
+    with pytest.raises(SystemExit, match="READING reason"):
+        spl_recovery_probe.scan(cache, [dropped], tmp_path / "b.jsonl")

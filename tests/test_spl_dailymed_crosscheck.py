@@ -7,6 +7,8 @@ miniature SPL document shaped like the real thing.
 """
 from __future__ import annotations
 
+import pytest
+
 from tools.spl_dailymed_crosscheck import (
     extract_interactions_text,
     scan_label,
@@ -116,3 +118,45 @@ def test_token_overlap_of_unrelated_text_is_low():
 
 def test_token_overlap_with_an_empty_side_is_zero_rather_than_a_crash():
     assert token_overlap("", "anything") == 0.0
+
+
+def test_no_tool_keeps_a_SECOND_release_walker():
+    """Issue #168: this module used to define its own `iter_release_labels`, and
+    `spl_recovery_probe` imported it from here. It predated the skip counters,
+    so every figure either tool published was measured by a reader nothing
+    shipped. Both now walk `spl_release`'s, by identity."""
+    from drugref.ingest import spl_release
+    from tools import spl_dailymed_crosscheck, spl_recovery_probe
+
+    for tool in (spl_dailymed_crosscheck, spl_recovery_probe):
+        # No `getattr` default: a tool that dropped the import must FAIL here,
+        # not pass by comparing the shipped walker to itself.
+        assert tool.iter_release_labels is spl_release.iter_release_labels, (
+            tool.__name__)
+
+
+def _crosscheck(tmp_path, members) -> int:
+    """Run the tool's `main` over one release part and an empty openFDA cache."""
+    from tests.test_spl_dailymed import _part
+    from tools import spl_dailymed_crosscheck
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "texts.jsonl").write_text("")
+    (cache / "sections.jsonl").write_text("")
+    return spl_dailymed_crosscheck.main(
+        ["--parts", _part(tmp_path, members), "--cache", str(cache)])
+
+
+def test_the_crosscheck_REFUSES_when_the_reader_dropped_a_member(tmp_path):
+    """PR #185 review: member drops were printed but the exit code ignored them,
+    so coverage figures could be quoted over fewer members than the release
+    holds -- where the recovery probe, on the same drops, refuses."""
+    with pytest.raises(SystemExit, match="READING reason"):
+        _crosscheck(tmp_path, {
+            "ambiguous.zip": {"a.xml": b"<a/>", "b.xml": b"<b/>"}})
+
+
+def test_the_crosscheck_only_REPORTS_a_member_that_was_never_a_label(tmp_path):
+    """The control: a manifest is `skipped_`, not `dropped_`."""
+    assert _crosscheck(tmp_path, {"manifest.txt": None}) == 0
