@@ -195,7 +195,8 @@ def finish_run(conn: psycopg.Connection, run_id: int) -> None:
     VOUCHES FOR (db/054, #176), and this is the only place in the project that writes
     it. The flag's claim is about BOTH stamps, so it belongs where the SECOND one is
     written: `open_run` could only ever have promised it about a value that did not
-    exist yet.
+    exist yet. Since db/055 (#182) a trigger enforces it: the flag may turn true only
+    in the UPDATE that writes the first `finished_at` -- this one -- and is then frozen.
 
     THAT PLACEMENT IS WHAT MAKES db/054's DEFAULT ARGUMENT HOLD. `DEFAULT false`
     governs INSERTs, and `finished_at` arrives by UPDATE -- so a flag set at INSERT is

@@ -5455,6 +5455,28 @@ No critical finding; what changed:
 Not changed: startup-time notices (sent before psycopg installs any handler) should go to libpq's own stderr
 printer, unformatted — visible, not lost (read from psycopg's source, not reproduced live).
 
+## The measured-floor round (2026-10-29) — issue #182, `db/055`
+
+`db/054` forbade backfilling `duration_measured` in prose only; `UPDATE … SET duration_measured = true` worked
+and its result was indistinguishable from a measured row. `db/055` adds `forbid_duration_measured_rewrite()`
+under two `WHEN`-gated triggers on `ingest_run` (so every UPDATE with no true flag in it skips the function):
+
+1. **INSERT with `duration_measured = true` is refused** — nothing measured it.
+2. **`false → true` only where `OLD.finished_at IS NULL AND NEW.finished_at IS NOT NULL`** — the statement that
+   writes the first stamp. That answers the issue's design question ("never true except in the statement that
+   writes `finished_at`" IS expressible in a trigger) and admits `finish_run` while refusing any backfill of
+   finished rows, and a flag set on an open run.
+3. **Once true, the flag, `started_at` and `finished_at` are frozen.** Added beyond the issue's literal ask:
+   the flag vouches for those two values, so rewriting a stamp under it is the backfill by a side door.
+
+**What it does NOT stop, stated in the migration:** a hand-written `SET finished_at = now(), duration_measured =
+true` on a still-open row is indistinguishable from `finish_run` (a forgery, not a backfill); and a table owner
+can `DISABLE TRIGGER`, as `db/001` says of its own floor. An operator finishing a crashed run by hand
+(`SET finished_at` alone) is untouched and still lands unmeasured.
+
+Tests: `tests/test_ingest_run_measured_floor.py`, +8 (`finish_run` through the real `open_run`, each rule shown
+REFUSING, the three frozen columns parametrised, the hand-finish still admitted). Suite **2706 → 2714**.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5507,18 +5529,16 @@ rather than aborting** on an unmigrated database, alone among the six guarded si
 § "The watershed round" and § "The review round".
 
 **[#179](https://github.com/cairn-ehr/drugref/issues/179) four tools deaf to the server, and none configured
-logging** — **FIXED by PR #183, closes on merge** (three tools, not four: the issue's fourth, `spl_make_fixture`,
+logging** — **CLOSED by PR #183 (merged 2026-10-23)** (three tools, not four: the issue's fourth, `spl_make_fixture`,
 does not connect): the three bare `psycopg.connect` calls go through `db.connect`, every
 `tools/` entry point calls `server_messages.configure_logging`, and a source scan fails on a new bare connect
 or an entry point without the call — § "The tools-channel round".
 
 **[#182](https://github.com/cairn-ehr/drugref/issues/182) `db/054`'s no-backfill rule has no mechanism** —
-**OPEN, filed by the #181 review round.** The migration forbids `UPDATE … SET duration_measured = true WHERE
-started_at >= …` in prose only. Moving the write to `finish_run` closed the ACCIDENTAL path (a crashed run
-finished by hand); a deliberate backfill still works, and its result is permanently indistinguishable from a
-measured row. The repo already has the shape — `db/030`'s `forbid_any_rewrite()` over fourteen tables, and
-`db/001`'s `forbid_claim_rewrite` for a COLUMN-scoped floor. The design question is the narrow invariant:
-`finish_run` legitimately flips `false → true`, so "may not change" is the wrong rule.
+**FIXED by `db/055`, closes on merge** (filed by the #181 review round). The prose prohibition is now a trigger
+floor on `ingest_run`: no INSERT may set `duration_measured`; `false → true` only in the UPDATE writing the
+row's FIRST `finished_at` (which is `finish_run`, and never a backfill of finished rows); once true, the flag
+and both stamps are frozen — § "The measured-floor round".
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5687,7 +5707,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2706 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2714 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
