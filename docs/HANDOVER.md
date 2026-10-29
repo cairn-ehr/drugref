@@ -14,21 +14,26 @@
 ## ⇒ NEXT
 
 **Branch `claude/measured-floor` off `main`; PR OPEN against issue
-[#182](https://github.com/cairn-ehr/drugref/issues/182). THE SCHEMA NOW ENDS AT `db/055`.** PR #183 (#179, the
+[#182](https://github.com/cairn-ehr/drugref/issues/182). THE SCHEMA NOW ENDS AT `db/056`.** PR #183 (#179, the
 tools channel) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**, and
 a test enforces that — `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ JUST FINISHED — THE MEASURED-FLOOR ROUND, CLOSING [#182](https://github.com/cairn-ehr/drugref/issues/182)**
 (full account: PROJECT-NOTES § "The measured-floor round").
 
-**⇒ WHAT SHIPPED.** `db/055` puts a trigger floor under `ingest_run.duration_measured`, which `db/054` protected
-with prose only: no INSERT may set it; `false → true` only in the UPDATE writing the row's FIRST `finished_at`
-(that is `provenance.finish_run`, and never a backfill of finished rows); once true, the flag and both stamps
-are frozen. `WHEN` clauses keep it off every UPDATE without a true flag. The migration states what it does not
-stop (a hand-forged `finish_run` on an open row; a table owner's `DISABLE TRIGGER`).
+**⇒ WHAT SHIPPED.** `db/055` + `db/056` put a trigger floor under `ingest_run.duration_measured`, which `db/054`
+protected with prose only: no INSERT may set it; a written `finished_at` never returns to NULL; `false → true`
+only in the UPDATE writing the row's first `finished_at` (that is `provenance.finish_run`); once true, the flag
+and both stamps are frozen. The migrations state what they do not stop (a hand-forged `finish_run` on a run that
+is really open; a table owner's `DISABLE TRIGGER`).
 
-**⇒ VERIFIED.** `tests/test_ingest_run_measured_floor.py` (+8) shows every rule refusing and `finish_run`
-passing through the real `open_run`. `uv run pytest` green at **2714**; `ruff check .` clean.
+**⇒ THE REVIEW ROUND.** Three agent reviewers on PR #184 found `db/055` still let a backfill through in two
+statements (reopen `finished_at` to NULL, then pose as `finish_run`). `db/056` closes it; it is a new file
+because `db/055` was already in the test DB's ledger, so `db/055`'s own header is true only with `db/056` applied.
+
+**⇒ VERIFIED.** `tests/test_ingest_run_measured_floor.py` shows every rule refusing, each matched on its own
+message, plus `finish_run` and an ordinary write to a measured row passing. `uv run pytest` green;
+`ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 
@@ -73,7 +78,7 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   **`options='-c role=…'` in a DSN runs an ingest AS another role** with no authentication story.
   `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
   (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
-  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`, which adds only triggers), so every runtime they show now
+  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
   reads `unmeasured` until re-ingested — intended, not a regression.**
   **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
   it (`apply_migrations` is checksum-immutable).
