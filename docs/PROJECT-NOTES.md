@@ -5455,6 +5455,47 @@ No critical finding; what changed:
 Not changed: startup-time notices (sent before psycopg installs any handler) should go to libpq's own stderr
 printer, unformatted — visible, not lost (read from psycopg's source, not reproduced live).
 
+## The measured-floor round (2026-10-29) — issue #182, `db/055` + `db/056`
+
+`db/054` forbade backfilling `duration_measured` in prose only; `UPDATE … SET duration_measured = true` worked
+and its result was indistinguishable from a measured row. `db/055` adds `forbid_duration_measured_rewrite()`
+under two `WHEN`-gated triggers on `ingest_run`; `db/056` (the review round, below) replaces the function and the
+UPDATE trigger. An UPDATE of an unmeasured row that neither sets the flag nor withdraws `finished_at` skips the
+function. The rules:
+
+1. **INSERT with `duration_measured = true` is refused** — nothing measured it.
+2. **A written `finished_at` never returns to NULL** (`db/056`). Without it, rule 3's "first stamp" was only
+   "NULL → value".
+3. **`false → true` only where `OLD.finished_at IS NULL AND NEW.finished_at IS NOT NULL`** — with rule 2, the
+   statement that writes the row's first stamp. That answers the issue's design question ("never true except in
+   the statement that writes `finished_at`" IS expressible in a trigger, but needs rule 2 to mean it) and admits
+   `finish_run` while refusing any backfill of finished rows, and a flag set on an open run.
+4. **Once true, the flag, `started_at` and `finished_at` are frozen.** Added beyond the issue's literal ask:
+   the flag vouches for those two values, so rewriting a stamp under it is the backfill by a side door. A second
+   `finish_run` on the same row now raises; no orchestrator calls it twice.
+
+**What it does NOT stop, stated in the migrations:** a hand-written `SET finished_at = now(), duration_measured =
+true` on a run that really is still open is indistinguishable from `finish_run` (a forgery, not a backfill); and a
+table owner can `DISABLE TRIGGER`, as `db/001` says of its own floor. An operator finishing a crashed run by hand
+(`SET finished_at` alone) is untouched and still lands unmeasured.
+
+### The review round (2026-10-29) — three agent reviewers on PR #184, `db/056`
+
+- **The two-statement backfill.** `SET finished_at = NULL` on a finished, unmeasured row involved no true flag,
+  so `db/055`'s gate never ran; the row then looked open and `SET finished_at = <old>, duration_measured = true`
+  passed as `finish_run`. Reproduced on `drugref_test`. Fixed in a NEW file, `db/056`, because `db/055` was
+  already in the test DB's checksummed ledger — so `db/055`'s header and the comments that say "a backfill
+  cannot do this" are true only with `db/056` applied, and `db/056`'s header says so.
+- **The tests could not say which rule fired**: every RAISE contained "duration_measured", and with the frozen
+  rule deleted every frozen test still passed via the backfill rule. Each test now matches a phrase only its own
+  rule raises.
+- Added: the reopen refusal, `finished_at = NULL` and a second `finish_run` on a measured row, and a positive
+  write (`upstream_release`) on a measured row so "refuse every UPDATE of a measured row" fails a test. The
+  hot-path test no longer calls the committing `open_run`, which had left an unfinished UNII row in the shared
+  test schema.
+
+Tests: `tests/test_ingest_run_measured_floor.py`, +12. Suite **2706 → 2718**.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5507,18 +5548,17 @@ rather than aborting** on an unmigrated database, alone among the six guarded si
 § "The watershed round" and § "The review round".
 
 **[#179](https://github.com/cairn-ehr/drugref/issues/179) four tools deaf to the server, and none configured
-logging** — **FIXED by PR #183, closes on merge** (three tools, not four: the issue's fourth, `spl_make_fixture`,
+logging** — **CLOSED by PR #183 (merged 2026-10-29)** (three tools, not four: the issue's fourth, `spl_make_fixture`,
 does not connect): the three bare `psycopg.connect` calls go through `db.connect`, every
 `tools/` entry point calls `server_messages.configure_logging`, and a source scan fails on a new bare connect
 or an entry point without the call — § "The tools-channel round".
 
 **[#182](https://github.com/cairn-ehr/drugref/issues/182) `db/054`'s no-backfill rule has no mechanism** —
-**OPEN, filed by the #181 review round.** The migration forbids `UPDATE … SET duration_measured = true WHERE
-started_at >= …` in prose only. Moving the write to `finish_run` closed the ACCIDENTAL path (a crashed run
-finished by hand); a deliberate backfill still works, and its result is permanently indistinguishable from a
-measured row. The repo already has the shape — `db/030`'s `forbid_any_rewrite()` over fourteen tables, and
-`db/001`'s `forbid_claim_rewrite` for a COLUMN-scoped floor. The design question is the narrow invariant:
-`finish_run` legitimately flips `false → true`, so "may not change" is the wrong rule.
+**FIXED by `db/055` + `db/056`, closes on merge** (filed by the #181 review round). The prose prohibition is now a
+trigger floor on `ingest_run`: no INSERT may set `duration_measured`; a written `finished_at` never returns to
+NULL; `false → true` only in the UPDATE writing the row's first `finished_at` (which is `finish_run`, and —
+given the previous rule — never a backfill of finished rows); once true, the flag and both stamps are frozen —
+§ "The measured-floor round".
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5687,7 +5727,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2706 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2718 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

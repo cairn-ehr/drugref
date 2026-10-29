@@ -13,39 +13,33 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/tools-notice-channel` off `main`; PR OPEN against issue
-[#179](https://github.com/cairn-ehr/drugref/issues/179). THE SCHEMA STILL ENDS AT `db/054`** (no migration this
-round). #181 (the watershed column, #176) is MERGED. The suite total lives in PROJECT-NOTES § "How to run /
-test" and **nowhere else**, and a test enforces that — `uv run pytest` fails if the line and the collected
-suite disagree.
+**Branch `claude/measured-floor` off `main`; PR OPEN against issue
+[#182](https://github.com/cairn-ehr/drugref/issues/182). THE SCHEMA NOW ENDS AT `db/056`.** PR #183 (#179, the
+tools channel) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**, and
+a test enforces that — `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED — THE TOOLS-CHANNEL ROUND, CLOSING [#179](https://github.com/cairn-ehr/drugref/issues/179)**
-(full account: PROJECT-NOTES § "The tools-channel round").
+**⇒ JUST FINISHED — THE MEASURED-FLOOR ROUND, CLOSING [#182](https://github.com/cairn-ehr/drugref/issues/182)**
+(full account: PROJECT-NOTES § "The measured-floor round").
 
-**⇒ #174'S CHANNEL WAS STILL DARK UNDER `tools/`, FOR TWO REASONS.** Three tools (`spl_recovery_probe`,
-`spl_registry`, `drugcentral_ddi_spike`) opened a bare `psycopg.connect` — no notice handler. And no tool
-configured logging, so the root logger had no handler and every NOTICE mapped to INFO was dropped even
-through `db.connect`.
+**⇒ WHAT SHIPPED.** `db/055` + `db/056` put a trigger floor under `ingest_run.duration_measured`, which `db/054`
+protected with prose only: no INSERT may set it; a written `finished_at` never returns to NULL; `false → true`
+only in the UPDATE writing the row's first `finished_at` (that is `provenance.finish_run`); once true, the flag
+and both stamps are frozen. The migrations state what they do not stop (a hand-forged `finish_run` on a run that
+is really open; a table owner's `DISABLE TRIGGER`).
 
-**⇒ WHAT SHIPPED.** `server_messages.configure_logging(level="info")` is the one home for the log format;
-`cli.main` calls it, and so does every `tools/*.py` `__main__` block (nine). The three connects use
-`db.connect`. `tests/test_tools_server_channel.py` source-scans both rules with a floor on how much the scans
-must find, and tests the helper in a **subprocess** (pytest's root handlers make `basicConfig` a no-op
-in-process, so an in-process test could not fail).
+**⇒ THE REVIEW ROUND.** Three agent reviewers on PR #184 found `db/055` still let a backfill through in two
+statements (reopen `finished_at` to NULL, then pose as `finish_run`). `db/056` closes it; it is a new file
+because `db/055` was already in the test DB's ledger, so `db/055`'s own header is true only with `db/056` applied.
 
-**⇒ VERIFIED, THEN REVIEWED.** Four agent reviewers (code, tests, comments, silent failures): no critical
-finding. Fixed in the same PR — the scans now **parse** source (substrings were fooled by aliases, `from psycopg
-import connect`, single-quoted guards, a call after `main()`), cover **`src/` too** (all but `db.py`),
-`configure_logging` falls back to **`$DRUGREF_LOG_LEVEL`** (tools had no way to show DEBUG; `drugref
---log-level` honours it too), and four comments were corrected. `uv run pytest` green at **2706**; `ruff check
-.` clean; every touched tool runs `--help`.
+**⇒ VERIFIED.** `tests/test_ingest_run_measured_floor.py` shows every rule refusing, each matched on its own
+message, plus `finish_run` and an ordinary write to a measured row passing. `uv run pytest` green;
+`ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#182](https://github.com/cairn-ehr/drugref/issues/182)** — `db/054`'s no-backfill rule is prose only;
-   needs a narrow trigger (`finish_run` legitimately flips `false → true`). Then **#163–#166**, **#168–#171**.
+1. **#163–#166**, **#168–#171** — the small filed follow-ups.
 2. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — seven modules over rule 4's cap**, `questions.py`
    at **797** down to `ingest/spl_match.py` at **524**, each a small self-contained round. Precedent is three
    deep (`spl_release.py`, `cli_status.py`, `registry_read.py`); the rule is always the same — find the SEAM,
@@ -63,9 +57,8 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#176 is CLOSED
-by the round before; #179 by this one.** Open: **#177** (seven over the cap), **#182** (db/054's no-backfill rule has no mechanism — filed by #181's
-review), **#163–#166**, **#168–#171**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#179 is CLOSED
+(PR #183); #182 closes with this PR.** Open: **#177** (seven over the cap), **#163–#166**, **#168–#171**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #151–#153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -85,7 +78,7 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   **`options='-c role=…'` in a DSN runs an ingest AS another role** with no authentication story.
   `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
   (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
-  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054`, so every runtime they show now
+  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
   reads `unmeasured` until re-ingested — intended, not a regression.**
   **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
   it (`apply_migrations` is checksum-immutable).

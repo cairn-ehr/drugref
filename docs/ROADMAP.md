@@ -1065,6 +1065,13 @@ Full account: PROJECT-NOTES § "The tools-channel round". Three `tools/` scripts
 connect through `db.connect`, every tool entry point calls the new `server_messages.configure_logging` —
 also `cli.main`'s, so the log format has one home — and a source scan fails on either regression.
 
+**⇒ THE MEASURED-FLOOR ROUND ✅ DONE (2026-10-29) — issue #182, `db/055` + `db/056`.**
+Full account: PROJECT-NOTES § "The measured-floor round". `db/054`'s no-backfill rule for `duration_measured`
+was prose only; a trigger floor now refuses an INSERT claiming a measurement, a written `finished_at` returning
+to NULL (`db/056`, closing the two-statement backfill the PR #184 review found), a `false → true` flip anywhere
+but the UPDATE writing the run's first `finished_at` (`finish_run`), and any change to the flag or either stamp
+once true.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
