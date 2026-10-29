@@ -5505,16 +5505,22 @@ Five of the eight small SPL follow-ups filed by the #161 and #167 reviews, plus 
   size before `read()`: `MAX_OUTER_MEMBER_BYTES` (160 MiB) for an outer member, `MAX_LABEL_XML_BYTES` (32 MiB)
   for the label XML. **Measured on the 2026-08-21 Human Rx release** (all six parts): largest outer member
   15,700,018 bytes, largest inner member — always the XML — 3,212,601; each ceiling is ≥ 10× that. The declared
-  size is a real bound: a forged-size member was reproduced, and zipfile stops at the declared size and raises
-  `BadZipFile` (already a counted drop). Past a ceiling, the walker **raises `ValueError` naming the member**. It
+  size ALONE is not a bound (corrected in the PR #185 review): `ZipFile.read` inflates up to 1 GiB per call
+  before trimming to the declared size, so a 200 KB member declaring 100 bytes still put 200 MiB in memory before
+  its CRC failed. `_read_bounded` therefore reads through `open(...).read(ceiling)`, which deflate honours as a
+  maximum output length, and refuses bzip2/lzma members (which inflate each chunk whole) by name; the forgery
+  then fails its CRC as `BadZipFile`, already a counted drop. Past a ceiling, the walker **raises `ValueError` naming the member**. It
   is not a new `SKIP_REASONS` entry: that would be the 12th counter, which #169 names as its own trigger.
   The scan runs before `open_run`, so the database is untouched.
 - **#168 — duplicated vocabulary and a second walker.** `tools/spl_dailymed_crosscheck.py`'s own
   `iter_release_labels` is deleted. It and `tools/spl_recovery_probe.py` walk `spl_release`'s, pinned by
-  identity. The probe now refuses on a member-level DROP, with the verdict read off `ScanResult`'s
-  `dropped_`/`skipped_` field names rather than retyped. `tools/spl_subject_read.py` reads
+  identity. The probe AND the crosscheck now refuse on a member-level DROP, the verdict being
+  `spl_release.is_member_drop` — which FAILS SAFE (PR #185 review): only a reason with a `skipped_` field on
+  `ScanResult` is let through, and a test pins one field per `SKIP_REASONS` entry, since `scan_release` reads its
+  tally by hard-coded name and would not notice a new reason. `tools/spl_subject_read.py` reads
   `spl_dailymed._ACTIVE_CLASS_CODES` at call time, pinned by monkeypatching the shipped set. Side effect: the
-  tools' `document_id` is now the outer member name, not the XML stem; nothing reads it back.
+  walker yields the outer member name, not the XML stem, so the probe's JSONL key is now `release_member`
+  (was `document_id`); nothing reads it back.
 - **#171 — census lost finished parts.** `census_release(on_part=…)`; `main` prints one `part-census {json}`
   line to stderr per finished part, so a crash on part 6 leaves parts 1–5 on disk. Per-part catching was not
   added.
@@ -5534,7 +5540,7 @@ Five of the eight small SPL follow-ups filed by the #161 and #167 reviews, plus 
   524. Its suppression half (`parse_suppression_terms`, `NextWordProfile`, `SuppressionCandidate`,
   `next_word_profiles`, `suppression_candidates`, `shipped_suppression_terms`, `SUPPRESSION_DATA`) moved
   **verbatim** to `ingest/spl_suppress.py`, suite green, then the behaviour changes went in.
-  `spl_match.py` 524 → 359 and is **off the ledger**; six modules remain on #177.
+  `spl_match.py` 524 → 359 by the move (#165's checks then grew it) and is **off the ledger**; six modules remain on #177.
 
 **Left open deliberately:** #164 (fix the comment when a migration next touches that function, as the issue
 says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: parser, dedupe, census and tests).
@@ -5775,7 +5781,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2737 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2750 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

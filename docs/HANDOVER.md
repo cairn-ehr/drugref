@@ -20,15 +20,19 @@ test" and **nowhere else**; `uv run pytest` fails if the line and the collected 
 **⇒ JUST FINISHED — THE SPL FOLLOW-UPS ROUND** (full account: PROJECT-NOTES § "The SPL follow-ups round").
 
 **⇒ WHAT SHIPPED.** The release walker refuses a member whose declared size exceeds a ceiling ≥ 10× the largest
-real one (measured: 15.7 MB outer, 3.2 MB XML) before decompressing it (#166). The crosscheck/probe tools walk the
+real one (measured: 15.7 MB outer, 3.2 MB XML) before decompressing it, and reads at most what a member declares
+(+1), so a forged header cannot inflate a bomb past the check; bzip2/lzma members are refused by name (#166). The crosscheck/probe tools walk the
 shipped reader and `spl_subject_read` reads the shipped classCode set (#168). The census emits each part as it
 finishes (#171). The frozen SPL types copy their mappings, and the matcher refuses an empty `Match`, a suppression
 term on a name's key, and an over-full `NextWordProfile` (#165). The openFDA arm counts absent vs blank records and
 document-id-keyed labels, reconciled against records (#163). **`spl_match.py`'s suppression half moved verbatim to
-`spl_suppress.py` (524 → 359), so it left #177's ledger.**
+`spl_suppress.py` (524 → 359 by the move), so it left #177's ledger.**
 
-**⇒ VERIFIED.** `uv run pytest` green with the DB; `ruff check .` clean. One agent reviewer read the diff before
-the PR.
+**⇒ VERIFIED.** `uv run pytest` green with the DB; `ruff check .` clean. A five-agent PR review found the size
+cap bypassable by a forged header (reproduced: 355 MiB peak for a 200 KB member declaring 100 bytes; 0.1 MiB
+after), `Vocabulary`/`NextWordProfile` still holding live dicts, and the probe's skip verdict failing open — all
+fixed in the PR. Deferred to **#186** (persist #163's counts per run), **#187** (refuse negative counts),
+**#188** (census per-part class codes).
 
 ## ⇒ DO THIS NEXT
 

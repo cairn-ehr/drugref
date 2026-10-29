@@ -39,21 +39,23 @@ from drugref.ingest.spl_dailymed import (
 )
 
 #: ⇒ ISSUE #166: CEILINGS ON WHAT THIS READER WILL DECOMPRESS, checked against the
-#: archive's DECLARED size before `read()`, so a compression bomb is refused before
-#: it reaches memory. The declared size is a real bound: zipfile stops reading at
-#: it and raises `BadZipFile` (a counted drop) on a member that lied about it.
+#: archive's DECLARED size, and then enforced by reading at most the ceiling --
+#: the declared size alone is no bound, because `ZipFile.read` inflates up to
+#: 1 GiB before trimming to it. See `_read_bounded`.
 #: Measured on the 2026-08-21 Human Rx release, the largest outer member is
-#: 15,700,018 bytes and the largest label XML 3,212,601; each ceiling is ten times
-#: that, rounded up to whole MiB. A member past either is not a label.
+#: 15,700,018 bytes and the largest label XML 3,212,601; each ceiling is at least
+#: ten times that, in whole MiB. A member past either is not a label.
 MAX_OUTER_MEMBER_BYTES = 160 * 2**20
 MAX_LABEL_XML_BYTES = 32 * 2**20
 
 #: Every reason `iter_release_labels` can decline a member, in ONE place.
 #:
 #: `scan_release` builds its tally with `dict.fromkeys(SKIP_REASONS, 0)` and
-#: indexes it directly, so a reason added here without a home in `ScanResult`
-#: fails loudly at the call site, and a reason passed to `on_skip` that is not
-#: here raises `KeyError` rather than evaporating. `tools/spl_skip_census.py`
+#: indexes it directly, so a reason passed to `on_skip` that is not here raises
+#: `KeyError` rather than evaporating. A reason added HERE without a home in
+#: `ScanResult` would NOT fail by itself -- `scan_release` reads the tally by
+#: hard-coded name -- so a test pins one field per reason, and `is_member_drop`
+#: treats a reason with no `skipped_` field as a drop. `tools/spl_skip_census.py`
 #: reads the same tuple.
 SKIP_REASONS = (
     "not_a_member_zip", "no_xml_member", "several_xml_members",
@@ -190,6 +192,18 @@ class ScanResult:
         """
         return sum(getattr(self, field.name) for field in fields(self)
                    if field.name.startswith("dropped_"))
+
+
+def is_member_drop(reason: str) -> bool:
+    """Whether a member declined for `reason` is a lost label (refuse) rather
+    than a member that was never a label (report).
+
+    Read off `ScanResult`'s field names, never retyped by a caller. FAIL SAFE:
+    only a reason with a `skipped_` field is let through, so a reason nobody
+    declared counts as a drop -- an uncounted skip would be republished as
+    `absent_from_dailymed`.
+    """
+    return f"skipped_{reason}" not in {field.name for field in fields(ScanResult)}
 
 
 def describe_reported_skips(scan: ScanResult) -> str:
@@ -337,7 +351,10 @@ def scan_release(
 def iter_release_labels(
     part_path: str, *, on_skip: Callable[[str, str], None],
 ) -> Iterator[tuple[str, bytes]]:
-    """Yield `(document_id, xml_bytes)` for every label in one release part.
+    """Yield `(member, xml_bytes)` for every label in one release part.
+
+    `member` is the OUTER zip member's name (`.../<x>.zip`), not the XML file's
+    stem -- callers that bind it as `document_id` are holding a member name.
 
     Each outer member is itself a zip holding the XML plus the label's images;
     only the SOLE `.xml` member is read, so the images never leave the archive --
@@ -359,8 +376,9 @@ def iter_release_labels(
     with every counter reading clean. The `.xml` search inside is
     case-insensitive for the same reason.
 
-    ⇒ AN OVERSIZED MEMBER RAISES `ValueError` NAMING IT, rather than being
-    skipped: see `MAX_OUTER_MEMBER_BYTES`. It is not a reason in `SKIP_REASONS`
+    ⇒ AN OVERSIZED MEMBER -- or one compressed with a method a capped read
+    cannot cap -- RAISES `ValueError` NAMING IT, rather than being skipped: see
+    `MAX_OUTER_MEMBER_BYTES` and `_read_bounded`. It is not a reason in `SKIP_REASONS`
     because it is not a label this reader failed to read -- it is a release that
     is not what NLM ships, and the run stops before its row exists.
     """
@@ -374,9 +392,8 @@ def iter_release_labels(
                 # is not a skip either, so reporting it would pad the count of
                 # members that "were never label containers".
                 continue
-            _refuse_oversized(outer.getinfo(name), MAX_OUTER_MEMBER_BYTES, name)
             try:
-                member_bytes = outer.read(name)
+                member_bytes = _read_bounded(outer, name, MAX_OUTER_MEMBER_BYTES, name)
             except (zipfile.BadZipFile, RuntimeError, EOFError, OSError):
                 # A CRC failure, or a member encrypted with a password we do not
                 # have. Previously raised out of the generator naming nothing.
@@ -415,15 +432,41 @@ def _sole_xml_of(
             # everywhere else.
             skip(name, "several_xml_members")
             return None
-        _refuse_oversized(inner.getinfo(xml_names[0]), MAX_LABEL_XML_BYTES, name)
-        return inner.read(xml_names[0])
+        return _read_bounded(inner, xml_names[0], MAX_LABEL_XML_BYTES, name)
 
 
-def _refuse_oversized(info: zipfile.ZipInfo, ceiling: int, member: str) -> None:
-    """Raise, naming the release member, if `info` declares more than `ceiling`."""
+#: The compression methods whose decompression a capped `read(n)` really caps.
+#: Deflate inflates with a maximum output length; bzip2 and lzma inflate each
+#: input chunk WHOLE, so for them a capped read does not cap memory.
+_BOUNDED_METHODS = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+
+
+def _read_bounded(
+    archive: zipfile.ZipFile, inner_name: str, ceiling: int, member: str,
+) -> bytes:
+    """`inner_name`'s bytes, never decompressing more than it declares (+1).
+
+    Raises `ValueError`, naming the release member, for a member that DECLARES
+    more than `ceiling` or uses a method a capped read cannot cap (issue #166).
+    The declared size alone is no bound: `ZipFile.read` inflates up to 1 GiB per
+    call before trimming to it, so a forged header slips a bomb past a check on
+    it. Asking for `file_size + 1` makes deflate inflate at most that much, and
+    the extra byte guarantees the read reaches end-of-member, where zipfile
+    checks the CRC -- even for a declared size of 0, where `read(0)` checks
+    nothing. A member that lied then fails as `BadZipFile`, which the caller
+    counts.
+    """
+    info = archive.getinfo(inner_name)
     if info.file_size > ceiling:
         raise ValueError(
             f"release member {member!r}: {info.filename!r} declares "
             f"{info.file_size:,} bytes, which exceeds the {ceiling:,}-byte "
             "ceiling -- no real label is that large (issue #166); refusing "
             "rather than decompressing it")
+    if info.compress_type not in _BOUNDED_METHODS:
+        raise ValueError(
+            f"release member {member!r}: {info.filename!r} uses compression "
+            f"method {info.compress_type}, whose decompression a capped read "
+            "cannot cap -- NLM ships deflate (issue #166); refusing it")
+    with archive.open(info) as stream:
+        return stream.read(info.file_size + 1)

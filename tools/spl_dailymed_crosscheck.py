@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from drugref import server_messages
 # The SHIPPED walker, never a copy (issue #168): this module kept its own, which
 # predated the skip counters, so its figures were measured by an unshipped reader.
-from drugref.ingest.spl_release import iter_release_labels
+from drugref.ingest.spl_release import is_member_drop, iter_release_labels
 
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
@@ -57,6 +57,9 @@ _DOC_CODE = re.compile(rb'<code[^>]*\scode="(34391-3|34390-5|[0-9]{4,6}-[0-9])"'
 class LabelScan:
     """The cheap pass's result for one label."""
 
+    #: The release MEMBER's name (`.../<x>.zip`), as `iter_release_labels`
+    #: yields it -- the XML file's stem only before #168 retired this tool's own
+    #: walker.
     document_id: str
     set_id: str | None
     doc_code: str | None
@@ -230,8 +233,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"    of which prescription          {rx_with_section:>9,}")
     print(f"  set_id present in openFDA        {in_openfda:>9,}")
     print(f"  set_id MISSING from openFDA      {missing_from_openfda:>9,}")
+    member_drops = 0
     for reason, count in sorted(skips.items()):
-        print(f"  member skipped: {reason:<17}{count:>9,}")
+        dropped = is_member_drop(reason)
+        member_drops += count if dropped else 0
+        verdict = "dropped" if dropped else "skipped"
+        print(f"  member {verdict}: {reason:<17}{count:>9,}")
+    if member_drops:
+        # The recovery probe refuses on the same drops: coverage quoted over
+        # fewer members than the release holds is not a coverage figure.
+        raise SystemExit(
+            "members were dropped for a READING reason; the coverage above "
+            "undercounts the release. Fix before quoting.")
 
     print("\n=== FIDELITY OF openFDA's drug_interactions FIELD ===")
     if not containments:

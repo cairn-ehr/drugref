@@ -43,6 +43,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 #: Tokens are maximal runs of ASCII letters and digits. Everything else --
 #: hyphens, parentheses, commas, whitespace -- is a separator. This is what makes
@@ -161,7 +162,9 @@ class Vocabulary:
     max_tokens_by_first: Mapping[str, int]
 
     def __post_init__(self) -> None:
-        """Both maps are DERIVED from `by_key`, and stored beside it.
+        """Every key carries entries, and no suppression term shares a key with a
+        name or class (#165). Then: both maps are DERIVED from `by_key`, and
+        stored beside it.
 
         `build_vocabulary` computes them correctly; nothing said so. A vocabulary
         built by hand -- a future test, a second builder -- with a short
@@ -170,11 +173,17 @@ class Vocabulary:
         slice's floors exist to catch at enormous expense. O(19,000) once,
         against a 19.3 GB scan.
         """
+        # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
+        # read-only view so no later write can undo the checks below (#165).
+        # The proxy costs ~16 ns a lookup -- under a second over the whole scan.
+        for name in ("by_key", "max_tokens_by_first"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         for key, entries in self.by_key.items():
-            # ⇒ A SUPPRESSION TERM FOLDING ONTO A NAME (#165). `moiety_occurrences`
-            # would skip the suppress entry and still emit the name, flagged
-            # `match_ambiguous` -- so the suppression silently stops working AND
-            # the flag stops meaning db/051's "more than one registry entry".
+            # ⇒ A SUPPRESSION TERM FOLDING ONTO A NAME OR CLASS (#165).
+            # `moiety_occurrences` would skip the suppress entry and still emit
+            # the name, flagged `match_ambiguous` -- so the suppression silently
+            # stops working AND the flag stops meaning db/051's "more than one
+            # registry entry".
             kinds = {entry.kind for entry in entries}
             if not entries or (KIND_SUPPRESS in kinds and len(kinds) > 1):
                 raise ValueError(

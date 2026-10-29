@@ -289,8 +289,11 @@ class Corpus:
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
         # read-only view so no later `dict.update` can undo the checks below (#165).
+        # (A read-only view cannot be pickled, so `deepcopy`/`asdict` raise --
+        # nothing serialises these types; convert to `dict` first if one must.)
         for name in ("wordings", "label_counts"):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+        object.__setattr__(self, "labels", tuple(self.labels))
         if len(self.labels) + self.field_absent + self.field_blank != self.records:
             raise ValueError(
                 f"{len(self.labels)} sections + {self.field_absent} absent + "

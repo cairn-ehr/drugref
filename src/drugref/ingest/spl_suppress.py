@@ -1,7 +1,8 @@
 # src/drugref/ingest/spl_suppress.py
 """The SPL matcher's negative vocabulary: reading it, and the evidence behind it.
 
-Split out of `spl_match` under CLAUDE.md rule 4 (issue #177) by a verbatim move:
+Split out of `spl_match` under CLAUDE.md rule 4 (issue #177) by a verbatim move,
+after which #165 gave `NextWordProfile` its `__post_init__` check:
 that module RECOGNISES entities, and this one holds the suppression terms the
 recogniser is fed (`shipped_suppression_terms`) plus the corpus measurement a
 human rules on before a term is added (`next_word_profiles`,
@@ -13,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from importlib import resources
+from types import MappingProxyType
 
 from drugref.ingest.spl_match import KIND_MOIETY, Vocabulary, find_matches, tokenise
 
@@ -52,6 +54,8 @@ class NextWordProfile:
     def __post_init__(self) -> None:
         """Every following word follows an occurrence, so the counts are bounded
         by `occurrences` -- or `dominance` could exceed 1.0 (#165)."""
+        # Frozen as a copy, or a later write to the caller's dict undoes this.
+        object.__setattr__(self, "following", MappingProxyType(dict(self.following)))
         followed = sum(self.following.values())
         if followed > self.occurrences:
             raise ValueError(

@@ -62,10 +62,9 @@ import pathlib
 import re
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import fields
 
 from drugref import server_messages
-from drugref.ingest.spl_release import ScanResult, iter_release_labels
+from drugref.ingest.spl_release import is_member_drop, iter_release_labels
 from tools.spl_subject_read import (
     SubjectUniis,
     dedupe_by_set_id,
@@ -129,8 +128,9 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     **Every drop is counted.** ``labels_missing_from_dailymed`` is a set
     difference over what this stage wrote, so a document silently skipped here
     is republished downstream as a fact about the RELEASE -- "absent from
-    DailyMed" -- when it is a fact about the reading. Three counters keep the two
-    apart, and ``parse_failed`` is expected to be zero.
+    DailyMed" -- when it is a fact about the reading. Four document counters plus
+    the reader's member-level drops keep the two apart; any reading drop
+    refuses, and ``parse_failed`` is expected to be zero.
     """
     targets = orphan_label_targets(_cache_rows(cache))
     print(f"looking for {len(targets):,} labels across {len(parts)} release parts")
@@ -143,7 +143,7 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     with out.open("w") as handle:
         for part in parts:
             print(f"  scanning {part} ...", flush=True)
-            for document_id, xml_bytes in iter_release_labels(
+            for member, xml_bytes in iter_release_labels(
                     part, on_skip=lambda _member, reason: skips.update([reason])):
                 scanned += 1
                 match = _SET_ID.search(xml_bytes)
@@ -176,7 +176,9 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
                     json.dumps(
                         {
                             "set_id": recovered.set_id,
-                            "document_id": document_id,
+                            # Was `document_id`: since #168 it holds the
+                            # outer member's name, which is not one.
+                            "release_member": member,
                             "version": recovered.version,
                             "moiety_uniis": list(recovered.moiety_uniis),
                             "substance_uniis": list(recovered.substance_uniis),
@@ -193,12 +195,11 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     print(f"  dropped: unreadable / no setId    {no_set_id_tree:>9,}")
     print(f"  dropped: pre-filter disagreed     {disagreed:>9,}")
     print(f"  dropped: parse failed             {parse_failed:>9,}")
-    # A reason's verdict is READ off ScanResult's field names (`dropped_*` refuses,
-    # `skipped_*` is reported), never retyped here.
-    verdicts = {field.name for field in fields(ScanResult)}
+    # A reason's verdict is `spl_release`'s, never retyped here -- and it fails
+    # safe: a reason with no `skipped_*` field counts as a drop.
     member_drops = 0
     for reason, count in sorted(skips.items()):
-        dropped = f"dropped_{reason}" in verdicts
+        dropped = is_member_drop(reason)
         member_drops += count if dropped else 0
         label = "dropped" if dropped else "skipped"
         print(f"  {label}: member {reason:<19}{count:>9,}")

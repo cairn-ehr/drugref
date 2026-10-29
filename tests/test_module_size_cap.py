@@ -55,7 +55,7 @@ CAP = 500
 #: Filed as issue 177 -- and see issue 172, which is the one of these that WAS
 #: split (`spl_evidence.py`, 518 -> 428 by the move and 430 today, `Registry`/`load_registry` moved to
 #: `registry_read.py`) and is therefore not on the list. `ingest/spl_match.py` left
-#: the same way (524 -> 359, its suppression half moved to `spl_suppress.py`).
+#: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`).
 OVER_CAP_TODAY = {
     "questions.py": 797,
     "ingest/fda_cyp.py": 707,

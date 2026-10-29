@@ -302,6 +302,38 @@ def test_the_fixture_corpus_ingests_and_reconciles(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
+def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
+        conn, corpus, tmp_path):
+    """Issue #163's signal, end to end (PR #185 review). `SplSummary` only checks
+    `absent + blank` against the records, so binding absent to blank -- or
+    dropping the id-keyed count -- at the construction site passed every test.
+    THREE DISTINCT COUNTS, so any swap between them is visible."""
+    def bare(set_id, **fields):
+        return {"version": "1", "effective_time": "20240101",
+                "openfda": {}} | ({"set_id": set_id} if set_id else {}) | fields
+    extra = [
+        bare("ABSENT-1"), bare("ABSENT-2"),
+        bare("ABSENT-3", drug_interactions=None),        # explicit null: absent
+        bare("BLANK-1", drug_interactions=[]),
+        bare("BLANK-2", drug_interactions=["  ", ""]),
+        bare(None, id="DOCUMENT-ONLY-1", drug_interactions=[WORDING]),
+    ]
+    openfda_dir, parts = corpus
+    archive = openfda_dir / "drug-label-0001-of-0001.json.zip"
+    with zipfile.ZipFile(archive) as existing:
+        payload = json.loads(existing.read("drug-label-0001-of-0001.json"))
+    payload["results"] += extra
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as rewritten:
+        rewritten.writestr("drug-label-0001-of-0001.json", json.dumps(payload))
+
+    _seed_registry(conn)
+    summary = _ingest(conn, (openfda_dir, parts))
+    assert (summary.records_field_absent, summary.records_field_blank,
+            summary.labels_keyed_on_document_id) == (3, 2, 1)
+    assert summary.records_read == len(LABELS) + len(extra)
+
+
+@pytest.mark.usefixtures("_clean")
 def test_every_route_the_corpus_can_reach_is_taken(conn, corpus):
     """The fixture was chosen half-keyed and half-unkeyed for exactly this.
 
