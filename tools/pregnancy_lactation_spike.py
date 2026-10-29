@@ -22,7 +22,7 @@ import urllib.request
 from collections import Counter, defaultdict
 from typing import Any
 
-from drugref import db
+from drugref import db, server_messages
 from drugref.ingest import lactmed
 from drugref.ingest import regulatory_population as regulatory
 from drugref.ingest.checksum import checksum
@@ -472,4 +472,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     main()

@@ -54,6 +54,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from typing import Literal
 
+from drugref import server_messages
 from drugref.ingest import spl_dailymed as dm
 from drugref.ingest import spl_release
 
@@ -426,4 +427,6 @@ def _would_refuse(census: SkipCensus) -> bool:
 
 
 if __name__ == "__main__":
+    # No DB connection here: called for one log format per entry point (issue 179).
+    server_messages.configure_logging()
     raise SystemExit(main())

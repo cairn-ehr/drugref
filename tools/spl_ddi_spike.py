@@ -40,6 +40,7 @@ import pathlib
 import zipfile
 from collections.abc import Iterator
 
+from drugref import server_messages
 from tools.spl_ddi_report import measure
 from tools.spl_label_extract import Census, LabelSection, extract_section
 
@@ -179,4 +180,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    server_messages.configure_logging()  # server NOTICEs reach stderr (issue 179)
     raise SystemExit(main())

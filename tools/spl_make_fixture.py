@@ -42,6 +42,7 @@ import json
 import pathlib
 import xml.etree.ElementTree as ET
 
+from drugref import server_messages
 from drugref.ingest import spl, spl_dailymed, spl_release
 
 _SPL_NS = "urn:hl7-org:v3"
@@ -169,4 +170,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # No DB connection here: called for one log format per entry point (issue 179).
+    server_messages.configure_logging()
     raise SystemExit(main())

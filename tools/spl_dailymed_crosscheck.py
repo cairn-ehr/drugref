@@ -35,6 +35,8 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from drugref import server_messages
+
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
 
@@ -267,4 +269,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # No DB connection here: called for one log format per entry point (issue 179).
+    server_messages.configure_logging()
     raise SystemExit(main())

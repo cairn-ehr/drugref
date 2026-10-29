@@ -13,73 +13,39 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/watershed-column` off `main`; PR OPEN against issue
-[#176](https://github.com/cairn-ehr/drugref/issues/176). THE SCHEMA NOW ENDS AT `db/054`.** The suite total
-lives in PROJECT-NOTES § "How to run / test" and **nowhere else**, and a test enforces that — `uv run pytest`
-fails if the line and the collected suite disagree, which is how this round found its own drift twice rather
-than a reviewer finding it a round later.
+**Branch `claude/tools-notice-channel` off `main`; PR OPEN against issue
+[#179](https://github.com/cairn-ehr/drugref/issues/179). THE SCHEMA STILL ENDS AT `db/054`** (no migration this
+round). #181 (the watershed column, #176) is MERGED. The suite total lives in PROJECT-NOTES § "How to run /
+test" and **nowhere else**, and a test enforces that — `uv run pytest` fails if the line and the collected
+suite disagree.
 
-**⇒ JUST FINISHED — THE WATERSHED COLUMN, CLOSING [#176](https://github.com/cairn-ehr/drugref/issues/176)**
-(full account: PROJECT-NOTES § "The watershed round").
+**⇒ JUST FINISHED — THE TOOLS-CHANNEL ROUND, CLOSING [#179](https://github.com/cairn-ehr/drugref/issues/179)**
+(full account: PROJECT-NOTES § "The tools-channel round").
 
-**⇒ THE GUARD BUILT TO STOP A WRONG NUMBER STOOD BESIDE THE WRONG NUMBER SAYING NOTHING.** `db/053` changed what
-`ingest_run`'s two stamps MEAN and gave a reader nothing to tell the two meanings apart except a clock:
-`format_run_duration` compared `started_at` against **when db/053 was applied here**. That asks **WHEN** a row
-was written; the question is **WHICH CODE** wrote it, and nothing on the row recorded it. `db/054` adds
-`duration_measured boolean NOT NULL DEFAULT false`, set by **`provenance.finish_run`** and by nothing else,
-**in the same UPDATE that writes `finished_at`** — see the review round below for why not `open_run`.
+**⇒ #174'S CHANNEL WAS STILL DARK UNDER `tools/`, FOR TWO REASONS.** Three tools (`spl_recovery_probe`,
+`spl_registry`, `drugcentral_ddi_spike`) opened a bare `psycopg.connect` — no notice handler. And no tool
+configured logging, so the root logger had no handler and every NOTICE mapped to INFO was dropped even
+through `db.connect`.
 
-**⇒ BOTH DIRECTIONS REPRODUCED ON A REAL DATABASE.** An older client's INSERT takes db/053's `clock_timestamp()`
-DEFAULT and its old `finish_run` writes `now()`: **two seconds of `pg_sleep` recorded 666 µs**, cleared the CHECK and
-the watershed alike, and printed **`0.0s`** — #159's own failure mode, one round after it was fixed. The mirror case
-is the one no reader could see: `open_run` **backdates** `started_at` over the pre-open parse, so a correct new row
-could land before the watershed and be refused; its test reads the ledger to prove the row really straddles
-`applied_at`, or it would pass anywhere and prove nothing.
+**⇒ WHAT SHIPPED.** `server_messages.configure_logging(level="info")` is the one home for the log format;
+`cli.main` calls it, and so does every `tools/*.py` `__main__` block (nine). The three connects use
+`db.connect`. `tests/test_tools_server_channel.py` source-scans both rules with a floor on how much the scans
+must find, and tests the helper in a **subprocess** (pytest's root handlers make `basicConfig` a no-op
+in-process, so an in-process test could not fail).
 
-**⇒ NO ROW WAS BACKFILLED, AND THAT IS THE ROUND'S REAL DECISION** (yours, with both options on the table).
-Backfilling would have kept today's printed runtimes by **storing** the very inference the column removes. **Computed
-wrongly, a wrong answer can be corrected next round; written into a column, it becomes a fact nobody can tell from a
-measured one.** Cost is bounded and self-healing: each writer's next ingest records a real duration, and every
-existing verification database reads `unmeasured` until re-ingested — intended, not a regression.
-
-**⇒ THREE THINGS FOUND ON THE WAY PAST.** `db.migration_applied_at` went with its only caller (43 lines, three tests).
-`migration_guard.py` hand-listed **"ALL FIVE CALLERS"** and there were already more — replaced by a `grep` that cannot
-go stale, in the module whose subject is diagnoses that assert what they have not confirmed. And the script written to
-prove the re-issued catalog comments verbatim first reported them **identical**, because it scanned to the first `;`
-and db/053's comment holds one inside its string literal: **a reading identical on both versions is not evidence.**
-
-**⇒ THE REVIEW ROUND CHANGED THE MECHANISM, NOT THE PROSE ALONE.** Five agent reviews; the two that mattered:
-
-1. **THE GUARD WAS A REGRESSION WEARING A GUARD'S CLOTHES.** `print_loaded_release_block` is the **first** of
-   `status`' six blocks and `cli.main` renders a `RuntimeError` as one line, exit 2 — so on every database
-   between pulling this code and running `drugref migrate`, the new guard cost **all six blocks**; on `main`
-   that same database printed all six with `pre-db/053` everywhere. It now **degrades**: listing re-read from
-   db/025's columns, every row `unmeasured`, the guard's own sentence explaining it, the other five blocks
-   running. *Refuse the number, not the report* — this round's rule applied to itself.
-2. **THE FLAG MUST CERTIFY THE PAIR, SO `finish_run` WRITES IT.** `DEFAULT false` governs INSERTs and
-   `finished_at` arrives by **UPDATE**, so a flag set at INSERT was never covered by the default. An operator
-   tidying a crashed run by hand (`UPDATE … SET finished_at = now()`) got a row **claiming a measured duration
-   it never had** — #159's failure mode again, #176's own guard silent beside it. Written in `finish_run`, the
-   hand-rolled UPDATE does not name the column and the row keeps its `false`.
-
-Also: the operator note **stopped asserting a cause it could not confirm**; `format_run_duration` **refuses a
-negative interval** rather than printing `-2.4s`; two docstrings claimed a silent slip that **raises `TypeError`**;
-three more hand-kept tallies went, `cli.py`'s "five sites" among them. Full account in PROJECT-NOTES.
-
-**⇒ VERIFIED.** `uv run pytest` green at **2576**; CI's own shape (`-q --strict-markers -p no:randomly -rs -m "not
-livepage"`) green with **0 skipped, 1 deselected**; `uv run ruff check .` clean. **End-to-end rebuilt from nothing**
-on a scratch database (since dropped): migrate to `db/054`, a real `ingest unii` (**measured**), the old-client
-reproduction (**`unmeasured`**), a crashed run tidied by hand (**`unmeasured`** — the case the review added), then the
-view reduced to db/025's shape with db/054 un-applied: **all six blocks printed, exit 0**.
+**⇒ VERIFIED, THEN REVIEWED.** Four agent reviewers (code, tests, comments, silent failures): no critical
+finding. Fixed in the same PR — the scans now **parse** source (substrings were fooled by aliases, `from psycopg
+import connect`, single-quoted guards, a call after `main()`), cover **`src/` too** (all but `db.py`),
+`configure_logging` falls back to **`$DRUGREF_LOG_LEVEL`** (tools had no way to show DEBUG; `drugref
+--log-level` honours it too), and four comments were corrected. `uv run pytest` green at **2706**; `ruff check
+.` clean; every touched tool runs `--help`.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#179](https://github.com/cairn-ehr/drugref/issues/179)** — four committed tools open their own
-   `psycopg.connect` and are **deaf to the server** (the notice-channel round's defect one layer out); no tool
-   configures logging, so every NOTICE mapped to INFO is dropped under `tools/`. Wants a source-scan test like
-   `tests/test_spl_tools_smoke.py`'s. Then **#163–#166**, **#168–#171**.
+1. **[#182](https://github.com/cairn-ehr/drugref/issues/182)** — `db/054`'s no-backfill rule is prose only;
+   needs a narrow trigger (`finish_run` legitimately flips `false → true`). Then **#163–#166**, **#168–#171**.
 2. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — seven modules over rule 4's cap**, `questions.py`
    at **797** down to `ingest/spl_match.py` at **524**, each a small self-contained round. Precedent is three
    deep (`spl_release.py`, `cli_status.py`, `registry_read.py`); the rule is always the same — find the SEAM,
@@ -98,8 +64,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#176 is CLOSED
-by this round; #146 by the one before; #174 and #172 by the one before that.** Open: **#177** (seven over the cap),
-**#179** (tools deaf to the server), **#182** (db/054's no-backfill rule has no mechanism — filed by this round's
+by the round before; #179 by this one.** Open: **#177** (seven over the cap), **#182** (db/054's no-backfill rule has no mechanism — filed by #181's
 review), **#163–#166**, **#168–#171**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #151–#153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
@@ -110,10 +75,10 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref176` is THIS round's** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
+- **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
-  beside a measured row. **db/054 was EDITED in review (it is unmerged, so that is allowed) — its checksum
-  changed, so `drugref176` and `drugref_test` now REFUSE to migrate and must be rebuilt from nothing.**
+  beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and
+  REFUSES to migrate — rebuild it from nothing if needed.** `drugref_test` is recreated by pytest (green here).
 - **`drugref_notice174` is the SPL/role-split one** — chain + SPL as owner, then the same SPL ingest under role
   `drugref_app` (no ownership) twice, the second with `MAINTAIN`. **It still carries `drugref_app` and its
   GRANTs**, so it is the one database where the role split can be re-run (that round's record §1);

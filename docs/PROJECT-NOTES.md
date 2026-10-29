@@ -5400,6 +5400,61 @@ this round added; it published a number before) · then the view reduced to db/0
 un-applied → **all six blocks printed, the correct branch named, exit 0** · then restored → the measured row
 reports its runtime again, so the degrade is not sticky.
 
+## The tools-channel round (2026-10-23) — issue #179, no migration
+
+**⇒ THE SERVER-MESSAGE CHANNEL #174 BUILT WAS STILL DARK UNDER `tools/`, FOR TWO SEPARATE REASONS.** Three
+tools opened a bare `psycopg.connect` and so installed no notice handler at all — `spl_recovery_probe.py`
+(a diagnostic whose whole job is telling an operator what state the database is in), `spl_registry.py`,
+`drugcentral_ddi_spike.py`. And no tool configured logging, so even through `db.connect` the root logger had
+no handler and Python's last-resort handler printed only WARNING and worse: every NOTICE `SEVERITY_LEVEL`
+deliberately places at INFO — "… does not exist, skipping" among them — was dropped.
+
+**What shipped.** `server_messages.configure_logging(level="info")` is now the ONE home for the
+`"%(levelname)s %(name)s: %(message)s"` format; `cli.main` calls it with `--log-level`, and each of the nine
+`tools/*.py` `__main__` blocks calls it with the default (in the `__main__` block, not `main()`, so tests that
+drive `main(argv)` in-process are untouched). The three bare connects go through `db.connect`;
+`drugcentral_ddi_spike` keeps `import psycopg` for `IsolationLevel`. `spl_make_fixture.py`, named in the issue
+"if/when it connects", does not connect — it still configures logging, because the rule is per entry point.
+
+**The gate.** `tests/test_tools_server_channel.py` parses (`ast`) every `tools/*.py` **and every
+`src/drugref/` module but `db.py`** for a direct psycopg connect, and every `tools/` `__main__` block for a
+`server_messages.configure_logging()` call **before** `main()`, plus a floor on how much the scans must find
+(≥ 20 tool files, ≥ 70 `src/` modules, ≥ 9 entry points, ≥ 6 `db.connect` users) so a moved directory cannot
+leave it green and empty. The
+behaviour itself is tested in a **subprocess**: pytest puts handlers on the root logger and `basicConfig` is a
+no-op on a root that has one, so in-process the test could not tell a working helper from an empty one.
+
+**VERIFIED.** A real `DROP TABLE IF EXISTS` through `db.connect` + `configure_logging` printed
+`INFO drugref.postgres: [NOTICE 00000] table "no_such_table_179" does not exist, skipping`; every entry point
+runs `--help` cleanly; the suite went **2576 → 2611** (+35, all in this file).
+
+### The review round (2026-10-27) — four agent reviewers on PR #183, suite 2611 → 2706
+
+No critical finding; what changed:
+
+* **The scans were substrings, and a substring is fooled** — by `import psycopg as pg`, `from psycopg import
+  connect`, `psycopg.Connection.connect(`, a `'__main__'` guard in single quotes (which dropped the tool from
+  the scan entirely, floor still green), or a `configure_logging()` in a comment or after `raise
+  SystemExit(main())`. Both scans now parse the source, and the scanners have tests of their own pinning each
+  of those spellings (+17).
+* **`src/` was unguarded.** `db.connect`'s docstring calls it "the one function every orchestrator, CLI command
+  and migration opens its connection through" and nothing held `src/` to that; the bare-connect scan now
+  covers all 75 other `src/drugref/` modules (+75).
+* **`level` was untested**, so `cli.main`'s `--log-level` could have been ignored with the suite green; a
+  subprocess test now proves `"warning"` hides INFO.
+* **Tools could never show the DEBUG-mapped server messages** — no `--log-level`, default fixed at INFO.
+  `configure_logging(level=None)` now falls back to **`$DRUGREF_LOG_LEVEL`**, then `"info"`; `drugref
+  --log-level` defaults to None so the CLI honours the same variable. Explicit argument beats the variable;
+  both tested. The three new subprocess tests are +3; the old substring scans' 24 + 9 cases became the
+  parsed ones, so 75 + 17 + 3 = +95.
+* **Comment rot.** The `log` comment still said `cli.main` owned the format; three tools that open no
+  connection (`spl_dailymed_crosscheck`, `spl_make_fixture`, `spl_skip_census`) claimed "server NOTICEs reach
+  stderr" — they now say they call it for one format per entry point; `spl_recovery_probe` credited 179 with
+  #174's handler.
+
+Not changed: startup-time notices (sent before psycopg installs any handler) should go to libpq's own stderr
+printer, unformatted — visible, not lost (read from psycopg's source, not reproduced live).
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5450,6 +5505,12 @@ written by **`provenance.finish_run`** in the same UPDATE as `finished_at` (the 
 its only caller; **no row was backfilled** and the migration says why. The loaded-release block **degrades
 rather than aborting** on an unmigrated database, alone among the six guarded sites, because it is the first —
 § "The watershed round" and § "The review round".
+
+**[#179](https://github.com/cairn-ehr/drugref/issues/179) four tools deaf to the server, and none configured
+logging** — **FIXED by PR #183, closes on merge** (three tools, not four: the issue's fourth, `spl_make_fixture`,
+does not connect): the three bare `psycopg.connect` calls go through `db.connect`, every
+`tools/` entry point calls `server_messages.configure_logging`, and a source scan fails on a new bare connect
+or an entry point without the call — § "The tools-channel round".
 
 **[#182](https://github.com/cairn-ehr/drugref/issues/182) `db/054`'s no-backfill rule has no mechanism** —
 **OPEN, filed by the #181 review round.** The migration forbids `UPDATE … SET duration_measured = true WHERE
@@ -5626,7 +5687,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2576 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2706 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
