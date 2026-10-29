@@ -55,9 +55,10 @@ CAP = 500
 #: Filed as issue 177 -- and see issue 172, which is the one of these that WAS
 #: split (`spl_evidence.py`, 518 -> 428 by the move and 430 today, `Registry`/`load_registry` moved to
 #: `registry_read.py`) and is therefore not on the list. `ingest/spl_match.py` left
-#: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`).
+#: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`),
+#: and so did `questions.py` (797 -> ~220, its `_GAP_SOURCES` specs to
+#: `gap_sources_registry.py` and `gap_sources_interactions.py`).
 OVER_CAP_TODAY = {
-    "questions.py": 797,
     "ingest/fda_cyp.py": 707,
     "ingest/fda_cyp_run.py": 622,
     "signing.py": 605,
@@ -129,7 +130,8 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
     sizes = dict(_modules())
     for name in ("spl_evidence.py", "registry_read.py", "analyze.py",
                  "server_messages.py", "db.py", "cli.py", "cli_signing.py",
-                 "cli_signing_release.py"):
+                 "cli_signing_release.py", "questions.py",
+                 "gap_sources_registry.py", "gap_sources_interactions.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
         # a bare KeyError from the lookup below -- the guard its sibling above
         # already carries.

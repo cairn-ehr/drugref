@@ -5545,6 +5545,31 @@ Five of the eight small SPL follow-ups filed by the #161 and #167 reviews, plus 
 **Left open deliberately:** #164 (fix the comment when a migration next touches that function, as the issue
 says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: parser, dedupe, census and tests).
 
+## The questions.py split (2026-10-30) — issue #151, the first module of #177, no migration
+
+`questions.py` went **797 → 230** and is **off #177's ledger**; five modules remain on it.
+
+- **The seam.** 72% of the file was one dict literal, `_GAP_SOURCES`, with 18 gap-kind specs (`view`, `key_sql`,
+  `text_sql`). That is a vocabulary, not the writer. #151 recommended moving the whole literal into one module,
+  but that module would have been ~585 lines, so a new file on the ledger. Instead it is split **at slice 5c**:
+  `gap_sources_registry.REGISTRY_GAP_SOURCES` (12 kinds: registry coverage, classification, conditions, Plan
+  B/C, slice 3; 260 lines) and `gap_sources_interactions.INTERACTION_GAP_SOURCES` (6 kinds from
+  `uncurated_condition_contradiction` on; 342 lines). `questions.py` keeps the key_sql/text_sql contract comment,
+  `register_from_gaps` and the curated half, and builds `_GAP_SOURCES = {**REGISTRY…, **INTERACTION…}`. So
+  `questions._GAP_SOURCES` and the five tests and comments that cite it are unchanged, and questions.py is
+  still the ONLY writer of the register.
+- **Verbatim, checked by diff.** The spec bodies match the old lines 36–608 byte for byte, except three comments
+  that pointed across the new file boundary ("the upsert below", "precedent above", "this file's own").
+  Those now name the module they mean.
+- **The one new risk is the merge.** A `{**a, **b}` with a key in both halves keeps the later spec silently.
+  `test_question_ids.py` pins that the halves are disjoint, and pins the merged order as a frozen list of all 18
+  kinds, so a kind dropped in a later move fails too. Both new modules are on
+  `test_module_size_cap`'s explicit pin list, alongside questions.py.
+- **Suite 2750 → 2752**, and the +2 is not new tests. See the count line in § "How to run / test":
+  `test_tools_server_channel`'s bare-connect sweep has one case per file under `src/`, so every split moves
+  the count. (Earlier this round, `git stash` left the untracked new modules in place, which made main appear to
+  collect 2752 too. Count main from a clean checkout.)
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5614,6 +5639,11 @@ given the previous rule — never a backfill of finished rows); once true, the f
 its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budget` for a real reason), #169
 (the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor).
 
+**[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **FIXED by the
+questions.py split, closes on merge**, as the first of #177's modules — § "The questions.py split". **#177
+stays open with five:** `ingest/fda_cyp.py` 707, `ingest/fda_cyp_run.py` 622, `signing.py` 605, `curation.py`
+555, `release_verification.py` 540 (ceilings in `tests/test_module_size_cap.py`).
+
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
 **Answered by measurement, still open** — **#19: the "41 vs 13" puzzle RESOLVES.** 41-of-739 was the TERMINOLOGY
@@ -5667,6 +5697,7 @@ nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`
 guideline and **71% of it is the one `_GAP_SOURCES` literal**, which grows with every source that adds a gap
 kind — split out of #89 the way #130 was for `cli.py`, because the failure mode differs (a declarative table
 with a visible seam, not dense prose with none). **Its figures live on the issue; do not restate them here.**
+**FIXED 2026-10-30** — § "The questions.py split".
 Full account: § "The DrugCentral ddi ingest".
 
 **Filed by the 5c.3 SPL measurement round (2026-08-24)** —
@@ -5781,7 +5812,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2750 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2752 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -5938,6 +5969,11 @@ git config core.hooksPath .githooks
 # watershed refused), less 5 removed with the watershed they tested (the
 # straddling row, the no-ledger database, and the three `migration_applied_at`
 # tests, that function having gone with its only caller).
+# ⇒ ISSUE 177's questions.py SPLIT (no migration): 2750 -> 2752, +2 with NO new
+# behaviour -- +1 pinning the merged _GAP_SOURCES order and the two halves'
+# disjointness, -1 the ledger case questions.py no longer has, and +2 because the
+# bare-connect sweep in test_tools_server_channel parametrises over EVERY file under
+# src/, so each new module is a new case. A split always moves this number.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
