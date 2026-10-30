@@ -21,7 +21,7 @@ SCHEMA STILL ENDS AT `db/056`.** PR #185 (the SPL follow-ups) is MERGED. The sui
 
 **⇒ WHAT SHIPPED.** `questions.py` 797 → 230, off #177's ledger. Its 18 `_GAP_SOURCES` specs moved **verbatim**
 (checked by diff; three cross-file comment pointers reworded) into `gap_sources_registry.py` (12 pre-5c kinds,
-260 lines) and `gap_sources_interactions.py` (6 kinds from slice 5c, 342 lines). `questions.py` merges them, so
+260 lines) and `gap_sources_interactions.py` (6 kinds from slice 5c, 341 lines). `questions.py` merges them, so
 `questions._GAP_SOURCES` is unchanged and it is still the only writer. One new test pins disjoint halves and
 the merged 18-kind order (a dict merge silently drops a duplicate key).
 

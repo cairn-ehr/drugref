@@ -515,9 +515,10 @@ def test_the_question_text_states_the_actual_reason(conn):
     ALL FOUR branches pinned, not two: the review of this task's first pass
     found the CASE's `ELSE` branch (non_drug_entity) was untested by name, which
     is exactly how it went unnoticed that `ELSE` itself contradicted this file's
-    own no-ELSE rule (see questions.py's `fda_cyp_unadjudicated` entry, and
-    unresolved_ci_object's comment above it). A wording assertion per branch is
-    what would have caught a branch silently swallowed by the wrong one.
+    own no-ELSE rule (see gap_sources_interactions.py's `fda_cyp_unadjudicated`
+    entry, and unresolved_ci_object's comment in gap_sources_registry.py). A
+    wording assertion per branch is what would have caught a branch silently
+    swallowed by the wrong one.
 
     JOINED ON DISPOSITION, not four independent `any(...)` scans over the WHOLE
     text list. The previous version of this test only checked that each phrase
@@ -527,7 +528,7 @@ def test_the_question_text_states_the_actual_reason(conn):
     (the CASE matching the wrong WHEN, or two branches accidentally sharing a
     string) would still pass every `any(...)` here. Joining question_text back to
     the gap view's own `disposition` column (via the same gap_key format
-    questions.py's key_sql builds -- pinned directly, on
+    gap_sources_interactions.py's key_sql builds -- pinned directly, on
     test_the_subject_grain_collapses_repeated_cells_for_one_substance's own
     precedent of matching against `gap_key LIKE 'FDACYP:...'`) makes the
     assertion fail if a phrase shows up under the wrong disposition's own rows.
@@ -700,10 +701,11 @@ def test_the_subject_half_does_not_attribute_an_arbitrary_cells_text_to_the_whol
     arbitrary cell's raw text via whichever value happens to sort highest and
     attributes it to the whole substance, in columns a curator might reasonably
     read as meaning something. Neither column is read by any of the three
-    subject-half branches in questions.py's CASE, so db/042 projects NULL for
-    both there -- matching db/040's own reasoning for why column_heading and
-    pathway are NULL in this half: the honest value for a fact this half is
-    not asking about is NULL, not an arbitrary survivor of max().
+    subject-half branches in gap_sources_interactions.py's CASE, so db/042
+    projects NULL for both there -- matching db/040's own reasoning for why
+    column_heading and pathway are NULL in this half: the honest value for a
+    fact this half is not asking about is NULL, not an arbitrary survivor of
+    max().
 
     registry_near_name is the CONTRAST: unresolved_substance's own branch DOES
     read it (test_a_near_name_never_upgrades_a_rows_disposition depends on the
@@ -738,16 +740,17 @@ def test_an_unrecognised_disposition_aborts_loudly_rather_than_vanishing(conn):
     list nor the cell half's `= 'withheld_qualified'`, so it would have produced
     ZERO gap-view rows. SILENCE would have been the failure: `drugref ingest
     fda-cyp` reporting success, the view's own "ABSENCE OF A ROW IS NOT
-    COVERAGE" comment being quietly false for that row, and questions.py's CASE
-    comment ("aborts the ingest loudly") never actually being exercised --
-    issues 74/66/76's gate-that-never-fires, beside issue 122's comment
-    asserting a property the code did not have.
+    COVERAGE" comment being quietly false for that row, and
+    gap_sources_interactions.py's CASE comment ("aborts the ingest loudly")
+    never actually being exercised -- issues 74/66/76's gate-that-never-fires,
+    beside issue 122's comment asserting a property the code did not have.
 
     db/041's negative predicate (`NOT IN ('member', 'withheld_qualified')`)
     means an unrecognised disposition now reaches the subject half, then
-    questions.py's CASE (which has no ELSE, on unresolved_ci_object's own
-    precedent), evaluates to SQL NULL, and trips open_question.question_text's
-    NOT NULL constraint -- loud and specific, not silent.
+    gap_sources_interactions.py's CASE (which has no ELSE, on
+    unresolved_ci_object's own precedent), evaluates to SQL NULL, and trips
+    open_question.question_text's NOT NULL constraint -- loud and specific, not
+    silent.
 
     The CHECK is dropped for this test only, inside the rollback-scoped `conn`
     fixture's own transaction (ingest_fda_cyp's two commits happen first and

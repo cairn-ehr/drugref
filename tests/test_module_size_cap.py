@@ -56,7 +56,7 @@ CAP = 500
 #: split (`spl_evidence.py`, 518 -> 428 by the move and 430 today, `Registry`/`load_registry` moved to
 #: `registry_read.py`) and is therefore not on the list. `ingest/spl_match.py` left
 #: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`),
-#: and so did `questions.py` (797 -> ~220, its `_GAP_SOURCES` specs to
+#: and so did `questions.py` (797 -> 230, its `_GAP_SOURCES` specs to
 #: `gap_sources_registry.py` and `gap_sources_interactions.py`).
 OVER_CAP_TODAY = {
     "ingest/fda_cyp.py": 707,

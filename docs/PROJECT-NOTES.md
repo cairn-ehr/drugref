@@ -5554,7 +5554,7 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   but that module would have been ~585 lines, so a new file on the ledger. Instead it is split **at slice 5c**:
   `gap_sources_registry.REGISTRY_GAP_SOURCES` (12 kinds: registry coverage, classification, conditions, Plan
   B/C, slice 3; 260 lines) and `gap_sources_interactions.INTERACTION_GAP_SOURCES` (6 kinds from
-  `uncurated_condition_contradiction` on; 342 lines). `questions.py` keeps the key_sql/text_sql contract comment,
+  `uncurated_condition_contradiction` on; 341 lines). `questions.py` keeps the key_sql/text_sql contract comment,
   `register_from_gaps` and the curated half, and builds `_GAP_SOURCES = {**REGISTRY…, **INTERACTION…}`. So
   `questions._GAP_SOURCES` and the five tests and comments that cite it are unchanged, and questions.py is
   still the ONLY writer of the register.

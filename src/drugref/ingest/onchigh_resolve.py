@@ -77,12 +77,13 @@ from drugref.ingest import onchigh
 # class_uuid but were stored under three different strings, and a per-source
 # rebuild silently missed rows it owned (ids.py's own docstring). Getting
 # this wrong here is worse than that: `_GAP_SOURCES`'s `unresolved_onc_
-# endpoint` entry (questions.py) builds an unresolved endpoint's `gap_key`
-# as `'ONCHIGH:' || entry_id || ':' || identifier_scheme || ':' ||
-# identifier_value`, and `question_uuid = uuid5(gap_kind, gap_key)` is
-# immortal and cited by external tooling -- so 'MEDRT' would not just be an
-# inconsistent label, it would be PERMANENTLY BAKED into a question a
-# curator might already be tracking.
+# endpoint` entry (gap_sources_interactions.py) builds an unresolved
+# endpoint's `gap_key` as `'ONCHIGH:' || entry_id || ':' || endpoint_role
+# || ':' || identifier_scheme || ':' || identifier_value`, and
+# `question_uuid = uuid5(gap_kind, gap_key)` is immortal and cited by
+# external tooling -- so 'MEDRT' would not just be an inconsistent label,
+# it would be PERMANENTLY BAKED into a question a curator might already be
+# tracking.
 #
 # TASK 10 WIDENS WHO USES OBJECT_SCHEME: a CLASS SUBJECT is also named by a
 # MED-RT code (`subject_medrt_code`), so an unresolved class subject records
