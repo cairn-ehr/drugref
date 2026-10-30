@@ -1099,7 +1099,7 @@ PROJECT-NOTES § "The fda_cyp_run.py split". The pure per-tuple decisions (`_cla
 
 **⇒ THE signing.py AND release_verification.py SPLITS ✅ DONE (2026-10-30) — the fourth and fifth modules of
 #177, no migration.** Full account: PROJECT-NOTES § "The signing.py and release_verification.py splits".
-`signing.py`'s frozen context vocabulary (field lists, natural-key columns, the three context predicates) moved
+`signing.py`'s frozen context vocabulary (field lists, natural-key columns, `context_target_kind` and the two context predicates) moved
 to `signing_contexts.py` (605 → 394). `release_verification.py`'s signature half moved to `release_signature.py`
 (540 → 369). They had to go together because the renamed callers pushed the second file over its ratchet
 ceiling. #177 keeps one module: `curation.py` 555.

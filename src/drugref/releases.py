@@ -1,6 +1,7 @@
 # src/drugref/releases.py
 """Release manifests: enumerate the live curated overlay and publish it as a signed
-manifest (db/030, spec 5.5/8). Verification lives in `release_verification.py` --
+manifest (db/030, spec 5.5/8). Verification lives in `release_verification.py`
+(its signature half in `release_signature.py`) --
 see that module's docstring for why the split and for the one direction this module
 is imported back across it.
 

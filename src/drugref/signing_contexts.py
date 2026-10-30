@@ -3,14 +3,15 @@
 
 WHY THIS IS ITS OWN MODULE (issue 177). `signing.py` says HOW bytes are built and what a
 signature over them means; this module says WHAT goes into those bytes for each context
--- the frozen field lists (spec 4.5), the frozen natural-key columns (spec 5.5), and the
-three predicates that ask whether a stored context can be rebuilt against a target kind.
+-- the frozen field lists (spec 4.5), the frozen natural-key columns (spec 5.5), one
+helper (`context_target_kind`) and two predicates (`context_is_usable_for`,
+`entry_context_is_reproducible`) that ask whether a stored context can be rebuilt.
 It is a second vocabulary, and it was moved out of `signing.py` verbatim. Nothing here
 touches a connection or the cryptography; every value is a string or a tuple of strings.
 
 `signing.canonical_payload` takes the field pairs IN THE ORDER these lists give them;
-the callers that build payloads (`signatures`, `releases`, `release_verification`)
-read the lists from here.
+`signatures` and `releases` read the lists from here, and `release_verification` and
+`release_signature` call the predicates.
 """
 
 
@@ -217,7 +218,8 @@ def entry_context_is_reproducible(entry_context: str, current_context: str) -> b
     A STATED, CONSERVATIVE LIMITATION: a future `/v2` that both ADDS and REMOVES a
     column would make a genuine `/v1` entry non-containable once the catalog moved on,
     and this reports it as dropped+added rather than comparing it. That is a misread
-    in the direction that asks a human to look -- `_published_content_is_history`'s own
+    in the direction that asks a human to look --
+    `release_verification._published_content_is_history`'s own
     limitation, chosen the same way -- and never a false clean bill of health. Version
     evolution that only ADDS columns (the realistic direction, and the one the alarm in
     tests/test_signing_payload_coverage.py forces a decision about) is unaffected.

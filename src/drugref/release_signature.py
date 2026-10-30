@@ -26,6 +26,7 @@ class MalformedManifestError(signing.SigningError):
     sentence: as a bare `KeyError` this escaped that catch and printed a traceback,
     permanently, the table being insert-only."""
 
+
 def _worst_verdict(verdicts: list) -> str:
     """WORST WINS, using `signing.VERDICT_PRECEDENCE` (spec 7.1) as the ONE ranking --
     review round 2's C4: an earlier draft hand-typed the same five-step order as a
@@ -114,7 +115,7 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
     # unconstrained, so a member that is a scalar or carries different keys raised
     # `KeyError`/`TypeError` here -- neither a `RuntimeError`, so `cli.main` printed a
     # traceback, and `release_manifest` is insert-only so the row could never be fixed.
-    # Same class as the planted `payload_context` one function down.
+    # Same class as the planted `payload_context` further down this function.
     try:
         upstream = [(u["source"], u["writer"], u["release"]) for u in upstream_releases]
     except (KeyError, TypeError) as exc:

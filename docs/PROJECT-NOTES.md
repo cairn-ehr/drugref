@@ -172,7 +172,7 @@ worth keeping does not belong in the file whose history is deliberately disposab
   and fixed**, which is what makes it a rule rather than a bug. It passes every test until a `/v2` context or a
   second algorithm exists, and then reports every historical `/v1` signature as forged. **Wherever a stored
   record has a format/version/algorithm field, the verifier reads that field; if it never reads it, the field is
-  decoration and the guard is missing.** The same instinct is why `signing.FIELD_LISTS` is frozen rather than
+  decoration and the guard is missing.** The same instinct is why `signing_contexts.FIELD_LISTS` is frozen rather than
   derived — the one place in this repo where deriving from the catalog is the wrong answer.
 - **A PROSE RULE THAT HAS FAILED SIX TIMES IS NOT A RULE, IT IS A WISH — AND IT IS NOW A HOOK** (#114 and #118,
   closed by the guard round). The sweep-closed-but-unfixed pattern happened **six** times — #31, #35, #40, #61,
@@ -5680,6 +5680,12 @@ only `curation.py` (555) remains on it. The new modules are `signing_contexts.py
   this file say `signing.FIELD_LISTS` and similar. They record what was true when written, so read them as
   `signing_contexts.`.
 - **Suite 2754 → 2754.** Each module gives −1 ledger case and +1 sweep case.
+- **The PR #192 review round (2754 → 2760)** fixed wording only, plus two tests for gaps that predate the
+  split. `context_is_usable_for` now has a DB-free parametrized test (+5); before, only DB-gated tests reached
+  it. The malformed-`upstream_releases` test now drives the scalar member `[1]` too (+1). Before, only the
+  `KeyError` arm was exercised, so dropping `TypeError` from the `except` tuple passed silently. A mutation
+  check confirmed the new case fails with `TypeError` removed. The docs-site decision page's *Applies to*
+  line now names both new modules.
 
 ## The standing open-issue ledger
 
@@ -5692,8 +5698,8 @@ needs. HANDOVER now carries only what gates the NEXT session and points here.
 **Examined by the debt round and deliberately NOT taken** — **#65** the issue itself says do not act until
 curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
 **#112/#105** blocked on class-grain content existing · **#89 `signing.py` was 605 lines against the filed
-582, and `release_verification.py` went 532 → 540** (both split 2026-10-30, § "The signing.py and
-release_verification.py splits") (rule-3 documentation for #87) — **re-read that issue's
+582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87; both split 2026-10-30, §
+"The signing.py and release_verification.py splits") — **re-read that issue's
 figures, do not re-derive them**; `curation.py` **has since crossed the cap at 523** (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
@@ -5926,7 +5932,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2754 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2760 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6096,7 +6102,9 @@ git config core.hooksPath .githooks
 # +1 pinning _footnote_text's FdaCypFootnoteError raise, which review found untested.
 # ⇒ ISSUE 177's signing.py AND release_verification.py SPLITS (no migration): 2754 ->
 # 2754 -- per module, -1 the ledger case it no longer has, +1 the sweep case for the
-# new signing_contexts.py / release_signature.py.
+# new signing_contexts.py / release_signature.py. Its review round: 2754 -> 2760 --
+# +5 a DB-free parametrized context_is_usable_for test, +1 the scalar-member
+# (TypeError) case of the malformed-upstream-releases test.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

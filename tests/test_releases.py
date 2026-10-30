@@ -332,17 +332,22 @@ def test_the_upstream_snapshot_round_trips(conn, institutional_key, a_graded_rul
     assert verdict.is_intact
 
 
+@pytest.mark.parametrize("upstream_releases", [
+    '[{"src": "UNII"}]',  # an object with different keys -> KeyError
+    '[1]',                # a scalar member -> TypeError
+])
 def test_a_malformed_upstream_member_is_reported_not_a_traceback(
-        conn, institutional_key, published):
+        conn, institutional_key, published, upstream_releases):
     """The other half of I3. `upstream_releases` is CHECKed only as an ARRAY, so its
     members are unconstrained -- a hand-written manifest holding a scalar, or objects
     with different keys, reached a bare `KeyError`/`TypeError` that `cli.main` does not
-    catch, on an insert-only table with no correction path."""
+    catch, on an insert-only table with no correction path. Both arms are driven, so
+    dropping either exception from the `except` tuple fails here."""
     conn.execute(
         "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
         "row_count, upstream_releases, published_by, published_at) "
-        "VALUES ('2026.08.22', %s, 0, '[{\"src\": \"UNII\"}]'::jsonb, 'op', %s)",
-        (b"\x09" * 32, PUBLISHED_AT))
+        "VALUES ('2026.08.22', %s, 0, %s::jsonb, 'op', %s)",
+        (b"\x09" * 32, upstream_releases, PUBLISHED_AT))
     with pytest.raises(release_signature.MalformedManifestError,
                        match="upstream_releases member"):
         release_verification.verify_release(conn, "2026.08.22")

@@ -1,9 +1,10 @@
 # Signing the curated overlay
 
 **Status:** Active
-**Last reviewed:** 2026-08-19
+**Last reviewed:** 2026-10-30
 **Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`, `db/048`,
-`signing.py`, `keys.py`, `signatures.py`, `releases.py`, `release_verification.py`, the
+`signing.py`, `signing_contexts.py`, `keys.py`, `signatures.py`, `releases.py`,
+`release_verification.py`, `release_signature.py`, the
 `drugref keys | sign | verify | publish` commands, and the reviewer app/service
 **Full derivation:** the [slice-5c.4 signing design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-08-09-drugref-slice-5c4-signing-design.md)
 

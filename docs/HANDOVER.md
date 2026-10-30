@@ -23,12 +23,13 @@ release_verification.py splits").
 
 **⇒ WHAT SHIPPED.** Commit 1: `release_verification.py` 540 → 369. Its signature half (`MalformedManifestError`,
 `_worst_verdict`, `_verify_manifest_signature`) moved to `release_signature.py` (189). Commit 2: `signing.py`
-605 → 394. Its frozen context vocabulary (field lists, natural-key columns, the three `context_*` predicates)
+605 → 394. Its frozen context vocabulary (field lists, natural-key columns, `context_target_kind` and the two context predicates)
 moved to `signing_contexts.py` (230). Both moves are verbatim. Callers name the new modules, and nothing is
 re-exported. **They went together because the ratchet forced it:** the longer `signing_contexts.` name pushed
 `release_verification.py` to 541, one over its ceiling.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2754 passed (per module, −1 ledger case and +1 sweep case);
+**⇒ VERIFIED.** `uv run pytest` with the DB: green (per module, −1 ledger case and +1 sweep case; the PR #192
+review round added 6 tests for two pre-existing coverage gaps);
 `ruff check .` clean; `make_signing_vectors.py` reproduces `signing_vectors.json` byte for byte.
 
 ## ⇒ DO THIS NEXT

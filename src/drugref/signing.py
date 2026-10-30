@@ -50,9 +50,9 @@ class SigningError(RuntimeError):
     a `KeyError` escaped the catch and `drugref verify --release` printed a stack
     trace.
 
-    A COMMON BASE so a caller wanting the whole family names one class rather than five
-    across three modules -- and so nobody reaches for `except RuntimeError`, which is
-    far too wide to mean anything.
+    A COMMON BASE so a caller wanting the whole family names one class rather than
+    every subclass across the signing modules -- and so nobody reaches for
+    `except RuntimeError`, which is far too wide to mean anything.
     """
 
 

@@ -350,6 +350,25 @@ def test_entry_context_is_reproducible(entry_context, current_context, expected)
         entry_context, current_context) is expected
 
 
+@pytest.mark.parametrize("stored_context,target_kind,expected", [
+    # the ordinary case: a context this build knows, on its own kind
+    ("curated_interaction/v1", "curated_interaction", True),
+    ("curated_condition/v1", "curated_condition", True),
+    # never known -- storable, because payload_context has a regex CHECK and no FK
+    ("bogus/v9", "curated_interaction", False),
+    # a real context, but another kind's: rebuilding would hit UndefinedColumn
+    ("curated_condition/v1", "curated_interaction", False),
+    # a context naming THIS kind but at a version no frozen list holds
+    ("curated_interaction/v9", "curated_interaction", False),
+])
+def test_context_is_usable_for(stored_context, target_kind, expected):
+    """PURE, and until now reached only through DB-gated tests, so a run without
+    DRUGREF_TEST_DSN never checked it. The cases are the shapes of unusable that
+    `context_is_usable_for`'s docstring names: never-known and another kind's."""
+    assert signing_contexts.context_is_usable_for(
+        stored_context, target_kind) is expected
+
+
 def test_a_retired_context_stays_reproducible_when_its_kind_moves_to_v2(monkeypatch):
     """THE CASE THE CONTAINMENT TEST MUST NOT BREAK, and the reason it is written as
     containment rather than equality. `signing_contexts.FIELD_LISTS` keeps every retired context
