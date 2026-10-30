@@ -1246,6 +1246,24 @@ def test_an_ascii_apostrophe_still_matches_FDAs_curly_one():
     assert not fda_cyp_disposition._is_non_drug_entity("bupropion")
 
 
+def test_footnote_text_skips_one_undefined_marker_but_raises_when_none_resolve():
+    """The three outcomes _footnote_text distinguishes for a qualified cell.
+
+    One undefined marker among defined ones is skipped (the page oddity); a
+    cell whose ONLY markers are the known-undefined 'b' yields None; a cell
+    where no marker resolves and some are not 'b' means drugref stopped
+    reading FDA's definitions correctly, and must be loud.
+    """
+    defs = {"9": "grapefruit prose", "14": "fourteen prose"}
+    footnote_text = fda_cyp_disposition._footnote_text
+    assert footnote_text(None, defs) is None
+    assert footnote_text("9, b", defs) == "grapefruit prose"
+    assert footnote_text("9, 14", defs) == "grapefruit prose / fourteen prose"
+    assert footnote_text("b", defs) is None
+    with pytest.raises(fda_cyp_disposition.FdaCypFootnoteError, match="'7'"):
+        footnote_text("7, b", defs)
+
+
 @pytest.mark.usefixtures("conn")
 def test_a_pre_db042_withheld_row_does_not_abort_an_unrelated_sources_ingest(conn):
     """THE CROSS-SOURCE ABORT, pinned.

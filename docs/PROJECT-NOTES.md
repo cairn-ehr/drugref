@@ -5608,7 +5608,7 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
 ## The fda_cyp_run.py split (2026-10-30) — the third module of #177, no migration
 
 `ingest/fda_cyp_run.py` went **622 → 407** and is **off #177's ledger**; three modules remain on it. The new
-`ingest/fda_cyp_disposition.py` is 249.
+`ingest/fda_cyp_disposition.py` is 252.
 
 - **The seam.** The writer held a pure decision layer that never touches the database: what each parsed tuple
   BECOMES. That moved: `NON_DRUG_ENTITIES` with `_APOSTROPHES`/`_is_non_drug_entity`, `_COMBINATION_WORD`,
@@ -5634,7 +5634,11 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   `fda_cyp_disposition`. Both modules are on `test_module_size_cap`'s explicit pin list.
 - **Stale name in an applied migration, deliberately left.** `db/042`'s header says
   `fda_cyp_run._classify`. Applied migrations are immutable; read it as `fda_cyp_disposition._classify`.
-- **Suite 2753 → 2753.** −1 for the ledger case, +1 for the sweep case of the new file.
+- **Suite 2753 → 2754.** −1 for the ledger case, +1 for the sweep case of the new file, +1 from the PR #191
+  review: `_footnote_text`'s `FdaCypFootnoteError` raise had no test, so its three outcomes (one undefined
+  marker skipped, only-`'b'` → None, nothing resolving → raise) are now pinned directly. The same review
+  corrected `_footnote_text`'s docstring (it said undefined markers were skipped "rather than raising") and
+  `fda_cyp.parse_footnotes`'s, which still named `fda_cyp_run` as the caller deciding absent lookups.
 
 ## The standing open-issue ledger
 
@@ -5879,7 +5883,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2753 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2754 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6044,8 +6048,9 @@ git config core.hooksPath .githooks
 # ⇒ ISSUE 177's fda_cyp.py SPLIT (no migration): 2752 -> 2753 -- +1 pinning that
 # fda_cyp and fda_cyp_cell raise ONE FdaCypParseError class, -1 the ledger case
 # fda_cyp.py no longer has, +1 the sweep case for the new fda_cyp_cell.py.
-# ⇒ ISSUE 177's fda_cyp_run.py SPLIT (no migration): 2753 -> 2753 -- -1 the ledger
-# case fda_cyp_run.py no longer has, +1 the sweep case for fda_cyp_disposition.py.
+# ⇒ ISSUE 177's fda_cyp_run.py SPLIT (no migration): 2753 -> 2754 -- -1 the ledger
+# case fda_cyp_run.py no longer has, +1 the sweep case for fda_cyp_disposition.py,
+# +1 pinning _footnote_text's FdaCypFootnoteError raise, which review found untested.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

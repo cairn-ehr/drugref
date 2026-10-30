@@ -23,11 +23,11 @@ and the collected suite disagree.
 **⇒ WHAT SHIPPED.** `ingest/fda_cyp_run.py` 622 → 407, off #177's ledger. Its pure per-tuple decisions
 (`_classify` + the non-drug/combination vocabulary, `DISPOSITIONS`, `_footnote_text`, `UNDEFINED_MARKERS`,
 `FdaCypFootnoteError`, `source_code`, `class_name`, `_fold_by_lower`) moved **verbatim** (checked by sorted-line
-diff) into `ingest/fda_cyp_disposition.py` (249). The writer and its body stayed. **The writer imports the moved
+diff) into `ingest/fda_cyp_disposition.py` (252). The writer and its body stayed. **The writer imports the moved
 names BY NAME**, so `monkeypatch.setattr(fda_cyp_run, "_classify", …)` still patches what the loop calls — do
 not turn those into module-qualified calls.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2753 passed (−1 ledger case, +1 sweep case); `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2754 passed (−1 ledger case, +1 sweep case, +1 review's `_footnote_text` raise test); `ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 

@@ -79,6 +79,7 @@ _COMBINATION_WORD = re.compile(r"\band\b", re.I)
 # definitions correctly -- is loud instead of looking like this same oddity.
 UNDEFINED_MARKERS = frozenset({"b"})
 
+
 class FdaCypFootnoteError(Exception):
     """A qualified cell's markers have no text on a page whose Footnotes read fine.
 
@@ -120,10 +121,11 @@ def _footnote_text(markers: str | None,
     nothing to explain. For a qualified cell this looks up EVERY marker in the
     comma-separated list and joins whatever text is on file, silently skipping
     a marker with no known definition (see parse_footnotes's own docstring on
-    the lettered marker 'b') rather than raising: an undefined marker is a
-    page oddity to record evidence about, not a reason to abort an otherwise-
-    good row. It can only return None for a qualified cell if NONE of its
-    markers are on file, which has not happened on any release measured so far.
+    the lettered marker 'b') as long as at least ONE marker resolves: an
+    undefined marker is a page oddity to record evidence about, not a reason
+    to abort an otherwise-good row. If NONE resolve, it returns None only when
+    every marker is in UNDEFINED_MARKERS, and otherwise raises
+    FdaCypFootnoteError -- see the comment in the body for why.
     """
     if markers is None:
         return None
@@ -150,6 +152,7 @@ def _footnote_text(markers: str | None,
                 "definitions have stopped agreeing.")
         return None
     return " / ".join(found)
+
 
 def source_code(system: str, pathway: str, role: str, potency: str | None) -> str:
     """The deterministic key a class_uuid is minted from.

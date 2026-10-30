@@ -358,8 +358,9 @@ def parse_footnotes(page: str) -> dict[str, str]:
     own Footnotes list never defines at all (design section 2.3's "second
     namespace"). That is evidence to preserve about the page, not a reason to
     abort an otherwise-good row -- so an undefined marker simply has no entry
-    in the returned dict, and the caller (fda_cyp_run) decides what an absent
-    lookup means for a given row rather than this function deciding for it.
+    in the returned dict, and the caller (fda_cyp_disposition._footnote_text,
+    reached through fda_cyp_run) decides what an absent lookup means for a
+    given row rather than this function deciding for it.
     """
     heading = _FOOTNOTES_HEADING.search(page)
     if not heading:
