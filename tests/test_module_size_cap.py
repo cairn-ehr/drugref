@@ -60,11 +60,11 @@ CAP = 500
 #: `gap_sources_registry.py` and `gap_sources_interactions.py`) and
 #: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`)
 #: and `ingest/fda_cyp_run.py` (622 -> 407, its disposition vocabulary to
-#: `ingest/fda_cyp_disposition.py`).
+#: `ingest/fda_cyp_disposition.py`) and `release_verification.py` (540 -> 369, its
+#: signature half to `release_signature.py`) and `signing.py` (605 -> 394, its frozen
+#: context vocabulary to `signing_contexts.py`).
 OVER_CAP_TODAY = {
-    "signing.py": 605,
     "curation.py": 555,
-    "release_verification.py": 540,
 }
 
 _PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"
@@ -121,10 +121,11 @@ def test_a_ledgered_module_that_is_no_longer_over_the_cap_must_leave_the_ledger(
 
 
 def test_the_modules_this_round_moved_code_between_are_under_the_cap():
-    """The specific pins issue 172 asked for, kept explicit as well as swept.
+    """The specific pins issues 172 and 177 asked for, kept explicit as well as swept.
 
-    `spl_evidence.py` is the file the issue was filed about; `registry_read.py`
-    is where its read path went. Naming them is not redundant with the sweep: it
+    `spl_evidence.py` is the file issue 172 was filed about; `registry_read.py`
+    is where its read path went; the rest were added as later splits (issue 177
+    among them) landed. Naming them is not redundant with the sweep: it
     is what makes a future edit that pushes either one over fail with the ISSUE
     NUMBER in the message rather than with a bare line count.
     """
@@ -134,16 +135,18 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
                  "cli_signing_release.py", "questions.py",
                  "gap_sources_registry.py", "gap_sources_interactions.py",
                  "ingest/fda_cyp.py", "ingest/fda_cyp_cell.py",
-                 "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py"):
+                 "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py",
+                 "release_verification.py", "release_signature.py",
+                 "signing.py", "signing_contexts.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
         # a bare KeyError from the lookup below -- the guard its sibling above
         # already carries.
         assert name in sizes, (
             f"{name} no longer exists under src/drugref; this pin names the "
-            "modules issue 172 moved code between, so update the list with the "
+            "modules issues 172 and 177 moved code between, so update the list with the "
             "split rather than deleting the pin")
         assert sizes[name] <= CAP, (
-            f"{name} is {sizes[name]} lines, over the ~{CAP} cap. This is issue "
-            "172's shape again: spl_evidence.py reached 518 because the module "
-            "held a READ path (Registry/load_registry) inside the SOLE WRITER of "
-            "the SPL projection. Find the seam, do not add a paragraph.")
+            f"{name} is {sizes[name]} lines, over the ~{CAP} cap -- the shape issues "
+            "172 and 177 split: a module holding two vocabularies (spl_evidence.py "
+            "reached 518 with a READ path, Registry/load_registry, inside the SOLE "
+            "WRITER of the SPL projection). Find the seam, do not add a paragraph.")

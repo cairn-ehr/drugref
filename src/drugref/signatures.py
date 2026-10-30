@@ -26,11 +26,11 @@ every historical signature would be rebuilt under the new one, produce different
 and be reported as a forgery. `payload_context` is therefore an OVERRIDE on
 `payload_fields`/`payload_for` -- `None` reads the catalog's current value, an explicit
 value pins one -- and `verify_target` always passes the value STORED on the signature
-row it is checking, never the catalog's idea of "current". `signing.FIELD_LISTS` keeps
-every retired context version for exactly this reason: a version is stopped being
-minted, never deleted. `algorithm` carries the identical hazard and the identical fix --
-recorded per row, read back rather than assumed, because `signing.verify` only
-implements one scheme.
+row it is checking, never the catalog's idea of "current". The frozen field lists in
+`signing_contexts.FIELD_LISTS` keep every retired context version for exactly this
+reason: a version is stopped being minted, never deleted. `algorithm` carries the
+identical hazard and the identical fix -- recorded per row, read back rather than
+assumed, because `signing.verify` only implements one scheme.
 
 RECORDING AND VERIFYING ARE SEPARATE ACTS. `record` stores whatever it is given and
 asserts nothing about the SIGNATURE's validity, deliberately: a recorder that refused an
@@ -52,7 +52,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg import sql
 
-from drugref import keys, signing
+from drugref import keys, signing, signing_contexts
 
 
 class UnknownTargetError(signing.SigningError):
@@ -121,9 +121,9 @@ def _row_content_fields(conn: psycopg.Connection, table: str, pk_column: str,
 
     `context` picks which frozen field list -- and therefore which columns -- to read,
     which is exactly why this is safe to CACHE keyed by context but never to share
-    across different ones: `signing.FIELD_LISTS` keeps every retired version, and a
-    future `/v2` field list may name a different column set than `/v1` for the same
-    table.
+    across different ones: `signing_contexts.FIELD_LISTS` keeps every retired version,
+    and a future `/v2` field list may name a different column set than `/v1` for the
+    same table.
 
     IT HAS CALLERS OUTSIDE THIS MODULE, despite the leading underscore, for the same
     reason `_target_kind_catalog` does and recorded here for the same purpose (a static
@@ -134,8 +134,9 @@ def _row_content_fields(conn: psycopg.Connection, table: str, pk_column: str,
     `enumerate_live`'s own docstring for the measurement that made that the intended
     path.
     """
-    field_names = signing.FIELD_LISTS[context]
-    row_columns = [f for f in field_names if f not in signing.ATTESTATION_FIELDS]
+    field_names = signing_contexts.FIELD_LISTS[context]
+    row_columns = [f for f in field_names
+                   if f not in signing_contexts.ATTESTATION_FIELDS]
     row = conn.execute(
         sql.SQL("SELECT {cols} FROM drugref.{table} WHERE {pk} = %s").format(
             cols=sql.SQL(", ").join(sql.Identifier(c) for c in row_columns),
@@ -172,8 +173,9 @@ def payload_fields(conn: psycopg.Connection, target_kind: str, target_id: int, *
     `curated_interaction/v1` must still verify after `signature_target_kind`'s row for
     `curated_interaction` moves on to `/v2`, and re-deriving from the catalog would
     rebuild the payload under the new context, change the bytes, and report every
-    historical signature as a forgery. `signing.FIELD_LISTS` therefore keeps every
-    retired context version forever -- a version is stopped being minted, never deleted.
+    historical signature as a forgery. `signing_contexts.FIELD_LISTS` therefore keeps
+    every retired context version forever -- a version is stopped being minted, never
+    deleted.
 
     THE TABLE AND KEY COLUMN COME FROM signature_target_kind -- never from a dict in
     Python -- regardless of whether `payload_context` overrides the context: one target
@@ -394,7 +396,7 @@ def verify_target(conn: psycopg.Connection, target_kind: str,
         # `signing.verdict` decide also keeps the precedence intact -- an unusable
         # context under an UNREGISTERED key must still report UNKNOWN_KEY, because
         # filing a registry gap as a forgery is what step 1 exists to prevent.
-        if not signing.context_is_usable_for(payload_context, target_kind):
+        if not signing_contexts.context_is_usable_for(payload_context, target_kind):
             signature_ok = False
         else:
             if payload_context not in row_fields_by_context:

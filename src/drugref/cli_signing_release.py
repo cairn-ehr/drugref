@@ -48,8 +48,9 @@ def _reject_manifest_kind(target_kind: str) -> bool:
 
     A MANIFEST IS NOT SIGNED FROM ITS OWN COLUMNS AT ALL -- that is the substance, not a
     missing feature. Its payload is built from `release_manifest_entry` and two derived
-    counts by `releases.manifest_payload`, which is why `release_verification` cannot
-    reuse `signatures.verify_target` either (see that module's docstring). So the answer
+    counts by `releases.manifest_payload`, which is why the release verifier
+    (`release_signature`) cannot reuse `signatures.verify_target` either (see
+    `release_verification`'s module docstring). So the answer
     is not to teach `sign` a special case: `drugref publish` is how a manifest gets
     signed, and `drugref verify --release` is how it gets checked.
     """

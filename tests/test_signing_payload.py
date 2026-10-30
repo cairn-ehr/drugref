@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from drugref import signing
+from drugref import signing, signing_contexts
 
 VECTORS = pathlib.Path(__file__).parent / "fixtures" / "signing_vectors.json"
 
@@ -256,8 +256,8 @@ def test_every_field_list_ends_with_the_attestation_pair():
     """Spec 4.4: the signer and the moment are INSIDE the signed bytes, so a signature
     cannot be re-attributed to another key by editing a column, nor walked across a
     revocation boundary by editing a timestamp."""
-    for context, fields in signing.FIELD_LISTS.items():
-        assert fields[-2:] == signing.ATTESTATION_FIELDS, context
+    for context, fields in signing_contexts.FIELD_LISTS.items():
+        assert fields[-2:] == signing_contexts.ATTESTATION_FIELDS, context
 
 
 def test_no_field_list_names_a_surrogate_key_or_superseded_by():
@@ -265,13 +265,13 @@ def test_no_field_list_names_a_surrogate_key_or_superseded_by():
     local to one database, so signing them would break a signature carried into another;
     superseded_by is the one column the floor lets change, so signing it would invalidate
     every signature the moment its row is corrected."""
-    for context, fields in signing.FIELD_LISTS.items():
+    for context, fields in signing_contexts.FIELD_LISTS.items():
         assert "superseded_by" not in fields, context
         assert not any(f.endswith("_id") for f in fields), context
 
 
 def test_the_field_lists_have_no_duplicates():
-    for context, fields in signing.FIELD_LISTS.items():
+    for context, fields in signing_contexts.FIELD_LISTS.items():
         assert len(fields) == len(set(fields)), context
 
 
@@ -346,13 +346,32 @@ def test_entry_context_is_reproducible(entry_context, current_context, expected)
     reach today because the catalog is seeded correctly, and which is exactly the kind of
     branch that goes unexercised until it fires.
     """
-    assert signing.entry_context_is_reproducible(
+    assert signing_contexts.entry_context_is_reproducible(
         entry_context, current_context) is expected
+
+
+@pytest.mark.parametrize("stored_context,target_kind,expected", [
+    # the ordinary case: a context this build knows, on its own kind
+    ("curated_interaction/v1", "curated_interaction", True),
+    ("curated_condition/v1", "curated_condition", True),
+    # never known -- storable, because payload_context has a regex CHECK and no FK
+    ("bogus/v9", "curated_interaction", False),
+    # a real context, but another kind's: rebuilding would hit UndefinedColumn
+    ("curated_condition/v1", "curated_interaction", False),
+    # a context naming THIS kind but at a version no frozen list holds
+    ("curated_interaction/v9", "curated_interaction", False),
+])
+def test_context_is_usable_for(stored_context, target_kind, expected):
+    """PURE, and until now reached only through DB-gated tests, so a run without
+    DRUGREF_TEST_DSN never checked it. The cases are the shapes of unusable that
+    `context_is_usable_for`'s docstring names: never-known and another kind's."""
+    assert signing_contexts.context_is_usable_for(
+        stored_context, target_kind) is expected
 
 
 def test_a_retired_context_stays_reproducible_when_its_kind_moves_to_v2(monkeypatch):
     """THE CASE THE CONTAINMENT TEST MUST NOT BREAK, and the reason it is written as
-    containment rather than equality. `signing.FIELD_LISTS` keeps every retired context
+    containment rather than equality. `signing_contexts.FIELD_LISTS` keeps every retired context
     forever precisely so a `/v1` signature still verifies after its kind moves to `/v2`
     (`signatures.py`'s standing rule). A `/v2` that ADDS a column -- the realistic
     evolution, and the one tests/test_signing_payload_coverage.py's alarm forces a
@@ -362,9 +381,9 @@ def test_a_retired_context_stays_reproducible_when_its_kind_moves_to_v2(monkeypa
     v2 = ("subject_moiety_uuid", "object_class_uuid", "relationship", "applies",
           "severity", "mechanism", "management", "evidence_grade", "question_uuid",
           "source", "reviewed_by", "reviewed_against", "reviewed_at", "a_new_column",
-          *signing.ATTESTATION_FIELDS)
-    monkeypatch.setitem(signing.FIELD_LISTS, "curated_interaction/v2", v2)
-    monkeypatch.setitem(signing.NATURAL_KEY_COLUMNS, "curated_interaction/v2",
-                        signing.CURATED_INTERACTION_V1_KEY)
-    assert signing.entry_context_is_reproducible(
+          *signing_contexts.ATTESTATION_FIELDS)
+    monkeypatch.setitem(signing_contexts.FIELD_LISTS, "curated_interaction/v2", v2)
+    monkeypatch.setitem(signing_contexts.NATURAL_KEY_COLUMNS, "curated_interaction/v2",
+                        signing_contexts.CURATED_INTERACTION_V1_KEY)
+    assert signing_contexts.entry_context_is_reproducible(
         "curated_interaction/v1", "curated_interaction/v2") is True

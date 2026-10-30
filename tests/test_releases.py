@@ -4,7 +4,8 @@ import datetime as dt
 
 import pytest
 
-from drugref import curation, keys, release_verification, releases, signatures, signing
+from drugref import (curation, keys, release_signature, release_verification, releases,
+                     signatures, signing, signing_contexts)
 
 PUBLISHED_AT = dt.datetime(2026, 8, 9, 6, 0, 0, tzinfo=dt.timezone.utc)
 
@@ -331,18 +332,23 @@ def test_the_upstream_snapshot_round_trips(conn, institutional_key, a_graded_rul
     assert verdict.is_intact
 
 
+@pytest.mark.parametrize("upstream_releases", [
+    '[{"src": "UNII"}]',  # an object with different keys -> KeyError
+    '[1]',                # a scalar member -> TypeError
+])
 def test_a_malformed_upstream_member_is_reported_not_a_traceback(
-        conn, institutional_key, published):
+        conn, institutional_key, published, upstream_releases):
     """The other half of I3. `upstream_releases` is CHECKed only as an ARRAY, so its
     members are unconstrained -- a hand-written manifest holding a scalar, or objects
     with different keys, reached a bare `KeyError`/`TypeError` that `cli.main` does not
-    catch, on an insert-only table with no correction path."""
+    catch, on an insert-only table with no correction path. Both arms are driven, so
+    dropping either exception from the `except` tuple fails here."""
     conn.execute(
         "INSERT INTO drugref.release_manifest (release_tag, manifest_digest, "
         "row_count, upstream_releases, published_by, published_at) "
-        "VALUES ('2026.08.22', %s, 0, '[{\"src\": \"UNII\"}]'::jsonb, 'op', %s)",
-        (b"\x09" * 32, PUBLISHED_AT))
-    with pytest.raises(release_verification.MalformedManifestError,
+        "VALUES ('2026.08.22', %s, 0, %s::jsonb, 'op', %s)",
+        (b"\x09" * 32, upstream_releases, PUBLISHED_AT))
+    with pytest.raises(release_signature.MalformedManifestError,
                        match="upstream_releases member"):
         release_verification.verify_release(conn, "2026.08.22")
 
@@ -430,7 +436,7 @@ def test_verify_release_reconstructs_the_manifest_signatures_past_context(
     past, not the present), reintroduced here in hard-coded form: the first draft never
     selected `payload_context` at all.
 
-    `release_manifest/v2` is registered into `signing.FIELD_LISTS` only for the
+    `release_manifest/v2` is registered into `signing_contexts.FIELD_LISTS` only for the
     duration of this test (`monkeypatch`, auto-reverted) -- there is no real `/v2`
     context today, but a signature genuinely recorded under one must still verify from
     its own stored `payload_context` regardless. Mirrors
@@ -440,8 +446,8 @@ def test_verify_release_reconstructs_the_manifest_signatures_past_context(
     (`release_manifest`'s context is a caller-supplied parameter, not read from a
     catalog row) -- `monkeypatch` on `FIELD_LISTS` is the equivalent lever here.
     """
-    monkeypatch.setitem(signing.FIELD_LISTS, "release_manifest/v2",
-                        signing.RELEASE_MANIFEST_V1)
+    monkeypatch.setitem(signing_contexts.FIELD_LISTS, "release_manifest/v2",
+                        signing_contexts.RELEASE_MANIFEST_V1)
     payload = releases.manifest_payload(
         conn, release_tag="2026.08.22", published_by="an operator",
         published_at=PUBLISHED_AT, entries=[], upstream=[],
@@ -628,7 +634,7 @@ def test_an_unusable_manifest_signature_context_is_a_verdict_not_a_crash(
         conn, institutional_key, published):
     """C3, the manifest half. `assertion_signature.payload_context` is unconstrained
     beyond its regex on this path too, and `manifest_payload` subscripted
-    `signing.FIELD_LISTS` with it -- so one planted row made `drugref verify --release`
+    `signing_contexts.FIELD_LISTS` with it -- so one planted row made `drugref verify --release`
     raise `KeyError` (not a `RuntimeError`, so `cli.main` printed a traceback) for the
     life of the database, `release_manifest` being insert-only.
 
@@ -712,12 +718,12 @@ def test_worst_verdict_picks_the_most_severe():
     fix for C4's `KeyError` crash): it must rank WORST, beating even
     `signing.UNKNOWN_KEY`, rather than raising or being silently treated as best.
     """
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.VALID, signing.KEY_EXPIRED]) == signing.KEY_EXPIRED
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.VALID, signing.BAD_SIGNATURE,
          signing.KEY_EXPIRED]) == signing.BAD_SIGNATURE
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.UNKNOWN_KEY, "some_future_verdict"]) == "some_future_verdict"
 
 
@@ -739,7 +745,7 @@ def test_a_widened_natural_key_trigger_does_not_re_key_a_published_release(
     live natural key, so not one paired with a published entry: `dropped` and `added`
     both non-empty, `is_intact` false, on a database in which NOTHING had changed. That
     is C1-of-Task-8's failure mode reached through schema evolution instead of through
-    offset ids, and it is why `signing.NATURAL_KEY_COLUMNS` is frozen.
+    offset ids, and it is why `signing_contexts.NATURAL_KEY_COLUMNS` is frozen.
 
     THE TRIGGER IS GENUINELY REPLACED HERE, not stubbed: the DDL runs inside this test's
     own transaction (Postgres DDL is transactional and the `conn` fixture rolls back),
@@ -791,9 +797,9 @@ def test_verification_re_renders_a_natural_key_under_the_entrys_stored_context(
     addition.
     """
     v2_key = ("subject_moiety_uuid", "object_class_uuid")
-    monkeypatch.setitem(signing.FIELD_LISTS, "curated_interaction/v2",
-                        signing.CURATED_INTERACTION_V1)
-    monkeypatch.setitem(signing.NATURAL_KEY_COLUMNS, "curated_interaction/v2", v2_key)
+    monkeypatch.setitem(signing_contexts.FIELD_LISTS, "curated_interaction/v2",
+                        signing_contexts.CURATED_INTERACTION_V1)
+    monkeypatch.setitem(signing_contexts.NATURAL_KEY_COLUMNS, "curated_interaction/v2", v2_key)
 
     target_id = curation.record_interaction_judgement(
         conn, a_graded_rule["subject"], a_graded_rule["class"], "CI_MoA", True,
@@ -862,7 +868,7 @@ def _manifest_parts(entries, upstream, *, key_fingerprint):
         "signed_at": signing.render(_MANIFEST_SCALARS["signed_at"]),
     }
     fields = [(name, scalar_values[name])
-              for name in signing.FIELD_LISTS["release_manifest/v1"]]
+              for name in signing_contexts.FIELD_LISTS["release_manifest/v1"]]
     entry_members = [
         [("target_kind", e.target_kind), ("natural_key", e.natural_key),
          ("payload_context", e.payload_context),
@@ -1021,8 +1027,8 @@ def test_publish_signs_under_the_catalogs_context_not_a_literal(
     signature), so an UPDATE here is the ordinary migration path, not a violation. The
     `conn` fixture rolls it back regardless.
     """
-    monkeypatch.setitem(signing.FIELD_LISTS, "release_manifest/v2",
-                        signing.RELEASE_MANIFEST_V1)
+    monkeypatch.setitem(signing_contexts.FIELD_LISTS, "release_manifest/v2",
+                        signing_contexts.RELEASE_MANIFEST_V1)
     conn.execute("UPDATE drugref.signature_target_kind "
                  "SET payload_context = 'release_manifest/v2' "
                  "WHERE target_kind = 'release_manifest'")
@@ -1176,7 +1182,7 @@ def test_an_unreproducible_entry_context_fails_to_pair_rather_than_raising(
 
     `release_manifest_entry.payload_context` carries a regex CHECK and, deliberately, no
     foreign key, so both values below are storable with one INSERT. The first version of
-    the C1 fix subscripted `signing.NATURAL_KEY_COLUMNS` / `signing.FIELD_LISTS` directly
+    the C1 fix subscripted `signing_contexts.NATURAL_KEY_COLUMNS` / `signing_contexts.FIELD_LISTS` directly
     and raised `KeyError` -- which is not a `RuntimeError`, so `cli.main` does not catch
     it and `drugref verify --release` printed a raw traceback.
 

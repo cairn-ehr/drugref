@@ -1097,6 +1097,13 @@ PROJECT-NOTES § "The fda_cyp_run.py split". The pure per-tuple decisions (`_cla
 `ingest/fda_cyp_disposition.py`. The writer stayed. 622 → 407, off the ledger. #177 keeps three modules:
 `signing.py` 605, `curation.py` 555, `release_verification.py` 540.
 
+**⇒ THE signing.py AND release_verification.py SPLITS ✅ DONE (2026-10-30) — the fourth and fifth modules of
+#177, no migration.** Full account: PROJECT-NOTES § "The signing.py and release_verification.py splits".
+`signing.py`'s frozen context vocabulary (field lists, natural-key columns, `context_target_kind` and the two context predicates) moved
+to `signing_contexts.py` (605 → 394). `release_verification.py`'s signature half moved to `release_signature.py`
+(540 → 369). They had to go together because the renamed callers pushed the second file over its ratchet
+ceiling. #177 keeps one module: `curation.py` 555.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

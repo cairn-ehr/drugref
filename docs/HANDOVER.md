@@ -13,32 +13,36 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/fda-cyp-run-split` off `main`; PR OPEN for the third module of #177 (#177 stays open). No
-migration — THE SCHEMA STILL ENDS AT `db/056`.** PRs #189 and #190 (the first two #177 splits) are MERGED. The
+**Branch `claude/signing-split` off `main`; PR OPEN for the fourth and fifth modules of #177 (#177 stays open).
+No migration — THE SCHEMA STILL ENDS AT `db/056`.** PRs #189–#191 (the first three #177 splits) are MERGED. The
 suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line
 and the collected suite disagree.
 
-**⇒ JUST FINISHED — THE fda_cyp_run.py SPLIT** (full account: PROJECT-NOTES § "The fda_cyp_run.py split").
+**⇒ JUST FINISHED — TWO SPLITS IN ONE PR** (full account: PROJECT-NOTES § "The signing.py and
+release_verification.py splits").
 
-**⇒ WHAT SHIPPED.** `ingest/fda_cyp_run.py` 622 → 407, off #177's ledger. Its pure per-tuple decisions
-(`_classify` + the non-drug/combination vocabulary, `DISPOSITIONS`, `_footnote_text`, `UNDEFINED_MARKERS`,
-`FdaCypFootnoteError`, `source_code`, `class_name`, `_fold_by_lower`) moved **verbatim** (checked by sorted-line
-diff) into `ingest/fda_cyp_disposition.py` (252). The writer and its body stayed. **The writer imports the moved
-names BY NAME**, so `monkeypatch.setattr(fda_cyp_run, "_classify", …)` still patches what the loop calls — do
-not turn those into module-qualified calls.
+**⇒ WHAT SHIPPED.** Commit 1: `release_verification.py` 540 → 369. Its signature half (`MalformedManifestError`,
+`_worst_verdict`, `_verify_manifest_signature`) moved to `release_signature.py` (189). Commit 2: `signing.py`
+605 → 394. Its frozen context vocabulary (field lists, natural-key columns, `context_target_kind` and the two context predicates)
+moved to `signing_contexts.py` (230). Both moves are verbatim. Callers name the new modules, and nothing is
+re-exported. **They went together because the ratchet forced it:** the longer `signing_contexts.` name pushed
+`release_verification.py` to 541, one over its ceiling.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2754 passed (−1 ledger case, +1 sweep case, +1 review's `_footnote_text` raise test); `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green (per module, −1 ledger case and +1 sweep case; the PR #192
+review round added 6 tests for two pre-existing coverage gaps);
+`ruff check .` clean; `make_signing_vectors.py` reproduces `signing_vectors.json` byte for byte.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — three modules over rule 4's cap**:
-   `signing.py` 605, `curation.py` 555, `release_verification.py` 540. Each is a small self-contained round,
-   and seven splits have used the same rule: find the SEAM (a read path inside a writer, a second vocabulary,
-   or a pure decision layer), move it verbatim, get the suite green, *then* change behaviour. The ledger
-   ratchets, so none of them may grow. **Trap:** a module that leaves the ledger also loses its ledger test
-   case, and each new file adds a `test_tools_server_channel` sweep case, so update the count line.
+1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — one module left over rule 4's cap**:
+   `curation.py` 555. #89 posted its natural seam (`ClassGrainCounts` + `class_grain_counts` + `_RULE_COUNT`,
+   ~90 lines, one consumer); re-read the issue, do not re-derive it. Same rule as the last nine splits: find the
+   SEAM, move it verbatim, get the suite green, *then* change behaviour. Splitting it closes BOTH #177 and #89,
+   and then `OVER_CAP_TODAY` is empty. **Traps:** a renamed qualified name can push a caller past 88 columns
+   and a ledgered module past its ceiling (this round). Each new file adds a `test_tools_server_channel` sweep
+   case, so update the count line.
 2. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
    only cost.
 3. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
@@ -55,7 +59,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (three over the cap), **#186**,
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (one over the cap: `curation.py`), **#89** (same file), **#186**,
 **#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current

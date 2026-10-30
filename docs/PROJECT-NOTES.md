@@ -172,7 +172,7 @@ worth keeping does not belong in the file whose history is deliberately disposab
   and fixed**, which is what makes it a rule rather than a bug. It passes every test until a `/v2` context or a
   second algorithm exists, and then reports every historical `/v1` signature as forged. **Wherever a stored
   record has a format/version/algorithm field, the verifier reads that field; if it never reads it, the field is
-  decoration and the guard is missing.** The same instinct is why `signing.FIELD_LISTS` is frozen rather than
+  decoration and the guard is missing.** The same instinct is why `signing_contexts.FIELD_LISTS` is frozen rather than
   derived — the one place in this repo where deriving from the catalog is the wrong answer.
 - **A PROSE RULE THAT HAS FAILED SIX TIMES IS NOT A RULE, IT IS A WISH — AND IT IS NOW A HOOK** (#114 and #118,
   closed by the guard round). The sweep-closed-but-unfixed pattern happened **six** times — #31, #35, #40, #61,
@@ -5640,6 +5640,53 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   corrected `_footnote_text`'s docstring (it said undefined markers were skipped "rather than raising") and
   `fda_cyp.parse_footnotes`'s, which still named `fda_cyp_run` as the caller deciding absent lookups.
 
+## The signing.py and release_verification.py splits (2026-10-30) — the fourth and fifth modules of #177, no migration
+
+`signing.py` went **605 → 394** and `release_verification.py` **540 → 369**. Both are **off #177's ledger**;
+only `curation.py` (555) remains on it. The new modules are `signing_contexts.py` (230) and `release_signature.py`
+(189). One PR, two commits, one per module.
+
+- **Why two in one round: the ratchet forced it.** Moving `signing.py`'s vocabulary renames every caller from
+  `signing.X` to `signing_contexts.X`. That made `release_verification.py`'s
+  `context_is_usable_for(payload_context, "release_manifest")` line too long, and wrapping it put the file at
+  **541**, above its 540 ceiling. No comment paragraph packed into fewer lines, and the ledger forbids raising the
+  number. So `release_verification.py` was split first (commit 1, on `main`'s names), then the `signing.py` move
+  was re-applied on top (commit 2). **The lesson:** a rename that lengthens a qualified name can push a module that
+  sits AT its ceiling over it. Measure the ledgered callers before choosing a module name.
+- **signing.py's seam is the frozen context vocabulary, not the verdict rule.** #89 named the verdict rule
+  (`KeyStatus`, the six constants, `VERDICT_PRECEDENCE`, `verdict`). That is ~67 lines, which would have left
+  the file at ~538 and still over, and `signing.py`'s docstring argues for keeping it there. What moved instead is
+  WHICH FIELDS each context signs: `ATTESTATION_FIELDS`, the four frozen field lists, `FIELD_LISTS`, the three
+  `*_KEY` tuples, `NATURAL_KEY_COLUMNS`, and `context_target_kind` / `context_is_usable_for` /
+  `entry_context_is_reproducible`. `signing.py` keeps the primitives, `canonical_payload` and the verdict rule.
+  The new module imports nothing.
+- **release_verification.py's seam is the half its own docstring already named.** The SIGNATURE half moved:
+  `MalformedManifestError` (raised only there), `_worst_verdict` and `_verify_manifest_signature`. The CONTENT
+  half stayed: `ManifestVerdict`, `AmbiguousSupersessionError`, `UnknownReleaseError`,
+  `_published_content_is_history` and `verify_release`. `verify_release` imports `_verify_manifest_signature`
+  BY NAME, which matches the file's existing `from drugref.releases import ...`. No test monkeypatches either name.
+- **Callers name the new module; nothing is re-exported.** That is the fda_cyp_run split's convention. Code and
+  tests calling a moved name now say `signing_contexts.` or `release_signature.`. So do comment pointers:
+  `keys.py`, `releases.py` and `signing_contexts.py` named `release_verification._verify_manifest_signature` or
+  `_worst_verdict`. Comments that the longer name pushed past 88 columns were re-wrapped without changing a word.
+- **Verbatim, checked by diff** (sorted non-blank lines of each old file ⊆ the two new ones). The exceptions are
+  the reworded pointers across each boundary: `signing.py`'s module docstring gained a paragraph naming
+  `signing_contexts.py`, and `canonical_payload`'s and `SigningError`'s docstrings now qualify the moved names.
+  `context_target_kind`'s docstring now says `signing._CONTEXT`. `release_verification.py`'s module docstring
+  says the signature half lives in `release_signature.py`.
+- **The signed bytes did not move.** `uv run python tests/make_signing_vectors.py` still reproduces
+  `tests/fixtures/signing_vectors.json` byte for byte.
+- **Historical prose is left as it was.** The 5c.4 plan under `docs/superpowers/plans/` and the older sections of
+  this file say `signing.FIELD_LISTS` and similar. They record what was true when written, so read them as
+  `signing_contexts.`.
+- **Suite 2754 → 2754.** Each module gives −1 ledger case and +1 sweep case.
+- **The PR #192 review round (2754 → 2760)** fixed wording only, plus two tests for gaps that predate the
+  split. `context_is_usable_for` now has a DB-free parametrized test (+5); before, only DB-gated tests reached
+  it. The malformed-`upstream_releases` test now drives the scalar member `[1]` too (+1). Before, only the
+  `KeyError` arm was exercised, so dropping `TypeError` from the `except` tuple passed silently. A mutation
+  check confirmed the new case fails with `TypeError` removed. The docs-site decision page's *Applies to*
+  line now names both new modules.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5650,8 +5697,9 @@ needs. HANDOVER now carries only what gates the NEXT session and points here.
 
 **Examined by the debt round and deliberately NOT taken** — **#65** the issue itself says do not act until
 curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds UNII, MED-RT, MeSH, GSRS only) ·
-**#112/#105** blocked on class-grain content existing · **#89 `signing.py` is now 605 lines against the filed
-582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87) — **re-read that issue's
+**#112/#105** blocked on class-grain content existing · **#89 `signing.py` was 605 lines against the filed
+582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87; both split 2026-10-30, §
+"The signing.py and release_verification.py splits") — **re-read that issue's
 figures, do not re-derive them**; `curation.py` **has since crossed the cap at 523** (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
@@ -5712,8 +5760,9 @@ its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budg
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
 left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third — § "The fda_cyp_run.py split".
-**#177 stays open with three:** `signing.py` 605, `curation.py` 555, `release_verification.py` 540 (ceilings in
-`tests/test_module_size_cap.py`).
+`signing.py` and `release_verification.py` left fourth and fifth — § "The signing.py and release_verification.py
+splits". **#177 stays open with one:** `curation.py` 555 (ceiling in `tests/test_module_size_cap.py`). **#89 stays
+open for the same file**: its signing.py and release_verification.py halves are done.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5883,7 +5932,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2754 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2760 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6051,6 +6100,11 @@ git config core.hooksPath .githooks
 # ⇒ ISSUE 177's fda_cyp_run.py SPLIT (no migration): 2753 -> 2754 -- -1 the ledger
 # case fda_cyp_run.py no longer has, +1 the sweep case for fda_cyp_disposition.py,
 # +1 pinning _footnote_text's FdaCypFootnoteError raise, which review found untested.
+# ⇒ ISSUE 177's signing.py AND release_verification.py SPLITS (no migration): 2754 ->
+# 2754 -- per module, -1 the ledger case it no longer has, +1 the sweep case for the
+# new signing_contexts.py / release_signature.py. Its review round: 2754 -> 2760 --
+# +5 a DB-free parametrized context_is_usable_for test, +1 the scalar-member
+# (TypeError) case of the malformed-upstream-releases test.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
