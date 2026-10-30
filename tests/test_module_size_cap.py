@@ -58,9 +58,10 @@ CAP = 500
 #: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`),
 #: and so did `questions.py` (797 -> 230, its `_GAP_SOURCES` specs to
 #: `gap_sources_registry.py` and `gap_sources_interactions.py`) and
-#: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`).
+#: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`)
+#: and `ingest/fda_cyp_run.py` (622 -> 407, its disposition vocabulary to
+#: `ingest/fda_cyp_disposition.py`).
 OVER_CAP_TODAY = {
-    "ingest/fda_cyp_run.py": 622,
     "signing.py": 605,
     "curation.py": 555,
     "release_verification.py": 540,
@@ -132,7 +133,8 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
                  "server_messages.py", "db.py", "cli.py", "cli_signing.py",
                  "cli_signing_release.py", "questions.py",
                  "gap_sources_registry.py", "gap_sources_interactions.py",
-                 "ingest/fda_cyp.py", "ingest/fda_cyp_cell.py"):
+                 "ingest/fda_cyp.py", "ingest/fda_cyp_cell.py",
+                 "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
         # a bare KeyError from the lookup below -- the guard its sibling above
         # already carries.

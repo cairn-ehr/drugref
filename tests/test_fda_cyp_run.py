@@ -10,7 +10,7 @@ import psycopg
 import pytest
 
 from drugref import cli, cli_chain, cli_fda_cyp, ids, questions
-from drugref.ingest import fda_cyp_run
+from drugref.ingest import fda_cyp_disposition, fda_cyp_run
 
 # The fixture carries a genuine table AND, since the review round, the page's
 # own article:modified_time line copied verbatim -- so the end-to-end CLI tests
@@ -100,9 +100,10 @@ def _clean(conn):
 
 
 def test_the_source_code_is_deterministic_and_lower_case():
-    assert fda_cyp_run.source_code("CYP", "3A", "inhibitor", "strong") == "cyp:3a:inhibitor:strong"
-    assert fda_cyp_run.source_code("transporter", "P-gp", "substrate", None) == "transporter:pgp:substrate"
-    assert fda_cyp_run.source_code("transporter", "MATE2-K", "inhibitor", None) == "transporter:mate2k:inhibitor"
+    assert fda_cyp_disposition.source_code("CYP", "3A", "inhibitor", "strong") == "cyp:3a:inhibitor:strong"
+    assert fda_cyp_disposition.source_code("transporter", "P-gp", "substrate", None) == "transporter:pgp:substrate"
+    assert fda_cyp_disposition.source_code("transporter", "MATE2-K", "inhibitor", None) == \
+        "transporter:mate2k:inhibitor"
 
 
 def test_the_class_name_is_source_tagged():
@@ -110,9 +111,9 @@ def test_the_class_name_is_source_tagged():
     MED-RT's bracketed suffix is PUBLISHED BY MED-RT; this one is drugref's own
     label and says so.
     """
-    assert fda_cyp_run.class_name("CYP", "3A", "inhibitor", "strong") == \
+    assert fda_cyp_disposition.class_name("CYP", "3A", "inhibitor", "strong") == \
         "CYP3A strong inhibitor [FDA-CYP]"
-    assert fda_cyp_run.class_name("transporter", "P-gp", "substrate", None) == \
+    assert fda_cyp_disposition.class_name("transporter", "P-gp", "substrate", None) == \
         "P-gp substrate [FDA-CYP]"
 
 
@@ -244,7 +245,7 @@ def test_curcumin_resolves_as_a_moiety_AND_is_still_a_non_drug_entity(conn):
         "SELECT disposition FROM drugref.fda_cyp_assertion "
         "WHERE lower(raw_substance) = 'curcumin' LIMIT 1").fetchone()
     assert row[0] == "non_drug_entity"
-    assert "curcumin" in fda_cyp_run.NON_DRUG_ENTITIES
+    assert "curcumin" in fda_cyp_disposition.NON_DRUG_ENTITIES
 
 
 @pytest.mark.usefixtures("conn")
@@ -1239,10 +1240,28 @@ def test_an_ascii_apostrophe_still_matches_FDAs_curly_one():
     change flipping a clinical classification with no error is the exact shape
     _classify's own ordering docstring exists to prevent.
     """
-    assert fda_cyp_run._is_non_drug_entity("St. John's wort")      # ASCII
-    assert fda_cyp_run._is_non_drug_entity("St. John’s wort")  # FDA's curly
-    assert fda_cyp_run._is_non_drug_entity("GRAPEFRUIT JUICE")
-    assert not fda_cyp_run._is_non_drug_entity("bupropion")
+    assert fda_cyp_disposition._is_non_drug_entity("St. John's wort")      # ASCII
+    assert fda_cyp_disposition._is_non_drug_entity("St. John’s wort")  # FDA's curly
+    assert fda_cyp_disposition._is_non_drug_entity("GRAPEFRUIT JUICE")
+    assert not fda_cyp_disposition._is_non_drug_entity("bupropion")
+
+
+def test_footnote_text_skips_one_undefined_marker_but_raises_when_none_resolve():
+    """The three outcomes _footnote_text distinguishes for a qualified cell.
+
+    One undefined marker among defined ones is skipped (the page oddity); a
+    cell whose ONLY markers are the known-undefined 'b' yields None; a cell
+    where no marker resolves and some are not 'b' means drugref stopped
+    reading FDA's definitions correctly, and must be loud.
+    """
+    defs = {"9": "grapefruit prose", "14": "fourteen prose"}
+    footnote_text = fda_cyp_disposition._footnote_text
+    assert footnote_text(None, defs) is None
+    assert footnote_text("9, b", defs) == "grapefruit prose"
+    assert footnote_text("9, 14", defs) == "grapefruit prose / fourteen prose"
+    assert footnote_text("b", defs) is None
+    with pytest.raises(fda_cyp_disposition.FdaCypFootnoteError, match="'7'"):
+        footnote_text("7, b", defs)
 
 
 @pytest.mark.usefixtures("conn")

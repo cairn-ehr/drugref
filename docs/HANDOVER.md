@@ -13,30 +13,30 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/fda-cyp-split` off `main`; PR OPEN for the second module of #177 (#177 stays open). No
-migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #189 (the questions.py split, #151) is MERGED. The suite
-total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and
-the collected suite disagree.
+**Branch `claude/fda-cyp-run-split` off `main`; PR OPEN for the third module of #177 (#177 stays open). No
+migration — THE SCHEMA STILL ENDS AT `db/056`.** PRs #189 and #190 (the first two #177 splits) are MERGED. The
+suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line
+and the collected suite disagree.
 
-**⇒ JUST FINISHED — THE fda_cyp.py SPLIT** (full account: PROJECT-NOTES § "The fda_cyp.py split").
+**⇒ JUST FINISHED — THE fda_cyp_run.py SPLIT** (full account: PROJECT-NOTES § "The fda_cyp_run.py split").
 
-**⇒ WHAT SHIPPED.** `ingest/fda_cyp.py` 707 → 395, off #177's ledger. Its CELL grammar (`ROLE_COLUMNS`, the
-marker grammar, the closed pathway vocabulary, `parse_cell` + helpers) moved **verbatim** (checked by sorted-line
-diff) into `ingest/fda_cyp_cell.py` (348). The PAGE half (table, headings, `CypTuple`, `parse_table`,
-`parse_release`, `parse_footnotes`) stayed. **`FdaCypParseError` now lives in `fda_cyp_cell`** to avoid an
-import cycle. `fda_cyp` imports it, so `fda_cyp.FdaCypParseError` is unchanged for every caller. One new test
-pins that both modules use the same class.
+**⇒ WHAT SHIPPED.** `ingest/fda_cyp_run.py` 622 → 407, off #177's ledger. Its pure per-tuple decisions
+(`_classify` + the non-drug/combination vocabulary, `DISPOSITIONS`, `_footnote_text`, `UNDEFINED_MARKERS`,
+`FdaCypFootnoteError`, `source_code`, `class_name`, `_fold_by_lower`) moved **verbatim** (checked by sorted-line
+diff) into `ingest/fda_cyp_disposition.py` (252). The writer and its body stayed. **The writer imports the moved
+names BY NAME**, so `monkeypatch.setattr(fda_cyp_run, "_classify", …)` still patches what the loop calls — do
+not turn those into module-qualified calls.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2753 passed; `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2754 passed (−1 ledger case, +1 sweep case, +1 review's `_footnote_text` raise test); `ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — four modules over rule 4's cap**:
-   `ingest/fda_cyp_run.py` 622, `signing.py` 605, `curation.py` 555, `release_verification.py` 540. Each is a
-   small self-contained round, and six splits have used the same rule: find the SEAM (a read path inside a
-   writer, or a second vocabulary), move it verbatim, get the suite green, *then* change behaviour. The ledger
+1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — three modules over rule 4's cap**:
+   `signing.py` 605, `curation.py` 555, `release_verification.py` 540. Each is a small self-contained round,
+   and seven splits have used the same rule: find the SEAM (a read path inside a writer, a second vocabulary,
+   or a pure decision layer), move it verbatim, get the suite green, *then* change behaviour. The ledger
    ratchets, so none of them may grow. **Trap:** a module that leaves the ledger also loses its ledger test
    case, and each new file adds a `test_tools_server_channel` sweep case, so update the count line.
 2. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
@@ -55,7 +55,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (four over the cap), **#186**,
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (three over the cap), **#186**,
 **#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current

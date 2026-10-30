@@ -5605,6 +5605,41 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   immutable; read those names as `fda_cyp_cell.*`.
 - **Suite 2752 → 2753.** +1 for the identity pin, −1 for the ledger case, +1 for the sweep case of the new file.
 
+## The fda_cyp_run.py split (2026-10-30) — the third module of #177, no migration
+
+`ingest/fda_cyp_run.py` went **622 → 407** and is **off #177's ledger**; three modules remain on it. The new
+`ingest/fda_cyp_disposition.py` is 252.
+
+- **The seam.** The writer held a pure decision layer that never touches the database: what each parsed tuple
+  BECOMES. That moved: `NON_DRUG_ENTITIES` with `_APOSTROPHES`/`_is_non_drug_entity`, `_COMBINATION_WORD`,
+  `UNDEFINED_MARKERS`, `FdaCypFootnoteError`, `DISPOSITIONS`, `_footnote_text`, `source_code`, `class_name`,
+  `_fold_by_lower` and `_classify`. The run stayed in `fda_cyp_run.py`: `SOURCE`, `WRITER`, `CONCEPT_TYPE`,
+  `RELATIONSHIP`, `FDA_CYP_TABLES`, `FdaCypShrinkError`, `FdaCypDispositionError`, `MIN_RETAINED_FRACTION`,
+  `FdaCypSummary` and `ingest_fda_cyp`, whose body is unchanged. The "orchestrators are the only writers"
+  invariant holds: the new module has no DB access.
+- **Imported BY NAME, on purpose.** `fda_cyp_run` does `from fda_cyp_disposition import (DISPOSITIONS,
+  _classify, ...)`, so the loop reads `_classify` from the writer's own globals.
+  `test_an_unrecognised_disposition_is_counted_by_nothing_and_so_must_raise`, which does
+  `monkeypatch.setattr(fda_cyp_run, "_classify", ...)`, therefore still patches what the writer calls. A
+  module-qualified call (`fda_cyp_disposition._classify(...)`) would have silently made that patch a no-op.
+- **`FdaCypFootnoteError` is NOT re-exported from `fda_cyp_run`.** Nothing catches it by name today. Unlike
+  `FdaCypParseError` in the fda_cyp split, the writer never names it, so a re-export would be an unused import.
+  If a caller ever needs to catch it, import it from `fda_cyp_disposition`.
+- **Verbatim, checked by diff.** The sorted non-blank lines of the old file are a subset of the two new files,
+  except two reworded docstrings that crossed the boundary (`FdaCypFootnoteError` now names
+  `fda_cyp_run.FdaCypDispositionError`/`FdaCypShrinkError`; `_footnote_text`'s "an earlier round of this
+  module" now says `fda_cyp_run`). Two comments elsewhere that named the defining module now say
+  `fda_cyp_disposition`: `gap_sources_interactions.py` (`_classify`) and `fda_cyp_cell.py` (`_footnote_text`).
+  Tests calling moved names (`source_code`, `class_name`, `NON_DRUG_ENTITIES`, `_is_non_drug_entity`) now name
+  `fda_cyp_disposition`. Both modules are on `test_module_size_cap`'s explicit pin list.
+- **Stale name in an applied migration, deliberately left.** `db/042`'s header says
+  `fda_cyp_run._classify`. Applied migrations are immutable; read it as `fda_cyp_disposition._classify`.
+- **Suite 2753 → 2754.** −1 for the ledger case, +1 for the sweep case of the new file, +1 from the PR #191
+  review: `_footnote_text`'s `FdaCypFootnoteError` raise had no test, so its three outcomes (one undefined
+  marker skipped, only-`'b'` → None, nothing resolving → raise) are now pinned directly. The same review
+  corrected `_footnote_text`'s docstring (it said undefined markers were skipped "rather than raising") and
+  `fda_cyp.parse_footnotes`'s, which still named `fda_cyp_run` as the caller deciding absent lookups.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5676,8 +5711,8 @@ its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budg
 
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
-left second — § "The fda_cyp.py split". **#177 stays open with four:** `ingest/fda_cyp_run.py` 622,
-`signing.py` 605, `curation.py` 555, `release_verification.py` 540 (ceilings in
+left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third — § "The fda_cyp_run.py split".
+**#177 stays open with three:** `signing.py` 605, `curation.py` 555, `release_verification.py` 540 (ceilings in
 `tests/test_module_size_cap.py`).
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
@@ -5848,7 +5883,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2753 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2754 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6013,6 +6048,9 @@ git config core.hooksPath .githooks
 # ⇒ ISSUE 177's fda_cyp.py SPLIT (no migration): 2752 -> 2753 -- +1 pinning that
 # fda_cyp and fda_cyp_cell raise ONE FdaCypParseError class, -1 the ledger case
 # fda_cyp.py no longer has, +1 the sweep case for the new fda_cyp_cell.py.
+# ⇒ ISSUE 177's fda_cyp_run.py SPLIT (no migration): 2753 -> 2754 -- -1 the ledger
+# case fda_cyp_run.py no longer has, +1 the sweep case for fda_cyp_disposition.py,
+# +1 pinning _footnote_text's FdaCypFootnoteError raise, which review found untested.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

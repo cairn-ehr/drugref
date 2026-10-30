@@ -178,9 +178,10 @@ def _merge_markers(*groups: str | None) -> str | None:
     """Join marker groups into one comma-separated string, each marker ONCE.
 
     A cell-level marker qualifies every item, so an item that also states it
-    yielded '5, 5' -- and fda_cyp_run._footnote_text then joined FDA's same prose into
-    footnote_text twice. dict.fromkeys rather than a set because the order the
-    markers appear in on the page is the order they must be read in.
+    yielded '5, 5' -- and fda_cyp_disposition._footnote_text then joined FDA's
+    same prose into footnote_text twice. dict.fromkeys rather than a set
+    because the order the markers appear in on the page is the order they must
+    be read in.
     """
     markers = [marker.strip() for group in groups if group
                for marker in group.split(",") if marker.strip()]

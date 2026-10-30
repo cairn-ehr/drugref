@@ -182,7 +182,7 @@ INTERACTION_GAP_SOURCES = {
     # its clean form).
     #
     # key_sql DELIBERATELY OMITS `disposition` even though the subject half now
-    # groups by it. That is safe only because `fda_cyp_run._classify` decides
+    # groups by it. That is safe only because `fda_cyp_disposition._classify` decides
     # each of the subject dispositions from `raw_substance` (and, for
     # combination_regimen, its own regex over that same string) ALONE -- never
     # from per-cell data like footnote_markers -- so one raw_substance can never
