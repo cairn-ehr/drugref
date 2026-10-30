@@ -228,8 +228,8 @@ def _handle_status(conn, args) -> int:
     than a SELECT embedded here, unlike the two above it: those read operational views,
     while this one reads the CURATED overlay, which belongs to curation.py. See the
     module docstring for what that placement does and does not buy. The fifth block
-    (db/035) reads the overlay too and goes through `curation.class_grain_counts` for
-    the same reason."""
+    (db/035) reads the overlay too and goes through
+    `class_grain_read.class_grain_counts` for the same reason."""
     # THE FIRST FOUR BLOCKS say "none" when empty, and the symmetry is the point: a
     # fresh database printed a bare "loaded releases:" header, which reads as output
     # that got cut off rather than as an answer. Nothing loaded IS the answer there.

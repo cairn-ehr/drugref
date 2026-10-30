@@ -5687,6 +5687,26 @@ only `curation.py` (555) remains on it. The new modules are `signing_contexts.py
   check confirmed the new case fails with `TypeError` removed. The docs-site decision page's *Applies to*
   line now names both new modules.
 
+## The curation.py split (2026-10-31) — the sixth and last module of #177, closes #89, no migration
+
+`curation.py` went **555 → 413** and **`OVER_CAP_TODAY` is gone**: every module under `src/drugref` is now under
+rule 4's cap with no exemption. The new module is `class_grain_read.py` (158). One commit.
+
+- **The seam was the one #89 named**: the class-grain block at the foot of the file (`ClassGrainCounts`,
+  `RULE_REACH_VIEW` / `UNGRADED_RULE_VIEW` / `GRAIN_DISAGREEMENT_VIEW` and `CLASS_GRAIN_VIEWS`, `_rule_count_sql`,
+  `class_grain_counts`). It is a read beside the overlay's writes, with one consumer,
+  `cli_status.print_class_grain_block`. `curation.py` keeps the writers and `unresolved_targets`.
+- **Verbatim, checked by diff** (sorted lines of the old file = the two new ones, plus the new header only). The
+  exceptions are three pointers across the boundary, which now say `curation.UnresolvedTarget` /
+  `curation.unresolved_targets`. One pre-existing error was fixed in passing: "cli.py owns the voice" became
+  `cli_status.py`, which has owned it since #130.
+- **Callers name the new module; nothing is re-exported.** `cli_status.py` (which no longer imports `curation`),
+  `tests/test_class_grain_detectors.py`, and the docstring pointers in `cli.py` and `curated_read.py`.
+- **The ledger was deleted, not left empty.** An empty `OVER_CAP_TODAY` would make its parametrized test a
+  permanent skip and leave an allow-list waiting for its first entry. The sweep is now strict, and its failure
+  message says there is no list to add to. `curation.py` and `class_grain_read.py` joined the explicit pins.
+- **Suite 2760 → 2760**: −1 ledger case, +1 `test_tools_server_channel` sweep case for the new file.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5700,7 +5720,8 @@ curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds U
 **#112/#105** blocked on class-grain content existing · **#89 `signing.py` was 605 lines against the filed
 582, and `release_verification.py` went 532 → 540** (rule-3 documentation for #87; both split 2026-10-30, §
 "The signing.py and release_verification.py splits") — **re-read that issue's
-figures, do not re-derive them**; `curation.py` **has since crossed the cap at 523** (the db/038 round, issue
+figures, do not re-derive them**; `curation.py` **crossed the cap at 523** (split 2026-10-31, § "The curation.py
+split") (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written) · **#88** a type checker
 is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
 **Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
@@ -5727,7 +5748,7 @@ seam the issue named: `Registry`/`load_registry`, a READ path inside the SOLE WR
 `registry_read.py` (**518 → 428**, 430 today). The cap test it asked for became a **sweep** over every module under
 `src/drugref` in `tests/test_module_size_cap.py`, replacing the two per-file cap tests that between them
 guarded three files of 76 — which is how 518 happened with a green suite. The seven modules already over
-the cap are a checked ledger there, filed as
+the cap were a checked ledger there (all split by 2026-10-31, the ledger deleted), filed as
 **[#177](https://github.com/cairn-ehr/drugref/issues/177)**.
 
 **[#176](https://github.com/cairn-ehr/drugref/issues/176) the ingest-duration watershed dates rows by TIME, not
@@ -5761,8 +5782,8 @@ its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budg
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
 left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third — § "The fda_cyp_run.py split".
 `signing.py` and `release_verification.py` left fourth and fifth — § "The signing.py and release_verification.py
-splits". **#177 stays open with one:** `curation.py` 555 (ceiling in `tests/test_module_size_cap.py`). **#89 stays
-open for the same file**: its signing.py and release_verification.py halves are done.
+splits". `curation.py` left last — § "The curation.py split" — so **#177 and #89 close on that PR's merge** and
+the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -6105,6 +6126,8 @@ git config core.hooksPath .githooks
 # new signing_contexts.py / release_signature.py. Its review round: 2754 -> 2760 --
 # +5 a DB-free parametrized context_is_usable_for test, +1 the scalar-member
 # (TypeError) case of the malformed-upstream-releases test.
+# ⇒ ISSUE 177's curation.py SPLIT (no migration): 2760 -> 2760 -- -1 the last ledger
+# case (the ledger itself is deleted), +1 the sweep case for class_grain_read.py.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
@@ -6282,7 +6305,8 @@ ran in CI and `ruff` was not even a project dependency.
   `mesh.iter_records`, `ingest/checksum.py`, `db.clear_source_tables`, `provenance.py`, and — since the policy-surface debt
   round — `overlay.supersede`, pinned by `test_only_overlay_points_a_row_at_its_successor`. **`curation.py`** is
   slice 5c.1's curated-overlay writer, and since issue 76 also holds `unresolved_targets` — the READ that gives
-  `curated_target_unresolved` a consumer, called by `drugref status`'s third block. It lives there rather than in
+  `curated_target_unresolved` a consumer, called by `drugref status`'s third block. Its class-grain detector
+  counts (`class_grain_counts`, the fifth block's read) moved to **`class_grain_read.py`** under #177/#89. It lives there rather than in
   `cli.py` because a Python-embedded reader of an append-only curated table is invisible to the `pg_rewrite`
   sweep that finds every other reader; a grep test per curated table pins that. **`overlay.py`** is the append-only
   tier's one correction primitive (#59): `supersede(conn, table, pk_column, new_id, key_columns, key_values)`, the

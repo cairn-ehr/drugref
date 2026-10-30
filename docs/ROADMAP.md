@@ -1104,6 +1104,12 @@ to `signing_contexts.py` (605 → 394). `release_verification.py`'s signature ha
 (540 → 369). They had to go together because the renamed callers pushed the second file over its ratchet
 ceiling. #177 keeps one module: `curation.py` 555.
 
+**⇒ THE curation.py SPLIT ✅ DONE (2026-10-31) — the sixth and last module of #177, closes #89, no migration.**
+Full account: PROJECT-NOTES § "The curation.py split". The class-grain detector counts (`ClassGrainCounts`,
+the three view names, `_rule_count_sql`, `class_grain_counts`) moved verbatim to `class_grain_read.py`
+(555 → 413). **No module is over rule 4's cap any more**, so `tests/test_module_size_cap.py`'s
+`OVER_CAP_TODAY` ledger is deleted and the sweep is strict.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

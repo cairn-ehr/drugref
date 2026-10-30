@@ -22,17 +22,16 @@ NO SQL AGAINST A CURATED TABLE LIVES HERE, and the qualifier is the whole rule -
 earlier version of this paragraph said "NO SQL LIVES HERE, deliberately", which stopped
 being true the moment the loaded-release block arrived with its `SELECT` against
 `drugref.loaded_release`. The class-grain read goes through
-`curation.class_grain_counts` because two of its three views derive from
-`curated_class_interaction`,
-and cli.py's module docstring makes the rule: a handler must not embed SQL against
-curated, append-only tables, since the sweep that finds readers works through
-`pg_rewrite` and cannot see a query living in a Python string.
+`class_grain_read.class_grain_counts` because two of its three views derive from
+`curated_class_interaction`, and cli.py's module docstring makes the rule: a handler
+must not embed SQL against curated, append-only tables, since the sweep that finds
+readers works through `pg_rewrite` and cannot see a query living in a Python string.
 `test_the_cli_embeds_no_sql_against_a_curated_table` covers this module for the same
 reason it covers the five above -- and it PASSES on the loaded-release SELECT because
 `loaded_release` and `ingest_run_incomplete` are operational views nothing curates, the
 same exception cli.py's docstring already draws for `_handle_status`.
 """
-from drugref import curated_read, curation, migration_guard, provenance
+from drugref import class_grain_read, curated_read, migration_guard, provenance
 
 
 def print_loaded_release_block(conn) -> None:
@@ -206,9 +205,9 @@ def print_class_grain_block(conn) -> None:
     `class_pair_rule_reach`'s arithmetic without changing any name this block reads, so
     the guard did not fire on a db/035-or-036 database and the block printed numbers
     computed from the OLD, OVERSTATED `max_pair_count` -- `dead` under-reporting exactly
-    the rule db/037 exists to surface. `curation._rule_count_sql` now names a db/037
-    column so the UndefinedColumn arm below reaches that case too; see its comment for
-    why the added column cannot move the count.
+    the rule db/037 exists to surface. `class_grain_read._rule_count_sql` now names a
+    db/037 column so the UndefinedColumn arm below reaches that case too; see its
+    comment for why the added column cannot move the count.
     """
     # ISSUE 122. ALL THREE VIEWS ARE NAMED, not just the one that raised: they ship in
     # one migration (db/035), so an operator seeing two present and one absent is
@@ -218,11 +217,11 @@ def print_class_grain_block(conn) -> None:
     # db/035-db/036 database has every view present and still fails; the "relations
     # exist but the migration is not applied" branch is written for exactly that state.
     with migration_guard.guarded(
-            conn, relations=curation.CLASS_GRAIN_VIEWS, migration="037",
+            conn, relations=class_grain_read.CLASS_GRAIN_VIEWS, migration="037",
             consequence=("ungraded, unreachable and cross-grain-disagreeing class "
                          "rules cannot be reported, and a rule reaching no pair would "
                          "be under-reported even where they exist")):
-        counts = curation.class_grain_counts(conn)
+        counts = class_grain_read.class_grain_counts(conn)
 
     # THE DENOMINATOR LEADS (issue 111), and the two numerators hang off it in
     # parentheses rather than standing on their own lines.

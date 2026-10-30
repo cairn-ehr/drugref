@@ -7,16 +7,17 @@ It lives here because it reads the same curated overlay through the same layerin
 -- this module owns the read, `cli_status.py` owns the operator's voice -- and a
 `curated_fault_read.py` holding one function would be a module made out of a sentence.
 
-WHY A MODULE OF ITS OWN. `curation.py` owns the curated overlay's writes and its
+WHY A MODULE OF ITS OWN. `curation.py` owned the curated overlay's writes and its
 detector counts and stood at 485 lines, so adding this to it would have breached
-CLAUDE.md rule 4's ~500-line cap on the spot -- the breach that is already open as issue
-89 for two other files (and `curation.py` has since crossed it, measured onto the same
-issue by db/038). `interactions.py` was the other candidate and is worse: its first
-sentence is "The ONLY module that writes the interaction tables", and a curated READ has
-no business there. `cli_status.py`, `cli_policy.py` and their siblings are the same
-split for the same reason. NOT NUMBERED HERE any more: this said "four siblings ... the
-seventh" while `cli_interactions.py` said "three more", two ordinals over one population
-that had already drifted apart by the round that added the eighth. A count kept in two
+CLAUDE.md rule 4's ~500-line cap on the spot -- the breach that was then open as issue
+89 for two other files (and `curation.py` later crossed it too, until its class-grain
+counts moved to `class_grain_read.py` under issues 177 and 89). `interactions.py` was
+the other candidate and is worse: its first sentence is "The ONLY module that writes
+the interaction tables", and a curated READ has no business there. `cli_status.py`,
+`cli_policy.py` and their siblings are the same split for the same reason. NOT NUMBERED
+HERE any more: this said "four siblings ... the seventh" while `cli_interactions.py`
+said "three more", two ordinals over one population that had already drifted apart by
+the round that added the eighth. A count kept in two
 files is the trap this project keeps paying for; `ls src/drugref/cli_*.py` is exact and
 cannot go stale.
 
@@ -247,11 +248,11 @@ def unrankable_severities(conn: psycopg.Connection) -> list[UnrankableSeverity]:
 
     RAISES psycopg's UndefinedTable UNCAUGHT on a database predating db/038. Converting
     that into an operator sentence is the CALLER's job, exactly as it is for
-    `curation.unresolved_targets` and `curation.class_grain_counts` -- this module owns
-    the read, `cli_status.py` owns the voice. (What that caller then SAYS is only as
-    good as its diagnosis: #122 tracks that all four guards assert one cause as fact and
-    that `cli.main` drops `__cause__`, so the Postgres error naming the real missing
-    relation reaches nobody.)
+    `curation.unresolved_targets` and `class_grain_read.class_grain_counts` -- this
+    module owns the read, `cli_status.py` owns the voice. (What that caller then SAYS is
+    only as good as its diagnosis: #122 tracks that all four guards assert one cause as
+    fact and that `cli.main` drops `__cause__`, so the Postgres error naming the real
+    missing relation reaches nobody.)
     """
     return [UnrankableSeverity(**dict(zip(_UNRANKABLE_COLUMNS, row, strict=True)))
             for row in conn.execute(_UNRANKABLE).fetchall()]
