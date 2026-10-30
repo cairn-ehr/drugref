@@ -1091,6 +1091,12 @@ splitting, `parse_cell`) moved verbatim to `ingest/fda_cyp_cell.py`. The page/ta
 off the ledger. #177 keeps four modules: `fda_cyp_run.py` 622, `signing.py` 605, `curation.py` 555,
 `release_verification.py` 540.
 
+**⇒ THE fda_cyp_run.py SPLIT ✅ DONE (2026-10-30) — the third module of #177, no migration.** Full account:
+PROJECT-NOTES § "The fda_cyp_run.py split". The pure per-tuple decisions (`_classify` and its vocabulary,
+`_footnote_text`, `source_code`, `class_name`, `_fold_by_lower`) moved verbatim to
+`ingest/fda_cyp_disposition.py`. The writer stayed. 622 → 407, off the ledger. #177 keeps three modules:
+`signing.py` 605, `curation.py` 555, `release_verification.py` 540.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
