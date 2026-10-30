@@ -5572,8 +5572,8 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
 
 ## The fda_cyp.py split (2026-10-30) — the second module of #177, no migration
 
-`ingest/fda_cyp.py` went **707 → 391** and is **off #177's ledger**; four modules remain on it. The new
-`ingest/fda_cyp_cell.py` is 349.
+`ingest/fda_cyp.py` went **707 → 395** and is **off #177's ledger**; four modules remain on it. The new
+`ingest/fda_cyp_cell.py` is 348.
 
 - **The seam.** The module held two vocabularies. The PAGE one stays in `fda_cyp.py`: where the data table is,
   `EXPECTED_COLUMNS`, `_clean`, the header row, `CypTuple`, `parse_table`, `parse_release` and
@@ -5594,6 +5594,15 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   `fda_cyp.py`'s guard list now says which guards live in `fda_cyp_cell.parse_cell`. Tests that call moved
   names (`parse_cell`, `split_footnotes`, `ROLE_COLUMNS`, `PATHWAYS`, `_PATHWAYS_BY_SYSTEM`) and two test
   comments now name `fda_cyp_cell`. Both modules are on `test_module_size_cap`'s explicit pin list.
+- **Review round (PR 190).** Six more comments that pointed across the new boundary, or were already wrong on
+  main, were corrected: "parse_cell's comment above", "mid-cell in this file", "this module's strictness",
+  `parse_table`'s failure list (now names all of `parse_cell`'s five), a bare `_footnote_text`
+  (`fda_cyp_run`'s), and a claim that atorvastatin's `'moderate substrate'` cell is "NOT exercised by anything
+  CI runs" — `test_atorvastatins_real_cell_drops_the_word_sensitive_entirely` runs it unskipped, and it is the
+  ONLY test that does.
+- **Stale names in applied migrations, deliberately left.** `db/042` and `db/043` (including `db/043`'s
+  `COMMENT ON`) still say `fda_cyp._PATHWAYS_BY_SYSTEM` / `fda_cyp.parse_cell`. Applied migrations are
+  immutable; read those names as `fda_cyp_cell.*`.
 - **Suite 2752 → 2753.** +1 for the identity pin, −1 for the ledger case, +1 for the sweep case of the new file.
 
 ## The standing open-issue ledger

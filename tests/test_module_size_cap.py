@@ -58,7 +58,7 @@ CAP = 500
 #: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`),
 #: and so did `questions.py` (797 -> 230, its `_GAP_SOURCES` specs to
 #: `gap_sources_registry.py` and `gap_sources_interactions.py`) and
-#: `ingest/fda_cyp.py` (707 -> 391, its cell grammar to `ingest/fda_cyp_cell.py`).
+#: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`).
 OVER_CAP_TODAY = {
     "ingest/fda_cyp_run.py": 622,
     "signing.py": 605,

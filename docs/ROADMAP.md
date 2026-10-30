@@ -1087,7 +1087,7 @@ merges them and is still the only writer; it went 797 → 230 and is off the led
 
 **⇒ THE fda_cyp.py SPLIT ✅ DONE (2026-10-30) — the second module of #177, no migration.** Full account:
 PROJECT-NOTES § "The fda_cyp.py split". The cell grammar (`ROLE_COLUMNS`, the pathway vocabulary, marker
-splitting, `parse_cell`) moved verbatim to `ingest/fda_cyp_cell.py`. The page/table half stayed. 707 → 391,
+splitting, `parse_cell`) moved verbatim to `ingest/fda_cyp_cell.py`. The page/table half stayed. 707 → 395,
 off the ledger. #177 keeps four modules: `fda_cyp_run.py` 622, `signing.py` 605, `curation.py` 555,
 `release_verification.py` 540.
 

@@ -178,7 +178,7 @@ def _merge_markers(*groups: str | None) -> str | None:
     """Join marker groups into one comma-separated string, each marker ONCE.
 
     A cell-level marker qualifies every item, so an item that also states it
-    yielded '5, 5' -- and _footnote_text then joined FDA's same prose into
+    yielded '5, 5' -- and fda_cyp_run._footnote_text then joined FDA's same prose into
     footnote_text twice. dict.fromkeys rather than a set because the order the
     markers appear in on the page is the order they must be read in.
     """
@@ -290,10 +290,9 @@ def parse_cell(raw_cell: str, column_index: int,
         # exact cell (pinned by
         # test_atorvastatins_real_cell_drops_the_word_sensitive_entirely,
         # which quotes the byte-for-byte cell). 'moderate substrate' is in NO
-        # test fixture and NOT exercised by anything CI runs -- downloads/ is
-        # gitignored, so only a skipif(not REAL_PAGE.exists()) test would ever
-        # see it -- which is exactly why a "tightening" here would go green in
-        # CI and abort the real ingest.
+        # HTML fixture -- that unit test is the ONLY thing CI runs that sees
+        # it, so weakening or deleting the test lets a "tightening" here go
+        # green in CI and abort the real ingest.
         raise FdaCypParseError(
             f"cell {raw_cell!r} says potency {cell_potency!r} but column "
             f"{column_heading!r} says {column_potency!r} -- they disagree")

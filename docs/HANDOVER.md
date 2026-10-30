@@ -20,9 +20,9 @@ the collected suite disagree.
 
 **⇒ JUST FINISHED — THE fda_cyp.py SPLIT** (full account: PROJECT-NOTES § "The fda_cyp.py split").
 
-**⇒ WHAT SHIPPED.** `ingest/fda_cyp.py` 707 → 391, off #177's ledger. Its CELL grammar (`ROLE_COLUMNS`, the
+**⇒ WHAT SHIPPED.** `ingest/fda_cyp.py` 707 → 395, off #177's ledger. Its CELL grammar (`ROLE_COLUMNS`, the
 marker grammar, the closed pathway vocabulary, `parse_cell` + helpers) moved **verbatim** (checked by sorted-line
-diff) into `ingest/fda_cyp_cell.py` (349). The PAGE half (table, headings, `CypTuple`, `parse_table`,
+diff) into `ingest/fda_cyp_cell.py` (348). The PAGE half (table, headings, `CypTuple`, `parse_table`,
 `parse_release`, `parse_footnotes`) stayed. **`FdaCypParseError` now lives in `fda_cyp_cell`** to avoid an
 import cycle. `fda_cyp` imports it, so `fda_cyp.FdaCypParseError` is unchanged for every caller. One new test
 pins that both modules use the same class.

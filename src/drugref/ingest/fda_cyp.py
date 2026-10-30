@@ -25,7 +25,7 @@ neither is "the HTML looked simple":
    lenient parse of the real page produces 69 classes instead of 65 while
    reporting zero errors, and four of them are garbage minted with real immortal
    UUIDs ('cyp:1a2 20', 'transporter:oatp1b1 inhibitor'). Those four are what
-   this module's strictness is for.
+   this parser's strictness (this module and fda_cyp_cell) is for.
 
    WHAT IS DELIBERATELY NOT ASSERTED HERE: the ROW COUNT. An earlier version of
    this docstring claimed "the row and cell COUNTS are asserted (245 x 11
@@ -176,9 +176,11 @@ def parse_table(page: str) -> list[CypTuple]:
     two CypTuples. On the 2026-05-29 release, 245 rows and 337 non-empty cells
     produce 419 tuples.
 
-    Raises FdaCypParseError for every structural failure the module documents --
-    no table, no rows, a ragged row or header, a cell whose role or potency
-    disagrees with its column, an unknown or wrong-system pathway. It does NOT
+    Raises FdaCypParseError for every structural failure documented here and in
+    fda_cyp_cell.parse_cell -- no table, no rows, a ragged row or header, and
+    (from parse_cell, whose docstring lists all five) a cell that states no
+    role phrase or whose role or potency disagrees with its column, an unknown
+    or wrong-system pathway, or a column index that is not a role column. It does NOT
     read the footnote prose or the release stamp; parse_footnotes and
     parse_release are separate calls, so the orchestrator can order them.
     """
@@ -201,7 +203,8 @@ def parse_table(page: str) -> list[CypTuple]:
                 # A row-level (name-glued) marker qualifies EVERY cell in that
                 # row; a cell- or item-level one (parse_cell's own return,
                 # already itself a merge of the two WITHIN-cell positions --
-                # see parse_cell's comment above) qualifies only where it sits.
+                # see the CELL-LEVEL MARKER comment in fda_cyp_cell.parse_cell)
+                # qualifies only where it sits.
                 # row_markers and cell_markers are kept SEPARATE here (issue
                 # 122's shape applied to footnote SCOPE) so a caller can tell
                 # "FDA qualified this substance" from "FDA qualified THIS
@@ -290,10 +293,10 @@ def parse_release(page: str) -> str:
     # and CONTRADICTORY. The old loop returned on the first readable stamp
     # without ever comparing the three, so a CMS that updates og:updated_time
     # but not the JSON-LD dateModified wrote a WRONG upstream_release -- and
-    # ingest_run history, as this module's docstring says, cannot be corrected
-    # afterwards. check_fda_cyp_release already refuses when the OPERATOR
-    # disagrees with the page; this is that same check applied to the page
-    # disagreeing with itself.
+    # ingest_run history (append-only) cannot be corrected afterwards.
+    # check_fda_cyp_release already refuses when the OPERATOR disagrees with
+    # the page; this is that same check applied to the page disagreeing with
+    # itself.
     if len(readable) > 1:
         raise FdaCypParseError(
             "the page's dateModified / article:modified_time / og:updated_time "
@@ -319,9 +322,10 @@ def parse_release(page: str) -> str:
 # "<h2>Footnotes</h2>" followed by a flat list of "<p><sup>MARKER</sup>text</p>"
 # paragraphs, one per footnote. Markers run 1-21 today, plus a lettered 'b'
 # that TRAILS A WHOLE CELL (cenobamate's "CYP3A moderate inducer b" -- the
-# conivaptan position, not the mid-cell one: "mid-cell" in this file means a
+# conivaptan position, not the mid-cell one: "mid-cell" in this parser means a
 # marker on ONE ITEM of a list, as in ciprofloxacin's "1A2 20 ; 3A moderate
-# inhibitor", and the two are handled by different code paths) but is NEVER
+# inhibitor", and the two are handled by different code paths, both in
+# fda_cyp_cell.parse_cell) but is NEVER
 # defined here -- design section 2.3 calls this "a second namespace", and the
 # live page's own Footnotes list has no entry for a letter at all. That is a
 # page oddity to preserve evidence about, not a defect to paper over: see
