@@ -5570,6 +5570,41 @@ says), #169 (do it when the 12th counter arrives), #170 (`Version` sum type: par
   the count. (Earlier this round, `git stash` left the untracked new modules in place, which made main appear to
   collect 2752 too. Count main from a clean checkout.)
 
+## The fda_cyp.py split (2026-10-30) — the second module of #177, no migration
+
+`ingest/fda_cyp.py` went **707 → 395** and is **off #177's ledger**; four modules remain on it. The new
+`ingest/fda_cyp_cell.py` is 348.
+
+- **The seam.** The module held two vocabularies. The PAGE one stays in `fda_cyp.py`: where the data table is,
+  `EXPECTED_COLUMNS`, `_clean`, the header row, `CypTuple`, `parse_table`, `parse_release` and
+  `parse_footnotes`. The CELL one moved to `fda_cyp_cell.py`: `ROLE_COLUMNS`, the footnote-marker grammar
+  (`split_footnotes`), the closed pathway vocabulary (`PATHWAYS`, `_PATHWAYS_BY_SYSTEM`), the role/potency
+  phrases and `parse_cell` with its helpers. `fda_cyp.parse_table` is the only production caller of the cell
+  half. `fda_cyp_run` and the CLI call only `parse_table`, `parse_release` and `parse_footnotes`, so neither
+  changed.
+- **`FdaCypParseError` is defined in `fda_cyp_cell`**, because both halves raise it and defining it in
+  `fda_cyp.py` would make the two modules import each other. `fda_cyp` imports it (with `ROLE_COLUMNS`,
+  `parse_cell`, `split_footnotes`, all used there), so `fda_cyp.FdaCypParseError` is the same class and every
+  existing `except` and `pytest.raises` still works. A new test pins `fda_cyp.FdaCypParseError is
+  fda_cyp_cell.FdaCypParseError`. If `fda_cyp` ever declared its own class again, cell failures would get past
+  every handler.
+- **Verbatim, checked by diff.** The sorted non-blank lines of the old file are a subset of the two new files.
+  The only additions are the new module docstring and the import block. After that check, two comments that
+  crossed the boundary were reworded: "justified the whole module" now says "the whole parser", and
+  `fda_cyp.py`'s guard list now says which guards live in `fda_cyp_cell.parse_cell`. Tests that call moved
+  names (`parse_cell`, `split_footnotes`, `ROLE_COLUMNS`, `PATHWAYS`, `_PATHWAYS_BY_SYSTEM`) and two test
+  comments now name `fda_cyp_cell`. Both modules are on `test_module_size_cap`'s explicit pin list.
+- **Review round (PR 190).** Six more comments that pointed across the new boundary, or were already wrong on
+  main, were corrected: "parse_cell's comment above", "mid-cell in this file", "this module's strictness",
+  `parse_table`'s failure list (now names all of `parse_cell`'s five), a bare `_footnote_text`
+  (`fda_cyp_run`'s), and a claim that atorvastatin's `'moderate substrate'` cell is "NOT exercised by anything
+  CI runs" — `test_atorvastatins_real_cell_drops_the_word_sensitive_entirely` runs it unskipped, and it is the
+  ONLY test that does.
+- **Stale names in applied migrations, deliberately left.** `db/042` and `db/043` (including `db/043`'s
+  `COMMENT ON`) still say `fda_cyp._PATHWAYS_BY_SYSTEM` / `fda_cyp.parse_cell`. Applied migrations are
+  immutable; read those names as `fda_cyp_cell.*`.
+- **Suite 2752 → 2753.** +1 for the identity pin, −1 for the ledger case, +1 for the sweep case of the new file.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5639,10 +5674,11 @@ given the previous rule — never a backfill of finished rows); once true, the f
 its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budget` for a real reason), #169
 (the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor).
 
-**[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **FIXED by the
-questions.py split, closes on merge**, as the first of #177's modules — § "The questions.py split". **#177
-stays open with five:** `ingest/fda_cyp.py` 707, `ingest/fda_cyp_run.py` 622, `signing.py` 605, `curation.py`
-555, `release_verification.py` 540 (ceilings in `tests/test_module_size_cap.py`).
+**[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
+questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
+left second — § "The fda_cyp.py split". **#177 stays open with four:** `ingest/fda_cyp_run.py` 622,
+`signing.py` 605, `curation.py` 555, `release_verification.py` 540 (ceilings in
+`tests/test_module_size_cap.py`).
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -5812,7 +5848,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2752 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2753 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -5974,6 +6010,9 @@ git config core.hooksPath .githooks
 # disjointness, -1 the ledger case questions.py no longer has, and +2 because the
 # bare-connect sweep in test_tools_server_channel parametrises over EVERY file under
 # src/, so each new module is a new case. A split always moves this number.
+# ⇒ ISSUE 177's fda_cyp.py SPLIT (no migration): 2752 -> 2753 -- +1 pinning that
+# fda_cyp and fda_cyp_cell raise ONE FdaCypParseError class, -1 the ledger case
+# fda_cyp.py no longer has, +1 the sweep case for the new fda_cyp_cell.py.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
