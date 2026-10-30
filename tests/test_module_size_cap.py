@@ -60,11 +60,11 @@ CAP = 500
 #: `gap_sources_registry.py` and `gap_sources_interactions.py`) and
 #: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`)
 #: and `ingest/fda_cyp_run.py` (622 -> 407, its disposition vocabulary to
-#: `ingest/fda_cyp_disposition.py`).
+#: `ingest/fda_cyp_disposition.py`) and `release_verification.py` (540 -> 369, its
+#: signature half to `release_signature.py`).
 OVER_CAP_TODAY = {
     "signing.py": 605,
     "curation.py": 555,
-    "release_verification.py": 540,
 }
 
 _PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"
@@ -134,7 +134,8 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
                  "cli_signing_release.py", "questions.py",
                  "gap_sources_registry.py", "gap_sources_interactions.py",
                  "ingest/fda_cyp.py", "ingest/fda_cyp_cell.py",
-                 "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py"):
+                 "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py",
+                 "release_verification.py", "release_signature.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
         # a bare KeyError from the lookup below -- the guard its sibling above
         # already carries.

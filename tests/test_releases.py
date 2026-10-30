@@ -4,7 +4,8 @@ import datetime as dt
 
 import pytest
 
-from drugref import curation, keys, release_verification, releases, signatures, signing
+from drugref import (curation, keys, release_signature, release_verification, releases,
+                     signatures, signing)
 
 PUBLISHED_AT = dt.datetime(2026, 8, 9, 6, 0, 0, tzinfo=dt.timezone.utc)
 
@@ -342,7 +343,7 @@ def test_a_malformed_upstream_member_is_reported_not_a_traceback(
         "row_count, upstream_releases, published_by, published_at) "
         "VALUES ('2026.08.22', %s, 0, '[{\"src\": \"UNII\"}]'::jsonb, 'op', %s)",
         (b"\x09" * 32, PUBLISHED_AT))
-    with pytest.raises(release_verification.MalformedManifestError,
+    with pytest.raises(release_signature.MalformedManifestError,
                        match="upstream_releases member"):
         release_verification.verify_release(conn, "2026.08.22")
 
@@ -712,12 +713,12 @@ def test_worst_verdict_picks_the_most_severe():
     fix for C4's `KeyError` crash): it must rank WORST, beating even
     `signing.UNKNOWN_KEY`, rather than raising or being silently treated as best.
     """
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.VALID, signing.KEY_EXPIRED]) == signing.KEY_EXPIRED
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.VALID, signing.BAD_SIGNATURE,
          signing.KEY_EXPIRED]) == signing.BAD_SIGNATURE
-    assert release_verification._worst_verdict(
+    assert release_signature._worst_verdict(
         [signing.UNKNOWN_KEY, "some_future_verdict"]) == "some_future_verdict"
 
 

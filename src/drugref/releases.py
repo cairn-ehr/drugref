@@ -274,7 +274,7 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
     it explicitly -- review round 2's C2: the first draft hard-coded the literal string
     `"release_manifest/v1"` with no way to build (or, critically, to REBUILD while
     VERIFYING) a payload under any other context, which is Task 7's C1 defect
-    reintroduced in a different shape. `release_verification._verify_manifest_signature`
+    reintroduced in a different shape. `release_signature._verify_manifest_signature`
     passes the value it read back from the specific `assertion_signature` row it is
     checking, never assuming "today's" -- the same reconstruct-the-past discipline
     `signatures.payload_for` already applies one layer down -- and `publish` passes the

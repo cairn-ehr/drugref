@@ -283,7 +283,7 @@ def for_verification(conn: psycopg.Connection,
     """The key material AND the status rule, in one round trip. None if unregistered.
 
     WHY ONE QUERY (issue 87). `signatures.verify_target` and
-    `release_verification._verify_manifest_signature` each asked the registry the same
+    `release_signature._verify_manifest_signature` each asked the registry the same
     question twice about one fingerprint. `verify_target` is called once per curated
     row across the whole overlay by the release verifier -- its docstring already
     records hoisting the catalog lookup and the target-row read out of the
