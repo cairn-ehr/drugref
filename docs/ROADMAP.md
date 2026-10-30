@@ -1080,6 +1080,11 @@ onto a name. The openFDA arm counts absent vs blank records and labels keyed on 
 suppression half moved to `spl_suppress.py` (524 → 359 by the move, off #177's ledger). #164, #169, #170 stay open on their
 own triggers; the PR's review added #186, #187, #188.
 
+**⇒ THE questions.py SPLIT ✅ DONE (2026-10-30) — issue #151, the first module of #177, no migration.** Full
+account: PROJECT-NOTES § "The questions.py split". The 18 `_GAP_SOURCES` specs moved verbatim into two
+vocabulary modules split at slice 5c (`gap_sources_registry.py`, `gap_sources_interactions.py`). `questions.py`
+merges them and is still the only writer; it went 797 → 230 and is off the ledger. #177 keeps five modules.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

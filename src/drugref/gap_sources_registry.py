@@ -1,0 +1,260 @@
+# src/drugref/gap_sources_registry.py
+"""Gap kinds that predate slice 5c: registry coverage, classification, conditions,
+Plan B/C's curation kinds and slice 3's composition kind.
+
+A VOCABULARY, NOT A WRITER. Each entry names the gap view that derives a kind and
+the SQL that turns one of its rows into a question; `questions.py` merges this dict
+with `gap_sources_interactions.INTERACTION_GAP_SOURCES` into `_GAP_SOURCES` and is
+still the only module that writes the register. Split out of questions.py verbatim
+for issue 177 (CLAUDE.md rule 4) -- the contract every entry obeys (`key_sql` builds
+the frozen SCHEME:value gap_key, `text_sql` the searchable statement) is stated
+once, above that merge.
+
+EVERY gap_key FORMAT HERE IS FROZEN: question_uuid is uuid5(gap_kind, gap_key),
+immortal and externally cited, so reformatting a key re-mints every question.
+"""
+
+REGISTRY_GAP_SOURCES = {
+    "unclassified_moiety": {
+        "view": "gap_unclassified_moiety",
+        "key_sql": "'MOIETY:' || moiety_uuid",
+        "text_sql": (
+            "'Which physiologic effects does ' || display_name || "
+            "' produce? No has_PE membership is recorded, so it cannot participate "
+            "in any effect-accumulation model.'"),
+    },
+    "unpopulated_contraindication": {
+        "view": "gap_unpopulated_contraindication",
+        "key_sql": "'CLASS:' || class_uuid",
+        "text_sql": (
+            "'Which drugs belong to ' || class_name || '? It carries ' || "
+            "ci_rule_count || ' contraindication rule(s) but no drug is filed under "
+            "it anywhere in its subtree, so those rules can never yield a pair.'"),
+    },
+    "unmatched_ingredient": {
+        "view": "gap_unmatched_ingredient",
+        "key_sql": "'RXNORM_IN:' || rxcui",
+        # "NAMED upstream", NOT "classified upstream", and the widening is a correction
+        # rather than a hedge. Since db/019 the bucket has THREE reasons, and 13 of the
+        # 2,150 RxCUIs on this worklist are never classified at all -- 10 reach it only
+        # as the subject of an indication rule and 3 only as the subject of a
+        # contraindication and an indication. The old text asserted a classification for
+        # all 2,150, so those 13 became EXTERNALLY CITABLE questions (question_uuid is
+        # immortal) carrying a false premise about the release.
+        #
+        # DELIBERATELY NOT REASON-SPECIFIC: gap_unmatched_ingredient is DISTINCT ON
+        # (rxcui) and does not project `reason`, precisely so its grain matches the
+        # question's -- one RxCUI, one question, however many reasons named it. Naming
+        # the reason here would mean either widening the view (splitting one question
+        # into three, which db/008's DISTINCT ON exists to prevent) or picking one
+        # reason arbitrarily. The disjunction is what is actually true of every row.
+        "text_sql": (
+            "'Does RxCUI ' || rxcui || COALESCE(' (' || name || ')', '') || "
+            "' have an active moiety drugref should carry? An upstream release names "
+            "it -- as a classified ingredient, or as the subject of a contraindication "
+            "or indication rule -- but no moiety in the registry claims it.'"),
+    },
+    # Plan B. The one kind here that drugref can answer ITSELF -- by recording a
+    # decision in class_expansion_policy -- rather than by consulting a source. It
+    # shares the CLASS:{uuid} gap_key format with unpopulated_contraindication, and
+    # only gap_kind separates the two: a sprawling class nothing is filed under
+    # legitimately raises both questions, independently answerable.
+    "unreviewed_expansion_root": {
+        "view": "gap_unreviewed_expansion_root",
+        "key_sql": "'CLASS:' || class_uuid",
+        "text_sql": (
+            "'Should a contraindication naming ' || class_name || ' expand over its ' "
+            "|| descendant_class_count || ' descendant classes, or is the class too "
+            "abstract to pair on? ' || ci_rule_count || ' rule(s) ride on the answer. "
+            "It expands by default until a decision is recorded in "
+            "class_expansion_policy.'"),
+    },
+    # #31 (db/018). The rules Plan B's deny-list leaves reaching nobody: the object
+    # class is denied expansion AND carries no direct member on the rule's axis, while
+    # drugs DO sit below it. The third kind drugref can answer ITSELF, by recording a
+    # decision -- and it shares the CLASS:{uuid} gap_key with the two other class-level
+    # kinds, which only gap_kind separates. That is deliberate and already the
+    # established shape: one class can legitimately raise several independently
+    # answerable questions, and question_uuid takes gap_kind as an input precisely so
+    # they do not collide.
+    #
+    # The text names BOTH numbers a curator needs to answer it -- how many rules ride
+    # on the decision, and how many drugs the deny is holding back -- because the
+    # answer is a judgement between them (299 partners for Endocrine Activity
+    # Alteration is fan-out, so `allow` is probably wrong; a class holding back three
+    # is a different conversation). PARTNERS, not members: the count excludes each
+    # rule's own subject (ci_rule_partner_reach), so the number the curator weighs is
+    # what allowing expansion would actually reach, never one drug more.
+    "dead_by_expansion_policy": {
+        "view": "gap_dead_by_expansion_policy",
+        "key_sql": "'CLASS:' || class_uuid",
+        "text_sql": (
+            "'Which drugs belong DIRECTLY to ' || class_name || '? ' || ci_rule_count "
+            "|| ' contraindication rule(s) name it, expansion over the ' || "
+            "subtree_partner_count || ' drug(s) below it is DENIED in "
+            "class_expansion_policy, and no drug it could pair with is filed directly "
+            "under it -- so those rule(s) reach nobody. Answer by filing a drug "
+            "directly, by revisiting the deny, or by recording that the rule is "
+            "unactionable.'"),
+    },
+    # Slice 5b. CI_ChemClass objects that reached no moiety. The gap_key scheme is
+    # {NAMESPACE}:{code} because the subject is an upstream RECORD drugref never
+    # registered: it has no drugref UUID to cite, which is exactly why it is a gap.
+    #
+    # THE NAMESPACE COMES FROM THE DATA (issue #41, with db/017). It was hardcoded
+    # 'MESH:' here while the view collapsed its grouping onto object_code alone, so
+    # the same one-namespace assumption lived in TWO places and fixing either alone
+    # left the other live -- and this is the half no migration can reach. An object
+    # code is not namespace-unique in general, and question_uuid is a pure function
+    # of (gap_kind, gap_key): a collision here does not merely miscount, it hands two
+    # objects ONE immortal question that append-only curator rows then attach to.
+    #
+    # upper(), not object_source verbatim, and the choice is deliberate: it keeps the
+    # frozen SCHEME:value convention every other gap kind uses (MOIETY:, CLASS:,
+    # RXNORM_IN:) AND leaves every existing MeSH question_uuid bit-for-bit unchanged
+    # (object_source is stored 'MeSH'), so a fix to an externally-citable identifier
+    # scheme needed no migration of the identifiers themselves. Pinned by test.
+    #
+    # db/017 ALSO groups on upper(object_source), and the repetition is deliberate --
+    # it is not #41's defect returning. That defect was the namespace VALUE ('MESH')
+    # written in two places, where correcting one left the other wrong. This is the
+    # same canonicalisation RULE stated twice, where the two cannot disagree: applying
+    # upper() to an already-upper string changes nothing. Kept here because gap_key
+    # defines a FROZEN, externally-citable identifier scheme and must not depend on a
+    # future re-issue of the view remembering to canonicalise -- exactly the way db/016
+    # was re-issued as db/017. Both halves are pinned independently, in test_gap_views.
+    #
+    # TWO KINDS, TWO QUESTIONS, one gap_kind (db/014). Both are objects drugref did
+    # not ingest, so both belong on this worklist -- but the remedies are opposites
+    # and so the text must be too:
+    #   * CHEMICAL_CLASS         -- a policy question drugref answers ITSELF, like
+    #                               unreviewed_expansion_root: may this class expand
+    #                               over MeSH's structural tree?
+    #   * UNREGISTERED_SUBSTANCE -- a COVERAGE question, like unmatched_ingredient:
+    #                               the object names a real substance the registry
+    #                               does not carry. Asking whether a leaf drug
+    #                               descriptor should "expand over the tree" is a
+    #                               category error, and asking it was the defect
+    #                               db/014's object_kind closed.
+    # The CASE has NO ELSE deliberately. open_question.question_text is NOT NULL, so
+    # a third object_kind added without its own question aborts the ingest loudly
+    # instead of shipping a curator the wrong sentence -- the same force-a-declaration
+    # discipline db/014 gave condition_ci_axis.expands_descendants.
+    "unresolved_ci_object": {
+        "view": "gap_unresolved_ci_object",
+        "key_sql": "upper(object_source) || ':' || object_code",
+        "text_sql": (
+            "CASE object_kind "
+            "WHEN 'CHEMICAL_CLASS' THEN "
+            "  'Should contraindications naming ' "
+            "  || COALESCE(object_name, object_code) "
+            "  || ' be expanded to the drugs beneath it in MeSH''s structural tree? ' "
+            "  || ci_rule_count || ' upstream rule(s) ride on the answer, and they "
+            "are withheld until it is decided -- MeSH structural classes do not map "
+            "cleanly onto clinical ones.' "
+            "WHEN 'UNREGISTERED_SUBSTANCE' THEN "
+            "  'MED-RT contraindicates ' || ci_rule_count || ' drug(s) with ' "
+            "  || COALESCE(object_name, object_code) "
+            "  || ', a substance drugref registers no moiety for, so those rule(s) "
+            "were not ingested. Should it be registered? This is a registry-coverage "
+            "gap -- do NOT answer it by expanding anything over MeSH''s tree.' "
+            "END"),
+    },
+    # Slice 5b.2. Diseases nothing in the registry treats, prevents or diagnoses --
+    # directly or from above. The gap_key is the REGISTERED-OBJECT form (MOIETY:,
+    # CLASS:) rather than unresolved_ci_object's {NAMESPACE}:{code}, and the difference
+    # is real: this subject IS registered and has a drugref UUID to cite, whereas that
+    # one is an upstream record drugref never registered, which is exactly why it is a
+    # gap. The text names the disease AND its MeSH code so the row is usable as a
+    # literature search on its own.
+    "condition_without_indication": {
+        "view": "gap_condition_without_indication",
+        "key_sql": "'CONDITION:' || condition_uuid",
+        "text_sql": (
+            "'Which drugs treat, prevent or diagnose ' || name || ' (MeSH ' || "
+            "source_code || ')? No may_treat, may_prevent or may_diagnose assertion "
+            "names it or any condition above it in the MeSH tree, so drugref can offer "
+            "nothing for a patient coded with it.'"),
+    },
+    # ---- Plan C: the four curation-dependent kinds --------------------------
+    #
+    # ALL FOUR ARE QUESTIONS drugref ANSWERS ITSELF, like unreviewed_expansion_root
+    # and dead_by_expansion_policy and unlike unmatched_ingredient -- the remedy is a
+    # curator decision recorded in additive_effect or effect_contribution, never a
+    # source to go and consult. The cost ladder (source_tier) therefore does not order
+    # them: there is no cheaper tier to check first.
+    "uncurated_additive_effect": {
+        "view": "gap_uncurated_additive_effect",
+        "key_sql": "'CLASS:' || class_uuid",
+        # Names BOTH numbers a curator weighs -- how much upstream attention the class
+        # already has, and how many drugs a threshold would range over -- because the
+        # answer is a judgement between them, exactly as dead_by_expansion_policy's is.
+        "text_sql": (
+            "'Does the effect ' || class_name || ' ACCUMULATE across a regimen, and at "
+            "what threshold? ' || ci_rule_count || ' contraindication rule(s) name it "
+            "and ' || subtree_member_count || ' drug(s) sit at or below it. Answer by "
+            "recording an additive_effect row -- including one with accumulates = "
+            "false, which is a real answer and retires this question.'"),
+    },
+    "uncurated_threshold": {
+        "view": "gap_uncurated_threshold",
+        "key_sql": "'CLASS:' || effect_class_uuid",
+        # Shares the CLASS:{uuid} format with uncurated_additive_effect and with the
+        # three class-level kinds above; only gap_kind separates them. That is the
+        # established shape (one class legitimately raises several independently
+        # answerable questions) and question_uuid takes gap_kind as an input precisely
+        # so they cannot collide.
+        # Quotes the UNGRADED count, which since db/023 is the number the gap gates on
+        # -- a curator told "only N graded" could satisfy that by grading classes the
+        # effect never reaches, which is exactly the hole db/023 closed. "How many of
+        # the drugs this would fire on has nobody looked at" is the actual question.
+        "text_sql": (
+            "'Which drugs are MAJOR contributors to ' || class_name || '? It fires on "
+            "any ' || threshold_total || ' contributor(s) with no major required, and "
+            "' || ungraded_member_count || ' of its drug(s) have no grade at all "
+            "(across ' || graded_contributor_count || ' promotion(s) that reach it) "
+            "-- so it currently fires on members nobody has reviewed. Answer by "
+            "grading contributors, or by raising threshold_major.'"),
+    },
+    "ineffective_contribution": {
+        "view": "gap_ineffective_contribution",
+        # A COMPOUND KEY, joined with '/' per mint_question_uuid's frozen convention.
+        # The gap is about the PAIR: the same contributor class may be a fine promotion
+        # for one effect and a no-op for another, and folding them onto one question
+        # would hand two unrelated gaps a single immortal UUID.
+        "key_sql": ("'CLASS:' || effect_class_uuid || "
+                    "'/CLASS:' || contributor_class_uuid"),
+        "text_sql": (
+            "'Promoting ' || contributor_class_name || ' to ' || magnitude || ' for ' "
+            "|| effect_class_name || ' changes nothing: the two classes share no drug. "
+            "Was the wrong class named, or did an upstream release move the drugs out "
+            "from under one of them?'"),
+    },
+    "ungraded_contribution": {
+        "view": "gap_ungraded_contribution",
+        "key_sql": ("'CLASS:' || effect_class_uuid || "
+                    "'/CLASS:' || contributor_class_uuid"),
+        "text_sql": (
+            "'Is ' || contributor_class_name || ' a MAJOR or a minor contributor to ' "
+            "|| effect_class_name || '? Its ' || member_count || ' member(s) count as "
+            "minor by default because nobody has graded the class. Recording minor "
+            "EXPLICITLY is a real answer and retires this question -- it records that "
+            "a curator looked.'"),
+    },
+    # Slice 3, gap kind 12. The read path propagates ONLY the active component, so
+    # an unruled composite is reached by nothing -- and for a contraindication,
+    # fewer rows is the harm direction. That trade is defensible only because the
+    # shortfall is on a worklist rather than hidden, which is this entry.
+    #
+    # Keyed on the COMPOSITE, which is also the view's grain (#41): grouping more
+    # coarsely would fold two gaps onto one immortal question_uuid.
+    "unruled_composition_activity": {
+        "view": "gap_unruled_composition_activity",
+        "key_sql": "'SUBSTANCE:' || substance_unii",
+        "text_sql": (
+            "'Which component of UNII ' || substance_unii || ' makes it "
+            "pharmacologically active? It has ' || component_count || ' registered "
+            "component(s) and the release marks none of them active, so no "
+            "contraindication or interaction on a component reaches it.'"),
+    },
+}

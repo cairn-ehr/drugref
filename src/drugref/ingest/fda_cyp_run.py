@@ -513,7 +513,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                     f"{disposition!r}, which this orchestrator counts into no "
                     f"summary field. The closed set is {sorted(DISPOSITIONS)}. "
                     "Widening it means widening the counts, db/039's CHECK and "
-                    "questions.py's CASE together.")
+                    "gap_sources_interactions.py's CASE together.")
 
             # registry_near_name is left NULL throughout this slice. Section 7.1
             # describes it as curator evidence from "a stated, mechanical prefix

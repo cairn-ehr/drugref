@@ -40,10 +40,11 @@ def _gap_view_comment_defects(comment):
     if not comment:
         return ["no COMMENT ON VIEW at all"]
     defects = []
-    # THE FROZEN KEY. `CI_AXIS:` is what `questions.py` emits ("'/CI_AXIS:' ||
-    # relationship", twice) and what four tests pin literally. Checked BOTH ways: the
-    # right spelling present, and the bare `/AXIS:` absent -- because the revert produced
-    # a comment that was wrong without being empty, which a presence check alone misses.
+    # THE FROZEN KEY. `CI_AXIS:` is what `gap_sources_interactions.py` emits
+    # ("'/CI_AXIS:' || relationship", twice) and what four tests pin literally.
+    # Checked BOTH ways: the right spelling present, and the bare `/AXIS:` absent --
+    # because the revert produced a comment that was wrong without being empty, which
+    # a presence check alone misses.
     if "CI_AXIS:" not in comment:
         defects.append("does not spell the frozen gap_key `CI_AXIS:`")
     if "/AXIS:" in comment:

@@ -936,7 +936,7 @@ def test_an_unregistered_substance_gets_the_other_question(conn, ingest_run_id):
 
 
 def test_an_unhandled_object_kind_aborts_rather_than_mislabels(conn, ingest_run_id):
-    """The CASE in questions.py has no ELSE, deliberately.
+    """The CASE in gap_sources_registry.py has no ELSE, deliberately.
 
     A third object_kind added without its own question text yields NULL, and
     open_question.question_text is NOT NULL -- so the ingest dies loudly at the
@@ -1116,7 +1116,7 @@ def test_the_view_emits_the_namespace_already_canonicalised(conn, ingest_run_id)
     """object_source is published UPPER-CASED, not merely grouped that way.
 
     A consumer reading the namespace off this view must read the same string
-    questions.py keys on; emitting the stored spelling beside a canonicalised
+    gap_sources_registry.py keys on; emitting the stored spelling beside a canonicalised
     grouping would hand a reader 'MeSH' for a row whose question is 'MESH:...'.
     """
     _insert_unresolved(conn, ingest_run_id, object_source="MeSH",

@@ -138,8 +138,9 @@ def test_object_kind_is_constrained(conn, ingest_run_id):
     """Only the two kinds the read path knows how to phrase a question for.
 
     An unconstrained free-text column here is db/012 finding 3 all over again: a
-    mis-typed kind would insert cleanly and then fall through questions.py's CASE
-    to NULL, blaming the register step for a typo made at ingest time.
+    mis-typed kind would insert cleanly and then fall through
+    gap_sources_registry.py's CASE to NULL, blaming the register step for a typo
+    made at ingest time.
     """
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute(

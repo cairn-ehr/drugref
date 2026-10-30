@@ -13,34 +13,30 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-followups` off `main`; PR OPEN closing #163, #165, #166, #168, #171. No migration — THE
-SCHEMA STILL ENDS AT `db/056`.** PR #184 (#182) is MERGED. The suite total lives in PROJECT-NOTES § "How to run /
-test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/questions-split` off `main`; PR OPEN closing #151 (and #177's first module). No migration — THE
+SCHEMA STILL ENDS AT `db/056`.** PR #185 (the SPL follow-ups) is MERGED. The suite total lives in PROJECT-NOTES §
+"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED — THE SPL FOLLOW-UPS ROUND** (full account: PROJECT-NOTES § "The SPL follow-ups round").
+**⇒ JUST FINISHED — THE questions.py SPLIT** (full account: PROJECT-NOTES § "The questions.py split").
 
-**⇒ WHAT SHIPPED.** The release walker refuses a member whose declared size exceeds a ceiling ≥ 10× the largest
-real one (measured: 15.7 MB outer, 3.2 MB XML) before decompressing it, and reads at most what a member declares
-(+1), so a forged header cannot inflate a bomb past the check; bzip2/lzma members are refused by name (#166). The crosscheck/probe tools walk the
-shipped reader and `spl_subject_read` reads the shipped classCode set (#168). The census emits each part as it
-finishes (#171). The frozen SPL types copy their mappings, and the matcher refuses an empty `Match`, a suppression
-term on a name's key, and an over-full `NextWordProfile` (#165). The openFDA arm counts absent vs blank records and
-document-id-keyed labels, reconciled against records (#163). **`spl_match.py`'s suppression half moved verbatim to
-`spl_suppress.py` (524 → 359 by the move), so it left #177's ledger.**
+**⇒ WHAT SHIPPED.** `questions.py` 797 → 230, off #177's ledger. Its 18 `_GAP_SOURCES` specs moved **verbatim**
+(checked by diff; three cross-file comment pointers reworded) into `gap_sources_registry.py` (12 pre-5c kinds,
+260 lines) and `gap_sources_interactions.py` (6 kinds from slice 5c, 341 lines). `questions.py` merges them, so
+`questions._GAP_SOURCES` is unchanged and it is still the only writer. One new test pins disjoint halves and
+the merged 18-kind order (a dict merge silently drops a duplicate key).
 
-**⇒ VERIFIED.** `uv run pytest` green with the DB; `ruff check .` clean. A five-agent PR review found the size
-cap bypassable by a forged header (reproduced: 355 MiB peak for a 200 KB member declaring 100 bytes; 0.1 MiB
-after), `Vocabulary`/`NextWordProfile` still holding live dicts, and the probe's skip verdict failing open — all
-fixed in the PR. Deferred to **#186** (persist #163's counts per run), **#187** (refuse negative counts),
-**#188** (census per-part class codes).
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2752 passed; `ruff check .` clean. **Trap found:** each new file
+under `src/` adds a case to `test_tools_server_channel`'s sweep, so a split always moves the suite count. And
+`git stash` keeps untracked files, so count main from a clean checkout.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — six modules over rule 4's cap**, `questions.py`
-   at **797** down to `release_verification.py` at **540**, each a small self-contained round. Precedent is four
-   deep (`spl_release.py`, `cli_status.py`, `registry_read.py`, `spl_suppress.py`); the rule is always the same —
+1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — five modules over rule 4's cap**,
+   `ingest/fda_cyp.py` at **707** down to `release_verification.py` at **540**, each a small self-contained round.
+   Precedent is five deep (`spl_release.py`, `cli_status.py`, `registry_read.py`, `spl_suppress.py`,
+   `gap_sources_*.py`); the rule is always the same —
    find the SEAM, verbatim move, suite green, *then* behaviour. The ledger ratchets, so none of them may grow.
 2. **The SPL follow-ups left on their own triggers** — #164, #169, #170 (see the ledger); #170 is the one with
    no trigger, just cost.
@@ -57,11 +53,11 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#179 is CLOSED
-(PR #183); #182 is CLOSED (PR #184); #163, #165, #166, #168, #171 close with this PR.** Open: **#177** (six over
-the cap), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
+#166, #168, #171 are CLOSED (PR #185); #151 closes with this PR.** Open: **#177** (five over the cap), **#186**,
+**#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
-#151–#153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
+#152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
