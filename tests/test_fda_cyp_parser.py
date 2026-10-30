@@ -22,7 +22,7 @@ import pathlib
 
 import pytest
 
-from drugref.ingest import fda_cyp
+from drugref.ingest import fda_cyp, fda_cyp_cell
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
 
@@ -71,19 +71,31 @@ def test_a_short_header_row_raises_rather_than_a_bare_indexerror(fixture_html):
         fda_cyp.parse_table(broken)
 
 
+def test_both_halves_of_the_parser_raise_one_and_the_same_error_class():
+    """Issue 177 split the cell grammar into fda_cyp_cell, which now DEFINES
+    FdaCypParseError; fda_cyp imports it. Every caller (fda_cyp_run, the CLI,
+    these tests) catches `fda_cyp.FdaCypParseError`. If fda_cyp ever declared
+    its own class again, a bad CELL would raise the other one and walk straight
+    past every one of those handlers.
+    """
+    assert fda_cyp.FdaCypParseError is fda_cyp_cell.FdaCypParseError
+    with pytest.raises(fda_cyp.FdaCypParseError):
+        fda_cyp_cell.parse_cell("CYP9Z9 moderate inhibitor", 2, "CYP Mod INH")
+
+
 def test_the_ten_role_columns_are_pinned_to_their_meanings():
     """Each column IS a (system, role, potency) tuple -- the table is a MATRIX,
     not a list of facts, and this mapping is the whole reason a cell can be read.
     """
-    assert fda_cyp.ROLE_COLUMNS[1] == ("CYP", "inhibitor", "strong")
-    assert fda_cyp.ROLE_COLUMNS[8] == ("CYP", "substrate", "moderate sensitive")
-    assert fda_cyp.ROLE_COLUMNS[9] == ("transporter", "inhibitor", None)
-    assert fda_cyp.ROLE_COLUMNS[10] == ("transporter", "substrate", None)
-    assert len(fda_cyp.ROLE_COLUMNS) == 10
+    assert fda_cyp_cell.ROLE_COLUMNS[1] == ("CYP", "inhibitor", "strong")
+    assert fda_cyp_cell.ROLE_COLUMNS[8] == ("CYP", "substrate", "moderate sensitive")
+    assert fda_cyp_cell.ROLE_COLUMNS[9] == ("transporter", "inhibitor", None)
+    assert fda_cyp_cell.ROLE_COLUMNS[10] == ("transporter", "substrate", None)
+    assert len(fda_cyp_cell.ROLE_COLUMNS) == 10
 
 
 def test_a_single_trailing_footnote_is_split_off():
-    assert fda_cyp.split_footnotes("adefovir 1") == ("adefovir", "1")
+    assert fda_cyp_cell.split_footnotes("adefovir 1") == ("adefovir", "1")
 
 
 def test_a_COMMA_SEPARATED_footnote_list_is_split_off():
@@ -101,19 +113,19 @@ def test_a_COMMA_SEPARATED_footnote_list_is_split_off():
     was recorded as a measurement of the source. A partially-working parser hands
     you a plausible string, and a plausible string gets quoted.
     """
-    assert fda_cyp.split_footnotes("ritonavir 14, 15, 16") == ("ritonavir", "14, 15, 16")
+    assert fda_cyp_cell.split_footnotes("ritonavir 14, 15, 16") == ("ritonavir", "14, 15, 16")
     # And the trailing-comma form the probe produced must ALSO split cleanly, so a
     # re-fetch that really does end in a comma is not a new bug.
-    assert fda_cyp.split_footnotes("ritonavir 14, 15,") == ("ritonavir", "14, 15")
+    assert fda_cyp_cell.split_footnotes("ritonavir 14, 15,") == ("ritonavir", "14, 15")
 
 
 def test_a_LETTER_marker_is_a_second_namespace():
     """Footnotes are numbered AND lettered: cenobamate's cell ends 'inducer b'."""
-    assert fda_cyp.split_footnotes("CYP3A moderate inducer b") == ("CYP3A moderate inducer", "b")
+    assert fda_cyp_cell.split_footnotes("CYP3A moderate inducer b") == ("CYP3A moderate inducer", "b")
 
 
 def test_an_unfootnoted_name_is_returned_unchanged_with_no_markers():
-    assert fda_cyp.split_footnotes("abiraterone") == ("abiraterone", None)
+    assert fda_cyp_cell.split_footnotes("abiraterone") == ("abiraterone", None)
 
 
 def test_a_number_that_is_part_of_the_name_is_not_eaten():
@@ -123,40 +135,40 @@ def test_a_number_that_is_part_of_the_name_is_not_eaten():
     NAME, not marker. The rule is a marker is a whitespace-separated bare integer
     or single lower-case letter -- '2a' and '2-K' are neither.
     """
-    assert fda_cyp.split_footnotes("peginterferon alpha-2a") == ("peginterferon alpha-2a", None)
-    assert fda_cyp.split_footnotes("MATE2-K substrate") == ("MATE2-K substrate", None)
+    assert fda_cyp_cell.split_footnotes("peginterferon alpha-2a") == ("peginterferon alpha-2a", None)
+    assert fda_cyp_cell.split_footnotes("MATE2-K substrate") == ("MATE2-K substrate", None)
 
 
 def test_the_fixture_yields_ritonavir_not_ritonavir_14_15(fixture_html):
     """End to end over the real bytes: the substance is named 'ritonavir'."""
     rows = fda_cyp.extract_rows(fixture_html)
-    names = {fda_cyp.split_footnotes(row[0])[0] for row in rows}
+    names = {fda_cyp_cell.split_footnotes(row[0])[0] for row in rows}
     assert "ritonavir" in names
     assert not any(name.startswith("ritonavir 14") for name in names)
 
 
 def test_a_simple_cell_yields_one_pathway():
-    assert fda_cyp.parse_cell("2D6 moderate inhibitor", 2, "CYP Mod INH") == [("2D6", None)]
+    assert fda_cyp_cell.parse_cell("2D6 moderate inhibitor", 2, "CYP Mod INH") == [("2D6", None)]
 
 
 def test_a_semicolon_list_yields_several_pathways():
-    assert fda_cyp.parse_cell("P-gp; BCRP inhibitor", 9, "TRNSP INH") == [
+    assert fda_cyp_cell.parse_cell("P-gp; BCRP inhibitor", 9, "TRNSP INH") == [
         ("P-gp", None), ("BCRP", None)]
 
 
 def test_the_word_and_is_also_a_separator():
-    assert fda_cyp.parse_cell("3A and 2C19 weak inhibitor", 3, "CYP WK INH") == [
+    assert fda_cyp_cell.parse_cell("3A and 2C19 weak inhibitor", 3, "CYP WK INH") == [
         ("3A", None), ("2C19", None)]
 
 
 def test_a_comma_is_also_a_separator():
-    assert fda_cyp.parse_cell("1A2, 2B6 weak inducer", 6, "CYP WK IND") == [
+    assert fda_cyp_cell.parse_cell("1A2, 2B6 weak inducer", 6, "CYP WK IND") == [
         ("1A2", None), ("2B6", None)]
 
 
 def test_a_cyp_prefix_is_normalised_away():
     """The page writes bare '3A' and prefixed 'CYP3A' for the same pathway."""
-    assert fda_cyp.parse_cell("CYP3A moderate inducer", 5, "CYP Mod IND") == [("3A", None)]
+    assert fda_cyp_cell.parse_cell("CYP3A moderate inducer", 5, "CYP Mod IND") == [("3A", None)]
 
 
 def test_a_trailing_noun_is_not_a_pathway():
@@ -169,7 +181,7 @@ def test_a_trailing_noun_is_not_a_pathway():
     source' trap Task 2 hit with 'ritonavir 14, 15,' -- corrected the same way,
     against the live bytes rather than the spec's illustrative shorthand.
     """
-    assert fda_cyp.parse_cell("BCRP and P-gp transporters inhibitor", 9, "TRNSP INH") == [
+    assert fda_cyp_cell.parse_cell("BCRP and P-gp transporters inhibitor", 9, "TRNSP INH") == [
         ("BCRP", None), ("P-gp", None)]
 
 
@@ -178,13 +190,13 @@ def test_a_footnote_attached_to_ONE_pathway_is_kept_with_it():
     ALONE, mid-cell -- a trailing-only stripper turns '1A2 20' into a pathway and
     mints the garbage class 'cyp:1a2 20:inhibitor:moderate'.
     """
-    assert fda_cyp.parse_cell("1A2 20 ; 3A moderate inhibitor", 2, "CYP Mod INH") == [
+    assert fda_cyp_cell.parse_cell("1A2 20 ; 3A moderate inhibitor", 2, "CYP Mod INH") == [
         ("1A2", "20"), ("3A", None)]
 
 
 def test_a_footnote_on_SEVERAL_pathways_is_kept_with_each():
     """rifampin: 'OATP1B1 13 ; OATP1B3 13 inhibitor'."""
-    assert fda_cyp.parse_cell("OATP1B1 13 ; OATP1B3 13 inhibitor", 9, "TRNSP INH") == [
+    assert fda_cyp_cell.parse_cell("OATP1B1 13 ; OATP1B3 13 inhibitor", 9, "TRNSP INH") == [
         ("OATP1B1", "13"), ("OATP1B3", "13")]
 
 
@@ -193,7 +205,7 @@ def test_the_role_word_may_repeat_per_list_item():
     phrase covers only the items that do not state their own -- reading it as part
     of the pathway mints 'transporter:oatp1b1 inhibitor'.
     """
-    assert fda_cyp.parse_cell("BCRP; OATP1B1 inhibitor; OAT3 inhibitor", 9, "TRNSP INH") == [
+    assert fda_cyp_cell.parse_cell("BCRP; OATP1B1 inhibitor; OAT3 inhibitor", 9, "TRNSP INH") == [
         ("BCRP", None), ("OATP1B1", None), ("OAT3", None)]
 
 
@@ -204,7 +216,7 @@ def test_an_unknown_pathway_token_ABORTS():
     reporting zero errors. Four are garbage, minted with real immortal UUIDs.
     """
     with pytest.raises(fda_cyp.FdaCypParseError, match="pathway"):
-        fda_cyp.parse_cell("CYP9Z9 moderate inhibitor", 2, "CYP Mod INH")
+        fda_cyp_cell.parse_cell("CYP9Z9 moderate inhibitor", 2, "CYP Mod INH")
 
 
 def test_a_cell_whose_role_disagrees_with_its_COLUMN_aborts():
@@ -214,7 +226,7 @@ def test_a_cell_whose_role_disagrees_with_its_COLUMN_aborts():
     rather than be resolved by preferring one of them.
     """
     with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
-        fda_cyp.parse_cell("2D6 strong inhibitor", 2, "CYP Mod INH")  # column says moderate
+        fda_cyp_cell.parse_cell("2D6 strong inhibitor", 2, "CYP Mod INH")  # column says moderate
 
 
 def test_an_out_of_range_column_index_raises_the_documented_error_not_a_bare_keyerror():
@@ -224,7 +236,7 @@ def test_an_out_of_range_column_index_raises_the_documented_error_not_a_bare_key
     instead, contradicting the documented contract.
     """
     with pytest.raises(fda_cyp.FdaCypParseError, match="column"):
-        fda_cyp.parse_cell("3A moderate inhibitor", 99, "bogus heading")
+        fda_cyp_cell.parse_cell("3A moderate inhibitor", 99, "bogus heading")
 
 
 def test_the_potency_cross_check_is_total_not_skipped_when_one_side_is_missing():
@@ -239,11 +251,11 @@ def test_the_potency_cross_check_is_total_not_skipped_when_one_side_is_missing()
     """
     # The column (CYP Mod INH) declares a potency band; the cell states none.
     with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
-        fda_cyp.parse_cell("3A inhibitor", 2, "CYP Mod INH")
+        fda_cyp_cell.parse_cell("3A inhibitor", 2, "CYP Mod INH")
     # The column (TRNSP INH) is a transporter column -- FDA publishes no potency
     # vocabulary for transporters at all -- yet the cell states one anyway.
     with pytest.raises(fda_cyp.FdaCypParseError, match="disagree"):
-        fda_cyp.parse_cell("P-gp strong inhibitor", 9, "TRNSP INH")
+        fda_cyp_cell.parse_cell("P-gp strong inhibitor", 9, "TRNSP INH")
 
 
 def test_a_pathway_from_the_wrong_system_aborts_even_though_it_is_a_real_pathway():
@@ -255,16 +267,16 @@ def test_a_pathway_from_the_wrong_system_aborts_even_though_it_is_a_real_pathway
     the union of every system this table has.
     """
     with pytest.raises(fda_cyp.FdaCypParseError, match="system"):
-        fda_cyp.parse_cell("OATP1B1 moderate inhibitor", 2, "CYP Mod INH")
+        fda_cyp_cell.parse_cell("OATP1B1 moderate inhibitor", 2, "CYP Mod INH")
     with pytest.raises(fda_cyp.FdaCypParseError, match="system"):
-        fda_cyp.parse_cell("3A inhibitor", 9, "TRNSP INH")
+        fda_cyp_cell.parse_cell("3A inhibitor", 9, "TRNSP INH")
 
 
 def test_moderately_sensitive_matches_the_columns_moderate_sensitive():
     """The legend's word is not always the cell's: 'moderately sensitive
     substrate' against the column's 'Mod SENS SUB'. Not a disagreement.
     """
-    assert fda_cyp.parse_cell("2C8 and 3A moderately sensitive substrate", 8,
+    assert fda_cyp_cell.parse_cell("2C8 and 3A moderately sensitive substrate", 8,
                               "CYP Mod SENS SUB") == [("2C8", None), ("3A", None)]
 
 
@@ -280,21 +292,21 @@ def test_atorvastatins_real_cell_drops_the_word_sensitive_entirely():
     startswith comparison ('moderate sensitive'.startswith('moderate')) admits
     it; an == comparison aborts the real page on this exact cell.
     """
-    assert fda_cyp.parse_cell("3A moderate substrate", 8, "CYP Mod SENS SUB") == [("3A", None)]
+    assert fda_cyp_cell.parse_cell("3A moderate substrate", 8, "CYP Mod SENS SUB") == [("3A", None)]
 
 
 def test_OATP1B_is_its_own_pathway_and_is_never_expanded():
     """FDA writes the coarser 'OATP1B' where other rows say OATP1B1/OATP1B3.
     Expanding it would manufacture a specificity FDA declined to state.
     """
-    assert fda_cyp.parse_cell("OATP1B transporter inhibitor", 9, "TRNSP INH") == [
+    assert fda_cyp_cell.parse_cell("OATP1B transporter inhibitor", 9, "TRNSP INH") == [
         ("OATP1B", None)]
-    assert "OATP1B" in fda_cyp.PATHWAYS
+    assert "OATP1B" in fda_cyp_cell.PATHWAYS
 
 
 def test_parse_table_over_the_fixture_produces_the_measured_tuple_and_pathway_count(
         fixture_html):
-    """The PREVIOUS version of this test asserted `tup.pathway in fda_cyp.PATHWAYS`
+    """The PREVIOUS version of this test asserted `tup.pathway in fda_cyp_cell.PATHWAYS`
     for every tuple -- which is GUARANTEED BY CONSTRUCTION, not a property that
     can fail: parse_cell raises FdaCypParseError before returning any pathway
     outside the closed vocabulary (test_an_unknown_pathway_token_ABORTS pins
@@ -548,7 +560,7 @@ def test_a_marker_repeated_at_both_scopes_is_carried_once():
     yielded '5, 5' -- and _footnote_text then joined FDA's same prose into
     footnote_text twice.
     """
-    pairs = fda_cyp.parse_cell("3A 5 moderate inhibitor 5", 2, "CYP Mod INH")
+    pairs = fda_cyp_cell.parse_cell("3A 5 moderate inhibitor 5", 2, "CYP Mod INH")
     assert pairs == [("3A", "5")]
 
 
@@ -563,5 +575,5 @@ def test_a_comma_separated_marker_list_stays_with_its_mid_cell_pathway():
     VOCABULARY -- telling the operator to widen PATHWAYS, which would be the
     wrong fix, for a footnote-parsing problem.
     """
-    pairs = fda_cyp.parse_cell("1A2 20, 21; 3A moderate inhibitor", 2, "CYP Mod INH")
+    pairs = fda_cyp_cell.parse_cell("1A2 20, 21; 3A moderate inhibitor", 2, "CYP Mod INH")
     assert pairs == [("1A2", "20, 21"), ("3A", None)]

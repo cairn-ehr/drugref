@@ -13,36 +13,37 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/questions-split` off `main`; PR OPEN closing #151 (and #177's first module). No migration — THE
-SCHEMA STILL ENDS AT `db/056`.** PR #185 (the SPL follow-ups) is MERGED. The suite total lives in PROJECT-NOTES §
-"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/fda-cyp-split` off `main`; PR OPEN for the second module of #177 (#177 stays open). No
+migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #189 (the questions.py split, #151) is MERGED. The suite
+total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and
+the collected suite disagree.
 
-**⇒ JUST FINISHED — THE questions.py SPLIT** (full account: PROJECT-NOTES § "The questions.py split").
+**⇒ JUST FINISHED — THE fda_cyp.py SPLIT** (full account: PROJECT-NOTES § "The fda_cyp.py split").
 
-**⇒ WHAT SHIPPED.** `questions.py` 797 → 230, off #177's ledger. Its 18 `_GAP_SOURCES` specs moved **verbatim**
-(checked by diff; three cross-file comment pointers reworded) into `gap_sources_registry.py` (12 pre-5c kinds,
-260 lines) and `gap_sources_interactions.py` (6 kinds from slice 5c, 341 lines). `questions.py` merges them, so
-`questions._GAP_SOURCES` is unchanged and it is still the only writer. One new test pins disjoint halves and
-the merged 18-kind order (a dict merge silently drops a duplicate key).
+**⇒ WHAT SHIPPED.** `ingest/fda_cyp.py` 707 → 391, off #177's ledger. Its CELL grammar (`ROLE_COLUMNS`, the
+marker grammar, the closed pathway vocabulary, `parse_cell` + helpers) moved **verbatim** (checked by sorted-line
+diff) into `ingest/fda_cyp_cell.py` (349). The PAGE half (table, headings, `CypTuple`, `parse_table`,
+`parse_release`, `parse_footnotes`) stayed. **`FdaCypParseError` now lives in `fda_cyp_cell`** to avoid an
+import cycle. `fda_cyp` imports it, so `fda_cyp.FdaCypParseError` is unchanged for every caller. One new test
+pins that both modules use the same class.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2752 passed; `ruff check .` clean. **Trap found:** each new file
-under `src/` adds a case to `test_tools_server_channel`'s sweep, so a split always moves the suite count. And
-`git stash` keeps untracked files, so count main from a clean checkout.
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2753 passed; `ruff check .` clean.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — five modules over rule 4's cap**,
-   `ingest/fda_cyp.py` at **707** down to `release_verification.py` at **540**, each a small self-contained round.
-   Precedent is five deep (`spl_release.py`, `cli_status.py`, `registry_read.py`, `spl_suppress.py`,
-   `gap_sources_*.py`); the rule is always the same —
-   find the SEAM, verbatim move, suite green, *then* behaviour. The ledger ratchets, so none of them may grow.
-2. **The SPL follow-ups left on their own triggers** — #164, #169, #170 (see the ledger); #170 is the one with
-   no trigger, just cost.
-3. **`5c.5` pregnancy & lactation is spiked-not-designed** — LactMed puts 1,679 moieties outside MED-RT's thin
-   lactation floor, gated on a **clinician review that has not happened** (23-row worklist).
-4. **The class half of 5c.3** (#155, #102, word order); deferring it **RAISED** drug × drug yield by 193 pairs.
+1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — four modules over rule 4's cap**:
+   `ingest/fda_cyp_run.py` 622, `signing.py` 605, `curation.py` 555, `release_verification.py` 540. Each is a
+   small self-contained round, and six splits have used the same rule: find the SEAM (a read path inside a
+   writer, or a second vocabulary), move it verbatim, get the suite green, *then* change behaviour. The ledger
+   ratchets, so none of them may grow. **Trap:** a module that leaves the ledger also loses its ledger test
+   case, and each new file adds a `test_tools_server_channel` sweep case, so update the count line.
+2. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
+   only cost.
+3. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
+   lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
+4. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
 
 ## Parallel project sequencing
 
@@ -54,7 +55,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 closes with this PR.** Open: **#177** (five over the cap), **#186**,
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (four over the cap), **#186**,
 **#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current

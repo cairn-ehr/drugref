@@ -128,7 +128,7 @@ def test_the_pathway_vocabulary_is_closed_in_SQL_too(conn):
 
 def test_a_real_pathway_under_the_wrong_system_is_refused_in_SQL(conn):
     """'OATP1B1' is a genuine transporter, and a CYP row naming it would mint a
-    class under the wrong system. fda_cyp.parse_cell refuses this; db/043 makes
+    class under the wrong system. fda_cyp_cell.parse_cell refuses this; db/043 makes
     the DB refuse it too, so the two cannot disagree.
     """
     run_id = conn.execute(
@@ -153,10 +153,10 @@ def test_the_SQL_pathway_vocabulary_equals_the_parsers(conn):
     hold it -- the "written down twice" hazard this project keeps paying for.
     A subset assertion would let either side drift silently.
     """
-    from drugref.ingest import fda_cyp
+    from drugref.ingest import fda_cyp_cell
     live = {(row[0], row[1]) for row in conn.execute(
         "SELECT system, pathway FROM drugref.fda_cyp_pathway").fetchall()}
     expected = {(system, pathway)
-                for system, pathways in fda_cyp._PATHWAYS_BY_SYSTEM.items()
+                for system, pathways in fda_cyp_cell._PATHWAYS_BY_SYSTEM.items()
                 for pathway in pathways}
     assert live == expected

@@ -291,7 +291,7 @@ def test_apply_migrations_is_idempotent(conn):
         # SCHEMA ONLY -- no parser or orchestrator lands in this migration.
         "fda_cyp_assertion", "gap_fda_cyp_unadjudicated",
         # db/043: the closed (system, pathway) vocabulary, held in SQL rather
-        # than only in fda_cyp._PATHWAYS_BY_SYSTEM, so the assertion table can
+        # than only in fda_cyp_cell._PATHWAYS_BY_SYSTEM, so the assertion table can
         # foreign-key to it and no writer can widen it by accident.
         "fda_cyp_pathway",
         # Slice 6r, db/044: authenticated reviewer identities. The stable account is

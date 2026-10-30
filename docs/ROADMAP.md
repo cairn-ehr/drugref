@@ -1085,6 +1085,12 @@ account: PROJECT-NOTES § "The questions.py split". The 18 `_GAP_SOURCES` specs 
 vocabulary modules split at slice 5c (`gap_sources_registry.py`, `gap_sources_interactions.py`). `questions.py`
 merges them and is still the only writer; it went 797 → 230 and is off the ledger. #177 keeps five modules.
 
+**⇒ THE fda_cyp.py SPLIT ✅ DONE (2026-10-30) — the second module of #177, no migration.** Full account:
+PROJECT-NOTES § "The fda_cyp.py split". The cell grammar (`ROLE_COLUMNS`, the pathway vocabulary, marker
+splitting, `parse_cell`) moved verbatim to `ingest/fda_cyp_cell.py`. The page/table half stayed. 707 → 391,
+off the ledger. #177 keeps four modules: `fda_cyp_run.py` 622, `signing.py` 605, `curation.py` 555,
+`release_verification.py` 540.
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 
