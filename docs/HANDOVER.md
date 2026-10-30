@@ -13,41 +13,30 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/signing-split` off `main`; PR OPEN for the fourth and fifth modules of #177 (#177 stays open).
-No migration — THE SCHEMA STILL ENDS AT `db/056`.** PRs #189–#191 (the first three #177 splits) are MERGED. The
-suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line
-and the collected suite disagree.
+**Branch `claude/curation-split` off `main`; PR OPEN for the sixth and last module of #177. It closes #177 AND
+#89 on merge. No migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #192 (the signing / release_verification
+splits) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run
+pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED — TWO SPLITS IN ONE PR** (full account: PROJECT-NOTES § "The signing.py and
-release_verification.py splits").
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The curation.py split"). `curation.py` 555 → 413. Its
+class-grain detector counts (`ClassGrainCounts`, the three view names + `CLASS_GRAIN_VIEWS`, `_rule_count_sql`,
+`class_grain_counts`) moved verbatim to `class_grain_read.py` (158). Their only consumer is `cli_status.py`.
+**No module under `src/drugref` is over rule 4's cap now**, so `OVER_CAP_TODAY` and its ledger test are DELETED
+and the size sweep is strict. A module that grows over 500 must be split; there is no list to add it to.
 
-**⇒ WHAT SHIPPED.** Commit 1: `release_verification.py` 540 → 369. Its signature half (`MalformedManifestError`,
-`_worst_verdict`, `_verify_manifest_signature`) moved to `release_signature.py` (189). Commit 2: `signing.py`
-605 → 394. Its frozen context vocabulary (field lists, natural-key columns, `context_target_kind` and the two context predicates)
-moved to `signing_contexts.py` (230). Both moves are verbatim. Callers name the new modules, and nothing is
-re-exported. **They went together because the ratchet forced it:** the longer `signing_contexts.` name pushed
-`release_verification.py` to 541, one over its ceiling.
-
-**⇒ VERIFIED.** `uv run pytest` with the DB: green (per module, −1 ledger case and +1 sweep case; the PR #192
-review round added 6 tests for two pre-existing coverage gaps);
-`ruff check .` clean; `make_signing_vectors.py` reproduces `signing_vectors.json` byte for byte.
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2760 passed (unchanged: −1 ledger case, +1 sweep case).
+`ruff check .` clean. Sorted-line diff: the old `curation.py` equals the two new files, plus only the new header.
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **[#177](https://github.com/cairn-ehr/drugref/issues/177) — one module left over rule 4's cap**:
-   `curation.py` 555. #89 posted its natural seam (`ClassGrainCounts` + `class_grain_counts` + `_RULE_COUNT`,
-   ~90 lines, one consumer); re-read the issue, do not re-derive it. Same rule as the last nine splits: find the
-   SEAM, move it verbatim, get the suite green, *then* change behaviour. Splitting it closes BOTH #177 and #89,
-   and then `OVER_CAP_TODAY` is empty. **Traps:** a renamed qualified name can push a caller past 88 columns
-   and a ledgered module past its ceiling (this round). Each new file adds a `test_tools_server_channel` sweep
-   case, so update the count line.
-2. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
+1. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
    only cost.
-3. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
+2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
-4. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
+3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
+4. **PR #185's review follow-ups** #186, #187, #188, still open.
 
 ## Parallel project sequencing
 
@@ -59,7 +48,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** Open: **#177** (one over the cap: `curation.py`), **#89** (same file), **#186**,
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 close on this PR's merge.** Open: **#186**,
 **#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
