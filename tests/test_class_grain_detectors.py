@@ -21,7 +21,7 @@ import uuid
 
 import pytest
 
-from drugref import curation, ids, interactions, keys, questions, releases, signing
+from drugref import class_grain_read, curation, ids, interactions, keys, questions, releases, signing
 from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
                                                 _file_member)
 from tests.test_curated_overlay import _a_class
@@ -719,7 +719,7 @@ def test_an_emptied_tier_does_not_render_like_a_healthy_one(conn, ingest_run_id,
     """
     from drugref import cli_status
 
-    before = curation.class_grain_counts(conn)
+    before = class_grain_read.class_grain_counts(conn)
     assert (before.ungraded, before.dead, before.disagreements) == (0, 0, 0)
     cli_status.print_class_grain_block(conn)
     emptied = capsys.readouterr().out
@@ -728,7 +728,7 @@ def test_an_emptied_tier_does_not_render_like_a_healthy_one(conn, ingest_run_id,
         conn, ingest_run_id, subject_code="N0000006400", object_code="N0000006500",
         subject_members=[("TESTUNIID1", "s")], object_members=[("TESTUNIID2", "o")])
 
-    after = curation.class_grain_counts(conn)
+    after = class_grain_read.class_grain_counts(conn)
     assert (after.ungraded, after.dead, after.disagreements) == (0, 0, 0), (
         "the premise: a graded rule reaching a pair trips no detector, so both states "
         "are all-zero and only a denominator can tell them apart")
@@ -767,7 +767,7 @@ def test_the_denominator_counts_a_rule_once_however_many_authorities_assert_it(
     interactions.add_class_pair_contraindication(
         conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
 
-    counts = curation.class_grain_counts(conn)
+    counts = class_grain_read.class_grain_counts(conn)
     assert counts.rules_total == 1, (
         f"one rule asserted by two authorities is ONE rule, got {counts.rules_total}")
     assert counts.ungraded == 1
@@ -942,7 +942,7 @@ def test_the_status_block_counts_a_two_source_dead_rule_once(conn, ingest_run_id
     interactions.add_class_pair_contraindication(
         conn, subject_class, object_class, "CI_MoA", "MED-RT", ingest_run_id)
 
-    counts = curation.class_grain_counts(conn)
+    counts = class_grain_read.class_grain_counts(conn)
     assert counts.dead == 1, (
         f"one dead rule asserted twice is ONE dead rule, got {counts.dead}")
     cli_status.print_class_grain_block(conn)
@@ -979,7 +979,7 @@ def test_the_status_block_reports_a_cross_grain_disagreement(conn, ingest_run_id
 
     _a_pair_graded_by_both_grains(conn, ingest_run_id, moiety_severity="moderate",
                                   class_severity="contraindicated")
-    counts = curation.class_grain_counts(conn)
+    counts = class_grain_read.class_grain_counts(conn)
     assert counts.disagreements == 1
 
     cli_status.print_class_grain_block(conn)
@@ -1070,7 +1070,7 @@ def test_both_detectors_inverted_on_that_row_and_now_agree(conn, ingest_run_id):
         "WHERE subject_class = %s", (klass,)).fetchone()[0]
     assert queued == 0, "a rule no answer can change must not reach a curator"
 
-    counts = curation.class_grain_counts(conn)
+    counts = class_grain_read.class_grain_counts(conn)
     assert counts.dead == 1, "and it must reach the operator, who can act on it"
     assert counts.ungraded == 0
 
@@ -1285,7 +1285,7 @@ def test_the_denominator_is_named_for_the_population_it_denominates(conn,
         conn, ingest_run_id, subject_code="N0000009800", object_code="N0000009900",
         object_axis="has_PE")
 
-    counts = curation.class_grain_counts(conn)
+    counts = class_grain_read.class_grain_counts(conn)
     assert not hasattr(counts, "total"), (
         "the old name is gone, not aliased -- an alias would keep the misreading "
         "available and this rename buys nothing")

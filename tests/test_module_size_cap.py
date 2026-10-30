@@ -24,48 +24,20 @@ measured. Nothing here imports drugref at all.
 remembering to add it. That is the difference between this and what it replaces:
 the old tests could only ever fail for a file someone had already worried about.
 
-**THE EXEMPTION LIST IS A LEDGER, NOT AN ESCAPE HATCH**, and it is checked in
-both directions. Seven modules were already over the cap when this gate was
-written -- none of them touched by the round that wrote it -- and refusing to
-merge until all seven were split would have been a different project. They are
-named below with their measured size, and the second test asserts that each one is
-STILL over: a module that gets split and then quietly stays on the list would turn
-the ledger into a permanent exemption, which is the thing an allow-list always
-decays into. Removing a name is part of splitting the file.
-
-⇒ **AND IT IS A RATCHET, WHICH IS WHAT MAKES "BOTH DIRECTIONS" TRUE.** The first
-version of this file recorded each module's size and then never read the number:
-both tests used only the keys, so the seven LARGEST modules in the package -- the
-seven most likely to keep growing -- were exempt from rule 4 in the growing
-direction, permanently and by construction. A ledger whose values are decoration is
-an allow-list wearing a ledger's clothes. The recorded size is now the ceiling: a
-ledgered module may shrink and leave, and may not grow.
+**THERE IS NO EXEMPTION LIST ANY MORE (issue 177).** Seven modules were already
+over the cap when this gate was written, so it shipped with an `OVER_CAP_TODAY`
+ledger naming each with its measured size -- checked in both directions, and a
+ratchet: a ledgered module had to stay over (or leave the list) and could not grow
+past its recorded size. Each was then split on a real seam, the last being
+`curation.py` (555 -> 413, its class-grain counts to `class_grain_read.py`), and an
+empty ledger is just an allow-list waiting for its first entry, so it was deleted
+with its test. Every module is now under the cap, with no exceptions. A module that
+grows over it needs a split with a reason, not a new list.
 """
 import pathlib
 
-import pytest
-
 #: THE ONE HOME FOR RULE 4'S NUMBER.
 CAP = 500
-
-#: Modules that were ALREADY over `CAP` when this gate landed (2026-09-02), with
-#: the size measured that day -- WHICH IS ALSO EACH ONE'S CEILING, see the ratchet
-#: paragraph above. Nothing here was written or grown by the round that
-#: added this file; the list exists so the gate could be switched on at all.
-#: Filed as issue 177 -- and see issue 172, which is the one of these that WAS
-#: split (`spl_evidence.py`, 518 -> 428 by the move and 430 today, `Registry`/`load_registry` moved to
-#: `registry_read.py`) and is therefore not on the list. `ingest/spl_match.py` left
-#: the same way (524 -> 359 by the move, its suppression half to `spl_suppress.py`),
-#: and so did `questions.py` (797 -> 230, its `_GAP_SOURCES` specs to
-#: `gap_sources_registry.py` and `gap_sources_interactions.py`) and
-#: `ingest/fda_cyp.py` (707 -> 395, its cell grammar to `ingest/fda_cyp_cell.py`)
-#: and `ingest/fda_cyp_run.py` (622 -> 407, its disposition vocabulary to
-#: `ingest/fda_cyp_disposition.py`) and `release_verification.py` (540 -> 369, its
-#: signature half to `release_signature.py`) and `signing.py` (605 -> 394, its frozen
-#: context vocabulary to `signing_contexts.py`).
-OVER_CAP_TODAY = {
-    "curation.py": 555,
-}
 
 _PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"
 
@@ -83,7 +55,7 @@ def _modules():
         if "migrations" not in path.parts)
 
 
-def test_every_module_is_under_the_size_cap_unless_it_is_on_the_ledger():
+def test_every_module_is_under_the_size_cap():
     """Rule 4, swept over the whole package rather than over three remembered files.
 
     The message names the seam-finding job, not just the number: a module over the
@@ -91,33 +63,11 @@ def test_every_module_is_under_the_size_cap_unless_it_is_on_the_ledger():
     `spl_release.py` out of `spl_dailymed.py` and `cli_status.py` out of `cli.py`
     -- verbatim move first, whole suite green, then any behaviour change.
     """
-    over = {name: lines for name, lines in _modules()
-            if lines > CAP and name not in OVER_CAP_TODAY}
+    over = {name: lines for name, lines in _modules() if lines > CAP}
     assert not over, (
-        f"over CLAUDE.md rule 4's ~{CAP}-line cap and not on the ledger: {over}. "
-        "Split it (verbatim move first, suite green, then behaviour) rather than "
-        "adding it to OVER_CAP_TODAY -- that list is a record of what predates "
-        "this gate, not a place to put new work.")
-
-
-@pytest.mark.parametrize("name", sorted(OVER_CAP_TODAY))
-def test_a_ledgered_module_that_is_no_longer_over_the_cap_must_leave_the_ledger(name):
-    """The direction an allow-list normally rots in, closed.
-
-    A name left behind after its file was split is a module silently exempt from
-    rule 4 forever, and nothing else in the suite would ever mention it again.
-    """
-    sizes = dict(_modules())
-    assert name in sizes, f"{name} no longer exists; drop it from OVER_CAP_TODAY"
-    assert sizes[name] > CAP, (
-        f"{name} is {sizes[name]} lines, back under the ~{CAP} cap -- remove it "
-        "from OVER_CAP_TODAY so the sweep starts guarding it")
-    assert sizes[name] <= OVER_CAP_TODAY[name], (
-        f"{name} is {sizes[name]} lines, up from the {OVER_CAP_TODAY[name]} "
-        f"recorded when this ledger was written. A ledgered module may SHRINK and "
-        f"leave the ledger; it may not grow. Split it (verbatim move first, suite "
-        f"green, then behaviour) rather than raising the recorded number -- raising "
-        f"it is how an allow-list is made out of a ledger.")
+        f"over CLAUDE.md rule 4's ~{CAP}-line cap: {over}. Split it on a real "
+        "seam (verbatim move first, suite green, then behaviour); there is no "
+        "exemption list to add it to, and issue 177 deleted the last one.")
 
 
 def test_the_modules_this_round_moved_code_between_are_under_the_cap():
@@ -137,7 +87,8 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
                  "ingest/fda_cyp.py", "ingest/fda_cyp_cell.py",
                  "ingest/fda_cyp_run.py", "ingest/fda_cyp_disposition.py",
                  "release_verification.py", "release_signature.py",
-                 "signing.py", "signing_contexts.py"):
+                 "signing.py", "signing_contexts.py",
+                 "curation.py", "class_grain_read.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
         # a bare KeyError from the lookup below -- the guard its sibling above
         # already carries.
