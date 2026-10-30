@@ -2,8 +2,8 @@
 """The alarms that let the frozen field lists AND the frozen natural-key column lists
 stay frozen (spec 4.5, 5.5). DB-gated.
 
-TWO CONSTANTS, ONE PATTERN. `signing.FIELD_LISTS` decides which columns enter a payload;
-`signing.NATURAL_KEY_COLUMNS` decides which columns render the `natural_key` a manifest
+TWO CONSTANTS, ONE PATTERN. `signing_contexts.FIELD_LISTS` decides which columns enter a payload;
+`signing_contexts.NATURAL_KEY_COLUMNS` decides which columns render the `natural_key` a manifest
 entry is PAIRED by. Both are frozen against the standing derive-from-the-catalog rule,
 for the same reason -- they enter signed bytes, so deriving them means a migration
 silently rewrites history -- and both therefore need the same alarm: a test that
@@ -12,7 +12,7 @@ divergence, forcing a deliberate `/v2` rather than a silent one.
 """
 import pytest
 
-from drugref import signing
+from drugref import signing_contexts
 from tests.test_live_key_index_guard import _single_live_tables
 
 CURATED = [
@@ -48,7 +48,7 @@ def test_the_frozen_field_list_accounts_for_every_column(conn, context, table, p
     live = {row[0] for row in conn.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = 'drugref' AND table_name = %s", (table,)).fetchall()}
-    signed = set(signing.FIELD_LISTS[context]) - set(signing.ATTESTATION_FIELDS)
+    signed = set(signing_contexts.FIELD_LISTS[context]) - set(signing_contexts.ATTESTATION_FIELDS)
     deliberately_unsigned = {pk, "superseded_by"}
     assert live == signed | deliberately_unsigned, (
         f"drugref.{table}'s columns and {context}'s frozen field list disagree. "
@@ -63,7 +63,7 @@ def test_the_frozen_field_list_accounts_for_every_column(conn, context, table, p
 def test_the_frozen_natural_key_columns_match_todays_trigger(conn, context, table, pk):
     """A CHANGE TO A CURATED TABLE'S NATURAL KEY MUST FAIL HERE rather than silently
     re-key everything drugref has ever published. The alarm for
-    `signing.NATURAL_KEY_COLUMNS`, and the exact counterpart of the field-list alarm
+    `signing_contexts.NATURAL_KEY_COLUMNS`, and the exact counterpart of the field-list alarm
     above -- same inversion, same reason, one question over.
 
     WHAT THIS REPLACED, and why the replacement needed an alarm at all. `releases.py`
@@ -84,10 +84,10 @@ def test_the_frozen_natural_key_columns_match_todays_trigger(conn, context, tabl
     a red test and a deliberate `/v2` decision instead of a silent re-keying.
     """
     trigger_columns = dict(_single_live_tables(conn))[table].split(", ")
-    assert list(signing.NATURAL_KEY_COLUMNS[context]) == trigger_columns, (
+    assert list(signing_contexts.NATURAL_KEY_COLUMNS[context]) == trigger_columns, (
         f"drugref.{table}'s single-live trigger and {context}'s frozen natural-key "
         f"columns disagree. Trigger: {trigger_columns}. Frozen: "
-        f"{list(signing.NATURAL_KEY_COLUMNS[context])}. A natural key that changes is a "
+        f"{list(signing_contexts.NATURAL_KEY_COLUMNS[context])}. A natural key that changes is a "
         "DELIBERATE decision: mint a /v2 context, add its frozen key list here, and "
         "leave /v1's alone. Editing the /v1 tuple re-keys every manifest entry ever "
         "published, and a published entry's natural_key is inside signed bytes.")
@@ -103,7 +103,7 @@ def test_every_natural_key_column_is_also_a_signed_field(conn, context, table, p
     part of what gets signed is a design commitment (spec 4.5), not an accident of which
     columns the two tuples happen to name.
     """
-    assert set(signing.NATURAL_KEY_COLUMNS[context]) <= set(signing.FIELD_LISTS[context])
+    assert set(signing_contexts.NATURAL_KEY_COLUMNS[context]) <= set(signing_contexts.FIELD_LISTS[context])
 
 
 def test_every_curated_context_has_a_frozen_natural_key():
@@ -117,11 +117,11 @@ def test_every_curated_context_has_a_frozen_natural_key():
                                             "curated_class_interaction"}
     for context in ("curated_interaction/v1", "curated_condition/v1",
                     "curated_class_interaction/v1"):
-        assert context in signing.NATURAL_KEY_COLUMNS
+        assert context in signing_contexts.NATURAL_KEY_COLUMNS
     # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of
     # tidiness the reason has to be re-read.
-    assert "release_manifest/v1" not in signing.NATURAL_KEY_COLUMNS
+    assert "release_manifest/v1" not in signing_contexts.NATURAL_KEY_COLUMNS
 
 
 def test_every_curated_catalog_kind_is_covered_by_a_release(conn):
@@ -151,7 +151,7 @@ def test_every_curated_catalog_kind_is_covered_by_a_release(conn):
 
 
 def test_every_frozen_context_names_its_own_target_kind(conn):
-    """`signing.context_is_usable_for` decides whether a stored `payload_context` can be
+    """`signing_contexts.context_is_usable_for` decides whether a stored `payload_context` can be
     rebuilt against a target by comparing `context_target_kind(context)` -- the part
     before the `/v` -- against the target kind. That turns a NAMING CONVENTION into a
     security check, so the convention needs an alarm of its own.
@@ -164,14 +164,14 @@ def test_every_frozen_context_names_its_own_target_kind(conn):
         "SELECT target_kind, payload_context "
         "FROM drugref.signature_target_kind").fetchall())
 
-    for context in signing.FIELD_LISTS:
-        assert signing.context_target_kind(context) in catalog, (
+    for context in signing_contexts.FIELD_LISTS:
+        assert signing_contexts.context_target_kind(context) in catalog, (
             f"{context} names a target kind the catalog does not have")
 
     for target_kind, context in catalog.items():
-        assert signing.context_target_kind(context) == target_kind, (
+        assert signing_contexts.context_target_kind(context) == target_kind, (
             f"{target_kind} signs under {context}, whose prefix names a different kind "
-            "-- signing.context_is_usable_for would reject every signature it makes")
+            "-- signing_contexts.context_is_usable_for would reject every signature it makes")
 
 
 def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
@@ -183,7 +183,7 @@ def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
 
       * the coverage test above compares SETS, so it cannot see a permutation;
       * the committed vectors carry their `fields` as literal lists INSIDE the fixture
-        and never consult `signing.FIELD_LISTS`, so they pin bytes against a list that
+        and never consult `signing_contexts.FIELD_LISTS`, so they pin bytes against a list that
         is only conventionally the frozen one (`make_signing_vectors.py` says as much);
       * `signatures.py` builds the publish payload and the verify payload from the SAME
         tuple, so a permutation is SELF-CONSISTENT -- it breaks only signatures recorded
@@ -208,7 +208,7 @@ def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
          ).read_text())
     for case in vectors["cases"]:
         assert [name for name, _value in case["fields"]] == \
-            list(signing.FIELD_LISTS[case["context"]]), (
+            list(signing_contexts.FIELD_LISTS[case["context"]]), (
             f"{case['name']}: {case['context']}'s frozen field ORDER has changed since "
             "the vectors were committed. Every signature already recorded under this "
             "context was made over the OLD order and will now report BAD_SIGNATURE. "

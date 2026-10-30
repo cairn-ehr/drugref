@@ -37,7 +37,7 @@ from dataclasses import dataclass
 import psycopg
 from psycopg import sql
 
-from drugref import signatures, signing
+from drugref import signatures, signing, signing_contexts
 from drugref.release_signature import _verify_manifest_signature
 from drugref.releases import ENTRY_DIGEST_SIGNED_AT, enumerate_live
 
@@ -180,13 +180,13 @@ def _published_content_is_history(conn: psycopg.Connection, target_kind: str,
     current_id = live_target_id
     seen = {current_id}
     while True:
-        # EXACTLY ONE PREDECESSOR EXPECTED, made explicit the same way
-        # the now-DELETED `releases._natural_key_columns` was, before
-        # `signing.NATURAL_KEY_COLUMNS` replaced it -- `.fetchone()` would silently pick
-        # whichever row the planner returns first. NOT PREVENTED BY ANY TRIGGER:
-        # `forbid_multiple_live_assertions` counts LIVE rows per natural key and says
-        # nothing about how many rows point `superseded_by` AT one successor, so
-        # db/020's deferred single-live trigger gives this no protection at all. What
+        # EXACTLY ONE PREDECESSOR EXPECTED, made explicit the same way the now-DELETED
+        # `releases._natural_key_columns` was, before
+        # `signing_contexts.NATURAL_KEY_COLUMNS` replaced it -- `.fetchone()` would
+        # silently pick whichever row the planner returns first. NOT PREVENTED BY ANY
+        # TRIGGER: `forbid_multiple_live_assertions` counts LIVE rows per natural key
+        # and says nothing about how many rows point `superseded_by` AT one successor,
+        # so db/020's deferred single-live trigger gives this no protection at all. What
         # actually prevents it, on the ordinary path, is `overlay.supersede`'s one
         # guarded UPDATE (WHERE the natural key matches AND superseded_by IS NULL) --
         # and that guard is exactly what raw SQL against the table bypasses. This is a
@@ -241,7 +241,7 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
 
     THE PAIRING KEY ITSELF IS ALSO RECONSTRUCTED FROM THE PAST, not re-derived from the
     present schema -- C1 (final review). Which COLUMNS render a natural key is frozen
-    per context in `signing.NATURAL_KEY_COLUMNS`, and this function tells
+    per context in `signing_contexts.NATURAL_KEY_COLUMNS`, and this function tells
     `enumerate_live` which context each kind's entries were recorded under, so a later
     migration that widens a curated table's natural key cannot silently re-key the
     published set. See the comment at the `natural_key_contexts` construction below,
@@ -327,7 +327,7 @@ def verify_release(conn: psycopg.Connection, release_tag: str) -> ManifestVerdic
     # test to the natural-key half.
     unpairable = {
         key for key in manifest_keys & live_keys
-        if not signing.entry_context_is_reproducible(
+        if not signing_contexts.entry_context_is_reproducible(
             manifest_entries[key][0], live_entries[key].payload_context)}
 
     dropped = sorted((manifest_keys - live_keys) | unpairable)

@@ -12,7 +12,7 @@ NOTHING HERE COMMITS. The caller owns the transaction, as everywhere in these mo
 """
 import psycopg
 
-from drugref import keys, signatures, signing
+from drugref import keys, signatures, signing, signing_contexts
 from drugref.releases import ManifestEntry, manifest_payload
 
 
@@ -159,12 +159,13 @@ def _verify_manifest_signature(conn: psycopg.Connection, manifest_id: int,
         status = registered.status if registered else None
         # THE SAME PLANTED-CONTEXT GUARD verify_target applies one layer down (review
         # C3). `assertion_signature.payload_context` is unconstrained beyond its regex
-        # here too, and `manifest_payload` subscripts `signing.FIELD_LISTS` with it --
-        # so one planted `release_manifest` signature turned `drugref verify --release`
-        # into a raw `KeyError` traceback for the life of the database, the manifest
-        # table being insert-only. The digest cannot be compared either: there are no
-        # bytes to compare.
-        if not signing.context_is_usable_for(payload_context, "release_manifest"):
+        # here too, and `manifest_payload` subscripts `signing_contexts.FIELD_LISTS`
+        # with it -- so one planted `release_manifest` signature turned `drugref verify
+        # --release` into a raw `KeyError` traceback for the life of the database, the
+        # manifest table being insert-only. The digest cannot be compared either: there
+        # are no bytes to compare.
+        if not signing_contexts.context_is_usable_for(payload_context,
+                                                      "release_manifest"):
             digest_matches.append(False)
             signature_ok = False
         else:

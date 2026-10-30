@@ -5,7 +5,7 @@ import datetime as dt
 import psycopg
 import pytest
 
-from drugref import signing
+from drugref import signing_contexts
 
 FP = "a" * 64
 OTHER_FP = "b" * 64
@@ -83,7 +83,7 @@ def test_every_catalog_context_can_be_encoded(conn):
     THE CONVERSE IS DELIBERATELY NOT ASSERTED (`<=`, not `==`), and this test used to get
     it exactly backwards -- set EQUALITY, with a docstring calling an unreferenced field
     list "dead code nothing exercises". That is the opposite of Task 7's C1 fix, which
-    `signatures.py` records in as many words: "signing.FIELD_LISTS keeps every retired
+    `signatures.py` records in as many words: "signing_contexts.FIELD_LISTS keeps every retired
     context version forever -- a version is stopped being minted, never deleted." A
     retired `/v1` list is the ONLY thing that can reproduce the bytes a past signature
     was made over. The day anyone mints a `/v2`, the catalog moves on and this test went
@@ -94,9 +94,9 @@ def test_every_catalog_context_can_be_encoded(conn):
     """
     contexts = {row[0] for row in conn.execute(
         "SELECT payload_context FROM drugref.signature_target_kind").fetchall()}
-    assert contexts <= set(signing.FIELD_LISTS), (
-        f"signature_target_kind names contexts signing.FIELD_LISTS cannot encode: "
-        f"{sorted(contexts - set(signing.FIELD_LISTS))}. Add the frozen field list "
+    assert contexts <= set(signing_contexts.FIELD_LISTS), (
+        f"signature_target_kind names contexts signing_contexts.FIELD_LISTS cannot encode: "
+        f"{sorted(contexts - set(signing_contexts.FIELD_LISTS))}. Add the frozen field list "
         "BEFORE the catalog row -- never the other way round.")
 
 

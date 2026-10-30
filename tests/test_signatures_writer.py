@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from drugref import curation, keys, signatures, signing
+from drugref import curation, keys, signatures, signing, signing_contexts
 
 SIGNED_AT = dt.datetime(2026, 8, 9, 4, 33, 52, 8117, tzinfo=dt.timezone.utc)
 LATER = dt.datetime(2026, 12, 1, tzinfo=dt.timezone.utc)
@@ -328,7 +328,7 @@ def test_verification_reconstructs_the_past_context_not_the_present(conn, signed
     signature_target_kind carries no floor (no append-only trigger), so mutating it
     inside this test's transaction and letting `conn` roll back afterwards is a faithful
     stand-in for a real /v2 having been registered elsewhere, without needing one to
-    exist in signing.FIELD_LISTS for this test to prove the point: the signed row's own
+    exist in signing_contexts.FIELD_LISTS for this test to prove the point: the signed row's own
     `payload_context` column -- 'curated_interaction/v1' -- must be what gets used, and
     that context's field list is real and present regardless of what the catalog says.
     """
@@ -430,7 +430,7 @@ def test_a_condition_payload_does_not_verify_as_an_interaction(conn, a_contradic
 
 
 # ---- the mutation gate -------------------------------------------------------------
-# ONE PARAMETRIZE LIST, checked against signing.CURATED_INTERACTION_V1 by the test
+# ONE PARAMETRIZE LIST, checked against signing_contexts.CURATED_INTERACTION_V1 by the test
 # immediately below rather than trusted to stay in step by hand (M1, review round 2):
 # without that check, a field ADDED to the frozen list with no matching case here would
 # be invisible -- "one rule in two places" inside the one test the brief calls most
@@ -451,10 +451,10 @@ _MUTATION_CASES = [
 
 def test_the_mutation_gate_covers_every_frozen_field():
     """M1 (review round 2): guards the gate itself against becoming a second,
-    unenforced copy of signing.CURATED_INTERACTION_V1. Complete today at 15/15, but
+    unenforced copy of signing_contexts.CURATED_INTERACTION_V1. Complete today at 15/15, but
     nothing previously asserted that the two lists agree -- a field added to the frozen
     list with no matching mutation case below would otherwise go uncovered silently."""
-    assert {field for field, _ in _MUTATION_CASES} == set(signing.CURATED_INTERACTION_V1)
+    assert {field for field, _ in _MUTATION_CASES} == set(signing_contexts.CURATED_INTERACTION_V1)
 
 
 @pytest.mark.parametrize("field,mutated", _MUTATION_CASES)
@@ -463,7 +463,7 @@ def test_changing_any_signed_field_breaks_the_signature(conn, signed_rule,
     """ONE TEST PER SIGNED FIELD, per the standing rule slice 5c.1's PR review produced:
     for every clause in a multi-field guard, name the test that kills its removal.
 
-    A field silently missing from signing.CURATED_INTERACTION_V1 is the ONE defect this
+    A field silently missing from signing_contexts.CURATED_INTERACTION_V1 is the ONE defect this
     layer cannot survive -- the signature would keep verifying while the unsigned field
     was free to be anything -- and no aggregate test can see it.
 
@@ -498,6 +498,6 @@ def test_changing_any_signed_field_breaks_the_signature(conn, signed_rule,
         [(name, mutated if name == field else value) for name, value in fields])
     assert rebuilt != signed_rule["payload"], (
         f"changing {field} did not change the payload -- it is not covered by "
-        f"signing.CURATED_INTERACTION_V1, so a signature says nothing about it")
+        f"signing_contexts.CURATED_INTERACTION_V1, so a signature says nothing about it")
     assert signing.verify(signed_rule["public"], rebuilt,
                           signed_rule["signature"]) is False

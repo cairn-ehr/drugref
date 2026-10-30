@@ -36,7 +36,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from drugref import signatures, signing
+from drugref import signatures, signing, signing_contexts
 
 # THE TWO CURATED TARGET KINDS A RELEASE COVERS -- a release is, by definition, a
 # snapshot of drugref's OWN judgements, never of a rebuildable ingest projection (which
@@ -113,13 +113,13 @@ def natural_key_of(conn: psycopg.Connection, target_kind: str, target_id: int, *
     `None` reads today's context from `signature_target_kind` (right when a key is being
     minted for a manifest about to be published), an explicit value pins a past one
     (right when reproducing the key a published entry recorded). Which COLUMNS a context
-    names is frozen in `signing.NATURAL_KEY_COLUMNS` -- see that constant for why
-    reading them back out of `pg_trigger` instead was a measured defect.
+    names is frozen in `signing_contexts.NATURAL_KEY_COLUMNS` -- see that constant for
+    why reading them back out of `pg_trigger` instead was a measured defect.
     """
     table, pk_column, current_context = signatures._target_kind_catalog(
         conn, target_kind)
     context = payload_context if payload_context is not None else current_context
-    columns = signing.NATURAL_KEY_COLUMNS[context]
+    columns = signing_contexts.NATURAL_KEY_COLUMNS[context]
     row = conn.execute(
         sql.SQL("SELECT {cols} FROM drugref.{table} WHERE {pk} = %s").format(
             cols=sql.SQL(", ").join(sql.Identifier(c) for c in columns),
@@ -192,10 +192,10 @@ def enumerate_live(conn: psycopg.Connection, *,
     THE NATURAL KEY IS A SUBSET OF THOSE SAME CONTENT FIELDS -- `_row_content_fields`
     already returns every frozen field, ALREADY RENDERED, and a curated table's natural
     key columns are always among them (a row's identity is always part of what gets
-    signed; `signing.NATURAL_KEY_COLUMNS` and `signing.FIELD_LISTS` have never disagreed
-    on this, and a KeyError below is exactly how that would be caught if they ever did).
-    So the natural key is read straight out of that same field list rather than issued
-    as a second SELECT -- one row read, not two, per entry.
+    signed; `signing_contexts.NATURAL_KEY_COLUMNS` and `signing_contexts.FIELD_LISTS`
+    have never disagreed on this, and a KeyError below is exactly how that would be
+    caught if they ever did). So the natural key is read straight out of that same field
+    list rather than issued as a second SELECT -- one row read, not two, per entry.
 
     WHICH COLUMNS MAKE THE KEY IS FROZEN, AND WHICH FROZEN LIST APPLIES IS THE CALLER'S
     CHOICE. `natural_key_contexts` maps `target_kind -> payload_context` and defaults to
@@ -203,9 +203,9 @@ def enumerate_live(conn: psycopg.Connection, *,
     PUBLISHING, because a manifest being minted now records today's keys.
     `verify_release` passes the contexts it read off the manifest's OWN entries, because
     pairing a past recording against today's columns is the C1 defect
-    `signing.NATURAL_KEY_COLUMNS` exists to close: widen a curated table's single-live
-    trigger by one column and every live key re-renders, pairs with nothing, and an
-    untouched database reports 100% churn. This is `signatures.payload_fields`'
+    `signing_contexts.NATURAL_KEY_COLUMNS` exists to close: widen a curated table's
+    single-live trigger by one column and every live key re-renders, pairs with nothing,
+    and an untouched database reports 100% churn. This is `signatures.payload_fields`'
     `payload_context` override, one layer up and one question over.
 
     NOTE THE ASYMMETRY WITH THE DIGEST, which is deliberate: the digest below is still
@@ -236,14 +236,14 @@ def enumerate_live(conn: psycopg.Connection, *,
         table, pk_column, context = signatures._target_kind_catalog(conn, target_kind)
         key_context = (natural_key_contexts or {}).get(target_kind, context)
         # AN UNUSABLE REQUESTED CONTEXT FALLS BACK, IT NEVER RAISES -- see
-        # `signing.entry_context_is_reproducible` for what "unusable" means and for the
-        # traceback this replaced. Falling back to the CURRENT context (rather than
-        # skipping the kind) is what keeps the `added` direction honest: a skipped kind
-        # would drop its live rows out of the enumeration silently, so a manifest that
-        # omits a live row would stop reporting it.
-        if not signing.entry_context_is_reproducible(key_context, context):
+        # `signing_contexts.entry_context_is_reproducible` for what "unusable" means and
+        # for the traceback this replaced. Falling back to the CURRENT context (rather
+        # than skipping the kind) is what keeps the `added` direction honest: a skipped
+        # kind would drop its live rows out of the enumeration silently, so a manifest
+        # that omits a live row would stop reporting it.
+        if not signing_contexts.entry_context_is_reproducible(key_context, context):
             key_context = context
-        key_columns = signing.NATURAL_KEY_COLUMNS[key_context]
+        key_columns = signing_contexts.NATURAL_KEY_COLUMNS[key_context]
         rows = conn.execute(
             sql.SQL("SELECT {pk} FROM drugref.{table} "
                     "WHERE superseded_by IS NULL ORDER BY {pk}").format(
@@ -298,8 +298,8 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
     releases were loaded, a different question from `reviewed_against` (which release
     a JUDGEMENT was formed against).
 
-    THE SCALAR FIELD ORDER IS READ FROM `signing.FIELD_LISTS[payload_context]`, not
-    hand-typed here a second time: the frozen order for that context is what this
+    THE SCALAR FIELD ORDER IS READ FROM `signing_contexts.FIELD_LISTS[payload_context]`,
+    not hand-typed here a second time: the frozen order for that context is what this
     payload must match, so building a `{name: value}` dict and iterating the frozen
     list is what makes a field this function forgets to compute a loud `KeyError`
     rather than a silently wrong (or silently reordered) payload.
@@ -319,7 +319,7 @@ def manifest_payload(conn: psycopg.Connection, *, release_tag: str, published_by
         "signed_at": signing.render(signed_at),
     }
     fields = [(name, scalar_values[name])
-             for name in signing.FIELD_LISTS[payload_context]]
+             for name in signing_contexts.FIELD_LISTS[payload_context]]
     entry_members = [
         [("target_kind", entry.target_kind), ("natural_key", entry.natural_key),
          ("payload_context", entry.payload_context),

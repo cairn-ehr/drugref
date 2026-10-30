@@ -27,7 +27,7 @@ cross-reference that quietly points at the wrong vector is worse than none.
 """
 import json
 
-from drugref import releases, signing
+from drugref import releases, signing, signing_contexts
 
 TEST_PRIVATE = bytes(range(32))
 
@@ -37,7 +37,7 @@ def _cases(fp: str) -> list[dict]:
     tests in test_signing_payload.py cannot show together (see module docstring there
     for what those tests already prove in isolation).
 
-    Field lists below are written in signing.FIELD_LISTS' FROZEN ORDER for their
+    Field lists below are written in signing_contexts.FIELD_LISTS' FROZEN ORDER for their
     context, and each case supplies every field in that list -- these vectors are the
     format's published reference, so an incomplete row would publish a wrong example.
     """
@@ -150,7 +150,7 @@ def _cases(fp: str) -> list[dict]:
     # but never spells out.
     entry_digest_fields = [
         [name, value] for name, value in interaction_fields
-        if name not in signing.ATTESTATION_FIELDS
+        if name not in signing_contexts.ATTESTATION_FIELDS
     ] + [
         ["signer_key_fingerprint", ""],
         ["signed_at", signing.render(releases.ENTRY_DIGEST_SIGNED_AT)],
