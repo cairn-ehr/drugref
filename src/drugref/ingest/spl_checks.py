@@ -25,6 +25,7 @@ from types import MappingProxyType
 import psycopg
 
 from drugref.ingest import spl_release, spl_subject
+from drugref.ingest.counts import refuse_negative_counts
 
 #: THE MEASURED PAIR FLOOR, on the 2026-08-22 openFDA and 2026-08-21 DailyMed
 #: releases. **A FLOOR, NOT A TARGET, and the check asserts `>=`.**
@@ -94,6 +95,12 @@ class SplSummary:
         # read-only view so no later `dict.update` can undo the checks below (#165).
         object.__setattr__(self, "labels_by_route",
                            MappingProxyType(dict(self.labels_by_route)))
+        # Before any sum: a -1 and a +1 would otherwise cancel (#187).
+        refuse_negative_counts(self)
+        if self.labels_keyed_on_document_id > self.labels:
+            raise ValueError(
+                f"labels_keyed_on_document_id = {self.labels_keyed_on_document_id} "
+                f"but only {self.labels} labels: it counts a SUBSET of them")
         accounted = self.labels + self.records_field_absent + self.records_field_blank
         if accounted != self.records_read:
             raise ValueError(

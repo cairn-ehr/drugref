@@ -13,30 +13,30 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/curation-split` off `main`; PR OPEN for the last module of #177. It closes #177 AND
-#89 on merge. No migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #192 (the signing / release_verification
-splits) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run
-pytest` fails if the line and the collected suite disagree.
+**Branch `claude/spl-nonnegative-counts` off `main`; PR OPEN for #187, which it closes on merge. No migration —
+THE SCHEMA STILL ENDS AT `db/056`.** PR #193 (the curation.py split) is MERGED, so #177 and #89 are CLOSED and no
+module is over rule 4's cap. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+`uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The curation.py split"). `curation.py` 555 → 413. Its
-class-grain detector counts (`ClassGrainCounts`, the three view names + `CLASS_GRAIN_VIEWS`, `_rule_count_sql`,
-`class_grain_counts`) moved verbatim to `class_grain_read.py` (162). Their only consumer is `cli_status.py`.
-**No module under `src/drugref` is over rule 4's cap now**, so `OVER_CAP_TODAY` and its ledger test are DELETED
-and the size sweep is strict. A module that grows over 500 must be split; there is no list to add it to.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The negative-count refusal"). `spl.Corpus`,
+`spl_checks.SplSummary` and `spl_release.ScanResult` now refuse any negative count — `int` fields AND `int`
+values in mapping fields (`label_counts`, `labels_by_route`) — via one pure helper,
+`ingest/counts.py:refuse_negative_counts`, called first in each `__post_init__`. `labels_keyed_on_document_id`
+is bounded by the label count on both `Corpus` and `SplSummary`.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2760 passed (unchanged: −1 ledger case, +1 sweep case).
-`ruff check .` clean. Sorted-line diff: the old `curation.py` equals the two new files, plus only the new header.
+**⇒ VERIFIED.** `uv run pytest` with the DB: 2769 passed (+8 new, +1 sweep case for `counts.py`). `ruff check .`
+clean. (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
 1. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
-   only cost.
+   only cost. #186 (persist #163's counts per run) needs a migration.
 2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
 3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
-4. **PR #185's review follow-ups** #186, #187, #188, still open.
+4. **PR #185's review follow-ups** #186, #188, still open (#187 closes on this PR).
 
 ## Parallel project sequencing
 
@@ -48,8 +48,8 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 close on this PR's merge.** Open: **#186**,
-**#187**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 closes on this PR's
+merge.** Open: **#186**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
