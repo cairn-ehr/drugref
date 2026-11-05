@@ -5716,8 +5716,8 @@ on the other (`field_absent=-1, field_blank=+1` added up; a negative `dropped_*`
 
 - **One shared check, `ingest/counts.py:refuse_negative_counts`** (pure). It walks `dataclasses.fields` and
   refuses any negative `int` field **and any negative `int` value inside a mapping field** — the latter closes
-  the same hole in `Corpus.label_counts` and `SplSummary.labels_by_route`, whose sums are reconciled too. `bool`
-  is skipped (a flag is not a count). A new counter is covered by existing, not by being listed.
+  the same hole in `Corpus.label_counts` and `SplSummary.labels_by_route`, whose sums are reconciled too. A `bool`
+  needs no exclusion: it is an `int` but never negative. A new counter is covered by existing, not by being listed.
 - **Called first in each `__post_init__`** (`spl.Corpus`, `spl_checks.SplSummary`, `spl_release.ScanResult`),
   after the mapping freeze and before any sum check, so the refusal names the negative field rather than some
   downstream sum it happened to break.

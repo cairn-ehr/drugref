@@ -15,11 +15,6 @@ import dataclasses
 from collections.abc import Mapping
 
 
-def _is_count(value: object) -> bool:
-    # `bool` is a subclass of `int` in Python, but a flag is not a count.
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def refuse_negative_counts(instance: object) -> None:
     """Raise `ValueError` naming the first negative count on `instance`.
 
@@ -27,16 +22,17 @@ def refuse_negative_counts(instance: object) -> None:
     of every mapping field (e.g. per-route buckets, whose sum is reconciled the
     same way). Non-count fields -- strings, tuples, sets -- are ignored, so a
     new counter is covered by existing rather than by being listed here.
+    (A `bool` is an `int` too, but it is never negative, so it never trips.)
     """
     for field in dataclasses.fields(instance):
         value = getattr(instance, field.name)
-        if _is_count(value) and value < 0:
+        if isinstance(value, int) and value < 0:
             raise ValueError(
                 f"{field.name} = {value}: a count cannot be negative, and a "
                 "negative term lets a reconciliation add up when it should not")
         if isinstance(value, Mapping):
             for key, item in value.items():
-                if _is_count(item) and item < 0:
+                if isinstance(item, int) and item < 0:
                     raise ValueError(
                         f"{field.name}[{key!r}] = {item}: a count cannot be "
                         "negative, and a negative bucket cancels a real one")

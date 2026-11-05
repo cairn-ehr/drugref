@@ -36,7 +36,7 @@ clean. (`ruff format` is NOT applied in this repo — most existing files fail `
 2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
 3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
-4. **PR #185's review follow-ups** #186, #188, still open (#187 closes on this PR).
+4. **Review follow-ups** #186, #188 (PR #185), #195 (PR #194: the same negative-count audit for the non-SPL summary types), still open (#187 closes on this PR).
 
 ## Parallel project sequencing
 
@@ -49,7 +49,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
 #166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 closes on this PR's
-merge.** Open: **#186**, **#188** (PR #185's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+merge.** Open: **#186**, **#188** (PR #185's review), **#195** (PR #194's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
