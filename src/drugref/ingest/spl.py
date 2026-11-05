@@ -47,6 +47,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from drugref.ingest.counts import refuse_negative_counts
+
 #: The authority, as `ingest_run.source` spells it. Paired with the CHECK db/051
 #: widens and with `ids._SOURCE_CANONICAL` -- see that module on why a source
 #: spelled in only two of the three places fails SILENTLY.
@@ -294,6 +296,12 @@ class Corpus:
         for name in ("wordings", "label_counts"):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         object.__setattr__(self, "labels", tuple(self.labels))
+        # Before any sum: a -1 and a +1 would otherwise cancel (#187).
+        refuse_negative_counts(self)
+        if self.labels_keyed_on_document_id > len(self.labels):
+            raise ValueError(
+                f"labels_keyed_on_document_id = {self.labels_keyed_on_document_id} "
+                f"but only {len(self.labels)} labels: it counts a SUBSET of them")
         if len(self.labels) + self.field_absent + self.field_blank != self.records:
             raise ValueError(
                 f"{len(self.labels)} sections + {self.field_absent} absent + "

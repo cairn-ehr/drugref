@@ -33,6 +33,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence, Set as Abstra
 from dataclasses import dataclass, fields
 from types import MappingProxyType
 
+from drugref.ingest.counts import refuse_negative_counts
 from drugref.ingest.spl_dailymed import (
     SubjectUniis, dedupe_by_set_id, extract_subject_uniis,
     prefilter_is_trustworthy, set_id_in_bytes,
@@ -181,6 +182,8 @@ class ScanResult:
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not the caller's dict (#165).
         object.__setattr__(self, "found", MappingProxyType(dict(self.found)))
+        # A negative drop would cancel a real one in `total_dropped` (#187).
+        refuse_negative_counts(self)
 
     @property
     def total_dropped(self) -> int:

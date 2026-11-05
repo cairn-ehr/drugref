@@ -153,3 +153,60 @@ def test_a_NextWordProfile_does_not_follow_its_callers_dict():
     assert profile.following["to"] == 1
     with pytest.raises(TypeError):
         profile.following["to"] = 9
+
+
+# --------------------------------------------------------------------------
+# Issue #187: a count is never negative, so -1 and +1 cannot cancel
+# --------------------------------------------------------------------------
+# Every reconciliation in these types is a SUM, and a sum is satisfied by a -1
+# on one side and a +1 on the other. Each refusal must name the field it
+# refused, so a broken caller is told which counter to look at.
+
+def _corpus(**overrides):
+    fields = dict(records=0, labels=(), wordings={}, label_counts={},
+                  field_absent=0, field_blank=0, labels_keyed_on_document_id=0)
+    return spl.Corpus(**(fields | overrides))
+
+
+def test_a_Corpus_refuses_a_negative_count_that_still_adds_up():
+    """0 labels + (-1) absent + 1 blank == 0 records: the sum alone passes."""
+    with pytest.raises(ValueError, match="field_absent"):
+        _corpus(field_absent=-1, field_blank=1)
+
+
+def test_a_Corpus_refuses_a_negative_label_count():
+    """A wording carried by -1 labels would cancel one carried by +1."""
+    with pytest.raises(ValueError, match="label_counts"):
+        _corpus(wordings={"a": "x", "b": "y"}, label_counts={"a": -1, "b": 1})
+
+
+def test_a_Corpus_refuses_more_document_id_keyed_labels_than_labels():
+    with pytest.raises(ValueError, match="labels_keyed_on_document_id"):
+        _corpus(labels_keyed_on_document_id=1)
+
+
+def test_an_SplSummary_refuses_a_negative_count_that_still_adds_up():
+    """10 labels + 91 absent + (-1) blank == 100 records: the sum alone passes."""
+    with pytest.raises(ValueError, match="records_field_blank"):
+        _summary(records_field_absent=91, records_field_blank=-1)
+
+
+def test_an_SplSummary_refuses_a_negative_route_bucket():
+    with pytest.raises(ValueError, match="labels_by_route"):
+        _summary(labels_by_route={"openfda_unii": 11, "unresolved": -1})
+
+
+def test_an_SplSummary_refuses_more_document_id_keyed_labels_than_labels():
+    with pytest.raises(ValueError, match="labels_keyed_on_document_id"):
+        _summary(labels_keyed_on_document_id=11)
+
+
+def test_a_ScanResult_refuses_a_negative_documents_read():
+    with pytest.raises(ValueError, match="documents_read"):
+        clean_scan(documents_read=-5)
+
+
+def test_a_ScanResult_refuses_a_negative_drop_that_would_cancel_a_real_one():
+    """Without the check, `total_dropped` reads 0 and the guard lets it pass."""
+    with pytest.raises(ValueError, match="dropped_junk_version"):
+        clean_scan(dropped_unreadable=1, dropped_junk_version=-1)

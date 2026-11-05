@@ -1110,6 +1110,11 @@ counts (`ClassGrainCounts`, the three view names, `_rule_count_sql`, `class_grai
 `class_grain_read.py` (162). **No module is over rule 4's cap any more**, so `tests/test_module_size_cap.py`'s
 `OVER_CAP_TODAY` ledger is deleted and the sweep is strict.
 
+**⇒ THE NEGATIVE-COUNT REFUSAL ✅ DONE (2026-11-05) — closes #187, no migration.** Full account: PROJECT-NOTES
+§ "The negative-count refusal". `Corpus`, `SplSummary` and `ScanResult` refuse a negative count (fields and
+mapping values) through one shared `ingest/counts.py`, so a −1 and a +1 can no longer satisfy a reconciliation.
+The PR's review added #195: the same audit for the non-SPL summary types (e.g. `DrugCentralSummary`).
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

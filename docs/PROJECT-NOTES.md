@@ -5708,6 +5708,24 @@ rule 4's cap with no exemption. The new module is `class_grain_read.py` (162). O
   message says there is no list to add to. `curation.py` and `class_grain_read.py` joined the explicit pins.
 - **Suite 2760 → 2760**: −1 ledger case, +1 `test_tools_server_channel` sweep case for the new file.
 
+## The negative-count refusal (2026-11-05) — closes #187, no migration
+
+Every reconciliation in the SPL summary types is a **sum**, and a sum is satisfied by a −1 on one side and a +1
+on the other (`field_absent=-1, field_blank=+1` added up; a negative `dropped_*` cancelled a real one in
+`total_dropped`, so the scan guard read 0 and passed).
+
+- **One shared check, `ingest/counts.py:refuse_negative_counts`** (pure). It walks `dataclasses.fields` and
+  refuses any negative `int` field **and any negative `int` value inside a mapping field** — the latter closes
+  the same hole in `Corpus.label_counts` and `SplSummary.labels_by_route`, whose sums are reconciled too. A `bool`
+  needs no exclusion: it is an `int` but never negative. A new counter is covered by existing, not by being listed.
+- **Called first in each `__post_init__`** (`spl.Corpus`, `spl_checks.SplSummary`, `spl_release.ScanResult`),
+  after the mapping freeze and before any sum check, so the refusal names the negative field rather than some
+  downstream sum it happened to break.
+- **`labels_keyed_on_document_id <= labels`** on both `Corpus` (as the issue asked) and `SplSummary` (same field,
+  same subset relation).
+- **Tests**: 8 in `tests/test_spl_type_invariants.py`, each matching the field name its refusal must carry.
+- **Suite 2760 → 2769**: +8 those, +1 the `test_tools_server_channel` sweep case for `counts.py`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5775,9 +5793,12 @@ given the previous rule — never a backfill of finished rows); once true, the f
 § "The measured-floor round".
 
 **The SPL follow-ups (#163–#166, #168–#171, filed by the #161 and #167 reviews)** — **#163, #165, #166, #168,
-#171 FIXED by the SPL follow-ups round, close on merge** — § "The SPL follow-ups round". **Still open, each on
+#171 FIXED by the SPL follow-ups round, close on merge** — § "The SPL follow-ups round". **The PR #185 review
+added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **Still open, each on
 its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budget` for a real reason), #169
-(the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor).
+(the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor). #186
+(persist #163's per-run counts — needs a migration) and #188 (the census's per-part line and `--json`) have no
+trigger, only cost.
 
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
@@ -5954,7 +5975,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2760 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2769 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6129,6 +6150,8 @@ git config core.hooksPath .githooks
 # (TypeError) case of the malformed-upstream-releases test.
 # ⇒ ISSUE 177's curation.py SPLIT (no migration): 2760 -> 2760 -- -1 the last ledger
 # case (the ledger itself is deleted), +1 the sweep case for class_grain_read.py.
+# ⇒ ISSUE 187's NEGATIVE-COUNT REFUSAL (no migration): 2760 -> 2769 -- +8 in
+# test_spl_type_invariants.py, +1 the bare-psycopg sweep case for ingest/counts.py.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
