@@ -21,6 +21,7 @@ import zipfile
 import pytest
 
 from drugref.ingest import spl_dailymed as dm
+from drugref.ingest import spl_version
 from tools import spl_skip_census as census
 
 UNII_SYSTEM = dm.UNII_CODE_SYSTEM
@@ -113,7 +114,7 @@ def test_a_junk_versionNumber_is_counted_and_its_raw_value_is_KEPT():
     document worth refusing, and a bare count cannot tell them apart."""
     verdict = census.classify_document(_document(version="four"))
     assert verdict.version_is_junk is True
-    assert verdict.version_raw == "four"
+    assert verdict.version.raw == "four"
 
 
 def test_an_ABSENT_versionNumber_is_not_junk():
@@ -122,7 +123,7 @@ def test_an_ABSENT_versionNumber_is_not_junk():
     label whose tie-break was destroyed."""
     verdict = census.classify_document(_document(version=None))
     assert verdict.version_is_junk is False
-    assert verdict.version_raw is None
+    assert verdict.version is spl_version.ABSENT_VERSION
 
 
 def test_EVERY_ingredient_classCode_is_censused_including_the_active_ones():
@@ -189,11 +190,10 @@ def test_the_census_NEVER_disagrees_with_the_shipped_reader(xml):
     assert (verdict.unreadable_reason is None) == (shipped is not None)
     if shipped is not None:
         assert verdict.tree_set_id == shipped.set_id
+        # ⇒ THE WHOLE `Version`, state included (issue #170). Comparing a bare
+        # `int | None` once let the two disagree on junk-vs-absent -- the half
+        # that DECIDES something -- because both read as `None`.
         assert verdict.version == shipped.version
-        # ⇒ AND THE JUNK VERDICT, which is the half that DECIDES something:
-        # `version` is `None` for an absent element AND for a broken one, so
-        # comparing it alone let the two disagree in the only way that matters.
-        assert verdict.version_is_junk == shipped.version_was_unreadable
 
 
 # --------------------------------------------------------------------------
@@ -288,6 +288,55 @@ def test_main_writes_each_part_to_stderr_AS_IT_COMPLETES(tmp_path, capsys):
     record = json.loads(lines[0].removeprefix("part-census "))
     assert record["part"] == good
     assert record["documents_read"] == 1
+
+
+def test_a_parts_line_carries_its_CLASS_CODES_not_only_its_counters(
+        tmp_path, capsys):
+    """Issue #188: the class codes are what a human needs to rule on a NEW code,
+    so a per-part line without them is evidence that survives a crash and still
+    cannot answer the question case 3 asks."""
+    good = _part(tmp_path, {"a.zip": _member(
+        {"a.xml": _document(_ingredient("ACTIB") + _ingredient("ZZZZ"))})})
+
+    with pytest.raises(FileNotFoundError):
+        census.main([good, str(tmp_path / "missing.zip")])
+
+    line, = [line for line in capsys.readouterr().err.splitlines()
+             if line.startswith("part-census ")]
+    record = json.loads(line.removeprefix("part-census "))
+    assert record["class_code_counts"] == {"ACTIB": 1, "ZZZZ": 1}
+    assert record["unknown_class_codes"] == ["ZZZZ"]
+
+
+def test_the_JSON_file_survives_a_crash_on_a_LATER_part(tmp_path):
+    """Issue #188: `--json` used to be written once, after the last part, so a
+    crash on part 6 lost the file for all six. It is rewritten after each part,
+    in the same shape as the final file, so the partial one parses the same way."""
+    good = _part(tmp_path, {"a.zip": _member(
+        {"a.xml": _document(_ingredient("ZZZZ"))})})
+    out = tmp_path / "census.json"
+
+    with pytest.raises(FileNotFoundError):
+        census.main([good, str(tmp_path / "missing.zip"), "--json", str(out)])
+
+    payload = json.loads(out.read_text())
+    assert payload["documents_read"] == 1
+    assert payload["unknown_class_codes"] == ["ZZZZ"]
+    assert list(payload["by_part"]) == [good]
+
+
+def test_the_finished_JSON_file_matches_the_whole_release(tmp_path):
+    """Rewriting per part must still leave the WHOLE-release payload at the end."""
+    first = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})}, "p1.zip")
+    second = _part(tmp_path, {"b.zip": _member(
+        {"b.xml": _document(set_id="SET-2")})}, "p2.zip")
+    out = tmp_path / "census.json"
+
+    assert census.main([first, second, "--json", str(out)]) == 0
+
+    payload = json.loads(out.read_text())
+    assert payload["documents_read"] == 2
+    assert list(payload["by_part"]) == [first, second]
 
 
 # --------------------------------------------------------------------------
@@ -414,3 +463,19 @@ def test_a_REPORTED_skip_alone_does_not_claim_the_ingest_would_refuse(tmp_path):
         "MANIFEST.txt": b"not a zip at all",
     })
     assert census.main([part]) == 0
+
+
+def test_a_bad_JSON_path_costs_the_file_but_NOT_the_measurement(tmp_path, capsys):
+    """An unwritable `--json` is named once and exits 2, but every part is still
+    read and the report still printed: the read is the expensive half."""
+    first = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})}, "p1.zip")
+    second = _part(tmp_path, {"b.zip": _member(
+        {"b.xml": _document(set_id="SET-2")})}, "p2.zip")
+    bad = str(tmp_path / "no-such-dir" / "census.json")
+
+    assert census.main([first, second, "--json", bad]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.err.count("could not write") == 1
+    assert captured.err.count("part-census ") == 2
+    assert "documents_read                        2" in captured.out

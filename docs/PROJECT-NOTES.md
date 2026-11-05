@@ -4314,7 +4314,7 @@ and refuses on any of six grounds. **Read the figures in the results record, not
 ### What shipped
 
 `db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
-deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_release.py`,
+deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_version.py`, `spl_release.py`,
 `spl_match.py`, `spl_suppress.py` (split from `spl_match.py` 2026-10-29), `spl_quote.py`, `spl_subject.py`,
 plus `spl_checks.py` for the guards), the writer
 `spl_evidence.py`, the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
@@ -5726,6 +5726,29 @@ on the other (`field_absent=-1, field_blank=+1` added up; a negative `dropped_*`
 - **Tests**: 8 in `tests/test_spl_type_invariants.py`, each matching the field name its refusal must carry.
 - **Suite 2760 → 2769**: +8 those, +1 the `test_tools_server_channel` sweep case for `counts.py`.
 
+## The SPL census and Version round (2026-11-06) — closes #188 and #170, no migration
+
+Two of the SPL follow-ups that had no trigger, only cost. #164 and #169 stay on their own stated triggers.
+
+- **#188 — the census's per-part evidence now survives a crash whole.** Each `part-census` stderr line carries
+  the part's `class_code_counts` and `unknown_class_codes`, which a human needs to rule on a new classCode, not
+  only the counters. `--json` is **rewritten after every part** in the final file's own shape (the running
+  total plus `by_part` so far), so a crash on part 6 leaves a file that parses like a finished one. JSON Lines
+  was rejected: it would change the shape a spec quotes. An unwritable `--json` is named once, the read carries
+  on, and the exit code is 2.
+- **#170 — one `Version` type, in the new pure `ingest/spl_version.py`.** `VersionState` is PARSED / ABSENT /
+  JUNK. `Version.__post_init__` refuses the meaningless combinations: only PARSED carries a `number`, and only
+  ABSENT has no `raw`. `Version.sort_key` replaces `_tie_break`. `SubjectUniis.version` is a `Version`, and
+  `version_was_unreadable` is gone. `spl_dailymed.version_of(root)` is **the one reader**, and
+  `tools/spl_skip_census.py` now calls it instead of keeping its own `_version_of`. The census crosscheck test
+  therefore compares whole `Version`s, so the junk-vs-absent disagreement #167 found can no longer be expressed.
+  The new module was split out because `spl_dailymed.py` hit 508 lines (now 446).
+- **A fourth spelling, found and fixed:** `tools/spl_subject_read.dedupe_by_set_id` (spike code) still ranked
+  by `(row.version or -1)`, the version-0 collapse the shipped reader had already fixed. It now uses `_rank`. The
+  spike keeps `int | None`, because its JSON cache stores bare ints.
+- **Suite 2769 → 2786**: +4 census (#188), +11 in `test_spl_reader_skips.py` (`version_of`'s three states, five
+  unbuildable combinations, `sort_key`), +1 the spike's version-0 case, +1 the sweep case for `spl_version.py`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5794,11 +5817,10 @@ given the previous rule — never a backfill of finished rows); once true, the f
 
 **The SPL follow-ups (#163–#166, #168–#171, filed by the #161 and #167 reviews)** — **#163, #165, #166, #168,
 #171 FIXED by the SPL follow-ups round, close on merge** — § "The SPL follow-ups round". **The PR #185 review
-added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **Still open, each on
-its own stated trigger:** #164 (a migration that touches `spl_wording_quote_budget` for a real reason), #169
-(the 12th `ScanResult` counter), #170 (the `Version` sum type, a parser + dedupe + census refactor). #186
-(persist #163's per-run counts — needs a migration) and #188 (the census's per-part line and `--json`) have no
-trigger, only cost.
+added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **#188 and #170 are FIXED** — § "The
+SPL census and Version round". **Still open, each on its own stated trigger:** #164 (a migration that touches
+`spl_wording_quote_budget` for a real reason), #169 (the 12th `ScanResult` counter). #186 (persist #163's
+per-run counts — needs a migration) has no trigger, only cost.
 
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
@@ -5975,7 +5997,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2769 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2786 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6152,6 +6174,8 @@ git config core.hooksPath .githooks
 # case (the ledger itself is deleted), +1 the sweep case for class_grain_read.py.
 # ⇒ ISSUE 187's NEGATIVE-COUNT REFUSAL (no migration): 2760 -> 2769 -- +8 in
 # test_spl_type_invariants.py, +1 the bare-psycopg sweep case for ingest/counts.py.
+# ⇒ ISSUES 188 + 170, THE SPL CENSUS AND Version ROUND (no migration): 2769 -> 2786 --
+# +4 census, +11 spl_version via test_spl_reader_skips.py, +1 spike, +1 sweep case.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

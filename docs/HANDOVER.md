@@ -13,30 +13,32 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-nonnegative-counts` off `main`; PR OPEN for #187, which it closes on merge. No migration —
-THE SCHEMA STILL ENDS AT `db/056`.** PR #193 (the curation.py split) is MERGED, so #177 and #89 are CLOSED and no
-module is over rule 4's cap. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
-`uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/spl-census-version` off `main`; PR OPEN for #188 and #170, which it closes on merge. No
+migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #194 is MERGED (#187 CLOSED). `main` also carries
+`3d56d5f`, the new `finalcheck` skill (review-pr → fixall → drive CI green). The suite total lives in
+PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
+suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The negative-count refusal"). `spl.Corpus`,
-`spl_checks.SplSummary` and `spl_release.ScanResult` now refuse any negative count — `int` fields AND `int`
-values in mapping fields (`label_counts`, `labels_by_route`) — via one pure helper,
-`ingest/counts.py:refuse_negative_counts`, called first in each `__post_init__`. `labels_keyed_on_document_id`
-is bounded by the label count on both `Corpus` and `SplSummary`.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL census and Version round"). **#188**: each
+`part-census` line carries the part's class codes, and `--json` is rewritten after every part in its final
+shape. **#170**: SPL's `<versionNumber>` is one `Version` (PARSED/ABSENT/JUNK) in the new pure
+`ingest/spl_version.py`, read by `spl_dailymed.version_of`, which both the ingest and the census call;
+`version_was_unreadable` and `_tie_break` are gone. Also fixed: the spike `tools/spl_subject_read.py`'s
+version-0 tie-break bug. `spl_dailymed.py` 508 → 446 after the split.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: 2769 passed (+8 new, +1 sweep case for `counts.py`). `ruff check .`
-clean. (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+17). `ruff check .` clean.
+(`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
 ## ⇒ DO THIS NEXT
 
 **Choose one; none is blocked.**
 
-1. **The SPL follow-ups left on their own triggers**: #164, #169, #170 (see the ledger). #170 has no trigger,
-   only cost. #186 (persist #163's counts per run) needs a migration.
+1. **The SPL follow-ups left on their own triggers**: #164 (the next migration touching that function), #169
+   (the 12th `ScanResult` counter); see the ledger. #186 (persist #163's counts per run) needs a migration.
 2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
 3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
-4. **Review follow-ups** #186, #188 (PR #185), #195 (PR #194: the same negative-count audit for the non-SPL summary types), still open (#187 closes on this PR).
+4. **Review follow-ups** #186 (PR #185), #195 (PR #194: the same negative-count audit for the non-SPL summary types), still open.
 
 ## Parallel project sequencing
 
@@ -48,8 +50,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 closes on this PR's
-merge.** Open: **#186**, **#188** (PR #185's review), **#195** (PR #194's review), **#164**, **#169**, **#170**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188 and #170 close on this PR's merge.** Open: **#186** (PR #185's review), **#195** (PR #194's review), **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
