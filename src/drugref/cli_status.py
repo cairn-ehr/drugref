@@ -262,9 +262,10 @@ def print_class_grain_block(conn) -> None:
     # class-grain content ships. A denominator here waits on that measurement.
     #
     # THE FIELD IS NOW NAMED FOR THAT (issue 115). This paragraph was the ONLY place the
-    # boundary was written down, in a different module from the type it constrains, and
-    # `curation.py`'s own docstring says that is not where such knowledge lives. The
-    # record's docstring states it too, so `{disagreements} of {rules_total}` now reads
+    # boundary was written down, in a different module from the type it constrains
+    # (now `class_grain_read.py`), and the one-home rule `curation.py`'s docstring
+    # states says that is not where such knowledge lives. The record's docstring
+    # states it too, so `{disagreements} of {rules_total}` now reads
     # wrong at a glance instead of reading like the symmetry it is not.
     if counts.disagreements:
         print(f"cross-grain disagreements: {counts.disagreements}"

@@ -17,9 +17,8 @@ the interaction tables", and a curated READ has no business there. `cli_status.p
 `cli_policy.py` and their siblings are the same split for the same reason. NOT NUMBERED
 HERE any more: this said "four siblings ... the seventh" while `cli_interactions.py`
 said "three more", two ordinals over one population that had already drifted apart by
-the round that added the eighth. A count kept in two
-files is the trap this project keeps paying for; `ls src/drugref/cli_*.py` is exact and
-cannot go stale.
+the round that added the eighth. A count kept in two files is the trap this project
+keeps paying for; `ls src/drugref/cli_*.py` is exact and cannot go stale.
 
 WHY IT EXISTS AT ALL, which is the more interesting half. `db/035` shipped a
 `severity_rank` column and stated drugref's two-grain precedence in a `COMMENT` --

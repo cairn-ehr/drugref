@@ -1263,7 +1263,8 @@ def test_the_denominator_is_named_for_the_population_it_denominates(conn,
 
     `rules_total` MAKES THAT DIVISION READ WRONG AT A GLANCE, which is the whole fix:
     the knowledge lived in a comment in `cli_status.py`, a different module from the
-    type, and `curation.py`'s own docstring says that is not where such knowledge goes.
+    type (now `class_grain_read.py`), and the one-home rule `curation.py`'s docstring
+    states says that is not where such knowledge goes.
 
     THE INVARIANTS ARE ASSERTED, NOT JUST THE NAME, so this test fails if a future
     filter breaks the containment the name now advertises.

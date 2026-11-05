@@ -13,14 +13,14 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/curation-split` off `main`; PR OPEN for the sixth and last module of #177. It closes #177 AND
+**Branch `claude/curation-split` off `main`; PR OPEN for the last module of #177. It closes #177 AND
 #89 on merge. No migration — THE SCHEMA STILL ENDS AT `db/056`.** PR #192 (the signing / release_verification
 splits) is MERGED. The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run
 pytest` fails if the line and the collected suite disagree.
 
 **⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The curation.py split"). `curation.py` 555 → 413. Its
 class-grain detector counts (`ClassGrainCounts`, the three view names + `CLASS_GRAIN_VIEWS`, `_rule_count_sql`,
-`class_grain_counts`) moved verbatim to `class_grain_read.py` (158). Their only consumer is `cli_status.py`.
+`class_grain_counts`) moved verbatim to `class_grain_read.py` (162). Their only consumer is `cli_status.py`.
 **No module under `src/drugref` is over rule 4's cap now**, so `OVER_CAP_TODAY` and its ledger test are DELETED
 and the size sweep is strict. A module that grows over 500 must be split; there is no list to add it to.
 

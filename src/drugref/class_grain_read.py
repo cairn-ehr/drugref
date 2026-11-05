@@ -5,8 +5,9 @@ WHY A MODULE OF ITS OWN (issues 177 and 89). This read lived at the foot of
 `curation.py`, the curated overlay's WRITER, and took that file to 555 lines -- over
 CLAUDE.md rule 4's ~500-line cap. It was a second job beside the writes and their one
 operator-facing read (`curation.unresolved_targets`): it reads three derived views and
-has a single consumer, `cli_status.print_class_grain_block`. Moved verbatim, the same
-treatment `curated_read.py` got when `curation.py` kept the writes.
+has a single consumer, `cli_status.print_class_grain_block`. Moved verbatim apart from
+its pointers across the new boundary; `curated_read.py` was kept out of `curation.py`
+for the same reason.
 
 THE LAYERING RULE IS UNCHANGED BY THE MOVE: this module owns the read, `cli_status.py`
 owns the operator's voice, and no SQL against a curated table lives in a cli_* handler.
@@ -71,10 +72,10 @@ class ClassGrainCounts:
 # db/018's "one quantity stated twice is a quantity that will disagree", on the operator
 # surface instead of in the schema.
 #
-# ONE FORMAT STRING, TWO CALLERS. The denominator (issue 111) and the dead count are
+# ONE QUERY BUILDER, TWO CALLERS. The denominator (issue 111) and the dead count are
 # the same query over the same population differing only by a WHERE, and writing them
-# out twice is how they would drift apart. `{where}` is interpolated from the two
-# literals below and never from anything reaching this module from outside.
+# out twice is how they would drift apart. `_rule_count_sql`'s `where` comes from the
+# two literals in `class_grain_counts` and never from anything outside this module.
 #
 # `shared_effective_member_count` IS NAMED TO WIDEN THE GUARD, not because the count
 # needs it (PR #113 review). cli.py's rule -- "a migration widening a view a guarded
@@ -90,6 +91,7 @@ class ClassGrainCounts:
 # `cpc.ingest_run` feed none of it -- so the two rows one rule asserted by two
 # authorities produces carry identical values here. Tested rather than argued, both
 # halves, in tests/test_class_grain_detectors.py.
+#
 # THE VIEW NAMES, EXPORTED, so the migration guard in `cli_status.py` probes the
 # relations these reads actually name rather than a hand-copied second spelling of them
 # (issue 122). One home per name: a rename that missed the guard would leave it
@@ -131,7 +133,8 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
     states and `curation.unresolved_targets` already obeys: a handler must not embed SQL
     against curated, append-only tables, because the sweep that finds readers works
     through `pg_rewrite` and cannot see a query living in a Python string. Two of these
-    views are derived from `curated_class_interaction`, so the read belongs here.
+    views are derived from `curated_class_interaction`, so the read belongs in a reader
+    module.
     It also keeps cli.py under CLAUDE.md rule 4's size cap, which it had just breached.
 
     THE DENOMINATOR IS TAKEN FROM `class_pair_rule_reach`, NOT from

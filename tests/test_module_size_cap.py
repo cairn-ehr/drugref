@@ -76,7 +76,7 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
     `spl_evidence.py` is the file issue 172 was filed about; `registry_read.py`
     is where its read path went; the rest were added as later splits (issue 177
     among them) landed. Naming them is not redundant with the sweep: it
-    is what makes a future edit that pushes either one over fail with the ISSUE
+    is what makes a future edit that pushes any of them over fail with the ISSUE
     NUMBER in the message rather than with a bare line count.
     """
     sizes = dict(_modules())
@@ -90,8 +90,7 @@ def test_the_modules_this_round_moved_code_between_are_under_the_cap():
                  "signing.py", "signing_contexts.py",
                  "curation.py", "class_grain_read.py"):
         # Named, so a rename or a split fails with THIS sentence rather than with
-        # a bare KeyError from the lookup below -- the guard its sibling above
-        # already carries.
+        # a bare KeyError from the lookup below.
         assert name in sizes, (
             f"{name} no longer exists under src/drugref; this pin names the "
             "modules issues 172 and 177 moved code between, so update the list with the "
