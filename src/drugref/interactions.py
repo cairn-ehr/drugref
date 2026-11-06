@@ -396,7 +396,7 @@ def record_unresolved_ci_objects(
 # than a rebuild that quietly stops covering it -- as are its peers
 # onchigh_run.UNRESOLVED_ENDPOINT_TABLES and fda_cyp_run.FDA_CYP_TABLES (the
 # latter only since issue 149; that test now also fails on any clear call site
-# left unregistered).
+# left unregistered, or written in a shape its scan cannot read).
 DRUGCENTRAL_TABLES = ("drugcentral_ddi_assertion",)
 
 

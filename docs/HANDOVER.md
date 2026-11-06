@@ -23,7 +23,7 @@ call-site scan fails on any `clear_source_tables(conn, NAME` left unregistered (
 13 sites, 12 registered). Test-only plus one comment in `interactions.py`; no behaviour change.
 **Stale, still OPEN on GitHub — close them: #130** (cli.py, fixed by PR #131) **and #133** (fda_cyp.py split, now 396 lines).
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+2). `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+3, one from the finalcheck review, which also made the scan fail on call shapes it cannot read). `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 

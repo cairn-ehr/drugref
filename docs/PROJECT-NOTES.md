@@ -5856,13 +5856,22 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
 `DRUGCENTRAL_TABLES` cites it as a peer again.
 
 - **Recurrence is now a failure.** `test_every_clear_call_site_is_registered_here` scans `src/drugref` for
-  `clear_source_tables(conn, NAME` and requires every `module.NAME` to be a key of `EXPECTED_TABLES` (the
-  scan asserts it found something, so a reworded call cannot pass it vacuously). It failed on exactly
-  `fda_cyp_run.FDA_CYP_TABLES` before the entry was added: **13 call sites, 12 registered.** ONCHIGH was the
-  first writer to land unregistered, FDA-CYP the second.
+  `clear_source_tables(<conn>, NAME,` and requires every `module.NAME` to be a key of `EXPECTED_TABLES`. It
+  failed on exactly `fda_cyp_run.FDA_CYP_TABLES` before the entry was added: **13 call sites, 12 registered.**
+  FDA-CYP was the only writer to land unregistered; ONCHIGH was registered in the commit that introduced it
+  (70f2150).
+- **The finalcheck review round closed the scan's own blind spot.** The first version only guarded against
+  *every* call going unmatched (`assert sites`), so a fourteenth call written in another shape (module-qualified
+  constant, literal tuple, keyword arguments) would have passed unseen, the #149 failure again. The scan now
+  also counts every `clear_source_tables(` call (`def` excluded) and fails on any file where that count exceeds
+  what it read; `test_the_scan_counts_every_call_it_cannot_read` pins the shapes. The same round corrected the
+  FDA entry's comment (an emptied tuple does not multiply `gap_fda_cyp_unadjudicated`: db/043 groups across
+  runs, so the real harm is open questions that never retire and a shrink guard whose stored count grows
+  until it refuses a healthy ingest) and dropped the stale "seven of the eight" count from
+  `db.clear_source_tables`'s docstring.
 - **What the scan does not see**: a writer that clears with its own `DELETE` rather than
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
-- **Tests**: +2 (the scan, and the new parametrized entry). **Suite 2830 → 2832.**
+- **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
 ## The standing open-issue ledger
 
@@ -6115,7 +6124,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2832 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2833 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
