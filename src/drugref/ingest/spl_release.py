@@ -38,6 +38,7 @@ from drugref.ingest.spl_dailymed import (
     SubjectUniis, dedupe_by_set_id, extract_subject_uniis,
     prefilter_is_trustworthy, set_id_in_bytes,
 )
+from drugref.ingest.spl_version import VersionState
 
 #: ⇒ ISSUE #166: CEILINGS ON WHAT THIS READER WILL DECOMPRESS, checked against the
 #: archive's DECLARED size, and then enforced by reading at most the ceiling --
@@ -322,7 +323,7 @@ def scan_release(
             # EVERY DROP `continue`s, so one document moves at most one counter
             # and never reaches `found`. Falling through would report a document
             # tripping two conditions as two drops AND keep it as a result.
-            if recovered.version_was_unreadable:
+            if recovered.version.state is VersionState.JUNK:
                 junk_version += 1
                 continue
             if recovered.unknown_class_code_uniis:

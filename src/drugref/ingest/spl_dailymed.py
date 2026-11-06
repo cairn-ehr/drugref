@@ -52,6 +52,8 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from drugref.ingest.spl_version import ABSENT_VERSION, Version, version_from_element
+
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
 
@@ -109,6 +111,13 @@ ROUTE_SUBSTANCE = "dailymed_active_substance"
 _SET_ID = re.compile(rb"<(?:\w+:)?setId[^>]*\sroot\s*=\s*[\"']([^\"']+)[\"']")
 
 
+def version_of(root: ET.Element) -> Version:
+    """Read `<versionNumber>` off a parsed SPL document -- **the one rule**, shared
+    by the ingest and the skip census. The three states and why the ELEMENT (not
+    the attribute) decides are `spl_version`'s."""
+    return version_from_element(root.find(f"{_SPL_NS}versionNumber"))
+
+
 @dataclass(frozen=True, kw_only=True)
 class SubjectUniis:
     """The UNIIs one label offers as its subject drug.
@@ -127,14 +136,9 @@ class SubjectUniis:
     set_id: str
     moiety_uniis: tuple[str, ...]
     substance_uniis: tuple[str, ...]
-    version: int | None = None
-    #: `<versionNumber>` was PRESENT and did not parse -- issue #162 case 2.
-    #: NOT the same as `version is None`, which is also true of a label carrying
-    #: no version element at all, and only one of those two is a label whose
-    #: tie-break was destroyed. `dedupe_by_set_id` then falls back to
-    #: `(None or -1)`, i.e. to zip-member order -- the thing that function argues
-    #: at length is not a rule.
-    version_was_unreadable: bool = False
+    #: PARSED, ABSENT or JUNK -- see `Version`. A JUNK version is issue #162
+    #: case 2: the label has lost its tie-break, which `scan_release` refuses.
+    version: Version = ABSENT_VERSION
     #: HL7 classCodes on this label that are in NEITHER shipped vocabulary --
     #: issue #162 case 3. Reported rather than refused over; see
     #: `unknown_class_code_uniis` for the half that IS refused over.
@@ -309,19 +313,11 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
     if not set_id:
         return None
 
-    version_element = root.find(f"{_SPL_NS}versionNumber")
-    version = None
-    version_was_unreadable = False
-    if version_element is not None:
-        try:
-            version = int(version_element.get("value") or "")
-        except ValueError:
-            # A junk version does not lose the label HERE -- it loses its
-            # tie-break, and `dedupe_by_set_id` never lets it displace a
-            # versioned row. It is REPORTED so that `scan_release` can refuse
-            # the run rather than silently attach the wrong version's subject.
-            version = None
-            version_was_unreadable = True
+    # A JUNK version does not lose the label HERE -- it loses its tie-break,
+    # and `dedupe_by_set_id` never lets it displace a versioned row. It is
+    # REPORTED so that `scan_release` can refuse the run rather than silently
+    # attach the wrong version's subject.
+    version = version_of(root)
 
     unknown_codes, unknown_uniis = _unknown_class_code_findings(root)
 
@@ -338,7 +334,6 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
         moiety_uniis=tuple(sorted(moiety_uniis)),
         substance_uniis=tuple(sorted(substance_uniis)),
         version=version,
-        version_was_unreadable=version_was_unreadable,
         unknown_class_codes=unknown_codes,
         unknown_class_code_uniis=unknown_uniis,
     )
@@ -426,15 +421,6 @@ def subject_route(
     return None
 
 
-def _tie_break(row: SubjectUniis) -> int:
-    """The de-duplication sort key. An unversioned row ranks below every version.
-
-    `-1` rather than `0`, because SPL version numbers are non-negative and a
-    label at version 0 must still outrank one carrying no version at all.
-    """
-    return row.version if row.version is not None else -1
-
-
 def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     """One row per label, keeping the HIGHEST `version`. **ONE POLICY.**
 
@@ -452,9 +438,9 @@ def dedupe_by_set_id(rows: Iterable[SubjectUniis]) -> dict[str, SubjectUniis]:
     best: dict[str, SubjectUniis] = {}
     for row in rows:
         current = best.get(row.set_id)
-        # NOT `(row.version or -1)`: version 0 is a version, and `or` would
-        # collapse it into the no-version sentinel, handing the tie-break back to
-        # zip-member order -- the one thing this function exists to refuse.
-        if current is None or _tie_break(row) > _tie_break(current):
+        # `Version.sort_key`, NOT `(number or -1)`: version 0 is a version, and
+        # `or` would collapse it into the no-version sentinel, handing the
+        # tie-break back to zip-member order -- what this function refuses.
+        if current is None or row.version.sort_key > current.version.sort_key:
             best[row.set_id] = row
     return best

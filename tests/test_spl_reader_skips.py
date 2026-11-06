@@ -19,10 +19,12 @@ UNII, which is the only way one could have contributed a subject) rather than on
 the cause imagined, and all ten `COLR` ingredients carry no `<code>` element at
 all.
 """
+import xml.etree.ElementTree as ET
+
 import pytest
 
 from tests.conftest import clean_scan as _scan
-from drugref.ingest import spl_checks, spl_dailymed as dm, spl_release as rel
+from drugref.ingest import spl_checks, spl_dailymed as dm, spl_release as rel, spl_version
 
 UNII_SYSTEM = dm.UNII_CODE_SYSTEM
 
@@ -110,16 +112,51 @@ def test_a_junk_version_is_REPORTED_by_the_reader_not_only_swallowed():
     """`dedupe_by_set_id` falls back to `(None or -1)`, i.e. to zip-member order
     -- the very thing the module argues at length is not a rule."""
     recovered = dm.extract_subject_uniis(_document(version="four"))
-    assert recovered.version is None
-    assert recovered.version_was_unreadable is True
+    assert recovered.version == spl_version.Version(spl_version.VersionState.JUNK, raw="four")
 
 
 def test_an_ABSENT_version_is_not_reported_as_unreadable():
-    """`version is None` means BOTH "no element" and "broken element", and only
-    the second is a label whose tie-break was destroyed."""
+    """No element and a broken element are two states, and only the second is a
+    label whose tie-break was destroyed."""
     recovered = dm.extract_subject_uniis(_document(version=None))
-    assert recovered.version is None
-    assert recovered.version_was_unreadable is False
+    assert recovered.version is spl_version.ABSENT_VERSION
+
+
+@pytest.mark.parametrize("version_element, expected", [
+    ('<versionNumber value="7"/>', spl_version.Version(spl_version.VersionState.PARSED, number=7, raw="7")),
+    ('<versionNumber value="0"/>', spl_version.Version(spl_version.VersionState.PARSED, number=0, raw="0")),
+    ('<versionNumber value="four"/>', spl_version.Version(spl_version.VersionState.JUNK, raw="four")),
+    # The ELEMENT decides, not the attribute: present with no `value` is JUNK.
+    ("<versionNumber/>", spl_version.Version(spl_version.VersionState.JUNK, raw="")),
+    ("", spl_version.ABSENT_VERSION),
+])
+def test_version_of_reads_each_of_the_THREE_states(version_element, expected):
+    """Issue #170: `<versionNumber>` has three states, and ONE function reads
+    them -- the census used to re-derive them, and once disagreed."""
+    root = ET.fromstring(
+        f'<document xmlns="urn:hl7-org:v3">{version_element}</document>')
+    assert dm.version_of(root) == expected
+
+
+@pytest.mark.parametrize("state, number, raw", [
+    (spl_version.VersionState.PARSED, None, "5"),     # parsed, but no number
+    (spl_version.VersionState.JUNK, 5, "five"),       # junk, yet carries a number
+    (spl_version.VersionState.JUNK, None, None),      # junk with nothing written
+    (spl_version.VersionState.ABSENT, 5, None),       # absent, yet carries a number
+    (spl_version.VersionState.ABSENT, None, "5"),     # absent, yet something was written
+])
+def test_a_MEANINGLESS_version_cannot_be_built(state, number, raw):
+    """Issue #170: `version=5, version_was_unreadable=True` used to be
+    constructible. Only PARSED carries a number; only ABSENT carries no text."""
+    with pytest.raises(ValueError):
+        spl_version.Version(state, number=number, raw=raw)
+
+
+def test_only_a_PARSED_version_sorts_by_its_number():
+    """The tie-break: every unparsed version ranks below version 0."""
+    assert spl_version.Version(spl_version.VersionState.PARSED, number=0, raw="0").sort_key == 0
+    assert spl_version.ABSENT_VERSION.sort_key == -1
+    assert spl_version.Version(spl_version.VersionState.JUNK, raw="x").sort_key == -1
 
 
 def test_a_junk_version_is_a_DROP_because_it_can_attach_the_WRONG_subject(

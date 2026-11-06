@@ -425,6 +425,15 @@ def test_an_unversioned_row_never_displaces_a_versioned_one():
     assert dedupe_by_set_id(rows)["c"].moiety_uniis == ("KNOWN",)
 
 
+def test_version_ZERO_still_outranks_an_unversioned_row():
+    """`(row.version or -1)` collapsed version 0 into the no-version sentinel, so
+    the two tied and zip-member order decided. The shipped reader fixed this; the
+    spike's copy kept it (found under issue #170)."""
+    unversioned = SubjectUniis(set_id="c", moiety_uniis=("NONE",), substance_uniis=())
+    zero = SubjectUniis(set_id="c", moiety_uniis=("ZERO",), substance_uniis=(), version=0)
+    assert dedupe_by_set_id([unversioned, zero])["c"].moiety_uniis == ("ZERO",)
+
+
 def test_the_version_is_read_off_the_label():
     versioned = SPL.replace(
         b'<setId root="set-abc"/>',

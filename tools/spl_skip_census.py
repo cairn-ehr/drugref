@@ -31,9 +31,10 @@ makes it once:
 
 ⇒ IT MEASURES THE SHIPPED READER, NOT A SECOND ONE. Member-level skips come from
 `spl_release.iter_release_labels` itself, and the classCode vocabulary and the
-`<versionNumber>` rule are read from `spl_dailymed` at call time. The document
-level needs finer granularity than `extract_subject_uniis` exposes -- it returns
-one `None` for three different situations -- so this module parses again, and
+`<versionNumber>` reader (`version_of`) are taken from `spl_dailymed` at call
+time. The document level needs finer granularity than `extract_subject_uniis`
+exposes -- it returns one `None` for three different situations -- so this
+module parses again, and
 `tests/test_spl_skip_census.py::test_the_census_NEVER_disagrees_with_the_shipped
 _reader` pins that second parse as a REFINEMENT of the shipped one rather than a
 rival to it. A probe that quietly measures itself is how seven wrong figures got
@@ -56,7 +57,7 @@ from typing import Literal
 
 from drugref import server_messages
 from drugref.ingest import spl_dailymed as dm
-from drugref.ingest import spl_release
+from drugref.ingest import spl_release, spl_version
 
 # ⇒ A VOCABULARY CONSTANT USED TO LIVE HERE, AND IT WENT OUT OF DATE IMMEDIATELY.
 #
@@ -94,12 +95,10 @@ class DocumentVerdict:
     #: through an `elif` chain: a typo there counts nothing, silently, in the tool
     #: whose entire job is noticing what nothing counts.
     unreadable_reason: UnreadableReason | None
-    #: `<versionNumber value=...>` exactly as written, or `None` if the element
-    #: is absent. Kept raw because a bare count cannot tell a typo from a broken
-    #: document, and that is the distinction the fix for issue #162 case 2 turns on.
-    version_raw: str | None
-    #: The parsed version, by the shipped rule. `None` for absent AND for junk.
-    version: int | None
+    #: `<versionNumber>`, read by the SHIPPED `spl_dailymed.version_of` (issue
+    #: #170) -- so the census cannot re-derive junk-vs-absent its own way, which
+    #: it once did and got wrong. `None` only when the document is unreadable.
+    version: spl_version.Version | None
     #: Every `<ingredient classCode=...>` this document carries, with counts.
     class_code_counts: Mapping[str, int]
 
@@ -119,11 +118,17 @@ class DocumentVerdict:
     def version_is_junk(self) -> bool:
         """A `<versionNumber>` that is present and does not parse.
 
-        NOT the same as `version is None`, which is also true of a label that
-        simply carries no version element -- and only one of those two is a
-        label whose tie-break was destroyed.
+        NOT the same as an ABSENT one: only a JUNK version is a label whose
+        tie-break was destroyed.
         """
-        return self.version_raw is not None and self.version is None
+        return (self.version is not None
+                and self.version.state is spl_version.VersionState.JUNK)
+
+    @property
+    def version_is_absent(self) -> bool:
+        """A readable document carrying no `<versionNumber>` element at all."""
+        return (self.version is not None
+                and self.version.state is spl_version.VersionState.ABSENT)
 
 
 def classify_document(xml_bytes: bytes) -> DocumentVerdict:
@@ -140,7 +145,7 @@ def classify_document(xml_bytes: bytes) -> DocumentVerdict:
     if root is None:
         return DocumentVerdict(
             prefilter_set_id=prefilter, tree_set_id=None,
-            unreadable_reason=reason, version_raw=None, version=None,
+            unreadable_reason=reason, version=None,
             class_code_counts={})
 
     set_id_element = root.find(f"{dm._SPL_NS}setId")
@@ -148,13 +153,12 @@ def classify_document(xml_bytes: bytes) -> DocumentVerdict:
     if not tree_set_id:
         return DocumentVerdict(
             prefilter_set_id=prefilter, tree_set_id=None,
-            unreadable_reason="no_set_id", version_raw=None, version=None,
+            unreadable_reason="no_set_id", version=None,
             class_code_counts={})
 
-    version_raw, version = _version_of(root)
     return DocumentVerdict(
         prefilter_set_id=prefilter, tree_set_id=tree_set_id,
-        unreadable_reason=None, version_raw=version_raw, version=version,
+        unreadable_reason=None, version=dm.version_of(root),
         class_code_counts=Counter(
             ingredient.get("classCode") or ""
             for ingredient in root.iter(f"{dm._SPL_NS}ingredient")))
@@ -174,30 +178,6 @@ def _unreadable_reason_and_root(
         # -- and a census that dies on the branch it exists to count reports
         # nothing for it.
         return "parse_error", None
-
-
-def _version_of(root: ET.Element) -> tuple[str | None, int | None]:
-    """`(raw, parsed)` for `<versionNumber>`, by the shipped parsing rule.
-
-    ⇒ THE SHIPPED RULE KEYS ON THE ELEMENT, NOT ON THE ATTRIBUTE, and an earlier
-    draft of this function keyed on the attribute. `extract_subject_uniis` does
-    `int(element.get("value") or "")` the moment the ELEMENT exists, so
-    `<versionNumber/>` with no `value` raises `ValueError` and is JUNK there --
-    a drop that refuses the whole run. Returning `(None, None)` for it here
-    called the same document "absent version", a benign context line. The census
-    would have reported zero for a condition the ingest aborts on, which is
-    exactly the "probe that quietly measures itself" this tool exists to avoid.
-    `raw` is therefore `""` -- present but empty -- rather than `None`, so
-    `version_is_junk` can tell the element apart from its absence.
-    """
-    element = root.find(f"{dm._SPL_NS}versionNumber")
-    if element is None:
-        return None, None
-    raw = element.get("value") or ""
-    try:
-        return raw, int(raw)
-    except ValueError:
-        return raw, None
 
 
 def codes_outside_the_vocabulary(counts: Mapping[str, int]) -> set[str]:
@@ -312,7 +292,7 @@ def census_part(
             totals["untrustworthy_prefilter"] += 1
         if verdict.version_is_junk:
             totals["junk_version"] += 1
-        elif verdict.version_raw is None and verdict.unreadable_reason is None:
+        elif verdict.version_is_absent:
             totals["absent_version"] += 1
         codes.update(verdict.class_code_counts)
         if progress is not None and totals["documents_read"] % 2000 == 0:
@@ -345,6 +325,24 @@ def census_release(
 def _counters(census: SkipCensus) -> dict[str, int]:
     """The counter fields of one census, as plain JSON-ready values."""
     return {name: getattr(census, name) for name in _COUNTER_FIELDS}
+
+
+def _class_codes(census: SkipCensus) -> dict[str, object]:
+    """The classCode histogram and its unruled codes, as JSON-ready values."""
+    return {"class_code_counts": dict(census.class_code_counts),
+            "unknown_class_codes": sorted(census.unknown_class_codes)}
+
+
+def _write_json(path: str, census: SkipCensus) -> None:
+    """Write the census -- total, class codes and per-part counters -- to `path`."""
+    payload = {
+        **_counters(census),
+        **_class_codes(census),
+        "by_part": {part: _counters(part_census)
+                    for part, part_census in census.by_part.items()},
+    }
+    with open(path, "w") as handle:
+        json.dump(payload, handle, indent=2)
 
 
 def _report(census: SkipCensus) -> str:
@@ -395,33 +393,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  [{time.monotonic() - started:7.1f}s] {part.split('/')[-1]} "
               f"{read:,} documents", file=sys.stderr, flush=True)
 
+    finished: dict[str, SkipCensus] = {}
+    json_failure: list[OSError] = []
+
     def emit_part(part: str, part_census: SkipCensus) -> None:
         # One JSON line per finished part, so a crash on a later part still
-        # leaves this one's evidence on disk (issue #171).
-        print("part-census " + json.dumps({"part": part, **_counters(part_census)}),
-              file=sys.stderr, flush=True)
+        # leaves this one's evidence on stderr (issue #171) -- WITH its class
+        # codes, which are what a human rules on a new code from (issue #188).
+        print("part-census " + json.dumps(
+            {"part": part, **_counters(part_census), **_class_codes(part_census)}),
+            file=sys.stderr, flush=True)
+        finished[part] = part_census
+        if args.json_out and not json_failure:
+            # Rewritten after EVERY part (issue #188), in the final file's own
+            # shape, so a crash on part 6 leaves parts 1-5 in a file that parses
+            # exactly like a finished one.
+            try:
+                _write_json(args.json_out,
+                            replace(merge(finished.values()), by_part=finished))
+            except OSError as error:
+                # Named once, and the read carries on: a bad --json path costs
+                # the record but never the 163-second measurement itself.
+                print(f"could not write {args.json_out}: {error}", file=sys.stderr)
+                json_failure.append(error)
 
     census = census_release(args.parts, progress=progress, on_part=emit_part)
     print(_report(census))
     print(f"\nread in {time.monotonic() - started:.1f}s", file=sys.stderr)
-
-    if args.json_out:
-        payload = {
-            **_counters(census),
-            "class_code_counts": dict(census.class_code_counts),
-            "unknown_class_codes": sorted(census.unknown_class_codes),
-            "by_part": {
-                part: _counters(part_census)
-                for part, part_census in census.by_part.items()},
-        }
-        try:
-            with open(args.json_out, "w") as handle:
-                json.dump(payload, handle, indent=2)
-        except OSError as error:
-            # Named, and AFTER the report is printed, so a bad --json path costs
-            # the record but never the 163-second measurement itself.
-            print(f"could not write {args.json_out}: {error}", file=sys.stderr)
-            return 2
+    if json_failure:
+        return 2
 
     # ⇒ THE EXIT CODE ANSWERS THE QUESTION THE TOOL WAS RUN TO ANSWER: would
     # `check_scan_dropped_nothing` refuse this release? Returning 0 either way

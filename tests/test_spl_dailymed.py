@@ -28,8 +28,15 @@ import pytest
 
 from drugref.ingest import spl_dailymed as dm
 from drugref.ingest import spl_release as rel
+from drugref.ingest import spl_version
 
 UNII_SYSTEM = dm.UNII_CODE_SYSTEM
+
+
+def _v(number: int) -> spl_version.Version:
+    """A PARSED version, spelled the way `version_of` builds one."""
+    return spl_version.Version(
+        spl_version.VersionState.PARSED, number=number, raw=str(number))
 
 
 def _document(body: str, *, set_id: str = "SET-1", version: str | None = "4") -> bytes:
@@ -186,8 +193,8 @@ def test_the_route_names_which_grain_answered_and_they_are_EXCLUSIVE():
 def test_one_set_id_read_TWICE_is_one_label():
     """Counting documents reported 6,583 labels where 6,539 exist."""
     rows = [
-        dm.SubjectUniis(set_id="S", moiety_uniis=("A",), substance_uniis=(), version=1),
-        dm.SubjectUniis(set_id="S", moiety_uniis=("B",), substance_uniis=(), version=2),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("A",), substance_uniis=(), version=_v(1)),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("B",), substance_uniis=(), version=_v(2)),
     ]
     assert len(dm.dedupe_by_set_id(rows)) == 1
 
@@ -200,17 +207,17 @@ def test_the_HIGHEST_version_wins_not_the_first_or_last_seen():
     of the same labels.
     """
     rows = [
-        dm.SubjectUniis(set_id="S", moiety_uniis=("LOW",), substance_uniis=(), version=1),
-        dm.SubjectUniis(set_id="S", moiety_uniis=("HIGH",), substance_uniis=(), version=9),
-        dm.SubjectUniis(set_id="S", moiety_uniis=("MID",), substance_uniis=(), version=5),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("LOW",), substance_uniis=(), version=_v(1)),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("HIGH",), substance_uniis=(), version=_v(9)),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("MID",), substance_uniis=(), version=_v(5)),
     ]
     assert dm.dedupe_by_set_id(rows)["S"].moiety_uniis == ("HIGH",)
 
 
 def test_an_unversioned_row_never_displaces_a_versioned_one():
     rows = [
-        dm.SubjectUniis(set_id="S", moiety_uniis=("V",), substance_uniis=(), version=2),
-        dm.SubjectUniis(set_id="S", moiety_uniis=("NONE",), substance_uniis=(), version=None),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("V",), substance_uniis=(), version=_v(2)),
+        dm.SubjectUniis(set_id="S", moiety_uniis=("NONE",), substance_uniis=(), version=spl_version.ABSENT_VERSION),
     ]
     assert dm.dedupe_by_set_id(rows)["S"].moiety_uniis == ("V",)
 
@@ -238,8 +245,9 @@ def test_a_label_read_successfully_with_no_ingredients_is_NOT_None():
 
 
 def test_the_version_is_read_and_a_junk_version_does_not_abort_the_read():
-    assert dm.extract_subject_uniis(_document("", version="7")).version == 7
-    assert dm.extract_subject_uniis(_document("", version="v7")).version is None
+    assert dm.extract_subject_uniis(_document("", version="7")).version.number == 7
+    assert (dm.extract_subject_uniis(_document("", version="v7")).version.state
+            is spl_version.VersionState.JUNK)
 
 
 def test_the_cheap_byte_prefilter_accepts_both_quote_styles():

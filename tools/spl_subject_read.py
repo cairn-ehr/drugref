@@ -198,6 +198,16 @@ def subject_uniis(
     return ()
 
 
+def _rank(row: SubjectUniis) -> int:
+    """The tie-break key: an unversioned row ranks below every version.
+
+    NOT `(row.version or -1)`, which this used to be: `or` collapsed version 0
+    into the no-version sentinel, so zip-member order decided. The shipped
+    `spl_dailymed.Version.sort_key` makes the same call.
+    """
+    return row.version if row.version is not None else -1
+
+
 def dedupe_by_set_id(
     rows: Iterable[SubjectUniis],
 ) -> dict[str, SubjectUniis]:
@@ -220,7 +230,7 @@ def dedupe_by_set_id(
         if current is None:
             best[row.set_id] = row
             continue
-        if (row.version or -1) > (current.version or -1):
+        if _rank(row) > _rank(current):
             best[row.set_id] = row
     return best
 
