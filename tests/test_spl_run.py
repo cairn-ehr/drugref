@@ -327,16 +327,26 @@ def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
         rewritten.writestr("drug-label-0001-of-0001.json", json.dumps(payload))
 
     _seed_registry(conn)
-    summary = _ingest(conn, (openfda_dir, parts))
+    said: list[str] = []
+    summary = _ingest(conn, (openfda_dir, parts), progress=said.append)
     assert (summary.records_field_absent, summary.records_field_blank,
             summary.labels_keyed_on_document_id) == (3, 2, 1)
     assert summary.records_read == len(LABELS) + len(extra)
     # #186: the same three, unswapped, in the run's stored census -- the only
-    # place a LATER release can read them back to compare against.
+    # place a LATER release can read them back to compare against. Joined to
+    # the SPL run, so a row filed under the registry seed's run would not pass.
     assert conn.execute(
-        "SELECT records_read, labels, records_field_absent, records_field_blank, "
-        "       labels_keyed_on_document_id FROM drugref.spl_run_census"
+        "SELECT c.records_read, c.labels, c.records_field_absent, "
+        "       c.records_field_blank, c.labels_keyed_on_document_id "
+        "  FROM drugref.spl_run_census c "
+        "  JOIN drugref.ingest_run r USING (ingest_run_id) "
+        " WHERE r.source = 'SPL'"
     ).fetchall() == [(summary.records_read, summary.labels, 3, 2, 1)]
+    # PR #198 review: and in the progress line, which is said BEFORE any floor
+    # can refuse -- a refused run rolls its census back, so this line is the
+    # only place a refused, drifted release shows the counts that explain it.
+    assert any("3 absent, 2 blank, 1 keyed on document id" in line
+               for line in said), said
 
 
 @pytest.mark.usefixtures("_clean")

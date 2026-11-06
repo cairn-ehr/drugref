@@ -49,14 +49,32 @@ def test_a_re_ingest_KEEPS_the_previous_runs_census(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
-def test_a_refused_run_leaves_NO_census_row(conn, corpus):
-    """The census is written inside the run's transaction, so a run that rolls
-    back cannot leave figures behind that a later release would be compared
-    against -- they would describe a projection that never existed."""
-
+def test_a_run_refused_by_its_floors_writes_NO_census(conn, corpus):
+    """`check_floors` runs before the census is written, so a refused run never
+    reaches the INSERT. (That alone says nothing about the transaction -- the
+    next test pins that.)"""
     _seed_registry(conn)
     with pytest.raises(ValueError):
         _ingest(conn, corpus, pair_floor=spl_run.MEASURED_PAIR_FLOOR)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.spl_run_census").fetchone() == (0,)
+
+
+@pytest.mark.usefixtures("_clean")
+def test_a_run_failing_AFTER_the_census_write_rolls_the_census_back(
+        conn, corpus, monkeypatch):
+    """The census is written inside the run's transaction, so a run that fails
+    after the INSERT (here `finish_run`; in life the deferred quote-budget
+    trigger at commit) cannot leave figures behind that a later release would be
+    compared against -- they would describe a projection that never existed.
+    A census written on its own committed transaction would fail this."""
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("finish_run refused (test)")
+
+    _seed_registry(conn)
+    monkeypatch.setattr(spl_run.provenance, "finish_run", refuse)
+    with pytest.raises(RuntimeError, match="finish_run refused"):
+        _ingest(conn, corpus)
     assert conn.execute(
         "SELECT count(*) FROM drugref.spl_run_census").fetchone() == (0,)
 
@@ -69,25 +87,40 @@ def _run(conn) -> int:
     ).fetchone()[0]
 
 
-@pytest.mark.parametrize("row", [
+@pytest.mark.parametrize("row, constraint", [
     # labels + absent + blank must equal records_read: every record is one of the three
-    pytest.param((10, 8, 1, 0, 0), id="buckets-do-not-sum"),
+    pytest.param((10, 8, 1, 0, 0), "spl_run_census_records_accounted",
+                 id="buckets-do-not-sum"),
     # a -1 and a +1 satisfy the sum, which is why each count has its own floor
-    pytest.param((10, 11, -1, 0, 0), id="negative-count-hidden-by-the-sum"),
+    pytest.param((10, 11, -1, 0, 0), "spl_run_census_records_field_absent_check",
+                 id="negative-absent-hidden-by-the-sum"),
+    pytest.param((10, 11, 0, -1, 0), "spl_run_census_records_field_blank_check",
+                 id="negative-blank-hidden-by-the-sum"),
     # an id-keyed label is still a label
-    pytest.param((10, 8, 1, 1, 9), id="more-id-keyed-than-labels"),
-    pytest.param((10, 8, 1, 1, -1), id="negative-id-keyed"),
+    pytest.param((10, 8, 1, 1, 9), "spl_run_census_id_keyed_are_labels",
+                 id="more-id-keyed-than-labels"),
+    pytest.param((10, 8, 1, 1, -1),
+                 "spl_run_census_labels_keyed_on_document_id_check",
+                 id="negative-id-keyed"),
+    # NOT HERE: `labels >= 0` and `records_read >= 0`. Neither can be broken
+    # alone -- a negative `labels` also breaks id_keyed_are_labels (or, with a
+    # negative id-keyed count, that count's own floor), and `records_read` is
+    # the sum of three floored counts, so records_accounted fires first. Both
+    # stay as belt-and-braces.
 ])
-def test_the_table_refuses_an_impossible_census(conn, row):
+def test_the_table_refuses_an_impossible_census(conn, row, constraint):
     """The database's own copy of `SplSummary`'s identities. The Python checks
-    guard the one writer; these guard everything else that can INSERT."""
+    guard the one writer; these guard everything else that can INSERT. Each
+    case names the ONE constraint it breaks, so a dropped CHECK cannot hide
+    behind another that happens to fire on the same row."""
     run_id = _run(conn)
-    with pytest.raises(psycopg.errors.CheckViolation):
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
         conn.execute(
             "INSERT INTO drugref.spl_run_census (ingest_run_id, records_read, "
             " labels, records_field_absent, records_field_blank, "
             " labels_keyed_on_document_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (run_id, *row))
+    assert refused.value.diag.constraint_name == constraint
 
 
 def test_the_table_accepts_a_consistent_census(conn):

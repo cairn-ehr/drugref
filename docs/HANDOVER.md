@@ -20,12 +20,13 @@ suite disagree.
 
 **⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL run census"). **#186**: `db/057` adds
 `drugref.spl_run_census`, one row per SPL run holding #163's absent/blank/id-keyed counts plus `records_read` and
-`labels`. Its CHECKs copy `SplSummary`'s identities. `spl_evidence.write_run_census` writes it inside the run's
-transaction. **It is HISTORY, deliberately NOT in `SPL_TABLES`**, so a re-ingest keeps the previous run's row
+`labels`. Its CHECKs copy the two `SplSummary` identities over those columns. `spl_evidence.write_run_census` writes it
+inside the run's transaction; the progress output also says the three counts before any floor can refuse,
+since a refused run keeps no census. **#199** (new) tracks a `drugref status` reader — nothing reads it yet. **It is HISTORY, deliberately NOT in `SPL_TABLES`**, so a re-ingest keeps the previous run's row
 to compare with. #186's other option (route id-keyed labels `unresolved`) was not taken; it would change
 db/051's route vocabulary.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+7). `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+9). `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
 ## ⇒ DO THIS NEXT
@@ -48,7 +49,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 closes on this PR's merge.** Open: **#164**, **#169**, **#199** (census reader). Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).

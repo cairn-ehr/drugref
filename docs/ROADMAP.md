@@ -1131,7 +1131,8 @@ review round".
 **⇒ THE SPL RUN CENSUS ✅ DONE (2026-11-06) — closes #186, `db/057`.** Full account: PROJECT-NOTES § "The SPL
 run census". #163's absent/blank/id-keyed counts, which must never refuse a run, are now stored once per run in
 `spl_run_census`. It is history keyed by `ingest_run`, not cleared by the per-source rebuild, so the next release
-can be compared with the last one. #186's second option (route id-keyed labels as `unresolved`) was NOT taken.
+can be compared with the last one. #186's second option (route id-keyed labels as `unresolved`) was NOT taken. **Follow-up #199:** nothing reads
+the census yet; a `drugref status` line comparing the last two runs would.
 
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).

@@ -266,6 +266,10 @@ def ingest_spl(
     spl.check_something_was_read(corpus.labels, records=corpus.records)
     say(f"  {len(corpus.labels):,} labels of {corpus.records:,} records, "
         f"{len(corpus.wordings):,} distinct wordings")
+    # #163's counts, said BEFORE any floor can refuse: a refused run rolls its
+    # db/057 census back, so this line is all a refused, drifted release leaves.
+    say(f"  {corpus.field_absent:,} absent, {corpus.field_blank:,} blank, "
+        f"{corpus.labels_keyed_on_document_id:,} keyed on document id")
 
     # ---- 2. the registry, in ONE statement ----------------------------------
     # Read BEFORE the run is opened: it is a read, a single statement sees a
@@ -442,7 +446,8 @@ def ingest_spl(
             labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
 
         # `register_from_gaps` IS DELIBERATELY NOT CALLED, unlike in every
-        # sibling orchestrator. This run writes only its own five tables, and
+        # sibling orchestrator. This run writes only its own five projection
+        # tables and its db/057 census row, and
         # `gap_unresolved_spl_subject` is not an `open_question` kind -- db/051
         # section 8 says why, at length. Calling it would re-derive eighteen
         # kinds this run cannot have changed, and would stamp SPL's run id as

@@ -4,12 +4,13 @@
 --
 -- ⇒ WHY. #163 added `records_field_absent`, `records_field_blank` and
 -- `labels_keyed_on_document_id` to SplSummary and ruled that NONE of them may
--- refuse a run: "the ratio moving between releases is the signal". But the only
--- place they went was one INFO log line, so no release could ever be compared with
--- the last. The sharpest case: a label keyed on openFDA's per-document `id` can
--- never match DailyMed and is routed `absent_from_dailymed`. If openFDA stopped
--- sending `set_id` on 500 records, 500 labels would be published as absent from
--- DailyMed and the only trace would be that log line.
+-- refuse a run: "the ratio moving between releases is the signal". But they were
+-- only ever logged and printed, never stored, so no release could ever be compared
+-- with the last. The sharpest case: a label keyed on openFDA's per-document `id`
+-- can never match DailyMed, so unless its openFDA UNII resolves it is routed
+-- `absent_from_dailymed`. If openFDA stopped sending `set_id` on 500 records, those
+-- of them without a resolving UNII would be published as absent from DailyMed and
+-- the only trace would be one log line.
 --
 -- ⇒ HISTORY, NOT A PROJECTION. Keyed by the run, and deliberately NOT in
 -- spl_evidence.SPL_TABLES: the per-source rebuild deletes the previous run's SPL
@@ -20,13 +21,14 @@
 -- `records_read` and `labels` are stored beside the three so the ratio is
 -- computable from this table alone; they are also what the identities need.
 --
--- ⇒ THE CHECKS COPY SplSummary's OWN IDENTITIES (spl_checks.py) so a hand-written
--- INSERT meets the same floor as the one writer: every record is a label, absent
--- or blank; an id-keyed label is still a label. Each count also has its own
--- `>= 0`, because a -1 and a +1 satisfy a sum (issue 187's lesson).
+-- ⇒ THE CHECKS COPY THE TWO SplSummary IDENTITIES OVER THESE COLUMNS (spl_checks.py)
+-- so a hand-written INSERT meets the same floor as the one writer: every record is
+-- a label, absent or blank; an id-keyed label is still a label. Each count also has
+-- its own `>= 0`, because a -1 and a +1 satisfy a sum (issue 187's lesson).
 --
--- NOT ENFORCED: that the referenced run's source is 'SPL'. A foreign key cannot
--- say it, and the only writer (spl_run.ingest_spl) passes its own run id.
+-- NOT ENFORCED: that the referenced run's source is 'SPL'. A plain foreign key
+-- cannot say it; a composite one (or a trigger) could, but is not worth it while
+-- the only writer (spl_run.ingest_spl) passes the run id it just opened.
 
 CREATE TABLE IF NOT EXISTS drugref.spl_run_census (
     ingest_run_id                bigint PRIMARY KEY
@@ -54,5 +56,6 @@ COMMENT ON COLUMN drugref.spl_run_census.records_field_blank IS
     'openFDA records whose drug_interactions field is present but holds only blanks.';
 COMMENT ON COLUMN drugref.spl_run_census.labels_keyed_on_document_id IS
     'Labels keyed on openFDA''s per-document id because set_id was missing. They can '
-    'never match DailyMed and are routed absent_from_dailymed, so a jump here reads '
-    'as labels vanishing from DailyMed when it is really a change in openFDA''s keys.';
+    'never match DailyMed, so any whose openFDA UNII does not resolve are routed '
+    'absent_from_dailymed: a jump here reads as labels vanishing from DailyMed when '
+    'it is really a change in openFDA''s keys.';
