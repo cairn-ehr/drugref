@@ -16,12 +16,15 @@ from enum import Enum
 class VersionState(Enum):
     """The three states of SPL's `<versionNumber>` (issue #170)."""
 
-    #: Present and an integer: the only state that can win a tie-break.
+    #: Present and a plain ASCII-digit integer (so never negative): the only
+    #: state that can win a tie-break.
     PARSED = "parsed"
     #: No `<versionNumber>` element at all. The label keeps its place, merely
     #: unversioned -- a benign context line, never a drop.
     ABSENT = "absent"
-    #: Present and NOT an integer -- issue #162 case 2. The label's tie-break is
+    #: Present and NOT plain ASCII digits -- issue #162 case 2. That includes
+    #: what Python's `int()` would accept but SPL never writes: `-1`, `" 3 "`,
+    #: `+2`, `1_0`, non-ASCII digits. The label's tie-break is
     #: destroyed, so `scan_release` refuses the run over it.
     JUNK = "junk"
 
@@ -51,15 +54,34 @@ class Version:
             raise ValueError(f"only a PARSED version carries a number: {self!r}")
         if (self.raw is None) != (self.state is VersionState.ABSENT):
             raise ValueError(f"only an ABSENT version has no raw text: {self!r}")
+        # `raw` alone decides the state, so the three fields cannot disagree:
+        # digits are PARSED (to exactly that number), anything else JUNK.
+        if self.state is VersionState.PARSED and not (
+                _is_spl_version(self.raw) and self.number == int(self.raw)
+                and type(self.number) is int):
+            raise ValueError(f"a PARSED version's number must be its text: {self!r}")
+        if self.state is VersionState.JUNK and _is_spl_version(self.raw):
+            raise ValueError(f"a JUNK version's text must not parse: {self!r}")
 
     @property
     def sort_key(self) -> int:
         """The de-duplication key: an unparsed version ranks below every version.
 
-        `-1` rather than `0`, because SPL version numbers are non-negative and a
-        label at version 0 must still outrank one carrying no version at all.
+        `-1` rather than `0`, because a PARSED number is non-negative (the
+        constructor enforces it) and a label at version 0 must still outrank
+        one carrying no version at all.
         """
         return self.number if self.number is not None else -1
+
+
+def _is_spl_version(raw: str) -> bool:
+    """Whether `raw` is a version SPL could write: one or more ASCII digits.
+
+    Stricter than `int()` on purpose: `int()` also takes a sign, whitespace,
+    underscores and non-ASCII digits, and a negative number would sort at or
+    below an ABSENT version.
+    """
+    return raw.isascii() and raw.isdigit()
 
 
 #: The one ABSENT value; it carries nothing, so every label can share it.
@@ -78,7 +100,6 @@ def version_from_element(element: ET.Element | None) -> Version:
     if element is None:
         return ABSENT_VERSION
     raw = element.get("value") or ""
-    try:
+    if _is_spl_version(raw):
         return Version(VersionState.PARSED, number=int(raw), raw=raw)
-    except ValueError:
-        return Version(VersionState.JUNK, raw=raw)
+    return Version(VersionState.JUNK, raw=raw)

@@ -1121,6 +1121,13 @@ and rewrites `--json` after every part, so a crash keeps the evidence (#188). SP
 three-state `Version` in the new `ingest/spl_version.py`, read by one function that both the ingest and the
 census call (#170). The spike's leftover version-0 tie-break bug is fixed too.
 
+**⇒ THE NEGATIVE-COUNT AUDIT ✅ DONE (2026-11-06) — closes #195, no migration.** Full account: PROJECT-NOTES
+§ "The negative-count audit". Every `__post_init__` in `src/` was read; only `DrugCentralSummary` and
+`NextWordProfile` reconcile sums of counts, and both now refuse a negative one through `ingest/counts.py`.
+The PR #197 review extended the guard to the four `tools/` types that reconcile sums, and made `Version`
+treat a negative or non-ASCII-digit `<versionNumber>` as JUNK. Full account: PROJECT-NOTES § "The PR #197
+review round".
+
 **What this slice still does NOT answer**, exactly as the design spec §8 left it: the class grain (#155,
 #102), the potency band, the word-order gap, and salt-grain resolution (#67).
 

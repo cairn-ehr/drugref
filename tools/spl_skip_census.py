@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -101,6 +102,13 @@ class DocumentVerdict:
     version: spl_version.Version | None
     #: Every `<ingredient classCode=...>` this document carries, with counts.
     class_code_counts: Mapping[str, int]
+
+    def __post_init__(self) -> None:
+        # Enforced, not just commented: an inconsistent verdict would count as
+        # neither junk nor absent, silently (review of PR #197).
+        if (self.version is None) != (self.unreadable_reason is not None):
+            raise ValueError(
+                f"version is None exactly when the document is unreadable: {self!r}")
 
     @property
     def prefilter_disagreed(self) -> bool:
@@ -341,8 +349,12 @@ def _write_json(path: str, census: SkipCensus) -> None:
         "by_part": {part: _counters(part_census)
                     for part, part_census in census.by_part.items()},
     }
-    with open(path, "w") as handle:
+    # Write beside, then swap: `open(path, "w")` empties the file first, so a
+    # failed dump would destroy the last good copy the rewrite exists to keep.
+    temporary = f"{path}.tmp"
+    with open(temporary, "w") as handle:
         json.dump(payload, handle, indent=2)
+    os.replace(temporary, path)
 
 
 def _report(census: SkipCensus) -> str:

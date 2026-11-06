@@ -258,6 +258,36 @@ def test_census_release_totals_the_document_verdicts_across_parts(tmp_path):
     assert result.unknown_class_codes == {"ZZZZ"}
 
 
+def test_census_counts_an_ABSENT_version_apart_from_junk_and_unreadable(tmp_path):
+    """Review of PR #197: nothing tested `absent_version`, so counting an
+    unreadable document (version `None`) or a JUNK one as absent would pass."""
+    part = _part(tmp_path, {
+        "a.zip": _member({"a.xml": _document(set_id="SET-A", version=None)}),
+        "b.zip": _member({"b.xml": _document(set_id="SET-B", version="junk")}),
+        "c.zip": _member({"c.xml": b"<not xml"}),
+    })
+
+    result = census.census_release([part])
+
+    assert result.absent_version == 1
+    assert result.junk_version == 1
+
+
+@pytest.mark.parametrize("reason, version", [
+    (None, None),                                   # read, yet no version
+    ("parse_error", spl_version.ABSENT_VERSION),    # unreadable, yet a version
+])
+def test_a_verdict_whose_version_contradicts_its_readability_cannot_be_built(
+        reason, version):
+    """Review of PR #197: `version` is `None` exactly when the document is
+    unreadable. Left as a comment, an inconsistent verdict counted as neither
+    junk nor absent -- silently."""
+    with pytest.raises(ValueError):
+        census.DocumentVerdict(
+            prefilter_set_id="SET-1", tree_set_id="SET-1",
+            unreadable_reason=reason, version=version, class_code_counts={})
+
+
 def test_a_crash_on_the_LAST_part_keeps_every_part_already_counted(tmp_path):
     """Issue #171: `by_part` lived in a local dict returned after the last part,
     so a raise on part 6 of 6 discarded five parts of a 163-second read. Each
@@ -310,8 +340,9 @@ def test_a_parts_line_carries_its_CLASS_CODES_not_only_its_counters(
 
 def test_the_JSON_file_survives_a_crash_on_a_LATER_part(tmp_path):
     """Issue #188: `--json` used to be written once, after the last part, so a
-    crash on part 6 lost the file for all six. It is rewritten after each part,
-    in the same shape as the final file, so the partial one parses the same way."""
+    crash on part 6 lost the JSON for the five finished parts. It is rewritten
+    after each part, in the same shape as the final file, so the partial one
+    parses the same way."""
     good = _part(tmp_path, {"a.zip": _member(
         {"a.xml": _document(_ingredient("ZZZZ"))})})
     out = tmp_path / "census.json"
@@ -326,8 +357,10 @@ def test_the_JSON_file_survives_a_crash_on_a_LATER_part(tmp_path):
 
 
 def test_the_finished_JSON_file_matches_the_whole_release(tmp_path):
-    """Rewriting per part must still leave the WHOLE-release payload at the end."""
-    first = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})}, "p1.zip")
+    """Rewriting per part must still leave the WHOLE-release payload at the end
+    -- including a class code seen only in the FIRST part, not just the last."""
+    first = _part(tmp_path, {"a.zip": _member(
+        {"a.xml": _document(_ingredient("ZZZZ"))})}, "p1.zip")
     second = _part(tmp_path, {"b.zip": _member(
         {"b.xml": _document(set_id="SET-2")})}, "p2.zip")
     out = tmp_path / "census.json"
@@ -337,6 +370,33 @@ def test_the_finished_JSON_file_matches_the_whole_release(tmp_path):
     payload = json.loads(out.read_text())
     assert payload["documents_read"] == 2
     assert list(payload["by_part"]) == [first, second]
+    assert payload["unknown_class_codes"] == ["ZZZZ"]
+
+
+def test_a_FAILED_rewrite_keeps_the_last_good_JSON_file(tmp_path, monkeypatch):
+    """Review of PR #197: `open(path, "w")` emptied the file BEFORE the dump, so a
+    disk-full on part 2's rewrite destroyed part 1's evidence. The rewrite now
+    goes to a temporary file that replaces the old one only once complete."""
+    first = _part(tmp_path, {"a.zip": _member({"a.xml": _document()})}, "p1.zip")
+    second = _part(tmp_path, {"b.zip": _member(
+        {"b.xml": _document(set_id="SET-2")})}, "p2.zip")
+    out = tmp_path / "census.json"
+    real_dump = json.dump
+    calls = []
+
+    def dump_then_fail_the_second_time(payload, handle, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            handle.write("{\"half\": ")
+            raise OSError("No space left on device")
+        real_dump(payload, handle, **kwargs)
+
+    monkeypatch.setattr(census.json, "dump", dump_then_fail_the_second_time)
+
+    assert census.main([first, second, "--json", str(out)]) == 2
+
+    payload = json.loads(out.read_text())
+    assert list(payload["by_part"]) == [first]
 
 
 # --------------------------------------------------------------------------

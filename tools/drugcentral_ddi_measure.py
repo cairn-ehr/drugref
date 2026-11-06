@@ -23,6 +23,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from drugref.ingest.counts import refuse_negative_counts
 from drugref.ingest.drugcentral_resolve import (
     Resolution,
     build_endpoint_index,
@@ -73,6 +74,7 @@ class Measurement:
     held: int
 
     def __post_init__(self) -> None:
+        refuse_negative_counts(self)  # first: a negative term fakes a sum
         accounted = self.unresolvable_rows + self.self_pair_rows + self.pair_rows
         if accounted != self.rows:
             raise ValueError(

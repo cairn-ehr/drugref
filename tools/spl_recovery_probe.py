@@ -159,8 +159,8 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
                     parse_failed += 1
                     continue
                 if recovered is None:
-                    # Either unparseable or carrying no setId in the tree. Both
-                    # are readings, not release facts, so neither may fall into
+                    # Unparseable, no setId in the tree, or a JUNK version. All
+                    # are readings, not release facts, so none may fall into
                     # the absent bucket unremarked.
                     no_set_id_tree += 1
                     continue
@@ -192,7 +192,7 @@ def scan(cache: pathlib.Path, parts: list[str], out: pathlib.Path) -> None:
     print(f"  rows written (documents)          {rows_written:>9,}")
     print(f"  ⇒ TARGETED LABELS FOUND (set_ids) {len(written_set_ids):>9,}")
     print(f"  dropped: no setId in the bytes    {no_set_id_bytes:>9,}")
-    print(f"  dropped: unreadable / no setId    {no_set_id_tree:>9,}")
+    print(f"  dropped: unreadable/setId/version {no_set_id_tree:>9,}")
     print(f"  dropped: pre-filter disagreed     {disagreed:>9,}")
     print(f"  dropped: parse failed             {parse_failed:>9,}")
     # A reason's verdict is `spl_release`'s, never retyped here -- and it fails

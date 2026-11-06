@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from drugref.ingest import spl_dailymed as dm
+from drugref.ingest.spl_version import VersionState
 
 #: The HL7 v3 namespace every SPL document uses.
 _SPL_NS = "{urn:hl7-org:v3}"
@@ -131,9 +132,11 @@ def _moiety_uniis_under(substance: ET.Element) -> list[str]:
 def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
     """The subject UNIIs of one SPL label, or ``None`` if it offers no join key.
 
-    ``None`` means the document could not be parsed, or carries no ``setId`` --
+    ``None`` means the document could not be parsed, carries no ``setId`` --
     the key that joins a recovered subject back to the openFDA record it would
-    rescue. A label with a ``setId`` but no ingredients returns a
+    rescue -- or carries a JUNK ``<versionNumber>``, which the shipped
+    ``scan_release`` refuses a whole run over, so the spike must not keep it.
+    A label with a ``setId`` but no ingredients returns a
     :class:`SubjectUniis` with empty tuples: it was read, and it had nothing.
     That distinction matters, because folding the two together would report a
     parse failure as a source gap.
@@ -148,13 +151,12 @@ def extract_subject_uniis(xml_bytes: bytes) -> SubjectUniis | None:
     if not set_id:
         return None
 
-    version_element = root.find(f"{_SPL_NS}versionNumber")
-    version = None
-    if version_element is not None:
-        try:
-            version = int(version_element.get("value") or "")
-        except ValueError:
-            version = None
+    # The shipped reader, not a copy: a copy once folded JUNK into "no version".
+    # The field stays `int | None` because the probe's JSON cache stores it so.
+    read = dm.version_of(root)
+    if read.state is VersionState.JUNK:
+        return None
+    version = read.number
 
     moiety_uniis: set[str] = set()
     substance_uniis: set[str] = set()
@@ -203,7 +205,7 @@ def _rank(row: SubjectUniis) -> int:
 
     NOT `(row.version or -1)`, which this used to be: `or` collapsed version 0
     into the no-version sentinel, so zip-member order decided. The shipped
-    `spl_dailymed.Version.sort_key` makes the same call.
+    `spl_version.Version.sort_key` makes the same call.
     """
     return row.version if row.version is not None else -1
 

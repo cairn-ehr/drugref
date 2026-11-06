@@ -109,8 +109,9 @@ def test_a_TRUSTWORTHY_prefilter_on_a_non_target_is_skipped_silently_as_before(
 # --------------------------------------------------------------------------
 
 def test_a_junk_version_is_REPORTED_by_the_reader_not_only_swallowed():
-    """`dedupe_by_set_id` falls back to `(None or -1)`, i.e. to zip-member order
-    -- the very thing the module argues at length is not a rule."""
+    """A JUNK version's `sort_key` is -1, the same as an absent one, so between
+    the two the tie-break falls back to zip-member order -- the very thing the
+    module argues at length is not a rule."""
     recovered = dm.extract_subject_uniis(_document(version="four"))
     assert recovered.version == spl_version.Version(spl_version.VersionState.JUNK, raw="four")
 
@@ -129,6 +130,14 @@ def test_an_ABSENT_version_is_not_reported_as_unreadable():
     # The ELEMENT decides, not the attribute: present with no `value` is JUNK.
     ("<versionNumber/>", spl_version.Version(spl_version.VersionState.JUNK, raw="")),
     ("", spl_version.ABSENT_VERSION),
+    # Review of PR #197: Python's `int()` takes all of these, SPL does not. A
+    # negative version would rank at or below ABSENT and let an unversioned
+    # row displace a versioned one; the others are not "exactly as written".
+    ('<versionNumber value="-1"/>', spl_version.Version(spl_version.VersionState.JUNK, raw="-1")),
+    ('<versionNumber value=" 3 "/>', spl_version.Version(spl_version.VersionState.JUNK, raw=" 3 ")),
+    ('<versionNumber value="+2"/>', spl_version.Version(spl_version.VersionState.JUNK, raw="+2")),
+    ('<versionNumber value="1_0"/>', spl_version.Version(spl_version.VersionState.JUNK, raw="1_0")),
+    ('<versionNumber value="\u0663"/>', spl_version.Version(spl_version.VersionState.JUNK, raw="\u0663")),
 ])
 def test_version_of_reads_each_of_the_THREE_states(version_element, expected):
     """Issue #170: `<versionNumber>` has three states, and ONE function reads
@@ -144,10 +153,15 @@ def test_version_of_reads_each_of_the_THREE_states(version_element, expected):
     (spl_version.VersionState.JUNK, None, None),      # junk with nothing written
     (spl_version.VersionState.ABSENT, 5, None),       # absent, yet carries a number
     (spl_version.VersionState.ABSENT, None, "5"),     # absent, yet something was written
+    (spl_version.VersionState.PARSED, 5, "7"),        # the number contradicts the text
+    (spl_version.VersionState.PARSED, -1, "-1"),      # SPL versions are non-negative
+    (spl_version.VersionState.PARSED, "5", "5"),      # a str is not a number
+    (spl_version.VersionState.JUNK, None, "7"),       # junk that parses
 ])
 def test_a_MEANINGLESS_version_cannot_be_built(state, number, raw):
     """Issue #170: `version=5, version_was_unreadable=True` used to be
-    constructible. Only PARSED carries a number; only ABSENT carries no text."""
+    constructible. Only PARSED carries a number; only ABSENT carries no text;
+    and the state, the number and the text cannot contradict each other."""
     with pytest.raises(ValueError):
         spl_version.Version(state, number=number, raw=raw)
 
