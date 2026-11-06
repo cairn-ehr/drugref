@@ -93,6 +93,19 @@ def test_a_NextWordProfile_followed_more_often_than_it_occurs_is_refused():
                                      following={"to": 5})
 
 
+def test_a_NextWordProfile_refuses_a_negative_following_count():
+    """Issue #195: 5 + (-2) = 3 occurrences passes the bound, yet `dominance`
+    reads 5 / 3 -- a negative bucket cancels a real one."""
+    with pytest.raises(ValueError, match="following"):
+        spl_suppress.NextWordProfile(name="lead", occurrences=3,
+                                     following={"to": 5, "poisoning": -2})
+
+
+def test_a_NextWordProfile_refuses_negative_occurrences():
+    with pytest.raises(ValueError, match="occurrences"):
+        spl_suppress.NextWordProfile(name="lead", occurrences=-1, following={})
+
+
 # --------------------------------------------------------------------------
 # PR #185 review: the freeze has to REFUSE a write, not merely copy
 # --------------------------------------------------------------------------

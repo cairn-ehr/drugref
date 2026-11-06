@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from importlib import resources
 from types import MappingProxyType
 
+from drugref.ingest.counts import refuse_negative_counts
 from drugref.ingest.spl_match import KIND_MOIETY, Vocabulary, find_matches, tokenise
 
 #: The shipped negative vocabulary, as a package data file.
@@ -56,6 +57,8 @@ class NextWordProfile:
         by `occurrences` -- or `dominance` could exceed 1.0 (#165)."""
         # Frozen as a copy, or a later write to the caller's dict undoes this.
         object.__setattr__(self, "following", MappingProxyType(dict(self.following)))
+        # A negative bucket would cancel a real one under the bound below (#195).
+        refuse_negative_counts(self)
         followed = sum(self.following.values())
         if followed > self.occurrences:
             raise ValueError(

@@ -43,6 +43,7 @@ import psycopg
 from drugref import interactions, provenance, questions
 from drugref.ingest import drugcentral
 from drugref.ingest.checksum import checksum
+from drugref.ingest.counts import refuse_negative_counts
 from drugref.ingest.drugcentral_resolve import (
     Registry, build_endpoint_index, first_wins, fold_key, fold_name,
 )
@@ -94,6 +95,8 @@ class DrugCentralSummary:
     duplicate_keys: int
 
     def __post_init__(self) -> None:
+        # First (#195): both identities are SUMS, which a -1 and a +1 satisfy.
+        refuse_negative_counts(self)
         if self.rows_excluded_by_reference + self.rows_bundleable != self.rows_read:
             raise ValueError(
                 f"excluded ({self.rows_excluded_by_reference}) + bundleable "

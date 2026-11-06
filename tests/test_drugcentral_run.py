@@ -169,6 +169,22 @@ def test_the_summary_refuses_a_read_count_that_excludes_more_than_it_read():
         _summary(rows_excluded_by_reference=3, rows_resolved=8, rows_unresolved=0)
 
 
+def test_the_summary_refuses_a_negative_bucket_that_still_sums():
+    """Issue #195: 6 + 0 + 1 + 1 = 8 and 10 = 2 + 8, so both sums pass.
+
+    A sum is satisfied by a -1 on one side and a +1 on the other, so the
+    identities are only as strong as the guarantee that no bucket is negative.
+    """
+    with pytest.raises(ValueError, match="rows_self_pair"):
+        _summary(rows_resolved=8, rows_self_pair=-1, pairs=7)
+
+
+def test_the_summary_refuses_a_negative_pair_count():
+    """`pairs > rows_resolved` is the one live check; -1 slips under it."""
+    with pytest.raises(ValueError, match="pairs"):
+        _summary(pairs=-1)
+
+
 def test_the_summary_refuses_more_pairs_than_resolved_rows():
     """The ONE check here that is not tautological at the call site.
 

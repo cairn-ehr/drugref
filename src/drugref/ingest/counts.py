@@ -5,7 +5,9 @@ The SPL summary types (`spl.Corpus`, `spl_checks.SplSummary`,
 `spl_release.ScanResult`) each check that their buckets ADD UP. A sum is
 satisfied by a -1 on one side and a +1 on the other, so an "adds up" check is
 only as strong as the guarantee that no term is negative. That guarantee lives
-here, once, so the three types cannot drift apart on it.
+here, once, so the types cannot drift apart on it. Issue #195 audited every
+other `__post_init__` and added the two more that reconcile sums:
+`drugcentral_run.DrugCentralSummary` and `spl_suppress.NextWordProfile`.
 
 Pure: no I/O, no DB.
 """

@@ -5749,6 +5749,24 @@ Two of the SPL follow-ups that had no trigger, only cost. #164 and #169 stay on 
 - **Suite 2769 → 2786**: +4 census (#188), +11 in `test_spl_reader_skips.py` (`version_of`'s three states, five
   unbuildable combinations, `sort_key`), +1 the spike's version-0 case, +1 the sweep case for `spl_version.py`.
 
+## The negative-count audit (2026-11-06) — closes #195, no migration
+
+#187 fixed the three SPL summary types; #195 asked which other `__post_init__` has the same hole. **All 19
+modules carrying a `__post_init__` were read** (the issue listed 10; `curation.py`, `ingest/drugcentral.py`,
+`ingest/onchigh.py`, `ingest/onchigh_resolve.py`, `registry_read.py`, `ingest/spl_version.py` were added).
+Only **two** reconcile a sum of counts, and both now call `refuse_negative_counts(self)` before their checks:
+
+- **`drugcentral_run.DrugCentralSummary`** — both bucket identities are sums
+  (`rows_resolved=8, rows_self_pair=-1` passed both), and `pairs=-1` slipped under `pairs > rows_resolved`.
+- **`spl_suppress.NextWordProfile`** — the bound `sum(following) <= occurrences` let `{"to": 5, "poisoning":
+  -2}` with 3 occurrences through, so `dominance` read 5/3. Called after the mapping freeze, as in `Corpus`.
+- **The rest need nothing**: route/uuid biconditionals (`Resolution`, `Subject`, `SubjectRow`, `Entry`,
+  `AssertionRecord`), span checks (`Window`, `QuoteRow` already refuse negative offsets), `GradedPair`'s
+  `effective_rank = COALESCE(severity_rank, 0)` identity (not a sum), key folds/freezes, `RunClock`,
+  `IngestStep`, `Version`. The other `*Summary`/`*Tally` types have no `__post_init__`, so no sum to fool.
+- **Tests**: +2 in `tests/test_drugcentral_run.py`, +2 in `tests/test_spl_type_invariants.py`, each matching the
+  refused field's name. **Suite 2786 → 2790.**
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5818,7 +5836,8 @@ given the previous rule — never a backfill of finished rows); once true, the f
 **The SPL follow-ups (#163–#166, #168–#171, filed by the #161 and #167 reviews)** — **#163, #165, #166, #168,
 #171 FIXED by the SPL follow-ups round, close on merge** — § "The SPL follow-ups round". **The PR #185 review
 added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **#188 and #170 are FIXED** — § "The
-SPL census and Version round". **Still open, each on its own stated trigger:** #164 (a migration that touches
+SPL census and Version round". **The PR #194 review added #195; FIXED** — § "The negative-count audit".
+**Still open, each on its own stated trigger:** #164 (a migration that touches
 `spl_wording_quote_budget` for a real reason), #169 (the 12th `ScanResult` counter). #186 (persist #163's
 per-run counts — needs a migration) has no trigger, only cost.
 
@@ -5997,7 +6016,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2786 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2790 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6176,6 +6195,8 @@ git config core.hooksPath .githooks
 # test_spl_type_invariants.py, +1 the bare-psycopg sweep case for ingest/counts.py.
 # ⇒ ISSUES 188 + 170, THE SPL CENSUS AND Version ROUND (no migration): 2769 -> 2786 --
 # +4 census, +11 spl_version via test_spl_reader_skips.py, +1 spike, +1 sweep case.
+# ⇒ ISSUE 195's NEGATIVE-COUNT AUDIT (no migration): 2786 -> 2790 -- +2
+# test_drugcentral_run.py, +2 test_spl_type_invariants.py.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.
