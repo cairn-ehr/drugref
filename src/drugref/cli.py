@@ -232,11 +232,12 @@ def _handle_status(conn, args) -> int:
     module docstring for what that placement does and does not buy. The fifth block
     (db/035) reads the overlay too, so it also goes through a reader module
     (`class_grain_read.class_grain_counts`) rather than embedded SQL."""
-    # THE FIRST FOUR BLOCKS say "none" when empty, and the symmetry is the point: a
+    # EVERY LIST BLOCK says "none" when empty, and the symmetry is the point: a
     # fresh database printed a bare "loaded releases:" header, which reads as output
     # that got cut off rather than as an answer. Nothing loaded IS the answer there.
-    # The fifth prints "0" deliberately: its lines are COUNTS of rules that should not
-    # exist, not lists that happen to be empty, and "0" is what an operator diffs.
+    # The class grain's prints "0" deliberately: its lines are COUNTS of rules that
+    # should not exist, not lists that happen to be empty, and "0" is what an
+    # operator diffs.
     cli_status.print_loaded_release_block(conn)
 
     incomplete = conn.execute(
@@ -339,12 +340,12 @@ def _handle_status(conn, args) -> int:
         print("\nbackdated signatures: none")
 
     cli_status.print_class_grain_block(conn)
-    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE FAULT BLOCKS because it is the
-    # rarest: it reports a
-    # SCHEMA fault -- a live curated ruling whose severity is absent from severity_kind,
-    # which a foreign key on both curated tables makes unreachable -- so on every
-    # healthy database it is one line of `none`, and the blocks an operator actually
-    # reads should not have to be scrolled past to reach it.
+    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE BLOCKS THAT REPORT SOMETHING
+    # WRONG, because it is the rarest: it reports a SCHEMA fault -- a live curated
+    # ruling whose severity is absent from severity_kind, which a foreign key on both
+    # curated tables makes unreachable -- so on every healthy database it is one line
+    # of `none`, and the blocks an operator actually reads should not have to be
+    # scrolled past to reach it.
     #
     # STILL EXITS 0 when it finds something, like the backdated-signature block and
     # unlike a raised guard. `status` REPORTS; it is not a health check with a contract

@@ -5830,14 +5830,23 @@ db/057 stored #163's counts per run, but nothing read them. **`drugref status` n
 newest two `spl_run_census` rows, newest first, each with absolute counts and the three ratios over
 `records_read` (one denominator, stated once in the header; a zero-record run prints `n/a`).
 
-- **No threshold, no banner, exit code unchanged** — #163 rules these counts never refuse, and no cut-off has
-  been measured. The operator diffs the two lines.
-- **Reader** `spl_evidence.recent_run_census(conn, limit=2)` → `RunCensus` (beside the writer, one home for the
-  table name `RUN_CENSUS_TABLE`). **Formatter** `cli_status.spl_census_lines` is pure; `print_spl_census_block`
-  is guarded on db/057 and RAISES like blocks 2–6 — it is last, so aborting costs no other block.
+- **No threshold, no banner** — #163 rules these counts never refuse, and no cut-off has been measured. The
+  operator diffs the two lines. **Exit code unchanged on a migrated database; on one short of db/057, `status`
+  now ends with the guard's sentence and exits 2** (it exited 0 before this block existed).
+- **Reader** `spl_evidence.recent_run_census(conn, limit=2)` → `RunCensus` (beside the writer; `RUN_CENSUS_TABLE`
+  is the one home of the table name, used by writer, reader and guard). **"Newest" = last FINISHED**
+  (`finished_at DESC NULLS LAST`), the order `loaded_release` uses, so block 7 cannot disagree with block 1.
+  **Formatter** `cli_status.spl_census_lines` is pure; `print_spl_census_block` is guarded on db/057 and RAISES
+  like the other guarded blocks (block 2, unfinished runs, has no guard) — it is last, so aborting costs no other
+  block.
+- **Block and guard-site counts are no longer written in docstrings.** The review found "blocks 2–7" / "guarded
+  seven" wrong by one (block 2 is unguarded) in four places; every such count was replaced by wording that cannot
+  drift, matching migration_guard.py's existing rule.
 - **Placed LAST** rather than beside the loaded-release block, so no existing block's ordinal (which several
   docstrings state) had to change.
-- **Tests**: +5 in `tests/test_spl_run_census.py`. **Suite 2823 → 2828.**
+- **Tests**: +7 in `tests/test_spl_run_census.py` (+5 PR, +2 review: five distinct counts read back field by
+  field — the corpus's 8/8/0/0/0 census could not see a column swap — and last-finished ordering), plus the
+  wiring assertion in `test_curation_orphans.py`'s healthy-status test. **Suite 2823 → 2830.**
 
 ## The standing open-issue ledger
 
@@ -6089,7 +6098,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2828 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2830 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6274,8 +6283,9 @@ git config core.hooksPath .githooks
 # test_spl_reader_skips.py, +3 spike, +4 census, +4 test_counts.py, +4 tools.
 # ⇒ ISSUE 186's SPL RUN CENSUS (db/057): 2814 -> 2823 -- +9 test_spl_run_census.py
 #   (+7 in the PR, +2 in its review: the after-write rollback and the blank floor).
-# ⇒ ISSUE 199's CENSUS READER (no migration): 2823 -> 2828 -- +5
-#   test_spl_run_census.py (three pure formatter cases, the DB read, the db/057 guard).
+# ⇒ ISSUE 199's CENSUS READER (no migration): 2823 -> 2830 -- +7
+#   test_spl_run_census.py (+5 in the PR: three pure formatter cases, the DB read, the
+#   db/057 guard; +2 in its review: column-to-field mapping, last-FINISHED ordering).
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

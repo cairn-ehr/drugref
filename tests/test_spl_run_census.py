@@ -10,8 +10,8 @@ the run, not cleared by the per-source rebuild) the previous release's row is
 still there when the next one lands.
 
 The end-to-end "the counts arrive unswapped" check lives beside the summary's
-own in `tests/test_spl_run.py`; this module pins the history property and the
-table's own floor.
+own in `tests/test_spl_run.py`; this module pins the history property, the
+table's own floor, and (issue #199) the reader and `drugref status`'s block.
 """
 import psycopg
 import pytest
@@ -137,6 +137,7 @@ def test_the_table_accepts_a_consistent_census(conn):
 # --------------------------------------------------------------------------
 
 def _census(run_id, release, records, labels, absent, blank, id_keyed):
+    """A RunCensus with positional shorthand -- tests only."""
     from drugref import spl_evidence
     return spl_evidence.RunCensus(
         ingest_run_id=run_id, upstream_release=release, records_read=records,
@@ -164,6 +165,7 @@ def test_the_census_block_prints_counts_AND_ratios_latest_first():
     assert "run 12" in newest and "2026-09" in newest
     assert "id-keyed 50 (5.00%)" in newest
     assert "no field 80 (8.00%)" in newest and "blank 20 (2.00%)" in newest
+    assert "records 1,000  labels 900" in newest
     assert "id-keyed 5 (0.50%)" in previous
     assert len(lines) == 3
 
@@ -193,9 +195,45 @@ def test_the_status_block_reads_the_two_latest_runs_from_the_database(
 
 def test_a_database_without_db057_gets_the_guards_sentence_not_a_traceback(conn):
     """Every deployment between pulling this code and `drugref migrate` lacks
-    the table. Renamed inside the rolled-back fixture transaction, the same
-    device tests/test_ingest_run_duration.py uses for db/054's site."""
+    the table. Renamed inside the rolled-back fixture transaction -- the
+    rename-inside-the-rollback device tests/test_ingest_run_duration.py uses for
+    db/054's site, with the same limit stated there."""
     from drugref import cli_status
     conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
-    with pytest.raises(RuntimeError, match="spl_run_census"):
+    # The probe's rollback undoes the rename, so this lands in the "NOT a missing
+    # migration" branch: what it pins is THIS site's migration and consequence.
+    with pytest.raises(RuntimeError, match=r"(?i)db/057[\s\S]*no SPL release can "
+                       r"be compared[\s\S]*spl_run_census"):
         cli_status.print_spl_census_block(conn)
+
+
+def test_the_reader_maps_every_column_to_its_own_field(conn):
+    """The corpus's census is 8/8/0/0/0, so an end-to-end check cannot see two
+    count columns swapped; five DISTINCT values can. `recent_run_census` zips the
+    SELECT onto RunCensus's fields by position, which `strict=True` checks only
+    for length."""
+    from drugref import spl_evidence
+    run_id = _run(conn)
+    spl_evidence.write_run_census(
+        conn, ingest_run_id=run_id, records_read=10, labels=6,
+        records_field_absent=3, records_field_blank=1,
+        labels_keyed_on_document_id=2)
+    assert spl_evidence.recent_run_census(conn, limit=1) == [_census(
+        run_id, "test", records=10, labels=6, absent=3, blank=1, id_keyed=2)]
+
+
+def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):
+    """Block 1 (db/054's `loaded_release`) orders by `finished_at`; ordering this
+    block by run id would disagree with it whenever two ingests commit out of the
+    order they opened in."""
+    from drugref import provenance, spl_evidence
+    opened_first, opened_second = _run(conn), _run(conn)
+    for run_id in (opened_first, opened_second):
+        spl_evidence.write_run_census(
+            conn, ingest_run_id=run_id, records_read=1, labels=1,
+            records_field_absent=0, records_field_blank=0,
+            labels_keyed_on_document_id=0)
+    provenance.finish_run(conn, opened_second)
+    provenance.finish_run(conn, opened_first)
+    got = [c.ingest_run_id for c in spl_evidence.recent_run_census(conn)]
+    assert got == [opened_first, opened_second]

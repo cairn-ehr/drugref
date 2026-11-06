@@ -21,9 +21,9 @@ to run / test" and **nowhere else**; `uv run pytest` fails if the line and the c
 **seventh block**, the newest two `spl_run_census` rows with counts and ratios over `records_read`. No threshold
 and no banner (#163: these counts never refuse). Reader `spl_evidence.recent_run_census`, pure formatter
 `cli_status.spl_census_lines`. **⇒ BEHAVIOUR CHANGE:** on a database short of `db/057`, `status` now ends with the
-guard's sentence and **exits 2** (same as blocks 2–6); every verification DB below is in that state.
+guard's sentence and **exits 2** (like every guarded block); every verification DB below except `drugref_test` is in that state.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+5). `ruff check .` clean. Ran
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+7, two from the review). `ruff check .` clean. Ran
 `drugref status` against `drugref_notice174` (pre-db/057): six blocks print, then the db/057 guard line, exit 2.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
@@ -68,8 +68,8 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
   (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
   `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
-  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`, so none
-  holds an `spl_run_census` row (no backfill: those counts were never stored).
+  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`: none has the `spl_run_census` table, so `status` exits 2 on
+  each until migrated (and there is no backfill: those counts were never stored).
   **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
   it (`apply_migrations` is checksum-immutable).
 - Corpora: `downloads/OPENFDA/` (14 partitions, 2026-08-22), `downloads/DAILYMED/` (6 Human Rx parts,

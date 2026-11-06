@@ -4,11 +4,10 @@ runtimes (issue 159, and which of them may be published at all: db/054, issue 17
 class grain (db/035), the unrankable-severity fault (db/038, issue 116) and the SPL run
 census (db/057, issue 199).
 
-FOUR BLOCKS NOW, and the file docstring has twice been written too narrowly for what
-the module holds: it said "the CLASS-GRAIN BLOCK" while holding one, then "LATER BLOCKS"
-and "TWO BLOCKS" while the first block came here too, then "THREE BLOCKS" until db/057's
-census arrived. The module name was always the general one; a `cli_unrankable.py` or
-a `cli_releases.py` would exist only because a sentence was drawn too tight.
+NO BLOCK COUNT HERE, on purpose: this docstring stated one three times and each new
+block made it wrong. The list above is the count. The module name was always the
+general one; a `cli_unrankable.py` or a `cli_releases.py` would exist only because a
+sentence was drawn too tight.
 
 WHY A MODULE RATHER THAN ANOTHER 50 LINES OF cli.py. cli.py was 483 lines before this
 round and the class grain's block plus its guard took it past CLAUDE.md rule 4's ~500
@@ -63,8 +62,9 @@ def print_loaded_release_block(conn) -> None:
     the same fault, one level up, as publishing a number nobody can vouch for.
     `_unmeasured_note` owns that sentence and the conditions on printing it.
 
-    ⇒ THIS BLOCK DEGRADES RATHER THAN ABORTS, alone among the guarded seven, because it
-    is the FIRST of them -- see `_read_loaded_release` for the whole argument.
+    ⇒ THIS BLOCK DEGRADES RATHER THAN ABORTS, alone among status's guarded blocks,
+    because it is the FIRST of them -- see `_read_loaded_release` for the whole
+    argument.
     """
     rows, refusal = _read_loaded_release(conn)
     print("loaded releases:" if rows else "loaded releases: none")
@@ -105,9 +105,10 @@ _CONSEQUENCE = "no runtime can be published for any loaded release"
 def _read_loaded_release(conn):
     """The rows in db/054's shape, and the operator's sentence if they had to be faked.
 
-    ⇒ WHY THIS DEGRADES WHERE EVERY OTHER GUARDED BLOCK ABORTS. The other six sites
-    are blocks 2-7 of `drugref status`, and `cli.main` renders a RuntimeError as one
-    line and exits 2 -- acceptable at the end of a report, and NOT at the start of one.
+    ⇒ WHY THIS DEGRADES WHERE EVERY OTHER GUARDED BLOCK ABORTS. Every later guarded
+    block of `drugref status` raises (block 2, the unfinished runs, has no guard),
+    and `cli.main` renders a RuntimeError as one line and exits 2 -- acceptable at
+    the end of a report, and NOT at the start of one.
     This block is the first, so raising here costs the operator the unfinished runs,
     the orphaned curated targets, the backdated signatures, the class grain, the
     unrankable severities and the SPL census as well. Before db/054 this same database
@@ -297,10 +298,10 @@ def print_unrankable_severity_block(conn) -> None:
     follows what the numbers mean rather than where the code lives. The class-grain
     block prints bare counts because an operator DIFFS them between runs and a zero is
     an informative reading there. This is a list that should not exist at all, so it
-    says `none` like the four `none`-voiced blocks above it (there are five blocks; the
-    class grain's is the one that counts instead) and banners when it is not empty.
+    says `none` like the other `none`-voiced blocks (the class grain's is the one that
+    counts instead) and banners when it is not empty.
 
-    SAME UndefinedTable GUARD, SAME NARROW SCOPE as its three siblings: a database
+    SAME UndefinedTable GUARD, SAME NARROW SCOPE as its guarded siblings: a database
     predating db/038 has no view to read, and that must be ONE sentence rather than a
     psycopg traceback arriving after five blocks of real answers -- which reads as a
     partial success and names neither the cause nor the fix.
@@ -356,8 +357,8 @@ def print_spl_census_block(conn) -> None:
     NO THRESHOLD AND NO BANNER, deliberately: #163 rules these counts never refuse, and
     a banner needs a cut-off nobody has measured. The operator diffs the two lines.
 
-    LAST, AND IT RAISES like blocks 2-6 rather than degrading like the first: nothing
-    is printed after it, so aborting here costs no other block.
+    LAST, AND IT RAISES like the other guarded blocks rather than degrading like the
+    first: nothing is printed after it, so aborting here costs no other block.
     """
     with migration_guard.guarded(
             conn, relations=(spl_evidence.RUN_CENSUS_TABLE,), migration="057",
@@ -372,7 +373,10 @@ def spl_census_lines(rows) -> list[str]:
     """PURE: the block's lines for `rows` (newest first), so it is testable without SQL.
 
     ONE DENOMINATOR FOR ALL THREE RATIOS, `records_read`, stated once in the header
-    rather than on each figure. A run that read nothing prints `n/a`, not a crash.
+    rather than on each figure. Even id-keyed labels, a subset of `labels`, divide by
+    records: one denominator lets the three shares be read against each other, and the
+    absolute count beside each one shows when `labels` itself moved. A run that read
+    nothing prints `n/a`, not a crash.
     """
     if not rows:
         return ["spl run census: none"]
