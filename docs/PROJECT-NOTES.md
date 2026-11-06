@@ -5812,8 +5812,7 @@ refuse a run, because *the ratio moving between releases is the signal*. Until n
   its progress output before any floor can refuse (PR #198 review) — the only trace a refused, drifted
   release leaves.
 - **Reading it**: `SELECT r.upstream_release, c.* FROM drugref.spl_run_census c JOIN drugref.ingest_run r
-  USING (ingest_run_id) ORDER BY ingest_run_id`. No comparison view and no CLI yet: **#199** tracks a
-  `drugref status` reader, without which the drift is still only visible to someone who queries it.
+  USING (ingest_run_id) ORDER BY ingest_run_id`, or `drugref status`'s seventh block (#199, below).
 - **#186's second option, NOT taken:** routing id-keyed labels as `unresolved` instead of
   `absent_from_dailymed`. That changes db/051's route vocabulary and what gets published. Storing the count
   makes the drift visible; whether the route should change is a separate decision.
@@ -5824,6 +5823,30 @@ refuse a run, because *the ratio moving between releases is the signal*. Until n
 - **Every pre-`db/057` verification database** (`drugref_notice174` etc.) simply lacks the table until migrated.
   `db/057` is a new file, so they migrate forward cleanly. Their old SPL runs have no census row; there is no
   backfill, because those counts were never stored.
+
+## The SPL census reader (2026-11-06) — closes #199, no migration
+
+db/057 stored #163's counts per run, but nothing read them. **`drugref status` now has a SEVENTH block**: the
+newest two `spl_run_census` rows, newest first, each with absolute counts and the three ratios over
+`records_read` (one denominator, stated once in the header; a zero-record run prints `n/a`).
+
+- **No threshold, no banner** — #163 rules these counts never refuse, and no cut-off has been measured. The
+  operator diffs the two lines. **Exit code unchanged on a migrated database; on one short of db/057, `status`
+  now ends with the guard's sentence and exits 2** (it exited 0 before this block existed).
+- **Reader** `spl_evidence.recent_run_census(conn, limit=2)` → `RunCensus` (beside the writer; `RUN_CENSUS_TABLE`
+  is the one home of the table name, used by writer, reader and guard). **"Newest" = last FINISHED**
+  (`finished_at DESC NULLS LAST`), the order `loaded_release` uses, so block 7 cannot disagree with block 1.
+  **Formatter** `cli_status.spl_census_lines` is pure; `print_spl_census_block` is guarded on db/057 and RAISES
+  like the other guarded blocks (block 2, unfinished runs, has no guard) — it is last, so aborting costs no other
+  block.
+- **Block and guard-site counts are no longer written in docstrings.** The review found "blocks 2–7" / "guarded
+  seven" wrong by one (block 2 is unguarded) in four places; every such count was replaced by wording that cannot
+  drift, matching migration_guard.py's existing rule.
+- **Placed LAST** rather than beside the loaded-release block, so no existing block's ordinal (which several
+  docstrings state) had to change.
+- **Tests**: +7 in `tests/test_spl_run_census.py` (+5 PR, +2 review: five distinct counts read back field by
+  field — the corpus's 8/8/0/0/0 census could not see a column swap — and last-finished ordering), plus the
+  wiring assertion in `test_curation_orphans.py`'s healthy-status test. **Suite 2823 → 2830.**
 
 ## The standing open-issue ledger
 
@@ -5897,8 +5920,8 @@ added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **#
 SPL census and Version round". **The PR #194 review added #195; FIXED** — § "The negative-count audit".
 **Still open, each on its own stated trigger:** #164 (a migration that touches
 `spl_wording_quote_budget` for a real reason), #169 (the 12th `ScanResult` counter). **#186 (persist #163's
-per-run counts) is FIXED by `db/057`** — § "The SPL run census". **Its review added #199** (nothing reads the
-census yet; a `drugref status` line would) — open, no trigger beyond wanting the drift read.
+per-run counts) is FIXED by `db/057`** — § "The SPL run census". **Its review added #199, FIXED** — § "The SPL
+census reader" (`drugref status`'s seventh block).
 
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
@@ -6075,7 +6098,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2823 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2830 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6260,6 +6283,9 @@ git config core.hooksPath .githooks
 # test_spl_reader_skips.py, +3 spike, +4 census, +4 test_counts.py, +4 tools.
 # ⇒ ISSUE 186's SPL RUN CENSUS (db/057): 2814 -> 2823 -- +9 test_spl_run_census.py
 #   (+7 in the PR, +2 in its review: the after-write rollback and the blank floor).
+# ⇒ ISSUE 199's CENSUS READER (no migration): 2823 -> 2830 -- +7
+#   test_spl_run_census.py (+5 in the PR: three pure formatter cases, the DB read, the
+#   db/057 guard; +2 in its review: column-to-field mapping, last-FINISHED ordering).
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

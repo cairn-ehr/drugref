@@ -247,7 +247,10 @@ def test_status_reports_no_orphans_on_a_healthy_database(capsys):
     from drugref import cli
 
     assert cli._handle_status(_Conn(), None) == 0
-    assert "unresolved curated targets: none" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "unresolved curated targets: none" in out
+    # issue 199: the seventh block is wired into `status`, not only callable
+    assert "spl run census: none" in out
 
 
 def test_status_reports_an_orphan_loudly(capsys):

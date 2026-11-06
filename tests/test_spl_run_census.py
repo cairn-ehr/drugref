@@ -10,8 +10,8 @@ the run, not cleared by the per-source rebuild) the previous release's row is
 still there when the next one lands.
 
 The end-to-end "the counts arrive unswapped" check lives beside the summary's
-own in `tests/test_spl_run.py`; this module pins the history property and the
-table's own floor.
+own in `tests/test_spl_run.py`; this module pins the history property, the
+table's own floor, and (issue #199) the reader and `drugref status`'s block.
 """
 import psycopg
 import pytest
@@ -130,3 +130,110 @@ def test_the_table_accepts_a_consistent_census(conn):
         "INSERT INTO drugref.spl_run_census (ingest_run_id, records_read, "
         " labels, records_field_absent, records_field_blank, "
         " labels_keyed_on_document_id) VALUES (%s, 10, 8, 1, 1, 8)", (run_id,))
+
+
+# --------------------------------------------------------------------------
+# The reader (issue #199): `drugref status` prints the latest two rows
+# --------------------------------------------------------------------------
+
+def _census(run_id, release, records, labels, absent, blank, id_keyed):
+    """A RunCensus with positional shorthand -- tests only."""
+    from drugref import spl_evidence
+    return spl_evidence.RunCensus(
+        ingest_run_id=run_id, upstream_release=release, records_read=records,
+        labels=labels, records_field_absent=absent, records_field_blank=blank,
+        labels_keyed_on_document_id=id_keyed)
+
+
+def test_the_census_block_says_none_when_no_SPL_run_has_landed():
+    """The other `none`-voiced blocks' rule: a bare header reads as cut-off
+    output, not as the answer "nothing has been censused yet"."""
+    from drugref import cli_status
+    assert cli_status.spl_census_lines([]) == ["spl run census: none"]
+
+
+def test_the_census_block_prints_counts_AND_ratios_latest_first():
+    """#199's smallest option: absolute values and per-record ratios, one line
+    per run, newest first -- the reader diffs the two lines. No threshold."""
+    from drugref import cli_status
+    lines = cli_status.spl_census_lines([
+        _census(12, "2026-09", 1000, 900, 80, 20, 50),
+        _census(9, "2026-08", 1000, 900, 80, 20, 5),
+    ])
+    assert lines[0].startswith("spl run census")
+    newest, previous = lines[1], lines[2]
+    assert "run 12" in newest and "2026-09" in newest
+    assert "id-keyed 50 (5.00%)" in newest
+    assert "no field 80 (8.00%)" in newest and "blank 20 (2.00%)" in newest
+    assert "records 1,000  labels 900" in newest
+    assert "id-keyed 5 (0.50%)" in previous
+    assert len(lines) == 3
+
+
+def test_a_census_of_ZERO_records_prints_no_ratio_rather_than_crashing():
+    """A run that read nothing has no denominator; dividing by it would kill
+    `drugref status` on its last block."""
+    from drugref import cli_status
+    (_, line) = cli_status.spl_census_lines([_census(1, "r", 0, 0, 0, 0, 0)])
+    assert "id-keyed 0 (n/a)" in line
+
+
+@pytest.mark.usefixtures("_clean")
+def test_the_status_block_reads_the_two_latest_runs_from_the_database(
+        conn, corpus, capsys):
+    """End to end: three ingests, and the block names exactly the last two,
+    newest first -- the comparison #199 asks for, read from db/057's rows."""
+    from drugref import cli_status
+    _seed_registry(conn)
+    runs = [_ingest(conn, corpus, release=f"rel-{i}") for i in range(3)]
+    cli_status.print_spl_census_block(conn)
+    out = capsys.readouterr().out
+    assert "rel-2" in out and "rel-1" in out and "rel-0" not in out
+    assert out.index("rel-2") < out.index("rel-1")
+    assert f"id-keyed {runs[-1].labels_keyed_on_document_id} (" in out
+
+
+def test_a_database_without_db057_gets_the_guards_sentence_not_a_traceback(conn):
+    """Every deployment between pulling this code and `drugref migrate` lacks
+    the table. Renamed inside the rolled-back fixture transaction -- the
+    rename-inside-the-rollback device tests/test_ingest_run_duration.py uses for
+    db/054's site, with the same limit stated there."""
+    from drugref import cli_status
+    conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
+    # The probe's rollback undoes the rename, so this lands in the "NOT a missing
+    # migration" branch: what it pins is THIS site's migration and consequence.
+    with pytest.raises(RuntimeError, match=r"(?i)db/057[\s\S]*no SPL release can "
+                       r"be compared[\s\S]*spl_run_census"):
+        cli_status.print_spl_census_block(conn)
+
+
+def test_the_reader_maps_every_column_to_its_own_field(conn):
+    """The corpus's census is 8/8/0/0/0, so an end-to-end check cannot see two
+    count columns swapped; five DISTINCT values can. `recent_run_census` zips the
+    SELECT onto RunCensus's fields by position, which `strict=True` checks only
+    for length."""
+    from drugref import spl_evidence
+    run_id = _run(conn)
+    spl_evidence.write_run_census(
+        conn, ingest_run_id=run_id, records_read=10, labels=6,
+        records_field_absent=3, records_field_blank=1,
+        labels_keyed_on_document_id=2)
+    assert spl_evidence.recent_run_census(conn, limit=1) == [_census(
+        run_id, "test", records=10, labels=6, absent=3, blank=1, id_keyed=2)]
+
+
+def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):
+    """Block 1 (db/054's `loaded_release`) orders by `finished_at`; ordering this
+    block by run id would disagree with it whenever two ingests commit out of the
+    order they opened in."""
+    from drugref import provenance, spl_evidence
+    opened_first, opened_second = _run(conn), _run(conn)
+    for run_id in (opened_first, opened_second):
+        spl_evidence.write_run_census(
+            conn, ingest_run_id=run_id, records_read=1, labels=1,
+            records_field_absent=0, records_field_blank=0,
+            labels_keyed_on_document_id=0)
+    provenance.finish_run(conn, opened_second)
+    provenance.finish_run(conn, opened_first)
+    got = [c.ingest_run_id for c in spl_evidence.recent_run_census(conn)]
+    assert got == [opened_first, opened_second]

@@ -13,20 +13,18 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-run-counts` off `main`; PR OPEN for #186, which it closes on merge. ONE migration: THE
-SCHEMA NOW ENDS AT `db/057`.** PRs #196 and #197 are MERGED (#188, #170, #195 CLOSED). The suite total lives in
-PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
-suite disagree.
+**Branch `claude/spl-census-reader` off `main`; PR OPEN for #199, which it closes on merge. NO migration: the
+schema still ends at `db/057`.** PR #198 is MERGED (#186 CLOSED). The suite total lives in PROJECT-NOTES § "How
+to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL run census"). **#186**: `db/057` adds
-`drugref.spl_run_census`, one row per SPL run holding #163's absent/blank/id-keyed counts plus `records_read` and
-`labels`. Its CHECKs copy the two `SplSummary` identities over those columns. `spl_evidence.write_run_census` writes it
-inside the run's transaction; the progress output also says the three counts before any floor can refuse,
-since a refused run keeps no census. **#199** (new) tracks a `drugref status` reader — nothing reads it yet. **It is HISTORY, deliberately NOT in `SPL_TABLES`**, so a re-ingest keeps the previous run's row
-to compare with. #186's other option (route id-keyed labels `unresolved`) was not taken; it would change
-db/051's route vocabulary.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL census reader"). **#199**: `drugref status` has a
+**seventh block**, the newest two `spl_run_census` rows with counts and ratios over `records_read`. No threshold
+and no banner (#163: these counts never refuse). Reader `spl_evidence.recent_run_census`, pure formatter
+`cli_status.spl_census_lines`. **⇒ BEHAVIOUR CHANGE:** on a database short of `db/057`, `status` now ends with the
+guard's sentence and **exits 2** (like every guarded block); every verification DB below except `drugref_test` is in that state.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+9). `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+7, two from the review). `ruff check .` clean. Ran
+`drugref status` against `drugref_notice174` (pre-db/057): six blocks print, then the db/057 guard line, exit 2.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
 ## ⇒ DO THIS NEXT
@@ -49,7 +47,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 closes on this PR's merge.** Open: **#164**, **#169**, **#199** (census reader). Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 is CLOSED (PR #198); #199 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -70,8 +68,8 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
   (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
   `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
-  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`, so none
-  holds an `spl_run_census` row (no backfill: those counts were never stored).
+  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`: none has the `spl_run_census` table, so `status` exits 2 on
+  each until migrated (and there is no backfill: those counts were never stored).
   **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
   it (`apply_migrations` is checksum-immutable).
 - Corpora: `downloads/OPENFDA/` (14 partitions, 2026-08-22), `downloads/DAILYMED/` (6 Human Rx parts,

@@ -273,8 +273,8 @@ def diagnose_message(conn: psycopg.Connection, exc: psycopg.Error, *,
     SPLIT OUT OF `raise_missing` FOR THE ONE CALLER THAT MUST NOT RAISE. Every guarded
     block so far answers a wrong-shaped database by aborting, which is right where the
     block is one of several and the reader has nothing to fall back on. The loaded-
-    release block is neither: it is the FIRST of `drugref status`' six, so raising
-    costs the other five, and db/025's columns are still there to be read -- so it
+    release block is neither: it is the FIRST of `drugref status`' blocks, so raising
+    costs every one after it, and db/025's columns are still there to be read -- so it
     prints this sentence and carries on with the runtimes withheld
     (`cli_status.print_loaded_release_block`).
 

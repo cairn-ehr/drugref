@@ -217,12 +217,14 @@ def _handle_migrate(conn, args) -> int:
 
 def _handle_status(conn, args) -> int:
     """What is loaded, what died trying, what a rebuild orphaned, what was signed late,
-    what the class grain is doing, and what drugref cannot rank. SIX blocks, one
-    command: an operator asking "is this current?" needs all of them, and reading only
-    the first would report a stale release as healthy. (It said THREE until db/035 added
-    the fifth and left this sentence behind -- cli_status.py's block calls itself the
-    fifth in its own first line, so the two disagreed by two. db/038's sixth is counted
-    here in the same commit that adds it, which is the whole lesson of that drift.)
+    what the class grain is doing, what drugref cannot rank, and how the last SPL
+    release's census compares with the one before. SEVEN blocks, one command: an
+    operator asking "is this current?" needs all of them, and reading only the first
+    would report a stale release as healthy. (It said THREE until db/035 added the
+    fifth and left this sentence behind -- cli_status.py's block calls itself the fifth
+    in its own first line, so the two disagreed by two. db/038's sixth is counted here
+    in the same commit that adds it, which is the whole lesson of that drift, and
+    db/057's seventh likewise.)
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
@@ -230,11 +232,12 @@ def _handle_status(conn, args) -> int:
     module docstring for what that placement does and does not buy. The fifth block
     (db/035) reads the overlay too, so it also goes through a reader module
     (`class_grain_read.class_grain_counts`) rather than embedded SQL."""
-    # THE FIRST FOUR BLOCKS say "none" when empty, and the symmetry is the point: a
+    # EVERY LIST BLOCK says "none" when empty, and the symmetry is the point: a
     # fresh database printed a bare "loaded releases:" header, which reads as output
     # that got cut off rather than as an answer. Nothing loaded IS the answer there.
-    # The fifth prints "0" deliberately: its lines are COUNTS of rules that should not
-    # exist, not lists that happen to be empty, and "0" is what an operator diffs.
+    # The class grain's prints "0" deliberately: its lines are COUNTS of rules that
+    # should not exist, not lists that happen to be empty, and "0" is what an
+    # operator diffs.
     cli_status.print_loaded_release_block(conn)
 
     incomplete = conn.execute(
@@ -337,16 +340,19 @@ def _handle_status(conn, args) -> int:
         print("\nbackdated signatures: none")
 
     cli_status.print_class_grain_block(conn)
-    # THE SIXTH BLOCK (db/038, issue 116). LAST because it is the rarest: it reports a
-    # SCHEMA fault -- a live curated ruling whose severity is absent from severity_kind,
-    # which a foreign key on both curated tables makes unreachable -- so on every
-    # healthy database it is one line of `none`, and the blocks an operator actually
-    # reads should not have to be scrolled past to reach it.
+    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE BLOCKS THAT REPORT SOMETHING
+    # WRONG, because it is the rarest: it reports a SCHEMA fault -- a live curated
+    # ruling whose severity is absent from severity_kind, which a foreign key on both
+    # curated tables makes unreachable -- so on every healthy database it is one line
+    # of `none`, and the blocks an operator actually reads should not have to be
+    # scrolled past to reach it.
     #
     # STILL EXITS 0 when it finds something, like the backdated-signature block and
     # unlike a raised guard. `status` REPORTS; it is not a health check with a contract
     # on its exit code, and three of these blocks would already have claims on it.
     cli_status.print_unrankable_severity_block(conn)
+    # THE SEVENTH (db/057, issue 199): no fault, a comparison -- see its docstring.
+    cli_status.print_spl_census_block(conn)
     return 0
 
 
