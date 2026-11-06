@@ -5792,6 +5792,39 @@ Five review agents read #188/#170/#195; the fixes:
   `test_spl_skip_census.py` (`absent_version` and the new invariants; the finished-JSON test now also pins the
   class-code union across parts), +4 new `test_counts.py`, +4 new `test_tools_negative_counts.py`.
 
+## The SPL run census (2026-11-06) — closes #186, `db/057`
+
+#163's three counts (`records_field_absent`, `records_field_blank`, `labels_keyed_on_document_id`) must never
+refuse a run, because *the ratio moving between releases is the signal*. Until now they reached only
+`log.info("spl: %s", summary)`, so no release could be compared with the last.
+
+- **`db/057` adds `drugref.spl_run_census`**: one row per SPL run, `ingest_run_id` PK/FK, the three counts plus
+  `records_read` and `labels` (so the ratio needs no other table). Its CHECKs copy the two `SplSummary` identities over
+  these columns (`labels + absent + blank = records_read`, `id_keyed <= labels`), and every count also has its own `>= 0`
+  (#187's lesson: a −1 and a +1 satisfy a sum). **Not enforced:** that the run's `source` is `'SPL'`.
+- **⇒ TRAP: IT IS HISTORY, NOT A PROJECTION.** It is deliberately **not** in `spl_evidence.SPL_TABLES`.
+  Adding it there would make `clear_source_spl` delete the previous run's row, leaving nothing to compare
+  against. `tests/test_spl_run_census.py` pins that two runs leave two rows.
+- **The writer** is `spl_evidence.write_run_census` (keyword-only), called by `ingest_spl` after
+  `check_floors` and before `finish_run`, inside the run's transaction: a run refused by its floors never
+  writes one, and a run failing after the write (`finish_run`, the deferred quote-budget trigger at commit)
+  rolls it back. **A refused run therefore leaves no census**, so `ingest_spl` also SAYS the three counts in
+  its progress output before any floor can refuse (PR #198 review) — the only trace a refused, drifted
+  release leaves.
+- **Reading it**: `SELECT r.upstream_release, c.* FROM drugref.spl_run_census c JOIN drugref.ingest_run r
+  USING (ingest_run_id) ORDER BY ingest_run_id`. No comparison view and no CLI yet: **#199** tracks a
+  `drugref status` reader, without which the drift is still only visible to someone who queries it.
+- **#186's second option, NOT taken:** routing id-keyed labels as `unresolved` instead of
+  `absent_from_dailymed`. That changes db/051's route vocabulary and what gets published. Storing the count
+  makes the drift visible; whether the route should change is a separate decision.
+- **Tests**: +1 assertion in `test_spl_run.py`'s absent/blank/id-keyed test (the stored row matches, unswapped);
+  `tests/test_db.py`'s inventory names the table; a new `tests/test_spl_run_census.py` (+9: history kept across
+  re-ingests, no row from a floor-refused run, none from a run failing after the write, five CHECK refusals
+  each pinned to the one constraint it breaks, and one acceptance). **Suite 2814 → 2823.**
+- **Every pre-`db/057` verification database** (`drugref_notice174` etc.) simply lacks the table until migrated.
+  `db/057` is a new file, so they migrate forward cleanly. Their old SPL runs have no census row; there is no
+  backfill, because those counts were never stored.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5863,8 +5896,9 @@ given the previous rule — never a backfill of finished rows); once true, the f
 added #186, #187, #188; #187 is FIXED** — § "The negative-count refusal". **#188 and #170 are FIXED** — § "The
 SPL census and Version round". **The PR #194 review added #195; FIXED** — § "The negative-count audit".
 **Still open, each on its own stated trigger:** #164 (a migration that touches
-`spl_wording_quote_budget` for a real reason), #169 (the 12th `ScanResult` counter). #186 (persist #163's
-per-run counts — needs a migration) has no trigger, only cost.
+`spl_wording_quote_budget` for a real reason), #169 (the 12th `ScanResult` counter). **#186 (persist #163's
+per-run counts) is FIXED by `db/057`** — § "The SPL run census". **Its review added #199** (nothing reads the
+census yet; a `drugref status` line would) — open, no trigger beyond wanting the drift read.
 
 **[#151](https://github.com/cairn-ehr/drugref/issues/151) `questions.py` over the cap** — **CLOSED by the
 questions.py split (PR #189)**, the first of #177's modules — § "The questions.py split". `ingest/fda_cyp.py`
@@ -6041,7 +6075,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2814 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2823 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6224,6 +6258,8 @@ git config core.hooksPath .githooks
 # test_drugcentral_run.py, +2 test_spl_type_invariants.py.
 # ⇒ THE PR 197 REVIEW ROUND (no migration): 2790 -> 2814 -- +9 spl_version via
 # test_spl_reader_skips.py, +3 spike, +4 census, +4 test_counts.py, +4 tools.
+# ⇒ ISSUE 186's SPL RUN CENSUS (db/057): 2814 -> 2823 -- +9 test_spl_run_census.py
+#   (+7 in the PR, +2 in its review: the after-write rollback and the blank floor).
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

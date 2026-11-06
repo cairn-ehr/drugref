@@ -211,6 +211,27 @@ def clear_source_spl(conn: psycopg.Connection, source: str) -> None:
     db.clear_source_tables(conn, SPL_TABLES, source)
 
 
+def write_run_census(
+    conn: psycopg.Connection, *, ingest_run_id: int, records_read: int,
+    labels: int, records_field_absent: int, records_field_blank: int,
+    labels_keyed_on_document_id: int,
+) -> None:
+    """Store one run's issue-163 counts in db/057's `spl_run_census` (issue 186).
+
+    HISTORY, not projection: the table is NOT in `SPL_TABLES`, so the next run's
+    `clear_source_spl` leaves this row standing for that run to be compared with.
+    Keyword-only for the module's usual reason -- five same-typed counts, and
+    swapping absent with blank would store cleanly. The table's CHECKs refuse an
+    impossible census; the caller's transaction decides whether it lands at all.
+    """
+    conn.execute(
+        "INSERT INTO drugref.spl_run_census (ingest_run_id, records_read, labels, "
+        " records_field_absent, records_field_blank, labels_keyed_on_document_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (ingest_run_id, records_read, labels, records_field_absent,
+         records_field_blank, labels_keyed_on_document_id))
+
+
 #: Which table each row type is written to. THE ONLY PLACE THE TWO ARE PAIRED --
 #: the COLUMN list is derived from the row type's own fields (see `_copy`), so a
 #: column added to a row type and forgotten in a hand-written list is not a state

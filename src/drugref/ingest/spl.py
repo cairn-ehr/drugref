@@ -284,8 +284,8 @@ class Corpus:
     field_absent: int
     field_blank: int
     #: Labels whose record had no `set_id`, keyed on openFDA's per-DOCUMENT `id`
-    #: instead. Such a label can never match DailyMed, so it would otherwise be
-    #: filed `absent_from_dailymed` uncounted.
+    #: instead. Such a label can never match DailyMed, so unless its openFDA UNII
+    #: resolves it would otherwise be filed `absent_from_dailymed` uncounted.
     labels_keyed_on_document_id: int
 
     def __post_init__(self) -> None:
