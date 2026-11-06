@@ -4314,7 +4314,7 @@ and refuses on any of six grounds. **Read the figures in the results record, not
 ### What shipped
 
 `db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
-deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_version.py`, `spl_release.py`,
+deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_version.py` (split from `spl_dailymed.py` 2026-11-06), `spl_release.py`,
 `spl_match.py`, `spl_suppress.py` (split from `spl_match.py` 2026-10-29), `spl_quote.py`, `spl_subject.py`,
 plus `spl_checks.py` for the guards), the writer
 `spl_evidence.py`, the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
@@ -5734,7 +5734,7 @@ Two of the SPL follow-ups that had no trigger, only cost. #164 and #169 stay on 
   the part's `class_code_counts` and `unknown_class_codes`, which a human needs to rule on a new classCode, not
   only the counters. `--json` is **rewritten after every part** in the final file's own shape (the running
   total plus `by_part` so far), so a crash on part 6 leaves a file that parses like a finished one. JSON Lines
-  was rejected: it would change the shape a spec quotes. An unwritable `--json` is named once, the read carries
+  was rejected: it would change the file's shape for existing readers. An unwritable `--json` is named once, the read carries
   on, and the exit code is 2.
 - **#170 — one `Version` type, in the new pure `ingest/spl_version.py`.** `VersionState` is PARSED / ABSENT /
   JUNK. `Version.__post_init__` refuses the meaningless combinations: only PARSED carries a `number`, and only
@@ -5742,7 +5742,8 @@ Two of the SPL follow-ups that had no trigger, only cost. #164 and #169 stay on 
   `version_was_unreadable` is gone. `spl_dailymed.version_of(root)` is **the one reader**, and
   `tools/spl_skip_census.py` now calls it instead of keeping its own `_version_of`. The census crosscheck test
   therefore compares whole `Version`s, so the junk-vs-absent disagreement #167 found can no longer be expressed.
-  The new module was split out because `spl_dailymed.py` hit 508 lines (now 446).
+  The new module was split out because `spl_dailymed.py` would have reached 508 lines with the type inline
+  (460 before; 446 after).
 - **A fourth spelling, found and fixed:** `tools/spl_subject_read.dedupe_by_set_id` (spike code) still ranked
   by `(row.version or -1)`, the version-0 collapse the shipped reader had already fixed. It now uses `_rank`. The
   spike keeps `int | None`, because its JSON cache stores bare ints.
@@ -5751,9 +5752,9 @@ Two of the SPL follow-ups that had no trigger, only cost. #164 and #169 stay on 
 
 ## The negative-count audit (2026-11-06) — closes #195, no migration
 
-#187 fixed the three SPL summary types; #195 asked which other `__post_init__` has the same hole. **All 19
-modules carrying a `__post_init__` were read** (the issue listed 10; `curation.py`, `ingest/drugcentral.py`,
-`ingest/onchigh.py`, `ingest/onchigh_resolve.py`, `registry_read.py`, `ingest/spl_version.py` were added).
+#187 fixed the three SPL summary types; #195 asked which other `__post_init__` has the same hole. **All 17
+`src/` modules defining a `__post_init__` were read** (the issue's 10, the 3 SPL modules #187 had already fixed,
+and `ingest/drugcentral.py`, `ingest/onchigh_resolve.py`, `registry_read.py`, `ingest/spl_version.py`).
 Only **two** reconcile a sum of counts, and both now call `refuse_negative_counts(self)` before their checks:
 
 - **`drugcentral_run.DrugCentralSummary`** — both bucket identities are sums
@@ -5762,10 +5763,34 @@ Only **two** reconcile a sum of counts, and both now call `refuse_negative_count
   -2}` with 3 occurrences through, so `dominance` read 5/3. Called after the mapping freeze, as in `Corpus`.
 - **The rest need nothing**: route/uuid biconditionals (`Resolution`, `Subject`, `SubjectRow`, `Entry`,
   `AssertionRecord`), span checks (`Window`, `QuoteRow` already refuse negative offsets), `GradedPair`'s
-  `effective_rank = COALESCE(severity_rank, 0)` identity (not a sum), key folds/freezes, `RunClock`,
+  `effective_rank = COALESCE(severity_rank, 0)` identity (not a sum), key folds/freezes (`Registry` ×2,
+  `Vocabulary`, `UnresolvedEndpoint`), `spl_match.Match` (refuses an empty `entries`), `RunClock`,
   `IngestStep`, `Version`. The other `*Summary`/`*Tally` types have no `__post_init__`, so no sum to fool.
 - **Tests**: +2 in `tests/test_drugcentral_run.py`, +2 in `tests/test_spl_type_invariants.py`, each matching the
   refused field's name. **Suite 2786 → 2790.**
+
+## The PR #197 review round (2026-11-06) — no migration
+
+Five review agents read #188/#170/#195; the fixes:
+
+- **`Version` is now fully derived from `raw`.** `version_from_element` accepted anything `int()` takes, so
+  `value="-1"` was PARSED with `sort_key` -1 (tying ABSENT) and `-7` let an unversioned row displace a
+  versioned one — silently, since `scan_release` only refuses JUNK. Now only plain ASCII digits are PARSED
+  (`" 3 "`, `+2`, `1_0`, `٣` are JUNK too), and `__post_init__` refuses a number that is not exactly `int(raw)`,
+  and a JUNK whose text parses.
+- **The spike's own version reader is gone.** `tools/spl_subject_read.extract_subject_uniis` reads through
+  `spl_dailymed.version_of` and returns `None` for a JUNK version (which the probe counts under "unreadable/
+  setId/version") instead of keeping it as unversioned. The field stays `int | None` for the JSON cache.
+- **The census `--json` rewrite is atomic** (write `.tmp`, `os.replace`): `open(path, "w")` emptied the last
+  good file before a dump that could fail. **`DocumentVerdict.__post_init__`** now enforces "`version` is
+  `None` exactly when unreadable", which was only a comment.
+- **`refuse_negative_counts` checks every number type**, not just `int` (`Decimal` is what psycopg returns for
+  `SUM()`), and the **`tools/` types that reconcile sums now call it**: `drugcentral_ddi_measure.Measurement`,
+  `spl_ddi_measure.PairCount` and `BandTally`, `spl_label_extract.Census` (`spl_subject_recovery` already
+  had its own check). #195's audit had stopped at `src/`.
+- **Suite 2790 → 2814**: +9 `test_spl_reader_skips.py`, +3 `test_spl_subject_recovery.py`, +4
+  `test_spl_skip_census.py` (`absent_version` and the new invariants; the finished-JSON test now also pins the
+  class-code union across parts), +4 new `test_counts.py`, +4 new `test_tools_negative_counts.py`.
 
 ## The standing open-issue ledger
 
@@ -6016,7 +6041,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2790 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2814 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6197,6 +6222,8 @@ git config core.hooksPath .githooks
 # +4 census, +11 spl_version via test_spl_reader_skips.py, +1 spike, +1 sweep case.
 # ⇒ ISSUE 195's NEGATIVE-COUNT AUDIT (no migration): 2786 -> 2790 -- +2
 # test_drugcentral_run.py, +2 test_spl_type_invariants.py.
+# ⇒ THE PR 197 REVIEW ROUND (no migration): 2790 -> 2814 -- +9 spl_version via
+# test_spl_reader_skips.py, +3 spike, +4 census, +4 test_counts.py, +4 tools.
 #   - THE COUNT IS THE PRE-DESELECTION TOTAL. CI runs `-m "not livepage"`, which
 #     deselects one test, so a selected-item count would be one lower in CI than
 #     it is locally and this line could only ever have matched one of the two.

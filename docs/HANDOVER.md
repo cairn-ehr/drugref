@@ -18,9 +18,12 @@
 total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and
 the collected suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The negative-count audit"). **#195**: all 19 modules with a
-`__post_init__` were read; only `drugcentral_run.DrugCentralSummary` and `spl_suppress.NextWordProfile`
-reconcile sums of counts, and both now call `ingest/counts.py:refuse_negative_counts` first. +4 tests.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The negative-count audit" and § "The PR #197 review
+round"). **#195**: all 17 `src/` modules defining a `__post_init__` were read; only
+`drugcentral_run.DrugCentralSummary` and `spl_suppress.NextWordProfile` reconcile sums of counts, and both now
+call `ingest/counts.py:refuse_negative_counts` first. **The PR #197 review** then made `Version` reject
+negative/odd versions as JUNK, removed the spike's own version reader, made the census `--json` rewrite atomic,
+and wired the guard (now any number type) into the four `tools/` types that reconcile sums.
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
@@ -29,7 +32,7 @@ reconcile sums of counts, and both now call `ingest/counts.py:refuse_negative_co
 
 **Choose one; none is blocked.**
 
-1. **The SPL follow-ups left on their own triggers**: #164 (the next migration touching that function), #169
+1. **The SPL follow-ups left on their own triggers**: #164 (the next migration touching `spl_wording_quote_budget`), #169
    (the 12th `ScanResult` counter); see the ledger. #186 (persist #163's counts per run) needs a migration.
 2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).

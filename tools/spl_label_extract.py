@@ -29,6 +29,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from drugref.ingest.counts import refuse_negative_counts
+
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -116,6 +118,7 @@ class Census:
     distinct_text_keys: int
 
     def __post_init__(self) -> None:
+        refuse_negative_counts(self)  # first: a negative term fakes a sum
         if self.with_section > self.records:
             raise ValueError(
                 f"{self.with_section} sections from {self.records} records: "

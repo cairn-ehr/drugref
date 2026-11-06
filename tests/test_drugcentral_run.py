@@ -170,7 +170,7 @@ def test_the_summary_refuses_a_read_count_that_excludes_more_than_it_read():
 
 
 def test_the_summary_refuses_a_negative_bucket_that_still_sums():
-    """Issue #195: 6 + 0 + 1 + 1 = 8 and 10 = 2 + 8, so both sums pass.
+    """Issue #195: 8 + (-1) + 1 + 0 = 8 and 10 = 2 + 8, so both sums pass.
 
     A sum is satisfied by a -1 on one side and a +1 on the other, so the
     identities are only as strong as the guarantee that no bucket is negative.

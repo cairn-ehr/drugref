@@ -31,6 +31,8 @@ import re
 from collections.abc import Iterable, Mapping, Sequence, Set as AbstractSet
 from dataclasses import dataclass
 
+from drugref.ingest.counts import refuse_negative_counts
+
 from tools.spl_entity_match import Match
 
 #: FDA and label prose both band a class by the words 'strong', 'moderate' and
@@ -132,6 +134,7 @@ class PairCount:
     self_pairs_excluded: int
 
     def __post_init__(self) -> None:
+        refuse_negative_counts(self)  # first: a negative term fakes a sum
         if self.held + self.novel != self.distinct:
             raise ValueError(
                 f"held {self.held} + novel {self.novel} != "
@@ -280,6 +283,7 @@ class BandTally:
     by_band: Mapping[str, int]
 
     def __post_init__(self) -> None:
+        refuse_negative_counts(self)  # first: a negative term fakes a sum
         if self.banded > self.class_occurrences:
             raise ValueError("more banded mentions than class mentions")
         if sum(self.by_band.values()) != self.banded:

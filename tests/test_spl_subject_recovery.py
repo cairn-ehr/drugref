@@ -442,6 +442,19 @@ def test_the_version_is_read_off_the_label():
     assert extract_subject_uniis(versioned).version == 7
 
 
+@pytest.mark.parametrize("value", ["four", "-1", ""])
+def test_a_JUNK_version_is_not_quietly_read_as_no_version(value):
+    """Review of PR #197: the spike's own `int(...)` reader folded a junk version
+    into "unversioned", so the probe kept a label the shipped `scan_release`
+    refuses the whole run over. It now reads through `spl_dailymed.version_of`
+    and drops the label, which the probe counts as unreadable."""
+    junk = SPL.replace(
+        b'<setId root="set-abc"/>',
+        b'<setId root="set-abc"/><versionNumber value="' + value.encode() + b'"/>',
+    )
+    assert extract_subject_uniis(junk) is None
+
+
 # --- the population that had no bucket ----------------------------------------
 
 
