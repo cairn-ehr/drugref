@@ -217,12 +217,14 @@ def _handle_migrate(conn, args) -> int:
 
 def _handle_status(conn, args) -> int:
     """What is loaded, what died trying, what a rebuild orphaned, what was signed late,
-    what the class grain is doing, and what drugref cannot rank. SIX blocks, one
-    command: an operator asking "is this current?" needs all of them, and reading only
-    the first would report a stale release as healthy. (It said THREE until db/035 added
-    the fifth and left this sentence behind -- cli_status.py's block calls itself the
-    fifth in its own first line, so the two disagreed by two. db/038's sixth is counted
-    here in the same commit that adds it, which is the whole lesson of that drift.)
+    what the class grain is doing, what drugref cannot rank, and how the last SPL
+    release's census compares with the one before. SEVEN blocks, one command: an
+    operator asking "is this current?" needs all of them, and reading only the first
+    would report a stale release as healthy. (It said THREE until db/035 added the
+    fifth and left this sentence behind -- cli_status.py's block calls itself the fifth
+    in its own first line, so the two disagreed by two. db/038's sixth is counted here
+    in the same commit that adds it, which is the whole lesson of that drift, and
+    db/057's seventh likewise.)
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
@@ -337,7 +339,8 @@ def _handle_status(conn, args) -> int:
         print("\nbackdated signatures: none")
 
     cli_status.print_class_grain_block(conn)
-    # THE SIXTH BLOCK (db/038, issue 116). LAST because it is the rarest: it reports a
+    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE FAULT BLOCKS because it is the
+    # rarest: it reports a
     # SCHEMA fault -- a live curated ruling whose severity is absent from severity_kind,
     # which a foreign key on both curated tables makes unreachable -- so on every
     # healthy database it is one line of `none`, and the blocks an operator actually
@@ -347,6 +350,8 @@ def _handle_status(conn, args) -> int:
     # unlike a raised guard. `status` REPORTS; it is not a health check with a contract
     # on its exit code, and three of these blocks would already have claims on it.
     cli_status.print_unrankable_severity_block(conn)
+    # THE SEVENTH (db/057, issue 199): no fault, a comparison -- see its docstring.
+    cli_status.print_spl_census_block(conn)
     return 0
 
 

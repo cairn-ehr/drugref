@@ -232,6 +232,39 @@ def write_run_census(
          records_field_blank, labels_keyed_on_document_id))
 
 
+#: The table `recent_run_census` reads, named once for its caller's migration guard.
+RUN_CENSUS_TABLE = "drugref.spl_run_census"
+
+
+@dataclass(frozen=True, kw_only=True)
+class RunCensus:
+    """One `spl_run_census` row plus the release it censused (issue 199's reader)."""
+    ingest_run_id: int
+    upstream_release: str
+    records_read: int
+    labels: int
+    records_field_absent: int
+    records_field_blank: int
+    labels_keyed_on_document_id: int
+
+
+def recent_run_census(conn: psycopg.Connection, *, limit: int = 2) -> list[RunCensus]:
+    """The newest `limit` censuses, newest first: what #163's counts exist to compare.
+
+    Every row is a committed run -- the census is written in the run's own transaction
+    (`write_run_census`), so no `finished_at IS NOT NULL` filter is needed.
+    """
+    # Column order is RunCensus's field order, so each row zips onto its field names.
+    rows = conn.execute(
+        "SELECT c.ingest_run_id, r.upstream_release, c.records_read, c.labels, "
+        "       c.records_field_absent, c.records_field_blank, "
+        "       c.labels_keyed_on_document_id "
+        f" FROM {RUN_CENSUS_TABLE} c JOIN drugref.ingest_run r USING (ingest_run_id) "
+        " ORDER BY c.ingest_run_id DESC LIMIT %s", (limit,)).fetchall()
+    names = [f.name for f in fields(RunCensus)]
+    return [RunCensus(**dict(zip(names, row, strict=True))) for row in rows]
+
+
 #: Which table each row type is written to. THE ONLY PLACE THE TWO ARE PAIRED --
 #: the COLUMN list is derived from the row type's own fields (see `_copy`), so a
 #: column added to a row type and forgotten in a hand-written list is not a state

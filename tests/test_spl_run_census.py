@@ -130,3 +130,72 @@ def test_the_table_accepts_a_consistent_census(conn):
         "INSERT INTO drugref.spl_run_census (ingest_run_id, records_read, "
         " labels, records_field_absent, records_field_blank, "
         " labels_keyed_on_document_id) VALUES (%s, 10, 8, 1, 1, 8)", (run_id,))
+
+
+# --------------------------------------------------------------------------
+# The reader (issue #199): `drugref status` prints the latest two rows
+# --------------------------------------------------------------------------
+
+def _census(run_id, release, records, labels, absent, blank, id_keyed):
+    from drugref import spl_evidence
+    return spl_evidence.RunCensus(
+        ingest_run_id=run_id, upstream_release=release, records_read=records,
+        labels=labels, records_field_absent=absent, records_field_blank=blank,
+        labels_keyed_on_document_id=id_keyed)
+
+
+def test_the_census_block_says_none_when_no_SPL_run_has_landed():
+    """The other `none`-voiced blocks' rule: a bare header reads as cut-off
+    output, not as the answer "nothing has been censused yet"."""
+    from drugref import cli_status
+    assert cli_status.spl_census_lines([]) == ["spl run census: none"]
+
+
+def test_the_census_block_prints_counts_AND_ratios_latest_first():
+    """#199's smallest option: absolute values and per-record ratios, one line
+    per run, newest first -- the reader diffs the two lines. No threshold."""
+    from drugref import cli_status
+    lines = cli_status.spl_census_lines([
+        _census(12, "2026-09", 1000, 900, 80, 20, 50),
+        _census(9, "2026-08", 1000, 900, 80, 20, 5),
+    ])
+    assert lines[0].startswith("spl run census")
+    newest, previous = lines[1], lines[2]
+    assert "run 12" in newest and "2026-09" in newest
+    assert "id-keyed 50 (5.00%)" in newest
+    assert "no field 80 (8.00%)" in newest and "blank 20 (2.00%)" in newest
+    assert "id-keyed 5 (0.50%)" in previous
+    assert len(lines) == 3
+
+
+def test_a_census_of_ZERO_records_prints_no_ratio_rather_than_crashing():
+    """A run that read nothing has no denominator; dividing by it would kill
+    `drugref status` on its last block."""
+    from drugref import cli_status
+    (_, line) = cli_status.spl_census_lines([_census(1, "r", 0, 0, 0, 0, 0)])
+    assert "id-keyed 0 (n/a)" in line
+
+
+@pytest.mark.usefixtures("_clean")
+def test_the_status_block_reads_the_two_latest_runs_from_the_database(
+        conn, corpus, capsys):
+    """End to end: three ingests, and the block names exactly the last two,
+    newest first -- the comparison #199 asks for, read from db/057's rows."""
+    from drugref import cli_status
+    _seed_registry(conn)
+    runs = [_ingest(conn, corpus, release=f"rel-{i}") for i in range(3)]
+    cli_status.print_spl_census_block(conn)
+    out = capsys.readouterr().out
+    assert "rel-2" in out and "rel-1" in out and "rel-0" not in out
+    assert out.index("rel-2") < out.index("rel-1")
+    assert f"id-keyed {runs[-1].labels_keyed_on_document_id} (" in out
+
+
+def test_a_database_without_db057_gets_the_guards_sentence_not_a_traceback(conn):
+    """Every deployment between pulling this code and `drugref migrate` lacks
+    the table. Renamed inside the rolled-back fixture transaction, the same
+    device tests/test_ingest_run_duration.py uses for db/054's site."""
+    from drugref import cli_status
+    conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
+    with pytest.raises(RuntimeError, match="spl_run_census"):
+        cli_status.print_spl_census_block(conn)

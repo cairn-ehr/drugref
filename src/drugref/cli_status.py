@@ -1,13 +1,14 @@
 # src/drugref/cli_status.py
 """`drugref status`'s BLOCKS, split out of cli.py -- the loaded releases and their
 runtimes (issue 159, and which of them may be published at all: db/054, issue 176), the
-class grain (db/035) and the unrankable-severity fault (db/038, issue 116).
+class grain (db/035), the unrankable-severity fault (db/038, issue 116) and the SPL run
+census (db/057, issue 199).
 
-THREE BLOCKS NOW, and the file docstring has twice been written too narrowly for what
+FOUR BLOCKS NOW, and the file docstring has twice been written too narrowly for what
 the module holds: it said "the CLASS-GRAIN BLOCK" while holding one, then "LATER BLOCKS"
-and "TWO BLOCKS" while the first block came here too. The module name was always the
-general one; a `cli_unrankable.py` or a `cli_releases.py` would exist only because a
-sentence was drawn too tight.
+and "TWO BLOCKS" while the first block came here too, then "THREE BLOCKS" until db/057's
+census arrived. The module name was always the general one; a `cli_unrankable.py` or
+a `cli_releases.py` would exist only because a sentence was drawn too tight.
 
 WHY A MODULE RATHER THAN ANOTHER 50 LINES OF cli.py. cli.py was 483 lines before this
 round and the class grain's block plus its guard took it past CLAUDE.md rule 4's ~500
@@ -31,7 +32,8 @@ reason it covers the five above -- and it PASSES on the loaded-release SELECT be
 `loaded_release` and `ingest_run_incomplete` are operational views nothing curates, the
 same exception cli.py's docstring already draws for `_handle_status`.
 """
-from drugref import class_grain_read, curated_read, migration_guard, provenance
+from drugref import (class_grain_read, curated_read, migration_guard, provenance,
+                     spl_evidence)
 
 
 def print_loaded_release_block(conn) -> None:
@@ -61,7 +63,7 @@ def print_loaded_release_block(conn) -> None:
     the same fault, one level up, as publishing a number nobody can vouch for.
     `_unmeasured_note` owns that sentence and the conditions on printing it.
 
-    ⇒ THIS BLOCK DEGRADES RATHER THAN ABORTS, alone among the guarded six, because it
+    ⇒ THIS BLOCK DEGRADES RATHER THAN ABORTS, alone among the guarded seven, because it
     is the FIRST of them -- see `_read_loaded_release` for the whole argument.
     """
     rows, refusal = _read_loaded_release(conn)
@@ -103,16 +105,16 @@ _CONSEQUENCE = "no runtime can be published for any loaded release"
 def _read_loaded_release(conn):
     """The rows in db/054's shape, and the operator's sentence if they had to be faked.
 
-    ⇒ WHY THIS DEGRADES WHERE EVERY OTHER GUARDED BLOCK ABORTS. The other five sites
-    are blocks 2-6 of `drugref status`, and `cli.main` renders a RuntimeError as one
+    ⇒ WHY THIS DEGRADES WHERE EVERY OTHER GUARDED BLOCK ABORTS. The other six sites
+    are blocks 2-7 of `drugref status`, and `cli.main` renders a RuntimeError as one
     line and exits 2 -- acceptable at the end of a report, and NOT at the start of one.
     This block is the first, so raising here costs the operator the unfinished runs,
-    the orphaned curated targets, the backdated signatures, the class grain and the
-    unrankable severities as well. Before db/054 this same database printed all six
-    blocks: the watershed read None and every runtime said `pre-db/053`. Turning that
-    into a total failure would be a regression wearing a guard's clothes, and this
-    project has already recorded "status crashed mid-output ... killing the five later
-    blocks" as a defect ONE ROUND AGO.
+    the orphaned curated targets, the backdated signatures, the class grain, the
+    unrankable severities and the SPL census as well. Before db/054 this same database
+    printed all six blocks it then had: the watershed read None and every runtime said
+    `pre-db/053`. Turning that into a total failure would be a regression wearing a
+    guard's clothes, and this project has already recorded "status crashed mid-output
+    ... killing the five later blocks" as a defect ONE ROUND AGO.
 
     ⇒ WHAT IS REFUSED IS THE NUMBER, NOT THE REPORT, which is this round's own rule
     applied to itself. db/025's columns are still there, so the listing is read from
@@ -339,3 +341,51 @@ def print_unrankable_severity_block(conn) -> None:
                   f"reviewed by {u.reviewed_by} at {u.reviewed_at}")
     else:
         print("\nunrankable severities (DDI grain): none")
+
+
+def print_spl_census_block(conn) -> None:
+    """THE SEVENTH BLOCK (db/057, issue 199): the last two SPL runs' issue-163 counts.
+
+    WHY IT EXISTS. Those counts never refuse a run -- "the ratio moving between
+    releases is the signal" -- and db/057 stored them per run, but nothing read the
+    table. A jump in `labels_keyed_on_document_id` (openFDA dropping `set_id`, so labels
+    without a resolving UNII publish as `absent_from_dailymed`) reached nobody who did
+    not think to query for it. Printing the latest row beside the previous one puts the
+    drift in front of the operator who just ran the ingest.
+
+    NO THRESHOLD AND NO BANNER, deliberately: #163 rules these counts never refuse, and
+    a banner needs a cut-off nobody has measured. The operator diffs the two lines.
+
+    LAST, AND IT RAISES like blocks 2-6 rather than degrading like the first: nothing
+    is printed after it, so aborting here costs no other block.
+    """
+    with migration_guard.guarded(
+            conn, relations=(spl_evidence.RUN_CENSUS_TABLE,), migration="057",
+            consequence="no SPL release can be compared with the one before it"):
+        rows = spl_evidence.recent_run_census(conn)
+    print()
+    for line in spl_census_lines(rows):
+        print(line)
+
+
+def spl_census_lines(rows) -> list[str]:
+    """PURE: the block's lines for `rows` (newest first), so it is testable without SQL.
+
+    ONE DENOMINATOR FOR ALL THREE RATIOS, `records_read`, stated once in the header
+    rather than on each figure. A run that read nothing prints `n/a`, not a crash.
+    """
+    if not rows:
+        return ["spl run census: none"]
+
+    def share(count: int, total: int) -> str:
+        return f"{count:,} ({count / total:.2%})" if total else f"{count:,} (n/a)"
+
+    lines = ["spl run census (newest first; % of openFDA records read):"]
+    for c in rows:
+        n = c.records_read
+        lines.append(
+            f"  run {c.ingest_run_id} {c.upstream_release}  records {n:,}  "
+            f"labels {c.labels:,}  no field {share(c.records_field_absent, n)}  "
+            f"blank {share(c.records_field_blank, n)}  "
+            f"id-keyed {share(c.labels_keyed_on_document_id, n)}")
+    return lines
