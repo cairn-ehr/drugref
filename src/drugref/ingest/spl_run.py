@@ -431,6 +431,15 @@ def ingest_spl(
 
         spl_checks.check_floors(
             summary, pair_floor=pair_floor, novel_floor=novel_floor)
+        # #186: the counts #163 says must never refuse, kept per run so the next
+        # release has this one to compare against (db/057). Inside the
+        # transaction, so a run that rolls back leaves no census behind.
+        spl_evidence.write_run_census(
+            conn, ingest_run_id=run_id, records_read=summary.records_read,
+            labels=summary.labels,
+            records_field_absent=summary.records_field_absent,
+            records_field_blank=summary.records_field_blank,
+            labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
 
         # `register_from_gaps` IS DELIBERATELY NOT CALLED, unlike in every
         # sibling orchestrator. This run writes only its own five tables, and

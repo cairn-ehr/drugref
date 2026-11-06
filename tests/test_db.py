@@ -353,6 +353,10 @@ def test_apply_migrations_is_idempotent(conn):
         # entry, because a curator cannot answer "not in the current DailyMed
         # release". db/051 section 8 argues it; tests/test_spl_run.py pins it.
         "spl_ddi_evidence", "spl_ddi_pair", "gap_unresolved_spl_subject",
+        # db/057 (#186): one row per SPL run of the counts that should NOT refuse
+        # but whose drift between releases is the signal. HISTORY, keyed by the
+        # run, so the per-source clear never touches it.
+        "spl_run_census",
     }
 
 

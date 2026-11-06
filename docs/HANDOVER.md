@@ -13,19 +13,19 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/negative-count-audit`, STACKED ON `claude/spl-census-version` (PR #196, still open for #188 and
-#170); its own PR closes #195. Merge #196 first. No migration — THE SCHEMA STILL ENDS AT `db/056`.** The suite
-total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and
-the collected suite disagree.
+**Branch `claude/spl-run-counts` off `main`; PR OPEN for #186, which it closes on merge. ONE migration: THE
+SCHEMA NOW ENDS AT `db/057`.** PRs #196 and #197 are MERGED (#188, #170, #195 CLOSED). The suite total lives in
+PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
+suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The negative-count audit" and § "The PR #197 review
-round"). **#195**: all 17 `src/` modules defining a `__post_init__` were read; only
-`drugcentral_run.DrugCentralSummary` and `spl_suppress.NextWordProfile` reconcile sums of counts, and both now
-call `ingest/counts.py:refuse_negative_counts` first. **The PR #197 review** then made `Version` reject
-negative/odd versions as JUNK, removed the spike's own version reader, made the census `--json` rewrite atomic,
-and wired the guard (now any number type) into the four `tools/` types that reconcile sums.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL run census"). **#186**: `db/057` adds
+`drugref.spl_run_census`, one row per SPL run holding #163's absent/blank/id-keyed counts plus `records_read` and
+`labels`. Its CHECKs copy `SplSummary`'s identities. `spl_evidence.write_run_census` writes it inside the run's
+transaction. **It is HISTORY, deliberately NOT in `SPL_TABLES`**, so a re-ingest keeps the previous run's row
+to compare with. #186's other option (route id-keyed labels `unresolved`) was not taken; it would change
+db/051's route vocabulary.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+7). `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 
 ## ⇒ DO THIS NEXT
@@ -33,11 +33,10 @@ and wired the guard (now any number type) into the four `tools/` types that reco
 **Choose one; none is blocked.**
 
 1. **The SPL follow-ups left on their own triggers**: #164 (the next migration touching `spl_wording_quote_budget`), #169
-   (the 12th `ScanResult` counter); see the ledger. #186 (persist #163's counts per run) needs a migration.
+   (the 12th `ScanResult` counter); see the ledger.
 2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
    lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
 3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
-4. **Review follow-up** #186 (PR #185), still open.
 
 ## Parallel project sequencing
 
@@ -49,7 +48,7 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188 and #170 close on PR #196's merge; #195 on this branch's PR.** Open: **#186** (PR #185's review), **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
 half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -70,7 +69,8 @@ releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
   (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
   `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
-  reads `unmeasured` until re-ingested — intended, not a regression.**
+  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`, so none
+  holds an `spl_run_census` row (no backfill: those counts were never stored).
   **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
   it (`apply_migrations` is checksum-immutable).
 - Corpora: `downloads/OPENFDA/` (14 partitions, 2026-08-22), `downloads/DAILYMED/` (6 Human Rx parts,

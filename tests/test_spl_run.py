@@ -331,6 +331,12 @@ def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
     assert (summary.records_field_absent, summary.records_field_blank,
             summary.labels_keyed_on_document_id) == (3, 2, 1)
     assert summary.records_read == len(LABELS) + len(extra)
+    # #186: the same three, unswapped, in the run's stored census -- the only
+    # place a LATER release can read them back to compare against.
+    assert conn.execute(
+        "SELECT records_read, labels, records_field_absent, records_field_blank, "
+        "       labels_keyed_on_document_id FROM drugref.spl_run_census"
+    ).fetchall() == [(summary.records_read, summary.labels, 3, 2, 1)]
 
 
 @pytest.mark.usefixtures("_clean")
