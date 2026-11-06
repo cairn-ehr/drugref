@@ -24,6 +24,9 @@ The rows themselves are still proved to disappear by each writer's own tests --
 test_schema_classes, test_interactions, test_conditions_writer, test_indications_writer,
 test_local_writer, test_gap_views. This module is about the contract those tests cannot see.
 """
+import pathlib
+import re
+
 import psycopg
 import pytest
 
@@ -31,7 +34,7 @@ from drugref import (
     classes, composition, conditions, db, indications, interactions, local,
     spl_evidence,
 )
-from drugref.ingest import onchigh_run
+from drugref.ingest import fda_cyp_run, onchigh_run
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -96,6 +99,12 @@ EXPECTED_TABLES = {
     # outcome of adding one.
     "onchigh_run.UNRESOLVED_ENDPOINT_TABLES": (
         onchigh_run.UNRESOLVED_ENDPOINT_TABLES, ("ingest_unresolved_onc_endpoint",)),
+    # Issue 149: missing here from slice 5c.2g until the call-site scan below
+    # made an unregistered writer a failure. fda_cyp_assertion holds members and
+    # withheld tuples alike, and gap_fda_cyp_unadjudicated (db/039) is derived
+    # from it -- so an emptied tuple would multiply that worklist per re-ingest.
+    "fda_cyp_run.FDA_CYP_TABLES": (
+        fda_cyp_run.FDA_CYP_TABLES, ("fda_cyp_assertion",)),
 }
 
 
@@ -103,6 +112,27 @@ EXPECTED_TABLES = {
 def test_the_declared_table_tuple_is_what_it_should_be(name):
     declared, expected = EXPECTED_TABLES[name]
     assert declared == expected
+
+
+# Every `db.clear_source_tables(conn, NAME, ...)` call site under src/drugref, as
+# "module.NAME" -- the same key shape EXPECTED_TABLES uses.
+_PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"
+_CLEAR_CALL = re.compile(r"clear_source_tables\(\s*conn,\s*([A-Z_]+)")
+
+
+def _clear_call_sites() -> set[str]:
+    return {f"{path.stem}.{name}"
+            for path in _PACKAGE.rglob("*.py")
+            for name in _CLEAR_CALL.findall(path.read_text())}
+
+
+def test_every_clear_call_site_is_registered_here():
+    """Issue 149: registration in EXPECTED_TABLES was manual, and two writers
+    (ONCHIGH, then FDA-CYP) landed without it -- so a table dropped from their
+    tuple was caught by nothing. This scan makes the omission itself fail."""
+    sites = _clear_call_sites()
+    assert sites, "the scan found no call sites: the regex no longer matches"
+    assert sites - EXPECTED_TABLES.keys() == set()
 
 
 def test_the_reason_vocabulary_is_what_it_should_be():
