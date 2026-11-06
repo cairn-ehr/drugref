@@ -13,19 +13,19 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-census-reader` off `main`; PR OPEN for #199, which it closes on merge. NO migration: the
-schema still ends at `db/057`.** PR #198 is MERGED (#186 CLOSED). The suite total lives in PROJECT-NOTES § "How
-to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/clear-contract-fda-cyp` off `main`; PR OPEN for #149, which it closes on merge. NO migration:
+the schema still ends at `db/057`.** PR #200 is MERGED (#199 CLOSED). The suite total lives in PROJECT-NOTES §
+"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The SPL census reader"). **#199**: `drugref status` has a
-**seventh block**, the newest two `spl_run_census` rows with counts and ratios over `records_read`. No threshold
-and no banner (#163: these counts never refuse). Reader `spl_evidence.recent_run_census`, pure formatter
-`cli_status.spl_census_lines`. **⇒ BEHAVIOUR CHANGE:** on a database short of `db/057`, `status` now ends with the
-guard's sentence and **exits 2** (like every guarded block); every verification DB below except `drugref_test` is in that state.
+**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The clear-contract registration round"). **#149**:
+`fda_cyp_run.FDA_CYP_TABLES` is registered in `test_source_clear_contract.py`'s `EXPECTED_TABLES`, and a new
+call-site scan fails on any `clear_source_tables(conn, NAME` left unregistered (it caught exactly this one:
+13 sites, 12 registered). Test-only plus one comment in `interactions.py`; no behaviour change.
+**Stale, still OPEN on GitHub — close them: #130** (cli.py, fixed by PR #131) **and #133** (fda_cyp.py split, now 396 lines).
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+7, two from the review). `ruff check .` clean. Ran
-`drugref status` against `drugref_notice174` (pre-db/057): six blocks print, then the db/057 guard line, exit 2.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+3, one from the finalcheck review, which also made the scan fail on call shapes it cannot read). `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
+**Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
 ## ⇒ DO THIS NEXT
 
@@ -47,8 +47,8 @@ names both drugs*, not *an authority asserts they interact*. FDA toxicity is cle
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 is CLOSED (PR #198); #199 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
-half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #149,
+#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 is CLOSED (PR #198); #199 is CLOSED (PR #200). #130/#133 are stale-but-open; #149 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
+half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148,
 #152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
 releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 

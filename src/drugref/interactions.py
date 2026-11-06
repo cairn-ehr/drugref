@@ -393,11 +393,10 @@ def record_unresolved_ci_objects(
 #
 # Registered in tests/test_source_clear_contract.py's EXPECTED_TABLES, which is
 # what turns a table silently dropped from this tuple into a failing test rather
-# than a rebuild that quietly stops covering it. fda_cyp_run's own
-# FDA_CYP_TABLES is deliberately NOT cited here as a peer with the same guard --
-# a code-review pass found it is not actually registered there. That gap is
-# pre-existing and tracked separately; this comment simply stops claiming
-# otherwise.
+# than a rebuild that quietly stops covering it -- as are its peers
+# onchigh_run.UNRESOLVED_ENDPOINT_TABLES and fda_cyp_run.FDA_CYP_TABLES (the
+# latter only since issue 149; that test now also fails on any clear call site
+# left unregistered, or written in a shape its scan cannot read).
 DRUGCENTRAL_TABLES = ("drugcentral_ddi_assertion",)
 
 

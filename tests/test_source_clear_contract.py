@@ -24,6 +24,9 @@ The rows themselves are still proved to disappear by each writer's own tests --
 test_schema_classes, test_interactions, test_conditions_writer, test_indications_writer,
 test_local_writer, test_gap_views. This module is about the contract those tests cannot see.
 """
+import pathlib
+import re
+
 import psycopg
 import pytest
 
@@ -31,7 +34,7 @@ from drugref import (
     classes, composition, conditions, db, indications, interactions, local,
     spl_evidence,
 )
-from drugref.ingest import onchigh_run
+from drugref.ingest import fda_cyp_run, onchigh_run
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -96,6 +99,14 @@ EXPECTED_TABLES = {
     # outcome of adding one.
     "onchigh_run.UNRESOLVED_ENDPOINT_TABLES": (
         onchigh_run.UNRESOLVED_ENDPOINT_TABLES, ("ingest_unresolved_onc_endpoint",)),
+    # Issue 149: missing here from slice 5c.2g until the call-site scan below
+    # made an unregistered writer a failure. fda_cyp_assertion holds members and
+    # withheld tuples alike. With an emptied tuple every superseded run's rows
+    # would stay: gap_fda_cyp_unadjudicated (db/043) groups across runs, so a
+    # tuple FDA dropped would keep its open question forever, and the shrink
+    # guard's stored count would grow until it refused a healthy ingest.
+    "fda_cyp_run.FDA_CYP_TABLES": (
+        fda_cyp_run.FDA_CYP_TABLES, ("fda_cyp_assertion",)),
 }
 
 
@@ -103,6 +114,56 @@ EXPECTED_TABLES = {
 def test_the_declared_table_tuple_is_what_it_should_be(name):
     declared, expected = EXPECTED_TABLES[name]
     assert declared == expected
+
+
+# Every `db.clear_source_tables(<conn>, NAME, ...)` call site under src/drugref, as
+# "module.NAME" -- the same key shape EXPECTED_TABLES uses. A call in any other
+# shape (module-qualified constant, literal tuple, keyword arguments) is counted
+# as unreadable rather than skipped, so it fails instead of passing unseen.
+_PACKAGE = pathlib.Path(__file__).resolve().parent.parent / "src" / "drugref"
+_ANY_CALL = re.compile(r"(?<!def )\bclear_source_tables\(")
+_CLEAR_CALL = re.compile(r"(?<!def )\bclear_source_tables\(\s*\w+,\s*([A-Z][A-Z0-9_]*)\s*,")
+
+
+def _scan(text: str) -> tuple[list[str], int]:
+    """(the constant names `text` passes as tables, how many calls it could not read)."""
+    names = _CLEAR_CALL.findall(text)
+    return names, len(_ANY_CALL.findall(text)) - len(names)
+
+
+def _clear_call_sites() -> tuple[set[str], list[str]]:
+    """("module.NAME" for every readable call, the files holding an unreadable one)."""
+    sites, unreadable = set(), []
+    for path in _PACKAGE.rglob("*.py"):
+        names, missed = _scan(path.read_text())
+        sites |= {f"{path.stem}.{name}" for name in names}
+        if missed:
+            unreadable.append(str(path.relative_to(_PACKAGE)))
+    return sites, unreadable
+
+
+def test_the_scan_counts_every_call_it_cannot_read():
+    """A call the regex cannot read must be COUNTED, not skipped: otherwise a
+    fourteenth writer spelled any other way lands as unregistered as FDA-CYP did."""
+    text = ("db.clear_source_tables(cur, V2_TABLES, source)\n"
+            "db.clear_source_tables(conn, mod.X_TABLES, s)\n"
+            "db.clear_source_tables(conn, ('t',), s)\n"
+            "db.clear_source_tables(conn, tables=X_TABLES, source=s)\n"
+            "db.clear_source_tables(conn=conn, tables=X_TABLES, source=s)\n"
+            "def clear_source_tables(conn: psycopg.Connection,\n")
+    assert _scan(text) == (["V2_TABLES"], 4)
+
+
+def test_every_clear_call_site_is_registered_here():
+    """Issue 149: registration in EXPECTED_TABLES was manual, and FDA-CYP's
+    writer landed without it -- so a table dropped from its tuple was caught by
+    nothing. This scan makes the omission itself fail."""
+    sites, unreadable = _clear_call_sites()
+    assert sites, "the scan found no call sites: the regex no longer matches"
+    assert unreadable == [], (
+        "a clear_source_tables call not in the `(conn, MODULE_CONSTANT, ...)` "
+        "shape: pass a module-level tuple constant and register it above")
+    assert sites - EXPECTED_TABLES.keys() == set()
 
 
 def test_the_reason_vocabulary_is_what_it_should_be():

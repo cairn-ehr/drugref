@@ -3867,7 +3867,8 @@ pattern is the finding.
   `test_source_clear_contract.py`'s `EXPECTED_TABLES`**, so a table dropped from that tuple would be caught by
   nothing. Pre-existing and unrelated to this round; found while registering
   `interactions.DRUGCENTRAL_TABLES`. `interactions.py`'s comment was corrected to stop citing it as a peer with
-  the same guard, and the gap was filed rather than fixed in passing.
+  the same guard, and the gap was filed rather than fixed in passing. **FIXED 2026-11-06** — § "The clear-contract
+  registration round", which also made any future unregistered call site fail.
 - **[#151](https://github.com/cairn-ehr/drugref/issues/151) — `questions.py` is over rule 4's ~500-line
   guideline**, and **71% of it is the single `_GAP_SOURCES` literal**, which grows with every source that adds
   a gap kind (this round added the eighteenth). Pre-existing; split out of #89 the way #130 was for `cli.py`,
@@ -5848,6 +5849,30 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   field — the corpus's 8/8/0/0/0 census could not see a column swap — and last-finished ordering), plus the
   wiring assertion in `test_curation_orphans.py`'s healthy-status test. **Suite 2823 → 2830.**
 
+## The clear-contract registration round (2026-11-06) — closes #149, no migration
+
+`fda_cyp_run.FDA_CYP_TABLES` (`("fda_cyp_assertion",)`) is now restated in
+`tests/test_source_clear_contract.py`'s `EXPECTED_TABLES`, and `interactions.py`'s comment above
+`DRUGCENTRAL_TABLES` cites it as a peer again.
+
+- **Recurrence is now a failure.** `test_every_clear_call_site_is_registered_here` scans `src/drugref` for
+  `clear_source_tables(<conn>, NAME,` and requires every `module.NAME` to be a key of `EXPECTED_TABLES`. It
+  failed on exactly `fda_cyp_run.FDA_CYP_TABLES` before the entry was added: **13 call sites, 12 registered.**
+  FDA-CYP was the only writer to land unregistered; ONCHIGH was registered in the commit that introduced it
+  (70f2150).
+- **The finalcheck review round closed the scan's own blind spot.** The first version only guarded against
+  *every* call going unmatched (`assert sites`), so a fourteenth call written in another shape (module-qualified
+  constant, literal tuple, keyword arguments) would have passed unseen, the #149 failure again. The scan now
+  also counts every `clear_source_tables(` call (`def` excluded) and fails on any file where that count exceeds
+  what it read; `test_the_scan_counts_every_call_it_cannot_read` pins the shapes. The same round corrected the
+  FDA entry's comment (an emptied tuple does not multiply `gap_fda_cyp_unadjudicated`: db/043 groups across
+  runs, so the real harm is open questions that never retire and a shrink guard whose stored count grows
+  until it refuses a healthy ingest) and dropped the stale "seven of the eight" count from
+  `db.clear_source_tables`'s docstring.
+- **What the scan does not see**: a writer that clears with its own `DELETE` rather than
+  `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
+- **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5967,7 +5992,8 @@ This paragraph used to carry the numbers, which made two homes for one set, and 
 posted to the issue, with the natural seam for `curation.py`. **`cli.py` is a separate issue
 ([#130](https://github.com/cairn-ehr/drugref/issues/130)) because its failure mode differs** — it sits at
 exactly 500 against a HARD cap test, so the next line added to it breaks CI, and the cap has already begun
-dictating where functions live rather than merely measuring size.
+dictating where functions live rather than merely measuring size. **Resolved by PR #131's review round
+(`cli_fda_cyp.py`), but it is STILL OPEN on GitHub (found stale 2026-11-06).**
 
 **Filed by the DrugCentral rounds (2026-08-23)** — **[#146](https://github.com/cairn-ehr/drugref/issues/146)**
 the suite-count line in § "How to run / test" was guarded by prose only and had drifted **nine** times —
@@ -5978,7 +6004,7 @@ ungraded cross-source disagreement question — **635 of the 7,501 DrugCentral p
 through MED-RT's class expansion and nothing compares them**, which is #97/#106 one tier down ·
 **[#149](https://github.com/cairn-ehr/drugref/issues/149)** `fda_cyp_run.FDA_CYP_TABLES` is not registered in
 `test_source_clear_contract.py`'s `EXPECTED_TABLES`, so a table dropped from that tuple would be caught by
-nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`) ·
+nothing (pre-existing, found while registering `interactions.DRUGCENTRAL_TABLES`) — **FIXED 2026-11-06**, § "The clear-contract registration round" ·
 **[#151](https://github.com/cairn-ehr/drugref/issues/151)** `questions.py` is over rule 4's ~500-line
 guideline and **71% of it is the one `_GAP_SOURCES` literal**, which grows with every source that adds a gap
 kind — split out of #89 the way #130 was for `cli.py`, because the failure mode differs (a declarative table
@@ -6098,7 +6124,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2830 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2833 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

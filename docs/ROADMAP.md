@@ -804,7 +804,7 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
   a held racemate — pharmacology with a literature behind it, scoped to every source since DrugCentral will
   meet it too; [#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because
   a near-name heuristic with no measured output is the pattern this slice spent five corrections catching;
-  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap.
+  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap (resolved by PR #131's `cli_fda_cyp.py`; issue still open, stale as of 2026-11-06).
 - **⇒ SEVEN OF THE SPEC'S OWN FIGURES WERE WRONG AND IMPLEMENTATION FOUND EVERY ONE** — the last two
   found by the FINAL review, after the count had been written down as five.** Full account:
   PROJECT-NOTES § "Slice 5c.2g". They share one shape — **something asserted a property it had not
@@ -1477,7 +1477,7 @@ on the excluded rows.
 7,501 pairs are already reachable through MED-RT's class expansion and nothing compares them, which is
 [#97](https://github.com/cairn-ehr/drugref/issues/97)/[#106](https://github.com/cairn-ehr/drugref/issues/106)'s
 question one tier down; and [#149](https://github.com/cairn-ehr/drugref/issues/149), a pre-existing gap in the
-per-source-clear contract test found while registering this round's own writer.
+per-source-clear contract test found while registering this round's own writer — **FIXED 2026-11-06**, with a call-site scan so the next unregistered writer fails.
 
 **⇒ THEN `db/050`, the PR-150 review round.** Five specialist agents; 1 critical, 9 important, all applied.
 **The critical one: a dump this code cannot read wiped the projection and exited 0** — renaming ONE column took
