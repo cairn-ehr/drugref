@@ -68,6 +68,26 @@ def test_a_subclass_only_drug_inherits_the_asserted_properties(conn):
     assert by_name["xdrug"].confirmed_exceptions == ()
 
 
+def test_a_subclass_only_drug_never_inherits_an_observed_property(conn):
+    """Spec §4: observed never passes down. K's direct members all carry Asthma CI
+    (observed only) and Gout CI (observed AND asserted); d, in subclass S, inherits
+    only Gout."""
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    for m in (x["b"], x["c"]):
+        w.contraindication(conn, r, m, x["cb"])   # Gout now 3 of 3: observed too
+    from drugref import curation_property
+    curation_property.record_property_ruling(       # ...and asserted on K
+        conn, subject_class_uuid=k, relationship="CI_with", object_kind="condition",
+        object_uuid=x["cb"], verdict="holds", reviewed_by="t", reviewed_against="t")
+    p = cpr.class_profile(conn, k)
+    by = {cp.prop.object_name: cp for cp in p.properties}
+    assert by["Asthma"].is_observed and not by["Asthma"].is_asserted
+    assert by["Gout"].is_observed and by["Gout"].is_asserted
+    (d,) = p.subclass_only
+    assert [pl.object_name for pl in d.inherits] == ["Gout"]
+
+
 def test_an_asserted_property_names_its_classes_sources_and_exceptions(conn):
     """Asserted on K (MED-RT) and on its ancestor P (ONCHIGH); b ruled out. Through the
     lens on K itself, a member with no record reads plain `inherits` (no via)."""

@@ -5912,9 +5912,12 @@ not here.** What the next round inherits:
   about a member). `curated_interaction` accepts only its `uncurated_interaction_rule` question — **not** the
   gap-19 `interacts_with class` question about the same pair, though spec §4 counts `applies = false` there as
   a confirmed exception. Widen the candidate list if curators need that cross-citation.
-- **Subclass-only drugs show what they inherit** (spec §4): `ClassProfile.subclass_only` is a list of
+- **Subclass-only drugs show what they inherit** (spec §4): `ClassProfile.subclass_only` is a tuple of
   `SubclassOnlyDrug` (inherits / confirmed exceptions, never an interaction with itself), and `profile class`
-  prints *"inherits every asserted property above"* or *"N of the M"* plus the named exceptions.
+  prints *"inherits every asserted property above"* or *"N of the M"* plus the named exceptions and, when
+  that is the shortfall, *"not with itself: interacts_with moiety X"*. The inheritance subtraction lives only
+  in `class_profile_read` (no view yet: #209). An observed `interacts_with` a member reads *"observed in 3 of
+  the 4 members other than X"*, so the eligible count under a 5-member header is explained.
 - **Every object uuid in the profile views resolves to a name**: `tools/class_profile_census.sql`'s last query
   counts the ones that do not (0 on `drugref_profiles` at `db/064`). The reader still falls back to the raw
   uuid rather than raising.
@@ -6195,7 +6198,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2965 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2973 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

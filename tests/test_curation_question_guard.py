@@ -89,9 +89,39 @@ def test_a_class_subject_ruling_answers_no_worklist_question(world):
     conn, a, _b, cond, k = world
     q = _question(conn, "unconfirmed_class_property",
                   f"CLASSPROP:{a}:CI_with:condition:{cond}")
-    with pytest.raises(ValueError, match="does not ask about"):
+    with pytest.raises(ValueError, match="answers no worklist question"):
         _rule(conn, subject_class_uuid=k, relationship="CI_with",
               object_kind="condition", object_uuid=cond, question_uuid=q)
+
+
+def test_a_question_uuid_given_as_text_is_judged_by_value(world):
+    """A str uuid (any case) is the same question; it must not read as 'about
+    something else'."""
+    conn, a, _b, cond, _k = world
+    q = _question(conn, "unconfirmed_class_property",
+                  f"CLASSPROP:{a}:CI_with:condition:{cond}")
+    _rule(conn, subject_moiety_uuid=a, relationship="CI_with",
+          object_kind="condition", object_uuid=cond, question_uuid=str(q).upper())
+
+
+def test_a_real_gap_19_question_is_citable_from_the_partners_side(conn):
+    """End to end: register_from_gaps mints the drug-pair question for the member
+    that is not confirmed; the ruling recorded from the PARTNER's side may cite it."""
+    from drugref import questions
+    r = w.run(conn)
+    c = w.klass(conn, r, "CPair")
+    x, *others = (w.moiety(conn, r, n) for n in ("px", "py", "pz", "pv", "pu"))
+    for m in (x, *others):
+        w.member(conn, r, m, c)
+    for m in others[:3]:
+        w.moiety_ci(conn, r, m, x)
+    questions.register_from_gaps(conn, r)
+    (q,) = conn.execute(
+        "SELECT question_uuid FROM drugref.open_question "
+        "WHERE gap_kind = 'unconfirmed_class_property' AND gap_key LIKE %s",
+        (f"CLASSPROP:{others[3]}:%",)).fetchone()
+    _rule(conn, subject_moiety_uuid=x, relationship="interacts_with",
+          object_kind="moiety", object_uuid=others[3], question_uuid=q)
 
 
 @pytest.mark.parametrize("write", [
@@ -105,8 +135,9 @@ def test_a_class_subject_ruling_answers_no_worklist_question(world):
         conn, uuid.uuid4(), uuid.uuid4(), "CI_PE", False, question_uuid=q,
         reviewed_by="t", reviewed_against="t"),
 ], ids=["interaction", "condition", "class_interaction"])
-def test_every_curated_writer_refuses_a_question_about_something_else(world, write):
-    """Refused before the INSERT: the subjects here do not even exist."""
+def test_every_curation_py_writer_refuses_a_question_about_something_else(world, write):
+    """Refused before the INSERT: the subjects here do not even exist. (The fourth
+    writer, record_property_ruling, is test_a_property_ruling_citing_another_...)"""
     conn, a, _b, _c, _k = world
     q = _question(conn, "unclassified_moiety", f"MOIETY:{a}")
     with pytest.raises(ValueError, match="does not ask about"):

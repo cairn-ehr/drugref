@@ -17,12 +17,14 @@
 ends at `db/064`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
 `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED: the class-profiles follow-ups (HANDOVER's old items 6 plus #206, #207).** `db/064`:
+**⇒ JUST FINISHED: the class-profiles follow-ups (HANDOVER's old item 6 plus #206, #207).** `db/064`:
 `class_property.members` is the ELIGIBLE count (an interaction partner that is itself a direct member is not
 in its own denominator), and the ≥ 2 floor and 75% bar use it (#206). `questions.require_question_for`: all
 four curated writers refuse a `question_uuid` not minted from the row's own key, computed by the gap kind's
-frozen `key_sql` (#207). `profile class` prints what a subclass-only drug inherits, with its confirmed
-exceptions (spec §4). The census script counts profile-view objects with no name. Measured on `drugref_profiles`
+frozen `key_sql` (#207). `profile class` prints how many of the asserted properties a subclass-only drug inherits,
+naming its confirmed exceptions and any interaction with itself (spec §4); an observed interaction row says
+"of the N members other than X". Pre-merge review follow-ups lodged: #209 (no SQL view for subclass-only
+inheritance), #210 (audit pre-#207 citations). The census script counts profile-view objects with no name. Measured on `drugref_profiles`
 (now at `db/064`): observed 4,317 → 4,321, gap rows 2,390 → 2,393, 0 unnamed objects, no read-cost regression
 (PROJECT-NOTES § "The class-profiles round").
 

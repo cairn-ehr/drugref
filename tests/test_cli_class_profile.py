@@ -35,6 +35,28 @@ def test_class_renderer_uses_the_exact_copy():
     assert "safe" not in low and "exception" not in low and "does not apply" not in low
 
 
+def test_an_interaction_with_a_member_names_who_is_left_out_of_the_count():
+    """#206: 'observed in 3 of 4' under a 5-member header must say why it is 4."""
+    x = cpr.PropertyLine("interacts_with", "moiety", _U, "xdrug")
+    p = cpr.ClassProperty(x, False, (), (), True, 3, 4, ("udrug",), ())
+    prof = cpr.ClassProfile(_U, "C", "MED-RT", "EPC",
+                            ("udrug", "vdrug", "xdrug", "ydrug", "zdrug"), (p,), {}, ())
+    assert ("    observed in 3 of the 4 members other than xdrug"
+            in ccp.render_class_profile(prof))
+
+
+def test_a_subclass_only_drug_says_it_never_inherits_an_interaction_with_itself():
+    x = cpr.PropertyLine("interacts_with", "moiety", _U, "xdrug")
+    y = cpr.PropertyLine("interacts_with", "moiety", _U, "ydrug")
+    props = tuple(cpr.ClassProperty(pl, True, ("K",), ("MED-RT",), False, 0, 0, (), ())
+                  for pl in (x, y))
+    prof = cpr.ClassProfile(_U, "K", "MED-RT", "EPC", (), props, {},
+                            (cpr.SubclassOnlyDrug("xdrug", "S", (y,), ()),))
+    assert ("    xdrug (via S): inherits 1 of the 2 asserted properties above; "
+            "not with itself: interacts_with moiety xdrug"
+            in ccp.render_class_profile(prof))
+
+
 def test_drug_renderer_shows_all_four_groups():
     lens = cpr.DrugLens(_U, "K class", ((_line(), "inherits via P"),), (_line("Gout"),),
                         (_line("Asthma2"),), (_line("Gout2"),))

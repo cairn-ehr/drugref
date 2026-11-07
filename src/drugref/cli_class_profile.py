@@ -30,7 +30,11 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
                        + (f" via {', '.join(cp.asserted_via)}"
                           if cp.asserted_via else ""))
         if cp.is_observed:
-            out.append(f"    observed in {cp.carriers} of {cp.members} members")
+            # #206: the partner drug is left out of its own count; say so, or the
+            # smaller number reads as a missing member.
+            of = (f"the {cp.members} members other than {cp.prop.object_name}"
+                  if cp.members < len(p.members) else f"{cp.members} members")
+            out.append(f"    observed in {cp.carriers} of {of}")
         if cp.not_confirmed:
             out.append(f"    not confirmed for: {', '.join(cp.not_confirmed)}")
         if cp.confirmed_exceptions:
@@ -45,18 +49,23 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
 
 
 def _subclass_only_line(e: cpr.SubclassOnlyDrug, n_asserted: int) -> str:
-    """Spec §4: what the drug inherits is shown beside it, observed properties never."""
+    """Spec §4: how many of the asserted properties above the drug inherits (observed
+    ones never pass down), naming each one it does not: its confirmed exceptions and
+    an interaction with itself."""
     line = f"    {e.name} (via {e.via})"
     if not n_asserted:
         return line
     if len(e.inherits) == n_asserted:
         line += ": inherits every asserted property above"
-    else:  # fewer: its confirmed exceptions, or an interaction with itself
+    else:
         line += (f": inherits {len(e.inherits)} of the {n_asserted} asserted "
                  "properties above")
     if e.confirmed_exceptions:
         line += "; confirmed exception: " + "; ".join(
             _prop(x) for x in e.confirmed_exceptions)
+    # The reader drops at most one row beyond those: "interacts_with" this drug itself.
+    if len(e.inherits) + len(e.confirmed_exceptions) < n_asserted:
+        line += f"; not with itself: interacts_with moiety {e.name}"
     return line
 
 

@@ -249,9 +249,55 @@ def test_the_partner_is_not_in_its_own_denominator(world):
         w.moiety_ci(conn, r, m, x)
     row = _cp(conn, c)[("interacts_with", "moiety", x)]
     assert row[3] is True and row[4:] == (3, 4)
+    # The row db/064 newly observes reaches standing and gap 19: the 4th member is
+    # not confirmed and asked about; x itself is neither.
+    standing = dict(conn.execute(
+        "SELECT moiety_uuid, standing FROM drugref.class_property_member "
+        "WHERE class_uuid = %s AND object_uuid = %s", (c, x)).fetchall())
+    assert standing == {**{m: "carries" for m in others[:3]},
+                        others[3]: "not_confirmed"}
+    assert {m for m, in conn.execute(
+        "SELECT moiety_uuid FROM drugref.gap_unconfirmed_class_property "
+        "WHERE object_uuid = %s", (x,))} == {others[3]}
     # An asserted-only row reports the eligible count too.
     w.class_ci(conn, r, others[3], c)
     assert _cp(conn, c)[("interacts_with", "moiety", others[3])][4:] == (0, 4)
+
+
+def test_two_of_three_eligible_is_not_observed(world):
+    """The other side of the #206 line: 4 members with x among them, 2 of the other 3
+    interact with x (66%) -- not observed."""
+    conn, r = world
+    c = w.klass(conn, r, "C206c")
+    x, *others = (w.moiety(conn, r, n) for n in ("x3", "y3", "z3", "v3"))
+    for m in (x, *others):
+        w.member(conn, r, m, c)
+    for m in others[:2]:
+        w.moiety_ci(conn, r, m, x)
+    assert ("interacts_with", "moiety", x) not in _cp(conn, c)
+
+
+@pytest.mark.parametrize("partner_in_subclass", [False, True])
+def test_a_partner_that_is_not_a_direct_member_is_not_subtracted(
+        world, partner_in_subclass):
+    """Only a DIRECT member is taken out of the count: a partner outside the class, or
+    one reaching it only through a subclass, could never be a carrier anyway. 2 of 3
+    stays 2 of 3 (not observed), and an asserted row still reports all 3."""
+    conn, r = world
+    c = w.klass(conn, r, f"C206d{partner_in_subclass}")
+    ms = [w.moiety(conn, r, f"m{i}d{partner_in_subclass}") for i in range(3)]
+    y = w.moiety(conn, r, f"yd{partner_in_subclass}")
+    for m in ms:
+        w.member(conn, r, m, c)
+    if partner_in_subclass:
+        s = w.klass(conn, r, f"S206d{partner_in_subclass}")
+        w.parent(conn, r, s, c)
+        w.member(conn, r, y, s)
+    for m in ms[:2]:
+        w.moiety_ci(conn, r, m, y)
+    assert ("interacts_with", "moiety", y) not in _cp(conn, c)
+    w.class_ci(conn, r, y, c)
+    assert _cp(conn, c)[("interacts_with", "moiety", y)][4:] == (2, 3)
 
 
 def test_two_members_one_of_them_the_partner_observe_nothing(world):

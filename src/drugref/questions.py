@@ -252,6 +252,12 @@ def require_question_for(
     """
     if question_uuid is None:
         return
+    if not candidates:
+        raise ValueError(f"question {question_uuid}: this row answers no worklist "
+                         "question (gap 19 asks about one member, never a class); "
+                         "cite none")
+    # Compare by value: a str uuid from a Python caller is the same question.
+    question_uuid = uuid.UUID(str(question_uuid))
     for gap_kind, columns in candidates:
         # Column names come from the calling writer, never from user input. Every value
         # is passed as text: a uuid concatenates in SQL exactly as str(uuid) prints it.
@@ -261,6 +267,6 @@ def require_question_for(
             [str(v) for v in columns.values()]).fetchone()[0]
         if ids.mint_question_uuid(gap_kind, key) == question_uuid:
             return
-    kinds = " or ".join(k for k, _ in candidates) or "no"
+    kinds = " or ".join(dict.fromkeys(k for k, _ in candidates))
     raise ValueError(f"question {question_uuid} does not ask about this row: it can "
                      f"cite only the {kinds} question minted from its own key")

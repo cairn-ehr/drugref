@@ -72,7 +72,7 @@ def record_interaction_judgement(
     whose citations live in `question_evidence`. Omitting it is legal and MEANS
     SOMETHING -- the grade rests on nothing recorded. Curated is not verified. A GIVEN
     one must be the question minted from this row's own key, or ValueError (#207; the
-    same check guards every writer here, via questions.require_question_for).
+    same check guards every curated writer, via questions.require_question_for).
 
     THE JUDGEMENT IS KEYED ON THE RULE, not on the drug pairs it expands to, so one
     call grades every pair the rule reaches. That is the point of curating at this

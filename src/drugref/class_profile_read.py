@@ -41,7 +41,9 @@ class SubclassOnlyDrug:
 
     Spec §4: the class's ASSERTED properties pass down to it (observed ones do not), so
     `inherits` lists them, less its confirmed exceptions and any interaction with
-    itself. A drug in two subclasses appears once per `via` class.
+    itself. Only what is asserted on THIS class or its ancestors: what the `via` class
+    asserts belongs to the via class's own profile. A drug in two subclasses appears
+    once per `via` class. (#209: this subtraction has no SQL view yet.)
     """
     name: str
     via: str
@@ -130,8 +132,8 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
     members = [r[0] for r in conn.execute(
         "SELECT moiety_uuid FROM drugref.class_profile_member WHERE class_uuid = %s",
         (class_uuid,))]
-    # Only the subclass-only drugs' confirmed exceptions; matched to the class's
-    # asserted properties below, so class_property is not computed a second time (#202).
+    # Every negation the subclass-only drugs hold, from any class; matched below to
+    # THIS class's asserted properties, so class_property is not computed twice (#202).
     negated = set(conn.execute(
         "SELECT moiety_uuid, relationship, object_kind, object_uuid "
         "FROM drugref.member_property_negation WHERE moiety_uuid = ANY(%s)",
