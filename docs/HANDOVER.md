@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-property-pushable`; PR OPEN (to `main`) for #202 + #209. PR #208 is MERGED. Schema now
+**Branch `claude/class-property-pushable`; PR #211 OPEN (to `main`) for #202 + #209. PR #208 is MERGED. Schema now
 ends at `db/065`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
 `uv run pytest` fails if the line and the collected suite disagree.
 
