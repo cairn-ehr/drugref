@@ -1,7 +1,8 @@
 """Writer for the class-profile ruling overlay (db/058).
 
 A ruling answers one question a class profile cannot answer from the sources alone:
-does this property (relationship + object) HOLD for this class or moiety, NOT HOLD, or is
+does this property (relationship + object) HOLD for this class or moiety, NOT HOLD,
+or is
 it beyond what the sources can establish. See db/058 and the class-profiles design spec
 section 5.
 
@@ -48,7 +49,8 @@ def record_property_ruling(
     key = (subject_kind, subject, relationship, object_kind, object_uuid)
 
     live = conn.execute(
-        "SELECT curated_property_ruling_id, verdict FROM drugref.curated_property_ruling "
+        "SELECT curated_property_ruling_id, verdict "
+        "FROM drugref.curated_property_ruling "
         "WHERE subject_kind = %s AND subject_uuid = %s AND relationship = %s "
         "AND object_kind = %s AND object_uuid = %s AND superseded_by IS NULL",
         key).fetchone()
