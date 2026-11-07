@@ -13,22 +13,19 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profile-fixes`; PR #208 OPEN (to `main`). PR #205 (class profiles) is MERGED. Schema now
-ends at `db/064`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+**Branch `claude/class-property-pushable`; PR OPEN (to `main`) for #202 + #209. PR #208 is MERGED. Schema now
+ends at `db/065`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
 `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED: the class-profiles follow-ups (HANDOVER's old item 6 plus #206, #207).** `db/064`:
-`class_property.members` is the ELIGIBLE count (an interaction partner that is itself a direct member is not
-in its own denominator), and the ≥ 2 floor and 75% bar use it (#206). `questions.require_question_for`: all
-four curated writers refuse a `question_uuid` not minted from the row's own key, computed by the gap kind's
-frozen `key_sql` (#207). `profile class` prints how many of the asserted properties a subclass-only drug inherits,
-naming its confirmed exceptions and any interaction with itself (spec §4); an observed interaction row says
-"of the N members other than X". Pre-merge review follow-ups lodged: #209 (no SQL view for subclass-only
-inheritance), #210 (audit pre-#207 citations). The census script counts profile-view objects with no name. Measured on `drugref_profiles`
-(now at `db/064`): observed 4,317 → 4,321, gap rows 2,390 → 2,393, 0 unnamed objects, no read-cost regression
-(PROJECT-NOTES § "The class-profiles round").
+**⇒ JUST FINISHED: #202 and #209 (`db/065`).** `class_property` is rewritten so `WHERE class_uuid = X` reaches
+every `class_membership` scan (one `UNION ALL` + one `GROUP BY`, no CTE referenced twice, the #206 self-partner
+test a `LEFT JOIN`): rows identical to `db/064` on `drugref_profiles`; one-class read 748 → 51 ms, `profile
+class` 1.5 → 0.42 s. New view `class_subclass_only_property` (asserted only, less confirmed exceptions and the
+drug itself); `class_profile_read` reads it instead of subtracting in Python. Figures: results record §6
+addendum; the trap: PROJECT-NOTES § "The class-profiles round", first bullet.
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
+One agent review (no correctness findings; one comment fixed). `drugref_profiles` migrated to `db/065`.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
@@ -43,11 +40,11 @@ inheritance), #210 (audit pre-#207 citations). The census script counts profile-
    catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
    differently? Whatever is chosen, "not confirmed" stays "not confirmed".
 4. **Owner question**: should an ASSERTED property passing down to a subclass honour a
-   `class_expansion_policy` deny? Today it does not (db/060 reads no policy).
+   `class_expansion_policy` deny? Today it does not (db/060 and db/065 read no policy).
 5. **Owner question (from #207)**: may a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair? Today the guard says no (only its `uncurated_interaction_rule` question).
-6. **#202 remaining**: a filtered read still computes every class (~0.5 s, scaling with the registry).
-   Before a consumer beyond the CLI: a filter-pushable `class_property`. A NEW migration.
+6. **#210** (no owner call needed): census query for curated rows written before #207 that cite a question
+   about something else. Small, no migration.
 7. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
    and FEEDS class profiles. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is
    gated on a clinician review that has not happened.
@@ -55,7 +52,7 @@ inheritance), #210 (audit pre-#207 citations). The census script counts profile-
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
-#202 (remaining), #203, #204; #206 and #207 close on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+#203, #204, #210; #202 and #209 close on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
@@ -67,7 +64,7 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
-  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/064`, `curated_property_ruling` empty. **Its builds and figures are in the
+  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/065`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction

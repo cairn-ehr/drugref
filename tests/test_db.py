@@ -330,6 +330,8 @@ def test_apply_migrations_is_idempotent(conn):
         "class_subclass_only_member",
         # db/061: the nineteenth question kind's gap view.
         "gap_unconfirmed_class_property",
+        # db/065 (#209): what a subclass-only drug inherits.
+        "class_subclass_only_property",
         # db/049 section 6: gap_unresolved_ddi_endpoint is gap kind EIGHTEEN, not
         # seventeen -- the live open_question_gap_kind CHECK already held
         # seventeen values (fda_cyp_unadjudicated above was the seventeenth)

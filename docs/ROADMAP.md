@@ -1311,7 +1311,7 @@ AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *
 check; the check has been done and the answer is no. It may only ever attach as a node-local, separately-licensed
 plug-in, like every other encumbered source.
 
-### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/064`, on `drugref_profiles`
+### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/065`, on `drugref_profiles`
 [Design](superpowers/specs/2026-11-07-drugref-class-profiles-design.md) ·
 [Plan](superpowers/plans/2026-11-07-drugref-class-profiles.md) ·
 [What it measured](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); full account: PROJECT-NOTES
@@ -1325,8 +1325,10 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   [#202](https://github.com/cairn-ehr/drugref/issues/202) (a single-class read costs the whole view) and
   [#203](https://github.com/cairn-ehr/drugref/issues/203) (the worklist's composition: one near-universal
   object dominates, MED-RT catch-all classes raise questions). The final review's `db/062` fixed a PK-ancestor
-  leak in `class_property.asserted_by` and with it removed #202's dominant cost (the profile CLI is interactive
-  again; #202 stays open for the structural point).
+  leak in `class_property.asserted_by` and with it removed #202's dominant cost; **`db/065` (2026-11-08) fixed
+  the structural point** — a one-class read now filters every member scan (51 ms, was 748 ms) — and added
+  `class_subclass_only_property` ([#209](https://github.com/cairn-ehr/drugref/issues/209)), so what a
+  subclass-only drug inherits is SQL, not only Python. Both close on that PR's merge.
 - **Filed by the final review**: [#204](https://github.com/cairn-ehr/drugref/issues/204) — interaction
   rulings change the class-profile views but never the prescribing-alert path. **Owner design call; curators
   hold off interaction questions until it is decided.**

@@ -1,7 +1,7 @@
 """Read side of class profiles: a thin Python reader over the class-profile views.
 
-The SQL views (db/059-db/064; db/062 and db/064 replace class_property, db/063
-class_property_member) are the consumer contract -- a prescribing front end reads
+The SQL views (db/059-db/065; db/062, db/064 and db/065 replace class_property,
+db/063 class_property_member) are the consumer contract -- a prescribing front end reads
 them directly. This module only turns their rows into frozen dataclasses with NAMES
 instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
 
@@ -43,7 +43,7 @@ class SubclassOnlyDrug:
     `inherits` lists them, less its confirmed exceptions and any interaction with
     itself. Only what is asserted on THIS class or its ancestors: what the `via` class
     asserts belongs to the via class's own profile. A drug in two subclasses appears
-    once per `via` class. (#209: this subtraction has no SQL view yet.)
+    once per `via` class. The subtraction is class_subclass_only_property's (db/065).
     """
     name: str
     via: str
@@ -132,12 +132,12 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
     members = [r[0] for r in conn.execute(
         "SELECT moiety_uuid FROM drugref.class_profile_member WHERE class_uuid = %s",
         (class_uuid,))]
-    # Every negation the subclass-only drugs hold, from any class; matched below to
-    # THIS class's asserted properties, so class_property is not computed twice (#202).
-    negated = set(conn.execute(
-        "SELECT moiety_uuid, relationship, object_kind, object_uuid "
-        "FROM drugref.member_property_negation WHERE moiety_uuid = ANY(%s)",
-        ([s[0] for s in sub],)).fetchall()) if sub else set()
+    # What each subclass-only drug inherits (db/065, #209): asserted only, less its
+    # confirmed exceptions and any interaction with itself -- the subtraction is SQL's.
+    inherited = conn.execute(
+        "SELECT moiety_uuid, via_class_uuid, relationship, object_kind, object_uuid, "
+        "standing FROM drugref.class_subclass_only_property WHERE class_uuid = %s",
+        (class_uuid,)).fetchall() if sub else []
 
     ids = {p[2] for p in props} | {s[3] for s in standing} | {p[0] for p in pec} \
         | {p[3] for p in pec} | {s[0] for s in sub} | {s[1] for s in sub} | set(members)
@@ -158,15 +158,16 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
             tuple(sorted(st.get("confirmed_exception", ())))))
     out.sort(key=lambda c: (c.prop.object_name, c.prop.relationship))
 
-    asserted = [(rel, kind, obj) for rel, kind, obj, is_asserted, *_ in props
-                if is_asserted]
+    by_route: dict[tuple, dict[str, list[PropertyLine]]] = {}
+    for mo, via, rel, kind, obj, st in inherited:
+        by_route.setdefault((mo, via), {}).setdefault(st, []).append(
+            _line(names, rel, kind, obj))
     subclass_only = []
-    for mo, via in sub:
-        mine = [a for a in asserted if a[1:] != ("moiety", mo)]   # never with itself
+    for mo, via in sub:            # every route, including one that inherits nothing
+        st = by_route.get((mo, via), {})
         subclass_only.append(SubclassOnlyDrug(
-            names[mo], names[via],
-            _sorted_lines(_line(names, *a) for a in mine if (mo, *a) not in negated),
-            _sorted_lines(_line(names, *a) for a in mine if (mo, *a) in negated)))
+            names[mo], names[via], _sorted_lines(st.get("inherits", ())),
+            _sorted_lines(st.get("confirmed_exception", ()))))
     subclass_only.sort(key=lambda e: (e.name, e.via))
 
     pecs: dict[str, list[PropertyLine]] = {}

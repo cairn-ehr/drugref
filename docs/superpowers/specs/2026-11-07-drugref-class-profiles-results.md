@@ -366,6 +366,25 @@ s at db/061); `profile drug` propranolol (20 class tags, no `--lens`) **1.71 s**
 than once per lens, and prints the full four-way split (shared, not confirmed for this drug, confirmed exception,
 peculiar).
 
+**Addendum, `db/065` (2026-11-08, #202).** `class_property` rewritten so a filter reaches every scan of
+`class_membership` (no CTE referenced twice; the self-partner test a `LEFT JOIN`). Applied to
+`drugref_profiles`; output identical to `db/064` (EXCEPT both ways: `class_property` 9,668 rows,
+`class_property_member`, `class_member_peculiarity`, `gap_unconfirmed_class_property`). Same query, warm:
+
+| view | rows | execution, db/065 | db/064 |
+|---|---:|---:|---:|
+| `class_property` | 7 | 51 ms | 748 ms |
+| `class_property_member` | 105 | 118 ms | 840 ms |
+| `class_member_peculiarity` | 300 | 86 ms | 767 ms |
+| `class_subclass_only_property` (new, #209) | 0 | 34 ms | — |
+
+Full `count(*)`: `class_property` 375 ms (473), `class_property_member` 400 ms (610), `class_member_peculiarity`
+887 ms (1,447), `gap_unconfirmed_class_property` 449 ms (941). `class_subclass_only_property` holds 53,041
+rows, all `inherits` (no rulings on this database). CLI: `profile class` **0.42 s** for each of the three
+classes (1.4–1.6 s at db/062); `profile drug` propranolol, no `--lens`, **1.53 s** (1.71 s);
+`register_from_gaps` 4.66 s. A filtered read still computes `member_property` (~30 ms) and the recursive
+`class_subtree` (~15 ms) in full.
+
 ## 7. Decisions
 
 - **The worklist is usable as built in size** (§4: the same order as `unmatched_ingredient` and
