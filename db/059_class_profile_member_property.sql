@@ -1,9 +1,10 @@
 -- db/059_class_profile_member_property.sql -- class profiles, task 2: the base views.
 --
 -- Design: docs/superpowers/specs/2026-11-07-drugref-class-profiles-design.md (sections 3-5).
--- Four READ-ONLY views, no new tables:
+-- Six READ-ONLY views, no new tables:
 --   class_profile_member          direct members of a profiled class
 --   member_property_record        (helper) every stated record, flagged if a curator negated it
+--   member_ruling_oriented        (helper) moiety rulings, interactions seen from both drugs
 --   member_property               the effective properties of a drug
 --   member_property_negation      the confirmed exceptions
 --   class_asserted_property       what a source or curator states about a class ITSELF
@@ -73,6 +74,27 @@ COMMENT ON VIEW drugref.member_property_record IS
     'never ddi_candidate_pair, curated_ddi_pair or spl_ddi_pair.';
 
 -- ---------------------------------------------------------------------------
+-- 2b. member_ruling_oriented -- live moiety rulings, interactions made symmetric
+-- ---------------------------------------------------------------------------
+-- Interactions are clinically symmetric (spec section 3), so a ruling on (X, interacts_with,
+-- moiety, Y) governs BOTH orientations: each such ruling also appears here as (Y, ..., X).
+-- If the two orientations are ruled differently, does_not_hold wins (the consumers test
+-- does_not_hold independently of holds, and removal beats addition).
+CREATE OR REPLACE VIEW drugref.member_ruling_oriented AS
+SELECT subject_uuid AS moiety_uuid, relationship, object_kind, object_uuid, verdict
+FROM   drugref.curated_property_ruling
+WHERE  superseded_by IS NULL AND subject_kind = 'moiety'
+UNION ALL
+SELECT object_uuid, relationship, 'moiety', subject_uuid, verdict
+FROM   drugref.curated_property_ruling
+WHERE  superseded_by IS NULL AND subject_kind = 'moiety'
+  AND  relationship = 'interacts_with' AND object_kind = 'moiety';
+
+COMMENT ON VIEW drugref.member_ruling_oriented IS
+    'Helper: live moiety-subject property rulings, with every drug-to-drug interaction ruling '
+    'also listed from the partner''s side so a ruling governs both orientations.';
+
+-- ---------------------------------------------------------------------------
 -- 3. member_property -- the effective properties
 -- ---------------------------------------------------------------------------
 -- Curated overrides candidate: a live does_not_hold moiety ruling removes the property even
@@ -83,13 +105,11 @@ SELECT u.moiety_uuid, u.relationship, u.object_kind, u.object_uuid,
 FROM  (SELECT moiety_uuid, relationship, object_kind, object_uuid, source
          FROM drugref.member_property_record WHERE NOT negated
        UNION ALL
-       SELECT subject_uuid, relationship, object_kind, object_uuid, 'DRUGREF'
-         FROM drugref.curated_property_ruling
-        WHERE superseded_by IS NULL AND subject_kind = 'moiety' AND verdict = 'holds') u
+       SELECT moiety_uuid, relationship, object_kind, object_uuid, 'DRUGREF'
+         FROM drugref.member_ruling_oriented WHERE verdict = 'holds') u
 WHERE  NOT EXISTS (
-        SELECT 1 FROM drugref.curated_property_ruling n
-        WHERE  n.superseded_by IS NULL AND n.subject_kind = 'moiety'
-          AND  n.verdict = 'does_not_hold' AND n.subject_uuid = u.moiety_uuid
+        SELECT 1 FROM drugref.member_ruling_oriented n
+        WHERE  n.verdict = 'does_not_hold' AND n.moiety_uuid = u.moiety_uuid
           AND  n.relationship = u.relationship AND n.object_kind = u.object_kind
           AND  n.object_uuid = u.object_uuid)
 GROUP  BY u.moiety_uuid, u.relationship, u.object_kind, u.object_uuid;
@@ -105,9 +125,9 @@ COMMENT ON VIEW drugref.member_property IS
 -- 4. member_property_negation -- the confirmed exceptions
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW drugref.member_property_negation AS
-SELECT subject_uuid AS moiety_uuid, relationship, object_kind, object_uuid
-FROM   drugref.curated_property_ruling
-WHERE  superseded_by IS NULL AND subject_kind = 'moiety' AND verdict = 'does_not_hold'
+SELECT moiety_uuid, relationship, object_kind, object_uuid
+FROM   drugref.member_ruling_oriented
+WHERE  verdict = 'does_not_hold'
 UNION
 -- ALL records negated, and no curator holds-ruling putting it back.
 SELECT r.moiety_uuid, r.relationship, r.object_kind, r.object_uuid
@@ -115,9 +135,8 @@ FROM   drugref.member_property_record r
 GROUP  BY r.moiety_uuid, r.relationship, r.object_kind, r.object_uuid
 HAVING bool_and(r.negated)
    AND NOT EXISTS (
-        SELECT 1 FROM drugref.curated_property_ruling h
-        WHERE  h.superseded_by IS NULL AND h.subject_kind = 'moiety'
-          AND  h.verdict = 'holds' AND h.subject_uuid = r.moiety_uuid
+        SELECT 1 FROM drugref.member_ruling_oriented h
+        WHERE  h.verdict = 'holds' AND h.moiety_uuid = r.moiety_uuid
           AND  h.relationship = r.relationship AND h.object_kind = r.object_kind
           AND  h.object_uuid = r.object_uuid);
 
@@ -170,11 +189,25 @@ FROM  (
                   AND n.object_class_uuid = cc.object_class_uuid
                   AND n.relationship = cc.relationship)
         UNION ALL
+        -- a drug-subject holds ruling on a class is the same fact seen from the class.
+        SELECT object_uuid, 'interacts_with', 'moiety', subject_uuid, 'DRUGREF'
+          FROM drugref.curated_property_ruling
+         WHERE superseded_by IS NULL AND subject_kind = 'moiety'
+           AND relationship = 'interacts_with' AND object_kind = 'class'
+           AND verdict = 'holds'
+        UNION ALL
         -- the only route to a condition property for a class today.
         SELECT subject_uuid, relationship, object_kind, object_uuid, 'DRUGREF'
           FROM drugref.curated_property_ruling
          WHERE superseded_by IS NULL AND subject_kind = 'class' AND verdict = 'holds'
       ) u
+-- A drug's does_not_hold on (interacts_with, class C) withdraws C's side of it too.
+WHERE  NOT (u.object_kind = 'moiety' AND EXISTS (
+        SELECT 1 FROM drugref.curated_property_ruling n
+        WHERE  n.superseded_by IS NULL AND n.subject_kind = 'moiety'
+          AND  n.verdict = 'does_not_hold' AND n.relationship = 'interacts_with'
+          AND  n.object_kind = 'class' AND n.object_uuid = u.class_uuid
+          AND  n.subject_uuid = u.object_uuid))
 GROUP  BY u.class_uuid, u.relationship, u.object_kind, u.object_uuid;
 
 COMMENT ON VIEW drugref.class_asserted_property IS
