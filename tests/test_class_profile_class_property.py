@@ -1,0 +1,182 @@
+"""class_property, class_property_member, class_member_peculiarity,
+class_subclass_only_member (db/060). DB-gated. Observed = at least 75% of >= 2 direct
+members; asserted = on the class or any ancestor and passes DOWN, observed never does."""
+import pytest
+
+from drugref import curation_property
+from tests import class_profile_world as w
+
+
+@pytest.fixture
+def world(conn):
+    return conn, w.run(conn)
+
+
+def _cp(conn, k):
+    return {(r[0], r[1], r[2]): r[3:] for r in conn.execute(
+        "SELECT relationship, object_kind, object_uuid, is_asserted, asserted_via, "
+        "asserted_by, is_observed, carriers, members "
+        "FROM drugref.class_property WHERE class_uuid=%s", (k,))}
+
+
+def _standing(conn, k):
+    return {r[0]: r[1] for r in conn.execute(
+        "SELECT moiety_uuid, standing FROM drugref.class_property_member "
+        "WHERE class_uuid=%s", (k,))}
+
+
+def _cohort(conn, r, n_carry, n_total, kind="may_treat", cond_name="htn"):
+    """A class with n_total members, the first n_carry indicated for one condition."""
+    k = w.klass(conn, r, "K" + cond_name)
+    cond = w.condition(conn, r, cond_name)
+    ms = [w.moiety(conn, r, f"m{i}{cond_name}") for i in range(n_total)]
+    for i, m in enumerate(ms):
+        w.member(conn, r, m, k)
+        if i < n_carry:
+            w.indication(conn, r, m, cond, kind)
+    return k, cond, ms
+
+
+def test_three_of_four_is_observed_and_two_of_four_is_not(world):
+    conn, r = world
+    k, cond, _ = _cohort(conn, r, 3, 4)
+    row = _cp(conn, k)[("may_treat", "condition", cond)]
+    assert row[3] is True and row[4:] == (3, 4)
+    k2, cond2, _ = _cohort(conn, r, 2, 4, cond_name="other")
+    assert ("may_treat", "condition", cond2) not in _cp(conn, k2)
+
+
+def test_a_one_member_class_observes_nothing(world):
+    conn, r = world
+    k, _, _ = _cohort(conn, r, 1, 1)
+    assert _cp(conn, k) == {}
+
+
+def test_two_of_two_is_observed(world):
+    conn, r = world
+    k, cond, _ = _cohort(conn, r, 2, 2)
+    assert _cp(conn, k)[("may_treat", "condition", cond)][3] is True
+
+
+def test_members_counts_distinct_drugs_even_if_tagged_twice(world):
+    """Two class_membership rows (has_EPC and has_MoA) for one drug and class ARE
+    representable (the PK includes relationship), so this is the literal case."""
+    conn, r = world
+    k, cond, ms = _cohort(conn, r, 2, 2)
+    w.member(conn, r, ms[0], k, "has_MoA")
+    assert _cp(conn, k)[("may_treat", "condition", cond)][4:] == (2, 2)
+
+
+def test_a_class_with_no_direct_members_has_only_asserted_properties(world):
+    conn, r = world
+    k = w.klass(conn, r, "Empty")
+    x = w.moiety(conn, r, "x")
+    w.class_ci(conn, r, x, k)
+    rows = _cp(conn, k)
+    assert list(rows) == [("interacts_with", "moiety", x)]
+    assert rows[("interacts_with", "moiety", x)] == (True, [k], ["MED-RT"], False, 0, 0)
+
+
+def test_exact_match_only(world):
+    conn, r = world
+    k = w.klass(conn, r, "K")
+    h, eh = w.condition(conn, r, "hypertension"), w.condition(conn, r, "essential")
+    conn.execute("INSERT INTO drugref.condition_parent VALUES (%s, %s, %s)", (eh, h, r))
+    a, b = w.moiety(conn, r, "a"), w.moiety(conn, r, "b")
+    for m, c in ((a, h), (b, eh)):
+        w.member(conn, r, m, k)
+        w.indication(conn, r, m, c)
+    rows = _cp(conn, k)
+    assert rows == {}  # 1 of 2 each: nothing pools across the condition hierarchy
+
+
+def test_an_ancestor_assertion_reaches_a_subclass(world):
+    conn, r = world
+    c, d = w.klass(conn, r, "C"), w.klass(conn, r, "D")
+    w.parent(conn, r, d, c)
+    x, m = w.moiety(conn, r, "x"), w.moiety(conn, r, "m")
+    w.class_ci(conn, r, x, c)
+    w.member(conn, r, m, d)
+    row = _cp(conn, d)[("interacts_with", "moiety", x)]
+    assert row[0] is True and row[1] == [c]
+    assert _standing(conn, d) == {m: "inherits"}
+
+
+def test_an_observed_property_does_not_descend(world):
+    conn, r = world
+    c, cond, _ = _cohort(conn, r, 2, 2)
+    d = w.klass(conn, r, "D")
+    w.parent(conn, r, d, c)
+    w.member(conn, r, w.moiety(conn, r, "dm"), d)
+    assert _cp(conn, d) == {}
+    assert ("may_treat", "condition", cond) in _cp(conn, c)
+
+
+def _rule_dnh(conn, m, cond):
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=m, relationship="may_treat",
+        object_kind="condition", object_uuid=cond, verdict="does_not_hold",
+        reviewed_by="t", reviewed_against="t")
+
+
+def test_standing_precedence(world):
+    conn, r = world
+    # 9 carriers of 12 -> observed; exc and both are negated, so they do not carry.
+    k, cond, ms = _cohort(conn, r, 9, 9)
+    exc, both, nc = (w.moiety(conn, r, n) for n in ("exc", "both", "nc"))
+    for m in (exc, both, nc):
+        w.member(conn, r, m, k)
+    w.indication(conn, r, both, cond)  # stated AND ruled out -> confirmed_exception
+    _rule_dnh(conn, exc, cond)
+    _rule_dnh(conn, both, cond)
+    got = {r_[0]: r_[1] for r_ in conn.execute(
+        "SELECT moiety_uuid, standing FROM drugref.class_property_member "
+        "WHERE class_uuid=%s AND object_uuid=%s", (k, cond))}
+    assert got[exc] == got[both] == "confirmed_exception"
+    assert got[nc] == "not_confirmed" and got[ms[0]] == "carries"
+    # an asserted property: a member nobody has spoken for stands inherits
+    x = w.moiety(conn, r, "x")
+    w.class_ci(conn, r, x, k)
+    ax = {r_[0]: r_[1] for r_ in conn.execute(
+        "SELECT moiety_uuid, standing FROM drugref.class_property_member "
+        "WHERE class_uuid=%s AND object_uuid=%s", (k, x))}
+    assert set(ax.values()) == {"inherits"}
+
+
+def test_not_confirmed_is_a_standing(world):
+    conn, r = world
+    k, cond, ms = _cohort(conn, r, 3, 4)
+    assert _standing(conn, k)[ms[3]] == "not_confirmed"
+    assert _standing(conn, k)[ms[0]] == "carries"
+
+
+def test_peculiarities_exclude_class_properties(world):
+    conn, r = world
+    k, cond, ms = _cohort(conn, r, 3, 4)
+    odd = w.condition(conn, r, "odd")
+    w.indication(conn, r, ms[0], odd)
+    got = {(r_[0], r_[1]) for r_ in conn.execute(
+        "SELECT moiety_uuid, object_uuid FROM drugref.class_member_peculiarity "
+        "WHERE class_uuid=%s", (k,))}
+    assert got == {(ms[0], odd)}
+
+
+def test_subclass_only_drugs_are_listed_not_counted(world):
+    conn, r = world
+    c, d = w.klass(conn, r, "C"), w.klass(conn, r, "D")
+    w.parent(conn, r, d, c)
+    cond = w.condition(conn, r, "c")
+    a, b, ateno = (w.moiety(conn, r, n) for n in ("a", "b", "atenolol"))
+    for m in (a, b):
+        w.member(conn, r, m, c)
+        w.indication(conn, r, m, cond)
+    w.member(conn, r, ateno, d)
+    w.indication(conn, r, ateno, cond)
+    assert conn.execute(
+        "SELECT via_class_uuid FROM drugref.class_subclass_only_member "
+        "WHERE class_uuid=%s AND moiety_uuid=%s", (c, ateno)).fetchall() == [(d,)]
+    assert ateno not in _standing(conn, c)
+    assert _cp(conn, c)[("may_treat", "condition", cond)][4:] == (2, 2)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.class_subclass_only_member "
+        "WHERE class_uuid=%s AND moiety_uuid IN (%s,%s)", (c, a, b)).fetchone()[0] == 0

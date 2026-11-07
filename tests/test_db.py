@@ -325,6 +325,9 @@ def test_apply_migrations_is_idempotent(conn):
         # db/059 class-profile views (information_schema.tables lists views too).
         "class_profile_member", "member_property_record", "member_property",
         "member_property_negation", "class_asserted_property", "member_ruling_oriented",
+        # db/060 class-profile class views.
+        "class_property", "class_property_member", "class_member_peculiarity",
+        "class_subclass_only_member",
         # db/049 section 6: gap_unresolved_ddi_endpoint is gap kind EIGHTEEN, not
         # seventeen -- the live open_question_gap_kind CHECK already held
         # seventeen values (fda_cyp_unadjudicated above was the seventeenth)
