@@ -99,3 +99,22 @@ def test_inherited_and_carried_members_raise_nothing(conn):
         conn, subject_class_uuid=k3, relationship="CI_with", object_kind="condition",
         object_uuid=c3, verdict="holds", reviewed_by="t", reviewed_against="t")
     assert _gap(conn) == []
+
+
+def test_a_ruling_from_the_partners_side_closes_the_question(conn):
+    """Interactions are symmetric (member_ruling_oriented): a ruling recorded as
+    (Y, interacts_with, moiety, D) answers D's question about Y too."""
+    r = w.run(conn)
+    k = w.klass(conn, r, "K")
+    y = w.moiety(conn, r, "partner")
+    ms = [w.moiety(conn, r, f"m{i}") for i in range(4)]
+    for m in ms:
+        w.member(conn, r, m, k)
+    for m in ms[:-1]:
+        w.moiety_ci(conn, r, m, y)
+    assert [g[0] for g in _gap(conn)] == [ms[-1]]
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=y, relationship="interacts_with", object_kind="moiety",
+        object_uuid=ms[-1], verdict="cannot_establish", reviewed_by="t",
+        reviewed_against="t")
+    assert _gap(conn) == []

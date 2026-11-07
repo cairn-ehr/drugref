@@ -180,3 +180,52 @@ def test_subclass_only_drugs_are_listed_not_counted(world):
     assert conn.execute(
         "SELECT count(*) FROM drugref.class_subclass_only_member "
         "WHERE class_uuid=%s AND moiety_uuid IN (%s,%s)", (c, a, b)).fetchone()[0] == 0
+
+
+def test_a_pk_ancestors_assertion_contributes_nothing_to_its_descendant(world):
+    """MED-RT PK classes are excluded everywhere, including as an ancestor an assertion
+    arrives from: neither asserted_via nor asserted_by may name what P asserts."""
+    conn, r = world
+    p = w.klass(conn, r, "Clearance", concept_type="PK")
+    c = w.klass(conn, r, "C")
+    w.parent(conn, r, c, p)
+    x = w.moiety(conn, r, "x")
+    w.class_ci(conn, r, x, c)                      # C's own assertion, MED-RT
+    w.class_ci(conn, r, x, p, source="ONCHIGH")    # the PK ancestor's, a second source
+    row = _cp(conn, c)[("interacts_with", "moiety", x)]
+    assert (row[1], row[2]) == ([c], ["MED-RT"])
+
+
+def _class_rule(conn, k, cond, verdict):
+    curation_property.record_property_ruling(
+        conn, subject_class_uuid=k, relationship="may_treat", object_kind="condition",
+        object_uuid=cond, verdict=verdict, reviewed_by="t", reviewed_against="t")
+
+
+def test_a_class_does_not_hold_neither_suppresses_an_ancestor_nor_an_observation(world):
+    """A class-subject does_not_hold only WITHDRAWS that class's own earlier holds. It is
+    not a negation: an ancestor's assertion still passes down, and an observed property
+    (a count over the members) still stands."""
+    conn, r = world
+    k, cond, _ = _cohort(conn, r, 2, 2)            # observed on K
+    p = w.klass(conn, r, "P")
+    w.parent(conn, r, k, p)
+    _class_rule(conn, p, cond, "holds")            # asserted on the ancestor
+    _class_rule(conn, k, cond, "holds")
+    _class_rule(conn, k, cond, "does_not_hold")    # withdraws K's own holds only
+    row = _cp(conn, k)[("may_treat", "condition", cond)]
+    assert row[0] is True and row[1] == [p]        # still asserted, via P alone
+    assert row[3] is True                          # still observed
+
+
+def test_the_view_comments_carry_the_consumer_contract(conn):
+    """The views are the contract (spec section 6): a consumer reading only the schema must
+    learn the four-way lens split and the alert-path limit of interaction rulings."""
+    def comment(v):
+        return conn.execute("SELECT obj_description(%s::regclass)",
+                            (f"drugref.{v}",)).fetchone()[0]
+    for v in ("class_property_member", "class_member_peculiarity"):
+        assert "FOUR-WAY" in comment(v) and "MUST render the not_confirmed" in comment(v)
+    for v in ("member_property", "class_asserted_property"):
+        assert "do NOT reach the prescribing-alert path" in comment(v) and "#204" in comment(v)
+    assert "only WITHDRAWS" in comment("class_asserted_property")

@@ -5890,9 +5890,6 @@ not here.** What the next round inherits:
 - **The worklist is usable in size but skewed** ([#203](https://github.com/cairn-ehr/drugref/issues/203)): one
   near-universal object (`CI_with Drug Hypersensitivity`) dominates it, and MED-RT's catch-all "Unknown ..."
   MoA/PE classes act as drug classes — the PK argument of #155 again, one axis over.
-- **Trap: `asserted_by` in `class_property` does not re-apply the MED-RT PK filter to ancestors.** Latent on
-  real data (no PK class has a non-PK descendant or asserts anything — measured); it becomes live the day a
-  source gives a MED-RT PK class a non-PK descendant or an assertion.
 - **SPL class-mention extraction (the old class half of 5c.3, #102/#155) is the NEXT project and feeds this
   one**: today no source states a *condition* about a class, so every condition class property is observed.
 
