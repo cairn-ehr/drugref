@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import overlay
+from drugref import overlay, questions
 
 
 def record_interaction_judgement(
@@ -70,7 +70,9 @@ def record_interaction_judgement(
 
     `question_uuid` is optional: it links the judgement to the gap question it answers,
     whose citations live in `question_evidence`. Omitting it is legal and MEANS
-    SOMETHING -- the grade rests on nothing recorded. Curated is not verified.
+    SOMETHING -- the grade rests on nothing recorded. Curated is not verified. A GIVEN
+    one must be the question minted from this row's own key, or ValueError (#207; the
+    same check guards every writer here, via questions.require_question_for).
 
     THE JUDGEMENT IS KEYED ON THE RULE, not on the drug pairs it expands to, so one
     call grades every pair the rule reaches. That is the point of curating at this
@@ -79,6 +81,10 @@ def record_interaction_judgement(
     class_contraindication's own measured row count; of the 635, 595 reach the
     worklist and 40 pair with nobody, see PROJECT-NOTES.md "Slice 5c.1").
     """
+    questions.require_question_for(conn, question_uuid, [(
+        "uncurated_interaction_rule", {"subject_moiety": subject_moiety_uuid,
+                                       "object_class": object_class_uuid,
+                                       "relationship": relationship})])
     new_id = conn.execute(
         "INSERT INTO drugref.curated_interaction "
         "(subject_moiety_uuid, object_class_uuid, relationship, applies, severity, "
@@ -131,6 +137,10 @@ def record_condition_ruling(
     answerable next to "what does drugref say". A spurious row therefore reaches no
     read view. Like a retiring interaction judgement, it passes no grading.
     """
+    questions.require_question_for(conn, question_uuid, [(
+        "uncurated_condition_contradiction",
+        {"subject_moiety": subject_moiety_uuid,
+         "object_condition": object_condition_uuid})])
     new_id = conn.execute(
         "INSERT INTO drugref.curated_condition "
         "(subject_moiety_uuid, object_condition_uuid, ruling, severity, mechanism, "
@@ -223,6 +233,10 @@ def record_class_interaction_judgement(
     one call grades every pair the rule expands to on BOTH sides once the
     read path (Task 11) builds the both-sides expansion.
     """
+    questions.require_question_for(conn, question_uuid, [(
+        "uncurated_class_interaction_rule", {"subject_class": subject_class_uuid,
+                                             "object_class": object_class_uuid,
+                                             "relationship": relationship})])
     new_id = conn.execute(
         "INSERT INTO drugref.curated_class_interaction "
         "(subject_class_uuid, object_class_uuid, relationship, applies, severity, "

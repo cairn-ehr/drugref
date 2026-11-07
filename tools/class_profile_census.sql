@@ -33,3 +33,16 @@ EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_property        
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_property_member     WHERE class_uuid = :'bb';
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_member_peculiarity  WHERE class_uuid = :'bb';
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_subclass_only_member WHERE class_uuid = :'bb';
+
+\echo '== names: profile-view object uuids that resolve to no name (expected 0; the reader would print the raw uuid) =='
+WITH objects AS (
+    SELECT object_kind, object_uuid FROM drugref.class_property
+    UNION
+    SELECT object_kind, object_uuid FROM drugref.member_property
+)
+SELECT object_kind, count(*) AS unnamed
+FROM   objects o
+WHERE  NOT EXISTS (SELECT 1 FROM drugref.condition        WHERE condition_uuid = o.object_uuid)
+  AND  NOT EXISTS (SELECT 1 FROM drugref.substance_moiety WHERE moiety_uuid    = o.object_uuid)
+  AND  NOT EXISTS (SELECT 1 FROM drugref.substance_class  WHERE class_uuid     = o.object_uuid)
+GROUP  BY object_kind;

@@ -40,7 +40,32 @@ def test_class_profile_reads_the_views(conn):
     assert (asthma.carriers, asthma.members) == (3, 4)
     assert asthma.not_confirmed == ("edrug",)
     assert [pl.object_name for pl in p.peculiarities["adrug"]] == ["Gout"]
-    assert p.subclass_only == (("ddrug", "S class"),)
+    (d,) = p.subclass_only
+    assert (d.name, d.via, d.inherits, d.confirmed_exceptions) == (
+        "ddrug", "S class", (), ())   # K asserts nothing, so nothing passes down
+
+
+def test_a_subclass_only_drug_inherits_the_asserted_properties(conn):
+    """Spec §4: an ASSERTED property passes down to a subclass-only drug and is shown
+    beside its entry. A confirmed exception does not pass down, and a drug never
+    inherits an interaction with itself."""
+    from drugref import curation_property
+    r = w.run(conn)
+    k, s = w.klass(conn, r, "K class"), w.klass(conn, r, "S class")
+    w.parent(conn, r, s, k)
+    x, y, d = (w.moiety(conn, r, n) for n in ("xdrug", "ydrug", "ddrug"))
+    for m in (x, d):
+        w.member(conn, r, m, s)          # x and d reach K only through S
+    w.class_ci(conn, r, x, k)            # K asserts: interacts_with xdrug
+    w.class_ci(conn, r, y, k)            # K asserts: interacts_with ydrug
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=d, relationship="interacts_with", object_kind="moiety",
+        object_uuid=y, verdict="does_not_hold", reviewed_by="t", reviewed_against="t")
+    by_name = {e.name: e for e in cpr.class_profile(conn, k).subclass_only}
+    assert [pl.object_name for pl in by_name["ddrug"].inherits] == ["xdrug"]
+    assert [pl.object_name for pl in by_name["ddrug"].confirmed_exceptions] == ["ydrug"]
+    assert [pl.object_name for pl in by_name["xdrug"].inherits] == ["ydrug"]
+    assert by_name["xdrug"].confirmed_exceptions == ()
 
 
 def test_an_asserted_property_names_its_classes_sources_and_exceptions(conn):

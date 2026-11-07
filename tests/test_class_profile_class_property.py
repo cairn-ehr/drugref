@@ -236,6 +236,36 @@ def test_a_member_has_no_standing_against_an_interaction_with_itself(world):
         "WHERE moiety_uuid = %s AND object_uuid = %s", (x, x)).fetchone() == (0,)
 
 
+def test_the_partner_is_not_in_its_own_denominator(world):
+    """#206. C has 5 members, x among them; 3 of the other 4 interact with x. x can
+    never carry "interacts with x", so it is not counted: 3 of 4 eligible, observed
+    (it was 3 of 5, 60%, not observed). `members` reports the eligible count."""
+    conn, r = world
+    c = w.klass(conn, r, "C206")
+    x, *others = (w.moiety(conn, r, n) for n in ("x", "y", "z", "v", "u"))
+    for m in (x, *others):
+        w.member(conn, r, m, c)
+    for m in others[:3]:
+        w.moiety_ci(conn, r, m, x)
+    row = _cp(conn, c)[("interacts_with", "moiety", x)]
+    assert row[3] is True and row[4:] == (3, 4)
+    # An asserted-only row reports the eligible count too.
+    w.class_ci(conn, r, others[3], c)
+    assert _cp(conn, c)[("interacts_with", "moiety", others[3])][4:] == (0, 4)
+
+
+def test_two_members_one_of_them_the_partner_observe_nothing(world):
+    """The >= 2 floor counts eligible members: one drug interacting with its only
+    classmate is one drug's property, not the class's."""
+    conn, r = world
+    c = w.klass(conn, r, "C206b")
+    x, y = w.moiety(conn, r, "x2"), w.moiety(conn, r, "y2")
+    w.member(conn, r, x, c)
+    w.member(conn, r, y, c)
+    w.moiety_ci(conn, r, y, x)
+    assert ("interacts_with", "moiety", x) not in _cp(conn, c)
+
+
 def test_a_direct_member_of_a_class_and_its_subclass_is_not_subclass_only(world):
     conn, r = world
     c, d = w.klass(conn, r, "C"), w.klass(conn, r, "D")

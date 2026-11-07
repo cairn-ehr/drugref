@@ -234,3 +234,33 @@ def add_evidence(conn: psycopg.Connection, question_uuid: uuid.UUID,
         "RETURNING question_evidence_id",
         (question_uuid, reference_scheme, reference_value, verdict, confidence,
          source, ingest_run_id)).fetchone()[0]
+
+
+def require_question_for(
+        conn: psycopg.Connection, question_uuid: uuid.UUID | None,
+        candidates: list[tuple[str, dict[str, object]]]) -> None:
+    """Refuse a curated row that cites a question about something else (#207).
+
+    `candidates` lists the questions this row could legitimately answer, as
+    (gap_kind, the gap view's key columns for this row). The expected gap_key is
+    computed by that kind's OWN frozen `key_sql`, run over a one-row stand-in for the
+    view, so the key format is never spelled a second time in Python; the uuid is then
+    minted the same way register_from_gaps mints it. None (no question cited) passes.
+
+    Why refuse: the retention guard above keeps any cited question alive as long as the
+    citing row exists, so a wrong uuid would pin an unrelated question forever.
+    """
+    if question_uuid is None:
+        return
+    for gap_kind, columns in candidates:
+        # Column names come from the calling writer, never from user input. Every value
+        # is passed as text: a uuid concatenates in SQL exactly as str(uuid) prints it.
+        stand_in = ", ".join(f"%s::text AS {name}" for name in columns)
+        key = conn.execute(
+            f"SELECT {_GAP_SOURCES[gap_kind]['key_sql']} FROM (SELECT {stand_in}) AS v",
+            [str(v) for v in columns.values()]).fetchone()[0]
+        if ids.mint_question_uuid(gap_kind, key) == question_uuid:
+            return
+    kinds = " or ".join(k for k, _ in candidates) or "no"
+    raise ValueError(f"question {question_uuid} does not ask about this row: it can "
+                     f"cite only the {kinds} question minted from its own key")

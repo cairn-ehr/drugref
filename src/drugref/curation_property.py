@@ -25,7 +25,7 @@ import uuid
 
 import psycopg
 
-from drugref import overlay
+from drugref import overlay, questions
 
 # Which FK column an object of each kind lives in. The column names are the schema's,
 # not a vocabulary: an unknown kind is a KeyError, which is the right loudness.
@@ -33,6 +33,22 @@ _OBJECT_COLUMN = {"condition": "object_condition_uuid", "moiety": "object_moiety
                   "class": "object_class_uuid"}
 
 _KEY = ("subject_kind", "subject_uuid", "relationship", "object_kind", "object_uuid")
+
+
+def _answerable(moiety, relationship, object_kind, object_uuid):
+    """The gap-19 questions a ruling may cite: one per member it is about.
+
+    A class-subject ruling has none (gap 19 asks about a MEMBER, never a class). A drug
+    pair is one fact asked of either drug, so both orientations count.
+    """
+    if moiety is None:
+        return []
+    sides = [(moiety, object_uuid)]
+    if object_kind == "moiety":
+        sides.append((object_uuid, moiety))
+    return [("unconfirmed_class_property",
+             {"moiety_uuid": m, "relationship": relationship,
+              "object_kind": object_kind, "object_uuid": o}) for m, o in sides]
 
 
 def record_property_ruling(
@@ -48,6 +64,9 @@ def record_property_ruling(
     verdict, question_uuid, reviewed_by and reviewed_against, (its id, False) is
     returned and nothing is written. Any difference is new provenance worth signing,
     so the new row is INSERTed, supersedes the old one, and (new id, True) is returned.
+
+    A given question_uuid must be a gap-19 question minted from this ruling's own key
+    (either side of a drug pair), else ValueError (#207); a class subject can cite none.
     """
     if (subject_class_uuid is None) == (subject_moiety_uuid is None):
         raise ValueError("give exactly one of subject_class_uuid / subject_moiety_uuid")
@@ -57,6 +76,8 @@ def record_property_ruling(
     subject_kind, subject = (("class", subject_class_uuid) if subject_class_uuid
                              else ("moiety", subject_moiety_uuid))
     key = (subject_kind, subject, relationship, object_kind, object_uuid)
+    questions.require_question_for(conn, question_uuid, _answerable(
+        subject_moiety_uuid, relationship, object_kind, object_uuid))
 
     live = conn.execute(
         "SELECT curated_property_ruling_id, verdict, question_uuid, reviewed_by, "

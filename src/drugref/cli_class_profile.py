@@ -39,8 +39,25 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
         out.append(f"  peculiar to {drug}: " + "; ".join(_prop(x) for x in lines))
     if p.subclass_only:
         out.append("  in subclasses only:")
-        out.extend(f"    {drug} (via {via})" for drug, via in p.subclass_only)
+        n_asserted = sum(cp.is_asserted for cp in p.properties)
+        out.extend(_subclass_only_line(e, n_asserted) for e in p.subclass_only)
     return out
+
+
+def _subclass_only_line(e: cpr.SubclassOnlyDrug, n_asserted: int) -> str:
+    """Spec §4: what the drug inherits is shown beside it, observed properties never."""
+    line = f"    {e.name} (via {e.via})"
+    if not n_asserted:
+        return line
+    if len(e.inherits) == n_asserted:
+        line += ": inherits every asserted property above"
+    else:  # fewer: its confirmed exceptions, or an interaction with itself
+        line += (f": inherits {len(e.inherits)} of the {n_asserted} asserted "
+                 "properties above")
+    if e.confirmed_exceptions:
+        line += "; confirmed exception: " + "; ".join(
+            _prop(x) for x in e.confirmed_exceptions)
+    return line
 
 
 def render_drug_profile(p: cpr.DrugProfile) -> list[str]:

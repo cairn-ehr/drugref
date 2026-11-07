@@ -17,13 +17,19 @@ def _profile():
     p = cpr.ClassProperty(_line(), True, ("K class",), ("MED-RT",), True, 3, 4,
                           ("edrug",), ("fdrug",))
     return cpr.ClassProfile(_U, "K class", "MED-RT", "EPC", ("adrug", "edrug"), (p,),
-                            {"adrug": (_line("Gout"),)}, (("ddrug", "S class"),))
+                            {"adrug": (_line("Gout"),)},
+                            (cpr.SubclassOnlyDrug("ddrug", "S class", (_line(),), ()),
+                             cpr.SubclassOnlyDrug("gdrug", "S class", (),
+                                                  (_line(),))))
 
 
 def test_class_renderer_uses_the_exact_copy():
     text = "\n".join(ccp.render_class_profile(_profile()))
     for s in ("not confirmed for: edrug", "confirmed exception: fdrug",
-              "in subclasses only:", "asserted (MED-RT)", "observed in 3 of 4 members"):
+              "in subclasses only:", "asserted (MED-RT)", "observed in 3 of 4 members",
+              "ddrug (via S class): inherits every asserted property above",
+              "gdrug (via S class): inherits 0 of the 1 asserted properties above; "
+              "confirmed exception: CI_with condition Asthma"):
         assert s in text
     low = text.lower().replace("confirmed exception", "")
     assert "safe" not in low and "exception" not in low and "does not apply" not in low

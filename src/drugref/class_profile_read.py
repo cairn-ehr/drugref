@@ -1,6 +1,6 @@
 """Read side of class profiles: a thin Python reader over the class-profile views.
 
-The SQL views (db/059-db/063; db/062 and db/063 replace class_property and
+The SQL views (db/059-db/064; db/062 and db/064 replace class_property, db/063
 class_property_member) are the consumer contract -- a prescribing front end reads
 them directly. This module only turns their rows into frozen dataclasses with NAMES
 instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
@@ -36,6 +36,20 @@ class ClassProperty:
 
 
 @dataclass(frozen=True)
+class SubclassOnlyDrug:
+    """A drug reaching the class only through a subclass: not a member, not counted.
+
+    Spec §4: the class's ASSERTED properties pass down to it (observed ones do not), so
+    `inherits` lists them, less its confirmed exceptions and any interaction with
+    itself. A drug in two subclasses appears once per `via` class.
+    """
+    name: str
+    via: str
+    inherits: tuple[PropertyLine, ...]
+    confirmed_exceptions: tuple[PropertyLine, ...]
+
+
+@dataclass(frozen=True)
 class ClassProfile:
     class_uuid: uuid.UUID
     class_name: str
@@ -44,7 +58,7 @@ class ClassProfile:
     members: tuple[str, ...]
     properties: tuple[ClassProperty, ...]
     peculiarities: Mapping[str, tuple[PropertyLine, ...]]
-    subclass_only: tuple[tuple[str, str], ...]   # (drug name, via class name)
+    subclass_only: tuple[SubclassOnlyDrug, ...]
 
 
 @dataclass(frozen=True)
@@ -116,6 +130,12 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
     members = [r[0] for r in conn.execute(
         "SELECT moiety_uuid FROM drugref.class_profile_member WHERE class_uuid = %s",
         (class_uuid,))]
+    # Only the subclass-only drugs' confirmed exceptions; matched to the class's
+    # asserted properties below, so class_property is not computed a second time (#202).
+    negated = set(conn.execute(
+        "SELECT moiety_uuid, relationship, object_kind, object_uuid "
+        "FROM drugref.member_property_negation WHERE moiety_uuid = ANY(%s)",
+        ([s[0] for s in sub],)).fetchall()) if sub else set()
 
     ids = {p[2] for p in props} | {s[3] for s in standing} | {p[0] for p in pec} \
         | {p[3] for p in pec} | {s[0] for s in sub} | {s[1] for s in sub} | set(members)
@@ -136,13 +156,24 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
             tuple(sorted(st.get("confirmed_exception", ())))))
     out.sort(key=lambda c: (c.prop.object_name, c.prop.relationship))
 
+    asserted = [(rel, kind, obj) for rel, kind, obj, is_asserted, *_ in props
+                if is_asserted]
+    subclass_only = []
+    for mo, via in sub:
+        mine = [a for a in asserted if a[1:] != ("moiety", mo)]   # never with itself
+        subclass_only.append(SubclassOnlyDrug(
+            names[mo], names[via],
+            _sorted_lines(_line(names, *a) for a in mine if (mo, *a) not in negated),
+            _sorted_lines(_line(names, *a) for a in mine if (mo, *a) in negated)))
+    subclass_only.sort(key=lambda e: (e.name, e.via))
+
     pecs: dict[str, list[PropertyLine]] = {}
     for mo, rel, kind, obj in pec:
         pecs.setdefault(names[mo], []).append(_line(names, rel, kind, obj))
     return ClassProfile(
         class_uuid, head[0], head[1], head[2], tuple(sorted(names[m] for m in members)),
         tuple(out), {k: _sorted_lines(v) for k, v in sorted(pecs.items())},
-        tuple(sorted((names[m], names[v]) for m, v in sub)))
+        tuple(subclass_only))
 
 
 def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,

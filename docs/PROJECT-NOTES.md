@@ -5873,7 +5873,7 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
 - **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
-## The class-profiles round (2026-11-07) — `db/058`–`db/063`, measured on `drugref_profiles`
+## The class-profiles round (2026-11-07) — `db/058`–`db/064`, measured on `drugref_profiles`
 
 A class's profile is what it has — **asserted** (a source or curator states it about the class or an ancestor,
 passed down) and/or **observed** (≥ 75% of ≥ 2 direct members carry it, never inherited) — and each direct
@@ -5899,8 +5899,25 @@ not here.** What the next round inherits:
   from the other side supersedes instead of standing beside the old row and losing to its `does_not_hold`.
   Don't read a ruling's `subject_uuid` as "the drug the question was about" — use `member_ruling_oriented`.
 - **No member has a standing against an interaction with itself** (`db/063`). "C interacts with x" is a fair
-  class property when x is in C; asking whether x interacts with x is not. The *count* side (x sits in the
-  denominator of its own property) is [#206](https://github.com/cairn-ehr/drugref/issues/206).
+  class property when x is in C; asking whether x interacts with x is not. The *count* side
+  ([#206](https://github.com/cairn-ehr/drugref/issues/206)) is `db/064`: `class_property.members` is the
+  **eligible** count for its row (direct members, less the object when it is itself a direct member), and
+  both the ≥ 2 floor and the 75% bar use it. On `drugref_profiles`: observed rows 4,317 → 4,321, gap rows
+  2,390 → 2,393 (questions follow on the next `register_from_gaps`); single-class read still ~0.5 s, `profile
+  class` 1.6 s.
+- **A curated row may cite only the question minted from its own key** (#207,
+  `questions.require_question_for`, called by all four curated writers). The expected gap_key is computed by
+  the gap kind's own frozen `key_sql` over a one-row stand-in, so the key format is never respelled in Python.
+  A drug-pair ruling accepts either side's gap-19 question; a class-subject ruling can cite none (gap 19 asks
+  about a member). `curated_interaction` accepts only its `uncurated_interaction_rule` question — **not** the
+  gap-19 `interacts_with class` question about the same pair, though spec §4 counts `applies = false` there as
+  a confirmed exception. Widen the candidate list if curators need that cross-citation.
+- **Subclass-only drugs show what they inherit** (spec §4): `ClassProfile.subclass_only` is a list of
+  `SubclassOnlyDrug` (inherits / confirmed exceptions, never an interaction with itself), and `profile class`
+  prints *"inherits every asserted property above"* or *"N of the M"* plus the named exceptions.
+- **Every object uuid in the profile views resolves to a name**: `tools/class_profile_census.sql`'s last query
+  counts the ones that do not (0 on `drugref_profiles` at `db/064`). The reader still falls back to the raw
+  uuid rather than raising.
 - **A drug-through-a-lens is a FOUR-way split** — shared (carries / inherits), not confirmed for this drug,
   confirmed exception, peculiar (db/062's COMMENTs). A consumer that drops the not-confirmed rows makes a gap
   read as "does not apply" (spec §9); `drugref profile drug` prints all four.
@@ -6003,7 +6020,9 @@ dominant cost out, the structural point stays open) ·
 composition (one object dominates; MED-RT catch-all classes raise questions) ·
 **[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
 interaction answers never reach the prescribing-alert path — owner design call, curators hold off interaction
-questions until it is decided. Figures on the issues and in the
+questions until it is decided · **[#206](https://github.com/cairn-ehr/drugref/issues/206)** and
+**[#207](https://github.com/cairn-ehr/drugref/issues/207)** (filed by the pre-merge review) **FIXED by the
+class-profile fixes round, close on merge** (`db/064`; `questions.require_question_for`). Figures on the issues and in the
 results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
 GitHub 2026-11-07**, alongside #130.
 
@@ -6176,7 +6195,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2951 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2965 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6668,7 +6687,7 @@ ran in CI and `ruff` was not even a project dependency.
   `drugref status` refusing to call their stamps a duration. Keep both.
 - **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
   **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
-  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave and to `db/063` by the pre-merge review.
+  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave, to `db/063` by the pre-merge review, and to `db/064` by the follow-up round (#206).
   `curated_property_ruling` is empty there. Commands, timings and every figure: [the results
   record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); re-run the cost figures with
   `tools/class_profile_census.sql`.

@@ -1311,7 +1311,7 @@ AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *
 check; the check has been done and the answer is no. It may only ever attach as a node-local, separately-licensed
 plug-in, like every other encumbered source.
 
-### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/063`, on `drugref_profiles`
+### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/064`, on `drugref_profiles`
 [Design](superpowers/specs/2026-11-07-drugref-class-profiles-design.md) ·
 [Plan](superpowers/plans/2026-11-07-drugref-class-profiles.md) ·
 [What it measured](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); full account: PROJECT-NOTES
@@ -1333,7 +1333,9 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
 - **Filed by the pre-merge review** (which also added `db/063`: one orientation per drug pair, no
   self-pairs): [#206](https://github.com/cairn-ehr/drugref/issues/206) — the observed denominator counts an
   interaction partner that is itself a member; [#207](https://github.com/cairn-ehr/drugref/issues/207) — a
-  ruling's `--question` is not checked against the ruling's own key (all curated writers).
+  ruling's `--question` is not checked against the ruling's own key (all curated writers). **Both FIXED by the
+  follow-up round** (`db/064`'s eligible denominator; one shared question guard), which also shows what a
+  subclass-only drug inherits on the parent's profile (spec §4) and adds a names check to the census.
 - **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
   in the results record §5.
 - **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a
