@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profile-fixes`; PR OPEN (to `main`). PR #205 (class profiles) is MERGED. Schema now
+**Branch `claude/class-profile-fixes`; PR #208 OPEN (to `main`). PR #205 (class profiles) is MERGED. Schema now
 ends at `db/064`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
 `uv run pytest` fails if the line and the collected suite disagree.
 
