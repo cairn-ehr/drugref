@@ -88,7 +88,8 @@ CURATED_CLASS_INTERACTION_V1 = (
     *ATTESTATION_FIELDS)
 
 # db/058, class profiles. EVERY column except the surrogate pk and superseded_by, in
-# table order -- INCLUDING the four STORED generated columns (subject_kind, subject_uuid,
+# table order -- INCLUDING the four STORED generated columns (subject_kind,
+# subject_uuid,
 # object_kind, object_uuid). They are derived, but they ARE the natural key, and
 # `releases.enumerate_live` reads natural-key values out of the signed fields, so a key
 # column missing here is a KeyError at publish time.

@@ -2,9 +2,8 @@
 
 A ruling answers one question a class profile cannot answer from the sources alone:
 does this property (relationship + object) HOLD for this class or moiety, NOT HOLD,
-or is
-it beyond what the sources can establish. See db/058 and the class-profiles design spec
-section 5.
+or is beyond what the sources can establish. See db/058 and the class-profiles design
+spec section 5.
 
 Same append-then-point sequence as curation.py (INSERT the new row, then point whatever
 was live at it, via overlay.supersede), plus one rule curation.py does not need: writing
