@@ -8,7 +8,8 @@ spec section 5.
 Same append-then-point sequence as curation.py (INSERT the new row, then point whatever
 was live at it, via overlay.supersede), plus one rule curation.py does not need: writing
 the SAME verdict again is a no-op, so a re-run of a curation file does not pile up
-identical superseded rows that every signed release would have to carry.
+identical superseded rows that every signed release would have to carry. "The same"
+means every field the writer supplies, not only the verdict.
 
 NO VOCABULARY IS RESTATED IN PYTHON: relationship, verdict, object kind and the class
 subject's restrictions live in db/058's CHECKs. A bad value raises from the database.
@@ -37,9 +38,10 @@ def record_property_ruling(
         question_uuid: uuid.UUID | None = None) -> int:
     """Record (or revise) one ruling; returns the live row's id.
 
-    Idempotent by comparison: if the live row for the key already carries `verdict`,
-    its id is returned and nothing is written. Otherwise the new row is INSERTed and
-    supersedes the old one.
+    Idempotent by comparison: if the live row for the key already carries the same
+    verdict, question_uuid, reviewed_by and reviewed_against, its id is returned and
+    nothing is written. Any difference is new provenance worth signing, so the new row
+    is INSERTed and supersedes the old one.
     """
     if (subject_class_uuid is None) == (subject_moiety_uuid is None):
         raise ValueError("give exactly one of subject_class_uuid / subject_moiety_uuid")
@@ -48,12 +50,14 @@ def record_property_ruling(
     key = (subject_kind, subject, relationship, object_kind, object_uuid)
 
     live = conn.execute(
-        "SELECT curated_property_ruling_id, verdict "
+        "SELECT curated_property_ruling_id, verdict, question_uuid, reviewed_by, "
+        "reviewed_against "
         "FROM drugref.curated_property_ruling "
         "WHERE subject_kind = %s AND subject_uuid = %s AND relationship = %s "
         "AND object_kind = %s AND object_uuid = %s AND superseded_by IS NULL",
         key).fetchone()
-    if live is not None and live[1] == verdict:
+    if live is not None and live[1:] == (verdict, question_uuid, reviewed_by,
+                                         reviewed_against):
         return live[0]
 
     new_id = conn.execute(

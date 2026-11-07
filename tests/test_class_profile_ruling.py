@@ -143,3 +143,29 @@ def test_a_closed_gap_carrying_a_ruling_is_retained_not_deleted(conn):
     questions.register_from_gaps(conn, r)  # must not abort
     assert conn.execute("SELECT is_current FROM drugref.open_question "
                         "WHERE question_uuid = %s", (qu,)).fetchall() == [(False,)]
+
+
+def _question(conn, key):
+    import uuid
+    q = uuid.uuid4()
+    r = w.run(conn)
+    conn.execute(
+        "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+        "question_text, first_derived_ingest, last_derived_ingest) "
+        "VALUES (%s, 'unclassified_moiety', %s, 'q', %s, %s)", (q, key, r, r))
+    return q
+
+
+def test_the_same_verdict_answering_a_different_question_supersedes(world):
+    """Idempotence compares EVERY written field, not only the verdict: a re-answer that
+    cites another question (or another reviewer or source) is new provenance, and a
+    no-op would silently drop it."""
+    conn, m, _k, c, _b = world
+    q1, q2 = _question(conn, "TEST:q1"), _question(conn, "TEST:q2")
+    old = _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q1)
+    assert _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q1) == old
+    new = _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q2)
+    assert new != old
+    assert conn.execute(
+        "SELECT question_uuid FROM drugref.curated_property_ruling "
+        "WHERE subject_uuid = %s AND superseded_by IS NULL", (m,)).fetchall() == [(q2,)]
