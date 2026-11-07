@@ -202,4 +202,4 @@ def test_the_gap_registry_is_the_two_halves_merged_with_nothing_dropped():
         "unruled_composition_activity", "uncurated_condition_contradiction",
         "uncurated_interaction_rule", "unresolved_onc_endpoint",
         "uncurated_class_interaction_rule", "fda_cyp_unadjudicated",
-        "unresolved_ddi_endpoint"]
+        "unresolved_ddi_endpoint", "unconfirmed_class_property"]
