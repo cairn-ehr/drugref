@@ -5993,7 +5993,7 @@ posted to the issue, with the natural seam for `curation.py`. **`cli.py` is a se
 ([#130](https://github.com/cairn-ehr/drugref/issues/130)) because its failure mode differs** — it sits at
 exactly 500 against a HARD cap test, so the next line added to it breaks CI, and the cap has already begun
 dictating where functions live rather than merely measuring size. **Resolved by PR #131's review round
-(`cli_fda_cyp.py`), but it is STILL OPEN on GitHub (found stale 2026-11-06).**
+(`cli_fda_cyp.py`); CLOSED on GitHub 2026-11-07 (found stale 2026-11-06).**
 
 **Filed by the DrugCentral rounds (2026-08-23)** — **[#146](https://github.com/cairn-ehr/drugref/issues/146)**
 the suite-count line in § "How to run / test" was guarded by prose only and had drifted **nine** times —

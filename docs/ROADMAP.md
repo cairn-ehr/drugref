@@ -804,7 +804,7 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
   a held racemate — pharmacology with a literature behind it, scoped to every source since DrugCentral will
   meet it too; [#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because
   a near-name heuristic with no measured output is the pattern this slice spent five corrections catching;
-  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap (resolved by PR #131's `cli_fda_cyp.py`; issue still open, stale as of 2026-11-06).
+  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap (resolved by PR #131's `cli_fda_cyp.py`; issue CLOSED 2026-11-07).
 - **⇒ SEVEN OF THE SPEC'S OWN FIGURES WERE WRONG AND IMPLEMENTATION FOUND EVERY ONE** — the last two
   found by the FINAL review, after the count had been written down as five.** Full account:
   PROJECT-NOTES § "Slice 5c.2g". They share one shape — **something asserted a property it had not

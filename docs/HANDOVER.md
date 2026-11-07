@@ -13,15 +13,12 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/clear-contract-fda-cyp` off `main`; PR OPEN for #149, which it closes on merge. NO migration:
-the schema still ends at `db/057`.** PR #200 is MERGED (#199 CLOSED). The suite total lives in PROJECT-NOTES §
-"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**On `main`; nothing open. PR #201 is MERGED (#149 CLOSED); stale #130 and #133 were CLOSED 2026-11-07. NO
+migration: the schema still ends at `db/057`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
+**nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED** (full account: PROJECT-NOTES § "The clear-contract registration round"). **#149**:
-`fda_cyp_run.FDA_CYP_TABLES` is registered in `test_source_clear_contract.py`'s `EXPECTED_TABLES`, and a new
-call-site scan fails on any `clear_source_tables(conn, NAME` left unregistered (it caught exactly this one:
-13 sites, 12 registered). Test-only plus one comment in `interactions.py`; no behaviour change.
-**Stale, still OPEN on GitHub — close them: #130** (cli.py, fixed by PR #131) **and #133** (fda_cyp.py split, now 396 lines).
+**⇒ IN PROGRESS (2026-11-07): the class half of 5c.3 — brainstorm/design round opened** (owner's choice of the
+three items below). No code yet; the design spec goes under `docs/superpowers/specs/`.
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+3, one from the finalcheck review, which also made the scan fail on call shapes it cannot read). `ruff check .` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
