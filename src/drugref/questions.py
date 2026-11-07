@@ -72,14 +72,14 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     invisible on the worklist, still citable by the external tool that already holds the
     UUID, and restored to current under that same UUID if the gap reopens. Only
     untouched questions are deleted, and those have nothing to cascade to. The guard now
-    covers EIGHT tables, not three: db/029 (slice 5c.1) added curated_interaction and
+    covers NINE tables, not three: db/029 (slice 5c.1) added curated_interaction and
     curated_condition to question_state's, question_source_check's and
     question_evidence's original three, because curating a pair is exactly what CLOSES
     its gap -- the very row that answers a question is what would otherwise make the
     next ingest try to delete it. db/032 (slice 5c.2) added curated_class_interaction,
     the class grain's own overlay, for exactly the same reason. db/045 adds reviewer
     annotations and citation-only evidence references; research history must also keep
-    a closed question addressable.
+    a closed question addressable. db/058 adds curated_property_ruling (class profiles).
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -148,6 +148,9 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             # it is discovered by every source's ingest failing at once, long after
             # the curated row that caused it was written.
             "AND NOT EXISTS (SELECT 1 FROM drugref.curated_class_interaction x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/058, class-profile rulings: same cascade-into-append-only hazard.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_property_ruling x "
             "                WHERE x.question_uuid = q.question_uuid)",
             (gap_kind, live_keys))
         conn.execute(

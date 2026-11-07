@@ -236,6 +236,8 @@ def test_apply_migrations_is_idempotent(conn):
         # natural key by EQUALITY and NULL = NULL is never true -- a polymorphic
         # subject would silently stop guarding.
         "class_pair_contraindication", "curated_class_interaction",
+        # db/058, class profiles
+        "curated_property_ruling",
         # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.
         # db/033 briefly widened ci_class_subtree's roots to also cover
         # class_pair_contraindication, which measurably inflated Postgres's
