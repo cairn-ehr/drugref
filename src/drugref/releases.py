@@ -57,10 +57,11 @@ from drugref import signatures, signing, signing_contexts
 # believes it does is worse than a failed one.
 # tests/test_signing_payload_coverage.py's
 # `test_every_curated_catalog_kind_is_covered_by_a_release` derives its expectation
-# from the CATALOG, so a fourth kind registered in SQL and forgotten here fails loudly
-# rather than silently narrowing every future release.
+# from the CATALOG, so any further kind registered in SQL and forgotten here fails
+# loudly rather than silently narrowing every future release.
+# FOUR since db/058 (class-profile rulings).
 _CURATED_KINDS = ("curated_interaction", "curated_condition",
-                  "curated_class_interaction")
+                  "curated_class_interaction", "curated_property_ruling")
 
 # THE SENTINEL A MANIFEST ENTRY'S DIGEST IS BUILT UNDER. See `enumerate_live`'s
 # docstring for why this must be the identical value every time an entry digest is

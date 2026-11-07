@@ -33,7 +33,7 @@ TEST_PRIVATE = bytes(range(32))
 
 
 def _cases(fp: str) -> list[dict]:
-    """The four vectors, each earning its place by showing something the property
+    """The vectors, each earning its place by showing something the property
     tests in test_signing_payload.py cannot show together (see module docstring there
     for what those tests already prove in isolation).
 
@@ -128,6 +128,34 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-08-14T01:21:04.250000Z"],
     ]
+    property_ruling_fields = [
+        # THE PROPERTY-RULING case (db/058), added the round a test found the context
+        # frozen with no vector -- curated_class_interaction/v1's omission again.
+        # DELIBERATELY UNLIKE EVERY CASE ABOVE: the subject is a CLASS, so of the five
+        # subject/object FK columns exactly two are set and three are NULL, and
+        # question_uuid is NULL (as in case 1). It is also the only context whose payload carries
+        # GENERATED columns (subject_kind, subject_uuid, object_kind, object_uuid,
+        # derived by the table from the FK columns): they are signed like any other
+        # field, so subject_uuid repeats subject_class_uuid byte for byte.
+        ["subject_class_uuid", "4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36"],
+        ["subject_moiety_uuid", None],
+        ["object_condition_uuid", "8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70"],
+        ["object_moiety_uuid", None],
+        ["object_class_uuid", None],
+        ["subject_kind", "class"],
+        ["subject_uuid", "4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36"],
+        ["object_kind", "condition"],
+        ["object_uuid", "8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70"],
+        ["relationship", "CI_with"],
+        ["verdict", "holds"],
+        ["question_uuid", None],
+        ["source", "DRUGREF"],
+        ["reviewed_by", "a class-profile curator"],
+        ["reviewed_against", "product labels of every class member, 2026-11"],
+        ["reviewed_at", "2026-11-07T05:12:40.000000Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-11-07T05:13:02.125000Z"],
+    ]
     # THE MANIFEST-ENTRY case: the SAME judgement as the first, rebuilt the way an
     # ENTRY's digest is
     # -- the two attestation fields replaced by the entry sentinel pair. An entry attests
@@ -176,6 +204,11 @@ def _cases(fp: str) -> list[dict]:
             "name": "an applying CLASS x CLASS judgement",
             "context": "curated_class_interaction/v1",
             "fields": class_interaction_fields,
+        },
+        {
+            "name": "a CLASS-subject property ruling with generated key columns",
+            "context": "curated_property_ruling/v1",
+            "fields": property_ruling_fields,
         },
         {
             "name": "a manifest ENTRY digest over case 1's judgement",

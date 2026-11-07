@@ -804,7 +804,7 @@ forms of one name could silently share one immortal `question_uuid`**). Both voc
   a held racemate — pharmacology with a literature behind it, scoped to every source since DrugCentral will
   meet it too; [#129](https://github.com/cairn-ehr/drugref/issues/129) `registry_near_name` ships NULL, because
   a near-name heuristic with no measured output is the pattern this slice spent five corrections catching;
-  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap (resolved by PR #131's `cli_fda_cyp.py`; issue still open, stale as of 2026-11-06).
+  [#130](https://github.com/cairn-ehr/drugref/issues/130) `cli.py` at exactly 500/500 against its own hard cap (resolved by PR #131's `cli_fda_cyp.py`; issue CLOSED 2026-11-07).
 - **⇒ SEVEN OF THE SPEC'S OWN FIGURES WERE WRONG AND IMPLEMENTATION FOUND EVERY ONE** — the last two
   found by the FINAL review, after the count had been written down as five.** Full account:
   PROJECT-NOTES § "Slice 5c.2g". They share one shape — **something asserted a property it had not
@@ -844,6 +844,9 @@ findings the next round inherits:
 - **Deferring the class half MOVED the drug × drug yield**, by +193 pairs on the openFDA arm: longest-match-wins
   had class names consuming 11,169 moiety spans. Re-adding classes reproduces the design's 20,554 exactly.
   **A round that re-adds them must expect the drug × drug yield to fall and must not read that as a regression.**
+  **⇒ That round — SPL class-mention extraction, the old class half (#102, #155, word order) — is the NEXT
+  project.** The 2026-11-07 owner choice put § "Class profiles" first, which supersedes HANDOVER's former
+  "do this next" item 3; class mentions then FEED the profiles as a source of class assertions.
 - **The end-to-end fixture could not see a wrong quote budget** until a wording where the budget BINDS was added
   — db/050's vacuous-guard finding, recurring inside the round that quotes db/050 about it.
 - Two performance findings filed rather than fixed: [#159](https://github.com/cairn-ehr/drugref/issues/159)
@@ -1307,6 +1310,34 @@ none of these three documents. Full account: PROJECT-NOTES § "Two further sourc
 AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *if its licence confirms*") predated the
 check; the check has been done and the answer is no. It may only ever attach as a node-local, separately-licensed
 plug-in, like every other encumbered source.
+
+### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/063`, on `drugref_profiles`
+[Design](superpowers/specs/2026-11-07-drugref-class-profiles-design.md) ·
+[Plan](superpowers/plans/2026-11-07-drugref-class-profiles.md) ·
+[What it measured](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); full account: PROJECT-NOTES
+§ "The class-profiles round". **Read the numbers there, not here.**
+
+What a drug class has (asserted, passed down; or observed over ≥ 75% of its direct members, never inherited),
+each member's standing against it, what is peculiar to a member, and `drugref profile class|drug|rule`. A
+member with nothing recorded is **not confirmed** — never "safe" — and becomes gap kind 19 on the worklist.
+
+- **Measured, with two findings filed rather than tuned**:
+  [#202](https://github.com/cairn-ehr/drugref/issues/202) (a single-class read costs the whole view) and
+  [#203](https://github.com/cairn-ehr/drugref/issues/203) (the worklist's composition: one near-universal
+  object dominates, MED-RT catch-all classes raise questions). The final review's `db/062` fixed a PK-ancestor
+  leak in `class_property.asserted_by` and with it removed #202's dominant cost (the profile CLI is interactive
+  again; #202 stays open for the structural point).
+- **Filed by the final review**: [#204](https://github.com/cairn-ehr/drugref/issues/204) — interaction
+  rulings change the class-profile views but never the prescribing-alert path. **Owner design call; curators
+  hold off interaction questions until it is decided.**
+- **Filed by the pre-merge review** (which also added `db/063`: one orientation per drug pair, no
+  self-pairs): [#206](https://github.com/cairn-ehr/drugref/issues/206) — the observed denominator counts an
+  interaction partner that is itself a member; [#207](https://github.com/cairn-ehr/drugref/issues/207) — a
+  ruling's `--question` is not checked against the ruling's own key (all curated writers).
+- **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
+  in the results record §5.
+- **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a
+  condition about a class, so every condition class property is observed.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

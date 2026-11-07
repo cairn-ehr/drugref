@@ -23,6 +23,10 @@ CURATED = [
     # omitted it silently and `verify_release` still passed.
     ("curated_class_interaction/v1", "curated_class_interaction",
      "curated_class_interaction_id"),
+    # db/058 (class profiles). Its four STORED generated columns are in the field list on
+    # purpose: they are the natural key, which enumerate_live reads from signed fields.
+    ("curated_property_ruling/v1", "curated_property_ruling",
+     "curated_property_ruling_id"),
 ]
 
 
@@ -114,9 +118,10 @@ def test_every_curated_context_has_a_frozen_natural_key():
     `releases._CURATED_KINDS` is the real scope, so it is what gets checked."""
     from drugref import releases
     assert set(releases._CURATED_KINDS) == {"curated_interaction", "curated_condition",
-                                            "curated_class_interaction"}
+                                            "curated_class_interaction",
+                                            "curated_property_ruling"}
     for context in ("curated_interaction/v1", "curated_condition/v1",
-                    "curated_class_interaction/v1"):
+                    "curated_class_interaction/v1", "curated_property_ruling/v1"):
         assert context in signing_contexts.NATURAL_KEY_COLUMNS
     # A manifest is never itself enumerated by a manifest -- see NATURAL_KEY_COLUMNS'
     # own closing note. Asserted, not merely stated, so the day somebody adds it out of
@@ -213,3 +218,19 @@ def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
             "the vectors were committed. Every signature already recorded under this "
             "context was made over the OLD order and will now report BAD_SIGNATURE. "
             "If the change is deliberate it is a new /v2 context, never an edit here.")
+
+
+def test_every_frozen_context_has_a_published_vector():
+    """A context registered and frozen with NO committed vector has no byte-level
+    reference and no ORDER pin (the test above walks the vectors, so it silently skips a
+    context they omit). curated_class_interaction/v1 shipped that way once, and
+    curated_property_ruling/v1 did again (db/058). No context is exempt: the manifest
+    has its own vector."""
+    import json
+    import pathlib
+
+    vectors = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "signing_vectors.json"
+         ).read_text())
+    covered = {case["context"] for case in vectors["cases"]}
+    assert set(signing_contexts.FIELD_LISTS) - covered == set()

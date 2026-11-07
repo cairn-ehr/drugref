@@ -23,6 +23,7 @@ import uuid
 import psycopg
 
 from drugref import ids, overlay
+from drugref.gap_sources_class_profile import CLASS_PROFILE_GAP_SOURCES
 from drugref.gap_sources_interactions import INTERACTION_GAP_SOURCES
 from drugref.gap_sources_registry import REGISTRY_GAP_SOURCES
 
@@ -35,11 +36,13 @@ from drugref.gap_sources_registry import REGISTRY_GAP_SOURCES
 # literature-searchable statement, which names its subject rather than referring to
 # it by UUID so the text is usable as a search expression on its own.
 #
-# The specs themselves live in two vocabulary modules (issue 177, rule 4), split at
-# slice 5c. Merged IN THIS ORDER, which is the order register_from_gaps walks;
-# test_question_ids pins the merged list and that the halves share no kind (a dict
-# merge would silently keep only the later of two equal keys).
-_GAP_SOURCES = {**REGISTRY_GAP_SOURCES, **INTERACTION_GAP_SOURCES}
+# The specs themselves live in three vocabulary modules (issue 177, rule 4; split at
+# slice 5c, the third added with class profiles). Merged IN THIS ORDER, which is the
+# order register_from_gaps walks; test_question_ids pins the merged list and that the
+# modules share no kind (a dict merge would silently keep only the later of two equal
+# keys).
+_GAP_SOURCES = {**REGISTRY_GAP_SOURCES, **INTERACTION_GAP_SOURCES,
+                **CLASS_PROFILE_GAP_SOURCES}
 
 
 def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str, int]:
@@ -72,14 +75,14 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
     invisible on the worklist, still citable by the external tool that already holds the
     UUID, and restored to current under that same UUID if the gap reopens. Only
     untouched questions are deleted, and those have nothing to cascade to. The guard now
-    covers EIGHT tables, not three: db/029 (slice 5c.1) added curated_interaction and
+    covers NINE tables, not three: db/029 (slice 5c.1) added curated_interaction and
     curated_condition to question_state's, question_source_check's and
     question_evidence's original three, because curating a pair is exactly what CLOSES
     its gap -- the very row that answers a question is what would otherwise make the
     next ingest try to delete it. db/032 (slice 5c.2) added curated_class_interaction,
     the class grain's own overlay, for exactly the same reason. db/045 adds reviewer
     annotations and citation-only evidence references; research history must also keep
-    a closed question addressable.
+    a closed question addressable. db/058 adds curated_property_ruling (class profiles).
     """
     counts: dict[str, int] = {}
     for gap_kind, spec in _GAP_SOURCES.items():
@@ -148,6 +151,9 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             # it is discovered by every source's ingest failing at once, long after
             # the curated row that caused it was written.
             "AND NOT EXISTS (SELECT 1 FROM drugref.curated_class_interaction x "
+            "                WHERE x.question_uuid = q.question_uuid) "
+            # db/058, class-profile rulings: same cascade-into-append-only hazard.
+            "AND NOT EXISTS (SELECT 1 FROM drugref.curated_property_ruling x "
             "                WHERE x.question_uuid = q.question_uuid)",
             (gap_kind, live_keys))
         conn.execute(

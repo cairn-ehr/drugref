@@ -58,9 +58,10 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_curate, cli_drugcentral, cli_fda_cyp, cli_interactions,
-                     cli_policy, cli_signing, cli_spl, cli_status, curation, db,
-                     interactions, migration_guard, server_messages, signatures)
+from drugref import (cli_class_profile, cli_curate, cli_drugcentral, cli_fda_cyp,
+                     cli_interactions, cli_policy, cli_signing, cli_spl, cli_status,
+                     curation, db, interactions, migration_guard, server_messages,
+                     signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -447,6 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
     cli_policy.register(commands)
     cli_signing.register(commands)
     cli_curate.register(commands)
+    cli_class_profile.register(commands)
     # Issue 114: `curated_read.effective_grades_for` had no consumer in src/, which is
     # the very "half a feature" its own module docstring argues against. This is that
     # consumer, and building it is what turned the DIRECTIONAL contract from a docstring

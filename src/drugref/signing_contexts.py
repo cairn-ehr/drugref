@@ -87,10 +87,23 @@ CURATED_CLASS_INTERACTION_V1 = (
     "source", "reviewed_by", "reviewed_against", "reviewed_at",
     *ATTESTATION_FIELDS)
 
+# db/058, class profiles. EVERY column except the surrogate pk and superseded_by, in
+# table order -- INCLUDING the four STORED generated columns (subject_kind,
+# subject_uuid, object_kind, object_uuid). They are derived, but they ARE the natural
+# key, and `releases.enumerate_live` reads natural-key values out of the signed
+# fields, so a key column missing here is a KeyError at publish time.
+CURATED_PROPERTY_RULING_V1 = (
+    "subject_class_uuid", "subject_moiety_uuid", "object_condition_uuid",
+    "object_moiety_uuid", "object_class_uuid", "subject_kind", "subject_uuid",
+    "object_kind", "object_uuid", "relationship", "verdict", "question_uuid",
+    "source", "reviewed_by", "reviewed_against", "reviewed_at",
+    *ATTESTATION_FIELDS)
+
 FIELD_LISTS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1,
     "curated_condition/v1": CURATED_CONDITION_V1,
     "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1,
+    "curated_property_ruling/v1": CURATED_PROPERTY_RULING_V1,
     "release_manifest/v1": RELEASE_MANIFEST_V1,
 }
 
@@ -136,10 +149,16 @@ CURATED_CONDITION_V1_KEY = ("subject_moiety_uuid", "object_condition_uuid")
 CURATED_CLASS_INTERACTION_V1_KEY = (
     "subject_class_uuid", "object_class_uuid", "relationship")
 
+# db/058. Five columns, matching the single-live trigger; the kind columns are part of
+# the key because the key must say which kind a uuid names.
+CURATED_PROPERTY_RULING_V1_KEY = (
+    "subject_kind", "subject_uuid", "relationship", "object_kind", "object_uuid")
+
 NATURAL_KEY_COLUMNS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1_KEY,
     "curated_condition/v1": CURATED_CONDITION_V1_KEY,
     "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1_KEY,
+    "curated_property_ruling/v1": CURATED_PROPERTY_RULING_V1_KEY,
 }
 
 
