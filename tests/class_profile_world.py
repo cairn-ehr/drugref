@@ -100,3 +100,26 @@ def moiety_ci(conn, run, subject, object):
         "INSERT INTO drugref.moiety_contraindication (subject_moiety_uuid, "
         "object_moiety_uuid, relationship, source, ingest_run) "
         "VALUES (%s, %s, 'CI_ChemClass', 'MED-RT', %s)", (subject, object, run))
+
+
+def curated_ci(conn, moiety, klass, relationship="CI_MoA", applies=True):
+    """A live curated_interaction row (drug -> class). applies=false needs NULL grading."""
+    conn.execute(
+        "INSERT INTO drugref.curated_interaction (subject_moiety_uuid, "
+        "object_class_uuid, relationship, applies, severity, evidence_grade, source, "
+        "reviewed_by, reviewed_against) VALUES (%s, %s, %s, %s, %s, %s, 'DRUGREF', "
+        "'test', 'test')",
+        (moiety, klass, relationship, applies, "major" if applies else None,
+         "established" if applies else None))
+
+
+def curated_class_ci(conn, subject_class, object_class, relationship="CI_MoA",
+                     applies=True):
+    """A live curated_class_interaction row (class -> class)."""
+    conn.execute(
+        "INSERT INTO drugref.curated_class_interaction (subject_class_uuid, "
+        "object_class_uuid, relationship, applies, severity, evidence_grade, source, "
+        "reviewed_by, reviewed_against) VALUES (%s, %s, %s, %s, %s, %s, 'DRUGREF', "
+        "'test', 'test')",
+        (subject_class, object_class, relationship, applies,
+         "major" if applies else None, "established" if applies else None))
