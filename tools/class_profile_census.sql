@@ -33,6 +33,7 @@ EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_property        
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_property_member     WHERE class_uuid = :'bb';
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_member_peculiarity  WHERE class_uuid = :'bb';
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_subclass_only_member WHERE class_uuid = :'bb';
+EXPLAIN (ANALYZE, BUFFERS, SUMMARY) SELECT * FROM drugref.class_subclass_only_property WHERE class_uuid = :'bb';
 
 \echo '== names: profile-view object uuids that resolve to no name (expected 0; the reader would print the raw uuid) =='
 WITH objects AS (

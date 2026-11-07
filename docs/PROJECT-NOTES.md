@@ -5873,7 +5873,7 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
 - **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
-## The class-profiles round (2026-11-07) — `db/058`–`db/064`, measured on `drugref_profiles`
+## The class-profiles round (2026-11-07) — `db/058`–`db/065`, measured on `drugref_profiles`
 
 A class's profile is what it has — **asserted** (a source or curator states it about the class or an ancestor,
 passed down) and/or **observed** (≥ 75% of ≥ 2 direct members carry it, never inherited) — and each direct
@@ -5883,12 +5883,20 @@ on the curators' worklist. Design: `superpowers/specs/2026-11-07-drugref-class-p
 **Every figure lives in [the results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md),
 not here.** What the next round inherits:
 
-- **The read path materialises every class** ([#202](https://github.com/cairn-ehr/drugref/issues/202)): a
-  `WHERE class_uuid = X` read of `class_property` still computes the full view. The final review's `db/062`
-  removed the dominant cost (a correlated per-row `asserted_by` subquery that also leaked MED-RT PK ancestors'
-  sources), and `drug_profile` now reads each view once for all lenses, so both CLI commands are interactive
-  again; #202 stays open for the structural point (the cost scales with the registry). Re-measure with
-  `tools/class_profile_census.sql`.
+- **A one-class read costs one class** ([#202](https://github.com/cairn-ehr/drugref/issues/202), `db/065`,
+  2026-11-08). Up to `db/064` several of the view's CTEs were referenced more than once, so Postgres
+  materialised them and applied `WHERE class_uuid = X` only at the end. `db/065` reads asserted and carried
+  rows through ONE `UNION ALL` + ONE `GROUP BY`, and the #206 self-partner test LEFT JOINs
+  `class_profile_member` directly instead of a shared CTE (the obvious alternative, a select-list `EXISTS`,
+  is not pushable either: it becomes a hashed subplan over every member). `db/065`'s own header words both
+  points more loosely ("each" CTE; "a LEFT JOIN, not an EXISTS"); it is applied, so it stays, and this bullet
+  is the accurate version. **The trap for the next view: in a view
+  that must be filterable, never reference a CTE twice, and never put a correlated `EXISTS` in the select
+  list** — `tests/test_class_profile_db065.py` pins it by checking the filter reaches every
+  `class_membership` scan in the plan. Rows identical (EXCEPT both ways over `class_property`,
+  `class_property_member`, `class_member_peculiarity`, the gap view). What still runs in full on a filtered
+  read: `member_property` (~30 ms) and the recursive `class_subtree` (~15 ms). Figures: results record §6
+  addendum. Re-measure with `tools/class_profile_census.sql`.
 - **Interaction rulings never reach the prescribing-alert path**
   ([#204](https://github.com/cairn-ehr/drugref/issues/204)): a `curated_property_ruling` *interacts_with*
   answer changes the class-profile views only. Owner design call; **curators should not work interaction
@@ -5915,8 +5923,8 @@ not here.** What the next round inherits:
 - **Subclass-only drugs show what they inherit** (spec §4): `ClassProfile.subclass_only` is a tuple of
   `SubclassOnlyDrug` (inherits / confirmed exceptions, never an interaction with itself), and `profile class`
   prints *"inherits every asserted property above"* or *"N of the M"* plus the named exceptions and, when
-  that is the shortfall, *"not with itself: interacts_with moiety X"*. The inheritance subtraction lives only
-  in `class_profile_read` (no view yet: #209). An observed `interacts_with` a member reads *"observed in 3 of
+  that is the shortfall, *"not with itself: interacts_with moiety X"*. The inheritance subtraction is the view
+  `class_subclass_only_property` (`db/065`, #209); `class_profile_read` only groups its rows. An observed `interacts_with` a member reads *"observed in 3 of
   the 4 members other than X"*, so the eligible count under a 5-member header is explained.
 - **Every object uuid in the profile views resolves to a name**: `tools/class_profile_census.sql`'s last query
   counts the ones that do not (0 on `drugref_profiles` at `db/064`). The reader still falls back to the raw
@@ -6017,8 +6025,8 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
-a single-class read of `class_property` computes every class (the profile CLI's cost; `db/062` took the
-dominant cost out, the structural point stays open) ·
+a single-class read of `class_property` computes every class — **FIXED by `db/065`, closes on merge**, with
+**#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
 composition (one object dominates; MED-RT catch-all classes raise questions) ·
 **[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
@@ -6198,7 +6206,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2973 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2980 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6555,7 +6563,7 @@ ran in CI and `ruff` was not even a project dependency.
   + the curated READ surface `src/drugref/{curated_read,cli_status,cli_interactions}.py` — `curated_read` owns
   both reads of the graded overlay (`effective_grades_for`, `unrankable_severities`), `cli_status` owns the two
   later `drugref status` blocks, and `cli_interactions` is `drugref interactions` (db/038, issue 114)
-  + the class-profiles surface (`db/058`–`db/063`): `class_profile_read.py` (the READ; pure dataclasses),
+  + the class-profiles surface (`db/058`–`db/065`): `class_profile_read.py` (the READ; pure dataclasses),
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
   + `src/drugref/ingest/*.py`; seed data under
@@ -6690,7 +6698,8 @@ ran in CI and `ruff` was not even a project dependency.
   `drugref status` refusing to call their stamps a duration. Keep both.
 - **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
   **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
-  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave, to `db/063` by the pre-merge review, and to `db/064` by the follow-up round (#206).
+  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave, to `db/063` by the pre-merge review, to `db/064` by the follow-up round (#206), and to `db/065` by the
+  #202/#209 round.
   `curated_property_ruling` is empty there. Commands, timings and every figure: [the results
   record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); re-run the cost figures with
   `tools/class_profile_census.sql`.
