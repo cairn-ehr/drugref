@@ -1,0 +1,179 @@
+"""Read side of class profiles: a thin Python reader over the class-profile views.
+
+The SQL views (db/059-db/060) are the consumer contract -- a prescribing front end reads
+them directly. This module only turns their rows into frozen dataclasses with NAMES
+instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
+
+Every tuple is sorted (by name, then relationship) so output and tests are stable.
+"""
+import uuid
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+import psycopg
+
+
+@dataclass(frozen=True)
+class PropertyLine:
+    relationship: str
+    object_kind: str          # 'condition' | 'moiety' | 'class'
+    object_uuid: uuid.UUID
+    object_name: str
+
+
+@dataclass(frozen=True)
+class ClassProperty:
+    prop: PropertyLine
+    is_asserted: bool
+    asserted_via: tuple[str, ...]      # class names (the class itself and/or ancestors)
+    asserted_by: tuple[str, ...]       # sources
+    is_observed: bool
+    carriers: int
+    members: int
+    not_confirmed: tuple[str, ...]     # drug names
+    confirmed_exceptions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ClassProfile:
+    class_uuid: uuid.UUID
+    class_name: str
+    source: str
+    concept_type: str
+    members: tuple[str, ...]
+    properties: tuple[ClassProperty, ...]
+    peculiarities: Mapping[str, tuple[PropertyLine, ...]]
+    subclass_only: tuple[tuple[str, str], ...]   # (drug name, via class name)
+
+
+@dataclass(frozen=True)
+class DrugLens:
+    class_uuid: uuid.UUID
+    class_name: str
+    shared: tuple[tuple[PropertyLine, str], ...]  # standing: carries|inherits[ via X]
+    peculiar: tuple[PropertyLine, ...]
+
+
+@dataclass(frozen=True)
+class DrugProfile:
+    moiety_uuid: uuid.UUID
+    name: str
+    class_tags: tuple[tuple[uuid.UUID, str], ...]
+    lenses: tuple[DrugLens, ...]
+
+
+def _names(conn: psycopg.Connection, uuids) -> dict[uuid.UUID, str]:
+    """uuid -> display name over conditions, moieties and classes."""
+    rows = conn.execute(
+        "SELECT condition_uuid, name FROM drugref.condition "
+        "WHERE condition_uuid = ANY(%(u)s) "
+        "UNION ALL SELECT moiety_uuid, display_name FROM drugref.substance_moiety "
+        "WHERE moiety_uuid = ANY(%(u)s) "
+        "UNION ALL SELECT class_uuid, class_name FROM drugref.substance_class "
+        "WHERE class_uuid = ANY(%(u)s)", {"u": list(set(uuids))}).fetchall()
+    return dict(rows)
+
+
+def _line(names, rel, kind, obj) -> PropertyLine:
+    return PropertyLine(rel, kind, obj, names.get(obj, str(obj)))
+
+
+def _sorted_lines(lines) -> tuple[PropertyLine, ...]:
+    return tuple(sorted(lines, key=lambda p: (p.object_name, p.relationship)))
+
+
+def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfile:
+    head = conn.execute(
+        "SELECT class_name, source, concept_type FROM drugref.substance_class "
+        "WHERE class_uuid = %s", (class_uuid,)).fetchone()
+    if head is None:
+        raise LookupError(f"no class {class_uuid}")
+    props = conn.execute(
+        "SELECT relationship, object_kind, object_uuid, is_asserted, asserted_via, "
+        "asserted_by, is_observed, carriers, members "
+        "FROM drugref.class_property WHERE class_uuid = %s", (class_uuid,)).fetchall()
+    standing = conn.execute(
+        "SELECT relationship, object_kind, object_uuid, moiety_uuid, standing "
+        "FROM drugref.class_property_member WHERE class_uuid = %s",
+        (class_uuid,)).fetchall()
+    pec = conn.execute(
+        "SELECT moiety_uuid, relationship, object_kind, object_uuid "
+        "FROM drugref.class_member_peculiarity WHERE class_uuid = %s",
+        (class_uuid,)).fetchall()
+    sub = conn.execute(
+        "SELECT moiety_uuid, via_class_uuid FROM drugref.class_subclass_only_member "
+        "WHERE class_uuid = %s", (class_uuid,)).fetchall()
+    members = [r[0] for r in conn.execute(
+        "SELECT moiety_uuid FROM drugref.class_profile_member WHERE class_uuid = %s",
+        (class_uuid,))]
+
+    ids = {p[2] for p in props} | {s[3] for s in standing} | {p[0] for p in pec} \
+        | {p[3] for p in pec} | {s[0] for s in sub} | {s[1] for s in sub} | set(members)
+    ids |= {c for p in props for c in p[4]}
+    names = _names(conn, ids)
+
+    by_prop: dict[tuple, dict[str, list[str]]] = {}
+    for rel, kind, obj, mo, st in standing:
+        by_prop.setdefault((rel, kind, obj), {}).setdefault(st, []).append(names[mo])
+
+    out = []
+    for rel, kind, obj, asserted, via, by, observed, carriers, n in props:
+        st = by_prop.get((rel, kind, obj), {})
+        out.append(ClassProperty(
+            _line(names, rel, kind, obj), asserted,
+            tuple(sorted(names[c] for c in via)), tuple(sorted(by)), observed,
+            carriers, n, tuple(sorted(st.get("not_confirmed", ()))),
+            tuple(sorted(st.get("confirmed_exception", ())))))
+    out.sort(key=lambda c: (c.prop.object_name, c.prop.relationship))
+
+    pecs: dict[str, list[PropertyLine]] = {}
+    for mo, rel, kind, obj in pec:
+        pecs.setdefault(names[mo], []).append(_line(names, rel, kind, obj))
+    return ClassProfile(
+        class_uuid, head[0], head[1], head[2], tuple(sorted(names[m] for m in members)),
+        tuple(out), {k: _sorted_lines(v) for k, v in sorted(pecs.items())},
+        tuple(sorted((names[m], names[v]) for m, v in sub)))
+
+
+def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
+                 lens_class_uuids: Sequence[uuid.UUID] = ()) -> DrugProfile:
+    """The drug seen through each lens class; no lenses given means every class tag."""
+    row = conn.execute("SELECT display_name FROM drugref.substance_moiety "
+                       "WHERE moiety_uuid = %s", (moiety_uuid,)).fetchone()
+    if row is None:
+        raise LookupError(f"no moiety {moiety_uuid}")
+    tags = conn.execute(
+        "SELECT m.class_uuid, c.class_name FROM drugref.class_profile_member m "
+        "JOIN drugref.substance_class c USING (class_uuid) WHERE m.moiety_uuid = %s "
+        "ORDER BY c.class_name, m.class_uuid", (moiety_uuid,)).fetchall()
+    tag_ids = {t[0] for t in tags}
+    foreign = [u for u in lens_class_uuids if u not in tag_ids]
+    if foreign:
+        raise ValueError(f"not a class of this drug: {', '.join(map(str, foreign))}")
+    chosen = [t for t in tags if not lens_class_uuids or t[0] in set(lens_class_uuids)]
+
+    lenses = []
+    for cu, cname in chosen:
+        shared_rows = conn.execute(
+            "SELECT pm.relationship, pm.object_kind, pm.object_uuid, pm.standing, "
+            "cp.asserted_via FROM drugref.class_property_member pm "
+            "JOIN drugref.class_property cp USING (class_uuid, relationship, "
+            "object_kind, object_uuid) "
+            "WHERE pm.class_uuid = %s AND pm.moiety_uuid = %s "
+            "AND pm.standing IN ('carries', 'inherits')", (cu, moiety_uuid)).fetchall()
+        pec_rows = conn.execute(
+            "SELECT relationship, object_kind, object_uuid "
+            "FROM drugref.class_member_peculiarity "
+            "WHERE class_uuid = %s AND moiety_uuid = %s",
+            (cu, moiety_uuid)).fetchall()
+        names = _names(conn, {r[2] for r in shared_rows} | {r[2] for r in pec_rows}
+                       | {a for r in shared_rows for a in r[4]})
+        shared = []
+        for rel, kind, obj, st, via in shared_rows:
+            if via and cu not in via:      # asserted only on ancestors
+                st = f"{st} via {', '.join(sorted(names[a] for a in via))}"
+            shared.append((_line(names, rel, kind, obj), st))
+        shared.sort(key=lambda s: (s[0].object_name, s[0].relationship))
+        lenses.append(DrugLens(cu, cname, tuple(shared),
+                               _sorted_lines(_line(names, *r) for r in pec_rows)))
+    return DrugProfile(moiety_uuid, row[0], tuple(tags), tuple(lenses))
