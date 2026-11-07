@@ -7,7 +7,10 @@ COPY RULE: a missing property is "not confirmed", never "safe" or "does not appl
 the word "exception" appears only as "confirmed exception" (spec §5).
 """
 # shortcut: UUIDs only on the command line, no name lookup — add one when a human operator uses it daily.  # noqa: E501
+import sys
 import uuid
+
+import psycopg
 
 from drugref import class_profile_read as cpr
 from drugref import curation_property
@@ -45,7 +48,14 @@ def render_drug_profile(p: cpr.DrugProfile) -> list[str]:
     for lens in p.lenses:
         out.append(f"  as a member of {lens.class_name}:")
         out.extend(f"    shared: {_prop(x)} ({st})" for x, st in lens.shared)
+        out.extend(f"    not confirmed for this drug: {_prop(x)}"
+                   for x in lens.not_confirmed)
+        out.extend(f"    confirmed exception: {_prop(x)}"
+                   for x in lens.confirmed_exceptions)
         out.extend(f"    peculiar: {_prop(x)}" for x in lens.peculiar)
+    if p.own_properties:
+        out.append("  own properties (no class tag):")
+        out.extend(f"    {_prop(x)}" for x in p.own_properties)
     return out
 
 
@@ -69,11 +79,19 @@ def _handle_drug(conn, args) -> int:
 
 
 def _handle_rule(conn, args) -> int:
-    rid = curation_property.record_property_ruling(
-        conn, subject_class_uuid=args.klass, subject_moiety_uuid=args.moiety,
-        relationship=args.relationship, object_kind=args.object_kind,
-        object_uuid=args.object, verdict=args.verdict, reviewed_by=args.reviewed_by,
-        reviewed_against=args.reviewed_against, question_uuid=args.question)
+    # The values came straight off the command line, so a refusal is an operator's typo:
+    # one line and exit 2, the cli_policy._write pattern (cli.main deliberately does not
+    # catch database errors for every handler). CheckViolation is an IntegrityError.
+    try:
+        rid = curation_property.record_property_ruling(
+            conn, subject_class_uuid=args.klass, subject_moiety_uuid=args.moiety,
+            relationship=args.relationship, object_kind=args.object_kind,
+            object_uuid=args.object, verdict=args.verdict, reviewed_by=args.reviewed_by,
+            reviewed_against=args.reviewed_against, question_uuid=args.question)
+    except (ValueError, psycopg.errors.IntegrityError) as exc:
+        conn.rollback()  # never rely on COMMIT of an aborted transaction rolling back
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
     conn.commit()  # the writer never commits; the CLI owns the transaction
     print(f"ruling {rid} recorded")
     return 0

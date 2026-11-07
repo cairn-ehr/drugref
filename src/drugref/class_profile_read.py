@@ -48,10 +48,15 @@ class ClassProfile:
 
 @dataclass(frozen=True)
 class DrugLens:
+    """One drug through one class: the FOUR-WAY split in class_property_member's
+    COMMENT. not_confirmed is rendered, never dropped: dropped, it reads as "does not
+    apply"."""
     class_uuid: uuid.UUID
     class_name: str
-    shared: tuple[tuple[PropertyLine, str], ...]  # standing: carries|inherits[ via X]
+    shared: tuple[tuple[PropertyLine, str], ...]  # standing: carries | inherits[ via X]
     peculiar: tuple[PropertyLine, ...]
+    not_confirmed: tuple[PropertyLine, ...]
+    confirmed_exceptions: tuple[PropertyLine, ...]
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,7 @@ class DrugProfile:
     name: str
     class_tags: tuple[tuple[uuid.UUID, str], ...]
     lenses: tuple[DrugLens, ...]
+    own_properties: tuple[PropertyLine, ...]  # filled only for a drug with no class tag
 
 
 def _names(conn: psycopg.Connection, uuids) -> dict[uuid.UUID, str]:
@@ -152,28 +158,51 @@ def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
         raise ValueError(f"not a class of this drug: {', '.join(map(str, foreign))}")
     chosen = [t for t in tags if not lens_class_uuids or t[0] in set(lens_class_uuids)]
 
+    # ONE query per view for every lens at once, grouped below (#202: each view costs
+    # about as much for twenty classes as for one).
+    cus = [t[0] for t in chosen]
+    standing_rows = conn.execute(
+        "SELECT pm.class_uuid, pm.relationship, pm.object_kind, pm.object_uuid, "
+        "pm.standing, cp.asserted_via FROM drugref.class_property_member pm "
+        "JOIN drugref.class_property cp USING (class_uuid, relationship, "
+        "object_kind, object_uuid) "
+        "WHERE pm.class_uuid = ANY(%s) AND pm.moiety_uuid = %s",
+        (cus, moiety_uuid)).fetchall() if cus else []
+    pec_rows = conn.execute(
+        "SELECT class_uuid, relationship, object_kind, object_uuid "
+        "FROM drugref.class_member_peculiarity "
+        "WHERE class_uuid = ANY(%s) AND moiety_uuid = %s",
+        (cus, moiety_uuid)).fetchall() if cus else []
+    # No profiled class tag: nothing to see it through, so show what it has itself.
+    own_rows = [] if tags else conn.execute(
+        "SELECT relationship, object_kind, object_uuid FROM drugref.member_property "
+        "WHERE moiety_uuid = %s", (moiety_uuid,)).fetchall()
+    names = _names(conn, {r[3] for r in standing_rows} | {r[3] for r in pec_rows}
+                   | {a for r in standing_rows for a in r[5]}
+                   | {r[2] for r in own_rows})
+
+    groups = {cu: {"shared": [], "peculiar": [], "not_confirmed": [],
+                   "confirmed_exception": []} for cu in cus}
+    for cu, rel, kind, obj, st, via in standing_rows:
+        line = _line(names, rel, kind, obj)
+        if st == "carries":                # its own record: never "via" anything
+            groups[cu]["shared"].append((line, st))
+        elif st == "inherits":
+            if cu not in via:              # asserted only on ancestors
+                st = f"{st} via {', '.join(sorted(names[a] for a in via))}"
+            groups[cu]["shared"].append((line, st))
+        else:
+            groups[cu][st].append(line)
+    for cu, *prop in pec_rows:
+        groups[cu]["peculiar"].append(_line(names, *prop))
+
     lenses = []
     for cu, cname in chosen:
-        shared_rows = conn.execute(
-            "SELECT pm.relationship, pm.object_kind, pm.object_uuid, pm.standing, "
-            "cp.asserted_via FROM drugref.class_property_member pm "
-            "JOIN drugref.class_property cp USING (class_uuid, relationship, "
-            "object_kind, object_uuid) "
-            "WHERE pm.class_uuid = %s AND pm.moiety_uuid = %s "
-            "AND pm.standing IN ('carries', 'inherits')", (cu, moiety_uuid)).fetchall()
-        pec_rows = conn.execute(
-            "SELECT relationship, object_kind, object_uuid "
-            "FROM drugref.class_member_peculiarity "
-            "WHERE class_uuid = %s AND moiety_uuid = %s",
-            (cu, moiety_uuid)).fetchall()
-        names = _names(conn, {r[2] for r in shared_rows} | {r[2] for r in pec_rows}
-                       | {a for r in shared_rows for a in r[4]})
-        shared = []
-        for rel, kind, obj, st, via in shared_rows:
-            if via and cu not in via:      # asserted only on ancestors
-                st = f"{st} via {', '.join(sorted(names[a] for a in via))}"
-            shared.append((_line(names, rel, kind, obj), st))
-        shared.sort(key=lambda s: (s[0].object_name, s[0].relationship))
-        lenses.append(DrugLens(cu, cname, tuple(shared),
-                               _sorted_lines(_line(names, *r) for r in pec_rows)))
-    return DrugProfile(moiety_uuid, row[0], tuple(tags), tuple(lenses))
+        g = groups[cu]
+        shared = sorted(g["shared"],
+                        key=lambda s: (s[0].object_name, s[0].relationship))
+        lenses.append(DrugLens(cu, cname, tuple(shared), _sorted_lines(g["peculiar"]),
+                               _sorted_lines(g["not_confirmed"]),
+                               _sorted_lines(g["confirmed_exception"])))
+    return DrugProfile(moiety_uuid, row[0], tuple(tags), tuple(lenses),
+                       _sorted_lines(_line(names, *r) for r in own_rows))
