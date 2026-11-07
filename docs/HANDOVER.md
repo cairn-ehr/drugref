@@ -13,47 +13,53 @@
 
 ## ⇒ NEXT
 
-**On `main`; nothing open. PR #201 is MERGED (#149 CLOSED); stale #130 and #133 were CLOSED 2026-11-07. NO
-migration: the schema still ends at `db/057`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
-**nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/class-profiles`; PR pending (to `main`). Schema now ends at `db/061`** (`058`–`061`, class
+profiles). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest`
+fails if the line and the collected suite disagree.
 
-**⇒ IN PROGRESS (2026-11-07): the class half of 5c.3 — brainstorm/design round opened** (owner's choice of the
-three items below). No code yet; the design spec goes under `docs/superpowers/specs/`.
+**⇒ JUST FINISHED: class profiles, built and measured** on `drugref_profiles`. What a class has (asserted or
+observed), each member's standing, peculiarities, `drugref profile class|drug|rule`, and gap kind 19
+`unconfirmed_class_property`. **"Not confirmed" is never "safe".** Figures: the
+[results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); account: PROJECT-NOTES §
+"The class-profiles round". **Two findings filed, not tuned:** #202 (single-class reads cost the whole view —
+the profile CLI is too slow for interactive use) and #203 (the worklist's composition).
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total (+3, one from the finalcheck review, which also made the scan fail on call shapes it cannot read). `ruff check .` clean.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
 ## ⇒ DO THIS NEXT
 
-**Choose one; none is blocked.**
-
-1. **The SPL follow-ups left on their own triggers**: #164 (the next migration touching `spl_wording_quote_budget`), #169
-   (the 12th `ScanResult` counter); see the ledger.
-2. **`5c.5` pregnancy & lactation is spiked-not-designed**: LactMed puts 1,679 moieties outside MED-RT's thin
-   lactation floor. It is gated on a **clinician review that has not happened** (23-row worklist).
-3. **The class half of 5c.3** (#155, #102, word order). Deferring it **RAISED** drug × drug yield by 193 pairs.
-
-## Parallel project sequencing
-
-DrugCentral is done: a **candidate-tier floor pinned to the 2023 release** — no refresh, no auto-alert. **SPL is a
-fourth candidate source and DELIBERATELY NOT an arm of `exact_ddi_pair`**: it means *a label's interactions section
-names both drugs*, not *an authority asserts they interact*. FDA toxicity is cleared; class-grain content (#98) gates
-#112/#105.
+1. **Get the PR reviewed and merged**, then the owner's **clinical read of results §5** (beta blockers, ACE
+   inhibitors, SSRIs). Nothing in this round drew a clinical conclusion.
+2. **Owner design calls on #203** before curators work the new worklist: exclude MED-RT's "Unknown ..."
+   catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
+   differently on the worklist? Whatever is chosen, "not confirmed" stays "not confirmed".
+3. **#202** before the read path gets a consumer beyond the CLI (an API, Cairn): a filter-pushable
+   `class_property` and a join-based `asserted_by`. A NEW migration — `db/060` is immutable once merged.
+4. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
+   and FEEDS class profiles: today no source states a condition about a class. Expect drug × drug yield to
+   fall when classes are re-added (ROADMAP § 5c.3) — not a regression.
+5. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician
+   review that has not happened (23-row worklist).
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#163, #165,
-#166, #168, #171 are CLOSED (PR #185); #151 is CLOSED (PR #189).** **#177 and #89 are CLOSED (PR #193). #187 is CLOSED (PR #194). #188, #170, #195 are CLOSED (PRs #196, #197). #186 is CLOSED (PR #198); #199 is CLOSED (PR #200). #130/#133 are stale-but-open; #149 closes on this PR's merge.** Open: **#164**, **#169**. Standing: **#155** and **#102 re-opened**, both inherited by the deferred class
-half; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148,
-#152, #153, #128/#129, #132–#135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
-releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
+#202, #203.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**, **#169**. Standing:
+**#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base) is wanted by three
+sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132, #134, #135, #124,
+#121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17, the three
+rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
+- **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
+  `fda-cyp` + `drugcentral`, no SPL), `curated_property_ruling` empty. **Its builds and figures are in the
+  [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
   beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and

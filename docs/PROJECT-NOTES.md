@@ -5873,6 +5873,29 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
 - **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
+## The class-profiles round (2026-11-07) — `db/058`–`db/061`, measured on `drugref_profiles`
+
+A class's profile is what it has — **asserted** (a source or curator states it about the class or an ancestor,
+passed down) and/or **observed** (≥ 75% of ≥ 2 direct members carry it, never inherited) — and each direct
+member's standing against it: `confirmed_exception` > `carries` > `inherits` > `not_confirmed`. **"Not
+confirmed" means no record for that drug, never "safe"**; it raises gap kind 19 (`unconfirmed_class_property`)
+on the curators' worklist. Design: `superpowers/specs/2026-11-07-drugref-class-profiles-design.md`.
+**Every figure lives in [the results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md),
+not here.** What the next round inherits:
+
+- **The read path materialises every class** ([#202](https://github.com/cairn-ehr/drugref/issues/202)): a
+  `WHERE class_uuid = X` read of `class_property` costs the full view, so `drugref profile class` and, much
+  worse, `profile drug` without `--lens` are too slow for an interactive consumer. Per-ingest gap registration
+  is tolerable. Not tuned in the measuring round, by rule.
+- **The worklist is usable in size but skewed** ([#203](https://github.com/cairn-ehr/drugref/issues/203)): one
+  near-universal object (`CI_with Drug Hypersensitivity`) dominates it, and MED-RT's catch-all "Unknown ..."
+  MoA/PE classes act as drug classes — the PK argument of #155 again, one axis over.
+- **Trap: `asserted_by` in `class_property` does not re-apply the MED-RT PK filter to ancestors.** Latent on
+  real data (no PK class has a non-PK descendant or asserts anything — measured); it becomes live the day a
+  source gives a MED-RT PK class a non-PK descendant or an assertion.
+- **SPL class-mention extraction (the old class half of 5c.3, #102/#155) is the NEXT project and feeds this
+  one**: today no source states a *condition* about a class, so every condition class property is observed.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -5954,6 +5977,13 @@ left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third 
 `signing.py` and `release_verification.py` left fourth and fifth — § "The signing.py and release_verification.py
 splits". `curation.py` left last — § "The curation.py split" — so **#177 and #89 close on that PR's merge** and
 the ledger in `tests/test_module_size_cap.py` is deleted.
+
+**Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
+a single-class read of `class_property` computes every class (the profile CLI's cost) ·
+**[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
+composition (one object dominates; MED-RT catch-all classes raise questions). Figures on the issues and in the
+results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
+GitHub 2026-11-07**, alongside #130.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -6457,7 +6487,12 @@ ran in CI and `ruff` was not even a project dependency.
   **`035` the class grain's detectors** (`severity_kind` + five CHECK→FK conversions, `class_pair_rule_reach`,
   `gap_uncurated_class_interaction_rule` + gap kind 16, `gap_unreviewed_expansion_root` widened to both grains,
   `curated_target_unresolved`'s third arm, `curated_ddi_pair.severity_rank`, `curated_grain_disagreement`,
-  `curated_class_interaction` as a `signature_target_kind`). **Read the LATEST file that touches an object for its
+  `curated_class_interaction` as a `signature_target_kind`) · **`058`–`061` class profiles** (`058`
+  `curated_property_ruling`, append-only, one live ruling per key; `059` six read-only base views —
+  `class_profile_member`, `member_property_record`, `member_ruling_oriented`, `member_property`,
+  `member_property_negation`, `class_asserted_property`; `060` four class-level views — `class_property`,
+  `class_property_member`, `class_member_peculiarity`, `class_subclass_only_member`; `061`
+  `gap_unconfirmed_class_property` + gap kind 19 `unconfirmed_class_property`). **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
@@ -6473,6 +6508,9 @@ ran in CI and `ruff` was not even a project dependency.
   + the curated READ surface `src/drugref/{curated_read,cli_status,cli_interactions}.py` — `curated_read` owns
   both reads of the graded overlay (`effective_grades_for`, `unrankable_severities`), `cli_status` owns the two
   later `drugref status` blocks, and `cli_interactions` is `drugref interactions` (db/038, issue 114)
+  + the class-profiles surface (`db/058`–`db/061`): `class_profile_read.py` (the READ; pure dataclasses),
+  `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
+  (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
@@ -6603,6 +6641,10 @@ ran in CI and `ruff` was not even a project dependency.
   counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
   only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
   `drugref status` refusing to call their stamps a duration. Keep both.
+- **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
+  **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
+  **no SPL** (not a property source). `curated_property_ruling` is empty there. Commands, timings and every
+  figure: [the results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md).
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).
