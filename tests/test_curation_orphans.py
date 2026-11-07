@@ -451,8 +451,12 @@ def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsy
     # and shipped a local substitute whose first assertion could not fail -- so the
     # newest reporting module over the curated overlay was the one module exempt from
     # the guard. Added in review of PR #119; the module is clean, so it passes as-is.
+    #
+    # `cli_class_profile` (db/058-062) is the fourth module to arrive without joining, and
+    # it writes and reports on curated_property_ruling. Added by the class-profiles final
+    # review; clean, so it passes as-is.
     ["cli", "cli_policy", "cli_signing", "cli_signing_release", "cli_curate",
-     "cli_status", "cli_interactions"])
+     "cli_status", "cli_interactions", "cli_class_profile"])
 @pytest.mark.parametrize("table", [
     "curated_interaction", "curated_condition",
     # THE FOUR SLICE-5C.4 TABLES, added the round cli_signing.py/
@@ -468,7 +472,10 @@ def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsy
     # four modules could reach are listed now, so the docstring's claim and
     # the parametrize list agree.
     "signing_key", "assertion_signature", "release_manifest",
-    "release_manifest_entry"])
+    "release_manifest_entry",
+    # The two later curated tables, missing from this list since they shipped:
+    # curated_class_interaction (db/035) and curated_property_ruling (db/058).
+    "curated_class_interaction", "curated_property_ruling"])
 def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     """cli.py's own discipline, pinned. `_handle_status` is allowed to embed SELECTs
     against operational views, and that exception must not creep to cover the curated

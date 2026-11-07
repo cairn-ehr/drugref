@@ -56,8 +56,11 @@ def test_a_not_confirmed_member_raises_one_question_with_a_frozen_key(conn):
     assert rows[0][0] == key
     assert rows[0][1] == ids.mint_question_uuid("unconfirmed_class_property", key)
     text = rows[0][2]
+    # The alert sentence is on EVERY question: no alert-path view reads
+    # curated_property_ruling (#204), so it is true of condition answers too.
     for needle in ("m3", "CI_with", "Cond", "K", "holds", "does not hold",
-                   "cannot be established"):
+                   "cannot be established",
+                   "Answering does not change prescribing alerts."):
         assert needle in text
     assert "safe" not in text.lower()
 

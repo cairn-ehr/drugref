@@ -30,6 +30,8 @@ CLASS_PROFILE_GAP_SOURCES = {
             "(SELECT string_agg(class_name, ', ' "
             "ORDER BY class_name) FROM drugref.substance_class "
             "WHERE class_uuid = ANY(" + _V + ".raising_classes)) || "
-            "'. Answer: holds, does not hold, or cannot be established.'"),
+            "'. Answer: holds, does not hold, or cannot be established. "
+            # True of every answer: no alert-path view reads the rulings (#204).
+            "Answering does not change prescribing alerts.'"),
     },
 }
