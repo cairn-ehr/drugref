@@ -13,22 +13,20 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profiles`; PR #205 OPEN (to `main`). Schema now ends at `db/063`** (`058`–`063`, class
-profiles). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest`
-fails if the line and the collected suite disagree.
+**Branch `claude/class-profile-fixes`; PR #208 OPEN (to `main`). PR #205 (class profiles) is MERGED. Schema now
+ends at `db/064`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+`uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED: the class-profiles final review's fix wave.** `db/062` (`class_property.asserted_by` no
-longer leaks MED-RT PK ancestors and lost its per-row subquery; the gap closes on a partner-side interaction
-ruling; COMMENTs carry the four-way lens split and the alert-path limit); `drugref profile drug` prints all four
-groups and reads each view once for all lenses; `profile rule` exits 2 on a refused value; the ruling writer
-supersedes on any provenance change; a `curated_property_ruling/v1` signing vector. Re-measured on
-`drugref_profiles` (now at `db/062`): `profile class` ~1.5 s (was 11 s), `profile drug` propranolol 1.7 s (was
-189 s) — the [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md) §6, re-run with
-`tools/class_profile_census.sql`. **Filed: #204.** Then `/finalcheck`'s review: `db/063` (drug-pair rulings
-stored lower-uuid-first, so a reversed correction supersedes; no self-pair rulings; no member standing against
-an interaction with itself: 129 rows and 4 self-questions gone, worklist 2,390); `profile rule` says when an
-answer was already live and warns that a class `does_not_hold` refutes nothing observed; a MED-RT PK class is
-refused instead of printed empty. **Filed: #206, #207.**
+**⇒ JUST FINISHED: the class-profiles follow-ups (HANDOVER's old item 6 plus #206, #207).** `db/064`:
+`class_property.members` is the ELIGIBLE count (an interaction partner that is itself a direct member is not
+in its own denominator), and the ≥ 2 floor and 75% bar use it (#206). `questions.require_question_for`: all
+four curated writers refuse a `question_uuid` not minted from the row's own key, computed by the gap kind's
+frozen `key_sql` (#207). `profile class` prints how many of the asserted properties a subclass-only drug inherits,
+naming its confirmed exceptions and any interaction with itself (spec §4); an observed interaction row says
+"of the N members other than X". Pre-merge review follow-ups lodged: #209 (no SQL view for subclass-only
+inheritance), #210 (audit pre-#207 citations). The census script counts profile-view objects with no name. Measured on `drugref_profiles`
+(now at `db/064`): observed 4,317 → 4,321, gap rows 2,390 → 2,393, 0 unnamed objects, no read-cost regression
+(PROJECT-NOTES § "The class-profiles round").
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
@@ -36,21 +34,20 @@ refused instead of printed empty. **Filed: #206, #207.**
 
 ## ⇒ DO THIS NEXT
 
-1. **Get the PR reviewed and merged**, then the owner's **clinical read of results §5** (beta blockers, ACE
-   inhibitors, SSRIs). Nothing in this round drew a clinical conclusion. **After that read**, write the
-   docs-site *Design decisions* record for class profiles (living decisions only).
-2. **Owner design call on #204** — interaction rulings never reach the prescribing-alert path. **Curators must
-   not work `interacts_with` questions (539 of 2,390) until it is decided.**
+1. **Get this PR reviewed and merged.** Then the owner's **clinical read of the class-profiles results §5**
+   (beta blockers, ACE inhibitors, SSRIs); nothing so far drew a clinical conclusion. **After that read**,
+   write the docs-site *Design decisions* record for class profiles (living decisions only).
+2. **Owner design call on #204**: interaction rulings never reach the prescribing-alert path. **Curators must
+   not work `interacts_with` questions until it is decided.**
 3. **Owner design calls on #203** before curators work the rest of the worklist: exclude MED-RT's "Unknown ..."
    catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
    differently? Whatever is chosen, "not confirmed" stays "not confirmed".
 4. **Owner question**: should an ASSERTED property passing down to a subclass honour a
    `class_expansion_policy` deny? Today it does not (db/060 reads no policy).
-5. **#202 remaining**: a filtered read still computes every class (now ~0.4 s, scaling with the registry).
+5. **Owner question (from #207)**: may a `curated_interaction` cite the gap-19 `interacts_with class` question
+   about the same pair? Today the guard says no (only its `uncurated_interaction_rule` question).
+6. **#202 remaining**: a filtered read still computes every class (~0.5 s, scaling with the registry).
    Before a consumer beyond the CLI: a filter-pushable `class_property`. A NEW migration.
-6. Small follow-ups (no issue yet; file or do): the class view should show "inherited via" beside
-   subclass-only drugs (spec §4 promises it, `render_class_profile` lists them without it); a set-based check
-   that every object uuid in the profile views resolves to a name (the reader falls back to the raw uuid).
 7. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
    and FEEDS class profiles. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is
    gated on a clinician review that has not happened.
@@ -58,7 +55,7 @@ refused instead of printed empty. **Filed: #206, #207.**
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
-#202 (remaining), #203, #204, #206, #207.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+#202 (remaining), #203, #204; #206 and #207 close on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
@@ -70,7 +67,7 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
-  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/063`, `curated_property_ruling` empty. **Its builds and figures are in the
+  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/064`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction

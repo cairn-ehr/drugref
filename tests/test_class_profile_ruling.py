@@ -172,6 +172,18 @@ def test_the_table_is_a_signature_target_and_in_every_release(conn):
     assert "curated_property_ruling/v1" in signing_contexts.NATURAL_KEY_COLUMNS
 
 
+def _question(conn, key):
+    """A gap-19 question registered as register_from_gaps would mint it."""
+    from drugref import ids
+    q = ids.mint_question_uuid("unconfirmed_class_property", key)
+    r = w.run(conn)
+    conn.execute(
+        "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+        "question_text, first_derived_ingest, last_derived_ingest) "
+        "VALUES (%s, 'unconfirmed_class_property', %s, 'q', %s, %s)", (q, key, r, r))
+    return q
+
+
 def test_a_closed_gap_carrying_a_ruling_is_retained_not_deleted(conn):
     """The retention guard in questions.register_from_gaps must list this table: its
     question FK is ON DELETE CASCADE into an append-only table, so an omission would
@@ -180,42 +192,33 @@ def test_a_closed_gap_carrying_a_ruling_is_retained_not_deleted(conn):
     r = w.run(conn)
     m = w.moiety(conn, r, "drugQ")
     c = w.condition(conn, r, "CondQ")
-    questions.register_from_gaps(conn, r)
-    # Keyed on THIS moiety: other tests commit questions of their own.
-    qu = conn.execute("SELECT question_uuid FROM drugref.open_question "
-                      "WHERE gap_key = %s", (f"MOIETY:{m}",)).fetchone()[0]
+    # The ruling's own gap-19 question (#207: it may cite no other). Nothing raises the
+    # property, so the view does not derive it: the next register_from_gaps closes it.
+    qu = _question(conn, f"CLASSPROP:{m}:CI_with:condition:{c}")
     _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=qu)
-    w.member(conn, r, m, w.klass(conn, r, "PEClass", concept_type="PE"),
-             relationship="has_PE")  # closes gap_unclassified_moiety
     questions.register_from_gaps(conn, r)  # must not abort
     assert conn.execute("SELECT is_current FROM drugref.open_question "
                         "WHERE question_uuid = %s", (qu,)).fetchall() == [(False,)]
-
-
-def _question(conn, key):
-    import uuid
-    q = uuid.uuid4()
-    r = w.run(conn)
-    conn.execute(
-        "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
-        "question_text, first_derived_ingest, last_derived_ingest) "
-        "VALUES (%s, 'unclassified_moiety', %s, 'q', %s, %s)", (q, key, r, r))
-    return q
 
 
 def test_the_same_verdict_answering_a_different_question_supersedes(world):
     """Idempotence compares EVERY written field, not only the verdict: a re-answer that
     cites another question (or another reviewer or reviewed_against) is new provenance, and a
     no-op would silently drop it."""
-    conn, m, _k, c, _b = world
-    q1, q2 = _question(conn, "TEST:q1"), _question(conn, "TEST:q2")
-    old = _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q1)
-    assert _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q1) == old
-    new = _rule(conn, subject_moiety_uuid=m, object_uuid=c, question_uuid=q2)
+    conn, m, _k, _c, b = world
+    # A drug pair is the one key two questions may legitimately ask: one per side.
+    q1 = _question(conn, f"CLASSPROP:{m}:interacts_with:moiety:{b}")
+    q2 = _question(conn, f"CLASSPROP:{b}:interacts_with:moiety:{m}")
+    pair = dict(subject_moiety_uuid=m, relationship="interacts_with",
+                object_kind="moiety", object_uuid=b)
+    old = _rule(conn, question_uuid=q1, **pair)
+    assert _rule(conn, question_uuid=q1, **pair) == old
+    new = _rule(conn, question_uuid=q2, **pair)
     assert new != old
     assert conn.execute(
         "SELECT question_uuid FROM drugref.curated_property_ruling "
-        "WHERE subject_uuid = %s AND superseded_by IS NULL", (m,)).fetchall() == [(q2,)]
+        "WHERE subject_uuid = least(%s, %s) AND superseded_by IS NULL",
+        (m, b)).fetchall() == [(q2,)]
 
 
 def test_a_signed_ruling_publishes_and_verifies_with_its_generated_key(world):

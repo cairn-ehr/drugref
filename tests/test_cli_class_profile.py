@@ -17,16 +17,44 @@ def _profile():
     p = cpr.ClassProperty(_line(), True, ("K class",), ("MED-RT",), True, 3, 4,
                           ("edrug",), ("fdrug",))
     return cpr.ClassProfile(_U, "K class", "MED-RT", "EPC", ("adrug", "edrug"), (p,),
-                            {"adrug": (_line("Gout"),)}, (("ddrug", "S class"),))
+                            {"adrug": (_line("Gout"),)},
+                            (cpr.SubclassOnlyDrug("ddrug", "S class", (_line(),), ()),
+                             cpr.SubclassOnlyDrug("gdrug", "S class", (),
+                                                  (_line(),))))
 
 
 def test_class_renderer_uses_the_exact_copy():
     text = "\n".join(ccp.render_class_profile(_profile()))
     for s in ("not confirmed for: edrug", "confirmed exception: fdrug",
-              "in subclasses only:", "asserted (MED-RT)", "observed in 3 of 4 members"):
+              "in subclasses only:", "asserted (MED-RT)", "observed in 3 of 4 members",
+              "ddrug (via S class): inherits every asserted property above",
+              "gdrug (via S class): inherits 0 of the 1 asserted properties above; "
+              "confirmed exception: CI_with condition Asthma"):
         assert s in text
     low = text.lower().replace("confirmed exception", "")
     assert "safe" not in low and "exception" not in low and "does not apply" not in low
+
+
+def test_an_interaction_with_a_member_names_who_is_left_out_of_the_count():
+    """#206: 'observed in 3 of 4' under a 5-member header must say why it is 4."""
+    x = cpr.PropertyLine("interacts_with", "moiety", _U, "xdrug")
+    p = cpr.ClassProperty(x, False, (), (), True, 3, 4, ("udrug",), ())
+    prof = cpr.ClassProfile(_U, "C", "MED-RT", "EPC",
+                            ("udrug", "vdrug", "xdrug", "ydrug", "zdrug"), (p,), {}, ())
+    assert ("    observed in 3 of the 4 members other than xdrug"
+            in ccp.render_class_profile(prof))
+
+
+def test_a_subclass_only_drug_says_it_never_inherits_an_interaction_with_itself():
+    x = cpr.PropertyLine("interacts_with", "moiety", _U, "xdrug")
+    y = cpr.PropertyLine("interacts_with", "moiety", _U, "ydrug")
+    props = tuple(cpr.ClassProperty(pl, True, ("K",), ("MED-RT",), False, 0, 0, (), ())
+                  for pl in (x, y))
+    prof = cpr.ClassProfile(_U, "K", "MED-RT", "EPC", (), props, {},
+                            (cpr.SubclassOnlyDrug("xdrug", "S", (y,), ()),))
+    assert ("    xdrug (via S): inherits 1 of the 2 asserted properties above; "
+            "not with itself: interacts_with moiety xdrug"
+            in ccp.render_class_profile(prof))
 
 
 def test_drug_renderer_shows_all_four_groups():

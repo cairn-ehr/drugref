@@ -281,19 +281,23 @@ def test_a_closed_gap_carrying_a_CLASS_grain_judgement_is_RETAINED_not_deleted(c
     curation.record_class_interaction_judgement -- a public keyword argument.
     """
     run_id = _run(conn)
-    m = _moiety(conn, run_id)
-    questions.register_from_gaps(conn, run_id)
-    qu = conn.execute("SELECT question_uuid FROM drugref.open_question").fetchone()[0]
+    subject = _a_class(conn, run_id, "N0000000101", "Subject Class [PE]")
+    obj = _a_class(conn, run_id, "N0000000102", "Object Class [PE]")
+    # The rule's OWN question (#207: a writer refuses any other). No candidate rule
+    # backs it, so the next register_from_gaps finds the gap closed.
+    key = f"CLASS:{subject}/CLASS:{obj}/CI_AXIS:CI_PE"
+    qu = ids.mint_question_uuid("uncurated_class_interaction_rule", key)
+    conn.execute(
+        "INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+        "question_text, first_derived_ingest, last_derived_ingest) "
+        "VALUES (%s, 'uncurated_class_interaction_rule', %s, 'q', %s, %s)",
+        (qu, key, run_id, run_id))
 
     curation.record_class_interaction_judgement(
-        conn,
-        _a_class(conn, run_id, "N0000000101", "Subject Class [PE]"),
-        _a_class(conn, run_id, "N0000000102", "Object Class [PE]"),
-        "CI_PE", False, question_uuid=qu,
+        conn, subject, obj, "CI_PE", False, question_uuid=qu,
         reviewed_by="Dr X", reviewed_against="test")
 
-    _classify(conn, run_id, m)                       # the gap closes
-    questions.register_from_gaps(conn, run_id)       # must NOT abort
+    questions.register_from_gaps(conn, run_id)       # the gap closes; must NOT abort
 
     assert conn.execute(
         "SELECT is_current FROM drugref.open_question "
