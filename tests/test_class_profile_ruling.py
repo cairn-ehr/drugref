@@ -22,7 +22,7 @@ def _rule(conn, *, verdict="holds", relationship="CI_with", object_kind="conditi
           **kw):
     return curation_property.record_property_ruling(
         conn, relationship=relationship, object_kind=object_kind, verdict=verdict,
-        reviewed_by="Dr X", reviewed_against="test", **kw)
+        reviewed_by="Dr X", reviewed_against="test", **kw)[0]
 
 
 def test_a_moiety_holds_ruling_round_trips(world):
@@ -41,6 +41,16 @@ def test_re_recording_the_same_verdict_writes_nothing(world):
     assert _rule(conn, subject_moiety_uuid=m, object_uuid=c) == first
     assert conn.execute("SELECT count(*) FROM drugref.curated_property_ruling "
                         "WHERE subject_uuid = %s", (m,)).fetchone()[0] == 1
+
+
+def test_the_writer_says_whether_it_wrote(world):
+    """The CLI must not print "recorded" for an identical re-answer that wrote nothing."""
+    conn, m, _k, c, _b = world
+    kw = dict(subject_moiety_uuid=m, relationship="CI_with", object_kind="condition",
+              object_uuid=c, verdict="holds", reviewed_by="t", reviewed_against="t")
+    rid, written = curation_property.record_property_ruling(conn, **kw)
+    assert written is True
+    assert curation_property.record_property_ruling(conn, **kw) == (rid, False)
 
 
 def test_a_changed_verdict_supersedes(world):
@@ -84,6 +94,43 @@ def test_a_moiety_interaction_ruling_is_allowed(world):
     conn, m, _k, _c, b = world
     _rule(conn, relationship="interacts_with", object_kind="moiety",
           verdict="cannot_establish", subject_moiety_uuid=m, object_uuid=b)
+
+
+def test_a_drug_pair_is_stored_in_one_orientation(world):
+    """Interactions are symmetric, so (X, Y) and (Y, X) are ONE natural key: the writer
+    stores the lower uuid as the subject. Otherwise both orientations could be live at
+    once, and a later correction recorded from the other side would be outvoted by the
+    earlier does_not_hold without anything saying so."""
+    conn, m, _k, _c, b = world
+    lo, hi = sorted((m, b))
+    first = _rule(conn, relationship="interacts_with", object_kind="moiety",
+                  subject_moiety_uuid=lo, object_uuid=hi, verdict="does_not_hold")
+    second = _rule(conn, relationship="interacts_with", object_kind="moiety",
+                   subject_moiety_uuid=hi, object_uuid=lo)
+    assert conn.execute(
+        "SELECT subject_uuid, object_uuid, verdict, superseded_by "
+        "FROM drugref.curated_property_ruling WHERE relationship = 'interacts_with' "
+        "ORDER BY curated_property_ruling_id").fetchall() == [
+        (lo, hi, "does_not_hold", second), (lo, hi, "holds", None)]
+    assert first != second
+
+
+def test_the_table_refuses_an_unordered_drug_pair(world):
+    conn, m, _k, _c, b = world
+    lo, hi = sorted((m, b))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute(
+            "INSERT INTO drugref.curated_property_ruling (subject_moiety_uuid, "
+            "relationship, object_moiety_uuid, verdict, source, reviewed_by, "
+            "reviewed_against) VALUES (%s, 'interacts_with', %s, 'holds', 'DRUGREF', "
+            "'x', 'x')", (hi, lo))
+
+
+def test_a_drug_cannot_be_ruled_to_interact_with_itself(world):
+    conn, m, _k, _c, _b = world
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _rule(conn, relationship="interacts_with", object_kind="moiety",
+              subject_moiety_uuid=m, object_uuid=m)
 
 
 @pytest.mark.parametrize("both", [True, False])
@@ -158,7 +205,7 @@ def _question(conn, key):
 
 def test_the_same_verdict_answering_a_different_question_supersedes(world):
     """Idempotence compares EVERY written field, not only the verdict: a re-answer that
-    cites another question (or another reviewer or source) is new provenance, and a
+    cites another question (or another reviewer or reviewed_against) is new provenance, and a
     no-op would silently drop it."""
     conn, m, _k, c, _b = world
     q1, q2 = _question(conn, "TEST:q1"), _question(conn, "TEST:q2")
@@ -172,7 +219,7 @@ def test_the_same_verdict_answering_a_different_question_supersedes(world):
 
 
 def test_a_signed_ruling_publishes_and_verifies_with_its_generated_key(world):
-    """The natural key is five GENERATED columns (subject_kind, subject_uuid, ...): they
+    """The natural key is five columns, four of them GENERATED (subject_kind, ...): they
     must render in the manifest entry, and the release must verify intact."""
     import datetime as dt
 

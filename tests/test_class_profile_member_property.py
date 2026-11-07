@@ -130,6 +130,19 @@ def test_negating_every_record_makes_a_confirmed_exception(world):
     assert key in _negated(conn, x)
 
 
+def test_a_holds_ruling_puts_back_what_every_record_negation_removed(world):
+    """member_property_negation's second arm needs NO live holds: a curator's later holds
+    beats the record-level applies = false, so the drug carries it again."""
+    conn, r = world
+    k, x = w.klass(conn, r, "C"), w.moiety(conn, r, "x")
+    w.class_ci(conn, r, x, k, "CI_PE")
+    w.curated_ci(conn, x, k, "CI_PE", applies=False)
+    _rule(conn, "holds", "interacts_with", "class", k, subject_moiety_uuid=x)
+    key = ("interacts_with", "class", k)
+    assert key in _props(conn, x)
+    assert key not in _negated(conn, x)
+
+
 def test_holds_adds_and_does_not_hold_removes(world):
     conn, r = world
     m, c = w.moiety(conn, r, "m"), w.condition(conn, r, "c")

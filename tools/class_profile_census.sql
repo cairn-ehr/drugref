@@ -4,7 +4,7 @@
 --   psql "host=localhost port=5532 dbname=drugref_profiles user=postgres" -f tools/class_profile_census.sql
 --
 -- Two figures need more than psql and are run by hand beside it:
---   CLI wall time (results §6), the class and drug used throughout the results record:
+--   CLI wall time (results §6), for the class the results record uses and a drug in it:
 --     /usr/bin/time -p uv run drugref --dsn "<dsn>" profile class b0723faa-540c-5d7a-870f-4466c1b351e5
 --     /usr/bin/time -p uv run drugref --dsn "<dsn>" profile drug  d1c60bfd-af53-5e58-ae5e-ca17075ff875
 --   (beta-Adrenergic Blocker [EPC]; propranolol, no --lens.)

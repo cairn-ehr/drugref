@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profiles`; PR #205 OPEN (to `main`). Schema now ends at `db/062`** (`058`–`062`, class
+**Branch `claude/class-profiles`; PR #205 OPEN (to `main`). Schema now ends at `db/063`** (`058`–`063`, class
 profiles). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest`
 fails if the line and the collected suite disagree.
 
@@ -24,7 +24,11 @@ groups and reads each view once for all lenses; `profile rule` exits 2 on a refu
 supersedes on any provenance change; a `curated_property_ruling/v1` signing vector. Re-measured on
 `drugref_profiles` (now at `db/062`): `profile class` ~1.5 s (was 11 s), `profile drug` propranolol 1.7 s (was
 189 s) — the [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md) §6, re-run with
-`tools/class_profile_census.sql`. **Filed: #204.**
+`tools/class_profile_census.sql`. **Filed: #204.** Then `/finalcheck`'s review: `db/063` (drug-pair rulings
+stored lower-uuid-first, so a reversed correction supersedes; no self-pair rulings; no member standing against
+an interaction with itself: 129 rows and 4 self-questions gone, worklist 2,390); `profile rule` says when an
+answer was already live and warns that a class `does_not_hold` refutes nothing observed; a MED-RT PK class is
+refused instead of printed empty. **Filed: #206, #207.**
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
@@ -36,7 +40,7 @@ supersedes on any provenance change; a `curated_property_ruling/v1` signing vect
    inhibitors, SSRIs). Nothing in this round drew a clinical conclusion. **After that read**, write the
    docs-site *Design decisions* record for class profiles (living decisions only).
 2. **Owner design call on #204** — interaction rulings never reach the prescribing-alert path. **Curators must
-   not work `interacts_with` questions (543 of 2,394) until it is decided.**
+   not work `interacts_with` questions (539 of 2,390) until it is decided.**
 3. **Owner design calls on #203** before curators work the rest of the worklist: exclude MED-RT's "Unknown ..."
    catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
    differently? Whatever is chosen, "not confirmed" stays "not confirmed".
@@ -54,7 +58,7 @@ supersedes on any provenance change; a `curated_property_ruling/v1` signing vect
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
-#202 (remaining), #203, #204.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+#202 (remaining), #203, #204, #206, #207.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
@@ -66,7 +70,7 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
-  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/062`, `curated_property_ruling` empty. **Its builds and figures are in the
+  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/063`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction

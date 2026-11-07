@@ -194,6 +194,57 @@ def test_a_pk_ancestors_assertion_contributes_nothing_to_its_descendant(world):
     w.class_ci(conn, r, x, p, source="ONCHIGH")    # the PK ancestor's, a second source
     row = _cp(conn, c)[("interacts_with", "moiety", x)]
     assert (row[1], row[2]) == ([c], ["MED-RT"])
+    assert _cp(conn, p) == {}                      # nor is the PK class profiled itself
+
+
+def test_two_asserting_levels_both_name_themselves_and_their_sources(world):
+    conn, r = world
+    onc = w.run(conn, source="ONCHIGH")
+    p, c = w.klass(conn, r, "P"), w.klass(conn, r, "C")
+    w.parent(conn, r, c, p)
+    x = w.moiety(conn, r, "x")
+    w.class_ci(conn, r, x, c)
+    w.class_ci(conn, onc, x, p, source="ONCHIGH")
+    row = _cp(conn, c)[("interacts_with", "moiety", x)]
+    assert (row[1], row[2]) == (sorted([c, p]), ["MED-RT", "ONCHIGH"])
+
+
+def test_a_member_has_no_standing_against_an_interaction_with_itself(world):
+    """C interacts with x and x is itself a member of C. The property is C's, but "does
+    x interact with x" is meaningless: no standing for x, so no self-question either --
+    whether the property was asserted (x -> C rule) or observed (the others all
+    interact with x)."""
+    conn, r = world
+    c = w.klass(conn, r, "C")
+    x, *others = (w.moiety(conn, r, n) for n in ("x", "y", "z", "v"))
+    for m in (x, *others):
+        w.member(conn, r, m, c)
+    w.class_ci(conn, r, x, c)                          # asserted route
+    assert ("interacts_with", "moiety", x) in _cp(conn, c)
+    assert x not in _standing(conn, c)
+    d = w.klass(conn, r, "D")
+    for m in (x, *others):
+        w.member(conn, r, m, d)
+    for m in others:
+        w.moiety_ci(conn, r, m, x)                     # observed route, 3 of 4
+    assert _cp(conn, d)[("interacts_with", "moiety", x)][3] is True
+    assert x not in {m for m, in conn.execute(
+        "SELECT moiety_uuid FROM drugref.class_property_member WHERE class_uuid = %s "
+        "AND object_uuid = %s", (d, x))}
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.gap_unconfirmed_class_property "
+        "WHERE moiety_uuid = %s AND object_uuid = %s", (x, x)).fetchone() == (0,)
+
+
+def test_a_direct_member_of_a_class_and_its_subclass_is_not_subclass_only(world):
+    conn, r = world
+    c, d = w.klass(conn, r, "C"), w.klass(conn, r, "D")
+    w.parent(conn, r, d, c)
+    m = w.moiety(conn, r, "both")
+    w.member(conn, r, m, c)
+    w.member(conn, r, m, d)
+    assert conn.execute("SELECT count(*) FROM drugref.class_subclass_only_member "
+                        "WHERE class_uuid = %s", (c,)).fetchone() == (0,)
 
 
 def _class_rule(conn, k, cond, verdict):

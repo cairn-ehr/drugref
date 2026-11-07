@@ -133,7 +133,7 @@ def _cases(fp: str) -> list[dict]:
         # frozen with no vector -- curated_class_interaction/v1's omission again.
         # DELIBERATELY UNLIKE EVERY CASE ABOVE: the subject is a CLASS, so of the five
         # subject/object FK columns exactly two are set and three are NULL, and
-        # question_uuid is NULL too. It is also the only context whose payload carries
+        # question_uuid is NULL (as in case 1). It is also the only context whose payload carries
         # GENERATED columns (subject_kind, subject_uuid, object_kind, object_uuid,
         # derived by the table from the FK columns): they are signed like any other
         # field, so subject_uuid repeats subject_class_uuid byte for byte.

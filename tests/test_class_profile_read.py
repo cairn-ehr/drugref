@@ -8,8 +8,8 @@ from tests import class_profile_world as w
 
 
 def _world(conn):
-    """Class K with members a, b, c (a, b contraindicated with the observed condition,
-    c not); a sub-class S holding drug d, so d is a subclass-only member of K."""
+    """Class K with members a, b, c, all contraindicated with Asthma (observed); only a
+    with Gout. A sub-class S holds drug d, so d is a subclass-only member of K."""
     r = w.run(conn)
     k = w.klass(conn, r, "K class")
     s = w.klass(conn, r, "S class")
@@ -29,7 +29,7 @@ def _world(conn):
 
 def test_class_profile_reads_the_views(conn):
     x = _world(conn)
-    # drop c's carriage by making a 4th member that lacks it: 3/4 still observed (>=75%)
+    # add a 4th member e without the record: 3/4 still observed (>= 75%), e not_confirmed
     r = x["r"]
     e = w.moiety(conn, r, "edrug")
     w.member(conn, r, e, x["k"])
@@ -41,6 +41,40 @@ def test_class_profile_reads_the_views(conn):
     assert asthma.not_confirmed == ("edrug",)
     assert [pl.object_name for pl in p.peculiarities["adrug"]] == ["Gout"]
     assert p.subclass_only == (("ddrug", "S class"),)
+
+
+def test_an_asserted_property_names_its_classes_sources_and_exceptions(conn):
+    """Asserted on K (MED-RT) and on its ancestor P (ONCHIGH); b ruled out. Through the
+    lens on K itself, a member with no record reads plain `inherits` (no via)."""
+    from drugref import curation_property
+    r = w.run(conn)
+    onc = w.run(conn, source="ONCHIGH")
+    p, k = w.klass(conn, r, "P class"), w.klass(conn, r, "K class")
+    w.parent(conn, r, k, p)
+    x, a, b = (w.moiety(conn, r, n) for n in ("xdrug", "adrug", "bdrug"))
+    for m in (a, b):
+        w.member(conn, r, m, k)
+    w.class_ci(conn, r, x, k)
+    w.class_ci(conn, onc, x, p, source="ONCHIGH")
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=b, relationship="interacts_with", object_kind="moiety",
+        object_uuid=x, verdict="does_not_hold", reviewed_by="t", reviewed_against="t")
+    (cp,) = cpr.class_profile(conn, k).properties
+    assert cp.asserted_via == ("K class", "P class")
+    assert cp.asserted_by == ("MED-RT", "ONCHIGH")
+    assert cp.confirmed_exceptions == ("bdrug",) and cp.not_confirmed == ()
+    (la,) = cpr.drug_profile(conn, a).lenses
+    assert [(pl.object_name, st) for pl, st in la.shared] == [("xdrug", "inherits")]
+
+
+def test_a_medrt_pk_class_is_refused_not_shown_empty(conn):
+    """Every view excludes MED-RT PK classes (#155); printing "0 members" would read as
+    "this class has no members"."""
+    r = w.run(conn)
+    pk = w.klass(conn, r, "Clearance", concept_type="PK")
+    w.member(conn, r, w.moiety(conn, r, "pkdrug"), pk, relationship="has_PK")
+    with pytest.raises(LookupError, match="not profiled"):
+        cpr.class_profile(conn, pk)
 
 
 def test_unknown_class_and_moiety_raise_lookuperror(conn):

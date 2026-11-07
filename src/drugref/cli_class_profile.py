@@ -61,10 +61,11 @@ def render_drug_profile(p: cpr.DrugProfile) -> list[str]:
 
 def _handle_class(conn, args) -> int:
     try:
-        print("\n".join(render_class_profile(cpr.class_profile(conn, args.class_uuid))))
+        p = cpr.class_profile(conn, args.class_uuid)
     except LookupError as exc:
-        print(f"** {exc} **")
+        print(f"drugref: {exc}", file=sys.stderr)
         return 2
+    print("\n".join(render_class_profile(p)))
     return 0
 
 
@@ -72,7 +73,7 @@ def _handle_drug(conn, args) -> int:
     try:
         p = cpr.drug_profile(conn, args.moiety_uuid, args.lens or ())
     except (LookupError, ValueError) as exc:
-        print(f"** {exc} **")
+        print(f"drugref: {exc}", file=sys.stderr)
         return 2
     print("\n".join(render_drug_profile(p)))
     return 0
@@ -81,19 +82,28 @@ def _handle_drug(conn, args) -> int:
 def _handle_rule(conn, args) -> int:
     # The values came straight off the command line, so a refusal is an operator's typo:
     # one line and exit 2, the cli_policy._write pattern (cli.main deliberately does not
-    # catch database errors for every handler). CheckViolation is an IntegrityError.
+    # catch database errors for every handler). CheckViolation is an IntegrityError; the
+    # DEFERRED single-live guard raises (RaiseException) at COMMIT, so the commit is
+    # inside the try too.
     try:
-        rid = curation_property.record_property_ruling(
+        rid, written = curation_property.record_property_ruling(
             conn, subject_class_uuid=args.klass, subject_moiety_uuid=args.moiety,
             relationship=args.relationship, object_kind=args.object_kind,
             object_uuid=args.object, verdict=args.verdict, reviewed_by=args.reviewed_by,
             reviewed_against=args.reviewed_against, question_uuid=args.question)
-    except (ValueError, psycopg.errors.IntegrityError) as exc:
+        conn.commit()  # the writer never commits; the CLI owns the transaction
+    except (ValueError, psycopg.errors.IntegrityError,
+            psycopg.errors.RaiseException) as exc:
         conn.rollback()  # never rely on COMMIT of an aborted transaction rolling back
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
-    conn.commit()  # the writer never commits; the CLI owns the transaction
-    print(f"ruling {rid} recorded")
+    print(f"ruling {rid} " + ("recorded" if written else "already live (unchanged)"))
+    if args.klass and args.verdict == "does_not_hold":
+        # db/062's class_asserted_property COMMENT: not a negation. Say so where the
+        # curator is, or they will believe they refuted an observed property.
+        print("drugref: note: a class does_not_hold only withdraws this class's own "
+              "earlier holds; an observed property, or one asserted on an ancestor, "
+              "still stands", file=sys.stderr)
     return 0
 
 

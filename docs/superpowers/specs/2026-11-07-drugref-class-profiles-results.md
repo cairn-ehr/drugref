@@ -383,3 +383,8 @@ peculiar).
   until #204 is decided.**
 - The measuring round tuned nothing, by the spec's rule (§7); the only SQL change since is the final review's
   `db/062` (a correctness fix that also removed the cost).
+- **Addendum, `db/063` (the pre-merge review).** A member had a standing against "interacts_with
+  <itself>" whenever the drug belongs to a class said to interact with it: 129 such `class_property_member`
+  rows on `drugref_profiles`, 4 of them self-questions on the worklist. `db/063` removes them (0 rows; the
+  worklist is now **2,390**, 539 interaction questions: 503 moiety-object, 36 class-object). Every figure above
+  is the `db/062` measurement and is left as measured. The denominator side of the same case is **#206**.

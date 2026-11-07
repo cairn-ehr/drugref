@@ -10,7 +10,8 @@ import uuid
 from drugref import ids
 
 # ingest_run.writer is NOT NULL (db/025); name the writer each source really uses.
-_WRITER = {"MED-RT": "medrt_run", "MeSH": "mesh_run", "UNII": "unii_run"}
+_WRITER = {"MED-RT": "medrt_run", "MeSH": "mesh_run", "UNII": "unii_run",
+           "ONCHIGH": "onchigh_run"}
 
 
 def run(conn, source="MED-RT") -> int:

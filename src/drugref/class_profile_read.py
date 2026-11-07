@@ -1,6 +1,7 @@
 """Read side of class profiles: a thin Python reader over the class-profile views.
 
-The SQL views (db/059-db/060) are the consumer contract -- a prescribing front end reads
+The SQL views (db/059-db/063; db/062 and db/063 replace class_property and
+class_property_member) are the consumer contract -- a prescribing front end reads
 them directly. This module only turns their rows into frozen dataclasses with NAMES
 instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
 
@@ -94,6 +95,9 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
         "WHERE class_uuid = %s", (class_uuid,)).fetchone()
     if head is None:
         raise LookupError(f"no class {class_uuid}")
+    if head[1:] == ("MED-RT", "PK"):
+        # Every view excludes these (#155); an empty profile would read as "no members".
+        raise LookupError(f"{class_uuid} is a MED-RT PK class: not profiled (#155)")
     props = conn.execute(
         "SELECT relationship, object_kind, object_uuid, is_asserted, asserted_via, "
         "asserted_by, is_observed, carriers, members "
@@ -155,7 +159,10 @@ def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
     tag_ids = {t[0] for t in tags}
     foreign = [u for u in lens_class_uuids if u not in tag_ids]
     if foreign:
-        raise ValueError(f"not a class of this drug: {', '.join(map(str, foreign))}")
+        # A lens must be a profiled class the drug is a DIRECT member of; a parent class
+        # it reaches only through a subclass, or a MED-RT PK class, is refused too.
+        raise ValueError("not a profiled class this drug is a direct member of: "
+                         f"{', '.join(map(str, foreign))}")
     chosen = [t for t in tags if not lens_class_uuids or t[0] in set(lens_class_uuids)]
 
     # ONE query per view for every lens at once, grouped below (#202: each view costs

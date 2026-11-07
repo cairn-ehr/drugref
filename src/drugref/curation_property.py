@@ -11,8 +11,14 @@ the SAME verdict again is a no-op, so a re-run of a curation file does not pile 
 identical superseded rows that every signed release would have to carry. "The same"
 means every field the writer supplies, not only the verdict.
 
-NO VOCABULARY IS RESTATED IN PYTHON: relationship, verdict, object kind and the class
-subject's restrictions live in db/058's CHECKs. A bad value raises from the database.
+DRUG PAIRS ARE STORED IN ONE ORIENTATION. An interaction is symmetric, so (X, Y) and
+(Y, X) are the same fact; the writer stores the lower uuid as the subject (db/063 CHECKs
+it), so a correction recorded "from the other side" supersedes the earlier ruling
+instead of standing beside it.
+
+NO VOCABULARY IS RESTATED IN PYTHON: relationship, verdict and the class subject's
+restrictions live in db/058's CHECKs, so a bad value raises from the database. An
+unknown object kind is a KeyError from _OBJECT_COLUMN below.
 NOTHING HERE COMMITS; the caller owns the transaction.
 """
 import uuid
@@ -35,16 +41,19 @@ def record_property_ruling(
         subject_moiety_uuid: uuid.UUID | None = None,
         relationship: str, object_kind: str, object_uuid: uuid.UUID,
         verdict: str, reviewed_by: str, reviewed_against: str,
-        question_uuid: uuid.UUID | None = None) -> int:
-    """Record (or revise) one ruling; returns the live row's id.
+        question_uuid: uuid.UUID | None = None) -> tuple[int, bool]:
+    """Record (or revise) one ruling; returns (live row id, whether a row was written).
 
     Idempotent by comparison: if the live row for the key already carries the same
-    verdict, question_uuid, reviewed_by and reviewed_against, its id is returned and
-    nothing is written. Any difference is new provenance worth signing, so the new row
-    is INSERTed and supersedes the old one.
+    verdict, question_uuid, reviewed_by and reviewed_against, (its id, False) is
+    returned and nothing is written. Any difference is new provenance worth signing,
+    so the new row is INSERTed, supersedes the old one, and (new id, True) is returned.
     """
     if (subject_class_uuid is None) == (subject_moiety_uuid is None):
         raise ValueError("give exactly one of subject_class_uuid / subject_moiety_uuid")
+    if (subject_moiety_uuid is not None and object_kind == "moiety"
+            and object_uuid < subject_moiety_uuid):
+        subject_moiety_uuid, object_uuid = object_uuid, subject_moiety_uuid
     subject_kind, subject = (("class", subject_class_uuid) if subject_class_uuid
                              else ("moiety", subject_moiety_uuid))
     key = (subject_kind, subject, relationship, object_kind, object_uuid)
@@ -58,7 +67,7 @@ def record_property_ruling(
         key).fetchone()
     if live is not None and live[1:] == (verdict, question_uuid, reviewed_by,
                                          reviewed_against):
-        return live[0]
+        return live[0], False
 
     new_id = conn.execute(
         f"INSERT INTO drugref.curated_property_ruling "
@@ -71,4 +80,4 @@ def record_property_ruling(
          question_uuid, reviewed_by, reviewed_against)).fetchone()[0]
     overlay.supersede(conn, "curated_property_ruling", "curated_property_ruling_id",
                       new_id, _KEY, key)
-    return new_id
+    return new_id, True

@@ -474,7 +474,7 @@ def test_a_database_predating_db035_names_it_for_the_class_grain_block_too(capsy
     "signing_key", "assertion_signature", "release_manifest",
     "release_manifest_entry",
     # The two later curated tables, missing from this list since they shipped:
-    # curated_class_interaction (db/035) and curated_property_ruling (db/058).
+    # curated_class_interaction (db/032) and curated_property_ruling (db/058).
     "curated_class_interaction", "curated_property_ruling"])
 def test_the_cli_embeds_no_sql_against_a_curated_table(module, table):
     """cli.py's own discipline, pinned. `_handle_status` is allowed to embed SELECTs

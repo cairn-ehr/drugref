@@ -5873,7 +5873,7 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
 - **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
-## The class-profiles round (2026-11-07) — `db/058`–`db/062`, measured on `drugref_profiles`
+## The class-profiles round (2026-11-07) — `db/058`–`db/063`, measured on `drugref_profiles`
 
 A class's profile is what it has — **asserted** (a source or curator states it about the class or an ancestor,
 passed down) and/or **observed** (≥ 75% of ≥ 2 direct members carry it, never inherited) — and each direct
@@ -5894,6 +5894,13 @@ not here.** What the next round inherits:
   answer changes the class-profile views only. Owner design call; **curators should not work interaction
   questions until it is decided** (the question text and the view COMMENTs say answering does not change
   alerts).
+- **A drug-to-drug ruling is stored lower-uuid-first** (`db/063`'s CHECK; `curation_property` swaps the
+  pair). Interactions are symmetric, so this makes (X, Y) and (Y, X) one natural key: a correction recorded
+  from the other side supersedes instead of standing beside the old row and losing to its `does_not_hold`.
+  Don't read a ruling's `subject_uuid` as "the drug the question was about" — use `member_ruling_oriented`.
+- **No member has a standing against an interaction with itself** (`db/063`). "C interacts with x" is a fair
+  class property when x is in C; asking whether x interacts with x is not. The *count* side (x sits in the
+  denominator of its own property) is [#206](https://github.com/cairn-ehr/drugref/issues/206).
 - **A drug-through-a-lens is a FOUR-way split** — shared (carries / inherits), not confirmed for this drug,
   confirmed exception, peculiar (db/062's COMMENTs). A consumer that drops the not-confirmed rows makes a gap
   read as "does not apply" (spec §9); `drugref profile drug` prints all four.
@@ -6169,7 +6176,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2939 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2951 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6526,7 +6533,7 @@ ran in CI and `ruff` was not even a project dependency.
   + the curated READ surface `src/drugref/{curated_read,cli_status,cli_interactions}.py` — `curated_read` owns
   both reads of the graded overlay (`effective_grades_for`, `unrankable_severities`), `cli_status` owns the two
   later `drugref status` blocks, and `cli_interactions` is `drugref interactions` (db/038, issue 114)
-  + the class-profiles surface (`db/058`–`db/062`): `class_profile_read.py` (the READ; pure dataclasses),
+  + the class-profiles surface (`db/058`–`db/063`): `class_profile_read.py` (the READ; pure dataclasses),
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
   + `src/drugref/ingest/*.py`; seed data under
@@ -6661,7 +6668,7 @@ ran in CI and `ruff` was not even a project dependency.
   `drugref status` refusing to call their stamps a duration. Keep both.
 - **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
   **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
-  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave.
+  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave and to `db/063` by the pre-merge review.
   `curated_property_ruling` is empty there. Commands, timings and every figure: [the results
   record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); re-run the cost figures with
   `tools/class_profile_census.sql`.

@@ -48,9 +48,12 @@ def test_drug_renderer_shows_own_properties_without_a_class_tag():
 
 
 def _wire(conn, monkeypatch):
-    """Run the CLI on the test's own connection; keep the rollback isolation."""
+    """Run the CLI on the test's own connection; keep the rollback isolation. Returns
+    the list each (stubbed) commit appends to, so a test can see the CLI committed."""
+    commits = []
     monkeypatch.setattr(cli.db, "connect", lambda dsn: contextlib.nullcontext(conn))
-    monkeypatch.setattr(conn, "commit", lambda: None)
+    monkeypatch.setattr(conn, "commit", lambda: commits.append(True))
+    return commits
 
 
 def test_profile_class_and_drug_through_cli_main(conn, monkeypatch, capsys):
@@ -68,8 +71,13 @@ def test_profile_class_and_drug_through_cli_main(conn, monkeypatch, capsys):
     assert cli.main(["--dsn", "x", "profile", "drug", str(ms[3])]) == 0
     assert "not confirmed for this drug: CI_with condition Clicond" in \
         capsys.readouterr().out
-    assert cli.main(["--dsn", "x", "profile", "class", str(uuid.uuid4())]) == 2
-    assert cli.main(["--dsn", "x", "profile", "drug", str(uuid.uuid4())]) == 2
+    assert cli.main(["--dsn", "x", "profile", "drug", str(ms[3]), "--lens", str(k)]) == 0
+    capsys.readouterr()
+    for argv in (["class", str(uuid.uuid4())], ["drug", str(uuid.uuid4())],
+                 ["drug", str(ms[3]), "--lens", str(uuid.uuid4())]):
+        assert cli.main(["--dsn", "x", "profile", *argv]) == 2
+        out = capsys.readouterr()
+        assert out.out == "" and out.err.startswith("drugref: ")  # errors to stderr
 
 
 def test_profile_rule_with_a_bad_verdict_exits_2(conn, monkeypatch, capsys):
@@ -87,12 +95,30 @@ def test_profile_rule_with_a_bad_verdict_exits_2(conn, monkeypatch, capsys):
 def test_profile_rule_writes_through_the_writer(conn, monkeypatch, capsys):
     r = w.run(conn)
     m, c = w.moiety(conn, r, "rdrug"), w.condition(conn, r, "Rcond")
-    _wire(conn, monkeypatch)
-    rc = cli.main(["--dsn", "x", "profile", "rule", "--moiety", str(m),
-                   "--relationship", "CI_with", "--object-kind", "condition",
-                   "--object", str(c), "--verdict", "holds", "--reviewed-by", "t",
-                   "--reviewed-against", "t"])
-    assert rc == 0
+    commits = _wire(conn, monkeypatch)
+    argv = ["--dsn", "x", "profile", "rule", "--moiety", str(m),
+            "--relationship", "CI_with", "--object-kind", "condition",
+            "--object", str(c), "--verdict", "holds", "--reviewed-by", "t",
+            "--reviewed-against", "t"]
+    assert cli.main(argv) == 0
+    assert "recorded" in capsys.readouterr().out
+    assert commits == [True]
     assert conn.execute(
         "SELECT count(*) FROM drugref.curated_property_ruling "
         "WHERE subject_moiety_uuid = %s AND verdict = 'holds'", (m,)).fetchone()[0] == 1
+    # The same answer again writes nothing, and says so instead of "recorded".
+    assert cli.main(argv) == 0
+    assert "already live (unchanged)" in capsys.readouterr().out
+
+
+def test_a_class_does_not_hold_warns_what_it_does_not_do(conn, monkeypatch, capsys):
+    """A class-subject does_not_hold only withdraws the class's own holds; a curator
+    trying to refute an observed property must be told it still stands."""
+    r = w.run(conn)
+    k, c = w.klass(conn, r, "Wclass"), w.condition(conn, r, "Wcond")
+    _wire(conn, monkeypatch)
+    assert cli.main(["--dsn", "x", "profile", "rule", "--class", str(k),
+                     "--relationship", "may_treat", "--object-kind", "condition",
+                     "--object", str(c), "--verdict", "does_not_hold",
+                     "--reviewed-by", "t", "--reviewed-against", "t"]) == 0
+    assert "only withdraws" in capsys.readouterr().err

@@ -36,10 +36,11 @@ from drugref.gap_sources_registry import REGISTRY_GAP_SOURCES
 # literature-searchable statement, which names its subject rather than referring to
 # it by UUID so the text is usable as a search expression on its own.
 #
-# The specs themselves live in two vocabulary modules (issue 177, rule 4), split at
-# slice 5c. Merged IN THIS ORDER, which is the order register_from_gaps walks;
-# test_question_ids pins the merged list and that the halves share no kind (a dict
-# merge would silently keep only the later of two equal keys).
+# The specs themselves live in three vocabulary modules (issue 177, rule 4; split at
+# slice 5c, the third added with class profiles). Merged IN THIS ORDER, which is the
+# order register_from_gaps walks; test_question_ids pins the merged list and that the
+# modules share no kind (a dict merge would silently keep only the later of two equal
+# keys).
 _GAP_SOURCES = {**REGISTRY_GAP_SOURCES, **INTERACTION_GAP_SOURCES,
                 **CLASS_PROFILE_GAP_SOURCES}
 

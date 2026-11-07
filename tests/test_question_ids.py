@@ -180,20 +180,23 @@ def test_a_compound_key_does_not_collide_with_its_halves():
     assert len(minted) == 3
 
 
-def test_the_gap_registry_is_the_two_halves_merged_with_nothing_dropped():
-    """Issue 177 split `_GAP_SOURCES` across two modules; questions.py merges them.
+def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped():
+    """Issue 177 split `_GAP_SOURCES` across modules (three since the class-profile
+    gap kind); questions.py merges them.
 
     A dict merge silently keeps the LATER of two equal keys, so a gap_kind defined
-    in both halves would lose one spec without any error -- and a spec dropped in
-    the move would simply stop being derived. Both are pinned here: the halves are
-    disjoint, and the merged order is the frozen list of every kind registered
-    before the split (register_from_gaps walks it in this order).
+    in two modules would lose one spec without any error -- and a spec dropped in
+    a move would simply stop being derived. Both are pinned here: the modules are
+    pairwise disjoint, and the merged order is the frozen list of every kind
+    (register_from_gaps walks it in this order).
     """
-    from drugref import gap_sources_interactions, gap_sources_registry, questions
+    from drugref import (gap_sources_class_profile, gap_sources_interactions,
+                         gap_sources_registry, questions)
 
-    registry = gap_sources_registry.REGISTRY_GAP_SOURCES
-    interactions = gap_sources_interactions.INTERACTION_GAP_SOURCES
-    assert not set(registry) & set(interactions)
+    parts = [set(gap_sources_registry.REGISTRY_GAP_SOURCES),
+             set(gap_sources_interactions.INTERACTION_GAP_SOURCES),
+             set(gap_sources_class_profile.CLASS_PROFILE_GAP_SOURCES)]
+    assert sum(map(len, parts)) == len(set().union(*parts))
     assert list(questions._GAP_SOURCES) == [
         "unclassified_moiety", "unpopulated_contraindication", "unmatched_ingredient",
         "unreviewed_expansion_root", "dead_by_expansion_policy", "unresolved_ci_object",

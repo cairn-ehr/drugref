@@ -105,8 +105,9 @@ def test_inherited_and_carried_members_raise_nothing(conn):
 
 
 def test_a_ruling_from_the_partners_side_closes_the_question(conn):
-    """Interactions are symmetric (member_ruling_oriented): a ruling recorded as
-    (Y, interacts_with, moiety, D) answers D's question about Y too."""
+    """Interactions are symmetric (member_ruling_oriented): a ruling naming Y as the
+    subject answers D's question about Y too. (The writer stores the lower uuid as the
+    subject, so either D or Y may end up the subject; both arms are symmetric.)"""
     r = w.run(conn)
     k = w.klass(conn, r, "K")
     y = w.moiety(conn, r, "partner")
@@ -116,8 +117,29 @@ def test_a_ruling_from_the_partners_side_closes_the_question(conn):
     for m in ms[:-1]:
         w.moiety_ci(conn, r, m, y)
     assert [g[0] for g in _gap(conn)] == [ms[-1]]
+    questions.register_from_gaps(conn, r)          # the moiety arm of text_sql
+    (text,), = conn.execute(
+        "SELECT question_text FROM drugref.open_question WHERE is_current "
+        "AND gap_kind = 'unconfirmed_class_property'").fetchall()
+    assert "partner" in text and "m3" in text
     curation_property.record_property_ruling(
         conn, subject_moiety_uuid=y, relationship="interacts_with", object_kind="moiety",
         object_uuid=ms[-1], verdict="cannot_establish", reviewed_by="t",
         reviewed_against="t")
     assert _gap(conn) == []
+
+
+def test_a_class_object_question_names_the_class(conn):
+    """The class arm of text_sql: the partner is a class, named in the text."""
+    r = w.run(conn)
+    k, q = w.klass(conn, r, "K"), w.klass(conn, r, "Qclass")
+    ms = [w.moiety(conn, r, f"m{i}") for i in range(4)]
+    for m in ms:
+        w.member(conn, r, m, k)
+    for m in ms[:-1]:
+        w.class_ci(conn, r, m, q)
+    questions.register_from_gaps(conn, r)
+    (text,), = conn.execute(
+        "SELECT question_text FROM drugref.open_question WHERE is_current "
+        "AND gap_kind = 'unconfirmed_class_property'").fetchall()
+    assert "Qclass" in text and "m3" in text

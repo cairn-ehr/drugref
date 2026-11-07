@@ -89,10 +89,9 @@ CURATED_CLASS_INTERACTION_V1 = (
 
 # db/058, class profiles. EVERY column except the surrogate pk and superseded_by, in
 # table order -- INCLUDING the four STORED generated columns (subject_kind,
-# subject_uuid,
-# object_kind, object_uuid). They are derived, but they ARE the natural key, and
-# `releases.enumerate_live` reads natural-key values out of the signed fields, so a key
-# column missing here is a KeyError at publish time.
+# subject_uuid, object_kind, object_uuid). They are derived, but they ARE the natural
+# key, and `releases.enumerate_live` reads natural-key values out of the signed
+# fields, so a key column missing here is a KeyError at publish time.
 CURATED_PROPERTY_RULING_V1 = (
     "subject_class_uuid", "subject_moiety_uuid", "object_condition_uuid",
     "object_moiety_uuid", "object_class_uuid", "subject_kind", "subject_uuid",
