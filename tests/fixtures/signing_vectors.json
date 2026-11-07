@@ -209,6 +209,87 @@
       "signature": "dbf0cded6f47ee9b0a11f1ef7013f3f0474b7abdd482d4b05f7c1b47a03204d80b479089bc72199f061280b938750a65aa5fac7dbed856ba64726b633ac02b04"
     },
     {
+      "name": "a CLASS-subject property ruling with generated key columns",
+      "context": "curated_property_ruling/v1",
+      "fields": [
+        [
+          "subject_class_uuid",
+          "4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36"
+        ],
+        [
+          "subject_moiety_uuid",
+          null
+        ],
+        [
+          "object_condition_uuid",
+          "8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70"
+        ],
+        [
+          "object_moiety_uuid",
+          null
+        ],
+        [
+          "object_class_uuid",
+          null
+        ],
+        [
+          "subject_kind",
+          "class"
+        ],
+        [
+          "subject_uuid",
+          "4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36"
+        ],
+        [
+          "object_kind",
+          "condition"
+        ],
+        [
+          "object_uuid",
+          "8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70"
+        ],
+        [
+          "relationship",
+          "CI_with"
+        ],
+        [
+          "verdict",
+          "holds"
+        ],
+        [
+          "question_uuid",
+          null
+        ],
+        [
+          "source",
+          "DRUGREF"
+        ],
+        [
+          "reviewed_by",
+          "a class-profile curator"
+        ],
+        [
+          "reviewed_against",
+          "product labels of every class member, 2026-11"
+        ],
+        [
+          "reviewed_at",
+          "2026-11-07T05:12:40.000000Z"
+        ],
+        [
+          "signer_key_fingerprint",
+          "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c"
+        ],
+        [
+          "signed_at",
+          "2026-11-07T05:13:02.125000Z"
+        ]
+      ],
+      "payload": "drugref-sig-v1\ncurated_property_ruling/v1\n18\n18:subject_class_uuid:S:36:4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36\n19:subject_moiety_uuid:N:0:\n21:object_condition_uuid:S:36:8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70\n18:object_moiety_uuid:N:0:\n17:object_class_uuid:N:0:\n12:subject_kind:S:5:class\n12:subject_uuid:S:36:4e7c2a19-6b3d-5f80-9a42-1c8e5d0b7f36\n11:object_kind:S:9:condition\n11:object_uuid:S:36:8a3f1d62-0c95-5e47-b1d8-3e6a9c2f4b70\n12:relationship:S:7:CI_with\n7:verdict:S:5:holds\n13:question_uuid:N:0:\n6:source:S:7:DRUGREF\n11:reviewed_by:S:23:a class-profile curator\n16:reviewed_against:S:45:product labels of every class member, 2026-11\n11:reviewed_at:S:27:2026-11-07T05:12:40.000000Z\n22:signer_key_fingerprint:S:64:56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\n9:signed_at:S:27:2026-11-07T05:13:02.125000Z\n",
+      "digest": "adef4dc96dc85eae7b29eac6791cb0be23d3de9c5e7b89f53c6d9c77311c37db",
+      "signature": "dab9329bd3720db7c2f0d67f855e111eb644adfb7ce427de0e56dc14e86bd0fb9feb7bf66f7c531ebba3f7adb8953a1095cc0082a823adc591bbd67cad735d0f"
+    },
+    {
       "name": "a manifest ENTRY digest over case 1's judgement",
       "context": "curated_interaction/v1",
       "fields": [

@@ -169,3 +169,32 @@ def test_the_same_verdict_answering_a_different_question_supersedes(world):
     assert conn.execute(
         "SELECT question_uuid FROM drugref.curated_property_ruling "
         "WHERE subject_uuid = %s AND superseded_by IS NULL", (m,)).fetchall() == [(q2,)]
+
+
+def test_a_signed_ruling_publishes_and_verifies_with_its_generated_key(world):
+    """The natural key is five GENERATED columns (subject_kind, subject_uuid, ...): they
+    must render in the manifest entry, and the release must verify intact."""
+    import datetime as dt
+
+    from drugref import keys, release_verification, signatures, signing
+    conn, _m, k, c, _b = world
+    at = dt.datetime(2026, 11, 7, tzinfo=dt.timezone.utc)
+    kp = signing.generate_keypair()
+    fp = signing.fingerprint(kp.public_key)
+    keys.register(conn, public_key=kp.public_key, holder="drugref.org",
+                  registered_by="an operator")
+    rid = _rule(conn, subject_class_uuid=k, object_uuid=c)
+    context, payload = signatures.payload_for(conn, "curated_property_ruling", rid,
+                                              key_fingerprint=fp, signed_at=at)
+    signatures.record(conn, target_kind="curated_property_ruling", target_id=rid,
+                      payload_context=context, payload=payload, key_fingerprint=fp,
+                      signature=signing.sign(kp.private_key, payload), signed_at=at)
+    assert [v.verdict for v in signatures.verify_target(
+        conn, "curated_property_ruling", rid)] == [signing.VALID]
+    manifest_id = releases.publish(conn, release_tag="v-ruling", published_by="test",
+                                   private_key=kp.private_key, key_fingerprint=fp)
+    assert conn.execute(
+        "SELECT natural_key FROM drugref.release_manifest_entry WHERE manifest_id = %s "
+        "AND target_kind = 'curated_property_ruling' AND target_id = %s",
+        (manifest_id, rid)).fetchone() == (f"class/{k}/CI_with/condition/{c}",)
+    assert release_verification.verify_release(conn, "v-ruling").is_intact

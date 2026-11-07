@@ -218,3 +218,19 @@ def test_the_committed_vectors_pin_each_contexts_frozen_FIELD_ORDER():
             "the vectors were committed. Every signature already recorded under this "
             "context was made over the OLD order and will now report BAD_SIGNATURE. "
             "If the change is deliberate it is a new /v2 context, never an edit here.")
+
+
+def test_every_frozen_context_has_a_published_vector():
+    """A context registered and frozen with NO committed vector has no byte-level
+    reference and no ORDER pin (the test above walks the vectors, so it silently skips a
+    context they omit). curated_class_interaction/v1 shipped that way once, and
+    curated_property_ruling/v1 did again (db/058). No context is exempt: the manifest
+    has its own vector."""
+    import json
+    import pathlib
+
+    vectors = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "signing_vectors.json"
+         ).read_text())
+    covered = {case["context"] for case in vectors["cases"]}
+    assert set(signing_contexts.FIELD_LISTS) - covered == set()
