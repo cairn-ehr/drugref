@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profiles`; PR pending (to `main`). Schema now ends at `db/062`** (`058`–`062`, class
+**Branch `claude/class-profiles`; PR #205 OPEN (to `main`). Schema now ends at `db/062`** (`058`–`062`, class
 profiles). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest`
 fails if the line and the collected suite disagree.
 
