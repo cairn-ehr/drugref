@@ -5873,7 +5873,7 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
   `db.clear_source_tables`. None was found this round: the only other `DELETE`s in `src/` (`claims.py`'s `moiety_admission`, `questions.py`'s `open_question`) are not keyed by `ingest_run` and are not per-source clears.
 - **Tests**: +3 (the scan, its shape test, and the new parametrized entry). **Suite 2830 → 2833.**
 
-## The class-profiles round (2026-11-07) — `db/058`–`db/061`, measured on `drugref_profiles`
+## The class-profiles round (2026-11-07) — `db/058`–`db/062`, measured on `drugref_profiles`
 
 A class's profile is what it has — **asserted** (a source or curator states it about the class or an ancestor,
 passed down) and/or **observed** (≥ 75% of ≥ 2 direct members carry it, never inherited) — and each direct
@@ -5884,9 +5884,23 @@ on the curators' worklist. Design: `superpowers/specs/2026-11-07-drugref-class-p
 not here.** What the next round inherits:
 
 - **The read path materialises every class** ([#202](https://github.com/cairn-ehr/drugref/issues/202)): a
-  `WHERE class_uuid = X` read of `class_property` costs the full view, so `drugref profile class` and, much
-  worse, `profile drug` without `--lens` are too slow for an interactive consumer. Per-ingest gap registration
-  is tolerable. Not tuned in the measuring round, by rule.
+  `WHERE class_uuid = X` read of `class_property` still computes the full view. The final review's `db/062`
+  removed the dominant cost (a correlated per-row `asserted_by` subquery that also leaked MED-RT PK ancestors'
+  sources), and `drug_profile` now reads each view once for all lenses, so both CLI commands are interactive
+  again; #202 stays open for the structural point (the cost scales with the registry). Re-measure with
+  `tools/class_profile_census.sql`.
+- **Interaction rulings never reach the prescribing-alert path**
+  ([#204](https://github.com/cairn-ehr/drugref/issues/204)): a `curated_property_ruling` *interacts_with*
+  answer changes the class-profile views only. Owner design call; **curators should not work interaction
+  questions until it is decided** (the question text and the view COMMENTs say answering does not change
+  alerts).
+- **A drug-through-a-lens is a FOUR-way split** — shared (carries / inherits), not confirmed for this drug,
+  confirmed exception, peculiar (db/062's COMMENTs). A consumer that drops the not-confirmed rows makes a gap
+  read as "does not apply" (spec §9); `drugref profile drug` prints all four.
+- **A class-subject `does_not_hold` only withdraws that class's own earlier `holds`** — it neither suppresses
+  an ancestor's assertion passing down nor an observed property (pinned in
+  `tests/test_class_profile_class_property.py`). Whether an asserted pass-down should honour a
+  `class_expansion_policy` deny is an open owner question.
 - **The worklist is usable in size but skewed** ([#203](https://github.com/cairn-ehr/drugref/issues/203)): one
   near-universal object (`CI_with Drug Hypersensitivity`) dominates it, and MED-RT's catch-all "Unknown ..."
   MoA/PE classes act as drug classes — the PK argument of #155 again, one axis over.
@@ -5976,9 +5990,13 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
-a single-class read of `class_property` computes every class (the profile CLI's cost) ·
+a single-class read of `class_property` computes every class (the profile CLI's cost; `db/062` took the
+dominant cost out, the structural point stays open) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
-composition (one object dominates; MED-RT catch-all classes raise questions). Figures on the issues and in the
+composition (one object dominates; MED-RT catch-all classes raise questions) ·
+**[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
+interaction answers never reach the prescribing-alert path — owner design call, curators hold off interaction
+questions until it is decided. Figures on the issues and in the
 results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
 GitHub 2026-11-07**, alongside #130.
 
@@ -6151,7 +6169,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2902 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2939 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6489,7 +6507,10 @@ ran in CI and `ruff` was not even a project dependency.
   `class_profile_member`, `member_property_record`, `member_ruling_oriented`, `member_property`,
   `member_property_negation`, `class_asserted_property`; `060` four class-level views — `class_property`,
   `class_property_member`, `class_member_peculiarity`, `class_subclass_only_member`; `061`
-  `gap_unconfirmed_class_property` + gap kind 19 `unconfirmed_class_property`). **Read the LATEST file that touches an object for its
+  `gap_unconfirmed_class_property` + gap kind 19 `unconfirmed_class_property`; `062` the final review's fixes —
+  `class_property`'s `asserted_by` aggregated in its CTE, the gap view closed through `member_ruling_oriented`,
+  re-issued COMMENTs on `class_property_member`, `class_member_peculiarity`, `member_property`,
+  `class_asserted_property`). **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
@@ -6505,7 +6526,7 @@ ran in CI and `ruff` was not even a project dependency.
   + the curated READ surface `src/drugref/{curated_read,cli_status,cli_interactions}.py` — `curated_read` owns
   both reads of the graded overlay (`effective_grades_for`, `unrankable_severities`), `cli_status` owns the two
   later `drugref status` blocks, and `cli_interactions` is `drugref interactions` (db/038, issue 114)
-  + the class-profiles surface (`db/058`–`db/061`): `class_profile_read.py` (the READ; pure dataclasses),
+  + the class-profiles surface (`db/058`–`db/062`): `class_profile_read.py` (the READ; pure dataclasses),
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
   + `src/drugref/ingest/*.py`; seed data under
@@ -6640,8 +6661,10 @@ ran in CI and `ruff` was not even a project dependency.
   `drugref status` refusing to call their stamps a duration. Keep both.
 - **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
   **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
-  **no SPL** (not a property source). `curated_property_ruling` is empty there. Commands, timings and every
-  figure: [the results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md).
+  **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave.
+  `curated_property_ruling` is empty there. Commands, timings and every figure: [the results
+  record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); re-run the cost figures with
+  `tools/class_profile_census.sql`.
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

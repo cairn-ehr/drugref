@@ -13,16 +13,18 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-profiles`; PR pending (to `main`). Schema now ends at `db/061`** (`058`–`061`, class
+**Branch `claude/class-profiles`; PR pending (to `main`). Schema now ends at `db/062`** (`058`–`062`, class
 profiles). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest`
 fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED: class profiles, built and measured** on `drugref_profiles`. What a class has (asserted or
-observed), each member's standing, peculiarities, `drugref profile class|drug|rule`, and gap kind 19
-`unconfirmed_class_property`. **"Not confirmed" is never "safe".** Figures: the
-[results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); account: PROJECT-NOTES §
-"The class-profiles round". **Two findings filed, not tuned:** #202 (single-class reads cost the whole view —
-the profile CLI is too slow for interactive use) and #203 (the worklist's composition).
+**⇒ JUST FINISHED: the class-profiles final review's fix wave.** `db/062` (`class_property.asserted_by` no
+longer leaks MED-RT PK ancestors and lost its per-row subquery; the gap closes on a partner-side interaction
+ruling; COMMENTs carry the four-way lens split and the alert-path limit); `drugref profile drug` prints all four
+groups and reads each view once for all lenses; `profile rule` exits 2 on a refused value; the ruling writer
+supersedes on any provenance change; a `curated_property_ruling/v1` signing vector. Re-measured on
+`drugref_profiles` (now at `db/062`): `profile class` ~1.5 s (was 11 s), `profile drug` propranolol 1.7 s (was
+189 s) — the [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md) §6, re-run with
+`tools/class_profile_census.sql`. **Filed: #204.**
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
@@ -31,26 +33,32 @@ the profile CLI is too slow for interactive use) and #203 (the worklist's compos
 ## ⇒ DO THIS NEXT
 
 1. **Get the PR reviewed and merged**, then the owner's **clinical read of results §5** (beta blockers, ACE
-   inhibitors, SSRIs). Nothing in this round drew a clinical conclusion.
-2. **Owner design calls on #203** before curators work the new worklist: exclude MED-RT's "Unknown ..."
+   inhibitors, SSRIs). Nothing in this round drew a clinical conclusion. **After that read**, write the
+   docs-site *Design decisions* record for class profiles (living decisions only).
+2. **Owner design call on #204** — interaction rulings never reach the prescribing-alert path. **Curators must
+   not work `interacts_with` questions (543 of 2,394) until it is decided.**
+3. **Owner design calls on #203** before curators work the rest of the worklist: exclude MED-RT's "Unknown ..."
    catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
-   differently on the worklist? Whatever is chosen, "not confirmed" stays "not confirmed".
-3. **#202** before the read path gets a consumer beyond the CLI (an API, Cairn): a filter-pushable
-   `class_property` and a join-based `asserted_by`. A NEW migration — `db/060` is immutable once merged.
-4. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
-   and FEEDS class profiles: today no source states a condition about a class. Expect drug × drug yield to
-   fall when classes are re-added (ROADMAP § 5c.3) — not a regression.
-5. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician
-   review that has not happened (23-row worklist).
+   differently? Whatever is chosen, "not confirmed" stays "not confirmed".
+4. **Owner question**: should an ASSERTED property passing down to a subclass honour a
+   `class_expansion_policy` deny? Today it does not (db/060 reads no policy).
+5. **#202 remaining**: a filtered read still computes every class (now ~0.4 s, scaling with the registry).
+   Before a consumer beyond the CLI: a filter-pushable `class_property`. A NEW migration.
+6. Small follow-ups (no issue yet; file or do): the class view should show "inherited via" beside
+   subclass-only drugs (spec §4 promises it, `render_class_profile` lists them without it); a set-based check
+   that every object uuid in the profile views resolves to a name (the reader falls back to the raw uuid).
+7. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
+   and FEEDS class profiles. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is
+   gated on a clinician review that has not happened.
 
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
-#202, #203.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**, **#169**. Standing:
-**#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base) is wanted by three
-sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132, #134, #135, #124,
-#121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17, the three
-rule-6 deeds (#6, #25, GSRS).
+#202 (remaining), #203, #204.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+**#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
+is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
+#134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
+#17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
@@ -58,7 +66,7 @@ rule-6 deeds (#6, #25, GSRS).
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
-  `fda-cyp` + `drugcentral`, no SPL), `curated_property_ruling` empty. **Its builds and figures are in the
+  `fda-cyp` + `drugcentral`, no SPL), migrated to `db/062`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction

@@ -1311,7 +1311,7 @@ AGPL-3.0-compatible and not bundleable under rule 6. The old wording ("DDInter *
 check; the check has been done and the answer is no. It may only ever attach as a node-local, separately-licensed
 plug-in, like every other encumbered source.
 
-### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/061`, on `drugref_profiles`
+### Class profiles ✅ BUILT AND MEASURED (2026-11-07) — `db/058`–`db/062`, on `drugref_profiles`
 [Design](superpowers/specs/2026-11-07-drugref-class-profiles-design.md) ·
 [Plan](superpowers/plans/2026-11-07-drugref-class-profiles.md) ·
 [What it measured](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); full account: PROJECT-NOTES
@@ -1322,10 +1322,14 @@ each member's standing against it, what is peculiar to a member, and `drugref pr
 member with nothing recorded is **not confirmed** — never "safe" — and becomes gap kind 19 on the worklist.
 
 - **Measured, with two findings filed rather than tuned**:
-  [#202](https://github.com/cairn-ehr/drugref/issues/202) (a single-class read costs the whole view; the
-  profile CLI is too slow for interactive use) and [#203](https://github.com/cairn-ehr/drugref/issues/203)
-  (the worklist's composition: one near-universal object dominates, MED-RT catch-all classes raise questions).
-  Both are design calls for the owner before the read path gets a consumer beyond the CLI.
+  [#202](https://github.com/cairn-ehr/drugref/issues/202) (a single-class read costs the whole view) and
+  [#203](https://github.com/cairn-ehr/drugref/issues/203) (the worklist's composition: one near-universal
+  object dominates, MED-RT catch-all classes raise questions). The final review's `db/062` fixed a PK-ancestor
+  leak in `class_property.asserted_by` and with it removed #202's dominant cost (the profile CLI is interactive
+  again; #202 stays open for the structural point).
+- **Filed by the final review**: [#204](https://github.com/cairn-ehr/drugref/issues/204) — interaction
+  rulings change the class-profile views but never the prescribing-alert path. **Owner design call; curators
+  hold off interaction questions until it is decided.**
 - **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
   in the results record §5.
 - **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a

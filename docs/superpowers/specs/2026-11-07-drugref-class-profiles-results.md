@@ -1,8 +1,12 @@
 # Class profiles — measured results
 
-**Run:** 2026-11-07 · **Database:** `drugref_profiles` (built from nothing at this branch, schema to `db/061`) ·
+**Run:** 2026-11-07 · **Database:** `drugref_profiles` (built from nothing at this branch, schema to `db/061`,
+then migrated to `db/062` by the final review's fix wave) ·
 **Design:** [`2026-11-07-drugref-class-profiles-design.md`](2026-11-07-drugref-class-profiles-design.md) ·
-**Status:** measured; two findings filed (#202, #203), nothing tuned in this round; clinician read of §5 pending.
+**Status:** measured; three findings filed (#202, #203, #204); `db/062` re-measured §2, §4 and §6 (the
+read-cost figures; every row count is unchanged); clinician read of §5 pending. **Re-run the cost figures with
+[`tools/class_profile_census.sql`](../../../tools/class_profile_census.sql)** (its header carries the two
+non-psql timings).
 
 A class property absent from a profile, and every **not confirmed** below, means *no record for this drug* —
 never *safe*, never *does not apply*.
@@ -28,19 +32,20 @@ and no member is a confirmed exception on this database.
 
 ## 2. View sizes and full-scan cost
 
-`SELECT count(*)` per view, `psql \timing`, warm cache.
+`SELECT count(*)` per view, `psql \timing`, warm cache. The four views `db/062` changed (or that sit on
+`class_property`) were re-measured after it; the db/061 time is kept beside them.
 
-| view | rows | `count(*)` |
+| view | rows | `count(*)` (db/062; db/061) |
 |---|---:|---:|
 | `class_profile_member` | 41,099 | 20 ms |
 | `member_property_record` | 42,828 | 19 ms |
 | `member_property` | 42,072 | 24 ms |
 | `class_asserted_property` | 641 | 2 ms |
-| `class_property` | 9,664 | 3,804 ms |
-| `class_property_member` | 68,666 | 3,931 ms |
-| `class_member_peculiarity` | 424,055 | 4,268 ms |
+| `class_property` | 9,664 | 328 ms (3,804 ms) |
+| `class_property_member` | 68,666 | 338 ms (3,931 ms) |
+| `class_member_peculiarity` | 424,055 | 905 ms (4,268 ms) |
 | `class_subclass_only_member` | 79,379 | 96 ms |
-| `gap_unconfirmed_class_property` | 2,394 | 3,882 ms |
+| `gap_unconfirmed_class_property` | 2,394 | 452 ms (3,882 ms) |
 
 `class_asserted_property` by source: MED-RT 633, ONCHIGH 6, both 2 — all `interacts_with moiety`.
 `class_pair_contraindication` is empty on this build, so no class × class assertion exists.
@@ -137,9 +142,11 @@ Pregnancy` 57, `may_treat Inflammation` 35, `interacts_with Monoamine Oxidase In
 raising classes: Decreased Blood Pressure [PE] 55, Unknown Cellular or Molecular Interaction [MoA] 54, Serotonin
 Reuptake Inhibitor [EPC] 46, Protease Inhibitor [EPC] 42.
 
-**`register_from_gaps` with the new kind**, timed in a rolled-back transaction on this database: **7.43 s**
-whole (7.75 s on a second pass); the new kind's SELECT alone is **3.76 s**, the largest of the nineteen (the
-next is `uncurated_interaction_rule`, 2.86 s, issue 75). For scale, the same run's other large kinds:
+**`register_from_gaps` with the new kind**, timed in a rolled-back transaction on this database: at `db/062`
+**5.37 s** whole (4.52 s on a second pass; 7.43 / 7.75 s at db/061); the new kind's SELECT alone (key and text,
+as registered) is **0.43–0.49 s** (3.76 s at db/061, then the largest of the nineteen; the largest is now
+`uncurated_interaction_rule`, 2.86 s, issue 75). Still 2,394 current questions. Since `db/062` every question's
+text ends *"Answering does not change prescribing alerts."* (#204). For scale, the same run's other large kinds:
 `unclassified_moiety` 16,089, `unruled_composition_activity` 2,245, `unmatched_ingredient` 2,150 rows.
 
 ## 5. Spot checks — for the owner's clinical read
@@ -337,21 +344,27 @@ Serotonin Reuptake Inhibitor [EPC] [MED-RT EPC] -- 8 members: citalopram, escita
 
 ## 6. Read cost on a single class — the consumer view
 
-`EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM <view> WHERE class_uuid = '<beta blocker>'`:
+`EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM <view> WHERE class_uuid = '<beta blocker>'`
+([`tools/class_profile_census.sql`](../../../tools/class_profile_census.sql), three warm runs):
 
-| view | rows | execution |
-|---|---:|---:|
-| `class_property` | 7 | 3,669 ms |
-| `class_property_member` | 105 | 3,710 ms |
-| `class_member_peculiarity` | 300 | 3,689 ms |
-| `class_subclass_only_member` | 0 | 34 ms |
+| view | rows | execution, db/062 | db/061 |
+|---|---:|---:|---:|
+| `class_property` | 7 | 387–613 ms | 3,669 ms |
+| `class_property_member` | 105 | 486–716 ms | 3,710 ms |
+| `class_member_peculiarity` | 300 | 413–575 ms | 3,689 ms |
+| `class_subclass_only_member` | 0 | 36–40 ms | 34 ms |
 
-A filtered read costs the same as the full scan: the multiply-referenced CTEs of `db/060` are materialised for
-every class before the filter. In the `class_property` plan the correlated `asserted_by` subquery runs 5,357
-loops × 0.629 ms = 3.37 s of the 3.67 s.
+At db/061 the correlated `asserted_by` subquery in `class_property` ran 5,357 loops × 0.629 ms = 3.37 s of the
+3.67 s. `db/062` aggregates `asserted_by` in the grouped `asserted` CTE instead (output byte-identical over all
+9,664 rows and all 2,394 gap rows, compared by `\copy` before and after the migration). A filtered read still
+materialises every class before the filter (#202's structural point stands), but the whole materialisation now
+costs about 0.4 s.
 
-CLI wall time (`/usr/bin/time -p`): `profile class` **11.2–11.3 s** for each of the three classes;
-`profile drug` propranolol (20 class tags, no `--lens`) **189 s**; with one `--lens` 11.2 s.
+CLI wall time (`/usr/bin/time -p`, db/062): `profile class` **1.4–1.6 s** for each of the three classes (11.2–11.3
+s at db/061); `profile drug` propranolol (20 class tags, no `--lens`) **1.71 s** (189 s), with one `--lens`
+**1.12 s** (11.2 s). The drug profile now reads each view once for all its lenses (`class_uuid = ANY`), rather
+than once per lens, and prints the full four-way split (shared, not confirmed for this drug, confirmed exception,
+peculiar).
 
 ## 7. Decisions
 
@@ -359,6 +372,14 @@ CLI wall time (`/usr/bin/time -p`): `profile class` **11.2–11.3 s** for each o
   `unruled_composition_activity`), **but its composition needs a design decision**:
   one near-universal object dominates it, and MED-RT's two catch-all "Unknown ..." classes act as drug classes —
   close to the spec §9 anti-goal. **Filed: #203.**
-- **The read path is too slow for an interactive consumer** (§6): a single-class lookup costs the full view.
-  Per-ingest gap registration (§4) is tolerable beside ingests of 8–60 s. **Filed: #202.**
-- Not tuned in this round, by the spec's rule (§7): no SQL changed.
+- **The read path was too slow for an interactive consumer** (§6). Filed as **#202**; `db/062` took the
+  dominant cost out (single class ~0.4–0.6 s, a 20-lens drug profile 1.7 s). Left open on #202: a filtered read
+  still computes every class, so the cost grows with the registry rather than with the class asked for.
+- **Interaction rulings do not reach the prescribing-alert path. Filed: #204** (owner design call). A
+  `curated_property_ruling` *interacts_with* answer changes the class-profile views only, never
+  `exact_ddi_pair` / `ddi_candidate_pair` / `curated_ddi_pair`: a *holds* never alerts, a *does not hold* hides
+  the interaction in the help section while the alert still fires — against spec §4's agreement rule. 543 of the
+  2,394 questions are interaction questions (507 moiety-object, 36 class-object). **Curators should not work them
+  until #204 is decided.**
+- The measuring round tuned nothing, by the spec's rule (§7); the only SQL change since is the final review's
+  `db/062` (a correctness fix that also removed the cost).
