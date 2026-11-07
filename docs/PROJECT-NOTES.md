@@ -5884,10 +5884,13 @@ on the curators' worklist. Design: `superpowers/specs/2026-11-07-drugref-class-p
 not here.** What the next round inherits:
 
 - **A one-class read costs one class** ([#202](https://github.com/cairn-ehr/drugref/issues/202), `db/065`,
-  2026-11-08). Up to `db/064` the view's CTEs were each referenced more than once, so Postgres materialised
-  them and applied `WHERE class_uuid = X` only at the end. `db/065` reads asserted and carried rows through
-  ONE `UNION ALL` + ONE `GROUP BY`, and the #206 self-partner test is a `LEFT JOIN`, not a select-list
-  `EXISTS` (that one became a hashed subplan over every member). **The trap for the next view: in a view
+  2026-11-08). Up to `db/064` several of the view's CTEs were referenced more than once, so Postgres
+  materialised them and applied `WHERE class_uuid = X` only at the end. `db/065` reads asserted and carried
+  rows through ONE `UNION ALL` + ONE `GROUP BY`, and the #206 self-partner test LEFT JOINs
+  `class_profile_member` directly instead of a shared CTE (the obvious alternative, a select-list `EXISTS`,
+  is not pushable either: it becomes a hashed subplan over every member). `db/065`'s own header words both
+  points more loosely ("each" CTE; "a LEFT JOIN, not an EXISTS"); it is applied, so it stays, and this bullet
+  is the accurate version. **The trap for the next view: in a view
   that must be filterable, never reference a CTE twice, and never put a correlated `EXISTS` in the select
   list** — `tests/test_class_profile_db065.py` pins it by checking the filter reaches every
   `class_membership` scan in the plan. Rows identical (EXCEPT both ways over `class_property`,
@@ -6023,7 +6026,7 @@ the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, closes on merge**, with
-**#209** (no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
+**#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
 composition (one object dominates; MED-RT catch-all classes raise questions) ·
 **[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
@@ -6203,7 +6206,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2977 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2980 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

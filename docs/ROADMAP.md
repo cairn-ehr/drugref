@@ -1328,7 +1328,7 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   leak in `class_property.asserted_by` and with it removed #202's dominant cost; **`db/065` (2026-11-08) fixed
   the structural point** — a one-class read now filters every member scan (51 ms, was 748 ms) — and added
   `class_subclass_only_property` ([#209](https://github.com/cairn-ehr/drugref/issues/209)), so what a
-  subclass-only drug inherits is SQL, not only Python. Both close on that PR's merge.
+  subclass-only drug inherits is SQL, not only Python. Both close on PR #211's merge.
 - **Filed by the final review**: [#204](https://github.com/cairn-ehr/drugref/issues/204) — interaction
   rulings change the class-profile views but never the prescribing-alert path. **Owner design call; curators
   hold off interaction questions until it is decided.**

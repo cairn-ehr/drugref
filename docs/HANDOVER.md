@@ -19,13 +19,13 @@ ends at `db/065`.** The suite total lives in PROJECT-NOTES § "How to run / test
 
 **⇒ JUST FINISHED: #202 and #209 (`db/065`).** `class_property` is rewritten so `WHERE class_uuid = X` reaches
 every `class_membership` scan (one `UNION ALL` + one `GROUP BY`, no CTE referenced twice, the #206 self-partner
-test a `LEFT JOIN`): rows identical to `db/064` on `drugref_profiles`; one-class read 748 → 51 ms, `profile
-class` 1.5 → 0.42 s. New view `class_subclass_only_property` (asserted only, less confirmed exceptions and the
+test joining `class_profile_member` directly): rows identical to `db/064` on `drugref_profiles`; one-class
+read 748 → 51 ms (vs `db/064`), `profile class` 1.5 → 0.42 s (vs `db/062`; not re-timed at `db/064`). New view `class_subclass_only_property` (asserted only, less confirmed exceptions and the
 drug itself); `class_profile_read` reads it instead of subtracting in Python. Figures: results record §6
 addendum; the trap: PROJECT-NOTES § "The class-profiles round", first bullet.
 
 **⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
-One agent review (no correctness findings; one comment fixed). `drugref_profiles` migrated to `db/065`.
+Pre-merge review (`finalcheck`): no correctness findings; doc wording and 3 pinning tests added. `drugref_profiles` migrated to `db/065`.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
@@ -65,7 +65,7 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
   at once: concurrent runs drop the schema under each other and the failures look real.**
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
   `fda-cyp` + `drugcentral`, no SPL), migrated to `db/065`, `curated_property_ruling` empty. **Its builds and figures are in the
-  [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #202/#203 there.
+  [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #203 there (#202's figures: its §6 `db/065` addendum).
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
   beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and

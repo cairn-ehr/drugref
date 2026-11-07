@@ -199,8 +199,8 @@ def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,
                          f"{', '.join(map(str, foreign))}")
     chosen = [t for t in tags if not lens_class_uuids or t[0] in set(lens_class_uuids)]
 
-    # ONE query per view for every lens at once, grouped below (#202: each view costs
-    # about as much for twenty classes as for one).
+    # ONE query per view for every lens at once, grouped below: one round trip per view,
+    # and the part every class shares (member_property, class_subtree) is paid once.
     cus = [t[0] for t in chosen]
     standing_rows = conn.execute(
         "SELECT pm.class_uuid, pm.relationship, pm.object_kind, pm.object_uuid, "
