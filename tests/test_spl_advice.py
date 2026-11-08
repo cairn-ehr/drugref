@@ -295,8 +295,20 @@ def test_r10_templates_read_nmi_and_name_the_template():
             ("No pharmacokinetic interactions are expected with antacids", "interaction_expected"),
             ("No dosage reductions are recommended for patients taking antacids.",
              "no_dose_adjustment_needed"),
-            ("Dose adjustment is not recommended for patients receiving antacids.",
-             "dose_adjustment_not_needed")):
+            ):
         r = _read(t, "antacids")
         assert (r.level, r.rule_id) == ("no_meaningful_interaction",
                                         "no_meaningful_interaction." + rule), t
+
+
+def test_r11_not_recommended_is_never_an_all_clear():
+    # T4 and the mask exclude "recommended": these read avoid, not NMI / not_read.
+    for t, name in (
+            ("Dose adjustment is not recommended with antacids.", "antacids"),
+            ("Dose adjustment is not recommended for patients receiving antacids.", "antacids"),
+            ("Coadministration with strong inhibitors requiring dose reduction is not "
+             "recommended.", "strong inhibitors"),
+            ("Use with strong inhibitors even with dose adjustment is not recommended.",
+             "strong inhibitors")):
+        r = _read(t, name)
+        assert (r.level, r.rule_id) == ("avoid", "avoid.not_recommended"), t

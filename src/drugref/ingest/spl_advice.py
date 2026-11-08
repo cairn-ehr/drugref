@@ -51,8 +51,13 @@ single spaces) one of `NMI_TEMPLATES`:
   T2 no [...same...] interaction(s) is|are expected with M
   T3 no dose|dosage adjustment(s)|reduction(s) is|are needed|required|necessary|
      recommended with|for patients taking|receiving M
-  T4 dose|dosage adjustment(s)|reduction(s) is|are not needed|required|necessary|
-     recommended with|for patients taking|receiving M
+  T4 dose|dosage adjustment(s)|reduction(s) is|are not needed|required|necessary
+     with|for patients taking|receiving M      (NO "recommended": see R11)
+
+RULING R11: T4 omits "recommended", and the `no_dose_adjustment` mask does too, so
+"not recommended" always reaches `avoid.not_recommended`. "Dose reduction is not
+recommended with X" can mean "dose changes will not fix this -- avoid X", so reading it
+as an all-clear risks the worst error; reading it `avoid` over-warns (safe direction).
 
 The mention must END the sentence and is the only open slot, so any extra word, comma,
 clause, condition or odd whitespace means no match and `not_read`. The R8/R9 blocker
@@ -117,7 +122,7 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
           r"\bno (?:(?:initial|starting|specific) )?dos(?:e|age) "
           r"(?:adjustments?|reductions?)\b"
           r"|\bdos(?:e|age) (?:adjustments?|reductions?) (?:is|are) not "
-          r"(?:needed|required|necessary|recommended)\b"),
+          r"(?:needed|required|necessary)\b"),
 )
 
 # R10: the ONLY way to read NMI. Each fully matches the trimmed sentence scope (one
@@ -126,15 +131,16 @@ _PH = "\ue000"  # private-use code point: never occurs in label text
 _INTERACTION = (r"no (?:clinically (?:significant|relevant|meaningful) )?"
                 r"(?:(?:pharmacokinetic|drug) )?interactions? ")
 _DOSE = r"dos(?:e|age) (?:adjustments?|reductions?) (?:is|are) "
-_DOSE_END = (r"(?:needed|required|necessary|recommended) "
-             r"(?:with|for patients (?:taking|receiving)) " + _PH)
+_DOSE_TAIL = r"(?:with|for patients (?:taking|receiving)) " + _PH
+_DOSE_END = r"(?:needed|required|necessary|recommended) " + _DOSE_TAIL
+_DOSE_NOT_END = r"(?:needed|required|necessary) " + _DOSE_TAIL  # R11: no "recommended"
 NMI_TEMPLATES: tuple[AdviceRule, ...] = (
     _rule(NMI, "interaction_observed",
           _INTERACTION + r"(?:was|were|has been|have been) observed with " + _PH),
     _rule(NMI, "interaction_expected",
           _INTERACTION + r"(?:is|are) expected with " + _PH),
     _rule(NMI, "no_dose_adjustment_needed", r"no " + _DOSE + _DOSE_END),
-    _rule(NMI, "dose_adjustment_not_needed", _DOSE + r"not " + _DOSE_END),
+    _rule(NMI, "dose_adjustment_not_needed", _DOSE + r"not " + _DOSE_NOT_END),
 )
 
 
