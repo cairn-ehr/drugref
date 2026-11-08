@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS drugref.spl_advice_level (
     -- and "the reader could not tell". NULL, not 0 or 99, so a MIN() over ranks can
     -- never pick one of them by accident.
     strength_rank integer,
-    CONSTRAINT spl_advice_level_rank_positive CHECK (strength_rank IS NULL OR strength_rank > 0)
+    CONSTRAINT spl_advice_level_rank_positive CHECK (strength_rank IS NULL OR strength_rank > 0),
+    -- spl_class_statement looks a level up BY rank with a scalar subquery; two levels
+    -- sharing a rank would make that subquery error or pick one arbitrarily. (NULLs
+    -- stay allowed and never collide in a UNIQUE.)
+    CONSTRAINT spl_advice_level_rank_unique UNIQUE (strength_rank)
 );
 
 INSERT INTO drugref.spl_advice_level (level, strength_rank) VALUES
@@ -282,6 +286,8 @@ COMMENT ON TABLE drugref.spl_entity_occurrence IS
     'reading of rule 6, and stored for every match whether or not the quote budget '
     'could afford a window over it. The match rule is the SHIPPED resolver''s: exact, '
     'case-insensitive, contiguous, whole-token, longest-match-wins over '
-    'substance_moiety.display_name. It asserts NO RELATION. CORRECTED BY db/066: '
-    'class occurrences ARE now stored, in spl_class_occurrence (with a machine-read '
-    'advice level); db/051''s "deliberately absent" no longer holds.';
+    'substance_moiety.display_name. It asserts NO RELATION: that two drugs are named '
+    'in one interactions section is what this table says, and what the label MEANS by '
+    'it is curation''s job. CORRECTED BY db/066: class occurrences ARE now stored, in '
+    'spl_class_occurrence (with a machine-read advice level); db/051''s "deliberately '
+    'absent" no longer holds for the class grain.';

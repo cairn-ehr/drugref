@@ -80,6 +80,19 @@ def test_scope_check_matches_python(conn):
     assert d.count("'") == 2 * len(spl_advice.SCOPES)
 
 
+def test_mixed_check_names_exactly_the_strength_levels(conn):
+    d = _check_text(conn, "spl_class_occurrence_mixed_needs_strength")
+    for lv in spl_advice.STRENGTH:
+        assert f"'{lv}'" in d
+    assert d.count("'") == 2 * len(spl_advice.STRENGTH)
+
+
+def test_strength_rank_is_unique(conn):
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO drugref.spl_advice_level (level, strength_rank) "
+                     "VALUES ('bogus', 1)")
+
+
 def test_not_read_requires_null_rule(conn, world):
     r, k, *_ = world
     with pytest.raises(psycopg.errors.CheckViolation):
@@ -144,9 +157,11 @@ def test_nmi_beats_not_read_but_loses_to_strength(conn, world):
     _occ(conn, r, k, level="not_read", rule=None)
     _occ(conn, r, k, start=30, end=40, level="no_meaningful_interaction", rule="n.x")
     _label(conn, r, b, "S1")
-    (lvl,) = conn.execute("SELECT strongest_level FROM drugref.spl_class_statement"
-                          ).fetchone()
-    assert lvl == "no_meaningful_interaction"
+    q = "SELECT strongest_level FROM drugref.spl_class_statement"
+    assert conn.execute(q).fetchone() == ("no_meaningful_interaction",)
+    # ... but any strength level outranks the all-clear.
+    _occ(conn, r, k, start=50, end=60, level="monitor", rule="monitor.x")
+    assert conn.execute(q).fetchone() == ("monitor",)
 
 
 def test_worklist_lists_strength_rows_until_a_live_ruling_exists(conn, world):
@@ -160,6 +175,30 @@ def test_worklist_lists_strength_rows_until_a_live_ruling_exists(conn, world):
         conn, subject_moiety_uuid=a, relationship="interacts_with", object_kind="class",
         object_uuid=k, verdict="holds", reviewed_by="t", reviewed_against="t")
     assert conn.execute(q).fetchall() == []
+
+
+@pytest.mark.parametrize("verdicts", [("does_not_hold",), ("cannot_establish",),
+                                       ("holds", "does_not_hold", "cannot_establish")])
+def test_any_live_verdict_clears_the_worklist_and_supersession_keeps_it_cleared(
+        conn, world, verdicts):
+    r, k, a, b = world
+    _occ(conn, r, k)
+    _label(conn, r, a, "S1")
+    q = "SELECT count(*) FROM drugref.gap_unconfirmed_label_class_statement"
+    assert conn.execute(q).fetchone() == (1,)
+    for v in verdicts:  # each differing verdict supersedes the previous live row
+        curation_property.record_property_ruling(
+            conn, subject_moiety_uuid=a, relationship="interacts_with",
+            object_kind="class", object_uuid=k, verdict=v, reviewed_by="t",
+            reviewed_against="t")
+        assert conn.execute(q).fetchone() == (0,)
+    assert conn.execute("SELECT count(*) FILTER (WHERE superseded_by IS NULL), count(*) "
+                        "FROM drugref.curated_property_ruling").fetchone() == (
+                            1, len(verdicts))
+    # A ruling about a DIFFERENT class does not clear this statement.
+    other = w.klass(conn, r, "Fibrates")
+    _occ(conn, r, other, start=70, end=80)
+    assert conn.execute(q).fetchone() == (1,)
 
 
 def test_worklist_skips_nmi_and_not_read(conn, world):
