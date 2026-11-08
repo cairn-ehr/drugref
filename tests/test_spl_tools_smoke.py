@@ -109,3 +109,46 @@ def test_the_registry_halves_cannot_be_MUTATED_by_a_consumer():
         registry.by_name["aspirin"] = "u2"
     with pytest.raises(TypeError):
         registry.by_unii["DEF"] = "u2"
+
+
+# --- tools/spl_class_census.py -------------------------------------------------
+
+def test_class_census_pure_prose_figures():
+    from tools import spl_class_census as cc
+    assert cc.parenthetical_miss("cytochrome P450 3A4 (CYP3A4) inhibitors")
+    assert not cc.parenthetical_miss("cytochrome P450 3A4 (CYP3A4) " + "x" * 100 + " inhibitors")
+    assert not cc.parenthetical_miss("strong CYP3A4 inhibitors")
+    text = "Intervention: avoid statins here"
+    start = text.index("statins")
+    assert cc.near_table_label(text, start, start + 7)
+    assert not cc.near_table_label("z" * 200 + "statins", 200, 207)
+
+
+def test_spl_class_census_runs(conn):
+    """`test_spl_class_census_runs` (Task 9 step 1): every query executes and the
+    one seeded occurrence is counted -- per wording, on its axis, as populated."""
+    from drugref import spl_class_evidence as ce, spl_evidence
+    from drugref.ingest import spl
+    from tests import class_profile_world as w
+    from tools import spl_class_census as cc
+
+    run = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, '2026-08-22', 'deadbeef', %s) RETURNING ingest_run_id",
+        (spl.SOURCE, spl.WRITER)).fetchone()[0]
+    key = "b" * 64
+    spl_evidence.write_wordings(
+        conn, [spl_evidence.WordingRow(text_key=key, char_length=1_000, label_count=3)],
+        ingest_run_id=run, source=spl.SOURCE)
+    klass = w.klass(conn, run, "Statins")
+    spl_evidence.write_class_occurrences(conn, [ce.ClassOccurrenceRow(
+        text_key=key, char_start=1, char_end=8, class_uuid=str(klass),
+        match_ambiguous=False, match_form="stored", advice_level="avoid",
+        advice_mixed=False, advice_rule="avoid.x", advice_scope="sentence",
+        scope_start=0, scope_end=20)], ingest_run_id=run, source=spl.SOURCE)
+
+    assert cc.latest_spl_run(conn) == run
+    report = cc.run_queries(conn, run)
+    assert "| avoid | 1 |" in report          # level distribution, per occurrence
+    assert "TOP OFFENDERS" in report and "| Statins |" in report
+    assert "| 1 | 1 | 3 |" in report            # occurrences | wordings | labels

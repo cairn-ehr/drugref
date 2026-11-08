@@ -312,3 +312,13 @@ def test_r11_not_recommended_is_never_an_all_clear():
              "strong inhibitors")):
         r = _read(t, name)
         assert (r.level, r.rule_id) == ("avoid", "avoid.not_recommended"), t
+
+
+def test_scope_always_contains_a_mention_that_holds_a_sentence_boundary():
+    """A class name with ". X" inside it (seen on the real release) must not yield a
+    scope that ends before the mention does -- db/066's CHECK would refuse the row."""
+    text = "Use caution with Potassium. Salts are fine."
+    start = text.index("Potassium")
+    end = text.index("Salts") + len("Salts")
+    r = read_advice(text, start, end)
+    assert r.scope_start <= start and r.scope_end >= end

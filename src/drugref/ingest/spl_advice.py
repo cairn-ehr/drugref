@@ -259,9 +259,12 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
     block = _block_from(text, mk, starts, char_start)
-    if block:
+    if block and block[1] >= char_end:
         # NMI is not read here: a block can mix statements about different things.
         got = _read_scope(text[block[0]:block[1]], allow_nmi=False)
         if got:
             return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *block)
-    return AdviceReading("not_read", False, None, SCOPE_SENTENCE, s, e)
+    # A mention whose own text holds a ". X" boundary (found on the 2026-08 release:
+    # a class name ending a sentence mid-name) ends past the sentence end; db/066's
+    # CHECK requires the scope to contain the mention, so widen it to cover it.
+    return AdviceReading("not_read", False, None, SCOPE_SENTENCE, s, max(e, char_end))
