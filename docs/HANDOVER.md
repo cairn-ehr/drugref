@@ -50,6 +50,10 @@ run**: `test_suite_count.py` then fails two tests that are not real.
    6,588 acetaminophen spans in the shipped drug grain. Then **#214** (class-hygiene candidates: `Electrolyte
    [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
    avoid phrasing) and **#215** (store the class-pass drop counts per run).
+   **#218** (latent: the negation mask can still hide "contraindicated" in glued cells such as "Do not use
+   Contraindicated"; 0 occurrences today) — fix it together with **#216** (split `spl_run.py`, `spl_evidence.py`,
+   `spl_advice.py`, all at ~500 lines, and cache the reader's scope per wording). **#217**: order the label
+   class-statement worklist strongest level first.
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
@@ -58,7 +62,7 @@ run**: `test_suite_count.py` then fails two tests that are not real.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open
-from class profiles: #203, #204. From class mentions: #213, #214, #215.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+from class profiles: #203, #204. From class mentions: #213–#218.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #213/#214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve

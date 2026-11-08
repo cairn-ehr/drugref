@@ -6009,7 +6009,13 @@ a withheld MIXED sentence still ships `not_read`, never its weaker co-reading.
 names (high value: 6,588 acetaminophen spans missed by the drug pass) · [#214](https://github.com/cairn-ehr/drugref/issues/214)
 further class-hygiene candidates (the results record's "Open, for a ruling") ·
 [#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts (boundary and non-drug-head) are
-printed by the ingest but not stored per run.
+printed by the ingest but not stored per run (also: the UNII_Names file's name/checksum is not stored) ·
+[#216](https://github.com/cairn-ehr/drugref/issues/216) rule 4: `spl_run.py` / `spl_evidence.py` / `spl_advice.py`
+at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s) ·
+[#217](https://github.com/cairn-ehr/drugref/issues/217) label class-statement worklist not ordered strongest
+level first (design §6.4) · [#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can
+still hide "contraindicated" when the intervening word ends another strength phrase (0 occurrences; R24's rule
+not yet applied to it).
 
 ## The standing open-issue ledger
 
