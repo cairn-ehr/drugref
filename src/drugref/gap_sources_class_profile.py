@@ -1,4 +1,5 @@
-"""Gap kind 19: a class property that is not confirmed for one member (db/061).
+"""Gap kind 19: a class property that is not confirmed for one member (db/061), and
+gap kind 20: a machine-read label statement about a (drug, class) pair (db/066).
 
 A VOCABULARY, NOT A WRITER (see gap_sources_registry.py). The gap_key format is
 FROZEN: question_uuid is uuid5(gap_kind, gap_key), immortal and externally cited.
@@ -7,6 +8,7 @@ FROZEN: question_uuid is uuid5(gap_kind, gap_key), immortal and externally cited
 # Correlated subqueries must name the outer row; the caller gives the view no alias,
 # so qualify with the view name itself.
 _V = "drugref.gap_unconfirmed_class_property"
+_L = "drugref.gap_unconfirmed_label_class_statement"
 
 CLASS_PROFILE_GAP_SOURCES = {
     "unconfirmed_class_property": {
@@ -32,6 +34,25 @@ CLASS_PROFILE_GAP_SOURCES = {
             "WHERE class_uuid = ANY(" + _V + ".raising_classes)) || "
             "'. Answer: holds, does not hold, or cannot be established. "
             # True of every answer: no alert-path view reads the rulings (#204).
+            "Answering does not change prescribing alerts.'"),
+    },
+    # Gap kind 20. The view lists only machine-read STRENGTH levels no curator has ruled
+    # on; a `holds` ruling on (drug, interacts_with, class) is the only way the reading
+    # becomes a class property -- nothing machine-read promotes itself.
+    "unconfirmed_label_class_statement": {
+        "view": "gap_unconfirmed_label_class_statement",
+        # One question per (drug, class) pair, the same pair a ruling is keyed on.
+        "key_sql": "'SPLCLASS:' || moiety_uuid || ':' || class_uuid",
+        # Says "machine-read, not confirmed" and never that the drug is safe.
+        "text_sql": (
+            "'Does ' || (SELECT display_name FROM drugref.substance_moiety "
+            "WHERE moiety_uuid = " + _L + ".moiety_uuid) || ' interact with ' || "
+            "(SELECT class_name FROM drugref.substance_class "
+            "WHERE class_uuid = " + _L + ".class_uuid) || '? ' || label_count || "
+            "' label(s) for ' || (SELECT display_name FROM drugref.substance_moiety "
+            "WHERE moiety_uuid = " + _L + ".moiety_uuid) || ' say ' || "
+            "replace(strongest_level, '_', ' ') || ' (machine-read, not confirmed). "
+            "Answer: holds, does not hold, or cannot be established. "
             "Answering does not change prescribing alerts.'"),
     },
 }

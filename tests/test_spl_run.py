@@ -312,6 +312,19 @@ def test_class_pass_writes_class_occurrences(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
+def test_label_class_question_registered_after_spl_run(conn, corpus):
+    """The run feeds gap kind unconfirmed_label_class_statement, so it registers it."""
+    _seed_registry(conn)
+    class_uuid = _seed_class(conn)
+    _ingest(conn, _text_corpus(corpus))
+    keys = [k for (k,) in conn.execute(
+        "SELECT gap_key FROM drugref.open_question "
+        "WHERE gap_kind = 'unconfirmed_label_class_statement'")]
+    assert keys and all(k.startswith("SPLCLASS:") and k.endswith(f":{class_uuid}")
+                        for k in keys)
+
+
+@pytest.mark.usefixtures("_clean")
 def test_drug_pairs_unchanged_by_class_pass(conn, corpus):
     """TEXT HELD CONSTANT: only the registry's classes differ between the runs.
 
@@ -737,9 +750,11 @@ def test_the_gap_view_is_NOT_registered_as_an_open_question_kind(conn, corpus):
     assert "gap_unresolved_spl_subject" not in views
     _seed_registry(conn)
     _ingest(conn, corpus)
-    (questions_written,) = conn.execute(
-        "SELECT count(*) FROM drugref.open_question").fetchone()
-    assert questions_written == 0
+    # The run now registers questions (for the label-class kind), which also derives
+    # the registry kinds; but nothing it writes may be about an unresolved SPL subject.
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.open_question WHERE gap_kind ILIKE '%spl%' "
+        "OR gap_kind ILIKE '%subject%'").fetchone() == (0,)
 
 
 @pytest.mark.usefixtures("_clean")

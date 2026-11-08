@@ -55,7 +55,8 @@ from collections.abc import Callable, Mapping, Sequence
 
 import psycopg
 
-from drugref import provenance, registry_read, spl_class_evidence, spl_evidence
+from drugref import (
+    provenance, questions, registry_read, spl_class_evidence, spl_evidence)
 from drugref.ingest import (
     spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release, spl_suppress,
     spl_subject,
@@ -473,13 +474,10 @@ def ingest_spl(
             records_field_blank=summary.records_field_blank,
             labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
 
-        # `register_from_gaps` IS DELIBERATELY NOT CALLED, unlike in every
-        # sibling orchestrator. This run writes only its own five projection
-        # tables and its db/057 census row, and
-        # `gap_unresolved_spl_subject` is not an `open_question` kind -- db/051
-        # section 8 says why, at length. Calling it would re-derive eighteen
-        # kinds this run cannot have changed, and would stamp SPL's run id as
-        # `last_derived_ingest` on questions it had no part in deriving.
+        # This run now feeds a gap kind (unconfirmed_label_class_statement, from the
+        # class pass), so the question registry must see it, inside this transaction so
+        # a rollback leaves no question behind. Re-deriving the other kinds is a no-op.
+        questions.register_from_gaps(conn, run_id)
 
         provenance.finish_run(conn, run_id)
         # THE DEFERRED QUOTE-BUDGET TRIGGER FIRES HERE, at this commit, over

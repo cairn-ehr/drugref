@@ -36,7 +36,7 @@ _KEY = ("subject_kind", "subject_uuid", "relationship", "object_kind", "object_u
 
 
 def answerable_questions(moiety, relationship, object_kind, object_uuid):
-    """The gap-19 questions a ruling may cite: one per member it is about.
+    """The gap-19 (and, for drug -> class, label-statement) questions a ruling may cite.
 
     A class-subject ruling has none (gap 19 asks about a MEMBER, never a class). A drug
     pair is one fact asked of either drug, so both orientations count.
@@ -46,9 +46,14 @@ def answerable_questions(moiety, relationship, object_kind, object_uuid):
     sides = [(moiety, object_uuid)]
     if object_kind == "moiety":
         sides.append((object_uuid, moiety))
-    return [("unconfirmed_class_property",
-             {"moiety_uuid": m, "relationship": relationship,
-              "object_kind": object_kind, "object_uuid": o}) for m, o in sides]
+    found = [("unconfirmed_class_property",
+              {"moiety_uuid": m, "relationship": relationship,
+               "object_kind": object_kind, "object_uuid": o}) for m, o in sides]
+    if relationship == "interacts_with" and object_kind == "class":
+        # The SPL label worklist asks exactly this (drug, class) question.
+        found.append(("unconfirmed_label_class_statement",
+                      {"moiety_uuid": moiety, "class_uuid": object_uuid}))
+    return found
 
 
 def record_property_ruling(
