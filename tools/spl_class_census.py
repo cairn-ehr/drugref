@@ -120,7 +120,8 @@ QUERIES: tuple[tuple[str, str], ...] = (
                     count(DISTINCT (char_start, char_end)) AS spans
                FROM occ GROUP BY axis, pop, text_key, label_count) p
       GROUP BY axis, pop ORDER BY axis, pop"""),
-    # The PK/APC filter below must change with spl_class_vocab.is_matchable.
+    # The PK/APC filter and the named exclusion below must change with
+    # spl_class_vocab.is_matchable / EXCLUDED_CLASSES.
     ("Classes mentioned at least once vs classes matchable, per axis",
      """
      SELECT c.source || ' ' || c.concept_type AS axis,
@@ -134,6 +135,7 @@ QUERIES: tuple[tuple[str, str], ...] = (
               AS mentioned
        FROM drugref.substance_class c
       WHERE NOT (c.source = 'MED-RT' AND c.concept_type IN ('PK', 'APC'))
+        AND (c.source, c.concept_type, c.class_name) <> ('MeSH', 'PA', 'Hormones')
       GROUP BY 1, 2 ORDER BY 1, 2"""),
     ("Distinct statements (labelling drug x class; label-derived, not per wording) "
      "and classes gaining at least one, per axis",

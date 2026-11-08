@@ -103,6 +103,10 @@ class SplSummary:
     #: dropped because they equal a moiety display name (R16).
     class_spans_dropped_at_a_boundary: int = 0
     class_keys_shadowed_by_moieties: int = 0
+    #: R19: class keys equal to a UNII official name (a drug, P1), and class spans
+    #: whose word qualifies a non-drug head ('anticoagulant effect', P2).
+    class_keys_shadowed_by_official_names: int = 0
+    class_spans_dropped_on_a_non_drug_head: int = 0
 
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
@@ -188,8 +192,12 @@ class SplSummary:
             f"class mentions over {self.wordings_with_a_class:,} wordings "
             f"({self.moiety_spans_inside_class_spans:,} moiety occurrences lie "
             f"inside one; {self.class_spans_dropped_at_a_boundary:,} class spans "
-            f"dropped at a sentence boundary, {self.class_keys_shadowed_by_moieties:,} "
-            f"class keys dropped as moiety names); {self.quotes:,} quoted "
+            f"dropped at a sentence boundary, "
+            f"{self.class_spans_dropped_on_a_non_drug_head:,} class spans dropped "
+            f"on a non-drug head word, {self.class_keys_shadowed_by_moieties:,} "
+            f"class keys dropped as moiety names, "
+            f"{self.class_keys_shadowed_by_official_names:,} class keys dropped "
+            f"as UNII official names); {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
             f"{self.self_pairs:,} self-pair evidence rows excluded"

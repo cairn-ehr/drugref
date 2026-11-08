@@ -15,6 +15,7 @@ from drugref import cli_spl
 from drugref.ingest import spl_run
 
 _MINIMAL = ["spl", "--openfda", "/tmp/o", "--dailymed", "/tmp/a.zip",
+            "--unii-names", "/tmp/UNII_Names.txt",
             "--release", "openfda-2026-08-22+dailymed-2026-08-21"]
 
 
@@ -83,3 +84,14 @@ def test_the_release_tag_is_REQUIRED_because_two_corpora_have_two_stamps(parse):
     drugref guessed would be a provenance claim nobody made."""
     with pytest.raises(SystemExit):
         parse(["spl", "--openfda", "/tmp/o", "--dailymed", "/tmp/a.zip"])
+
+
+def test_the_unii_names_file_is_REQUIRED_and_handed_through(parse, captured_kwargs):
+    """R19/P1 drops class keys that are a UNII official name ('Acetaminophen [EPC]').
+    The orchestrator skips the rule when given no file, so the production path must
+    not be able to forget it."""
+    cli_spl.handle_spl(None, parse(_MINIMAL))
+    assert str(captured_kwargs["unii_names"]) == "/tmp/UNII_Names.txt"
+    without = [a for a in _MINIMAL if a not in ("--unii-names", "/tmp/UNII_Names.txt")]
+    with pytest.raises(SystemExit):
+        parse(without)

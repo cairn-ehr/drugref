@@ -195,7 +195,7 @@ def _write_evidence(
     """
     keys = sorted(corpus.wordings)
     occurrences = with_moiety = quotes = quoted_chars = 0
-    class_total = with_class = inside = boundary_drops = 0
+    class_total = with_class = inside = boundary_drops = head_drops = 0
     for start in range(0, len(keys), WORDING_CHUNK):
         chunk = keys[start:start + WORDING_CHUNK]
         occurrence_rows: list[spl_evidence.OccurrenceRow] = []
@@ -206,12 +206,14 @@ def _write_evidence(
                 text_key, corpus.wordings[text_key], vocab)
             if found:
                 with_moiety += 1
-            mentions, within, dropped = spl_class_evidence.class_pass_for_wording(
-                text_key, corpus.wordings[text_key], class_vocab,
-                [(o.char_start, o.char_end) for o in found])
+            mentions, within, dropped, on_head = (
+                spl_class_evidence.class_pass_for_wording(
+                    text_key, corpus.wordings[text_key], class_vocab,
+                    [(o.char_start, o.char_end) for o in found]))
             with_class += bool(mentions)
             inside += within
             boundary_drops += dropped
+            head_drops += on_head
             class_rows.extend(mentions)
             occurrence_rows.extend(found)
             quote_rows.extend(quoted)
@@ -226,7 +228,7 @@ def _write_evidence(
             progress(min(start + WORDING_CHUNK, len(keys)), len(keys))
     return spl_class_evidence.EvidenceCounts(
         occurrences, with_moiety, quotes, quoted_chars,
-        class_total, with_class, inside, boundary_drops)
+        class_total, with_class, inside, boundary_drops, head_drops)
 
 
 def ingest_spl(
@@ -237,6 +239,7 @@ def ingest_spl(
     pair_floor: int | None = None,
     novel_floor: int | None = None,
     progress: Callable[[str], None] | None = None,
+    unii_names: str | pathlib.Path | None = None,
 ) -> SplSummary:
     """Read both corpora and rebuild this source's projection.
 
@@ -312,11 +315,9 @@ def ingest_spl(
     # Classes are read in the SAME TRANSACTION as the registry, before the
     # rollback below. Zero classes is legitimate (the drug grain needs none), so
     # it is reported, not refused; an empty vocabulary simply matches nothing.
-    class_entries, shadowed = spl_class_evidence.split_shadowed_keys(
-        spl_class_evidence.load_class_entries(conn), names)
-    class_vocab = spl_class_evidence.class_vocabulary(class_entries)
-    say(f"  registry: {len(class_entries):,} class match keys "
-        f"({len(shadowed):,} dropped as moiety names: {sorted(shadowed)[:12]})")
+    class_vocab, class_keys = spl_class_evidence.class_vocabulary_for_run(
+        conn, names, known_uniis, unii_names)
+    say(f"  registry: {class_keys}")
     # Reported rather than merely counted. A UNII two moieties claim resolves
     # first-wins, so every subject derived from it names ONE of them and the
     # other silently never appears -- `identity_claim` permits this by design, so
@@ -464,8 +465,7 @@ def ingest_spl(
             wordings_with_a_class=counts.wordings_with_a_class,
             moiety_spans_inside_class_spans=(
                 counts.moiety_spans_inside_class_spans),
-            class_spans_dropped_at_a_boundary=counts.class_spans_dropped_at_a_boundary,
-            class_keys_shadowed_by_moieties=len(shadowed))
+            **counts.class_drop_fields(), **class_keys.summary_fields())
 
         spl_checks.check_floors(
             summary, pair_floor=pair_floor, novel_floor=novel_floor)

@@ -68,3 +68,16 @@ def test_class_match_keys_dedupes_by_fold():
 def test_class_match_keys_empty_base_yields_nothing():
     # '[EPC]' strips to '' and number_variants('') would be 's'.
     assert class_match_keys("[EPC]", "MED-RT") == ()
+
+
+def test_the_one_named_exclusion_is_mesh_hormones():
+    """R19/P3: 'Hormones' (MeSH PA) is the twin of the excluded APC 'Hormone' and read
+    4/10 as a class mention on run 11 (physiology: antidiuretic hormone, hormone
+    levels). ONE named entry, so a second exclusion is a visible, reviewed edit."""
+    from drugref.ingest.spl_class_vocab import EXCLUDED_CLASSES
+    assert EXCLUDED_CLASSES == frozenset({("MeSH", "PA", "Hormones")})
+    assert not is_matchable("MeSH", "PA", "Hormones")
+    # Only that exact class: its neighbours and namesakes on other axes still match.
+    assert is_matchable("MeSH", "PA", "Hormone Antagonists")
+    assert is_matchable("MED-RT", "EPC", "Hormones")
+    assert is_matchable("MeSH", "PA")  # the name is optional for axis-only callers

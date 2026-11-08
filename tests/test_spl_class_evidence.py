@@ -96,22 +96,23 @@ def test_moiety_spans_inside_class_spans_boundaries():
 
 def test_class_pass_for_wording_rows_and_overlap():
     text = "Avoid rifampin inducers and rifampin."
-    rows, inside, dropped = ce.class_pass_for_wording(
+    rows, inside, dropped, heads = ce.class_pass_for_wording(
         "k", text, _vocab(("rifampin inducers", CU)), [(6, 14), (30, 37)])
     assert [text[r.char_start:r.char_end] for r in rows] == ["rifampin inducers"]
     assert inside == 1
-    assert ce.class_pass_for_wording("k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0, 0)
+    assert ce.class_pass_for_wording(
+        "k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0, 0, 0)
 
 
 def test_a_class_match_spanning_a_sentence_boundary_is_dropped_and_counted():
     """Tokenising ignores punctuation, so 'Avoid Potassium. Salts are fine.' matches the
     class 'Potassium Salts' across a sentence end -- a false mention (R17)."""
     text = "Avoid Potassium. Salts are fine."
-    rows, inside, dropped = ce.class_pass_for_wording(
+    rows, inside, dropped, _ = ce.class_pass_for_wording(
         "k", text, _vocab(("Potassium Salts", CU)), [])
     assert (rows, dropped) == ([], 1)
     # ... while the same words inside one sentence are kept.
-    rows, _, dropped = ce.class_pass_for_wording(
+    rows, _, dropped, _ = ce.class_pass_for_wording(
         "k", "Avoid Potassium Salts today.", _vocab(("Potassium Salts", CU)), [])
     assert len(rows) == 1 and dropped == 0
 
@@ -123,3 +124,88 @@ def test_split_shadowed_keys_drops_keys_that_are_moiety_names():
         [ent("Calcium", CU), ent("Statins", CU2)], {"calcium", "warfarin"})
     assert [e.key for e in kept] == ["Statins"]
     assert shadowed == ["Calcium"]
+
+
+# ---- R19/P2: a class word that is an adjective on a non-drug head noun ---------
+
+def test_followed_by_non_drug_head_effect_words():
+    """The class word describes an EFFECT (or is part of another class name), so the
+    span is not a mention of the class: 'enhance the anticoagulant effect of X'."""
+    f = ce.followed_by_non_drug_head
+    for text, word in (("the anticoagulant effect of X", "anticoagulant"),
+                       ("anticoagulant effects", "anticoagulant"),
+                       ("the analgesic doses of Y", "analgesic"),
+                       ("an analgesic dose of Y", "analgesic"),
+                       ("the anticholinergic (drying) effects", "anticholinergic"),
+                       ("systemic corticosteroid side effects", "corticosteroid"),
+                       ("corticosteroid side-effects", "corticosteroid"),
+                       ("a synergistic anticonvulsant action", "anticonvulsant"),
+                       ("anticonvulsant actions", "anticonvulsant"),
+                       ("an insulin secretagogue", "insulin"),
+                       ("Insulin Secretagogues", "Insulin")):
+        assert f(text, text.index(word) + len(word)), text
+
+
+def test_followed_by_non_drug_head_keeps_real_class_phrases():
+    """R19 keeps 'activity'/'properties': 'drugs with anticholinergic activity' names a
+    real group, and dropping it would under-warn. Bare 'dose' is kept too: 'the PPI dose
+    should not exceed' is dose advice ABOUT the class."""
+    f = ce.followed_by_non_drug_head
+    for text, word in (("drugs with anticholinergic activity", "anticholinergic"),
+                       ("agents with anticholinergic properties", "anticholinergic"),
+                       ("the proton pump inhibitor dose should not exceed", "inhibitor"),
+                       ("reduce the diuretic dosage", "diuretic"),
+                       ("anticoagulants such as warfarin", "anticoagulants"),
+                       ("diuretic effectiveness", "diuretic"),
+                       ("anticoagulant therapy", "anticoagulant"),
+                       ("insulin", "insulin")):
+        end = text.index(word) + len(word)
+        assert not f(text, end), text
+
+
+def test_a_class_span_on_an_effect_word_is_dropped_and_counted():
+    text = "Drug X may enhance the anticoagulant effect of drug Y. Avoid anticoagulants."
+    rows, _, boundary, heads = ce.class_pass_for_wording(
+        "k", text, _vocab(("anticoagulant", CU), ("anticoagulants", CU)), [])
+    assert [text[r.char_start:r.char_end] for r in rows] == ["anticoagulants"]
+    assert (boundary, heads) == (0, 1)
+
+
+# ---- R19/P1: class keys equal to a UNII official name --------------------------
+
+_NAMES_HEADER = "Name\tTYPE\tUNII\tDisplay Name\n"
+
+
+def test_official_names_reads_type_of_for_held_uniis_only():
+    lines = [_NAMES_HEADER,
+             "PARACETAMOL-LIKE\tof\tU1\tPARACETAMOL-LIKE\n",   # official, held
+             "WIDGETOL\tcn\tU1\tPARACETAMOL-LIKE\n",           # common name: not official
+             "GADGETOL\tof\tU9\tGADGETOL\n"]                   # official, NOT held
+    assert ce.official_names(lines, {"U1"}) == {"PARACETAMOL-LIKE"}
+
+
+def test_official_names_refuses_a_file_without_its_columns():
+    """UNII_Records sits beside UNII_Names; handing over the wrong file must raise,
+    not silently yield no names (and so drop nothing)."""
+    import pytest
+    with pytest.raises(ValueError, match="TYPE"):
+        ce.official_names(["UNII\tDisplay Name\tRXCUI\n"], {"U1"})
+
+
+def test_class_key_shadowing_counts_moiety_names_and_official_names_apart():
+    ent = lambda k, u: spl_match.Entry(  # noqa: E731
+        kind=spl_match.KIND_CLASS, key=k, display=k, class_uuid=u)
+    kept, keys = ce.drop_shadowed_class_keys(
+        [ent("Calcium", CU), ent("Widgetol", CU), ent("Widgetols", CU), ent("Statins", CU2)],
+        moiety_names={"calcium"}, official_names={"WIDGETOL"})
+    # Per KEY, as R16(b): the plural 'Widgetols' is a different key and survives.
+    assert [e.key for e in kept] == ["Widgetols", "Statins"]
+    assert (keys.shadowed_by_moieties, keys.shadowed_by_official_names) == (["Calcium"], ["Widgetol"])
+    assert keys.kept == 2
+
+
+def test_load_class_entries_skips_the_named_exclusion(conn):
+    r = _run(conn)
+    w.klass(conn, r, "Hormones", source="MeSH", concept_type="PA")
+    kept = w.klass(conn, r, "Hormone Antagonists", source="MeSH", concept_type="PA")
+    assert {e.class_uuid for e in ce.load_class_entries(conn)} == {str(kept)}

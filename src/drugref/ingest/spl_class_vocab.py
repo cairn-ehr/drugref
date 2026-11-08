@@ -44,16 +44,31 @@ def fda_cyp_label_orders(base: str) -> tuple[str, ...]:
     return (f"{band} {enzyme} {role}", f"{band} {enzyme} {role}s")
 
 
-def is_matchable(source: str, concept_type: str) -> bool:
-    """False for MED-RT's PK axis and for MED-RT's APC axis.
+#: Individually named classes never matched, as (source, concept_type, class_name).
+#: ONE entry, each with its measured reason, so a second exclusion is a visible,
+#: reviewed edit and not a drift. 'Hormones' (MeSH PA), R19/P3: the twin of the
+#: excluded APC 'Hormone' (the same 4,486 spans came back through it on run 11); it
+#: read 4/10 as a class mention in the hand sample, the false ones physiology
+#: ('antidiuretic hormone', 'plasma hormone levels') and every true one 'thyroid
+#: hormone', a narrower thing than the 138-member class.
+EXCLUDED_CLASSES: frozenset[tuple[str, str, str]] = frozenset({
+    ("MeSH", "PA", "Hormones"),
+})
+
+
+def is_matchable(source: str, concept_type: str, class_name: str | None = None) -> bool:
+    """False for MED-RT's PK and APC axes, and for a class in `EXCLUDED_CLASSES`.
 
     FDA-CYP is also 'PK' but is matched, hence the source check. PK is excluded
     because its names are ordinary English (#155). APC is excluded for the same
     reason, measured on the 2026-08 release: all 44 APC classes are empty by
     construction (no drug is filed under them), their names are generic words
     ('Enzyme' 15,587 occurrences, 'Hormone' 4,486) and each duplicates a MeSH
-    pharmacologic-action name that IS matched.
+    pharmacologic-action name that IS matched. `class_name` is optional so an
+    axis-level caller can still ask about the axis alone.
     """
+    if (source, concept_type, class_name) in EXCLUDED_CLASSES:
+        return False
     return not (source == "MED-RT" and concept_type in ("PK", "APC"))
 
 

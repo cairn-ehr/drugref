@@ -40,6 +40,7 @@ def handle_spl(conn, args) -> int:
         openfda_dir=args.openfda,
         dailymed_parts=args.dailymed,
         release=args.release,
+        unii_names=args.unii_names,
         pair_floor=None if args.no_pair_floor else spl_run.MEASURED_PAIR_FLOOR,
         novel_floor=None if args.no_pair_floor else spl_run.MEASURED_NOVEL_FLOOR,
         # Printed as it goes, not held to the end: the DailyMed pass takes tens
@@ -63,6 +64,12 @@ def add_parser(sources) -> None:
     parser.add_argument(
         "--dailymed", required=True, nargs="+", type=pathlib.Path,
         help="DailyMed Human Rx release parts (dm_spl_release_human_rx_part*.zip)")
+    # REQUIRED, because the orchestrator skips R19/P1 without it: class keys that
+    # are a UNII official name ('Acetaminophen [EPC]') are DRUG names to drop.
+    parser.add_argument(
+        "--unii-names", required=True, type=pathlib.Path,
+        help="UNII_Names_*.txt (beside UNII_Records): class match keys equal to "
+             "an official name of a substance the registry holds are dropped")
     # REQUIRED, as DrugCentral's is and for the same reason: openFDA publishes an
     # `export_date` and DailyMed a `last-modified`, and this ingest reads TWO
     # corpora with two different stamps, so a tag drugref guessed would be a

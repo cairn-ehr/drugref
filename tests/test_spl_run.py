@@ -347,6 +347,25 @@ def test_drug_pairs_unchanged_by_class_pass(conn, corpus):
 
 
 @pytest.mark.usefixtures("_clean")
+def test_a_class_key_that_is_a_unii_official_name_is_dropped_and_counted(
+        conn, corpus, tmp_path):
+    """R19/P1 end to end: the class's stored key equals the official name of a UNII the
+    registry holds, so it is a DRUG name (as 'Acetaminophen [EPC]' is) and is dropped.
+    The pair figures cannot move: only the class vocabulary is touched."""
+    _seed_registry(conn)
+    _seed_class(conn)
+    text = _text_corpus(corpus)
+    names = tmp_path / "UNII_Names.txt"
+    names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
+                     f"RIFAMPIN INDUCERS\tof\t{sorted(_fixture_uniis())[0]}\tX\n")
+    kept = _ingest(conn, text)
+    dropped = _ingest(conn, text, unii_names=names)
+    assert (kept.class_occurrences, dropped.class_occurrences) == (1, 0)
+    assert dropped.class_keys_shadowed_by_official_names == 1
+    assert (dropped.pairs, dropped.occurrences) == (kept.pairs, kept.occurrences)
+
+
+@pytest.mark.usefixtures("_clean")
 def test_overlap_counted(conn, corpus):
     _seed_registry(conn)
     _seed_class(conn)
@@ -1314,6 +1333,15 @@ def _summary(**overrides):
         class_occurrences=5, wordings_with_a_class=2,
         moiety_spans_inside_class_spans=1)
     return spl_checks.SplSummary(**(fields | overrides))
+
+
+def test_the_summary_reports_the_r19_class_drops():
+    """R19: official-name keys and effect-word spans are dropped and COUNTED, and the
+    line an operator reads says so (a silent drop is indistinguishable from none)."""
+    text = str(_summary(class_keys_shadowed_by_official_names=2,
+                        class_spans_dropped_on_a_non_drug_head=7))
+    assert "2 class keys dropped as UNII official names" in text
+    assert "7 class spans dropped on a non-drug head word" in text
 
 
 def test_the_summary_refuses_to_exist_unless_the_route_buckets_sum():
