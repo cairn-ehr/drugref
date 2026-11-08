@@ -244,10 +244,11 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# Negated contraindication, masked before the strength rules.
-# "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
+# Negated contraindication, masked before the strength rules. "not only/merely/just
+# contraindicated" and (R25) "not recommended/advised contraindicated" are not negations.
 _NEG_CONTRA = re.compile(
-    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicate(?:d[a-z]?)?\b",
+    r"\b(?:not|no)\s+(?:(?!(?:only|merely|just|recommended|advised)\b)\w+\s+)?"
+    r"contraindicate(?:d[a-z]?)?\b",
     re.IGNORECASE)
 # Task 9B: highlights end an item with a cross-reference "(7.1)", "( 5.6 , 7.2 )"
 # and no full stop before the next item; a bullet "•" starts one. Both are sentence

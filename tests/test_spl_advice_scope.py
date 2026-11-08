@@ -87,3 +87,16 @@ def test_separate_administration_mask_never_hides_a_strength_word():
                  "Separate dosing with widgetacids contraindicated in renal failure is "
                  "not needed."):
         assert _read(text, "widgetacids").level == "contraindicated", text
+
+
+def test_negated_contraindicated_never_swallows_not_recommended():
+    """R25: "not recommended" completes a strength phrase, so it is not the one
+    intervening word of "not X contraindicated"; both words must stay visible."""
+    for text in ("Use of drug A with widgetacids is not recommended contraindicated.",
+                 "Drug A and widgetacids: Not Recommended Contraindicated."):
+        assert _read(text, "widgetacids").level == "contraindicated", text
+
+
+def test_not_clinically_contraindicated_is_still_a_negation():
+    assert _read("Widgetacids are not clinically contraindicated.",
+                 "Widgetacids").level == "not_read"
