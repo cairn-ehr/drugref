@@ -66,6 +66,15 @@ KIND_SUPPRESS = "suppress"
 #: rather than treating the whole kind as malformed.
 KIND_CLASS = "class"
 
+#: How a class match key was derived from the stored class name. They live here,
+#: not in `spl_class_vocab`, because `spl_class_vocab` imports `fold` from this
+#: module: defining them there would make an import cycle as soon as `Entry`
+#: validates its form against them. `spl_class_vocab` re-exports them.
+FORM_STORED = "stored"            # the stored name, axis tag removed
+FORM_NUMBER = "number"            # the same name in the other grammatical number
+FORM_LABEL_ORDER = "label_order"  # FDA-CYP only: label word order
+MATCH_FORMS = (FORM_STORED, FORM_NUMBER, FORM_LABEL_ORDER)
+
 #: Every kind `Entry` admits. Only `KIND_MOIETY` carries a `moiety_uuid`.
 ENTRY_KINDS = (KIND_MOIETY, KIND_SUPPRESS, KIND_CLASS)
 

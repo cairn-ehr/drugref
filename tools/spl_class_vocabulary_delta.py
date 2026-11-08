@@ -28,17 +28,10 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import re
 
 from drugref import db, registry_read, server_messages
 from drugref.ingest import spl, spl_match, spl_run
-
-#: MED-RT and drugref tag a class with its axis -- 'Cytochrome P450 1A2
-#: Inhibitors [MoA]'. That tag never appears on a drug label, so the measurement
-#: round stripped it before matching, and this reproduces that exactly: a
-#: comparison against a vocabulary built differently would measure the rebuild.
-_AXIS_TAG = re.compile(r"\s*\[[A-Za-z0-9-]+\]\s*$")
-
+from drugref.ingest.spl_class_vocab import number_variants, strip_axis_tag
 
 def class_variants(class_name: str) -> tuple[str, ...]:
     """The measurement round's class spellings: the stored name, plus its other
@@ -49,8 +42,8 @@ def class_variants(class_name: str) -> tuple[str, ...]:
     rewrites word order or expands 'Cytochrome P450' to 'CYP', because those are
     real differences between drugref's vocabulary and label prose.
     """
-    base = _AXIS_TAG.sub("", class_name).strip()
-    variants = [base, base[:-1] if base.endswith("s") else base + "s"]
+    base = strip_axis_tag(class_name)
+    variants = [base, *number_variants(base)]
     seen: dict[str, None] = {}
     for variant in variants:
         if variant:
