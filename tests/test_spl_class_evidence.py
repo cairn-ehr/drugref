@@ -209,3 +209,15 @@ def test_load_class_entries_skips_the_named_exclusion(conn):
     w.klass(conn, r, "Hormones", source="MeSH", concept_type="PA")
     kept = w.klass(conn, r, "Hormone Antagonists", source="MeSH", concept_type="PA")
     assert {e.class_uuid for e in ce.load_class_entries(conn)} == {str(kept)}
+
+
+def test_class_vocabulary_without_unii_names_warns_that_p1_was_skipped():
+    """`unii_names=None` skips R19/P1 silently unless the run summary says so: the
+    ingest prints `str(keys)`, so the warning travels on that line."""
+    class _NoClasses:  # load_class_entries only iterates conn.execute(...)
+        def execute(self, _sql):
+            return []
+
+    _, keys = ce.class_vocabulary_for_run(_NoClasses(), [], [], None)
+    assert "WARNING" in str(keys) and "unii" in str(keys).lower()
+    assert ce.ClassKeyCounts(0, [], []).official_names_skipped is False

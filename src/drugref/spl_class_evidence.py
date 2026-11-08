@@ -129,6 +129,9 @@ class ClassKeyCounts(NamedTuple):
     kept: int
     shadowed_by_moieties: list[str]
     shadowed_by_official_names: list[str]
+    #: True when no UNII names file was given, so R19/P1 never ran: said out loud
+    #: in `__str__` because the ingest's progress line is the only place it shows.
+    official_names_skipped: bool = False
 
     def summary_fields(self) -> dict[str, int]:
         """The two drop counts as `SplSummary` keyword arguments (same names)."""
@@ -141,7 +144,10 @@ class ClassKeyCounts(NamedTuple):
                 f"({len(self.shadowed_by_moieties):,} dropped as moiety names: "
                 f"{sorted(self.shadowed_by_moieties)[:12]}; "
                 f"{len(self.shadowed_by_official_names):,} as UNII official names: "
-                f"{sorted(self.shadowed_by_official_names)[:12]})")
+                f"{sorted(self.shadowed_by_official_names)[:12]})"
+                + (" -- WARNING: no UNII names file (--unii-names), so class keys "
+                   "equal to a UNII official name were NOT dropped (R19/P1 skipped)"
+                   if self.official_names_skipped else ""))
 
 
 def drop_shadowed_class_keys(
@@ -166,12 +172,14 @@ def class_vocabulary_for_run(
     """The class vocabulary an ingest run matches with, and what was dropped.
 
     One call, so `spl_run` (at its size budget) stays a thin hook. `unii_names`
-    None skips P1 (the CLI requires the file; the count then says 0).
+    None skips P1 (the CLI requires the file; the count then says 0 and the
+    returned counts carry `official_names_skipped`, whose `str` warns).
     """
     names = read_official_names(unii_names, held_uniis) if unii_names else set()
     kept, counts = drop_shadowed_class_keys(
         load_class_entries(conn), moiety_names=moiety_names, official_names=names)
-    return class_vocabulary(kept), counts
+    skipped = not unii_names
+    return class_vocabulary(kept), counts._replace(official_names_skipped=skipped)
 
 
 def load_class_entries(conn: psycopg.Connection) -> list[spl_match.Entry]:

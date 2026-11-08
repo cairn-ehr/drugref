@@ -2,7 +2,8 @@
 
 Date of run: 2026-11-08. Design: [spl class mentions](2026-11-08-drugref-spl-class-mentions-design.md) §7.
 Rule 6: this record carries counts and class names only -- no label prose.
-Sections "Precision sample" and "Gates" are Task 9B's.
+Sections "Precision sample" and "Gates" are Task 9B's; every headline, census and gate figure is from
+SPL run 17, the run that ships.
 
 ## Provenance
 
@@ -10,14 +11,14 @@ Sections "Precision sample" and "Gates" are Task 9B's.
 |---|---|
 | git head at build | `d165f39` plus the Task 9A commits (tool, scope fixes R16/R17); run 12 at `6e7b749` (R19) |
 | database | `drugref_classmentions`, built from nothing (createdb, then migrate through db/066) |
-| SPL run | **ingest_run 16** (what ships: R19 hygiene + two advice-tuning iterations + the withheld levels + the R20 contraindication fix; per-source rebuilds on the same DB, db/066 untouched). Run 12 = R19 rebuild, run 13 = tuning iteration 1, run 14 = iteration 2, run 15 = withheld levels. Run 11 is the R16/R17 rebuild the class hygiene sample was drawn on; run 10 the superseded first full run; run 9 aborted, left as an unfinished row |
+| SPL run | **ingest_run 17** (what ships: R19 hygiene + two advice-tuning iterations + the withheld levels + the R20 contraindication fix + the R21 fall-through; per-source rebuilds on the same DB, db/066 untouched). Run 16 = R20, run 12 = R19 rebuild, run 13 = tuning iteration 1, run 14 = iteration 2, run 15 = withheld levels. Run 11 is the R16/R17 rebuild the class hygiene sample was drawn on; run 10 the superseded first full run; run 9 aborted, left as an unfinished row |
 | SPL release tag | `openfda-2026-08-22+dailymed-2026-08-21` |
 | other releases | UNII 26Feb2026, MED-RT 2026.07.06, MeSH 2026 (+ mesh-relations 2026.07.06), GSRS 2026-02-26, ONCHIGH 2026-08-12, FDA-CYP 2026-05-29, DrugCentral 11012023 |
 | checksums | all 20 files (14 openFDA partitions, 6 DailyMed parts) `shasum -a 256`-verified equal to the table in the [mining record §2](2026-08-24-drugref-slice-5c3-spl-mining-measurement.md); no mismatch |
 | corpus | 262,032 openFDA records, 68,550 labels carrying the section, 27,406 distinct wordings, 54,813 DailyMed documents read |
 
 Wall times (this machine, single run each, no controls): migrate 1 s -- ingest chain 159 s --
-onchigh 4 s -- fda-cyp 5 s -- drugcentral 20 s -- `ingest spl` 274 s (the rebuild, run 11; first run 228 s, the aborted attempt died after 93 s; runs 12-15 about 245 s each) -- census 48-50 s with `--openfda`.
+onchigh 4 s -- fda-cyp 5 s -- drugcentral 20 s -- `ingest spl` 274 s (the rebuild, run 11; first run 228 s, the aborted attempt died after 93 s; runs 12-16 about 245 s each, run 17 304 s) -- census 42-50 s with `--openfda`.
 
 Reproduce: `uv run python -m tools.spl_class_census --dsn "$DSN" --openfda downloads/OPENFDA`
 (the tables below are its output, verbatim, under added commentary).
@@ -70,20 +71,67 @@ word, and a truncated "Contraindicate" cell. **Run 16 differs from run 15 only i
 8 spans changed level, all not_read -> contraindicated** (the 4 targeted misses, plus 4 spans of
 the effect class "decreased blood pressure" carrying the same split cross-reference -- a
 non-mention over-warning, the safe direction). No other rule changed and no new random sample was
-drawn: the run-14/15 gate readings stand. Class mentions are unchanged from run 12 (227,990
-spans); only readings moved.
+drawn on run 16 (the gates now rest on the fresh run-17 draw, R23). Class mentions are unchanged
+from run 12 (227,990 spans); only readings moved.
 
-## Headline (run 16 -- what ships)
+## Run 17: the R21 fall-through (what ships)
 
-* Drug x drug pairs **29,952 / 26,598 novel -- identical** on every run 11-16 (floors 29,258 /
+Review of run 16 found that a WITHHELD sentence reading stopped the reader before the table-row and
+heading-block scopes, so the span shipped `not_read` (below). Ruling R21 fixed that, test-first, with the
+fix-round minors (`tests/test_spl_advice_scope.py`), re-ingested as run 17. **Run 17 differs from run 16
+only in readings: 1,822 spans changed level, every one `not_read` (sentence) -> heading block** -- monitor
+935, avoid 866, adjust_dose 14, contraindicated 7 (on run 16 the review read those 7 as 5 genuine MAOI
+heading blocks cross-referencing Contraindications and 2 over-warnings). The negated separate-administration
+mask changed 0 spans: that phrasing does not occur in this corpus; it guards a future release. Class mentions,
+statements, quote coverage and drug x drug pairs are unchanged from run 16.
+
+## Reader scope order, ratified deviations, known over-reads (R21, R22, fix round)
+
+**Scope order** (`spl_advice.read_advice`): (1) a PLR table-row HEADING reads its own row;
+(2) the sentence; (3) the table row holding a mention in an Impact / Examples cell; (4) the
+heading block (marker to next marker); else `not_read` over the sentence. The first scope that
+reads a level ships it.
+
+**R21 -- a withheld reading falls through.** A reading whose (level, scope) is in
+`spl_advice.WITHHELD` (sentence avoid, sentence monitor) is now skipped exactly like an empty
+one, so the next scope is tried. Before R21 the withheld sentence stopped the reader and the
+span shipped `not_read` even when its heading block cross-referenced Contraindications (run 16:
+36,447 not_read spans were withheld sentence readings; 7 would read contraindicated at block
+level, 5 of them genuine MAOI-heading blocks). A withheld mixed sentence ("avoid ..., or reduce
+the dose") still ships `not_read` at sentence scope -- never its weaker co-reading -- and then
+falls through. Tests: `tests/test_spl_advice_scope.py`. This qualifies design §5.2's "a
+heading-block reading never overrides a sentence reading": a withheld sentence reading does not
+ship, so there is no sentence reading for the block to override.
+
+**R22 -- ratified, named as deviations from design §5.2.** The extra sentence starts
+(`_XREF_END` highlight cross-references, `_BULLET` bullets, `_CELL_LABEL` PLR cell labels), the
+table-row scope (`_row_block`, stored as `heading_block`: `spl_advice.SCOPES` has two values and
+run 17 stores only those two) and the `_NOT_ADVICE` time-reference mask are ratified. **Deviation:
+a row HEADING is read from its row BEFORE its own sentence.** §5.2 makes the sentence the first
+scope. In a PLR table extracted without full stops the heading is glued to the end of the
+PREVIOUS row's cell, so the heading's "sentence" is the previous row's Intervention text -- another
+drug's advice. Reading that sentence first attributes the previous row's level to this class (the
+"merged-item" misses of draws 1-2); the heading's own row is the scope the label means.
+
+**Fix-round minor rules.** "Separate administration / dosing ... is not necessary / needed /
+required" is masked (`_NOT_ADVICE`), so it no longer reads `adjust_dose` (test). **Known
+over-reads left in place** (safe direction, recorded for the owner): "the dose need not be
+adjusted" can fire `adjust_dose.dose_change`; "at least N hours after" can be an observation
+period in a PK study, not a separation instruction, and still reads
+`adjust_dose.separate_administration`; "to avoid ..." purpose clauses read `avoid` (block scope).
+
+## Headline (run 17 -- what ships)
+
+* Drug x drug pairs **29,952 / 26,598 novel -- identical** on every run 11-17 (floors 29,258 /
   25,960 cleared).
 * **227,990 mentions (distinct spans)**, as 304,682 (span, class) rows, over 23,440 of 27,406
   wordings (85.5%). 60,464 spans (26.5%) are ambiguous (fold onto >1 class).
 * Statements (labelling drug x class): 14,135 over 469 classes (sum of the per-axis table).
-* Advice per SPAN: **77.3% not_read**; 51,710 strength spans -- contraindicated 5,382 (930 of
-  them heading/row block), adjust_dose 25,520 (9,696 block), avoid 8,761 (all block), monitor
-  12,047 (all block). **Sentence-scope avoid and monitor are withheld** (Gates). 37.8% of
-  strength spans are mixed (several strength levels in the scope).
+* Advice per SPAN: **76.5% not_read**; 53,532 strength spans -- contraindicated 5,389 (937 of
+  them heading/row block), adjust_dose 25,534 (9,710 block), avoid 9,627 (all block), monitor
+  12,982 (all block). **Sentence-scope avoid and monitor are withheld** and fall through to the
+  row / heading block (R21; Gates). 37.2% of strength spans are mixed (several strength levels in
+  the scope).
 * **Zero spans read `no_meaningful_interaction`** on every run: that level ships empty and its
   gate is vacuously met.
 * Quote windows cover 26.7% of spans (60,846 of 227,990).
@@ -100,10 +148,10 @@ spans); only readings moved.
   coverage gap of the shipped ingest, outside this round (§4.4).
 * The two axes still duplicate each other where MeSH PA and MED-RT PE/TC/MoA/EPC share a name
   (Diuretics / Antacids / Analgesics / Monoamine Oxidase Inhibitors): ambiguity is real
-  (26.0% of spans), and statements count each class separately.
+  (26.5% of spans), and statements count each class separately.
 * MED-RT PE: 1,291 classes with no direct member, 1 ever mentioned.
 
-## Census tables (verbatim tool output of run 16)
+## Census tables (verbatim tool output of run 17)
 
 ### Totals: (span, class) rows vs distinct spans (mentions)
 
@@ -173,92 +221,92 @@ spans); only readings moved.
 
 | advice_level | spans | pct | wordings | mixed |
 |---|---|---|---|---|
-| not_read | 176,280 | 77.32 | 23,030 | 0 |
-| adjust_dose | 25,520 | 11.19 | 7,083 | 12,233 |
-| monitor | 12,047 | 5.28 | 4,313 | 0 |
-| avoid | 8,761 | 3.84 | 2,042 | 6,067 |
-| contraindicated | 5,382 | 2.36 | 2,872 | 1,231 |
+| not_read | 174,458 | 76.52 | 23,013 | 0 |
+| adjust_dose | 25,534 | 11.20 | 7,083 | 12,247 |
+| monitor | 12,982 | 5.69 | 4,629 | 0 |
+| avoid | 9,627 | 4.22 | 2,519 | 6,446 |
+| contraindicated | 5,389 | 2.36 | 2,879 | 1,238 |
 
 ### Level x scope (per span)
 
 | advice_level | advice_scope | spans |
 |---|---|---|
-| adjust_dose | heading_block | 9,696 |
+| adjust_dose | heading_block | 9,710 |
 | adjust_dose | sentence | 15,824 |
-| avoid | heading_block | 8,761 |
-| contraindicated | heading_block | 930 |
+| avoid | heading_block | 9,627 |
+| contraindicated | heading_block | 937 |
 | contraindicated | sentence | 4,452 |
-| monitor | heading_block | 12,047 |
-| not_read | sentence | 176,280 |
+| monitor | heading_block | 12,982 |
+| not_read | sentence | 174,458 |
 
 ### Level x axis ((span, class) rows)
 
 | axis | advice_level | span_class_rows |
 |---|---|---|
 | FDA-CYP PK | adjust_dose | 1,779 |
-| FDA-CYP PK | avoid | 207 |
+| FDA-CYP PK | avoid | 271 |
 | FDA-CYP PK | contraindicated | 403 |
-| FDA-CYP PK | monitor | 17 |
-| FDA-CYP PK | not_read | 5,200 |
+| FDA-CYP PK | monitor | 21 |
+| FDA-CYP PK | not_read | 5,132 |
 | MED-RT EPC | adjust_dose | 14,383 |
-| MED-RT EPC | avoid | 6,468 |
-| MED-RT EPC | contraindicated | 3,832 |
-| MED-RT EPC | monitor | 6,434 |
-| MED-RT EPC | not_read | 102,733 |
+| MED-RT EPC | avoid | 7,039 |
+| MED-RT EPC | contraindicated | 3,839 |
+| MED-RT EPC | monitor | 7,117 |
+| MED-RT EPC | not_read | 101,472 |
 | MED-RT MoA | adjust_dose | 2,637 |
-| MED-RT MoA | avoid | 1,004 |
-| MED-RT MoA | contraindicated | 2,443 |
-| MED-RT MoA | monitor | 1,812 |
-| MED-RT MoA | not_read | 24,145 |
+| MED-RT MoA | avoid | 1,074 |
+| MED-RT MoA | contraindicated | 2,450 |
+| MED-RT MoA | monitor | 1,970 |
+| MED-RT MoA | not_read | 23,910 |
 | MED-RT PE | adjust_dose | 778 |
-| MED-RT PE | avoid | 312 |
+| MED-RT PE | avoid | 480 |
 | MED-RT PE | contraindicated | 153 |
 | MED-RT PE | monitor | 45 |
-| MED-RT PE | not_read | 8,153 |
+| MED-RT PE | not_read | 7,985 |
 | MED-RT TC | adjust_dose | 1,485 |
-| MED-RT TC | avoid | 1,500 |
+| MED-RT TC | avoid | 1,502 |
 | MED-RT TC | contraindicated | 255 |
-| MED-RT TC | monitor | 502 |
-| MED-RT TC | not_read | 13,015 |
-| MeSH PA | adjust_dose | 10,513 |
-| MeSH PA | avoid | 1,740 |
-| MeSH PA | contraindicated | 2,811 |
-| MeSH PA | monitor | 6,165 |
-| MeSH PA | not_read | 83,758 |
+| MED-RT TC | monitor | 513 |
+| MED-RT TC | not_read | 13,002 |
+| MeSH PA | adjust_dose | 10,527 |
+| MeSH PA | avoid | 2,174 |
+| MeSH PA | contraindicated | 2,818 |
+| MeSH PA | monitor | 6,545 |
+| MeSH PA | not_read | 82,923 |
 
 ### Phrase rules that fired (per span)
 
 | rule | spans | wordings |
 |---|---|---|
-| (not_read) | 176,280 | 23,030 |
-| adjust_dose.dose_change | 14,329 | 4,541 |
-| monitor.monitor | 7,992 | 3,563 |
+| (not_read) | 174,458 | 23,013 |
+| adjust_dose.dose_change | 14,343 | 4,541 |
+| monitor.monitor | 8,273 | 3,708 |
 | avoid.reserve | 4,638 | 687 |
 | adjust_dose.reduce_dose | 3,849 | 1,583 |
 | adjust_dose.dose_adjustment | 3,369 | 1,869 |
 | contraindicated.contraindicated | 3,327 | 1,460 |
+| avoid.avoid | 3,305 | 1,812 |
 | monitor.observe | 3,209 | 705 |
-| avoid.avoid | 2,625 | 1,431 |
 | adjust_dose.separate_administration | 2,230 | 880 |
-| contraindicated.see_contraindications | 2,000 | 1,552 |
+| contraindicated.see_contraindications | 2,007 | 1,559 |
+| monitor.caution | 1,358 | 718 |
+| avoid.not_recommended | 1,227 | 949 |
 | adjust_dose.dose_cap | 1,174 | 413 |
-| avoid.not_recommended | 1,140 | 870 |
-| monitor.caution | 711 | 547 |
 | adjust_dose.titrate | 569 | 326 |
-| avoid.do_not_use | 336 | 334 |
-| monitor.observe_closely | 135 | 59 |
+| avoid.do_not_use | 434 | 381 |
+| monitor.observe_closely | 142 | 63 |
 | contraindicated.contraindications_section | 55 | 19 |
-| avoid.do_not_coadminister | 22 | 19 |
+| avoid.do_not_coadminister | 23 | 20 |
 
 ### Spans covered by an existing quote window, per level
 
 | advice_level | spans | quoted |
 |---|---|---|
-| adjust_dose | 25,520 | 6,323 |
-| avoid | 8,761 | 2,404 |
-| contraindicated | 5,382 | 1,687 |
-| monitor | 12,047 | 3,563 |
-| not_read | 176,280 | 46,869 |
+| adjust_dose | 25,534 | 6,325 |
+| avoid | 9,627 | 2,567 |
+| contraindicated | 5,389 | 1,687 |
+| monitor | 12,982 | 3,756 |
+| not_read | 174,458 | 46,511 |
 
 ### TOP OFFENDERS: the 15 classes with most (span, class) rows (a class matching ordinary English shows up here)
 
@@ -476,9 +524,8 @@ counted as agreement or as an under-read.
 coadministration cannot be avoided, monitor ..." -> avoid (implied). Separating the doses in
 time ("at least 2 hours before", "separate administration") -> adjust_dose. "Reserve
 concomitant prescribing ..." (where nothing else will do) and "cessation ... is preferred" ->
-avoid. Advice about a NAMED member of the class ("atazanavir with
-simvastatin is contraindicated" under "HMG-CoA reductase inhibitors") counts for the class
-(flag `members`). A subject-in-class mention (the label naming its own drug's class) is read
+avoid. Advice about a NAMED member of the class (a statin named under an "HMG-CoA
+reductase inhibitors" heading) counts for the class (flag `members`). A subject-in-class mention (the label naming its own drug's class) is read
 as the advice on combining the labelled drug with the other drug (flag `subject`). A span that
 is not a class mention at all ("monitor electrolytes", "anti-fibrinolytic agents") is read
 `none` and flagged `non-mention`: it counts against the advice gates, because it is what a
@@ -515,8 +562,31 @@ Agreement = hand reading equals the machine level (not_read counts as equal to `
 | 3 | 14 | 20261114 | heading_block:avoid | 20 | 20 | 100 | 0 | 0 | 0 |
 | 3 | 14 | 20261114 | heading_block:adjust_dose | 20 | 19 | 95 | 0 | 1 | 0 |
 | 3 | 14 | 20261114 | heading_block:monitor | 20 | 20 | 100 | 0 | 0 | 0 |
+| **4** | **17** | **20261117** | sentence:contraindicated | 50 | 37 | 74 | 13 | 0 | 0 |
+| 4 | 17 | 20261117 | heading_block:contraindicated | 50 | 41 | 82 | 9 | 0 | 0 |
+| 4 | 17 | 20261117 | sentence:adjust_dose | 50 | 50 | 100 | 0 | 0 | 0 |
+| 4 | 17 | 20261117 | heading_block:avoid | 50 | 46 | 92 | 4 | 0 | 0 |
+| 4 | 17 | 20261117 | heading_block:adjust_dose | 50 | 49 | 98 | 1 | 0 | 0 |
+| 4 | 17 | 20261117 | heading_block:monitor | 50 | 46 | 92 | 2 | 2 | 0 |
 
-870 spans read in all. Draw 3 excluding the non-mention spans: sentence avoid 39/47 (83.0%),
+**Draw 4 (R23) is the one the gates rest on**: fresh, on the shipping run 17, seed 20261117, >= 50
+for every shipped (level, scope) stratum and 100 contraindicated (50 per scope). The row scope is not
+a separate stratum: `spl_advice.SCOPES` has two values and run 17 stores only `sentence` and
+`heading_block` (a table-row reading is stored as `heading_block`), so row readings are inside the
+heading_block strata. Sentence avoid / monitor are withheld and were not re-drawn. Read in a compact
+view (scope head, mention +/- 260/300 characters, each trigger of the machine's level, scope tail).
+Draw-4 disagreements: 29 of 31 are the machine STRONGER than the label -- another drug's or another
+clause's advice in the same scope (16: a cross-reference or "contraindicated" belonging to a
+neighbouring row or clause, the overlong blocks of tables without full stops), non-mentions (9: the
+effect classes "decreased blood pressure" x4 and "increased GI motility", `Electrolyte [EPC]`,
+`Ophthalmic Solutions`, `Bile Acid [EPC]` on "bile acid resins", the class word inside
+"non-potassium-sparing"), and 4 subject-in-class spans whose cross-reference is a DISEASE
+contraindication (dicyclomine in glaucoma). **Two under-reads, both below contraindicated, both
+block monitor:** a label advising to discontinue the diuretic or raise salt intake before starting
+(a regimen change, read adjust_dose by hand), and "consider alternative therapy" for patients on
+MAOIs (read avoid by hand; no rule covers that phrasing).
+
+1,170 spans read in all (870 in draws 1-3, 300 in draw 4). Draw 3 excluding the non-mention spans: sentence avoid 39/47 (83.0%),
 sentence monitor 44/47 (93.6%). Under-reads in the not_read strata are all below
 contraindicated (adjust_dose / avoid / monitor phrasings the rules miss); in draws 2 and 3 the
 hand found 5 explicit no-interaction statements in not_read (the machine never reads NMI).
@@ -546,6 +616,7 @@ next sentence / row Intervention does, listed and read (`9b-work/p2_contra_hunt*
 | 13 | 102 | 2 | 2,083 |
 | 14/15 | 32 | 0 | 2,070 |
 | 16 (R20) | 24 | 0 | 2,068 |
+| 17 (R21) | 24 | 0 | 2,068 |
 
 Run 12's in-scope cases were mostly "[See ... Contraindications (4.1)]" cross-references for
 MAOIs and a glued table footnote "Contraindicateda"; the 341 were PLR rows whose Intervention
@@ -566,6 +637,317 @@ are correct: 16 negated ("NOT contraindicated", "not contraindicated with ..." -
 table row, and 1 span of the effect class "decreased blood pressure" with a glued "sSee" (not a
 class mention). None is a contraindication of the mentioned class read lower. The
 row-Intervention column is 0.
+
+**Run 17 (R21): 0 genuine misses.** The same search returns the same 24 in-scope spans, each at
+the same level as on run 16 (R21 only raises readings), so the run-16 reading of them stands; the
+row-Intervention column is 0. The 7 spans R21 lifted to contraindicated have left the list.
+
+<details><summary>Per-span readings, draw 4 (run 17, seed 20261117 -- the gate draw)</summary>
+
+| id | text_key | span | class | scope | machine | rule | hand | flag |
+|---|---|---|---|---|---|---|---|---|
+| sentence:contraindicated#1 | f889901970b0 | 1982-2004 | Proton Pump Inhibitor [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#2 | b1133ee943d0 | 8858-8867 | Diuretics | sentence | contraindicated | contraindicated.contraindicated | contraindicated | members |
+| sentence:contraindicated#3 | 0e5a98b82c50 | 4180-4198 | Antimycobacterial [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated | members |
+| sentence:contraindicated#4 | d21c67dae3a5 | 4551-4563 | Anti-anginal [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#5 | 7debd94edba2 | 261-285 | CYP1A2 strong inhibitor [FDA-CYP] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#6 | b6392676b6e3 | 447-475 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#7 | 97a92b420861 | 1528-1556 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#8 | 7a139bd5da8b | 1400-1415 | Corticosteroid [EPC] | sentence | contraindicated | contraindicated.see_contraindications | none | other-clause |
+| sentence:contraindicated#9 | 32be8cc3a600 | 2025-2037 | Barbiturate [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#10 | 3d821db61e23 | 875-896 | CYP3A strong inducer [FDA-CYP] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#11 | 7d3ce1af1a9b | 4280-4302 | CYP3A strong inhibitor [FDA-CYP] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#12 | 027d474110e9 | 972-995 | CYP3A strong inhibitor [FDA-CYP] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#13 | 3cd3fe4c38a0 | 571-595 | Decreased Blood Pressure [PE] | sentence | contraindicated | contraindicated.see_contraindications | none | non-mention |
+| sentence:contraindicated#14 | 5b350e6fe4c1 | 9662-9687 | CYP2D6 moderate inhibitor [FDA-CYP] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#15 | 6127e870ff5b | 1727-1755 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#16 | 9df23d09ea54 | 1335-1356 | CYP3A strong inducer [FDA-CYP] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#17 | 775cf552ef18 | 8304-8313 | Alkaloid [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#18 | 90c268bded57 | 142-170 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#19 | 43e3c5c0ffea | 9195-9223 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#20 | bff4d73e6f0e | 2374-2388 | Antiarrhythmic [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#21 | c80ca9315276 | 307-335 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#22 | cca7614aab33 | 1795-1807 | Barbiturate [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#23 | c21114bd9c36 | 10360-10407 | Non-Nucleoside Reverse Transcriptase Inhibitors [MoA] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#24 | 273bf8577369 | 6188-6197 | Alkaloid [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#25 | 20ea88247749 | 4698-4713 | Antiarrhythmic [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#26 | eb6f5d6aaa14 | 25-53 | HMG-CoA Reductase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#27 | e9e4b58f24c4 | 8211-8220 | Alkaloid [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#28 | f8a60eef626d | 1331-1352 | CYP3A strong inducer [FDA-CYP] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#29 | 7d82554b432b | 312-326 | Anticoagulants | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#30 | 30d229c36116 | 6866-6891 | Tricyclic Antidepressant [EPC] | sentence | contraindicated | contraindicated.see_contraindications | none | merged-item |
+| sentence:contraindicated#31 | 0609b7b6ad12 | 6000-6024 | Calcium Channel Blocker [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#32 | 1e450c67918f | 12532-12561 | HMG-CoA Reductase Inhibitor [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#33 | a6d3d958951b | 2948-2962 | Anticoagulants | sentence | contraindicated | contraindicated.contraindicated | contraindicated | members |
+| sentence:contraindicated#34 | 5b350e6fe4c1 | 3733-3742 | Alkaloid [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#35 | d5fbc8e0ab35 | 548-572 | Decreased Blood Pressure [PE] | sentence | contraindicated | contraindicated.see_contraindications | none | non-mention |
+| sentence:contraindicated#36 | 5a2a9063c3d1 | 1603-1622 | Hypoglycemic Agents | sentence | contraindicated | contraindicated.see_contraindications | none | other-clause |
+| sentence:contraindicated#37 | 3e058ac50ebb | 5791-5838 | Non-Nucleoside Reverse Transcriptase Inhibitors [MoA] | sentence | contraindicated | contraindicated.see_contraindications | none | other-clause |
+| sentence:contraindicated#38 | f0a28bbf3d7c | 691-719 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#39 | 9271140ed6d5 | 4571-4618 | Non-Nucleoside Reverse Transcriptase Inhibitors [MoA] | sentence | contraindicated | contraindicated.contraindicated | monitor | merged-item |
+| sentence:contraindicated#40 | 911e49235588 | 2117-2129 | Barbiturate [EPC] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#41 | 3add4ead154e | 544-568 | Decreased Blood Pressure [PE] | sentence | contraindicated | contraindicated.see_contraindications | none | non-mention |
+| sentence:contraindicated#42 | 9eec1c2cc051 | 9121-9128 | Insulin [EPC] | sentence | contraindicated | contraindicated.contraindicated | monitor | merged-item |
+| sentence:contraindicated#43 | 01b15bf14d35 | 267-279 | Barbiturate [EPC] | sentence | contraindicated | contraindicated.see_contraindications | none | other-clause |
+| sentence:contraindicated#44 | 85e5eafdd6a6 | 1333-1354 | CYP3A strong inducer [FDA-CYP] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#45 | 151b2f1f6f23 | 3883-3893 | Analgesics | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#46 | a164c90dc162 | 900-924 | CYP1A2 strong inhibitor [FDA-CYP] | sentence | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| sentence:contraindicated#47 | b98c1fd15501 | 955-970 | Antiarrhythmic [EPC] | sentence | contraindicated | contraindicated.contraindicated | avoid | other-clause |
+| sentence:contraindicated#48 | c7427f057f12 | 5496-5524 | Monoamine Oxidase Inhibitor [EPC] | sentence | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| sentence:contraindicated#49 | ac19f99ba7cf | 4136-4153 | Antifungal Agent [TC] | sentence | contraindicated | contraindicated.see_contraindications | avoid | other-clause |
+| sentence:contraindicated#50 | 09ed028dba15 | 574-598 | Decreased Blood Pressure [PE] | sentence | contraindicated | contraindicated.see_contraindications | none | non-mention |
+| heading_block:contraindicated#1 | 492e1125ee80 | 348-378 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#2 | 6424cc24d632 | 522-550 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#3 | 49e127cb27ab | 396-412 | Anticholinergic [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | avoid | subject |
+| heading_block:contraindicated#4 | 85363bac2156 | 1523-1551 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#5 | e0ba23994d29 | 651-679 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#6 | 238ce8298e74 | 2113-2141 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#7 | a2ad31204b93 | 712-740 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#8 | e2588c0c190d | 1705-1714 | Macrolide [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated | examples |
+| heading_block:contraindicated#9 | 91dd803b6750 | 211-239 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#10 | acf6d9af0251 | 322-350 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#11 | baf8671c0b82 | 373-401 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#12 | aa51e1159b0b | 234-262 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#13 | 781edc915f5c | 24-52 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#14 | 57d552335d33 | 1826-1849 | HIV Protease Inhibitors | heading_block | contraindicated | contraindicated.contraindicated | contraindicated | examples |
+| heading_block:contraindicated#15 | 1a14a70e12c2 | 759-782 | CYP1A2 strong inhibitor [FDA-CYP] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#16 | 4930a86ade57 | 161-189 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#17 | cda73df65bc9 | 340-370 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#18 | 3928849eaa63 | 2416-2435 | Protease Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated | examples |
+| heading_block:contraindicated#19 | 825a202d19bd | 4626-4640 | Phenothiazine [EPC] | heading_block | contraindicated | contraindicated.contraindicated | avoid | other-clause |
+| heading_block:contraindicated#20 | b1b1b077e67a | 372-400 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#21 | 8c269871b68c | 2015-2043 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#22 | 91f8a2e91b4e | 342-372 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#23 | 398bb4e8dc0a | 162-190 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#24 | 48c5dd082678 | 3414-3442 | HMG-CoA Reductase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#25 | 6b720e95dcc7 | 161-189 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#26 | 3ba245a3a524 | 2001-2029 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#27 | 7e0d24a25a05 | 355-383 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#28 | e1a7773f20cd | 3403-3412 | Alkaloid [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#29 | 3c43ae90d8c8 | 344-374 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#30 | 0e4a63ad10cc | 1781-1804 | HIV Protease Inhibitors | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#31 | a6eb9f32c423 | 405-421 | Anticholinergic [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | avoid | subject |
+| heading_block:contraindicated#32 | 2f7593b5e6db | 346-376 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#33 | f5d32b3a1edc | 205-233 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#34 | 244068119e30 | 346-376 | Monoamine Oxidase-A Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#35 | 88251c87f174 | 522-550 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#36 | 089fc9587fae | 44-60 | Anticholinergic [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | avoid | subject |
+| heading_block:contraindicated#37 | 63c7ce8a7396 | 339-367 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#38 | e4b6dcc428c4 | 349-377 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#39 | 95fb21d929a6 | 173-201 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#40 | 2a0ec1aa8371 | 303-318 | Anticonvulsants | heading_block | contraindicated | contraindicated.contraindicated | avoid | other-clause |
+| heading_block:contraindicated#41 | c62176a37227 | 371-399 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#42 | 8946d906e235 | 549-592 | Nucleoside Reverse Transcriptase Inhibitors [MoA] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated | members |
+| heading_block:contraindicated#43 | 85495f25e50f | 234-262 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#44 | 74016c07fa19 | 821-849 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | contraindicated |  |
+| heading_block:contraindicated#45 | 3111cd1cd408 | 1875-1899 | Anti-inflammatory Agent [TC] | heading_block | contraindicated | contraindicated.see_contraindications | monitor | other-clause |
+| heading_block:contraindicated#46 | 6c48a34d4e38 | 157-185 | Monoamine Oxidase Inhibitor [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#47 | c2ff6391343d | 3710-3719 | Alkaloid [EPC] | heading_block | contraindicated | contraindicated.contraindicated | contraindicated |  |
+| heading_block:contraindicated#48 | 94e86cf2c555 | 1873-1897 | Anti-inflammatory Agent [TC] | heading_block | contraindicated | contraindicated.see_contraindications | monitor | other-clause |
+| heading_block:contraindicated#49 | 4dd015f2f315 | 399-415 | Anticholinergic [EPC] | heading_block | contraindicated | contraindicated.see_contraindications | avoid | subject |
+| heading_block:contraindicated#50 | ca44f4d79bcf | 1873-1897 | Anti-inflammatory Agent [TC] | heading_block | contraindicated | contraindicated.see_contraindications | monitor | other-clause |
+| sentence:adjust_dose#1 | 1cb1abba355c | 580-589 | Narcotics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#2 | a5a37f4f547f | 520-537 | Enzyme Inhibitors | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#3 | ea92c8875a30 | 2879-2894 | Enzyme Inducers [MoA] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#4 | 458046cc26e2 | 127-140 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#5 | 53eab0f90289 | 680-691 | Anesthetics | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#6 | ef7a93a8bd46 | 1550-1564 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#7 | 9e7c5533c2ab | 205-212 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#8 | c113f4f76cc7 | 179-192 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#9 | 1aa3cf20173b | 3344-3368 | Tricyclic Antidepressant [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#10 | 95a4416baf52 | 1325-1340 | Corticosteroid [EPC] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose | subject |
+| sentence:adjust_dose#11 | c3a3ffcf1a2d | 2493-2518 | Tricyclic Antidepressant [EPC] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#12 | 16cf7b379681 | 1989-2004 | Enzyme Inducers [MoA] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#13 | 02cfa5a121be | 5694-5702 | Antacid [PE] | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#14 | f0b4cad6f299 | 4608-4627 | Ion Exchange Resins | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#15 | ea197deacca4 | 103-116 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#16 | 03465f12ac1a | 545-560 | Benzodiazepine [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#17 | 195bf66fb552 | 420-434 | BCRP substrate [FDA-CYP] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#18 | 3c4f8e7a186e | 7651-7666 | Muscle Relaxant [EPC] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#19 | 54630b84fa75 | 618-625 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#20 | f1d37da9edf1 | 13826-13836 | Antiviral [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose | members |
+| sentence:adjust_dose#21 | 323cdb936167 | 282-289 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#22 | 4679538825ae | 6279-6287 | Diuretics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#23 | 860ac85d4fb5 | 2608-2620 | Barbiturate [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#24 | 840a794404e8 | 2230-2254 | Tricyclic Antidepressant [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#25 | 5975bc9917f8 | 1914-1928 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#26 | 42f2607276a0 | 774-797 | Bile Acid Binding Resin [EPC] | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#27 | 60cea165abe4 | 5911-5919 | Diuretics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#28 | 7dc83f370bad | 7345-7360 | Muscle Relaxant [EPC] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#29 | 9fca509b90f9 | 6750-6778 | Neuromuscular Blocking Agents | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#30 | 4f07dbff2523 | 6957-6976 | Ion Exchange Resins | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#31 | 2b839c4d7902 | 1135-1148 | Sulfonylurea [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#32 | 0a82b0d4f8dd | 2728-2743 | OAT3 substrate [FDA-CYP] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#33 | 54e126a070a4 | 4871-4895 | Immunosuppressive Agents | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose | members |
+| sentence:adjust_dose#34 | b3e65056b452 | 2453-2480 | CYP2C19 moderate inhibitor [FDA-CYP] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#35 | 2cb5986fa835 | 3066-3091 | Tricyclic Antidepressant [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#36 | 64e21fea14e2 | 3510-3517 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#37 | 79696d39f936 | 688-710 | CYP3A strong inhibitor [FDA-CYP] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#38 | 196920b7a81c | 1969-1976 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#39 | c618191e680a | 1869-1876 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| sentence:adjust_dose#40 | cb32e73a924d | 575-584 | Narcotics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#41 | f663562d7388 | 690-704 | Anticoagulants | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#42 | 7d4070c2d3be | 20696-20704 | Narcotics | sentence | adjust_dose | adjust_dose.titrate | adjust_dose |  |
+| sentence:adjust_dose#43 | 3cb6b8289f9d | 15402-15410 | Narcotics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#44 | 4f9a0288e995 | 3962-3970 | Vitamins | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#45 | ab9c479ab141 | 7620-7635 | Muscle Relaxant [EPC] | sentence | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| sentence:adjust_dose#46 | 660318c774df | 7455-7462 | Antacid [PE] | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| sentence:adjust_dose#47 | 60b483b089d4 | 2470-2493 | HIV Protease Inhibitors | sentence | adjust_dose | adjust_dose.dose_cap | adjust_dose |  |
+| sentence:adjust_dose#48 | 403d860ab9c5 | 513-520 | Insulin [EPC] | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| sentence:adjust_dose#49 | 5ee030dcda64 | 18517-18526 | Analgesics | sentence | adjust_dose | adjust_dose.dose_change | adjust_dose | members |
+| sentence:adjust_dose#50 | d3d836dd7a00 | 1931-1946 | Aminoglycoside [EPC] | sentence | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| heading_block:avoid#1 | 779ee790839e | 7412-7429 | Opioid Analgesic [EPC] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#2 | 3cc154eb9c1e | 1545-1562 | Local Anesthetic [EPC] | heading_block | avoid | avoid.avoid | avoid | implied |
+| heading_block:avoid#3 | c35b50a5f0bf | 898-909 | Anxiolytics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#4 | dab197efaca0 | 821-840 | Anti-Anxiety Agents | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#5 | d8446de07bcd | 5731-5750 | General Anesthetic [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#6 | 890ac1d1c7f6 | 3446-3462 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#7 | 7b440618fdd0 | 2708-2723 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#8 | 5d75767dfc74 | 2568-2583 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#9 | 195b83faa1ef | 3095-3111 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#10 | 00d08888965a | 5012-5027 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#11 | 64edd2f059be | 328-339 | Electrolyte [EPC] | heading_block | avoid | avoid.avoid | none | non-mention |
+| heading_block:avoid#12 | 552f077b5e8f | 2195-2214 | Protease Inhibitor [EPC] | heading_block | avoid | avoid.do_not_coadminister | avoid | members |
+| heading_block:avoid#13 | 619464851a8a | 1471-1499 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.do_not_use | avoid |  |
+| heading_block:avoid#14 | 1a1498d75b80 | 1601-1609 | Antacid [PE] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#15 | 1c142fd1f483 | 2701-2716 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#16 | 3888c770b2dd | 3447-3462 | Anticholinergic [EPC] | heading_block | avoid | avoid.avoid | monitor | merged-item |
+| heading_block:avoid#17 | 5a730dbbb145 | 1087-1095 | Antacid [PE] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#18 | cee5f1f4a583 | 405-421 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.not_recommended | avoid |  |
+| heading_block:avoid#19 | 7a8e83649ea5 | 5401-5420 | Sedatives/Hypnotics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#20 | 647e99ba0be5 | 5554-5570 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#21 | e479ac271956 | 1450-1469 | General Anesthetic [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#22 | 8e93420090ef | 1137-1152 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#23 | 96da0486cdf2 | 2716-2744 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.not_recommended | avoid |  |
+| heading_block:avoid#24 | b15689898ce0 | 274-301 | Potassium-sparing Diuretic [EPC] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#25 | 040f96304167 | 1932-1948 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#26 | 47a0b3cc554e | 5065-5080 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#27 | daf2e241cec6 | 1401-1417 | Muscle Relaxant [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#28 | 9bd43478b2f3 | 4155-4183 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.not_recommended | avoid |  |
+| heading_block:avoid#29 | 7e2f39b4bf1c | 7290-7305 | Corticosteroid [EPC] | heading_block | avoid | avoid.not_recommended | monitor | other-clause |
+| heading_block:avoid#30 | 0971a3e39932 | 1737-1765 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.do_not_use | avoid |  |
+| heading_block:avoid#31 | 0459b7bbc95d | 297-306 | Bile Acid [EPC] | heading_block | avoid | avoid.avoid | adjust_dose | non-mention |
+| heading_block:avoid#32 | c2d18095c6c6 | 1383-1402 | General Anesthetic [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#33 | e475ebf9b024 | 3463-3474 | Anxiolytics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#34 | 1a38c35c496e | 1388-1407 | General Anesthetic [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#35 | b53dccc42775 | 6280-6297 | Opioid Analgesic [EPC] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#36 | 4de4dd72287a | 1319-1330 | Anxiolytics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#37 | 0ba1ea5f1962 | 3004-3019 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#38 | 48ce9cec68cb | 1448-1456 | Antacid [PE] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#39 | 3d49f73fa1de | 6887-6895 | Antacid [PE] | heading_block | avoid | avoid.not_recommended | avoid |  |
+| heading_block:avoid#40 | 8dbca6d450ae | 9291-9319 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.do_not_use | avoid |  |
+| heading_block:avoid#41 | 6bf20b7f08c1 | 2366-2381 | Benzodiazepine [EPC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#42 | 91ade9fa8665 | 1829-1840 | Anesthetics | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#43 | a51dbcafe31b | 1135-1154 | Sedatives/Hypnotics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#44 | de03e6a3bd4a | 3248-3259 | Anxiolytics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#45 | f4078f81f740 | 6940-6948 | Antacid [PE] | heading_block | avoid | avoid.not_recommended | avoid |  |
+| heading_block:avoid#46 | 0e0ba1274f91 | 805-830 | Tricyclic Antidepressant [EPC] | heading_block | avoid | avoid.avoid | avoid | implied |
+| heading_block:avoid#47 | 99b1709d4e96 | 6593-6621 | Monoamine Oxidase Inhibitor [EPC] | heading_block | avoid | avoid.do_not_use | avoid |  |
+| heading_block:avoid#48 | 55cc65baf3c3 | 1627-1638 | Anesthetics | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:avoid#49 | 1a38c35c496e | 1342-1353 | Anxiolytics [TC] | heading_block | avoid | avoid.reserve | avoid | reserve |
+| heading_block:avoid#50 | 528ebc513ed8 | 195-204 | Vitamin A [EPC] | heading_block | avoid | avoid.avoid | avoid |  |
+| heading_block:adjust_dose#1 | b8f3a8cd3ba5 | 3297-3312 | Benzodiazepine [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#2 | 4a80099eca18 | 2370-2394 | Calcium Channel Blocker [EPC] | heading_block | adjust_dose | adjust_dose.dose_cap | adjust_dose | members |
+| heading_block:adjust_dose#3 | b56f9d7be7a2 | 2133-2157 | Cytochrome P450 Inducers [MoA] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#4 | fc6200d53682 | 6030-6039 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#5 | 39d2351777e1 | 3844-3853 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#6 | 805493778955 | 615-622 | Insulin [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#7 | efc6c667e484 | 6715-6740 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#8 | da51f558cc71 | 1258-1279 | CYP3A strong inducer [FDA-CYP] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#9 | 518e626dd5ad | 8230-8255 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#10 | 3b41e66140ce | 508-536 | Monoamine Oxidase Inhibitor [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#11 | 3c521215d153 | 484-493 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#12 | b969f29272c3 | 3257-3266 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#13 | 9e7c5533c2ab | 58-65 | Insulin [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#14 | 259c447cd874 | 3122-3141 | Protease Inhibitor [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#15 | 4396d796d0cd | 2453-2468 | Benzodiazepine [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#16 | a644c94101e2 | 2468-2493 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#17 | 940e75684299 | 2430-2445 | Benzodiazepine [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#18 | f8b692ae8f7e | 6377-6386 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#19 | f83b8ee0835e | 2952-2968 | Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#20 | cc7f3f4b10cc | 235-242 | Insulin [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#21 | 4c9067dd12d1 | 3302-3311 | Macrolide [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#22 | 0810fc19c452 | 1466-1475 | Macrolide [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#23 | 18f51569bc73 | 4009-4027 | Antimycobacterial [EPC] | heading_block | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| heading_block:adjust_dose#24 | 75e2f3b5ecb6 | 3016-3025 | Macrolide [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#25 | 80599f95c79c | 5005-5021 | Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#26 | c5bd36ea6d8e | 332-344 | Sulfonylurea [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#27 | 2a07de29215c | 613-620 | Insulin [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#28 | 704940f513e5 | 2613-2629 | Azole Antifungal [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#29 | 469e2f89a487 | 1459-1475 | Azole Antifungal [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#30 | 1c142fd1f483 | 1454-1473 | Protease Inhibitor [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#31 | 99213e715c72 | 7396-7405 | Diuretics | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#32 | dd69f6778d90 | 3035-3060 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#33 | 83075fb75845 | 1329-1338 | Estrogen [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#34 | bd714d018c87 | 2879-2897 | Sequestering Agents | heading_block | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| heading_block:adjust_dose#35 | e30e944c6727 | 1340-1359 | Protease Inhibitor [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose | examples |
+| heading_block:adjust_dose#36 | 242771cf79bc | 1717-1740 | Antihypertensive Agents | heading_block | adjust_dose | adjust_dose.dose_adjustment | adjust_dose |  |
+| heading_block:adjust_dose#37 | f506a38ca098 | 2411-2429 | Thiazide Diuretic [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#38 | 2f15801d08bb | 3681-3700 | Protease Inhibitor [EPC] | heading_block | adjust_dose | adjust_dose.dose_cap | adjust_dose |  |
+| heading_block:adjust_dose#39 | 12e3a817d382 | 7386-7402 | Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#40 | e97952a3e93e | 6523-6530 | Antacid [PE] | heading_block | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| heading_block:adjust_dose#41 | 2efa102ef6a6 | 5364-5389 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#42 | 1c2aca8c8cb6 | 3568-3585 | Azole Antifungal [EPC] | heading_block | adjust_dose | adjust_dose.dose_cap | adjust_dose |  |
+| heading_block:adjust_dose#43 | 692fd6bd0f2d | 5639-5664 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#44 | e8d54e6938d6 | 4110-4131 | Increased GI Motility [PE] | heading_block | adjust_dose | adjust_dose.dose_change | none | non-mention |
+| heading_block:adjust_dose#45 | 7443fd9cc6e6 | 7505-7513 | Antacid [PE] | heading_block | adjust_dose | adjust_dose.separate_administration | adjust_dose |  |
+| heading_block:adjust_dose#46 | 3a2bfd275e25 | 316-325 | Vitamin D [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#47 | ce18d093a640 | 773-780 | Insulin [EPC] | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:adjust_dose#48 | 5a2afb531d87 | 2645-2661 | Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#49 | 5f6b47fff282 | 3399-3424 | Skeletal Muscle Relaxant [EPC] | heading_block | adjust_dose | adjust_dose.reduce_dose | adjust_dose |  |
+| heading_block:adjust_dose#50 | fa8a0b21a2eb | 5805-5819 | Anticoagulants | heading_block | adjust_dose | adjust_dose.dose_change | adjust_dose |  |
+| heading_block:monitor#1 | 04baca6e781a | 2067-2075 | Diuretics | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#2 | 9172726639a8 | 4096-4112 | Muscle Relaxant [EPC] | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#3 | 59afe6c3cf85 | 2851-2867 | MTOR Inhibitors | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#4 | b793f3d38736 | 1127-1142 | Sympathomimetics | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#5 | 8549be303340 | 43-61 | Cardiac Glycoside [EPC] | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#6 | dcbd4591db7d | 7677-7692 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#7 | 35be75065f35 | 227-241 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#8 | 461a915cac6a | 923-952 | Carbonic Anhydrase Inhibitor [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#9 | 4bc387e57aa9 | 269-283 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#10 | bf497b6f3b97 | 8329-8343 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#11 | 19b9fc2b6d21 | 4060-4076 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#12 | fcb87f5f62d7 | 2511-2538 | Potassium-sparing Diuretic [EPC] | heading_block | monitor | monitor.caution | none | non-mention |
+| heading_block:monitor#13 | a6d6098b0ad0 | 8031-8046 | Anticholinergic [EPC] | heading_block | monitor | monitor.observe | monitor |  |
+| heading_block:monitor#14 | d800f42eafa4 | 4535-4542 | Insulin [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#15 | 22edd2ae3174 | 229-243 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#16 | f7140b021b2d | 1896-1909 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#17 | f4a039a42bdf | 1171-1181 | Macrolide [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#18 | 64e2ac8f2f39 | 126-155 | Cytochrome P450 3A Inhibitor [EPC] | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#19 | ad1d55c3b8f5 | 264-278 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#20 | 54b5d266c988 | 4259-4268 | Diuretics | heading_block | monitor | monitor.monitor | adjust_dose | under-read |
+| heading_block:monitor#21 | d27a0866cde3 | 3895-3943 | Serotonin and Norepinephrine Reuptake Inhibitor [EPC] | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#22 | 89ce95d7e99a | 205-220 | Benzodiazepine [EPC] | heading_block | monitor | monitor.observe | monitor |  |
+| heading_block:monitor#23 | 690022739a98 | 7457-7472 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#24 | 1156e7340068 | 2706-2734 | Monoamine Oxidase Inhibitor [EPC] | heading_block | monitor | monitor.caution | avoid | under-read |
+| heading_block:monitor#25 | bd35be9cf036 | 126-155 | Cytochrome P450 3A Inhibitor [EPC] | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#26 | 826ecacf5935 | 5729-5777 | Serotonin and Norepinephrine Reuptake Inhibitor [EPC] | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#27 | dd8fe05c369c | 8154-8169 | Anticholinergic [EPC] | heading_block | monitor | monitor.observe | monitor |  |
+| heading_block:monitor#28 | 875488963c9b | 3910-3957 | Non-Nucleoside Reverse Transcriptase Inhibitors [MoA] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#29 | 86bce5cd5b91 | 352-381 | Carbonic Anhydrase Inhibitor [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#30 | 22d99e20d004 | 1034-1049 | Corticosteroid [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#31 | 651b2827b21e | 3897-3922 | Tricyclic Antidepressant [EPC] | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#32 | 7dc7250f82b9 | 5820-5835 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#33 | 45be697a941c | 2105-2113 | Diuretics | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#34 | 23f6f8dc2ff8 | 8527-8542 | Anticholinergic [EPC] | heading_block | monitor | monitor.observe | monitor |  |
+| heading_block:monitor#35 | 07e37690edad | 3456-3471 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#36 | 4dc8768f4524 | 1023-1050 | Cyclooxygenase 2 Inhibitors | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#37 | b2d83d4fb99f | 1686-1725 | Selective Serotonin Reuptake Inhibitors | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#38 | 4ffe0fd50c74 | 1816-1844 | Monoamine Oxidase Inhibitor [EPC] | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#39 | 3f3510c85717 | 1322-1333 | Anesthetics | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#40 | 4a6ff52700dc | 3953-3968 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#41 | d13e66ad45ff | 7230-7245 | Corticosteroid [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#42 | 9610b6870183 | 7633-7659 | Tyrosine Kinase Inhibitors | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#43 | efc6c667e484 | 5789-5837 | Serotonin and Norepinephrine Reuptake Inhibitor [EPC] | heading_block | monitor | monitor.observe | monitor | examples |
+| heading_block:monitor#44 | b772a254e82f | 931-945 | Loop Diuretic [EPC] | heading_block | monitor | monitor.caution | monitor |  |
+| heading_block:monitor#45 | a9ff2d3c98da | 2123-2141 | Cardiac Glycoside [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#46 | f8849f8d2d62 | 420-439 | Ophthalmic Solutions | heading_block | monitor | monitor.caution | none | non-mention |
+| heading_block:monitor#47 | aa4fc6efa465 | 227-241 | Anticoagulants | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#48 | 0af4bb8b9c30 | 8073-8088 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#49 | c5954cb266ec | 1272-1287 | Benzodiazepine [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+| heading_block:monitor#50 | a0b54e9235b3 | 5964-5979 | Anticholinergic [EPC] | heading_block | monitor | monitor.monitor | monitor |  |
+
+</details>
 
 <details><summary>Per-span readings, draw 1 (run 12, before tuning)</summary>
 
@@ -1465,33 +1847,49 @@ another drug's clause; `non-mention` / `effect-adjective` the span is not a clas
 
 ## Gates
 
-Owner's gates (design 7), applied to the final draw (run 14 readings; run 15 ships them with
-the withheld pairs mapped to not_read):
+Owner's gates (design 7), applied to **draw 4 on run 17** (R23: fresh random samples on the run that
+ships, seed 20261117). Exact agreement and safe-direction disagreement (machine stronger than the
+label) are reported apart; the 95% Wilson lower bound is given per stratum. The pass rule is the
+owner's point threshold (>= 90% exact agreement); with n = 50 a 90% point estimate carries a lower
+bound near 79%, so the bounds say how far the sample can be trusted, not a second gate.
 
-| gate | result | verdict |
-|---|---|---|
-| `no_meaningful_interaction`: zero wrong readings | 0 spans read NMI on every run | **met (vacuous)**; the level ships empty |
-| zero contraindicated read lower -- random strata | 0 in draw 3 (the one in draw 2 was fixed by iteration 2) | met |
-| zero contraindicated read lower -- targeted hunt | 4 garbled-text spans on run 14/15; **0 on run 16** after R20 | **met** (run 16) |
-| avoid >= 90%, sentence | 39/50 = 78% (83% excluding non-mentions) | **failed -> withheld** |
-| avoid >= 90%, heading block | 20/20 = 100% | met, ships |
-| adjust_dose >= 90%, sentence | 29/30 = 97% (draw 2: 48/50 = 96%) | met, ships |
-| adjust_dose >= 90%, heading block | 19/20 = 95% | met, ships |
-| monitor >= 90%, sentence | 44/50 = 88% (93.6% excluding non-mentions) | **failed -> withheld** |
-| monitor >= 90%, heading block | 20/20 = 100% | met, ships |
+| gate (scope:level) | n | exact | % | Wilson 95% LB | machine stronger | under | contraindicated read lower | verdict |
+|---|---|---|---|---|---|---|---|---|
+| contraindicated, sentence | 50 | 37 | 74 | 60.4 | 13 | 0 | 0 | ships (gate is zero read lower) |
+| contraindicated, heading/row block | 50 | 41 | 82 | 69.2 | 9 | 0 | 0 | ships (gate is zero read lower) |
+| contraindicated, all scopes | 100 | 78 | 78 | 68.9 | 22 | 0 | 0 | **met** |
+| contraindicated read lower -- targeted hunt (run 17) | all spans | -- | -- | -- | -- | -- | 0 genuine | **met** |
+| adjust_dose >= 90%, sentence | 50 | 50 | 100 | 92.9 | 0 | 0 | 0 | **met, ships** |
+| avoid >= 90%, heading/row block | 50 | 46 | 92 | 81.2 | 4 | 0 | 0 | **met, ships** |
+| adjust_dose >= 90%, heading/row block | 50 | 49 | 98 | 89.5 | 1 | 0 | 0 | **met, ships** |
+| monitor >= 90%, heading/row block | 50 | 46 | 92 | 81.2 | 2 | 2 | 0 | **met, ships** |
+| avoid, sentence | -- | -- | -- | -- | -- | -- | -- | withheld since run 15 (draw 3: 39/50 = 78%) |
+| monitor, sentence | -- | -- | -- | -- | -- | -- | -- | withheld since run 15 (draw 3: 44/50 = 88%) |
+| `no_meaningful_interaction`: zero wrong | -- | 0 read on every run | | | | | | met (vacuous); ships empty |
 
-**Withheld (run 15): sentence-scope avoid and sentence-scope monitor**, mapped to not_read in
-`read_advice` (`spl_advice.WITHHELD`, tested), after the two permitted tuning iterations.
-Reason: the misses are another drug's advice in a merged bullet run or table row, which a
-phrase reader cannot attribute, plus non-mention spans. What ships: contraindicated (sentence
-4,444, block 930), adjust_dose (sentence 15,824, block 9,696), avoid and monitor from heading /
-row blocks only (8,761 and 12,047). Heading-block strata are n = 20: one miss is 5 points.
+**No stratum fails; nothing new is withheld.** What ships on run 17: contraindicated (sentence 4,452,
+block 937), adjust_dose (sentence 15,824, block 9,710), avoid and monitor from heading / row blocks
+only (9,627 and 12,982; this now includes the spans whose withheld sentence reading falls through,
+R21). Sentence-scope avoid and monitor stay withheld (`spl_advice.WITHHELD`, tested): after the two
+permitted tuning iterations the misses were another drug's advice in a merged bullet run or table row,
+which a phrase reader cannot attribute, plus non-mention spans.
 
-**Contraindicated gate (R20).** The 4 garbled contraindication spans of run 14/15 were fixed in
-the one extra round ruling R20 allowed (a split "s ee"/"se e", "CONTRAINDICATIONS" glued to the
-next word, the truncated "Contraindicate"; the negation mask covers the widened forms); the
-targeted search on run 16 finds 0. **Open, for a ruling.** A hygiene ruling would lift sentence monitor over
-the gate (93.6% without the non-mentions): `Electrolyte [EPC]` matching the lab analyte
-("monitor electrolytes"), the dosage-form class `Ophthalmic Solutions`, and class words inside
-"non-potassium-sparing" / "anti-fibrinolytic". Sentence avoid stays under the gate either way.
+**Contraindicated reads stronger than the label 22% of the time** (22 of 100, every one the safe
+direction; draw 1 on run 12 was 20 of 100). The owner's contraindicated gate is "zero read lower",
+which holds; the 90% agreement gate applies to avoid / adjust_dose / monitor, and withholding
+contraindicated to cure an over-read would turn real contraindications into `not_read` -- an
+under-warning. The over-reads are recorded for the owner's review: chiefly a cross-reference or a
+"Contraindicated" cell belonging to a neighbouring table row, and the effect class "decreased blood
+pressure" (4 of 50 sentence spans; a class-hygiene candidate).
 
+**History.** Draws 1-3 (runs 12-14, earlier rules) are in the Precision-sample table above: they drove
+the two tuning iterations and the withholding of sentence avoid / monitor; their heading-block strata
+were n = 15-20 and sentence adjust_dose n = 30 in draw 3, below the brief's >= 50 -- hence draw 4 (R23).
+The R20 round (run 16) fixed the four garbled contraindication misses the targeted hunt found on run
+14/15.
+
+**Open, for a ruling.** Class hygiene: `Electrolyte [EPC]` (the lab analyte), the dosage-form class
+`Ophthalmic Solutions`, the effect classes `Decreased Blood Pressure [PE]` / `Increased GI Motility
+[PE]`, `Bile Acid [EPC]` matching "bile acid resins", and class words inside "non-potassium-sparing" /
+"anti-fibrinolytic". Reader: "consider alternative therapy" (an avoid phrasing no rule covers; one
+block-monitor under-read in draw 4).

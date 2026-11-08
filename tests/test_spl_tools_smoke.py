@@ -124,6 +124,17 @@ def test_class_census_pure_prose_figures():
     assert not cc.near_table_label("z" * 200 + "statins", 200, 207)
 
 
+def test_class_census_exclusion_is_derived_from_the_vocabulary():
+    """The census's 'classes matchable' filter must exclude exactly what the class
+    pass excludes (spl_class_vocab.EXCLUDED_CLASSES), not a hand-copied list."""
+    from drugref.ingest.spl_class_vocab import EXCLUDED_CLASSES
+    from tools import spl_class_census as cc
+    sql = cc.excluded_classes_sql({("MeSH", "PA", "Hormones"), ("X", "Y", "O'Brien")})
+    assert "('MeSH', 'PA', 'Hormones')" in sql and "('X', 'Y', 'O''Brien')" in sql
+    matchable = next(q for title, q in cc.QUERIES if title.startswith("Classes mentioned"))
+    assert cc.excluded_classes_sql(EXCLUDED_CLASSES) in matchable
+
+
 def test_spl_class_census_runs(conn):
     """Task 9 step 1: every query executes; units are right (rows vs spans); the
     prose-derived figures run over a tiny corpus."""

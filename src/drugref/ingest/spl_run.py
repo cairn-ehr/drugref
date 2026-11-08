@@ -248,10 +248,10 @@ def ingest_spl(
     before any writing begins, so a crash from there on leaves that row standing
     with `finished_at IS NULL` rather than no trace at all.
 
-    `pair_floor` / `novel_floor`, when given, assert the measured floor with `>=`.
-    They default to `None` here and to `MEASURED_PAIR_FLOOR` /
-    `MEASURED_NOVEL_FLOOR` at the CLI, which is the production path -- so a real
-    run checks by default and a partial-corpus run has to say so out loud.
+    `pair_floor` / `novel_floor`, when given, assert the measured floor with `>=`:
+    None here, `MEASURED_*_FLOOR` at the CLI (the production path), so a real run
+    checks by default. `unii_names` (UNII_Names_*.txt, required by the CLI) drives
+    R19/P1; None skips P1 and the "registry:" progress line says so as a WARNING.
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.

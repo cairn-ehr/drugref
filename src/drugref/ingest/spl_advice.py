@@ -90,8 +90,9 @@ SCOPE_SENTENCE = "sentence"
 SCOPE_HEADING_BLOCK = "heading_block"
 SCOPES = (SCOPE_SENTENCE, SCOPE_HEADING_BLOCK)
 
-#: (level, scope) readings WITHHELD from what ships: read, then mapped to not_read
-#: (design 7: a level that cannot reach its gate after tuning is withheld). Task 9B,
+#: (level, scope) readings WITHHELD from what ships: skipped as if empty, so the next
+#: scope is tried (R21), and not_read if none reads (design 7: a level that cannot
+#: reach its gate after tuning is withheld). Task 9B,
 #: after the two permitted tuning iterations, final hand sample on SPL run 14:
 #: sentence-scope avoid 39/50 (78%) and monitor 44/50 (88%) exact agreement against
 #: the owner's 90% gate. The misses are mostly advice belonging to ANOTHER drug in a
@@ -259,10 +260,13 @@ _BULLET = re.compile(r"•\s*|(?<=\s)·\s*|^·\s*")
 _CELL_LABEL = re.compile(
     r"(?<=\s)(?:Clinical\s*Impact|linical\s+Impact|Intervention|Examples?)(?=\s*:|\s)")
 # A time reference, not advice ("during treatment initiation and dose adjustment",
-# "after initiation, dose titration, or discontinuation"): masked like the NMI phrases.
+# "after initiation, dose titration, or discontinuation"), and a negated separation
+# ("separate administration ... is not necessary"): masked like the NMI phrases.
 _NOT_ADVICE = re.compile(
     r"\bduring\s+(?:\w+\s+){0,3}?(?:and\s+)?dose\s+(?:titration|adjustment)s?\b"
-    r"|\binitiation,?\s+(?:and\s+)?dose\s+(?:titration|adjustment)s?\b", re.IGNORECASE)
+    r"|\binitiation,?\s+(?:and\s+)?dose\s+(?:titration|adjustment)s?\b"
+    r"|\bseparate(?:ly)?\s+(?:administration|dosing|doses)\b[^.;]{0,80}?"
+    r"\b(?:is|are)\s+not\s+(?:necessary|needed|required)\b", re.IGNORECASE)
 
 
 def _markers(text: str) -> list[int]:
@@ -439,22 +443,27 @@ def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
     return (NMI, False, hit.rule_id) if hit else None
 
 
+def _reading(got: tuple[str, bool, str | None] | None, scope: str, start: int, end: int,
+             withheld: frozenset[tuple[str, str]]) -> AdviceReading | None:
+    """`got` as a reading over [start, end), or None when nothing was read OR the
+    (level, scope) is withheld -- R21: the caller then tries the next scope exactly
+    as it would after not_read (a withheld sentence "avoid" must not hide the
+    heading block's "contraindicated")."""
+    if got is None or (got[0], scope) in withheld:
+        return None
+    return AdviceReading(got[0], got[1], got[2], scope, start, end)
+
+
 def read_advice(text: str, char_start: int, char_end: int, *,
                 withheld: frozenset[tuple[str, str]] = WITHHELD) -> AdviceReading:
     """Read the label's advice for the mention at [char_start, char_end).
 
-    A reading whose (level, scope) is in `withheld` ships as not_read over its own
-    scope. Tests of the phrase rules pass `withheld=frozenset()`.
+    Scopes are tried in order (row heading, sentence, table row, heading block); a
+    reading whose (level, scope) is in `withheld` is skipped like an empty one (R21),
+    so a withheld sentence never ships its weaker co-reading either, and when no
+    scope reads, the span ships not_read over its sentence. Tests of the phrase
+    rules pass `withheld=frozenset()`.
     """
-    r = _read_advice(text, char_start, char_end)
-    if (r.level, r.scope) in withheld:
-        return AdviceReading("not_read", False, None, r.scope,
-                             r.scope_start, r.scope_end)
-    return r
-
-
-def _read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
-    """The phrase reader before withholding (see `read_advice`)."""
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
     s, e0 = _span_from(starts, len(text), char_start)
@@ -464,21 +473,24 @@ def _read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     e = max(e0, char_end)
     row = _row_block(text, starts, char_start, char_end)
     if row and row[2]:  # a row heading: its sentence is the previous row's text
-        got = _read_scope(text[row[0]:row[1]], allow_nmi=False)
+        got = _reading(_read_scope(text[row[0]:row[1]], allow_nmi=False),
+                       SCOPE_HEADING_BLOCK, *row[:2], withheld)
         if got:
-            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row[:2])
-    got = _read_scope(text[s:e0], allow_nmi=True, rel_start=char_start - s,
-                      rel_end=char_end - s)
+            return got
+    got = _reading(_read_scope(text[s:e0], allow_nmi=True, rel_start=char_start - s,
+                               rel_end=char_end - s), SCOPE_SENTENCE, s, e, withheld)
     if got:
-        return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
+        return got
     if row and not row[2]:  # NMI is not read here either: a row mixes cells.
-        got = _read_scope(text[row[0]:row[1]], allow_nmi=False)
+        got = _reading(_read_scope(text[row[0]:row[1]], allow_nmi=False),
+                       SCOPE_HEADING_BLOCK, *row[:2], withheld)
         if got:
-            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row[:2])
+            return got
     block = _block_from(text, mk, starts, char_start)
     if block and block[1] >= char_end:
         # NMI is not read here: a block can mix statements about different things.
-        got = _read_scope(text[block[0]:block[1]], allow_nmi=False)
+        got = _reading(_read_scope(text[block[0]:block[1]], allow_nmi=False),
+                       SCOPE_HEADING_BLOCK, *block, withheld)
         if got:
-            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *block)
+            return got
     return AdviceReading("not_read", False, None, SCOPE_SENTENCE, s, e)
