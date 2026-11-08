@@ -236,26 +236,22 @@ def add_evidence(conn: psycopg.Connection, question_uuid: uuid.UUID,
          source, ingest_run_id)).fetchone()[0]
 
 
-def require_question_for(
+def cites_own_question(
         conn: psycopg.Connection, question_uuid: uuid.UUID | None,
-        candidates: list[tuple[str, dict[str, object]]]) -> None:
-    """Refuse a curated row that cites a question about something else (#207).
+        candidates: list[tuple[str, dict[str, object]]]) -> bool:
+    """True when `question_uuid` is None or is one of the `candidates` questions.
 
-    `candidates` lists the questions this row could legitimately answer, as
+    `candidates` lists the questions a curated row could legitimately answer, as
     (gap_kind, the gap view's key columns for this row). The expected gap_key is
     computed by that kind's OWN frozen `key_sql`, run over a one-row stand-in for the
     view, so the key format is never spelled a second time in Python; the uuid is then
-    minted the same way register_from_gaps mints it. None (no question cited) passes.
+    minted the same way register_from_gaps mints it.
 
-    Why refuse: the retention guard above keeps any cited question alive as long as the
-    citing row exists, so a wrong uuid would pin an unrelated question forever.
+    The non-raising half of require_question_for, shared with the #210 census
+    (citation_audit), which asks the same question of rows already written.
     """
     if question_uuid is None:
-        return
-    if not candidates:
-        raise ValueError(f"question {question_uuid}: this row answers no worklist "
-                         "question (gap 19 asks about one member, never a class); "
-                         "cite none")
+        return True
     # Compare by value: a str uuid from a Python caller is the same question.
     question_uuid = uuid.UUID(str(question_uuid))
     for gap_kind, columns in candidates:
@@ -266,7 +262,26 @@ def require_question_for(
             f"SELECT {_GAP_SOURCES[gap_kind]['key_sql']} FROM (SELECT {stand_in}) AS v",
             [str(v) for v in columns.values()]).fetchone()[0]
         if ids.mint_question_uuid(gap_kind, key) == question_uuid:
-            return
+            return True
+    return False
+
+
+def require_question_for(
+        conn: psycopg.Connection, question_uuid: uuid.UUID | None,
+        candidates: list[tuple[str, dict[str, object]]]) -> None:
+    """Refuse a curated row that cites a question about something else (#207).
+
+    See cites_own_question for what `candidates` is. None (no question cited) passes.
+
+    Why refuse: the retention guard above keeps any cited question alive as long as the
+    citing row exists, so a wrong uuid would pin an unrelated question forever.
+    """
+    if question_uuid is not None and not candidates:
+        raise ValueError(f"question {question_uuid}: this row answers no worklist "
+                         "question (gap 19 asks about one member, never a class); "
+                         "cite none")
+    if cites_own_question(conn, question_uuid, candidates):
+        return
     kinds = " or ".join(dict.fromkeys(k for k, _ in candidates))
     raise ValueError(f"question {question_uuid} does not ask about this row: it can "
                      f"cite only the {kinds} question minted from its own key")

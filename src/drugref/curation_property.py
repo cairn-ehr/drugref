@@ -35,7 +35,7 @@ _OBJECT_COLUMN = {"condition": "object_condition_uuid", "moiety": "object_moiety
 _KEY = ("subject_kind", "subject_uuid", "relationship", "object_kind", "object_uuid")
 
 
-def _answerable(moiety, relationship, object_kind, object_uuid):
+def answerable_questions(moiety, relationship, object_kind, object_uuid):
     """The gap-19 questions a ruling may cite: one per member it is about.
 
     A class-subject ruling has none (gap 19 asks about a MEMBER, never a class). A drug
@@ -76,7 +76,7 @@ def record_property_ruling(
     subject_kind, subject = (("class", subject_class_uuid) if subject_class_uuid
                              else ("moiety", subject_moiety_uuid))
     key = (subject_kind, subject, relationship, object_kind, object_uuid)
-    questions.require_question_for(conn, question_uuid, _answerable(
+    questions.require_question_for(conn, question_uuid, answerable_questions(
         subject_moiety_uuid, relationship, object_kind, object_uuid))
 
     live = conn.execute(

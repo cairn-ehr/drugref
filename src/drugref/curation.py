@@ -36,6 +36,35 @@ import psycopg
 from drugref import overlay, questions
 
 
+# ---- Which question each writer's row may cite (#207, #210) -------------------
+#
+# One function per curated table, returning the (gap_kind, key columns) candidates
+# questions.require_question_for checks a new row against. They are named, not
+# inlined in the writers, because citation_audit asks the SAME question of rows
+# already written -- two spellings of one candidate list could disagree.
+
+
+def interaction_questions(subject_moiety_uuid, object_class_uuid, relationship):
+    """A drug -> class judgement answers its own uncurated_interaction_rule question."""
+    return [("uncurated_interaction_rule", {"subject_moiety": subject_moiety_uuid,
+                                            "object_class": object_class_uuid,
+                                            "relationship": relationship})]
+
+
+def condition_questions(subject_moiety_uuid, object_condition_uuid):
+    """A drug x condition ruling answers its own contradiction question."""
+    return [("uncurated_condition_contradiction",
+             {"subject_moiety": subject_moiety_uuid,
+              "object_condition": object_condition_uuid})]
+
+
+def class_interaction_questions(subject_class_uuid, object_class_uuid, relationship):
+    """A class -> class judgement answers its own uncurated_class_interaction_rule."""
+    return [("uncurated_class_interaction_rule", {"subject_class": subject_class_uuid,
+                                                  "object_class": object_class_uuid,
+                                                  "relationship": relationship})]
+
+
 def record_interaction_judgement(
         conn: psycopg.Connection,
         subject_moiety_uuid: uuid.UUID,
@@ -81,10 +110,8 @@ def record_interaction_judgement(
     class_contraindication's own measured row count; of the 635, 595 reach the
     worklist and 40 pair with nobody, see PROJECT-NOTES.md "Slice 5c.1").
     """
-    questions.require_question_for(conn, question_uuid, [(
-        "uncurated_interaction_rule", {"subject_moiety": subject_moiety_uuid,
-                                       "object_class": object_class_uuid,
-                                       "relationship": relationship})])
+    questions.require_question_for(conn, question_uuid, interaction_questions(
+        subject_moiety_uuid, object_class_uuid, relationship))
     new_id = conn.execute(
         "INSERT INTO drugref.curated_interaction "
         "(subject_moiety_uuid, object_class_uuid, relationship, applies, severity, "
@@ -137,10 +164,8 @@ def record_condition_ruling(
     answerable next to "what does drugref say". A spurious row therefore reaches no
     read view. Like a retiring interaction judgement, it passes no grading.
     """
-    questions.require_question_for(conn, question_uuid, [(
-        "uncurated_condition_contradiction",
-        {"subject_moiety": subject_moiety_uuid,
-         "object_condition": object_condition_uuid})])
+    questions.require_question_for(conn, question_uuid, condition_questions(
+        subject_moiety_uuid, object_condition_uuid))
     new_id = conn.execute(
         "INSERT INTO drugref.curated_condition "
         "(subject_moiety_uuid, object_condition_uuid, ruling, severity, mechanism, "
@@ -233,10 +258,8 @@ def record_class_interaction_judgement(
     one call grades every pair the rule expands to on BOTH sides once the
     read path (Task 11) builds the both-sides expansion.
     """
-    questions.require_question_for(conn, question_uuid, [(
-        "uncurated_class_interaction_rule", {"subject_class": subject_class_uuid,
-                                             "object_class": object_class_uuid,
-                                             "relationship": relationship})])
+    questions.require_question_for(conn, question_uuid, class_interaction_questions(
+        subject_class_uuid, object_class_uuid, relationship))
     new_id = conn.execute(
         "INSERT INTO drugref.curated_class_interaction "
         "(subject_class_uuid, object_class_uuid, relationship, applies, severity, "
