@@ -5920,6 +5920,18 @@ not here.** What the next round inherits:
   about a member). `curated_interaction` accepts only its `uncurated_interaction_rule` question — **not** the
   gap-19 `interacts_with class` question about the same pair, though spec §4 counts `applies = false` there as
   a confirmed exception. Widen the candidate list if curators need that cross-citation.
+- **Rows written before that guard are audited by `citation_audit.miscited`** (#210; run it as
+  `uv run python -m tools.citation_census --dsn ...`, exit 1 on any LIVE finding). It reads every row, superseded
+  ones too (the retention guard keeps a question alive for any citing row), and checks each with the writers'
+  own candidate functions (`curation.*_questions`, `curation_property.answerable_questions`) through
+  `questions.cites_own_question`, the non-raising half of the guard. Report only: re-recording through the
+  writer corrects a live row (never an UPDATE), but the superseded row keeps its pin forever, so a superseded
+  finding is permanent, printed for awareness and does not fail the exit status. **2026-11-08: 0 findings on `drugref_profiles`; every other local
+  database holds no cited row except `drugref_reviewer_dev`**, whose 2 findings (one live, one superseded
+  `curated_interaction`) cite a hand-inserted "Test decision?" question with a random uuid4: its gap_key
+  equals the row's own key, but its uuid was never minted from it. GUI test data, not a curation error.
+  Databases older than `db/058` lack `curated_property_ruling` and the tool errors on them (rebuild, as with
+  `status`).
 - **Subclass-only drugs show what they inherit** (spec §4): `ClassProfile.subclass_only` is a tuple of
   `SubclassOnlyDrug` (inherits / confirmed exceptions, never an interaction with itself), and `profile class`
   prints *"inherits every asserted property above"* or *"N of the M"* plus the named exceptions and, when
@@ -6025,7 +6037,7 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
-a single-class read of `class_property` computes every class — **FIXED by `db/065`, closes on merge**, with
+a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
 **#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
 composition (one object dominates; MED-RT catch-all classes raise questions) ·
@@ -6033,7 +6045,9 @@ composition (one object dominates; MED-RT catch-all classes raise questions) ·
 interaction answers never reach the prescribing-alert path — owner design call, curators hold off interaction
 questions until it is decided · **[#206](https://github.com/cairn-ehr/drugref/issues/206)** and
 **[#207](https://github.com/cairn-ehr/drugref/issues/207)** (filed by the pre-merge review) **FIXED by the
-class-profile fixes round, close on merge** (`db/064`; `questions.require_question_for`). Figures on the issues and in the
+class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by
+PR #208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a
+report-only census, no migration (§ "The class-profiles round"). Figures on the issues and in the
 results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
 GitHub 2026-11-07**, alongside #130.
 
@@ -6206,7 +6220,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2980 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2990 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

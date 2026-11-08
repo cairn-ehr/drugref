@@ -1328,7 +1328,7 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   leak in `class_property.asserted_by` and with it removed #202's dominant cost; **`db/065` (2026-11-08) fixed
   the structural point** — a one-class read now filters every member scan (51 ms, was 748 ms) — and added
   `class_subclass_only_property` ([#209](https://github.com/cairn-ehr/drugref/issues/209)), so what a
-  subclass-only drug inherits is SQL, not only Python. Both close on PR #211's merge.
+  subclass-only drug inherits is SQL, not only Python. Both CLOSED by PR #211.
 - **Filed by the final review**: [#204](https://github.com/cairn-ehr/drugref/issues/204) — interaction
   rulings change the class-profile views but never the prescribing-alert path. **Owner design call; curators
   hold off interaction questions until it is decided.**
@@ -1338,6 +1338,8 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   ruling's `--question` is not checked against the ruling's own key (all curated writers). **Both FIXED by the
   follow-up round** (`db/064`'s eligible denominator; one shared question guard), which also shows what a
   subclass-only drug inherits on the parent's profile (spec §4) and adds a names check to the census.
+  Rows written before that guard are audited by `tools.citation_census`
+  ([#210](https://github.com/cairn-ehr/drugref/issues/210), report only): 0 findings on `drugref_profiles`.
 - **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
   in the results record §5.
 - **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a

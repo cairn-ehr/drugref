@@ -13,19 +13,20 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-property-pushable`; PR #211 OPEN (to `main`) for #202 + #209. PR #208 is MERGED. Schema now
-ends at `db/065`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
-`uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/citation-census`; PR #212 OPEN (to `main`) for #210. PRs #208 and #211 are MERGED (#202, #206,
+#207, #209 CLOSED). Schema still ends at `db/065`; this round adds no migration.** The suite total lives in
+PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
+suite disagree.
 
-**⇒ JUST FINISHED: #202 and #209 (`db/065`).** `class_property` is rewritten so `WHERE class_uuid = X` reaches
-every `class_membership` scan (one `UNION ALL` + one `GROUP BY`, no CTE referenced twice, the #206 self-partner
-test joining `class_profile_member` directly): rows identical to `db/064` on `drugref_profiles`; one-class
-read 748 → 51 ms (vs `db/064`), `profile class` 1.5 → 0.42 s (vs `db/062`; not re-timed at `db/064`). New view `class_subclass_only_property` (asserted only, less confirmed exceptions and the
-drug itself); `class_profile_read` reads it instead of subtracting in Python. Figures: results record §6
-addendum; the trap: PROJECT-NOTES § "The class-profiles round", first bullet.
+**⇒ JUST FINISHED: #210.** `citation_audit.miscited(conn)` reports every curated row (all four tables, superseded
+rows too) whose `question_uuid` is not one its own key may cite, using the writers' own candidate functions (now
+named: `curation.interaction_questions` / `condition_questions` / `class_interaction_questions`,
+`curation_property.answerable_questions`) via `questions.cites_own_question`, the non-raising half of
+`require_question_for`. Runner: `uv run python -m tools.citation_census --dsn ...` (exit 1 on a live finding; a superseded one is permanent, printed only).
+**Measured: 0 on `drugref_profiles`; only `drugref_reviewer_dev` has findings (2), GUI test data citing a
+hand-made uuid4 question** (PROJECT-NOTES § "The class-profiles round"). Report only: no row was superseded.
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests` clean.
-Pre-merge review (`finalcheck`): no correctness findings; doc wording and 3 pinning tests added. `drugref_profiles` migrated to `db/065`.
+**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests tools` clean.
 (`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
 **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
@@ -43,16 +44,14 @@ Pre-merge review (`finalcheck`): no correctness findings; doc wording and 3 pinn
    `class_expansion_policy` deny? Today it does not (db/060 and db/065 read no policy).
 5. **Owner question (from #207)**: may a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair? Today the guard says no (only its `uncurated_interaction_rule` question).
-6. **#210** (no owner call needed): census query for curated rows written before #207 that cite a question
-   about something else. Small, no migration.
-7. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
+6. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
    and FEEDS class profiles. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is
    gated on a clinician review that has not happened.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **New:
-#203, #204, #210; #202 and #209 close on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open
+from class profiles: #203, #204; #210 closes on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
