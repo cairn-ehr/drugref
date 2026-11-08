@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import psycopg
 
-from drugref import analyze, db
+from drugref import analyze, db, spl_class_evidence
 
 if TYPE_CHECKING:                       # pragma: no cover
     # Import-time-free: this module is the WRITER and `spl_quote` is a pure
@@ -282,6 +282,7 @@ _TABLE_FOR_ROW = {
     "LabelRow": "spl_label",
     "SubjectRow": "spl_label_subject",
     "OccurrenceRow": "spl_entity_occurrence",
+    "ClassOccurrenceRow": "spl_class_occurrence",
     "QuoteRow": "spl_wording_quote",
 }
 
@@ -489,3 +490,11 @@ def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
             "ANALYZE names its tables directly and may only name one "
             "this module owns")
     analyze.analyze_tables(conn, names)
+
+
+def write_class_occurrences(conn: psycopg.Connection,
+                            rows: Iterable[spl_class_evidence.ClassOccurrenceRow], *,
+                            ingest_run_id: int, source: str) -> int:
+    """Write machine-read class mentions (db/066): NOT CONFIRMED, never assertions."""
+    return _copy(conn, spl_class_evidence.ClassOccurrenceRow, rows,
+                 ingest_run_id=ingest_run_id, source=source)
