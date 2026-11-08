@@ -8,81 +8,96 @@ Sections "Precision sample" and "Gates" are Task 9B's.
 
 | item | value |
 |---|---|
-| git head at build | `d165f39` plus the uncommitted Task 9A tool (and one scope fix, see "A defect the real release found") |
+| git head at build | `d165f39` plus the Task 9A commits (tool, scope fixes R16/R17) |
 | database | `drugref_classmentions`, built from nothing (createdb, then migrate through db/066) |
-| SPL run | ingest_run 10 (run 9 is the first SPL attempt, which aborted, see below; it is left as an unfinished row) |
+| SPL run | ingest_run 11 (the rebuild below). Run 9 aborted, run 10 is the superseded first full run; run 9 is left as an unfinished row |
 | SPL release tag | `openfda-2026-08-22+dailymed-2026-08-21` |
 | other releases | UNII 26Feb2026, MED-RT 2026.07.06, MeSH 2026 (+ mesh-relations 2026.07.06), GSRS 2026-02-26, ONCHIGH 2026-08-12, FDA-CYP 2026-05-29, DrugCentral 11012023 |
 | checksums | all 20 files (14 openFDA partitions, 6 DailyMed parts) `shasum -a 256`-verified equal to the table in the [mining record §2](2026-08-24-drugref-slice-5c3-spl-mining-measurement.md); no mismatch |
 | corpus | 262,032 openFDA records, 68,550 labels carrying the section, 27,406 distinct wordings, 54,813 DailyMed documents read |
 
 Wall times (this machine, single run each, no controls): migrate 1 s -- ingest chain 159 s --
-onchigh 4 s -- fda-cyp 5 s -- drugcentral 20 s -- `ingest spl` 228 s (the passing run; the first
-attempt died after 93 s) -- census 47 s with `--openfda`.
+onchigh 4 s -- fda-cyp 5 s -- drugcentral 20 s -- `ingest spl` 274 s (the rebuild, run 11; first run 228 s, the aborted attempt died after 93 s) -- census 47 s with `--openfda`.
 
 Reproduce: `uv run python -m tools.spl_class_census --dsn "$DSN" --openfda downloads/OPENFDA`
 (the tables below are its output, verbatim, under added commentary).
 
-## A defect the real release found (fixed in this round)
+## First run, and what changed (R16, R17, unit fix)
 
-The first `ingest spl` aborted at the class write: db/066's CHECK
-`spl_class_occurrence_scope_contains_span` refused a row whose sentence scope ended 4
-characters before the mention ended. A class name (MED-RT EPC "Potassium Salt", 15-char
-mention) contained a `". X"` sentence boundary inside the mention, so the sentence ended
-mid-name. No fixture contained a class name spanning a boundary. Fix in
-`spl_advice.read_advice`: the not_read fallback scope is widened to cover the mention and a
-heading block that ends before the mention is not used; test
-`test_scope_always_contains_a_mention_that_holds_a_sentence_boundary`. This changes no
-strength/NMI rule.
+The first full run (run 10) had three faults, found in review, all fixed before this record's
+figures were taken (run 11, same corpus, same chain; db/066 untouched):
 
-## Headline
+1. **Scope fix was incomplete (R17).** The matcher tokenises on letters/digits and ignores
+   punctuation, so a class name matched ACROSS a sentence end ("... Potassium. Salts ..." ->
+   "Potassium Salts"), a false mention whose scope could end inside the span. The class pass
+   now drops any class match whose span holds a sentence boundary (the splitter's own rule,
+   `spl_advice.span_crosses_sentence_boundary`) and counts the drops; `read_advice` also
+   widens its scope to contain the span on every path.
+   **Sentence-splitter failure signal (design §7): 64 class spans dropped at a sentence boundary.**
+2. **Class hygiene (R16).** (a) MED-RT APC is no longer matched: all 44 classes empty by
+   construction, generic words ("Enzyme" 15,587 rows, "Hormone" 4,486), each duplicating a
+   MeSH name. (b) 12 class match keys equal to a registry moiety display name are dropped
+   (the moiety pass owns those mentions): Biguanide, Bismuth, Calcitonin, Calcium, Human C1
+   Esterase Inhibitor, Interferon alfa-2b, Interferon beta, Interferon gamma, Parathyroid
+   Hormone, Phenothiazine, Progesterone, Psoralen.
+3. **Unit error in the first record.** The first run's "391,521 class occurrences" and its
+   per-level shares counted (span, class) rows, not mentions. A mention is a distinct span;
+   a span several classes fold onto has several rows. The tool now reports spans and
+   ambiguous spans, and level/rule/scope distributions per SPAN.
 
-* Drug x drug pairs **29,952 / 26,598 novel -- identical** to the 5c.3 results record (floors
-  29,258 / 25,960 both cleared). The class pass changed no drug x drug figure.
-* 391,521 class occurrences over 24,841 of 27,406 wordings (90.6%); 20,265 moiety occurrences lie
-  inside a class span (the run summary and the census agree).
-* 16,792 distinct (labelling drug x class) statements over 502 classes.
-* Advice: **79.7% not_read**; of the 79,648 strength readings, 13.7% are mixed (avoid 22.9%,
-  adjust_dose 44.1%, contraindicated 18.3%). **No occurrence was read `no_meaningful_interaction`**
-  (the R10 template set matched nothing on the real release): that level has zero sample to
-  clear its gate, so Task 9B's gate for it is vacuous or the level is withheld.
-* Quote windows cover 25.2% of occurrences (98,494 of 391,521).
+First-run figures (superseded): 391,521 rows / 285,059 spans; 20,265 moiety spans inside a
+class span; 16,792 statements.
 
-## ALARMS for the 9B reader (not fixed in 9A)
+## Headline (run 11)
 
-* **Ordinary-English / non-class names dominate the counts**: `Enzyme [APC]` 15,587 occurrences
-  in 7,951 wordings (APC axis; 20 classes yield 1,808 statements and **none** has the labelling
-  drug as a member); `Calcium [EPC]` 9,935 / 2,350 (the word, not necessarily the class);
-  `Acetaminophen [EPC]` 6,588 / 1,559 (an *empty* EPC named like the drug). Full top-15 in the
-  tables. These are the #155-shape risk; whether they are wrong needs 9B's read.
-* **Two axes duplicate each other**: `Diuretics` (MeSH PA) and `Diuretic [APC]` have identical
-  counts (17,118), likewise `Antacids` / `Antacid [PE]`, `Analgesics` MeSH / `[TC]`. One span
-  matches two classes, which is why `number` and `stored` carry 87,130 / 105,861 ambiguous
-  occurrences (about half of all). Occurrences are therefore NOT distinct spans.
-* **MED-RT PE has 1,291 classes with no direct member, of which 1 is ever mentioned** -- fine,
-  but the empty-class share of the vocabulary is large (PE) while empty-class *mentions* are
-  concentrated in APC (50,416) and `Acetaminophen`.
+* Drug x drug pairs **29,952 / 26,598 novel -- identical** to the 5c.3 record and unchanged by
+  the class pass or by R16/R17 (floors 29,258 / 25,960 cleared).
+* **249,444 mentions (distinct spans)**, as 330,597 (span, class) rows, over 23,950 of 27,406
+  wordings (87.4%). 64,924 spans (26.0%) are ambiguous (fold onto >1 class).
+* Statements (labelling drug x class): 14,671 over 474 classes (sum of the per-axis table).
+* Advice per SPAN: **79.3% not_read**; of 51,653 strength spans 14.2% are mixed (avoid 24.0%,
+  adjust_dose 43.7%, contraindicated 19.8%).
+* **Zero spans read `no_meaningful_interaction`**: the R10 templates match nothing on the real
+  release, so that level has no sample to clear a gate (9B: vacuous gate or withheld level).
+* Quote windows cover 25.7% of spans (64,090 of 249,444).
+* 11,107 moiety occurrences lie inside a class span (6,344 wordings).
+* 283 wordings (783 labels) CONTAIN the long-form enzyme spelling near a role word (presence,
+  not a measured miss: whether the class vocabulary also catches them is unmeasured).
+* 30,632 of 330,597 rows (9.3%) are within 80 chars of "Intervention" / "Clinical Impact".
 
-## Census tables (verbatim tool output)
+## Still for the 9B reader
 
-## SPL run 10
+* `Acetaminophen [EPC]` (empty class) remains the 9th-largest class by rows (6,588 over 1,559
+  wordings): its key does not equal a registry display name, so R16(b) did not drop it, yet
+  the span is a drug mention. `Enzyme`, `Calcium` and the APC axis are gone from the top 15.
+* The two axes still duplicate each other where MeSH PA and MED-RT PE/TC/MoA/EPC share a name
+  (Diuretics / Antacids / Analgesics / Monoamine Oxidase Inhibitors): ambiguity is real
+  (26.0% of spans), and statements count each class separately.
+* MED-RT PE: 1,291 classes with no direct member, 1 ever mentioned.
 
-### Class occurrences per axis, empty vs populated (per wording; `labels` = the same wordings weighted by label_count)
+## Census tables (verbatim tool output of run 11)
 
-| axis | pop | occurrences | wordings | labels |
+### Totals: (span, class) rows vs distinct spans (mentions)
+
+| span_class_rows | spans | ambiguous_spans | ambiguous_pct | wordings |
 |---|---|---|---|---|
-| FDA-CYP PK | empty | 540 | 235 | 502 |
-| FDA-CYP PK | populated | 7,076 | 1,967 | 3,627 |
-| MED-RT APC | empty | 50,416 | 14,318 | 34,205 |
-| MED-RT EPC | empty | 19,066 | 7,864 | 19,131 |
-| MED-RT EPC | populated | 135,853 | 19,811 | 49,010 |
-| MED-RT MoA | empty | 2,507 | 1,335 | 2,800 |
-| MED-RT MoA | populated | 29,998 | 11,078 | 25,671 |
-| MED-RT PE | empty | 1 | 1 | 1 |
-| MED-RT PE | populated | 9,527 | 4,415 | 11,156 |
-| MED-RT TC | populated | 20,836 | 7,307 | 17,218 |
-| MeSH PA | empty | 112 | 83 | 326 |
-| MeSH PA | populated | 115,589 | 20,280 | 50,904 |
+| 330,597 | 249,444 | 64,924 | 26.0 | 23,950 |
+
+### Per axis, empty vs populated: (span, class) rows, distinct spans, wordings (`labels` = the same wordings weighted by label_count)
+
+| axis | pop | span_class_rows | spans | wordings | labels |
+|---|---|---|---|---|---|
+| FDA-CYP PK | empty | 540 | 540 | 235 | 502 |
+| FDA-CYP PK | populated | 7,066 | 7,066 | 1,959 | 3,612 |
+| MED-RT EPC | empty | 19,044 | 19,044 | 7,861 | 19,128 |
+| MED-RT EPC | populated | 124,790 | 124,790 | 19,505 | 48,384 |
+| MED-RT MoA | empty | 2,507 | 2,507 | 1,335 | 2,800 |
+| MED-RT MoA | populated | 29,997 | 29,997 | 11,078 | 25,671 |
+| MED-RT PE | empty | 1 | 1 | 1 | 1 |
+| MED-RT PE | populated | 9,527 | 9,527 | 4,415 | 11,156 |
+| MED-RT TC | populated | 20,836 | 20,836 | 7,307 | 17,218 |
+| MeSH PA | empty | 112 | 112 | 83 | 326 |
+| MeSH PA | populated | 116,177 | 116,177 | 20,331 | 50,976 |
 
 ### Classes mentioned at least once vs classes matchable, per axis
 
@@ -90,9 +105,8 @@ strength/NMI rule.
 |---|---|---|---|
 | FDA-CYP PK | empty | 5 | 3 |
 | FDA-CYP PK | populated | 60 | 38 |
-| MED-RT APC | empty | 44 | 22 |
-| MED-RT EPC | empty | 272 | 28 |
-| MED-RT EPC | populated | 539 | 157 |
+| MED-RT EPC | empty | 272 | 27 |
+| MED-RT EPC | populated | 539 | 149 |
 | MED-RT MoA | empty | 242 | 4 |
 | MED-RT MoA | populated | 539 | 83 |
 | MED-RT PE | empty | 1,291 | 1 |
@@ -106,76 +120,70 @@ strength/NMI rule.
 
 | axis | statements | classes | subject_in_class |
 |---|---|---|---|
-| FDA-CYP PK | 748 | 41 | 31 |
-| MED-RT APC | 1,808 | 20 | 0 |
-| MED-RT EPC | 6,679 | 177 | 171 |
+| FDA-CYP PK | 747 | 41 | 31 |
+| MED-RT EPC | 6,338 | 169 | 166 |
 | MED-RT MoA | 1,440 | 83 | 78 |
 | MED-RT PE | 374 | 15 | 7 |
 | MED-RT TC | 994 | 22 | 126 |
-| MeSH PA | 4,749 | 144 | 427 |
+| MeSH PA | 4,778 | 144 | 431 |
 
-### Yield per match_form (§4.2 key form)
+### Yield per match_form (§4.2 key form): rows, spans, ambiguous spans
 
-| match_form | occurrences | wordings | classes | ambiguous |
-|---|---|---|---|---|
-| label_order | 5,404 | 1,522 | 26 | 0 |
-| number | 184,548 | 22,672 | 346 | 87,130 |
-| stored | 201,569 | 22,503 | 402 | 105,861 |
+| match_form | span_class_rows | spans | wordings | classes | ambiguous_spans |
+|---|---|---|---|---|---|
+| label_order | 5,404 | 5,404 | 1,522 | 26 | 0 |
+| number | 157,493 | 146,653 | 21,540 | 325 | 51,613 |
+| stored | 167,700 | 140,528 | 21,658 | 374 | 56,452 |
 
 ### Moiety spans lying inside a class span (§4.4 overlap; equal spans count)
 
 | moiety_occurrences | wordings |
 |---|---|
-| 20,265 | 8,353 |
+| 11,107 | 6,344 |
 
-### Advice level distribution (per occurrence; wordings = distinct wordings)
+### Advice level distribution (per SPAN)
 
-| advice_level | occurrences | pct | wordings | mixed |
+| advice_level | spans | pct | wordings | mixed |
 |---|---|---|---|---|
-| not_read | 311,873 | 79.66 | 24,254 | 0 |
-| monitor | 37,476 | 9.57 | 8,592 | 0 |
-| avoid | 30,393 | 7.76 | 6,908 | 6,967 |
-| adjust_dose | 6,991 | 1.79 | 3,091 | 3,081 |
-| contraindicated | 4,788 | 1.22 | 1,262 | 874 |
+| not_read | 197,791 | 79.29 | 23,240 | 0 |
+| monitor | 24,870 | 9.97 | 8,219 | 0 |
+| avoid | 18,385 | 7.37 | 6,131 | 4,418 |
+| adjust_dose | 5,318 | 2.13 | 2,963 | 2,325 |
+| contraindicated | 3,080 | 1.23 | 1,203 | 609 |
 
-### Level x scope
+### Level x scope (per span)
 
-| advice_level | advice_scope | occurrences |
+| advice_level | advice_scope | spans |
 |---|---|---|
-| adjust_dose | heading_block | 439 |
-| adjust_dose | sentence | 6,552 |
-| avoid | heading_block | 2,912 |
-| avoid | sentence | 27,481 |
-| contraindicated | heading_block | 235 |
-| contraindicated | sentence | 4,553 |
-| monitor | heading_block | 6,755 |
-| monitor | sentence | 30,721 |
-| not_read | sentence | 311,873 |
+| adjust_dose | heading_block | 339 |
+| adjust_dose | sentence | 4,979 |
+| avoid | heading_block | 1,762 |
+| avoid | sentence | 16,623 |
+| contraindicated | heading_block | 180 |
+| contraindicated | sentence | 2,900 |
+| monitor | heading_block | 3,961 |
+| monitor | sentence | 20,909 |
+| not_read | sentence | 197,791 |
 
-### Level x axis
+### Level x axis ((span, class) rows)
 
-| axis | advice_level | occurrences |
+| axis | advice_level | span_class_rows |
 |---|---|---|
 | FDA-CYP PK | adjust_dose | 505 |
 | FDA-CYP PK | avoid | 2,193 |
 | FDA-CYP PK | contraindicated | 235 |
 | FDA-CYP PK | monitor | 430 |
-| FDA-CYP PK | not_read | 4,253 |
-| MED-RT APC | adjust_dose | 555 |
-| MED-RT APC | avoid | 2,337 |
-| MED-RT APC | contraindicated | 235 |
-| MED-RT APC | monitor | 5,023 |
-| MED-RT APC | not_read | 42,266 |
-| MED-RT EPC | adjust_dose | 3,740 |
-| MED-RT EPC | avoid | 11,265 |
-| MED-RT EPC | contraindicated | 2,036 |
-| MED-RT EPC | monitor | 12,604 |
-| MED-RT EPC | not_read | 125,274 |
+| FDA-CYP PK | not_read | 4,243 |
+| MED-RT EPC | adjust_dose | 3,626 |
+| MED-RT EPC | avoid | 10,120 |
+| MED-RT EPC | contraindicated | 2,030 |
+| MED-RT EPC | monitor | 11,823 |
+| MED-RT EPC | not_read | 116,235 |
 | MED-RT MoA | adjust_dose | 488 |
 | MED-RT MoA | avoid | 3,253 |
 | MED-RT MoA | contraindicated | 935 |
 | MED-RT MoA | monitor | 2,559 |
-| MED-RT MoA | not_read | 25,270 |
+| MED-RT MoA | not_read | 25,269 |
 | MED-RT PE | adjust_dose | 46 |
 | MED-RT PE | avoid | 956 |
 | MED-RT PE | contraindicated | 5 |
@@ -186,56 +194,56 @@ strength/NMI rule.
 | MED-RT TC | contraindicated | 186 |
 | MED-RT TC | monitor | 1,929 |
 | MED-RT TC | not_read | 16,441 |
-| MeSH PA | adjust_dose | 1,513 |
-| MeSH PA | avoid | 8,253 |
+| MeSH PA | adjust_dose | 1,516 |
+| MeSH PA | avoid | 8,288 |
 | MeSH PA | contraindicated | 1,156 |
-| MeSH PA | monitor | 14,395 |
-| MeSH PA | not_read | 90,384 |
+| MeSH PA | monitor | 14,421 |
+| MeSH PA | not_read | 90,908 |
 
-### Phrase rules that fired
+### Phrase rules that fired (per span)
 
-| rule | occurrences | wordings |
+| rule | spans | wordings |
 |---|---|---|
-| (not_read) | 311,873 | 24,254 |
-| monitor.monitor | 33,364 | 7,907 |
-| avoid.avoid | 19,239 | 4,186 |
-| avoid.not_recommended | 6,683 | 2,270 |
-| contraindicated.contraindicated | 4,788 | 1,262 |
-| monitor.observe_closely | 4,112 | 1,381 |
-| adjust_dose.dose_adjustment | 4,081 | 1,586 |
-| avoid.do_not_use | 3,214 | 761 |
-| adjust_dose.reduce_dose | 2,910 | 1,624 |
-| avoid.do_not_coadminister | 1,257 | 470 |
+| (not_read) | 197,791 | 23,240 |
+| monitor.monitor | 22,586 | 7,525 |
+| avoid.avoid | 12,341 | 3,781 |
+| avoid.not_recommended | 3,718 | 1,996 |
+| contraindicated.contraindicated | 3,080 | 1,203 |
+| adjust_dose.dose_adjustment | 2,903 | 1,458 |
+| adjust_dose.reduce_dose | 2,415 | 1,617 |
+| monitor.observe_closely | 2,284 | 1,381 |
+| avoid.do_not_use | 1,931 | 752 |
+| avoid.do_not_coadminister | 395 | 206 |
 
-### Occurrences covered by an existing quote window, per level
+### Spans covered by an existing quote window, per level
 
-| advice_level | occurrences | quoted |
+| advice_level | spans | quoted |
 |---|---|---|
-| adjust_dose | 6,991 | 1,535 |
-| avoid | 30,393 | 7,856 |
-| contraindicated | 4,788 | 1,726 |
-| monitor | 37,476 | 7,277 |
-| not_read | 311,873 | 80,100 |
+| adjust_dose | 5,318 | 1,035 |
+| avoid | 18,385 | 4,654 |
+| contraindicated | 3,080 | 1,276 |
+| monitor | 24,870 | 5,084 |
+| not_read | 197,791 | 52,041 |
 
-### TOP OFFENDERS: the 15 classes with most occurrences (a class matching ordinary English shows up here)
+### TOP OFFENDERS: the 15 classes with most (span, class) rows (a class matching ordinary English shows up here)
 
-| class_name | axis | pop | occurrences | wordings |
+| class_name | axis | pop | span_class_rows | wordings |
 |---|---|---|---|---|
 | Diuretics | MeSH PA | populated | 17,118 | 5,552 |
-| Diuretic [APC] | MED-RT APC | empty | 17,118 | 5,552 |
 | Anticoagulants | MeSH PA | populated | 16,178 | 6,432 |
-| Enzyme [APC] | MED-RT APC | empty | 15,587 | 7,951 |
 | Corticosteroid [EPC] | MED-RT EPC | populated | 9,939 | 3,129 |
-| Calcium [EPC] | MED-RT EPC | populated | 9,935 | 2,350 |
 | Benzodiazepine [EPC] | MED-RT EPC | populated | 9,241 | 3,272 |
 | Anticholinergic [EPC] | MED-RT EPC | populated | 7,661 | 2,386 |
-| Antacids | MeSH PA | populated | 7,553 | 3,464 |
 | Antacid [PE] | MED-RT PE | populated | 7,553 | 3,464 |
+| Antacids | MeSH PA | populated | 7,553 | 3,464 |
 | Tricyclic Antidepressant [EPC] | MED-RT EPC | populated | 7,343 | 4,334 |
 | Acetaminophen [EPC] | MED-RT EPC | empty | 6,588 | 1,559 |
 | Analgesics [TC] | MED-RT TC | populated | 5,654 | 2,730 |
 | Analgesics | MeSH PA | populated | 5,654 | 2,730 |
+| Monoamine Oxidase Inhibitors | MeSH PA | populated | 5,580 | 4,063 |
 | Monoamine Oxidase Inhibitor [EPC] | MED-RT EPC | populated | 5,580 | 4,063 |
+| Monoamine Oxidase Inhibitors [MoA] | MED-RT MoA | populated | 5,580 | 4,063 |
+| Estrogens | MeSH PA | populated | 5,509 | 2,657 |
 
 ### Drug x drug pairs (unchanged by the class pass; floors 29,258 / 25,960; last recorded run 29,952 / 26,598)
 
@@ -247,38 +255,33 @@ strength/NMI rule.
 
 | wordings | labels | wordings_with_a_class |
 |---|---|---|
-| 27,406 | 68,550 | 24,841 |
+| 27,406 | 68,550 | 23,950 |
 
-### Parenthetical-form misses (corpus)
+### Presence of the parenthetical spelling (corpus)
 
 | figure | wordings | labels |
 |---|---|---|
-| wordings with the parenthetical spelling near a role word | 283 | 783 |
+| wordings WITH the long-form enzyme spelling near a role word (presence) | 283 | 783 |
 
 ### Mentions near a table-row label (corpus)
 
-| figure | occurrences | wordings | of occurrences |
+| figure | span_class_rows | wordings | of all rows |
 |---|---|---|---|
-| class occurrences within 80 chars of Intervention/Clinical Impact | 36,969 | 2,807 | 391,521 |
+| (span, class) rows within 80 chars of Intervention/Clinical Impact | 30,632 | 2,804 | 330,597 |
 
 
 ### Notes on reading these tables
 
-* "pop" = the class has at least one direct `class_membership` row. MED-RT PK is excluded from
-  matching by design (so it is absent); FDA-CYP is also `PK` and is matched.
-* `labels` weights the same distinct wordings by `label_count`; it is shown only to make the
-  ~2.5x label/wording ratio visible. Every other count is per wording or per occurrence.
-* Statements are label-derived (subject moiety x class), so they have no wording grain.
-* `subject_in_class` is the share where the labelling drug is itself a member of the named
-  class. For APC it is 0 of 1,808.
-* The sentence-splitter failure rate (§7) is not separately measurable: the splitter has no
-  failure signal. The one failure the release exposed is the section above (a boundary inside
-  a mention); the `heading_block` scope share (level x scope table) is the nearest proxy.
-* The two corpus-derived figures were computed on the same 68,550-label corpus the database
-  was built from: 283 wordings (783 labels) carry the long-form enzyme spelling
-  (`cytochrome P450 <n> (CYP...`) with an inhibit/induc/substrate word within 80 characters;
-  36,969 of 391,521 occurrences (9.4%), in 2,807 wordings, sit within 80 characters (either
-  side) of "Intervention" / "Clinical Impact", i.e. in interaction-table rows.
+* "pop" = the class has at least one direct `class_membership` row. MED-RT PK and APC are
+  excluded from matching by design (so absent); FDA-CYP is also `PK` and is matched.
+* Units: "span_class_rows" = (span, class) rows; "spans" = distinct mentions. A reading
+  depends only on the span, so level, rule, scope and quote-coverage tables are per span.
+  "Level x axis" is per row because an axis belongs to the class.
+* `labels` weights the same distinct wordings by `label_count` (the ~2.5x ratio made visible).
+* Statements are label-derived (subject moiety x class), so they have no wording grain;
+  `subject_in_class` = the labelling drug is itself a member of the class.
+* The sentence-splitter failure signal is the boundary-drop count (64), taken from the ingest
+  summary; the census cannot recompute it because dropped spans are, by definition, not stored.
 
 ## Precision sample
 

@@ -115,9 +115,9 @@ def test_the_registry_halves_cannot_be_MUTATED_by_a_consumer():
 
 def test_class_census_pure_prose_figures():
     from tools import spl_class_census as cc
-    assert cc.parenthetical_miss("cytochrome P450 3A4 (CYP3A4) inhibitors")
-    assert not cc.parenthetical_miss("cytochrome P450 3A4 (CYP3A4) " + "x" * 100 + " inhibitors")
-    assert not cc.parenthetical_miss("strong CYP3A4 inhibitors")
+    assert cc.has_parenthetical_spelling("cytochrome P450 3A4 (CYP3A4) inhibitors")
+    assert not cc.has_parenthetical_spelling("cytochrome P450 3A4 (CYP3A4) " + "x" * 100 + " inhibitors")
+    assert not cc.has_parenthetical_spelling("strong CYP3A4 inhibitors")
     text = "Intervention: avoid statins here"
     start = text.index("statins")
     assert cc.near_table_label(text, start, start + 7)
@@ -125,8 +125,8 @@ def test_class_census_pure_prose_figures():
 
 
 def test_spl_class_census_runs(conn):
-    """`test_spl_class_census_runs` (Task 9 step 1): every query executes and the
-    one seeded occurrence is counted -- per wording, on its axis, as populated."""
+    """Task 9 step 1: every query executes; units are right (rows vs spans); the
+    prose-derived figures run over a tiny corpus."""
     from drugref import spl_class_evidence as ce, spl_evidence
     from drugref.ingest import spl
     from tests import class_profile_world as w
@@ -140,15 +140,36 @@ def test_spl_class_census_runs(conn):
     spl_evidence.write_wordings(
         conn, [spl_evidence.WordingRow(text_key=key, char_length=1_000, label_count=3)],
         ingest_run_id=run, source=spl.SOURCE)
-    klass = w.klass(conn, run, "Statins")
-    spl_evidence.write_class_occurrences(conn, [ce.ClassOccurrenceRow(
-        text_key=key, char_start=1, char_end=8, class_uuid=str(klass),
-        match_ambiguous=False, match_form="stored", advice_level="avoid",
-        advice_mixed=False, advice_rule="avoid.x", advice_scope="sentence",
-        scope_start=0, scope_end=20)], ingest_run_id=run, source=spl.SOURCE)
+    one = w.klass(conn, run, "Statins")
+    two = w.klass(conn, run, "Statin Drugs")
+
+    def row(klass, start, end, level, ambiguous):
+        return ce.ClassOccurrenceRow(
+            text_key=key, char_start=start, char_end=end, class_uuid=str(klass),
+            match_ambiguous=ambiguous, match_form="stored", advice_level=level,
+            advice_mixed=False, advice_rule=None if level == "not_read" else "avoid.x",
+            advice_scope="sentence", scope_start=0, scope_end=40)
+    # span 1..8 folds onto TWO classes (2 rows, 1 span); span 20..27 is one class.
+    spl_evidence.write_class_occurrences(conn, [
+        row(one, 1, 8, "avoid", True), row(two, 1, 8, "avoid", True),
+        row(one, 20, 27, "not_read", False)], ingest_run_id=run, source=spl.SOURCE)
 
     assert cc.latest_spl_run(conn) == run
-    report = cc.run_queries(conn, run)
-    assert "| avoid | 1 |" in report          # level distribution, per occurrence
-    assert "TOP OFFENDERS" in report and "| Statins |" in report
-    assert "| 1 | 1 | 3 |" in report            # occurrences | wordings | labels
+    sections = {t: body for t, body in (
+        (b.split("\n", 1)[0], b) for b in cc.run_queries(conn, run).split("### "))}
+    totals = next(b for t, b in sections.items() if t.startswith("Totals"))
+    assert "| 3 | 2 | 1 | 50.0 | 1 |" in totals     # rows | spans | ambiguous | % | wordings
+    levels = next(b for t, b in sections.items() if t.startswith("Advice level"))
+    assert "| avoid | 1 |" in levels and "| not_read | 1 |" in levels   # per SPAN
+    per_axis = next(b for t, b in sections.items() if t.startswith("Per axis"))
+    assert "| populated |" not in per_axis and "| empty | 3 | 2 | 1 | 3 |" in per_axis
+    offenders = next(b for t, b in sections.items() if t.startswith("TOP OFFENDERS"))
+    assert "| Statins |" in offenders
+
+    # prose-derived figures over a tiny corpus (offsets index into the wording)
+    text = "Intervention: avoid statins here " + "x" * 50
+    out = cc.prose_figures(conn, run, {key: text}, {key: 3})
+    assert "| 0 | 0 |" in out                  # no long-form spelling in this corpus
+    assert "| 3 | 1 | 3 |" in out               # all 3 rows near "Intervention", 1 wording
+    spelled = {key: "cytochrome P450 3A4 (CYP3A4) inhibitors " + text}
+    assert "| 1 | 3 |" in cc.prose_figures(conn, run, spelled, {key: 3})

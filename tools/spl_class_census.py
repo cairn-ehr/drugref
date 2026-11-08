@@ -7,10 +7,16 @@ level. Before any of that is trusted, §7 of the design asks for plain counts: h
 many mentions, on which axes, read as what, at what yield. This prints them all.
 
 ⇒ EVERY FIGURE IS PER WORDING, NOT PER LABEL. A wording is shared by ~2.5 labels on
-average, so "occurrences" counts a mention once per distinct wording text; the
+average, so counts are of distinct wording texts; the
 `labels` column is the same population weighted by `spl_wording.label_count`, shown
 only so a reader can see the 2.5x trap rather than fall into it. The one exception
 is "statements", which are (labelling drug x class) pairs and so label-derived.
+
+⇒ UNITS, BECAUSE THEY WERE CONFUSED ONCE: a MENTION is a distinct SPAN
+(text_key, char_start, char_end). The table holds one row per (span, class), and a
+span several classes fold onto has several rows. "Rows" below means (span, class)
+rows; "spans" means mentions. A reading (level, rule, scope) depends only on the span,
+so level and rule distributions are counted per SPAN.
 
 ⇒ "EMPTY" vs "POPULATED" classes: a class with no direct `class_membership` row can
 never be matched to a labelling drug by membership, so a mention of it is a
@@ -18,10 +24,11 @@ different kind of evidence. Both are reported, per axis (`source` + `concept_typ
 
 ⇒ WHAT COMES FROM WHERE. Everything stored comes from the database. Two figures are
 about PROSE the database deliberately does not keep (`spl_wording` has no text
-column), so they need the openFDA corpus (`--openfda`): the parenthetical-form
-misses, and mentions standing within 80 characters of a table-row label such as
-"Intervention" / "Clinical Impact". Without `--openfda` those two print "not
-measured". Nothing in this tool's OUTPUT quotes label prose (rule 6): only counts.
+column), so they need the openFDA corpus (`--openfda`): the PRESENCE of the
+parenthetical (long-form enzyme) spelling, and mentions standing within 80
+characters of a table-row label such as "Intervention" / "Clinical Impact".
+Without `--openfda` those two print "not measured". Nothing in this tool's OUTPUT
+quotes label prose (rule 6): only counts.
 
 Usage:
     uv run python -m tools.spl_class_census --dsn "$DSN" [--openfda downloads/OPENFDA]
@@ -53,7 +60,7 @@ _TABLE_LABEL = re.compile(r"intervention|clinical impact", re.IGNORECASE)
 _TABLE_WINDOW = 80
 
 
-def parenthetical_miss(text: str) -> bool:
+def has_parenthetical_spelling(text: str) -> bool:
     """True when `text` has the long-form enzyme spelling with a role word nearby."""
     return any(_ROLE_WORD.search(text, m.end(), m.end() + _ROLE_WINDOW)
                for m in _PAREN_FORM.finditer(text))
@@ -84,14 +91,33 @@ WITH occ AS (
    WHERE o.ingest_run = %(run)s)
 """
 
+#: One row per SPAN (a mention). Every (span, class) row of a span carries the same
+#: reading, so DISTINCT ON loses nothing; `ambiguous` is true when >1 class fold on it.
+_SPANS = _OCC + """, spans AS (
+  SELECT DISTINCT ON (text_key, char_start, char_end)
+         text_key, char_start, char_end, advice_level, advice_mixed, advice_rule,
+         advice_scope, match_ambiguous
+    FROM occ ORDER BY text_key, char_start, char_end)
+"""
+
 #: (title, SQL). Each SQL starts with `_OCC` when it reads occurrences.
 QUERIES: tuple[tuple[str, str], ...] = (
-    ("Class occurrences per axis, empty vs populated (per wording; `labels` = the "
-     "same wordings weighted by label_count)",
+    ("Totals: (span, class) rows vs distinct spans (mentions)",
+     _SPANS + """
+     SELECT (SELECT count(*) FROM occ) AS span_class_rows,
+            count(*) AS spans,
+            count(*) FILTER (WHERE match_ambiguous) AS ambiguous_spans,
+            round(100.0 * count(*) FILTER (WHERE match_ambiguous) / count(*), 1)
+              AS ambiguous_pct,
+            count(DISTINCT text_key) AS wordings
+       FROM spans"""),
+    ("Per axis, empty vs populated: (span, class) rows, distinct spans, wordings "
+     "(`labels` = the same wordings weighted by label_count)",
      _OCC + """
-     SELECT axis, pop, sum(n) AS occurrences, count(*) AS wordings,
-            sum(label_count) AS labels
-       FROM (SELECT axis, pop, text_key, label_count, count(*) AS n
+     SELECT axis, pop, sum(n) AS span_class_rows, sum(spans) AS spans,
+            count(*) AS wordings, sum(label_count) AS labels
+       FROM (SELECT axis, pop, text_key, label_count, count(*) AS n,
+                    count(DISTINCT (char_start, char_end)) AS spans
                FROM occ GROUP BY axis, pop, text_key, label_count) p
       GROUP BY axis, pop ORDER BY axis, pop"""),
     ("Classes mentioned at least once vs classes matchable, per axis",
@@ -106,7 +132,7 @@ QUERIES: tuple[tuple[str, str], ...] = (
                  WHERE o.class_uuid = c.class_uuid AND o.ingest_run = %(run)s))
               AS mentioned
        FROM drugref.substance_class c
-      WHERE NOT (c.source = 'MED-RT' AND c.concept_type = 'PK')
+      WHERE NOT (c.source = 'MED-RT' AND c.concept_type IN ('PK', 'APC'))
       GROUP BY 1, 2 ORDER BY 1, 2"""),
     ("Distinct statements (labelling drug x class; label-derived, not per wording) "
      "and classes gaining at least one, per axis",
@@ -117,12 +143,14 @@ QUERIES: tuple[tuple[str, str], ...] = (
        FROM drugref.spl_class_statement st
        JOIN drugref.substance_class c USING (class_uuid)
       GROUP BY 1 ORDER BY 1"""),
-    ("Yield per match_form (§4.2 key form)",
+    ("Yield per match_form (§4.2 key form): rows, spans, ambiguous spans",
      _OCC + """
-     SELECT match_form, count(*) AS occurrences,
+     SELECT match_form, count(*) AS span_class_rows,
+            count(DISTINCT (text_key, char_start, char_end)) AS spans,
             count(DISTINCT text_key) AS wordings,
             count(DISTINCT class_uuid) AS classes,
-            count(*) FILTER (WHERE match_ambiguous) AS ambiguous
+            count(DISTINCT (text_key, char_start, char_end))
+              FILTER (WHERE match_ambiguous) AS ambiguous_spans
        FROM occ GROUP BY 1 ORDER BY 1"""),
     ("Moiety spans lying inside a class span (§4.4 overlap; equal spans count)",
      """
@@ -134,36 +162,37 @@ QUERIES: tuple[tuple[str, str], ...] = (
              WHERE o.ingest_run = e.ingest_run AND o.source = e.source
                AND o.text_key = e.text_key
                AND e.char_start >= o.char_start AND e.char_end <= o.char_end)"""),
-    ("Advice level distribution (per occurrence; wordings = distinct wordings)",
-     _OCC + """
-     SELECT advice_level, count(*) AS occurrences,
+    ("Advice level distribution (per SPAN)",
+     _SPANS + """
+     SELECT advice_level, count(*) AS spans,
             round(100.0 * count(*) / sum(count(*)) OVER (), 2) AS pct,
             count(DISTINCT text_key) AS wordings,
             count(*) FILTER (WHERE advice_mixed) AS mixed
-       FROM occ GROUP BY 1 ORDER BY 2 DESC"""),
-    ("Level x scope", _OCC + """
-     SELECT advice_level, advice_scope, count(*) AS occurrences
+       FROM spans GROUP BY 1 ORDER BY 2 DESC"""),
+    ("Level x scope (per span)", _SPANS + """
+     SELECT advice_level, advice_scope, count(*) AS spans
+       FROM spans GROUP BY 1, 2 ORDER BY 1, 2"""),
+    ("Level x axis ((span, class) rows)", _OCC + """
+     SELECT axis, advice_level, count(*) AS span_class_rows
        FROM occ GROUP BY 1, 2 ORDER BY 1, 2"""),
-    ("Level x axis", _OCC + """
-     SELECT axis, advice_level, count(*) AS occurrences
-       FROM occ GROUP BY 1, 2 ORDER BY 1, 2"""),
-    ("Phrase rules that fired", _OCC + """
-     SELECT coalesce(advice_rule, '(not_read)') AS rule, count(*) AS occurrences,
+    ("Phrase rules that fired (per span)", _SPANS + """
+     SELECT coalesce(advice_rule, '(not_read)') AS rule, count(*) AS spans,
             count(DISTINCT text_key) AS wordings
-       FROM occ GROUP BY 1 ORDER BY 2 DESC"""),
-    ("Occurrences covered by an existing quote window, per level",
-     _OCC + """
-     SELECT advice_level, count(*) AS occurrences,
+       FROM spans GROUP BY 1 ORDER BY 2 DESC"""),
+    ("Spans covered by an existing quote window, per level",
+     _SPANS + """
+     SELECT advice_level, count(*) AS spans,
             count(*) FILTER (WHERE EXISTS (
                 SELECT 1 FROM drugref.spl_wording_quote q
-                 WHERE q.ingest_run = %(run)s AND q.text_key = occ.text_key
-                   AND q.char_start <= occ.char_start
-                   AND q.char_end >= occ.char_end)) AS quoted
-       FROM occ GROUP BY 1 ORDER BY 1"""),
-    ("TOP OFFENDERS: the 15 classes with most occurrences (a class matching "
+                 WHERE q.ingest_run = %(run)s AND q.source = 'SPL'
+                   AND q.text_key = spans.text_key
+                   AND q.char_start <= spans.char_start
+                   AND q.char_end >= spans.char_end)) AS quoted
+       FROM spans GROUP BY 1 ORDER BY 1"""),
+    ("TOP OFFENDERS: the 15 classes with most (span, class) rows (a class matching "
      "ordinary English shows up here)",
      _OCC + """
-     SELECT c.class_name, occ.axis, occ.pop, count(*) AS occurrences,
+     SELECT c.class_name, occ.axis, occ.pop, count(*) AS span_class_rows,
             count(DISTINCT occ.text_key) AS wordings
        FROM occ JOIN drugref.substance_class c USING (class_uuid)
       GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 15"""),
@@ -223,7 +252,7 @@ def prose_figures(conn: psycopg.Connection, run: int,
                   wordings: Mapping[str, str],
                   label_counts: Mapping[str, int]) -> str:
     """The two figures only the corpus can give (see the module docstring)."""
-    misses = [k for k, t in wordings.items() if parenthetical_miss(t)]
+    with_spelling = [k for k, t in wordings.items() if has_parenthetical_spelling(t)]
     near_occ, near_words = 0, set()
     total = 0
     with conn.cursor(name="census_occ") as cur:
@@ -236,14 +265,14 @@ def prose_figures(conn: psycopg.Connection, run: int,
             if text is not None and near_table_label(text, start, end):
                 near_occ += 1
                 near_words.add(key)
-    rows_a = [("wordings with the parenthetical spelling near a role word",
-               len(misses), sum(label_counts[k] for k in misses))]
-    rows_b = [("class occurrences within 80 chars of Intervention/Clinical Impact",
+    rows_a = [("wordings WITH the long-form spelling near a role word (presence)",
+               len(with_spelling), sum(label_counts[k] for k in with_spelling))]
+    rows_b = [("(span, class) rows within 80 chars of Intervention/Clinical Impact",
                near_occ, len(near_words), total)]
-    return ("### Parenthetical-form misses (corpus)\n\n"
+    return ("### Presence of the parenthetical spelling (corpus)\n\n"
             + markdown_table(["figure", "wordings", "labels"], rows_a)
             + "\n\n### Mentions near a table-row label (corpus)\n\n"
-            + markdown_table(["figure", "occurrences", "wordings", "of occurrences"],
+            + markdown_table(["figure", "span_class_rows", "wordings", "of all rows"],
                              rows_b) + "\n")
 
 

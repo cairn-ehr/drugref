@@ -98,6 +98,11 @@ class SplSummary:
     #: combined vocabulary) are excluded, so this is not directly comparable with
     #: the design round's 11,169 consumed moiety spans.
     moiety_spans_inside_class_spans: int
+    #: Class matches dropped because the span held a sentence boundary -- the
+    #: design 7 "sentence-splitter failure" signal (R17) -- and class match keys
+    #: dropped because they equal a moiety display name (R16).
+    class_spans_dropped_at_a_boundary: int = 0
+    class_keys_shadowed_by_moieties: int = 0
 
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
@@ -182,7 +187,9 @@ class SplSummary:
             f"{self.wordings_with_a_moiety:,} wordings; {self.class_occurrences:,} "
             f"class mentions over {self.wordings_with_a_class:,} wordings "
             f"({self.moiety_spans_inside_class_spans:,} moiety occurrences lie "
-            f"inside one); {self.quotes:,} quoted "
+            f"inside one; {self.class_spans_dropped_at_a_boundary:,} class spans "
+            f"dropped at a sentence boundary, {self.class_keys_shadowed_by_moieties:,} "
+            f"class keys dropped as moiety names); {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
             f"{self.self_pairs:,} self-pair evidence rows excluded"

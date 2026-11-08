@@ -192,6 +192,21 @@ def _span_from(starts: list[int], n: int, char_start: int) -> tuple[int, int]:
     return starts[i - 1], (starts[i] if i < len(starts) else n)
 
 
+def span_crosses_sentence_boundary(text: str, char_start: int, char_end: int) -> bool:
+    """True when a sentence boundary falls strictly inside the span.
+
+    The matcher tokenises on letters/digits and ignores punctuation, so a class name
+    can match ACROSS ". " ("Avoid Potassium. Salts ..." -> "Potassium Salts"): a
+    false mention. Same rule as the splitter (`_BOUNDARY`, abbreviations excluded);
+    a boundary that merely ends the span is fine.
+    """
+    for m in _BOUNDARY.finditer(text, char_start, char_end):
+        if m.end() < char_end and not _ABBREV.search(
+                text, max(0, m.start() - 6), m.start() + 1):
+            return True
+    return False
+
+
 def sentence_span(text: str, char_start: int, char_end: int) -> tuple[int, int]:
     """The sentence holding the span (`char_end` is unused; the start decides)."""
     return _span_from(_sentence_starts(text, _markers(text)), len(text), char_start)
@@ -254,6 +269,8 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
     s, e = _span_from(starts, len(text), char_start)
+    # Defensive on EVERY return path: db/066's CHECK needs scope to contain the span.
+    e = max(e, char_end)
     got = _read_scope(text[s:e], allow_nmi=True, rel_start=char_start - s,
                       rel_end=char_end - s)
     if got:
@@ -264,7 +281,4 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
         got = _read_scope(text[block[0]:block[1]], allow_nmi=False)
         if got:
             return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *block)
-    # A mention whose own text holds a ". X" boundary (found on the 2026-08 release:
-    # a class name ending a sentence mid-name) ends past the sentence end; db/066's
-    # CHECK requires the scope to contain the mention, so widen it to cover it.
-    return AdviceReading("not_read", False, None, SCOPE_SENTENCE, s, max(e, char_end))
+    return AdviceReading("not_read", False, None, SCOPE_SENTENCE, s, e)

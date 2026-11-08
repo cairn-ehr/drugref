@@ -33,6 +33,12 @@ def test_is_matchable_excludes_only_medrt_pk():
     assert is_matchable("MED-RT", "EPC")
 
 
+def test_medrt_apc_is_never_matched():
+    """All APC classes are empty by construction and are generic words (Enzyme,
+    Hormone) that duplicate a MeSH name -- the #155 PK-axis reasoning (R16)."""
+    assert not is_matchable("MED-RT", "APC")
+
+
 def test_class_match_keys_fda_cyp():
     keys = class_match_keys("CYP1A2 strong inhibitor [FDA-CYP]", "FDA-CYP")
     assert keys[0] == ("CYP1A2 strong inhibitor", FORM_STORED)

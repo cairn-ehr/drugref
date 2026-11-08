@@ -314,11 +314,22 @@ def test_r11_not_recommended_is_never_an_all_clear():
         assert (r.level, r.rule_id) == ("avoid", "avoid.not_recommended"), t
 
 
-def test_scope_always_contains_a_mention_that_holds_a_sentence_boundary():
-    """A class name with ". X" inside it (seen on the real release) must not yield a
-    scope that ends before the mention does -- db/066's CHECK would refuse the row."""
-    text = "Use caution with Potassium. Salts are fine."
-    start = text.index("Potassium")
-    end = text.index("Salts") + len("Salts")
+
+def test_scope_contains_the_mention_on_EVERY_path_even_when_a_rule_fires():
+    """'Avoid Potassium. Salts are fine.' read at the span of 'Potassium. Salts': the
+    sentence text[s:e] ends inside the span and 'Avoid' fires a rule, which used to
+    return a scope db/066's CHECK refuses. The class pass now drops such spans (R17)
+    but the reader is defensive on its own."""
+    text = "Avoid Potassium. Salts are fine."
+    start, end = 6, 22
     r = read_advice(text, start, end)
     assert r.scope_start <= start and r.scope_end >= end
+
+
+def test_span_crosses_sentence_boundary():
+    from drugref.ingest.spl_advice import span_crosses_sentence_boundary as crosses
+    text = "Avoid Potassium. Salts are fine."
+    assert crosses(text, 6, 22)
+    assert not crosses(text, 6, 15)                      # the boundary is its end
+    assert not crosses("Use e.g. Statins now.", 4, 15)   # an abbreviation is not one
+    assert crosses("Use Potassium; Salts now.", 4, 20)   # ';' counts like '.'

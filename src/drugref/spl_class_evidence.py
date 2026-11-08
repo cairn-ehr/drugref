@@ -53,12 +53,33 @@ class EvidenceCounts(NamedTuple):
     class_occurrences: int
     wordings_with_a_class: int
     moiety_spans_inside_class_spans: int
+    #: Class matches dropped because the span held a sentence boundary (R17).
+    class_spans_dropped_at_a_boundary: int = 0
+
+
+def split_shadowed_keys(
+    entries: Sequence[spl_match.Entry], moiety_names: Iterable[str],
+) -> tuple[list[spl_match.Entry], list[str]]:
+    """Drop class keys that fold equal to a registry moiety display name.
+
+    'Calcium [EPC]' keyed as 'Calcium' marks every mention of the DRUG calcium,
+    which the moiety pass already owns (R16). Returns `(kept, dropped key texts)`
+    so the caller can report what it removed.
+    """
+    names = {spl_match.fold(n) for n in moiety_names}
+    kept, dropped = [], []
+    for entry in entries:
+        if spl_match.fold(entry.key) in names:
+            dropped.append(entry.key)
+        else:
+            kept.append(entry)
+    return kept, dropped
 
 
 def load_class_entries(conn: psycopg.Connection) -> list[spl_match.Entry]:
     """One class entry per derived match key, for every class labels may name.
 
-    MED-RT's PK axis is skipped (`is_matchable`); FDA-CYP, also 'PK', is kept.
+    MED-RT's PK and APC axes are skipped (`is_matchable`); FDA-CYP, also 'PK', is kept.
     `display` is the stored `class_name`, so the vocabulary says what it matched.
     """
     entries = []
@@ -87,8 +108,23 @@ def class_vocabulary(entries: Sequence[spl_match.Entry]) -> spl_match.Vocabulary
 def class_rows_for_wording(text_key: str, text: str,
                            vocab: spl_match.Vocabulary) -> list[ClassOccurrenceRow]:
     """Match classes in one wording, then read the advice around each mention."""
+    return _rows_and_drops(text_key, text, vocab)[0]
+
+
+def _rows_and_drops(text_key: str, text: str, vocab: spl_match.Vocabulary,
+                    ) -> tuple[list[ClassOccurrenceRow], int]:
+    """Rows, plus how many matches were dropped for holding a sentence boundary.
+
+    A match whose span crosses a boundary is a false mention (the tokeniser ignores
+    punctuation); it is dropped and COUNTED -- the design's sentence-splitter signal.
+    """
     rows = []
+    dropped = 0
     for occ in spl_match.class_occurrences(spl_match.find_matches(text, vocab)):
+        if spl_advice.span_crosses_sentence_boundary(
+                text, occ.char_start, occ.char_end):
+            dropped += 1
+            continue
         reading = spl_advice.read_advice(text, occ.char_start, occ.char_end)
         rows.append(ClassOccurrenceRow(
             text_key=text_key, char_start=occ.char_start, char_end=occ.char_end,
@@ -97,7 +133,7 @@ def class_rows_for_wording(text_key: str, text: str,
             advice_mixed=reading.mixed, advice_rule=reading.rule_id,
             advice_scope=reading.scope, scope_start=reading.scope_start,
             scope_end=reading.scope_end))
-    return rows
+    return rows, dropped
 
 
 def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
@@ -119,13 +155,13 @@ def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
 def class_pass_for_wording(
     text_key: str, text: str, vocab: spl_match.Vocabulary,
     moiety_spans: Sequence[tuple[int, int]],
-) -> tuple[list[ClassOccurrenceRow], int]:
-    """`(class rows, moiety spans inside a class span)` for one wording.
+) -> tuple[list[ClassOccurrenceRow], int, int]:
+    """`(class rows, moiety spans inside a class span, boundary drops)` for a wording.
 
     Kept here so `spl_run` (at its size budget) makes ONE call per wording.
     `moiety_spans` are that wording's moiety occurrences from the moiety pass.
     """
-    rows = class_rows_for_wording(text_key, text, vocab)
+    rows, dropped = _rows_and_drops(text_key, text, vocab)
     inside = moiety_spans_inside_class_spans(
         moiety_spans, [(r.char_start, r.char_end) for r in rows])
-    return rows, inside
+    return rows, inside, dropped

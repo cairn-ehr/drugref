@@ -45,9 +45,16 @@ def fda_cyp_label_orders(base: str) -> tuple[str, ...]:
 
 
 def is_matchable(source: str, concept_type: str) -> bool:
-    """False only for MED-RT's PK axis (never matched); FDA-CYP is also 'PK'
-    but is matched, hence the source check."""
-    return not (source == "MED-RT" and concept_type == "PK")
+    """False for MED-RT's PK axis and for MED-RT's APC axis.
+
+    FDA-CYP is also 'PK' but is matched, hence the source check. PK is excluded
+    because its names are ordinary English (#155). APC is excluded for the same
+    reason, measured on the 2026-08 release: all 44 APC classes are empty by
+    construction (no drug is filed under them), their names are generic words
+    ('Enzyme' 15,587 occurrences, 'Hormone' 4,486) and each duplicates a MeSH
+    pharmacologic-action name that IS matched.
+    """
+    return not (source == "MED-RT" and concept_type in ("PK", "APC"))
 
 
 def class_match_keys(class_name: str, source: str) -> tuple[tuple[str, str], ...]:

@@ -96,8 +96,30 @@ def test_moiety_spans_inside_class_spans_boundaries():
 
 def test_class_pass_for_wording_rows_and_overlap():
     text = "Avoid rifampin inducers and rifampin."
-    rows, inside = ce.class_pass_for_wording(
+    rows, inside, dropped = ce.class_pass_for_wording(
         "k", text, _vocab(("rifampin inducers", CU)), [(6, 14), (30, 37)])
     assert [text[r.char_start:r.char_end] for r in rows] == ["rifampin inducers"]
     assert inside == 1
-    assert ce.class_pass_for_wording("k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0)
+    assert ce.class_pass_for_wording("k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0, 0)
+
+
+def test_a_class_match_spanning_a_sentence_boundary_is_dropped_and_counted():
+    """Tokenising ignores punctuation, so 'Avoid Potassium. Salts are fine.' matches the
+    class 'Potassium Salts' across a sentence end -- a false mention (R17)."""
+    text = "Avoid Potassium. Salts are fine."
+    rows, inside, dropped = ce.class_pass_for_wording(
+        "k", text, _vocab(("Potassium Salts", CU)), [])
+    assert (rows, dropped) == ([], 1)
+    # ... while the same words inside one sentence are kept.
+    rows, _, dropped = ce.class_pass_for_wording(
+        "k", "Avoid Potassium Salts today.", _vocab(("Potassium Salts", CU)), [])
+    assert len(rows) == 1 and dropped == 0
+
+
+def test_split_shadowed_keys_drops_keys_that_are_moiety_names():
+    ent = lambda k, u: spl_match.Entry(  # noqa: E731
+        kind=spl_match.KIND_CLASS, key=k, display=k, class_uuid=u)
+    kept, shadowed = ce.split_shadowed_keys(
+        [ent("Calcium", CU), ent("Statins", CU2)], {"calcium", "warfarin"})
+    assert [e.key for e in kept] == ["Statins"]
+    assert shadowed == ["Calcium"]
