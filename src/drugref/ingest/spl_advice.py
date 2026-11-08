@@ -121,7 +121,8 @@ _DOSE_WORD = r"(?:dose|doses|dosage|dosages|dosing)"
 ADVICE_RULES: tuple[AdviceRule, ...] = (
     # Negation ("not contraindicated") is masked in _read_scope, not here.
     # `[a-z]?`: a table cell can carry a glued footnote letter ("Contraindicateda").
-    _rule("contraindicated", "contraindicated", r"\bcontraindicated[a-z]?\b"),
+    # R20: also the truncated table cell "Contraindicate".
+    _rule("contraindicated", "contraindicated", r"\bcontraindicate(?:d[a-z]?)?\b"),
     # The label filing the interaction under its Contraindications section ("[See
     # Dosage and Administration (2.5), Contraindications (4.1)]"). Read lower, that is
     # an under-warning; when the reference belongs to another clause it over-warns,
@@ -129,12 +130,15 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
     # Iteration 2: brackets may sit inside the reference ("See D&A [2.5], CONTRA-
     # INDICATIONS [4.2]") and "See" may be glued to the section name.
     _rule("contraindicated", "see_contraindications",
-          r"\bsee(?-i:CONTRAINDICATIONS)\b|\bsee\b[^\n]{0,120}?\bcontraindications?\b"),
+          r"\bsee(?-i:CONTRAINDICATIONS)\b"
+          # R20: extraction can split the word ("s ee", "se e").
+          r"|\b(?:see|s\s+ee|se\s+e)\b[^\n]{0,120}?\bcontraindications?\b"),
     # A table cell carrying the bare upper-case section name files the row under it.
     # Where a garbled extraction leaves the word in another row it over-warns (the
     # safe direction); measured in the results record.
     _rule("contraindicated", "contraindications_section",
-          r"(?-i:\bCONTRAINDICATIONS\b)"),
+          # R20: or glued to the next word ("CONTRAINDICATIONSand").
+          r"(?-i:\bCONTRAINDICATIONS(?:\b|(?=[a-z])))"),
     _rule("avoid", "avoid", r"\bavoid(?:ed|ing)?\b"),
     _rule("avoid", "not_recommended",
           r"\bnot (?:generally |ordinarily |usually |routinely )?recommended\b"),
@@ -242,7 +246,7 @@ _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
 # "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
 _NEG_CONTRA = re.compile(
-    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicated[a-z]?\b",
+    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicate(?:d[a-z]?)?\b",
     re.IGNORECASE)
 # Task 9B: highlights end an item with a cross-reference "(7.1)", "( 5.6 , 7.2 )"
 # and no full stop before the next item; a bullet "•" starts one. Both are sentence

@@ -583,3 +583,27 @@ def test_levels_and_scopes_that_cleared_their_gate_still_ship():
             "increases potassium. Avoid concomitant use. 7.3 Other text.")
     r = _shipped(text, "Potassium-Sparing Diuretics")
     assert (r.level, r.scope) == ("avoid", "heading_block")
+
+
+# ---- Ruling R20: the garbled-extraction contraindication variants ----------------------
+
+def test_a_split_see_still_cross_references_contraindications():
+    for text in ("7.1 Widget Inhibitors (WIs) [s ee Dosage and Administration ( 2.9 ), "
+                 "Contraindications ( 4.1 )].",
+                 "7.1 Widget Inhibitors (WIs) [se e Contraindications ( 4 )]."):
+        assert _read(text, "Widget Inhibitors").level == "contraindicated", text
+
+
+def test_a_section_name_glued_to_the_next_word_still_reads_contraindicated():
+    text = "Widget Inhibitors See CONTRAINDICATIONSand WARNINGS."
+    assert _read(text, "Widget Inhibitors").level == "contraindicated"
+
+
+def test_a_truncated_contraindicate_cell_reads_contraindicated():
+    text = "Widgetants and Gizmolets Gizmogrelor Contraindicate during and 2 weeks after drug A."
+    assert _read(text, "Widgetants").level == "contraindicated"
+
+
+def test_the_negation_mask_covers_the_truncated_form():
+    assert _read("Use with widgetants is not contraindicate in adults.",
+                 "widgetants").level == "not_read"

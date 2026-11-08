@@ -4307,8 +4307,9 @@ computed resolution straight from the cache — not the probe's own tests, every
 
 **The slice is BUILT.** [Design spec](superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md)
 · [what it actually produced](superpowers/specs/2026-08-27-drugref-slice-5c3-spl-ddi-ingest-results.md).
-`drugref ingest spl --openfda <dir> --dailymed <parts...>` (plus, since the class pass's R19, a
-required `--unii-names <UNII_Names_*.txt>`) reads both corpora (19.3 GB, **2 min 09 s** since
+`drugref ingest spl --openfda <dir> --dailymed <parts...> --unii-names <UNII_Names_*.txt> --release <tag>`
+(`--unii-names` required since the class pass's R19: class keys equal to a UNII official name are dropped)
+reads both corpora (19.3 GB, **2 min 09 s** since
 issue 160; ~12.5 min before it), resolves
 each label's subject, matches the shipped resolver's rule over every wording, stores a bounded quoted window
 and refuses on any of six grounds. **Read the figures in the results record, not here.**
