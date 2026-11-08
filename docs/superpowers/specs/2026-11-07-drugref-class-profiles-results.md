@@ -1,10 +1,10 @@
 # Class profiles — measured results
 
 **Run:** 2026-11-07 · **Database:** `drugref_profiles` (built from nothing at this branch, schema to `db/061`,
-then migrated to `db/062` by the final review's fix wave) ·
+then migrated to `db/062` by the final review's fix wave, later to `db/064` and `db/065`) ·
 **Design:** [`2026-11-07-drugref-class-profiles-design.md`](2026-11-07-drugref-class-profiles-design.md) ·
 **Status:** measured; three findings filed (#202, #203, #204); `db/062` re-measured §2, §4 and §6 (the
-read-cost figures; every row count is unchanged); clinician read of §5 pending. **Re-run the cost figures with
+read-cost figures; every row count is unchanged); `db/065` re-measured them again (§6 addendum); clinician read of §5 pending. **Re-run the cost figures with
 [`tools/class_profile_census.sql`](../../../tools/class_profile_census.sql)** (its header carries the two
 non-psql timings).
 
@@ -366,6 +366,26 @@ s at db/061); `profile drug` propranolol (20 class tags, no `--lens`) **1.71 s**
 than once per lens, and prints the full four-way split (shared, not confirmed for this drug, confirmed exception,
 peculiar).
 
+**Addendum, `db/065` (2026-11-08, #202).** `class_property` rewritten so a filter reaches every scan of
+`class_membership` (no subquery referenced twice, so none is materialised; the self-partner test joins
+`class_profile_member` directly rather than a shared CTE). Applied to
+`drugref_profiles`; output identical to `db/064` (EXCEPT both ways: `class_property` 9,668 rows,
+`class_property_member`, `class_member_peculiarity`, `gap_unconfirmed_class_property`). Same query, warm:
+
+| view | rows | execution, db/065 | db/064 |
+|---|---:|---:|---:|
+| `class_property` | 7 | 51 ms | 748 ms |
+| `class_property_member` | 105 | 118 ms | 840 ms |
+| `class_member_peculiarity` | 300 | 86 ms | 767 ms |
+| `class_subclass_only_property` (new, #209) | 0 | 34 ms | — |
+
+Full `count(*)`: `class_property` 375 ms (473), `class_property_member` 400 ms (610), `class_member_peculiarity`
+887 ms (1,447), `gap_unconfirmed_class_property` 449 ms (941). `class_subclass_only_property` holds 53,041
+rows, all `inherits` (no rulings on this database). CLI: `profile class` **0.42 s** for each of the three
+classes (1.4–1.6 s at db/062); `profile drug` propranolol, no `--lens`, **1.53 s** (1.71 s);
+`register_from_gaps` 4.66 s. A filtered read still computes `member_property` (~30 ms) and the recursive
+`class_subtree` (~15 ms) in full.
+
 ## 7. Decisions
 
 - **The worklist is usable as built in size** (§4: the same order as `unmatched_ingredient` and
@@ -373,8 +393,9 @@ peculiar).
   one near-universal object dominates it, and MED-RT's two catch-all "Unknown ..." classes act as drug classes —
   close to the spec §9 anti-goal. **Filed: #203.**
 - **The read path was too slow for an interactive consumer** (§6). Filed as **#202**; `db/062` took the
-  dominant cost out (single class ~0.4–0.6 s, a 20-lens drug profile 1.7 s). Left open on #202: a filtered read
-  still computes every class, so the cost grows with the registry rather than with the class asked for.
+  dominant cost out (single class ~0.4–0.6 s, a 20-lens drug profile 1.7 s). What `db/062` left open — a
+  filtered read still computed every class — `db/065` closed (§6 addendum: a filter reaches every
+  `class_membership` scan; `profile class` 0.42 s).
 - **Interaction rulings do not reach the prescribing-alert path. Filed: #204** (owner design call). A
   `curated_property_ruling` *interacts_with* answer changes the class-profile views only, never
   `exact_ddi_pair` / `ddi_candidate_pair` / `curated_ddi_pair`: a *holds* never alerts, a *does not hold* hides
