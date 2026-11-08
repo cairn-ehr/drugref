@@ -202,3 +202,61 @@ def test_r8_leaky_probes_are_never_nmi():
 def test_r8_mention_before_the_phrase_is_refused():
     r = _read("Antacids showed no clinically significant interaction.", "Antacids")
     assert r.level == "not_read"
+
+
+# --- R9: absence of data, separators, contrast, conditions ----------------
+
+def test_r9a_absence_of_data_is_never_nmi():
+    s = "strong inhibitors"
+    for t in ("No specific dose adjustment recommendations can be made for strong inhibitors.",
+              "No dose adjustment studies have been conducted with strong inhibitors.",
+              "No dose adjustment data are available for strong inhibitors.",
+              "No dose adjustment guidance is available for strong inhibitors.",
+              "No clinically significant interaction studies were done with strong inhibitors.",
+              "No clinically significant interaction data exist for strong inhibitors."):
+        assert _read(t, s).level == "not_read", t  # not NMI, and not adjust_dose either
+
+
+def test_r9b_other_separators_block_nmi():
+    s = "Strong inhibitors"
+    base = "Weak inhibitors{0}No dose adjustment{0}Strong inhibitors{0}Use 5 mg"
+    for sep in ("\r", "\t", "\v", "\f", "\u00a0", " \u2014 ", "\u2014", " \u2013 ", " - ",
+                " / ", "/"):  # \u00a0 no-break space, \u2014 em dash, \u2013 en dash
+        assert _read(base.format(sep), s).level != "no_meaningful_interaction", repr(sep)
+    t = "No dose adjustment is needed with weak [use 5 mg with strong inhibitors]."
+    assert _read(t, "strong inhibitors").level != "no_meaningful_interaction"
+
+
+def test_r9c_contrast_words_block_nmi():
+    for t in ("No dose adjustment is needed with weak not strong inhibitors.",
+              "No dose adjustment is needed with weak rather than strong inhibitors.",
+              "No dose adjustment is needed with weak inhibitors unlike strong inhibitors.",
+              "No dose adjustment is needed with weak versus strong inhibitors.",
+              "No dose adjustment is needed with weak vs strong inhibitors."):
+        assert _read(t, "strong inhibitors").level == "not_read", t
+
+
+def test_r9c_the_nmi_rule_own_not_does_not_block():
+    # "dose adjustment is not required" is an NMI phrase that itself holds "not":
+    # its matched span is excluded from the "not" check.
+    r = _read("Dose adjustment is not required with antacids.", "antacids")
+    assert r.level == "no_meaningful_interaction"
+
+
+def test_r9d_conditional_all_clear_is_never_nmi():
+    for t in ("No dose adjustment is needed with strong inhibitors if the patient takes 5 mg.",
+              "No dose adjustment is needed with strong inhibitors after the first week of "
+              "5 mg dosing.",
+              "No dose adjustment is needed with strong inhibitors when taken at night.",
+              "No dose adjustment is needed with strong inhibitors provided 5 mg is used.",
+              "No dose adjustment is needed with strong inhibitors until day 7.",
+              "No dose adjustment is needed with strong inhibitors before surgery.",
+              "No dose adjustment is needed with strong inhibitors during induction."):
+        assert _read(t, "strong inhibitors").level == "not_read", t
+
+
+def test_r9_plain_positives_still_read_and_a_trailing_newline_is_not_a_separator():
+    for t in ("No dose adjustment is needed with antacids.",
+              "No clinically significant interaction was observed with antacids.",
+              "No dose adjustment is needed with antacids.\r\nOther text follows."):
+        assert _read(t, "antacids").level == "no_meaningful_interaction", repr(t)

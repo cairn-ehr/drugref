@@ -48,6 +48,20 @@ the start of the NMI phrase ("No ... interaction ... with X"), so a mention that
 merely precedes some other clause's all-clear is not covered by it. Otherwise
 the result is `not_read`; a strength level that fired still wins.
 
+**RULING R9 (R8 widened after round-3 review).** Every gap below read NMI on a
+sentence that is not a plain all-clear: (A) "no dose adjustment
+recommendations/studies/data/information/guidance" and "no ... interaction
+studies/data" state that evidence is MISSING, not that the hazard is -- refused,
+and read `not_read` (the phrase stays masked, so it never becomes `adjust_dose`
+either); (B) any whitespace other than a plain space (\r, \t, no-break space...),
+em/en dashes, [ ], / and " - " also separate clauses, so they block like a comma;
+whitespace at the very start/end of the sentence is ignored (a trailing newline
+separates nothing inside it); (C) rather than/unlike/versus/vs/not are contrast
+words -- the NMI phrase's own span is blanked before this check, because
+"dose adjustment is NOT required" is itself an NMI phrase; (D)
+if/when/provided/after/until/before/during make the all-clear conditional, and a
+dropped condition would read stronger than the label.
+
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
 """
@@ -129,14 +143,19 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# R8: any of these in the scope refuses NMI (a structural rule, see the docstring).
+# R8/R9: any of these in the scope refuses NMI (a structural rule, see the docstring).
+# `[^\S ]` is any whitespace except a plain space (newline, tab, \r, no-break space...).
 _NMI_BLOCKER = re.compile(
-    r"[,;:()\n]"
+    r"[,;:()\[\]/\u2014\u2013]|[^\S ]| - "
     r"|\b(?:and|or|nor|yet|whilst|while|but|however|although|whereas|unless|instead"
     r"|only|except\w*|exception\w*|exceed\w*|limit\w*|maximum|caution\w*"
-    r"|consider\w*)\b"
-    r"|\bother than\b|\bapart from\b",
+    r"|consider\w*|unlike|versus|vs|not|if|when|provided|after|until|before|during)\b"
+    r"|\bother than\b|\bapart from\b|\brather than\b",
     re.IGNORECASE)
+# R9(A): "no dose adjustment RECOMMENDATIONS can be made" / "no interaction STUDIES"
+# say the data is missing, not that the interaction is absent.
+_NMI_NO_DATA = re.compile(
+    r"\s+(?:recommendations?|stud(?:y|ies)|data|information|guidance)\b", re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
 # "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
 _NEG_CONTRA = re.compile(
@@ -211,8 +230,17 @@ def _read_scope(chunk: str, allow_nmi: bool,
     for level in STRENGTH:
         if level in first:
             return level, len(first) > 1, first[level][1]
+    if not (allow_nmi and nmi_hits):
+        return None
+    if any(_NMI_NO_DATA.match(chunk, b) for _, _, b in nmi_hits):
+        return None  # R9(A): absence of data, not an all-clear
+    # Blank the NMI phrases themselves ("... is NOT required" holds "not") and drop the
+    # whitespace around the sentence (a trailing newline separates nothing inside it).
+    plain = chunk
+    for a, _, b in nmi_hits:
+        plain = plain[:a] + " " * (b - a) + plain[b:]
     # R8 (c): the mention must come after the phrase that fired.
-    if allow_nmi and nmi_hits and not _NMI_BLOCKER.search(chunk):
+    if not _NMI_BLOCKER.search(plain.strip()):
         hit = next((h for h in nmi_hits if h[0] < rel_start), None)
         if hit:
             return NMI, False, hit[1]
