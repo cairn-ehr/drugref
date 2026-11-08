@@ -1,10 +1,12 @@
 # A label naming two drugs is evidence, not an assertion that they interact
 
 **Status:** Active
-**Last reviewed:** 2026-08-27
+**Last reviewed:** 2026-11-08
 **Applies to:** `drugref.spl_ddi_evidence`, `drugref.spl_ddi_pair`,
-`drugref.spl_entity_occurrence` and `drugref.exact_ddi_pair` (`db/051`); every future source read out of
-free prose rather than out of a structured field
+`drugref.spl_entity_occurrence` and `drugref.exact_ddi_pair` (`db/051`); the class-mention objects
+`drugref.spl_advice_level`, `drugref.spl_class_occurrence`, `drugref.spl_class_statement_evidence`,
+`drugref.spl_class_statement` and `drugref.gap_unconfirmed_label_class_statement` (`db/066`); every future
+source read out of free prose rather than out of a structured field
 **Full derivation:** the [SPL drug × drug ingest design
 spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-08-24-drugref-slice-5c3-spl-ddi-ingest-design.md)
 §1 and §5.2, and [what the ingest actually
@@ -56,6 +58,34 @@ one — so the band is a property of the **pair**, not of the drug or its class.
 relation extraction wearing a different hat, and a band that is really pair-scoped cannot be stored on
 anything else without being wrong somewhere.
 
+### Class mentions: the one place the line moved (2026-11-08)
+
+The paragraph above is exact for **drug × drug** co-mentions and nothing about it changed: no relation, no
+direction, no severity. For **class mentions** ("strong CYP3A4 inhibitors", "beta blockers") drugref now also
+stores an **advice level** per mention, read from the label's own words by a phrase vocabulary in code
+(`contraindicated`, `avoid`, `adjust_dose`, `monitor`, `no_meaningful_interaction`, or `not_read`), with the
+scope it was read from and the rule that fired (`db/066`).
+
+**Why the line moved.** The owner decided on 2026-11-08 that lightening clinicians' memory needs the label's
+*advice*, not only the fact that the label mentions a class: "this label contraindicates it" is the
+sentence a clinician wants to be reminded of. A mention with no advice cannot do that job.
+
+**What did not move, and must not.** The advice level is still *evidence*, never an assertion:
+
+- it is a statement about what **the label's text says**, quoted by offsets a reader can check, not a claim
+  that the drugs interact;
+- it is **not on the alert path** and is not an arm of `exact_ddi_pair`;
+- it is **never promoted** to a curated assertion except by a curator's `holds` ruling, with its own provenance;
+- the reader **refuses rather than guesses**: anything it cannot attribute to the class reads `not_read`
+  (76.5% of spans at the shipped run), `no_meaningful_interaction` ships only from closed, enumerated
+  templates, and a (scope, level) pair whose measured agreement with a clinician's reading fell below the
+  owner's 90% gate is **withheld** (sentence-scope avoid and monitor), not shipped with a caveat.
+
+The cost is that a machine reading now exists at all, so it has to be measured: the precision sample, the gates
+and the withheld levels are in the [results record](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-08-drugref-spl-class-mentions-results.md),
+and the [design](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-08-drugref-spl-class-mentions-design.md)
+holds the reasoning (where a later ruling revised the design's calls, the results record is the one to trust).
+
 ## Consequences
 
 **What it costs.** drugref cannot answer "how severe is this interaction?" from SPL, and a naive consumer who
@@ -68,7 +98,8 @@ a reader can cut the span back out and disagree. Nothing in the tier depends on 
 sentence, so nothing has to be re-validated when a better model arrives — and the curated overlay, which is
 where clinical judgement legitimately lives, gains 26,598 candidate pairs to rule on that it did not have.
 
-**What it commits us to.** Relation extraction is not forbidden forever; it is forbidden *in ingest*. If
+**What it commits us to.** Relation extraction between two **drugs** is not forbidden forever; it is forbidden
+*in ingest*. (Class advice levels are the one measured exception above.) If
 drugref ever grades these pairs, the grade will be a curated assertion with its own provenance, sitting above
 this evidence and citing it — not a column quietly added to a projection that is rebuilt from scratch on
 every release.

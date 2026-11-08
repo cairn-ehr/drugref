@@ -5953,8 +5953,63 @@ not here.** What the next round inherits:
 - **The worklist is usable in size but skewed** ([#203](https://github.com/cairn-ehr/drugref/issues/203)): one
   near-universal object (`CI_with Drug Hypersensitivity`) dominates it, and MED-RT's catch-all "Unknown ..."
   MoA/PE classes act as drug classes — the PK argument of #155 again, one axis over.
-- **SPL class-mention extraction (the old class half of 5c.3, #102/#155) is the NEXT project and feeds this
-  one**: today no source states a *condition* about a class, so every condition class property is observed.
+- **SPL class-mention extraction (the old class half of 5c.3, #102/#155) is DONE (2026-11-08, `db/066`) and
+  feeds this one** (§ "The SPL class-mentions round"): `class_profile_read` shows "What labels say about this
+  class". No source states a *condition* about a class, so condition class properties are still observed.
+
+## The SPL class-mentions round (2026-11-08) — `db/066`, measured on `drugref_classmentions`
+
+**Every figure is in the [results record](superpowers/specs/2026-11-08-drugref-spl-class-mentions-results.md)
+(SPL run 17 is what ships); the [design](superpowers/specs/2026-11-08-drugref-spl-class-mentions-design.md) is
+immutable and some of its calls were revised by rulings, so where they differ trust the results record.** Read the
+numbers there, not here. The decision record: [evidence is not an assertion](../docs-site/docs/decisions/evidence-is-not-an-assertion.md).
+
+**What it is.** The class pass (`spl_class_evidence.py`) runs beside the moiety pass over every wording: it matches
+class names, stores one row per (span, class) in `spl_class_occurrence` with a machine-read advice level
+(`spl_advice.py`), and the views `spl_class_statement_evidence` / `spl_class_statement` /
+`gap_unconfirmed_label_class_statement` aggregate labelling drug × class statements for class profiles.
+`drugref ingest spl` now REQUIRES `--unii-names` (R19: class keys equal to a UNII official name are dropped).
+
+**What is withheld.** Sentence-scope `avoid` and `monitor` (`spl_advice.WITHHELD`, tested) missed the owner's 90%
+gate; they ship only from a table row / heading block. `no_meaningful_interaction` ships empty. A withheld
+sentence reading is skipped like an empty one and the reader falls through to the row / heading block (R21);
+a withheld MIXED sentence still ships `not_read`, never its weaker co-reading.
+
+### Traps learned this round
+
+- **Blocklists leak by construction (R6–R11).** "no meaningful interaction" is the worst error (a missed warning
+  reads as an all-clear). Three rounds of "refuse if the sentence contains a contrast word" each leaked. The
+  answer is a CLOSED full-match template list (`NMI_TEMPLATES`): the whole sentence must match one fixed
+  template whose only open slot is the mention. If a phrasing is not in the list it reads `not_read`.
+- **A mention is a distinct SPAN, not a row.** A span several classes fold onto has several (span, class) rows.
+  The first record counted rows as mentions (a unit error, run 10); the census now reports both and every
+  distribution is per span. The same applies to the class-hygiene drop count (rows, not spans).
+- **Class names match across sentence boundaries (R17).** The matcher tokenises on letters and digits and ignores
+  punctuation, so "... Potassium. Salts ..." matched "Potassium Salts". The class pass drops a match whose span
+  holds a sentence boundary (`spl_advice.span_crosses_sentence_boundary`) and counts the drops.
+- **MED-RT APC and generic head words (R16/R19).** All APC classes are empty by construction and generic
+  ("Enzyme", "Hormone"); APC is not matched. Class keys equal to a registry moiety name or a UNII official name
+  are dropped (the drug pass owns those); matches on a non-drug head word are dropped; MeSH PA `Hormones` is excluded.
+- **Registry names vs US label spellings (#213).** The registry has no "acetaminophen" (or "nicotinic acid")
+  display name, so removing the class `Acetaminophen [EPC]` leaves 6,588 spans that NEITHER pass matches. A gap in
+  the shipped drug grain, outside this round.
+- **A withheld level must fall through, not stop the reader (R21)** — otherwise a heading block that
+  cross-references Contraindications is shadowed by a withheld sentence reading.
+- **A mask can hide the thing it masks around (R24).** `_NOT_ADVICE` ("separate administration ... is not
+  necessary") ran on masked text, so a strength word inside its gap vanished (under-read at the zero-tolerance
+  level). Commas end the gap now, and a match whose gap holds any strength-rule match is not masked.
+- **The reader has two conventions the owner should know:** "Reserve concomitant prescribing ..." reads `avoid`
+  (4,638 spans); "separate administration" reads `adjust_dose`. Contraindicated over-reads are the safe direction
+  (22 of 100 in the gate sample).
+- **Rule 6:** records carry counts and class names only, never label prose; tests use synthesised text.
+
+### Issues filed
+
+[#213](https://github.com/cairn-ehr/drugref/issues/213) registry lacks acetaminophen / nicotinic acid display
+names (high value: 6,588 acetaminophen spans missed by the drug pass) · [#214](https://github.com/cairn-ehr/drugref/issues/214)
+further class-hygiene candidates (the results record's "Open, for a ruling") ·
+[#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts (boundary and non-drug-head) are
+printed by the ingest but not stored per run.
 
 ## The standing open-issue ledger
 
@@ -6037,6 +6092,12 @@ left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third 
 `signing.py` and `release_verification.py` left fourth and fifth — § "The signing.py and release_verification.py
 splits". `curation.py` left last — § "The curation.py split" — so **#177 and #89 close on that PR's merge** and
 the ledger in `tests/test_module_size_cap.py` is deleted.
+
+**Filed by the SPL class-mentions round (2026-11-08)** — [#213](https://github.com/cairn-ehr/drugref/issues/213)
+the registry lacks acetaminophen / nicotinic acid display names (the drug pass misses 6,588 acetaminophen spans) ·
+[#214](https://github.com/cairn-ehr/drugref/issues/214) further class-hygiene candidates ·
+[#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts are not stored per run (§ "The SPL
+class-mentions round").
 
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
@@ -6222,7 +6283,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3148 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3149 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6563,7 +6624,10 @@ ran in CI and `ruff` was not even a project dependency.
   `gap_unconfirmed_class_property` + gap kind 19 `unconfirmed_class_property`; `062` the final review's fixes —
   `class_property`'s `asserted_by` aggregated in its CTE, the gap view closed through `member_ruling_oriented`,
   re-issued COMMENTs on `class_property_member`, `class_member_peculiarity`, `member_property`,
-  `class_asserted_property`). **Read the LATEST file that touches an object for its
+  `class_asserted_property`) · **`063`–`065`** class-profile fixes (one orientation per pair; the eligible
+  denominator; one-class reads pushable) · **`066` SPL class mentions** (`spl_advice_level`,
+  `spl_class_occurrence`, `spl_class_statement_evidence`, `spl_class_statement`,
+  `gap_unconfirmed_label_class_statement`; `class_profile_read` joins it). **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
@@ -6582,6 +6646,10 @@ ran in CI and `ruff` was not even a project dependency.
   + the class-profiles surface (`db/058`–`db/065`): `class_profile_read.py` (the READ; pure dataclasses),
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
+  + the SPL class-mentions surface (`db/066`): `ingest/spl_class_vocab.py` (builds the class match vocabulary and
+  applies the R16/R19 hygiene), `ingest/spl_advice.py` (the PURE advice reader: phrase rules, scope order,
+  `WITHHELD`, `NMI_TEMPLATES`), `spl_class_evidence.py` (the class pass and its row writer inputs) and
+  `tools/spl_class_census.py` (the census whose output is the results record's tables)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
@@ -6712,6 +6780,11 @@ ran in CI and `ruff` was not even a project dependency.
   counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
   only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
   `drugref status` refusing to call their stamps a duration. Keep both.
+- **`drugref_classmentions` is the SPL class-mentions round's verification database** (2026-11-08): built from
+  **nothing** at `db/066` (`createdb` → `migrate` → chain + `onchigh` + `fda-cyp` + `drugcentral` + `ingest spl`).
+  **SPL run 17 is the shipped measurement**; the database also carries an aborted run 9 and the superseded runs
+  10–16 (per-source rebuilds on the same DB). **Never patch it.** Reproduce the tables with
+  `uv run python -m tools.spl_class_census --dsn "$DSN" --openfda downloads/OPENFDA`.
 - **`drugref_profiles` is the class-profiles round's verification database** (2026-11-07): built from
   **nothing** at `db/061` — `createdb` → `migrate` → `ingest chain` + `onchigh` + `fda-cyp` + `drugcentral`,
   **no SPL** (not a property source), then migrated to `db/062` by the final review's fix wave, to `db/063` by the pre-merge review, to `db/064` by the follow-up round (#206), and to `db/065` by the

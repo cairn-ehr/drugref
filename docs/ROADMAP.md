@@ -844,9 +844,25 @@ findings the next round inherits:
 - **Deferring the class half MOVED the drug × drug yield**, by +193 pairs on the openFDA arm: longest-match-wins
   had class names consuming 11,169 moiety spans. Re-adding classes reproduces the design's 20,554 exactly.
   **A round that re-adds them must expect the drug × drug yield to fall and must not read that as a regression.**
-  **⇒ That round — SPL class-mention extraction, the old class half (#102, #155, word order) — is the NEXT
-  project.** The 2026-11-07 owner choice put § "Class profiles" first, which supersedes HANDOVER's former
-  "do this next" item 3; class mentions then FEED the profiles as a source of class assertions.
+  **⇒ That round — SPL class-mention extraction, the old class half (#102, #155, word order) — is DONE
+  (2026-11-08), see the next bullet.**
+- **SPL class-mention extraction ✅ DONE (2026-11-08) — `db/066`.** The old class half: the class pass re-adds
+  class names to the matcher (MeSH PA, MED-RT EPC/MoA/PE/TC, FDA-CYP PK), stores each class mention
+  (`spl_class_occurrence`) with a machine-read **advice level** (`contraindicated` / `avoid` / `adjust_dose` /
+  `monitor` / `no_meaningful_interaction`, else `not_read`), and publishes labelling drug × class statements
+  (`spl_class_statement`, `gap_unconfirmed_label_class_statement`). Still evidence, never an assertion, never on
+  the alert path: [the decision record](../docs-site/docs/decisions/evidence-is-not-an-assertion.md). Why it
+  moved: the owner, 2026-11-08 — lightening clinicians' memory needs the label's advice, not only its mention.
+  [Design](superpowers/specs/2026-11-08-drugref-spl-class-mentions-design.md) (immutable; later rulings revised
+  some of its calls, so for what actually shipped read) the
+  [results record](superpowers/specs/2026-11-08-drugref-spl-class-mentions-results.md) — **every figure lives
+  there, none here** (shipped measurement: SPL run 17 on `drugref_classmentions`; drug × drug pairs unchanged at
+  29,952 / 26,598). PROJECT-NOTES § "The SPL class-mentions round".
+  **Withheld, by the owner's 90% gate:** sentence-scope `avoid` and `monitor` (they ship only from
+  row / heading blocks); `no_meaningful_interaction` ships **empty** (only closed templates may read it).
+  **Next:** the owner's clinical read of the precision sample; #213 (the registry lacks acetaminophen and nicotinic
+  acid display names, so the drug pass misses those spans), #214 (further class-hygiene candidates), #215 (class-pass
+  drop counts are not stored per run). Class mentions now FEED class profiles ("What labels say about this class").
 - **The end-to-end fixture could not see a wrong quote budget** until a wording where the budget BINDS was added
   — db/050's vacuous-guard finding, recurring inside the round that quotes db/050 about it.
 - Two performance findings filed rather than fixed: [#159](https://github.com/cairn-ehr/drugref/issues/159)
@@ -1342,8 +1358,10 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   ([#210](https://github.com/cairn-ehr/drugref/issues/210), report only; CLOSED by PR #212): 0 findings on `drugref_profiles`.
 - **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
   in the results record §5.
-- **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a
-  condition about a class, so every condition class property is observed.
+- **Now fed (2026-11-08)** by SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half, `db/066`):
+  a class profile gains "What labels say about this class" — machine-read label statements with their advice
+  level, always marked as label evidence and never as a confirmed property. Condition class properties are still
+  observed until a curator confirms them.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
