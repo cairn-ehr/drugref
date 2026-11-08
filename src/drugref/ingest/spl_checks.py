@@ -89,6 +89,13 @@ class SplSummary:
     self_pairs: int
     pairs: int
     novel_pairs: int
+    #: The class pass (spl_class_evidence), beside the moiety pass. Machine-read
+    #: mentions of registered classes; none of it feeds the pair figures above.
+    class_occurrences: int
+    wordings_with_a_class: int
+    #: Moiety occurrences lying inside a class span of the same wording -- the
+    #: overlap that makes a single combined vocabulary change the drug x drug yield.
+    moiety_spans_inside_class_spans: int
 
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
@@ -127,6 +134,18 @@ class SplSummary:
                 f"the scan found {self.dailymed_found} of "
                 f"{self.dailymed_targets} targeted labels: it cannot find more "
                 "than it looked for, so the two describe different populations")
+        if self.wordings_with_a_class > self.wordings:
+            raise ValueError(
+                f"{self.wordings_with_a_class} wordings name a class but only "
+                f"{self.wordings} were read")
+        if self.wordings_with_a_class > self.class_occurrences:
+            raise ValueError(
+                f"{self.wordings_with_a_class} wordings name a class but only "
+                f"{self.class_occurrences} class occurrences exist")
+        if self.moiety_spans_inside_class_spans > self.occurrences:
+            raise ValueError(
+                f"{self.moiety_spans_inside_class_spans} moiety spans inside a "
+                f"class span, of only {self.occurrences} moiety occurrences")
         # NOT tautological, and it is the licensing determination in one line:
         # `quoted_chars` is summed over the windows actually written, and
         # `quotable_chars` over each wording's independently-computed budget.
@@ -158,7 +177,10 @@ class SplSummary:
             f"id) -> {self.pairs:,} pairs "
             f"({self.novel_pairs:,} novel); subjects: {routes}; "
             f"{self.occurrences:,} occurrences over "
-            f"{self.wordings_with_a_moiety:,} wordings; {self.quotes:,} quoted "
+            f"{self.wordings_with_a_moiety:,} wordings; {self.class_occurrences:,} "
+            f"class mentions over {self.wordings_with_a_class:,} wordings "
+            f"({self.moiety_spans_inside_class_spans:,} moiety occurrences lie "
+            f"inside one); {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
             f"{self.self_pairs:,} self-pair evidence rows excluded"
@@ -225,7 +247,8 @@ def check_scan_dropped_nothing(scan: spl_release.ScanResult) -> None:
 
 
 def reconcile(conn: psycopg.Connection, run_id: int, *, wordings: int,
-               labels: int, subjects: int, occurrences: int) -> None:
+               labels: int, subjects: int, occurrences: int,
+               class_occurrences: int = 0) -> None:
     """Compare what Python wrote against what the database holds, and abort if not.
 
     Scoped `WHERE ingest_run = %s` rather than counting whole tables, so a
@@ -241,7 +264,8 @@ def reconcile(conn: psycopg.Connection, run_id: int, *, wordings: int,
     """
     expected = {"spl_wording": wordings, "spl_label": labels,
                 "spl_label_subject": subjects,
-                "spl_entity_occurrence": occurrences}
+                "spl_entity_occurrence": occurrences,
+                "spl_class_occurrence": class_occurrences}
     for table, written in expected.items():
         (stored,) = conn.execute(
             f"SELECT count(*) FROM drugref.{table} WHERE ingest_run = %s",

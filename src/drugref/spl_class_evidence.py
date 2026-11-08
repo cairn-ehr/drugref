@@ -12,7 +12,7 @@ size budget and this logic is not about writing rows.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Iterable, Sequence
 
 import psycopg
 
@@ -86,3 +86,17 @@ def class_rows_for_wording(text_key: str, text: str,
             advice_scope=reading.scope, scope_start=reading.scope_start,
             scope_end=reading.scope_end))
     return rows
+
+
+def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
+                                    class_spans: Iterable[tuple[int, int]]) -> int:
+    """How many moiety spans of ONE wording lie wholly inside some class span.
+
+    Measures the overlap the separate class pass exists to keep out of the moiety
+    pass ("rifampin" inside "rifampin inducers"). Spans are `(char_start,
+    char_end)` of the same wording; a moiety counts once however many class spans
+    cover it. The quadratic scan is fine: a wording holds a handful of class spans.
+    """
+    classes = list(class_spans)
+    return sum(1 for start, end in moiety_spans
+               if any(c_start <= start and end <= c_end for c_start, c_end in classes))

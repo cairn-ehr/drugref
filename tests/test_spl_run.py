@@ -26,6 +26,7 @@ import pytest
 
 from tests.conftest import clean_scan as _scan
 from drugref import spl_evidence
+from tests import class_profile_world as w
 from drugref.ingest import (
     spl, spl_checks, spl_dailymed, spl_quote, spl_release, spl_run,
 )
@@ -249,6 +250,87 @@ def _ingest(conn, corpus, **overrides):
 # --------------------------------------------------------------------------
 # The whole path
 # --------------------------------------------------------------------------
+
+#: The class pass's fixture: ONE sentence naming a registered class (and, inside
+#: the class name, the moiety "rifampin" -- the overlap the summary counts), added
+#: to the ordinary wording only, so the other two wordings stay class-free.
+CLASS_SENTENCE = "\nUse with  rifampin\ninducers is contraindicated. "
+
+
+def _class_corpus(corpus, conn):
+    """Seed one MED-RT class and rebuild `corpus` with `CLASS_SENTENCE` in WORDING.
+
+    Returns the (openfda_dir, parts) pair `_ingest` takes. The class is seeded
+    AFTER `_seed_registry` has committed, and committed itself: `ingest_spl`
+    reads classes before its own rollback.
+    """
+    openfda_dir, parts = corpus
+    for old in openfda_dir.glob("drug-label-*.json.zip"):
+        old.unlink()
+    _openfda_partition(
+        openfda_dir / "drug-label-0001-of-0001.json.zip", LABELS,
+        wording_for=lambda label: _wording_for(label) + (
+            CLASS_SENTENCE if _wording_for(label) is WORDING else ""))
+    run = w.run(conn)
+    w.klass(conn, run, "Rifampin inducers [EPC]")
+    conn.commit()
+    return openfda_dir, parts
+
+
+@pytest.mark.usefixtures("_clean")
+def test_class_pass_writes_class_occurrences(conn, corpus):
+    _seed_registry(conn)
+    summary = _ingest(conn, _class_corpus(corpus, conn))
+    # One class-bearing wording; every label sharing it cites it once.
+    assert summary.wordings_with_a_class == 1
+    assert summary.class_occurrences == 1
+    (stored,) = conn.execute(
+        "SELECT count(*) FROM drugref.spl_class_occurrence").fetchone()
+    assert stored == 1
+    levels = {r[0] for r in conn.execute(
+        "SELECT advice_level FROM drugref.spl_class_statement_evidence")}
+    assert levels == {"contraindicated"}
+
+
+@pytest.mark.usefixtures("_clean")
+def test_drug_pairs_unchanged_by_class_pass(conn, corpus):
+    _seed_registry(conn)
+    without = _ingest(conn, corpus)  # no class registered: empty class vocabulary
+    pairs_without = spl_checks.read_pairs(conn, conn.execute(
+        "SELECT max(ingest_run) FROM drugref.spl_label").fetchone()[0])
+    assert without.class_occurrences == 0
+    corpus = _class_corpus(corpus, conn)
+    with_classes = _ingest(conn, corpus)
+    pairs_with = spl_checks.read_pairs(conn, conn.execute(
+        "SELECT max(ingest_run) FROM drugref.spl_label").fetchone()[0])
+    assert with_classes.class_occurrences == 1
+    assert pairs_with == pairs_without
+
+
+@pytest.mark.usefixtures("_clean")
+def test_overlap_counted(conn, corpus):
+    _seed_registry(conn)
+    summary = _ingest(conn, _class_corpus(corpus, conn))
+    assert summary.moiety_spans_inside_class_spans == 1
+
+
+@pytest.mark.usefixtures("_clean")
+def test_reconcile_refuses_class_count_mismatch(conn, corpus):
+    _seed_registry(conn)
+    _ingest(conn, _class_corpus(corpus, conn))
+    (run_id,) = conn.execute(
+        "SELECT max(ingest_run) FROM drugref.spl_class_occurrence").fetchone()
+    stored = dict(wordings=conn.execute(
+        "SELECT count(*) FROM drugref.spl_wording").fetchone()[0],
+        labels=conn.execute("SELECT count(*) FROM drugref.spl_label").fetchone()[0],
+        subjects=conn.execute(
+            "SELECT count(*) FROM drugref.spl_label_subject").fetchone()[0],
+        occurrences=conn.execute(
+            "SELECT count(*) FROM drugref.spl_entity_occurrence").fetchone()[0])
+    spl_checks.reconcile(conn, run_id, **stored, class_occurrences=1)
+    with pytest.raises(ValueError, match="spl_class_occurrence"):
+        spl_checks.reconcile(conn, run_id, **stored, class_occurrences=2)
+
 
 @pytest.mark.usefixtures("_clean")
 def test_the_expensive_pass_runs_with_NO_SNAPSHOT_HELD(conn, corpus, monkeypatch):
@@ -794,6 +876,8 @@ def test_a_FK_PARENT_is_ANALYZED_BEFORE_THE_CHILD_THAT_REFERENCES_IT_is_loaded(
         ("spl_label_subject", "spl_label"),
         ("spl_entity_occurrence", "spl_wording"),
         ("spl_wording_quote", "spl_wording"),
+        # db/066: its parent `spl_wording` is ANALYZEd before any child loads.
+        ("spl_class_occurrence", "spl_wording"),
     }
     for (child, parent), reltuples in sorted(observed.items()):
         assert reltuples > 0, (
@@ -890,6 +974,7 @@ def test_a_re_ingest_REPLACES_rather_than_accumulates(conn, corpus):
     in any single number.
     """
     _seed_registry(conn)
+    corpus = _class_corpus(corpus, conn)
     first = _ingest(conn, corpus)
     second = _ingest(conn, corpus)
     assert second == first
@@ -897,8 +982,6 @@ def test_a_re_ingest_REPLACES_rather_than_accumulates(conn, corpus):
         (rows,) = conn.execute(f"SELECT count(*) FROM drugref.{table}").fetchone()
         (runs,) = conn.execute(
             f"SELECT count(DISTINCT ingest_run) FROM drugref.{table}").fetchone()
-        if table == "spl_class_occurrence":
-            continue  # TEMPORARY: db/066 adds the table; the class pass (plan Task 6) fills it
         assert runs == 1, table
         assert rows > 0, table
 
@@ -1120,9 +1203,11 @@ def test_check_floors_ACCEPTS_a_summary_that_published_something():
 @pytest.mark.parametrize("field,overrides", [
     ("labels", {"labels": 0, "labels_by_route": {}, "dailymed_targets": 0,
                 "dailymed_found": 0, "records_field_absent": 90}),
-    ("wordings", {"wordings": 0, "wordings_with_a_moiety": 0}),
+    ("wordings", {"wordings": 0, "wordings_with_a_moiety": 0,
+                  "wordings_with_a_class": 0}),
     ("resolved subjects", {"labels_by_route": {"unresolved": 10}}),
-    ("entity occurrences", {"occurrences": 0}),
+    ("entity occurrences", {"occurrences": 0,
+                           "moiety_spans_inside_class_spans": 0}),
     ("candidate pairs", {"pairs": 0}),
 ])
 def test_a_structural_floor_of_zero_is_REFUSED(field, overrides):
@@ -1172,7 +1257,9 @@ def _summary(**overrides):
         dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
         dailymed_reported_skips="",
         occurrences=40, wordings_with_a_moiety=3, quotes=12, quoted_chars=900,
-        quotable_chars=1000, self_pairs=2, pairs=15, novel_pairs=14)
+        quotable_chars=1000, self_pairs=2, pairs=15, novel_pairs=14,
+        class_occurrences=5, wordings_with_a_class=2,
+        moiety_spans_inside_class_spans=1)
     return spl_checks.SplSummary(**(fields | overrides))
 
 

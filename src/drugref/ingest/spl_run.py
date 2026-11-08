@@ -54,7 +54,9 @@ from collections.abc import Callable, Mapping, Sequence
 
 import psycopg
 
-from drugref import provenance, registry_read, spl_evidence
+from drugref import (
+    provenance, registry_read, spl_class_evidence, spl_evidence,
+)
 from drugref.ingest import (
     spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release, spl_suppress,
     spl_subject,
@@ -176,13 +178,18 @@ def _evidence_for_wording(
 
 
 def _write_evidence(
-    conn: psycopg.Connection, corpus: spl.Corpus, vocab: spl_match.Vocabulary, *,
+    conn: psycopg.Connection, corpus: spl.Corpus, vocab: spl_match.Vocabulary,
+    class_vocab: spl_match.Vocabulary | None = None, *,
     ingest_run_id: int, source: str,
     progress: Callable[[int, int], None] | None = None,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int]:
     """Match every wording and write its evidence, in bounded chunks.
 
-    Returns `(occurrences, wordings_with_a_moiety, quotes, quoted_chars)`.
+    Returns `(occurrences, wordings_with_a_moiety, quotes, quoted_chars,
+    class_occurrences, wordings_with_a_class, moiety_spans_inside_class_spans)`.
+
+    The class pass is SEPARATE from the moiety pass (its own vocabulary, its own
+    table), so the moiety figures cannot move; `class_vocab=None` skips it.
 
     CHUNKED so peak memory does not scale with the corpus: 1.3 million occurrence
     rows held at once is hundreds of megabytes to say something that can be
@@ -190,25 +197,39 @@ def _write_evidence(
     """
     keys = sorted(corpus.wordings)
     occurrences = with_moiety = quotes = quoted_chars = 0
+    class_total = with_class = inside = 0
     for start in range(0, len(keys), WORDING_CHUNK):
         chunk = keys[start:start + WORDING_CHUNK]
         occurrence_rows: list[spl_evidence.OccurrenceRow] = []
         quote_rows: list[spl_evidence.QuoteRow] = []
+        class_rows: list[spl_class_evidence.ClassOccurrenceRow] = []
         for text_key in chunk:
             found, quoted = _evidence_for_wording(
                 text_key, corpus.wordings[text_key], vocab)
             if found:
                 with_moiety += 1
+            if class_vocab is not None:
+                mentions = spl_class_evidence.class_rows_for_wording(
+                    text_key, corpus.wordings[text_key], class_vocab)
+                if mentions:
+                    with_class += 1
+                class_rows.extend(mentions)
+                inside += spl_class_evidence.moiety_spans_inside_class_spans(
+                    [(o.char_start, o.char_end) for o in found],
+                    [(c.char_start, c.char_end) for c in mentions])
             occurrence_rows.extend(found)
             quote_rows.extend(quoted)
         occurrences += spl_evidence.write_occurrences(
             conn, occurrence_rows, ingest_run_id=ingest_run_id, source=source)
+        class_total += spl_evidence.write_class_occurrences(
+            conn, class_rows, ingest_run_id=ingest_run_id, source=source)
         quotes += spl_evidence.write_quotes(
             conn, quote_rows, ingest_run_id=ingest_run_id, source=source)
         quoted_chars += sum(row.char_end - row.char_start for row in quote_rows)
         if progress is not None:
             progress(min(start + WORDING_CHUNK, len(keys)), len(keys))
-    return occurrences, with_moiety, quotes, quoted_chars
+    return (occurrences, with_moiety, quotes, quoted_chars,
+            class_total, with_class, inside)
 
 
 def ingest_spl(
@@ -290,6 +311,13 @@ def ingest_spl(
             "against an empty registry it would publish nothing -- run `ingest "
             "unii` and `ingest chebi` first.")
     vocab = build_vocabulary(names)
+    # Classes are read in the SAME snapshot as the registry, before the rollback
+    # below. An empty class table is legitimate (the drug grain needs none), so
+    # it is reported, not refused.
+    class_entries = spl_class_evidence.load_class_entries(conn)
+    class_vocab = (spl_class_evidence.class_vocabulary(class_entries)
+                   if class_entries else None)
+    say(f"  registry: {len(class_entries):,} class match keys")
     say(f"  registry: {len(names):,} moiety names, {len(known_uniis):,} UNIIs")
     # Reported rather than merely counted. A UNII two moieties claim resolves
     # first-wins, so every subject derived from it names ONE of them and the
@@ -385,8 +413,9 @@ def ingest_spl(
             conn, subject_rows, ingest_run_id=run_id, source=spl.SOURCE)
 
         say(f"matching {len(corpus.wordings):,} wordings")
-        occurrences, with_moiety, quotes, quoted_chars = _write_evidence(
-            conn, corpus, vocab, ingest_run_id=run_id, source=spl.SOURCE,
+        (occurrences, with_moiety, quotes, quoted_chars, class_occurrences,
+         with_class, inside_class) = _write_evidence(
+            conn, corpus, vocab, class_vocab, ingest_run_id=run_id, source=spl.SOURCE,
             progress=(lambda done, total: say(f"  {done:,}/{total:,}"))
             if progress else None)
 
@@ -406,7 +435,8 @@ def ingest_spl(
         # database keeps the previous projection rather than a miscounted one.
         spl_checks.reconcile(conn, run_id,
                    wordings=stored_wordings, labels=stored_labels,
-                   subjects=len(subject_rows), occurrences=occurrences)
+                   subjects=len(subject_rows), occurrences=occurrences,
+                   class_occurrences=class_occurrences)
 
         pairs, novel, self_pairs = spl_checks.read_pairs(conn, run_id)
         quotable = sum(spl_quote.quote_budget(row.char_length)
@@ -431,7 +461,10 @@ def ingest_spl(
             quotable_chars=quotable,
             self_pairs=self_pairs,
             pairs=pairs,
-            novel_pairs=novel)
+            novel_pairs=novel,
+            class_occurrences=class_occurrences,
+            wordings_with_a_class=with_class,
+            moiety_spans_inside_class_spans=inside_class)
 
         spl_checks.check_floors(
             summary, pair_floor=pair_floor, novel_floor=novel_floor)

@@ -59,11 +59,13 @@ _TOKEN = re.compile(r"[A-Za-z0-9]+")
 #: at all; see `Entry`.
 KIND_MOIETY = "moiety"
 KIND_SUPPRESS = "suppress"
-#: A drug CLASS name. **The shipped ingest offers none**, and that exclusion is
-#: measured rather than assumed: `tools/spl_class_vocabulary_delta.py` adds the
-#: 8,534 class entries back and reproduces the design round's 20,554 pairs over
+#: A drug CLASS name. **The shipped moiety vocabulary holds none**, and that
+#: exclusion is measured rather than assumed:
+#: `tools/spl_class_vocabulary_delta.py` adds the 8,534 class entries back and reproduces the design round's 20,554 pairs over
 #: 26,721 wordings exactly, because longest-match-wins had class names consuming
 #: 11,169 moiety spans. Deferring them RAISED the drug x drug yield by 193 pairs.
+#: The shipped ingest runs a SEPARATE class-only pass (`spl_class_evidence`)
+#: with its own vocabulary, which is why the drug x drug yield is unchanged.
 #: The kind is named here so that tool builds the same type the matcher does --
 #: and so `Entry`'s check below can say a class entry carries no `moiety_uuid`
 #: rather than treating the whole kind as malformed.
@@ -91,9 +93,11 @@ class Entry:
     transposed -- constructs cleanly and folds a vocabulary key of "warfarin"
     under a kind of "warfarin", which `moiety_occurrences` then skips silently.
 
-    `kind` is one of `ENTRY_KINDS`. The shipped ingest offers `moiety` and
-    `suppress`; `class` exists for the measurement tool that quantifies what
-    excluding classes bought.
+    `kind` is one of `ENTRY_KINDS`. The shipped moiety vocabulary offers
+    `moiety` and `suppress`; `class` entries go to a SEPARATE class-only pass
+    (`spl_class_evidence`), so the moiety vocabulary holds none and the drug x
+    drug yield is unchanged (`tools/spl_class_vocabulary_delta.py` measures what
+    mixing them would cost).
 
     A **suppress** entry names a longer term that is not an entity: `prothrombin
     time` is a lab test, `serotonin syndrome` is an adverse event, `lead to` is a
