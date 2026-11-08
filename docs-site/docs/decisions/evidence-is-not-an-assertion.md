@@ -76,10 +76,14 @@ sentence a clinician wants to be reminded of. A mention with no advice cannot do
   that the drugs interact;
 - it is **not on the alert path** and is not an arm of `exact_ddi_pair`;
 - it is **never promoted** to a curated assertion except by a curator's `holds` ruling, with its own provenance;
-- the reader **refuses rather than guesses**: anything it cannot attribute to the class reads `not_read`
-  (76.5% of spans at the shipped run), `no_meaningful_interaction` ships only from closed, enumerated
-  templates, and a (scope, level) pair whose measured agreement with a clinician's reading fell below the
-  owner's 90% gate is **withheld** (sentence-scope avoid and monitor), not shipped with a caveat.
+- the reader **refuses rather than guesses**: it reads only a closed set of strength phrases, and a span with
+  none reads `not_read` (76.5% of spans at the shipped run). It does **not** attribute a phrase to the class:
+  it reads any strength phrase in the scope, so a miss is another drug's advice in the same sentence or block
+  (the `contraindicated` level over-reads in 22 of the 100 sampled spans, the safe direction).
+  `no_meaningful_interaction` ships only from closed, enumerated templates, and a (scope, level) pair whose
+  measured agreement with the designer's hand reading fell below the owner's 90% gate is **withheld**
+  (sentence-scope avoid and monitor), not shipped with a caveat. The owner's own clinical reading of the
+  sample is still owed.
 
 The cost is that a machine reading now exists at all, so it has to be measured: the precision sample, the gates
 and the withheld levels are in the [results record](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-08-drugref-spl-class-mentions-results.md),

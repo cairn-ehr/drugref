@@ -17,7 +17,7 @@ blocker](../decisions/licensing-is-a-blocker.md).
 | **RxNorm** | Normalised drug names and codes | Openly redistributable subset |
 | **FDA CYP/transporter table** | FDA's own examples of CYP and transporter substrates, inhibitors and inducers, by potency band | Public domain (US FDA website policy) |
 | **DrugCentral `ddi`** — the NDF-RT half only | Drug–drug interaction pairs at moiety grain, each carrying the VA's own severity band | CC BY-SA 4.0 over DrugCentral's compilation; the ingested rows are a US federal work (VHA NDF-RT) |
-| **SPL section 34073-7** (openFDA `drug/label` + DailyMed) | Which known drugs each US prescription label's DRUG INTERACTIONS section *names*, with character offsets, a citation and a bounded quoted window | CC0 1.0 as published by openFDA; NLM disclaims copyright status over the same labeling, so clearance was decided per column |
+| **SPL section 34073-7** (openFDA `drug/label` + DailyMed) | Which known drugs each US prescription label's DRUG INTERACTIONS section *names*, with character offsets, a citation and a bounded quoted window; and which drug *classes* it names, with a machine-read advice level (contraindicated, avoid, adjust dose, monitor) that is evidence only, never an assertion | CC0 1.0 as published by openFDA; NLM disclaims copyright status over the same labeling, so clearance was decided per column |
 
 The GSRS *software*, which drugref neither uses nor redistributes, is separately licensed
 Apache-2.0; only the public data dump is bundled.

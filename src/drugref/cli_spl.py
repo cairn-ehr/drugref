@@ -34,7 +34,7 @@ from drugref.ingest import spl_run
 
 
 def handle_spl(conn, args) -> int:
-    """`drugref ingest spl --openfda <dir> --dailymed <parts...> --release <tag>`."""
+    """`drugref ingest spl --openfda D --dailymed P... --unii-names F --release TAG`."""
     summary = spl_run.ingest_spl(
         conn,
         openfda_dir=args.openfda,

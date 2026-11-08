@@ -185,13 +185,10 @@ def _write_evidence(
 ) -> spl_class_evidence.EvidenceCounts:
     """Match every wording and write its evidence, in bounded chunks.
 
-    The class pass is SEPARATE from the moiety pass (its own vocabulary, its own
-    table), so the moiety figures cannot move. It is REQUIRED: an empty class
-    vocabulary matches nothing, so no caller can skip the pass silently.
+    The class pass is SEPARATE from the moiety pass (own vocabulary, own table), so
+    the moiety figures cannot move. REQUIRED: no caller can skip it silently.
 
-    CHUNKED so peak memory does not scale with the corpus: 1.3 million occurrence
-    rows held at once is hundreds of megabytes to say something that can be
-    written 96,000 rows at a time.
+    CHUNKED so peak memory does not scale with the corpus (1.3M rows is 100s of MB).
     """
     keys = sorted(corpus.wordings)
     occurrences = with_moiety = quotes = quoted_chars = 0
@@ -227,8 +224,11 @@ def _write_evidence(
         if progress is not None:
             progress(min(start + WORDING_CHUNK, len(keys)), len(keys))
     return spl_class_evidence.EvidenceCounts(
-        occurrences, with_moiety, quotes, quoted_chars,
-        class_total, with_class, inside, boundary_drops, head_drops)
+        occurrences=occurrences, wordings_with_a_moiety=with_moiety, quotes=quotes,
+        quoted_chars=quoted_chars, class_occurrences=class_total,
+        wordings_with_a_class=with_class, moiety_spans_inside_class_spans=inside,
+        class_spans_dropped_at_a_boundary=boundary_drops,
+        class_spans_dropped_on_a_non_drug_head=head_drops)
 
 
 def ingest_spl(

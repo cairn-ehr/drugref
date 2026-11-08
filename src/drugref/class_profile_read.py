@@ -182,7 +182,7 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
         "  ON r.subject_kind = 'moiety' AND r.subject_uuid = st.subject_moiety "
         " AND r.relationship = 'interacts_with' AND r.object_kind = 'class' "
         " AND r.object_uuid = st.class_uuid AND r.superseded_by IS NULL "
-        "JOIN LATERAL ( "     # the citation: newest label at the strongest level, then set_id
+        "JOIN LATERAL ( "     # citation: newest strongest-level label
         "  SELECT e.set_id, e.version, e.quote_text "
         "  FROM drugref.spl_class_statement_evidence e "
         "  WHERE e.subject_moiety = st.subject_moiety AND e.class_uuid = st.class_uuid "

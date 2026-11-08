@@ -244,8 +244,8 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# Negated contraindication, masked before the strength rules. "not only/merely/just
-# contraindicated" and (R25) "not recommended/advised contraindicated" are not negations.
+# Negated contraindication, masked before the strength rules. "not only/merely/just/
+# recommended/advised contraindicated" is not a negation (R25: stronger advice).
 _NEG_CONTRA = re.compile(
     r"\b(?:not|no)\s+(?:(?!(?:only|merely|just|recommended|advised)\b)\w+\s+)?"
     r"contraindicate(?:d[a-z]?)?\b",

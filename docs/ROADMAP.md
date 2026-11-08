@@ -831,7 +831,7 @@ the subject-recovery measurement, the design spec AND the ingest are all done.**
 PROJECT-NOTES § "Slice 5c.3 — the SPL ddi ingest". **Read the numbers there, not here.**
 
 **⇒ THE IMPLEMENTATION ROUND ✅ DONE (2026-08-27) — `db/051`, five tables, two views, one gap view.**
-`drugref ingest spl --openfda <dir> --dailymed <parts...> --unii-names <UNII_Names_*.txt> --release <tag>` reads 19.3 GB in **2 min 09 s** (12.5 minutes
+`drugref ingest spl --openfda <dir> --dailymed <parts...>` reads 19.3 GB in **2 min 09 s** (12.5 minutes
 until issue 160 was fixed on 2026-09-01; the run itself now REPORTS that, see issue 159) and publishes
 **29,952 distinct candidate pairs, 26,598 (88.8%) novel** — clearing the design's `>= 29,258` / `>= 25,960`
 floor, with the census reproducing exactly and the three counts that had no licence to move unmoved. Four

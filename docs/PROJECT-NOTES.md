@@ -6093,12 +6093,6 @@ left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third 
 splits". `curation.py` left last — § "The curation.py split" — so **#177 and #89 close on that PR's merge** and
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
-**Filed by the SPL class-mentions round (2026-11-08)** — [#213](https://github.com/cairn-ehr/drugref/issues/213)
-the registry lacks acetaminophen / nicotinic acid display names (the drug pass misses 6,588 acetaminophen spans) ·
-[#214](https://github.com/cairn-ehr/drugref/issues/214) further class-hygiene candidates ·
-[#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts are not stored per run (§ "The SPL
-class-mentions round").
-
 **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
 **#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
@@ -6283,7 +6277,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3149 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3155 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6646,9 +6640,10 @@ ran in CI and `ruff` was not even a project dependency.
   + the class-profiles surface (`db/058`–`db/065`): `class_profile_read.py` (the READ; pure dataclasses),
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
-  + the SPL class-mentions surface (`db/066`): `ingest/spl_class_vocab.py` (builds the class match vocabulary and
-  applies the R16/R19 hygiene), `ingest/spl_advice.py` (the PURE advice reader: phrase rules, scope order,
-  `WITHHELD`, `NMI_TEMPLATES`), `spl_class_evidence.py` (the class pass and its row writer inputs) and
+  + the SPL class-mentions surface (`db/066`): `ingest/spl_class_vocab.py` (builds the class match vocabulary;
+  `is_matchable`, the APC exclusion and `EXCLUDED_CLASSES` live here), `ingest/spl_advice.py` (the PURE advice reader: phrase rules, scope order,
+  `WITHHELD`, `NMI_TEMPLATES`), `spl_class_evidence.py` (the class pass and its row writer inputs; also the R19
+  hygiene: shadowed/official-name key drops, effect-word and boundary drops) and
   `tools/spl_class_census.py` (the census whose output is the results record's tables)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a

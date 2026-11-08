@@ -296,11 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dsn", required=True, help="the BUILT database")
     parser.add_argument("--openfda", help="directory of drug-label-*.json.zip; "
                         "enables the two prose-derived figures")
-    parser.add_argument("--sample", type=int, default=0,
-                        help="reserved for Task 9B (stratified precision sample)")
     args = parser.parse_args(argv)
-    if args.sample:
-        raise SystemExit("--sample is Task 9B's: not implemented in the census")
     started = time.monotonic()
     with db.connect(args.dsn) as conn:
         run = latest_spl_run(conn)

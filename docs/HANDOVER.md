@@ -50,7 +50,9 @@ run**: `test_suite_count.py` then fails two tests that are not real.
    6,588 acetaminophen spans in the shipped drug grain. Then **#214** (class-hygiene candidates: `Electrolyte
    [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
    avoid phrasing) and **#215** (store the class-pass drop counts per run).
-7. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
+7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
+   Owner to close it or say what remains.
+8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
    that has not happened.
 
 ## Open follow-ups
