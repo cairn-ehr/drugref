@@ -25,42 +25,41 @@ is left `not_read` rather than being promoted to an all-clear.
 **NEGATION.** Only two negations are understood. "not/no ... contraindicated"
 (up to one word between, any whitespace) is masked before the strength rules, so it
 reads `not_read`, never `contraindicated`. "no dose adjustment/reduction", "no
-clinically significant interaction" are the NMI phrases, masked so "dose
-adjustment" inside them cannot fire `adjust_dose`. Any other negation is not
-modelled; the vocabulary avoids phrases that negation would flip.
+clinically significant interaction", "dose adjustment is not required" are the NMI
+phrases in `ADVICE_RULES`; they are MASKS ONLY, so "dose adjustment" inside them
+cannot fire `adjust_dose`. A mask hit alone never yields NMI (see R10). Any other
+negation is not modelled; the vocabulary avoids phrases that negation would flip.
 
 **CONDITIONALS.** "If coadministration is necessary, reduce the dose" is read as
 `adjust_dose`: the label does give dose advice, and a conditional still tells the
 reader something is to be done. That is the safe direction (it can over-warn
 slightly, never produces an all-clear).
 
-**RULING R8 (structural NMI rule; replaced the R6/R7 blocklists).**
-`no_meaningful_interaction` is the worst error this module can make, and the
-reading is meant to be RARE. A blocklist of "contrast words" leaks by
-construction (the seed vocabulary and any word list are always incomplete: "with
-the exception of", ", no dose adjustment...", "whilst" all slipped through), so
-NMI is read only when the whole sentence scope is plainly one simple statement:
-(a) it contains none of , ; : ( ) or a newline; (b) it contains no whole-word
-and/or/nor/yet/whilst/while/but/however/although/whereas/unless/instead/only/
-except*/exception*, no "other than"/"apart from", and none of the dose-limit
-words exceed*/limit*/maximum/caution*/consider*; and (c) the mention comes AFTER
-the start of the NMI phrase ("No ... interaction ... with X"), so a mention that
-merely precedes some other clause's all-clear is not covered by it. Otherwise
-the result is `not_read`; a strength level that fired still wins.
+**RULING R10: NMI ONLY VIA A CLOSED FULL-MATCH TEMPLATE.** `no_meaningful_interaction`
+is the worst error this module can make, and the reading is meant to be RARE. Rulings
+R6-R9 tried to refuse NMI with blocklists (contrast words, separators, conditionals,
+"no ... data"); four review rounds each found a new sentence that slipped through
+("No dose adjustment is POSSIBLE with X" was the last), because a blocklist leaks by
+construction: it can never list every way a sentence is not a plain all-clear. So the
+rule is turned around -- list what IS an all-clear, and nothing else. In the sentence
+scope, the mention is replaced by a placeholder M, the scope is trimmed and one
+trailing "." dropped, and the WHOLE remainder must fully match (case-insensitive,
+single spaces) one of `NMI_TEMPLATES`:
 
-**RULING R9 (R8 widened after round-3 review).** Every gap below read NMI on a
-sentence that is not a plain all-clear: (A) "no dose adjustment
-recommendations/studies/data/information/guidance" and "no ... interaction
-studies/data" state that evidence is MISSING, not that the hazard is -- refused,
-and read `not_read` (the phrase stays masked, so it never becomes `adjust_dose`
-either); (B) any whitespace other than a plain space (\r, \t, no-break space...),
-em/en dashes, [ ], / and " - " also separate clauses, so they block like a comma;
-whitespace at the very start/end of the sentence is ignored (a trailing newline
-separates nothing inside it); (C) rather than/unlike/versus/vs/not are contrast
-words -- the NMI phrase's own span is blanked before this check, because
-"dose adjustment is NOT required" is itself an NMI phrase; (D)
-if/when/provided/after/until/before/during make the all-clear conditional, and a
-dropped condition would read stronger than the label.
+  T1 no [clinically significant|relevant|meaningful] [pharmacokinetic|drug]
+     interaction(s) was|were|has been|have been observed with M
+  T2 no [...same...] interaction(s) is|are expected with M
+  T3 no dose|dosage adjustment(s)|reduction(s) is|are needed|required|necessary|
+     recommended with|for patients taking|receiving M
+  T4 dose|dosage adjustment(s)|reduction(s) is|are not needed|required|necessary|
+     recommended with|for patients taking|receiving M
+
+The mention must END the sentence and is the only open slot, so any extra word, comma,
+clause, condition or odd whitespace means no match and `not_read`. The R8/R9 blocker
+was dropped: every word a template admits is fixed, none is a blocker word or
+separator (T4's own "not" was already exempt), so the blocker could never fire on a
+template match. A strength level that fired still wins. Cost: low NMI recall (safe
+direction; Task 9 measures it).
 
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
@@ -118,7 +117,24 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
           r"\bno (?:(?:initial|starting|specific) )?dos(?:e|age) "
           r"(?:adjustments?|reductions?)\b"
           r"|\bdos(?:e|age) (?:adjustments?|reductions?) (?:is|are) not "
-          r"(?:needed|required|necessary)\b"),
+          r"(?:needed|required|necessary|recommended)\b"),
+)
+
+# R10: the ONLY way to read NMI. Each fully matches the trimmed sentence scope (one
+# trailing "." dropped) with the mention replaced by _PH; see the module docstring.
+_PH = "\ue000"  # private-use code point: never occurs in label text
+_INTERACTION = (r"no (?:clinically (?:significant|relevant|meaningful) )?"
+                r"(?:(?:pharmacokinetic|drug) )?interactions? ")
+_DOSE = r"dos(?:e|age) (?:adjustments?|reductions?) (?:is|are) "
+_DOSE_END = (r"(?:needed|required|necessary|recommended) "
+             r"(?:with|for patients (?:taking|receiving)) " + _PH)
+NMI_TEMPLATES: tuple[AdviceRule, ...] = (
+    _rule(NMI, "interaction_observed",
+          _INTERACTION + r"(?:was|were|has been|have been) observed with " + _PH),
+    _rule(NMI, "interaction_expected",
+          _INTERACTION + r"(?:is|are) expected with " + _PH),
+    _rule(NMI, "no_dose_adjustment_needed", r"no " + _DOSE + _DOSE_END),
+    _rule(NMI, "dose_adjustment_not_needed", _DOSE + r"not " + _DOSE_END),
 )
 
 
@@ -143,19 +159,6 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# R8/R9: any of these in the scope refuses NMI (a structural rule, see the docstring).
-# `[^\S ]` is any whitespace except a plain space (newline, tab, \r, no-break space...).
-_NMI_BLOCKER = re.compile(
-    r"[,;:()\[\]/\u2014\u2013]|[^\S ]| - "
-    r"|\b(?:and|or|nor|yet|whilst|while|but|however|although|whereas|unless|instead"
-    r"|only|except\w*|exception\w*|exceed\w*|limit\w*|maximum|caution\w*"
-    r"|consider\w*|unlike|versus|vs|not|if|when|provided|after|until|before|during)\b"
-    r"|\bother than\b|\bapart from\b|\brather than\b",
-    re.IGNORECASE)
-# R9(A): "no dose adjustment RECOMMENDATIONS can be made" / "no interaction STUDIES"
-# say the data is missing, not that the interaction is absent.
-_NMI_NO_DATA = re.compile(
-    r"\s+(?:recommendations?|stud(?:y|ies)|data|information|guidance)\b", re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
 # "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
 _NEG_CONTRA = re.compile(
@@ -210,13 +213,15 @@ def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
 
 # --- reading ------------------------------------------------------------
 
-def _read_scope(chunk: str, allow_nmi: bool,
-                rel_start: int = 0) -> tuple[str, bool, str | None] | None:
-    """(level, mixed, rule_id) for one chunk of text, or None when nothing is read."""
-    nmi_hits = sorted((m.start(), r.rule_id, m.end()) for r in ADVICE_RULES
-                      if r.level == NMI for m in r.pattern.finditer(chunk))
+def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
+                rel_end: int = 0) -> tuple[str, bool, str | None] | None:
+    """(level, mixed, rule_id) for one chunk of text, or None when nothing is read.
+
+    [rel_start, rel_end) is the mention, relative to `chunk`; only NMI uses it.
+    """
     masked = chunk
-    spans = [(a, b) for a, _, b in nmi_hits]
+    spans = [m.span() for r in ADVICE_RULES if r.level == NMI
+             for m in r.pattern.finditer(chunk)]
     spans += [m.span() for m in _NEG_CONTRA.finditer(chunk)]
     for a, b in spans:  # "no dose adjustment" must not fire adjust_dose
         masked = masked[:a] + " " * (b - a) + masked[b:]
@@ -230,21 +235,12 @@ def _read_scope(chunk: str, allow_nmi: bool,
     for level in STRENGTH:
         if level in first:
             return level, len(first) > 1, first[level][1]
-    if not (allow_nmi and nmi_hits):
-        return None
-    if any(_NMI_NO_DATA.match(chunk, b) for _, _, b in nmi_hits):
-        return None  # R9(A): absence of data, not an all-clear
-    # Blank the NMI phrases themselves ("... is NOT required" holds "not") and drop the
-    # whitespace around the sentence (a trailing newline separates nothing inside it).
-    plain = chunk
-    for a, _, b in nmi_hits:
-        plain = plain[:a] + " " * (b - a) + plain[b:]
-    # R8 (c): the mention must come after the phrase that fired.
-    if not _NMI_BLOCKER.search(plain.strip()):
-        hit = next((h for h in nmi_hits if h[0] < rel_start), None)
-        if hit:
-            return NMI, False, hit[1]
-    return None
+    if not allow_nmi or rel_end > len(chunk):
+        return None  # a mention running past the sentence end is refused
+    scope = (chunk[:rel_start] + _PH + chunk[rel_end:]).strip()
+    scope = scope[:-1] if scope.endswith(".") else scope
+    hit = next((t for t in NMI_TEMPLATES if t.pattern.fullmatch(scope)), None)
+    return (NMI, False, hit.rule_id) if hit else None
 
 
 def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
@@ -252,7 +248,8 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
     s, e = _span_from(starts, len(text), char_start)
-    got = _read_scope(text[s:e], allow_nmi=True, rel_start=char_start - s)
+    got = _read_scope(text[s:e], allow_nmi=True, rel_start=char_start - s,
+                      rel_end=char_end - s)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
     block = _block_from(text, mk, starts, char_start)

@@ -4,7 +4,8 @@
 Texts are synthesised (rule 6) -- never real label prose.
 """
 
-from drugref.ingest.spl_advice import ADVICE_RULES, LEVELS, read_advice, sentence_span
+from drugref.ingest.spl_advice import (ADVICE_RULES, LEVELS, NMI_TEMPLATES, read_advice,
+                                       sentence_span)
 
 
 def _read(text, name):
@@ -62,9 +63,11 @@ def test_unknown_phrase_is_not_read():
 
 
 def test_rule_ids_unique_and_levels_known():
-    ids = [r.rule_id for r in ADVICE_RULES]
+    rules = ADVICE_RULES + NMI_TEMPLATES
+    ids = [r.rule_id for r in rules]
     assert len(ids) == len(set(ids))
-    assert all(r.level in LEVELS[:5] and r.rule_id.startswith(r.level + ".") for r in ADVICE_RULES)
+    assert all(r.level in LEVELS[:5] and r.rule_id.startswith(r.level + ".") for r in rules)
+    assert all(r.level == "no_meaningful_interaction" for r in NMI_TEMPLATES)
 
 
 # --- choices the brief leaves open ---------------------------------------
@@ -113,7 +116,7 @@ def test_r6_unseeded_advice_beside_nmi_is_never_nmi():
 
 
 def test_r6_contrast_words_block_nmi_but_single_clause_reads():
-    ok = _read("No clinically significant interaction with antacids.", "antacids")
+    ok = _read("No clinically significant interaction was observed with antacids.", "antacids")
     assert ok.level == "no_meaningful_interaction"
     for w in ("but", "However", "unless", "although", "while", "whereas"):
         r = _read(f"No clinically significant interaction with antacids {w} iron differs.", "antacids")
@@ -260,3 +263,40 @@ def test_r9_plain_positives_still_read_and_a_trailing_newline_is_not_a_separator
               "No clinically significant interaction was observed with antacids.",
               "No dose adjustment is needed with antacids.\r\nOther text follows."):
         assert _read(t, "antacids").level == "no_meaningful_interaction", repr(t)
+
+
+# --- R10: NMI only via a closed full-match template -------------------------
+
+def test_r10_unconstrained_verb_is_never_nmi():
+    s = "strong inhibitors"
+    for t in ("No dose adjustment is possible with strong inhibitors.",
+              "No dose adjustment can compensate for strong inhibitors.",
+              "No dose reduction is sufficient with strong inhibitors.",
+              "No dose reduction will prevent toxicity with strong inhibitors.",
+              "No dose adjustment has been established with strong inhibitors."):
+        assert _read(t, s).level != "no_meaningful_interaction", t
+
+
+def test_r10_a_mask_phrase_alone_is_never_nmi():
+    # The NMI phrases only MASK the strength rules now; outside a template they read nothing.
+    for t in ("No dose adjustment with antacids.",
+              "No clinically significant interaction with antacids.",
+              "No dose adjustment is needed with antacids in most patients.",
+              "No dose adjustment is needed with  antacids."):  # double space
+        assert _read(t, "antacids").level == "not_read", t
+
+
+def test_r10_templates_read_nmi_and_name_the_template():
+    for t, rule in (
+            ("No dose adjustment is needed with antacids.", "no_dose_adjustment_needed"),
+            ("No clinically significant interaction was observed with antacids.",
+             "interaction_observed"),
+            ("Dose adjustment is not required with antacids.", "dose_adjustment_not_needed"),
+            ("No pharmacokinetic interactions are expected with antacids", "interaction_expected"),
+            ("No dosage reductions are recommended for patients taking antacids.",
+             "no_dose_adjustment_needed"),
+            ("Dose adjustment is not recommended for patients receiving antacids.",
+             "dose_adjustment_not_needed")):
+        r = _read(t, "antacids")
+        assert (r.level, r.rule_id) == ("no_meaningful_interaction",
+                                        "no_meaningful_interaction." + rule), t
