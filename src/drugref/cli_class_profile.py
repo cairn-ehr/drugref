@@ -49,12 +49,18 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
         # Kept apart from the properties above on purpose: a machine reading of label
         # prose is not a confirmed fact; a curator's does_not_hold is shown, not hidden.
         out.append("  What labels say about this class (machine-read, not confirmed):")
-        out.extend(_label_line(s) for s in p.label_statements)
+        for s in p.label_statements:
+            out.extend(_label_lines(s))
     return out
 
 
-def _label_line(s: cpr.LabelStatement) -> str:
-    line = f"    {s.drug}'s label: {s.strongest_level} ({s.label_count} label(s))"
+def _label_lines(s: cpr.LabelStatement) -> list[str]:
+    if s.strongest_level == "not_read":
+        # §6.3: visibly not an interaction -- the label names the class, nothing more.
+        return [f"    {s.drug}'s label mentions the class; advice not read "
+                f"({s.label_count} label(s))"]
+    line = (f"    {s.drug}'s label: {s.strongest_level} "
+            f"({s.level_labels} of {s.label_count} label(s))")
     if s.mixed:
         line += "; mixed"
     if s.ambiguous:
@@ -63,7 +69,8 @@ def _label_line(s: cpr.LabelStatement) -> str:
         line += "; its own class"
     if s.ruling:
         line += f"; curator ruled: {s.ruling}"
-    return line
+    cite = f"      cited: SPL set {s.cite_set_id} version {s.cite_version}"
+    return [line, cite + (f': "{s.quote}"' if s.quote else "")]
 
 
 def _subclass_only_line(e: cpr.SubclassOnlyDrug, n_asserted: int) -> str:

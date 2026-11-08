@@ -247,7 +247,7 @@ def _spl_world(conn):
 
 
 def _mention(conn, r, drug, klass, *labels, level="avoid", mixed=False,
-             ambiguous=False, key="a"):
+             ambiguous=False, key="a", eff="20260101", quote=None):
     """Labels `labels` (subject = drug) sharing one wording that mentions `klass`.
     Level lives on the wording's span, so a different reading needs a different `key`."""
     from drugref import spl_evidence
@@ -261,7 +261,7 @@ def _mention(conn, r, drug, klass, *labels, level="avoid", mixed=False,
     for set_id in labels:
         spl_evidence.write_labels(
             conn, [spl_evidence.LabelRow(set_id=set_id, version="1",
-                                         effective_time="20260101",
+                                         effective_time=eff,
                                          product_type=None, text_key=tk)],
             ingest_run_id=r, source=spl.SOURCE)
         conn.execute(
@@ -275,6 +275,10 @@ def _mention(conn, r, drug, klass, *labels, level="avoid", mixed=False,
         "VALUES (%s,'SPL',%s,10,15,%s,%s,'stored',%s,%s,%s,'sentence',0,100)",
         (r, tk, klass, ambiguous, level, mixed,
          None if level == "not_read" else "x.y"))
+    if quote:                              # a window covering the span [10, 15)
+        conn.execute("INSERT INTO drugref.spl_wording_quote (ingest_run, source, "
+                     "text_key, ordinal, char_start, char_end, quote_text) "
+                     "VALUES (%s,'SPL',%s,0,5,20,%s)", (r, tk, quote))
 
 
 def _has_wording(conn, r, tk):
@@ -334,3 +338,59 @@ def test_label_statement_not_in_asserted_properties(conn):
     p = cpr.class_profile(conn, k)
     assert len(p.label_statements) == 1
     assert p.properties == before            # machine-read stays separate (owner decision)
+
+
+def test_statement_cites_one_label_at_the_strongest_level(conn):
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    _mention(conn, sr, drug, k, "S1", level="monitor", key="b", eff="20260901")
+    _mention(conn, sr, drug, k, "S3", level="avoid", key="c", eff="20260101")
+    _mention(conn, sr, drug, k, "S2", level="avoid", key="d", eff="20260601",
+             quote="x" * 15)
+    (st,) = cpr.class_profile(conn, k).label_statements
+    # 3 labels in all, 2 at the strongest level; of those S2 is the more recent.
+    assert (st.label_count, st.level_labels) == (3, 2)
+    assert (st.cite_set_id, st.cite_version, st.quote) == ("S2", "1", "x" * 15)
+
+
+def test_citation_tie_breaks_on_set_id_and_quote_is_none_without_window(conn):
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    _mention(conn, sr, drug, k, "S9", "S4", "S7")      # same time: lowest set_id wins
+    (st,) = cpr.class_profile(conn, k).label_statements
+    assert (st.level_labels, st.cite_set_id, st.quote) == (3, "S4", None)
+
+
+def test_superseded_ruling_is_ignored(conn):
+    from drugref import curation_property
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    _mention(conn, sr, drug, k, "S1")
+    for verdict in ("does_not_hold", "holds"):          # the second supersedes the first
+        curation_property.record_property_ruling(
+            conn, subject_moiety_uuid=drug, relationship="interacts_with",
+            object_kind="class", object_uuid=k, verdict=verdict,
+            reviewed_by="t", reviewed_against="t")
+    (st,) = cpr.class_profile(conn, k).label_statements
+    assert st.ruling == "holds"                         # one row, the live verdict
+
+
+def test_ruling_on_another_class_is_ignored(conn):
+    from drugref import curation_property
+    x = _world(conn)
+    r, k, s = x["r"], x["k"], x["s"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    _mention(conn, sr, drug, k, "S1")
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=drug, relationship="interacts_with",
+        object_kind="class", object_uuid=s, verdict="does_not_hold",
+        reviewed_by="t", reviewed_against="t")
+    (st,) = cpr.class_profile(conn, k).label_statements
+    assert st.ruling is None

@@ -154,8 +154,9 @@ def test_a_class_does_not_hold_warns_what_it_does_not_do(conn, monkeypatch, caps
 
 def _stmt(drug="qdrug", level="avoid", n=2, **kw):
     return cpr.LabelStatement(drug, level, n, **{
-        "mixed": False, "ambiguous": False, "subject_in_class": False, "ruling": None,
-        **kw})
+        "level_labels": n, "mixed": False, "ambiguous": False,
+        "subject_in_class": False, "ruling": None, "cite_set_id": "S1",
+        "cite_version": "3", "quote": None, **kw})
 
 
 def test_render_omits_section_when_empty():
@@ -165,11 +166,16 @@ def test_render_omits_section_when_empty():
 def test_render_section_lines():
     import dataclasses
     prof = dataclasses.replace(_profile(), label_statements=(
-        _stmt(), _stmt("rdrug", "monitor", 1, mixed=True, ambiguous=True,
-                       subject_in_class=True, ruling="does_not_hold")))
+        _stmt(level_labels=1, quote="avoid with X"),
+        _stmt("rdrug", "monitor", 1, mixed=True, ambiguous=True,
+              subject_in_class=True, ruling="does_not_hold"),
+        _stmt("sdrug", "not_read", 4)))
     out = ccp.render_class_profile(prof)
     i = out.index("  What labels say about this class (machine-read, not confirmed):")
-    assert out[i + 1:i + 3] == [
-        "    qdrug's label: avoid (2 label(s))",
-        "    rdrug's label: monitor (1 label(s)); mixed; name also matches another "
-        "class; its own class; curator ruled: does_not_hold"]
+    assert out[i + 1:i + 6] == [
+        "    qdrug's label: avoid (1 of 2 label(s))",
+        "      cited: SPL set S1 version 3: \"avoid with X\"",
+        "    rdrug's label: monitor (1 of 1 label(s)); mixed; name also matches another "
+        "class; its own class; curator ruled: does_not_hold",
+        "      cited: SPL set S1 version 3",
+        "    sdrug's label mentions the class; advice not read (4 label(s))"]
