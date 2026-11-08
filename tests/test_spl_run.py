@@ -257,12 +257,11 @@ def _ingest(conn, corpus, **overrides):
 CLASS_SENTENCE = "\nUse with  rifampin\ninducers is contraindicated. "
 
 
-def _class_corpus(corpus, conn):
-    """Seed one MED-RT class and rebuild `corpus` with `CLASS_SENTENCE` in WORDING.
+def _text_corpus(corpus):
+    """Rewrite the openFDA partition so WORDING carries `CLASS_SENTENCE`.
 
-    Returns the (openfda_dir, parts) pair `_ingest` takes. The class is seeded
-    AFTER `_seed_registry` has committed, and committed itself: `ingest_spl`
-    reads classes before its own rollback.
+    TEXT ONLY: no class is seeded, so a test can hold the text constant and vary
+    the registry's classes alone. Returns the (openfda_dir, parts) pair.
     """
     openfda_dir, parts = corpus
     for old in openfda_dir.glob("drug-label-*.json.zip"):
@@ -270,54 +269,83 @@ def _class_corpus(corpus, conn):
     _openfda_partition(
         openfda_dir / "drug-label-0001-of-0001.json.zip", LABELS,
         wording_for=lambda label: _wording_for(label) + (
-            CLASS_SENTENCE if _wording_for(label) is WORDING else ""))
-    run = w.run(conn)
-    w.klass(conn, run, "Rifampin inducers [EPC]")
-    conn.commit()
+            CLASS_SENTENCE if _wording_for(label) == WORDING else ""))
     return openfda_dir, parts
+
+
+#: The first fixture-substance moiety `_seed_registry` registers (index 0).
+MEMBER = uuid.UUID(int=0xB000)
+
+
+def _seed_class(conn):
+    """Register an FDA-CYP class named in `CLASS_SENTENCE`, with one member.
+
+    Committed, because `ingest_spl` reads classes before its own rollback.
+    """
+    run = w.run(conn)
+    cu = w.klass(conn, run, "Rifampin inducers [FDA-CYP]", source="FDA-CYP",
+                 concept_type="PK")
+    w.member(conn, run, MEMBER, cu)
+    conn.commit()
+    return cu
 
 
 @pytest.mark.usefixtures("_clean")
 def test_class_pass_writes_class_occurrences(conn, corpus):
     _seed_registry(conn)
-    summary = _ingest(conn, _class_corpus(corpus, conn))
+    class_uuid = _seed_class(conn)
+    summary = _ingest(conn, _text_corpus(corpus))
     # One class-bearing wording; every label sharing it cites it once.
     assert summary.wordings_with_a_class == 1
     assert summary.class_occurrences == 1
     (stored,) = conn.execute(
         "SELECT count(*) FROM drugref.spl_class_occurrence").fetchone()
     assert stored == 1
-    levels = {r[0] for r in conn.execute(
-        "SELECT advice_level FROM drugref.spl_class_statement_evidence")}
-    assert levels == {"contraindicated"}
+    rows = conn.execute(
+        "SELECT subject_moiety, strongest_level, subject_in_class "
+        "FROM drugref.spl_class_statement WHERE class_uuid = %s",
+        (class_uuid,)).fetchall()
+    assert {r[1] for r in rows} == {"contraindicated"}
+    # A direct member of the named class is flagged; every other subject is not.
+    assert {r[0] for r in rows if r[2]} <= {MEMBER}
+    assert any(r[2] for r in rows) and any(not r[2] for r in rows)
 
 
 @pytest.mark.usefixtures("_clean")
 def test_drug_pairs_unchanged_by_class_pass(conn, corpus):
+    """TEXT HELD CONSTANT: only the registry's classes differ between the runs.
+
+    Were class entries merged into the moiety vocabulary, "rifampin inducers"
+    would consume the rifampin span and `occurrences` would drop by one.
+    """
     _seed_registry(conn)
-    without = _ingest(conn, corpus)  # no class registered: empty class vocabulary
+    text = _text_corpus(corpus)
+    without = _ingest(conn, text)  # no class registered: nothing to match
+    assert without.class_occurrences == 0
     pairs_without = spl_checks.read_pairs(conn, conn.execute(
         "SELECT max(ingest_run) FROM drugref.spl_label").fetchone()[0])
-    assert without.class_occurrences == 0
-    corpus = _class_corpus(corpus, conn)
-    with_classes = _ingest(conn, corpus)
+    _seed_class(conn)
+    with_classes = _ingest(conn, text)
+    assert with_classes.class_occurrences == 1
     pairs_with = spl_checks.read_pairs(conn, conn.execute(
         "SELECT max(ingest_run) FROM drugref.spl_label").fetchone()[0])
-    assert with_classes.class_occurrences == 1
     assert pairs_with == pairs_without
+    assert with_classes.occurrences == without.occurrences
 
 
 @pytest.mark.usefixtures("_clean")
 def test_overlap_counted(conn, corpus):
     _seed_registry(conn)
-    summary = _ingest(conn, _class_corpus(corpus, conn))
+    _seed_class(conn)
+    summary = _ingest(conn, _text_corpus(corpus))
     assert summary.moiety_spans_inside_class_spans == 1
 
 
 @pytest.mark.usefixtures("_clean")
 def test_reconcile_refuses_class_count_mismatch(conn, corpus):
     _seed_registry(conn)
-    _ingest(conn, _class_corpus(corpus, conn))
+    _seed_class(conn)
+    _ingest(conn, _text_corpus(corpus))
     (run_id,) = conn.execute(
         "SELECT max(ingest_run) FROM drugref.spl_class_occurrence").fetchone()
     stored = dict(wordings=conn.execute(
@@ -974,7 +1002,8 @@ def test_a_re_ingest_REPLACES_rather_than_accumulates(conn, corpus):
     in any single number.
     """
     _seed_registry(conn)
-    corpus = _class_corpus(corpus, conn)
+    _seed_class(conn)
+    corpus = _text_corpus(corpus)
     first = _ingest(conn, corpus)
     second = _ingest(conn, corpus)
     assert second == first

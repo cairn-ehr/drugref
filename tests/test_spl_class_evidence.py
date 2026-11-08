@@ -81,3 +81,23 @@ def test_write_and_clear_class_occurrences(conn):
     assert conn.execute(count).fetchone() == (1,)
     spl_evidence.clear_source_spl(conn, spl.SOURCE)
     assert conn.execute(count).fetchone() == (0,)
+
+
+def test_moiety_spans_inside_class_spans_boundaries():
+    inside = ce.moiety_spans_inside_class_spans
+    cls = [(10, 20)]
+    assert inside([(10, 20)], cls) == 1          # equal
+    assert inside([(12, 15)], cls) == 1          # nested
+    assert inside([(10, 14)], cls) == 1          # shared start
+    assert inside([(5, 15)], cls) == 0           # partial overlap
+    assert inside([(5, 10), (20, 25)], cls) == 0  # edge-touching only
+    assert inside([(12, 15)], [(10, 20), (11, 30)]) == 1  # counted once
+
+
+def test_class_pass_for_wording_rows_and_overlap():
+    text = "Avoid rifampin inducers and rifampin."
+    rows, inside = ce.class_pass_for_wording(
+        "k", text, _vocab(("rifampin inducers", CU)), [(6, 14), (30, 37)])
+    assert [text[r.char_start:r.char_end] for r in rows] == ["rifampin inducers"]
+    assert inside == 1
+    assert ce.class_pass_for_wording("k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0)

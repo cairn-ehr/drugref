@@ -12,7 +12,7 @@ size budget and this logic is not about writing rows.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Iterable, NamedTuple, Sequence
 
 import psycopg
 
@@ -41,6 +41,18 @@ class ClassOccurrenceRow:
     advice_scope: str
     scope_start: int
     scope_end: int
+
+
+class EvidenceCounts(NamedTuple):
+    """What `_write_evidence` wrote, by NAME (seven ints by position invite swaps)."""
+
+    occurrences: int
+    wordings_with_a_moiety: int
+    quotes: int
+    quoted_chars: int
+    class_occurrences: int
+    wordings_with_a_class: int
+    moiety_spans_inside_class_spans: int
 
 
 def load_class_entries(conn: psycopg.Connection) -> list[spl_match.Entry]:
@@ -95,8 +107,25 @@ def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
     Measures the overlap the separate class pass exists to keep out of the moiety
     pass ("rifampin" inside "rifampin inducers"). Spans are `(char_start,
     char_end)` of the same wording; a moiety counts once however many class spans
-    cover it. The quadratic scan is fine: a wording holds a handful of class spans.
+    cover it. Equal, nested and shared-start spans count; a PARTIAL overlap and a
+    span merely touching a class span's edge do not. The quadratic scan is fine:
+    a wording holds a handful of class spans.
     """
     classes = list(class_spans)
     return sum(1 for start, end in moiety_spans
                if any(c_start <= start and end <= c_end for c_start, c_end in classes))
+
+
+def class_pass_for_wording(
+    text_key: str, text: str, vocab: spl_match.Vocabulary,
+    moiety_spans: Sequence[tuple[int, int]],
+) -> tuple[list[ClassOccurrenceRow], int]:
+    """`(class rows, moiety spans inside a class span)` for one wording.
+
+    Kept here so `spl_run` (at its size budget) makes ONE call per wording.
+    `moiety_spans` are that wording's moiety occurrences from the moiety pass.
+    """
+    rows = class_rows_for_wording(text_key, text, vocab)
+    inside = moiety_spans_inside_class_spans(
+        moiety_spans, [(r.char_start, r.char_end) for r in rows])
+    return rows, inside

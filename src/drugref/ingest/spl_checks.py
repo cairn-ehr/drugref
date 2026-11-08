@@ -93,8 +93,10 @@ class SplSummary:
     #: mentions of registered classes; none of it feeds the pair figures above.
     class_occurrences: int
     wordings_with_a_class: int
-    #: Moiety occurrences lying inside a class span of the same wording -- the
-    #: overlap that makes a single combined vocabulary change the drug x drug yield.
+    #: Moiety occurrences lying WHOLLY inside a class span of the same wording.
+    #: Partial overlaps (which longest-match-wins would also have consumed in a
+    #: combined vocabulary) are excluded, so this is not directly comparable with
+    #: the design round's 11,169 consumed moiety spans.
     moiety_spans_inside_class_spans: int
 
     def __post_init__(self) -> None:
