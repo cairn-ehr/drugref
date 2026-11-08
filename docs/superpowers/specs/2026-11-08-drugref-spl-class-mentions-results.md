@@ -283,6 +283,137 @@ class span; 16,792 statements.
 * The sentence-splitter failure signal is the boundary-drop count (64), taken from the ingest
   summary; the census cannot recompute it because dropped spans are, by definition, not stored.
 
+## Class hygiene sample (Task 9B phase 1)
+
+Question asked of each sampled span: **is this span a mention of the DRUG CLASS?** Read by the
+designer's clinical reader on the exact normalised openFDA text the ingest read (R18), run 11.
+
+**Sample.** Spans of run 11 grouped by the sorted set of classes they fold onto (twin classes
+such as `Antacids` / `Antacid [PE]` carry identical spans, so they are read once); the 25 largest
+groups by distinct spans (38 classes); within each group the spans sorted by
+(text_key, char_start, char_end) and `random.Random(20261108).sample(spans, 10)`. 250 spans.
+
+**Verdict codes.** `Y` the class itself; `Yn` the class narrowed to a sub-group of its drugs
+("oral anticoagulants", "Class III antiarrhythmics", "inhalation anesthetics", "thyroid
+hormones") -- counted as yes; `E` an effect / property / dose adjective ("anticoagulant
+effect of warfarin", "analgesic doses of aspirin"); `P` physiology / lab / endogenous substance
+("antidiuretic hormone", "plasma hormone levels"); `D` a single drug's name; `O` other (part of
+another class name, e.g. "insulin secretagogue"; a modifier that takes it outside the class,
+e.g. "nondepolarizing muscle relaxants" = neuromuscular blockers, none of which is a member;
+a procedure, "anesthetic induction"; an anaphor for one named drug).
+
+"Fails" below = fewer than 8 of 10 yes. n = 10 per group, so a rate is a screen, not an estimate.
+
+| class(es) | axis | spans | members | yes | of which Yn | dominant false positive | verdict |
+|---|---|---|---|---|---|---|---|
+| Diuretics | MeSH PA | 17,118 | 58 | 10/10 | 0 | -- | ok |
+| Anticoagulants | MeSH PA | 16,178 | 67 | 7/10 | 3 | E: "anticoagulant effect(s)/properties" (3) | **fails** |
+| Corticosteroid [EPC] | MED-RT EPC | 9,939 | 30 | 7/10 | 0 | E: "corticosteroid side effects" (2); P: 17-hydroxycorticosteroid test (1) | **fails** |
+| Benzodiazepine [EPC] | MED-RT EPC | 9,241 | 14 | 10/10 | 0 | -- | ok |
+| Anticholinergic [EPC] | MED-RT EPC | 7,661 | 13 | 8/10 | 0 | E: "anticholinergic (drying) effects" (2) | marginal |
+| Antacids; Antacid [PE] | MeSH PA; MED-RT PE | 7,553 | 14; 6 | 10/10 | 0 | -- | ok |
+| Tricyclic Antidepressant [EPC] | MED-RT EPC | 7,343 | 9 | 10/10 | 0 | -- | ok |
+| Acetaminophen [EPC] | MED-RT EPC | 6,588 | **0** | **0/10** | 0 | D: the drug acetaminophen, mostly inside a product name (10) | **fails** |
+| Analgesics; Analgesics [TC] | MeSH PA; MED-RT TC | 5,654 | 343; 131 | **4/10** | 3 | E: "analgesic effect of X" (4), "analgesic doses of aspirin" (2) | **fails** |
+| Monoamine Oxidase Inhibitors (EPC, MeSH, MoA) | 3 axes | 5,580 | 5; 24; 31 | 10/10 | 0 | -- | ok |
+| Estrogens; Estrogen [EPC] | MeSH PA; MED-RT EPC | 5,509 | 20; 3 | 9/10 | 0 | P: "estrogen reabsorption" (1) | ok |
+| Protease Inhibitors (EPC, MeSH, MoA) | 3 axes | 5,223 | 9; 131; 2 | 10/10 | 0 | -- | ok |
+| Insulin [EPC] | MED-RT EPC | 5,156 | 1 | 7/10 | 0 | O: "insulin secretagogue(s)" (3) | **fails** |
+| Muscle Relaxant [EPC] | MED-RT EPC | 5,007 | 6 | 8/10 | 0 | O: "(non)depolarizing muscle relaxants" = neuromuscular blockers (2) | marginal |
+| Hormones | MeSH PA | 4,496 | 138 | **4/10** | 4 | P: antidiuretic hormone, hormone levels, binding (5); O: "hormone replacement therapy" (1) | **fails** |
+| Antiarrhythmic [EPC] | MED-RT EPC | 4,179 | 12 | 10/10 | 7 | -- | ok |
+| Barbiturate [EPC] | MED-RT EPC | 4,151 | 2 | 10/10 | 0 | -- | ok |
+| Anticonvulsants; Anticonvulsants [TC] | MeSH PA; MED-RT TC | 4,143 | 96; 22 | 10/10 | 0 | -- | ok |
+| Calcium Channel Blocker(s) | MED-RT EPC; MeSH PA | 3,434 | 3; 95 | 10/10 | 0 | -- | ok |
+| Thiazide Diuretic [EPC] | MED-RT EPC | 3,265 | 5 | 10/10 | 0 | -- | ok |
+| Macrolide [EPC] | MED-RT EPC | 3,138 | 1 | 10/10 | 0 | -- | ok |
+| Selective Serotonin Reuptake Inhibitors | MeSH PA | 3,095 | 29 | 10/10 | 0 | -- | ok |
+| Anesthetics; Anesthetics [TC] | MeSH PA; MED-RT TC | 2,503 | 101; 45 | 8/10 | 7 | O: "anesthetic induction" (1), anaphor for one named drug (1) | marginal |
+| Proton Pump Inhibitors (EPC, MeSH, MoA) | 3 axes | 2,486 | 6; 15; 17 | 10/10 | 0 | -- | ok |
+| Sympathomimetics | MeSH PA | 2,473 | 89 | 10/10 | 0 | -- | ok |
+
+Overall 212 / 250 yes (84.8%); without the two classes P1/P3 below remove, 208 / 230 (90.4%).
+Members = moieties with a direct `class_membership` row (per class, in the order named).
+
+**Findings beyond the table.**
+
+* `Acetaminophen [EPC]` is a drug name. The registry knows the moiety only as `paracetamol`
+  (display name and INN; it holds no "acetaminophen" name at all), so R16(b) cannot see it --
+  and **the moiety pass does not see "acetaminophen" either**: 6,588 spans over 1,559 wordings
+  are a drug x drug coverage gap of the shipped ingest (out of this round's scope, §4.4; for an
+  issue). `Nicotinic Acid [EPC]` (733 spans; registry name `niacin`) is the same shape.
+* `Hormones` (MeSH PA) is the twin R16(a) predicted: the APC `Hormone [APC]` it excluded (4,486
+  occurrences) duplicated it, so the same spans now arrive through MeSH (4,496). Every yes in its
+  sample is "thyroid hormone(s)" -- a different, narrower thing than the 138-member class.
+* `Enzyme Inducers [MoA]` (empty, 2,218 spans) is outside the top 25 and was not read; it is the
+  next candidate for the same scrutiny.
+
+### Proposed exclusion rules (not implemented; for a controller ruling)
+
+All three act in the CLASS pass only (moiety pass, drug x drug figures untouched), are
+mechanical (derived from data already loaded, or a fixed closed list of head nouns), and are
+measured on run 11.
+
+* **P1 -- official-name keys (generalises R16(b)).** Drop a class match KEY that folds equal to a
+  UNII **official name** (`UNII_Names` TYPE `of`) of a substance whose UNII a registry moiety
+  claims. Per key, as R16(b): the plural `phenothiazines` survives. Removes all **6,588**
+  `Acetaminophen [EPC]` spans and the **733** `Nicotinic Acid [EPC]` spans (7,321); every other
+  class it hits is already dropped by R16(b) (Calcitonin, Interferon alfa-2b/beta/gamma,
+  Parathyroid Hormone, Phenothiazine, Progesterone). Restricting to `of` is deliberate: the
+  common-name type `cn` would also drop the class word `sulfonamide` (1,281 spans; a real class).
+* **P2 -- non-drug head noun.** Drop a class span when the next word (past at most one short
+  parenthetical, e.g. "(drying)") is `effect(s)`, `activity`/`activities`, `property`/`properties`,
+  `action(s)`, `side effect(s)`, `secretagogue(s)`, or `dose(s) of` -- the class word is then an
+  adjective describing an effect, or part of another class name. Removes **11,209 spans**
+  (15,785 rows): Analgesics 3,856 of 5,654; Anticoagulants 2,695; Anticholinergic 1,144;
+  Insulin 962; Corticosteroid 707; Dopamine Agonists 462; Antiviral 429; Anticonvulsants 228;
+  Anxiolytics 154; Diuretics 101; others smaller. Checked on two fresh random draws of the spans
+  it removes (seeds 20261109, 20261110; 40 + 30): **no genuine class mention removed**; 2 of the
+  30 are property-defined drug groups ("drugs with/having <class> activity"), up to
+  ~1,343 spans of that shape if the controller prefers to keep them (exempt when preceded by
+  with/having). Bare `dose(s)` is NOT a head: it removed a real one (a PPI-class span followed by
+  "dose" that carries genuine dose advice for the class). On this sample P2 removes 13 false positives and no yes:
+  Anticoagulants 7/8, Corticosteroid 7/8, Anticholinergic 8/8, Analgesics 4/4, Insulin 7/7.
+* **P3 -- exclude MeSH PA `Hormones`** from the vocabulary, as R16(a) excluded its APC twin:
+  4/10, the yes readings all name a narrower group, physiology dominant. Removes **4,496 spans**.
+  (No mechanical fix inside the class: the FP is the preceding word -- thyroid, antidiuretic,
+  growth -- and no "Thyroid Hormones" class exists to win the longest match.)
+
+Not proposed: a rule for "(non)depolarizing muscle relaxants" (579 spans, 2/10 -- it would be a
+hand-typed modifier list) or for Anesthetics' 2 one-offs. P1 + P2 + P3 remove about 23,000 of
+249,444 spans (9%; P2 and P3 overlap slightly).
+
+<details><summary>Per-span verdicts (text_key prefix : char_start-char_end verdict), groups in table order</summary>
+
+```
+G1: 9d94d717b41b:4415-4424 Y, db659dab3fc9:3337-3346 Y, 6c40af09dab4:390-399 Y, 9009e187fb74:4206-4214 Y, bcc92e0ef5fa:283-292 Y, 06450f57b719:74-83 Y, cfef1e3cf600:84-93 Y, 2628ad58383a:4592-4601 Y, cf8244678804:1962-1971 Y, 3450ac6e11cf:503-511 Y
+G2: ffe799b5d986:494-507 E, 5352437bc5bb:6140-6154 Y, 7539e984e191:710-724 Yn, 37cd9adc22a3:5361-5374 E, e973e4eb1d92:42-55 Y, 4b55455f8b7c:230-244 Y, 63d14057bdcf:290-304 Y, 8fb0c956a898:1310-1323 E, 0459b7bbc95d:113-127 Yn, 8de2528390e5:13327-13341 Yn
+G3: 9757890dc6fd:3378-3392 Y, c3af31f947fa:3038-3053 Y, 6a35e2e4a7c6:170-185 Y, 8e25e0cb86ff:975-989 Y, ad46d342ba96:101-116 Y, ec854ff3f7af:604-618 E, 05773679a7ce:3446-3460 Y, ebd12f2b7d8f:918-932 Y, bb7a5304ab32:9570-9584 P, 223c8b8ee95e:22337-22351 E
+G4: 961dba518536:245-260 Y, cefdf319325e:4625-4640 Y, 6a078ef4d99e:2902-2917 Y, 890ac1d1c7f6:3371-3386 Y, af5cbc62b5ca:7578-7593 Y, fb180a773d6e:1626-1641 Y, 065583cdf1e7:140-155 Y, f8e9fba92208:2779-2794 Y, c1750f78da1e:936-950 Y, 25fab61879e2:5813-5828 Y
+G5: 552b26569423:834-849 Y, 76afd29fbd9c:892-907 Y, 3c02d6a9109b:7938-7953 Y, f6234cc82caa:552-568 Y, 4dd015f2f315:399-415 Y, 65597d86f0f6:5720-5735 Y, 939780805234:8406-8421 Y, 049d1fc4d5e6:5566-5581 Y, 9109d05fef92:260-275 E, d2329785159b:2690-2705 E
+G6: 60b80cc147c5:787-794 Y, 81254fe9b313:4359-4367 Y, 439b4194b639:1431-1439 Y, f9b9dc9c8aa6:7126-7134 Y, 575182d47132:538-545 Y, 6f8318b57b04:1081-1088 Y, 9d2e8c124514:1188-1195 Y, 0451274fab83:3591-3599 Y, 9c04f457c9d4:418-426 Y, d375bb2f8e06:7548-7555 Y
+G7: 5c37f3c65db9:6179-6204 Y, 7fadc3b1430e:4012-4036 Y, 3e01df4b771d:480-505 Y, ff5720235890:1621-1646 Y, 529b92a1728a:2253-2277 Y, 6e41b04984c6:2033-2058 Y, 9be1499892c5:653-678 Y, 04079f12d304:1786-1811 Y, 9aa0e9633a66:1352-1377 Y, d90723151b15:482-507 Y
+G8: 69dbb39bea40:5589-5602 D, 902d207b8d41:5169-5182 D, 49c6c25028e4:583-596 D, 63431765bca6:3982-3995 D, 7ee8e3352675:3432-3445 D, ae4a1f95b938:4920-4933 D, 03655febf5a3:4211-4224 D, ab9c479ab141:7559-7572 D, f462d5a23e19:7899-7912 D, d3f12ae2c267:11054-11067 D
+G9: 7aa817311878:6006-6015 E, a793441d1ed4:1356-1365 E, 5266ddf97dd2:1059-1069 Yn, 6e9deab21c41:2411-2421 Y, 8e93420090ef:2847-2856 E, ce48adbd9231:9955-9964 E, 05617ce018ac:471-481 Yn, cc07858587d4:635-645 Yn, f91cbe5506a6:110-119 E, 9f49dfc441b3:7840-7849 E
+G10: 7ad3694c1857:145-173 Y, a8590b6085fc:635-663 Y, 50ccb2f70ad6:1421-1449 Y, 70142635aa47:1242-1270 Y, 8eab70a77014:5703-5731 Y, d080774850c7:6159-6187 Y, 0529f9df3ded:1524-1552 Y, cdc197ba9247:4934-4962 Y, fb8e81b5c7eb:1553-1581 Y, 9dbd8ce86def:521-549 Y
+G11: 7febec295a7e:378-387 Y, acc2a03cd9e5:1884-1893 Y, 578e3ba65eb1:1559-1567 P, 769dbbb05595:840-849 Y, 9616584750a3:2719-2728 Y, d591efe455c8:372-381 Y, 0573e5f788d2:4367-4375 Y, d460f3d3f7e6:1452-1460 Y, fed234552a52:760-769 Y, a2f619932f04:1975-1983 Y
+G12: 85deb4118ed3:632-651 Y, b72861f077cf:3399-3418 Y, 5b9aace92396:3226-3244 Y, 7a12ebff3503:345-364 Y, 9ea7b0f97a71:9300-9319 Y, de73ba422496:345-364 Y, 05fbb5c7b54c:2298-2317 Y, dc6b0de55d15:1250-1269 Y, ade380f68868:2391-2409 Y, 21b321539ede:1998-2017 Y
+G13: 823ad282b61b:661-668 Y, b76adb434de6:1762-1769 O, 5ab2d19267ec:1806-1813 O, 76ada56048d6:709-716 Y, 9c1a66501a72:1417-1424 Y, dffa08e0eb99:404-411 Y, 06bf785b2160:713-720 Y, dd2e28309a4e:1561-1568 O, ab090bc57031:9227-9234 Y, 2140c3630f12:595-602 Y
+G14: 84e3fe2710f2:5359-5374 O, b8f3a8cd3ba5:3386-3402 Y, 59704fe25247:11809-11825 Y, 792aa052b9db:7815-7830 Y, 9a5e3f5d7d9e:2627-2643 Y, e650beb3037e:7577-7592 Y, 05a52e3d0b0e:3384-3400 Y, e34700e72226:4017-4033 O, ace55dd3f71d:1164-1180 Y, 1f196c7e91de:2790-2806 Y
+G15: 963e4213a6b1:83-90 Yn, d17cd6627659:8779-8787 Yn, 6a473a544d5c:3371-3379 P, 884f0c3529c2:2395-2402 P, b53dccc42775:7017-7024 P, 07a3cf980800:1053-1061 Yn, fff4838c2192:7208-7215 P, c73e74a0f41e:7253-7260 P, 27071c265f6d:922-929 O, c6fb79d57275:4104-4111 Yn
+G16: aa4c50f88bad:6311-6326 Y, e20ebf5807ca:10451-10466 Yn, 71bf8a74a753:593-608 Yn, 9a2618c0de8e:3953-3968 Yn, c562f55b9dfc:2287-2302 Y, 07295b9e3a4d:3956-3971 Y, d4f6d120d91d:3475-3490 Yn, 285e9e85226e:106-120 Yn, d4e5b4209f99:4192-4207 Yn, 374c80c05b68:670-685 Yn
+G17: a755af9c4110:1540-1552 Y, e6b1961728f2:4927-4939 Y, 767102afb8fb:8916-8927 Y, 9aab80157fc9:8989-9000 Y, c760ad28b1d1:237-249 Y, 07ea9907db75:8806-8817 Y, dc8a8ea1eeec:2114-2126 Y, 2d84287493e4:739-751 Y, dbc1faff0125:9607-9618 Y, 3a750657d36b:8993-9004 Y
+G18: a82ac70f846a:10112-10127 Y, e34797490356:1585-1600 Y, 74db3a98346a:1214-1228 Y, 99ffeec8bd34:879-894 Y, c65cb778c801:10292-10306 Y, 05468f96a995:1346-1361 Y, da73aba45205:6084-6099 Y, 2863dc72ce28:7989-8003 Y, da2b59949bcc:3539-3553 Y, 367e75d511bb:1224-1238 Y
+G19: 625fd9eb2352:11652-11675 Y, 8a2122dddf78:889-912 Y, 4417a875d909:1223-1247 Y, 5b9aace92396:12000-12023 Y, 7441bade76bc:2033-2057 Y, a7ee12954f46:3114-3138 Y, 042aeec26a4d:7220-7244 Y, a6d8f9c5208d:12192-12216 Y, eae5bc3dd038:3148-3172 Y, d084f9e00c38:795-819 Y
+G20: 64e21fea14e2:3365-3383 Y, 8e46cfa9a905:1474-1492 Y, 4414b1ff4a4a:1461-1479 Y, 5a4e199d2df7:2901-2919 Y, 794585cb1ae1:1012-1030 Y, b15a8bbe66b7:4172-4190 Y, 02f8f3d2592d:8335-8353 Y, afdb01b11f59:2245-2263 Y, f3b719bca1a2:138-156 Y, d31685de6e89:2868-2886 Y
+G21: 6f670c054c5f:1506-1515 Y, 982ae2348663:2530-2539 Y, 4c857396a524:2641-2650 Y, 63c25031f924:1799-1809 Y, 83594f11ea5f:1520-1529 Y, baeda3950e56:1531-1541 Y, 060031ac368f:1472-1481 Y, b9d08b5a9afe:1086-1095 Y, fec2391d90d4:534-543 Y, e363d51d8a51:3129-3139 Y
+G22: 7134c62096e5:1866-1905 Y, 97cc7fd6af15:1654-1693 Y, 4a94bdca8e2d:5777-5816 Y, 6682c95f8ff5:845-884 Y, 83b7265357f9:4835-4874 Y, bc9f3d6abab8:552-591 Y, 04cfa642a5df:885-924 Y, bb91f780a033:1110-1149 Y, e2557ae4447b:1245-1284 Y, 8ea8a5bae38a:849-888 Y
+G23: 82be56023afa:6314-6325 Yn, b7c357033151:1858-1869 Yn, 565216c59565:2078-2089 Yn, 792b7cc34028:7403-7414 Yn, 989b65c4e1b1:5474-5485 Yn, e93d0b48d30d:769-780 Yn, 051b3a34bd65:716-727 Y, e6aa094edbba:6562-6573 Yn, aca4b62f26d1:1550-1560 O, 1db893b571fd:2565-2575 O
+G24: 8a60b3c7f93f:10251-10272 Y, bea0e82bb8f9:261-283 Y, 62da78850376:172-194 Y, 7dd6ea959742:172-194 Y, 9f502eda8376:8787-8809 Y, edd4c22ed8c5:1074-1096 Y, 05cd92e7d0f8:4334-4356 Y, eacd3ed4f398:8967-8989 Y, b2647ad6ab3c:3725-3747 Y, 21684fc6c3d7:1083-1105 Y
+G25: 8575cfe78dfb:2950-2966 Y, bf09b2454dee:294-310 Y, 5aad80bfb87c:24-39 Y, 7a0c5e4540f4:1010-1025 Y, a12b8c6845fd:7098-7114 Y, eaafa0ee7214:5930-5946 Y, 06abf9893633:887-903 Y, e7d2dd1d0fd6:1164-1180 Y, b591803f5837:1123-1139 Y, 2257c8bcc3e5:3655-3671 Y
+```
+</details>
+
 ## Precision sample
 
 TO BE FILLED BY TASK 9B.
