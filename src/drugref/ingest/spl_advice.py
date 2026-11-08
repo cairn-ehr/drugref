@@ -141,8 +141,8 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
     _rule("avoid", "do_not_use", r"\b(?:do|should) not (?:be )?use[d]?\b"),
     _rule("avoid", "do_not_coadminister",
           r"\bdo not co-?administer\b|\bshould not be co-?administered\b"),
-    # "Reserve concomitant prescribing for patients for whom alternative treatment
-    # options are inadequate" / "cessation ... is preferred": avoid unless necessary.
+    # "Reserve concomitant prescribing ..." (only where nothing else will do) and
+    # "cessation ... is preferred": avoid unless necessary.
     _rule("avoid", "reserve",
           r"\breserve\s+concomitant\b|\bcessation\s+of\b[^.;]{0,80}?\bis\s+preferred\b"),
     _rule("adjust_dose", "reduce_dose",

@@ -491,11 +491,11 @@ def test_contraindications_cross_reference_variants():
 
 
 def test_reserve_concomitant_prescribing_is_avoid():
-    """'Reserve concomitant prescribing for patients for whom alternative options are
-    inadequate' and 'cessation ... is preferred' are avoid-unless-necessary advice."""
+    """'Reserve concomitant prescribing ...' (only where nothing else will do) and
+    'cessation ... is preferred' are avoid-unless-necessary advice."""
     for text, name in (
-            ("Intervention: Reserve concomitant prescribing of widgetines for patients for "
-             "whom alternative treatment options are inadequate.", "widgetines"),
+            ("Intervention: Reserve concomitant prescribing of widgetines for the few.",
+             "widgetines"),
             ("Intervention: Cessation of widgetines is preferred in most cases.",
              "widgetines")):
         assert _read(text, name).level == "avoid", text
