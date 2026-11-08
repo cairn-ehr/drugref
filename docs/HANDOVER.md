@@ -13,8 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-class-mentions` (from `main` after PR #212). PR to be opened (link the round's design and
-results record; no closing keywords next to issue numbers). Schema now ends at `db/066`.** The suite total lives in
+**Branch `claude/spl-class-mentions` (from `main` after PR #212). PR #219 OPEN (to `main`). Schema now ends at `db/066`.** The suite total lives in
 PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
 suite disagree.
 
