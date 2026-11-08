@@ -13,7 +13,7 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/citation-census`; PR OPEN (to `main`) for #210. PRs #208 and #211 are MERGED (#202, #206,
+**Branch `claude/citation-census`; PR #212 OPEN (to `main`) for #210. PRs #208 and #211 are MERGED (#202, #206,
 #207, #209 CLOSED). Schema still ends at `db/065`; this round adds no migration.** The suite total lives in
 PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
 suite disagree.
