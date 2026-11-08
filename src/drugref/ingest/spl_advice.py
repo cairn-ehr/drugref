@@ -22,11 +22,32 @@ absent. Hence: (1) the reader prefers `not_read` to a guess; (2) a strength leve
 "contraindicated" (that would over-warn the other way, and is plainly wrong), but
 is left `not_read` rather than being promoted to an all-clear.
 
+**NEGATION.** Only two negations are understood. "not/no ... contraindicated"
+(up to one word between, any whitespace) is masked before the strength rules, so it
+reads `not_read`, never `contraindicated`. "no dose adjustment/reduction", "no
+clinically significant interaction" are the NMI phrases, masked so "dose
+adjustment" inside them cannot fire `adjust_dose`. Any other negation is not
+modelled; the vocabulary avoids phrases that negation would flip.
+
+**CONDITIONALS.** "If coadministration is necessary, reduce the dose" is read as
+`adjust_dose`: the label does give dose advice, and a conditional still tells the
+reader something is to be done. That is the safe direction (it can over-warn
+slightly, never produces an all-clear).
+
+**RULING R6 (single-clause NMI).** `no_meaningful_interaction` is read only when
+the sentence scope has no ';' and none of the contrast words
+except/unless/but/however/although/while/whereas. A clause such as "no dose
+adjustment with weak inhibitors" often sits beside advice about the mention that
+the seed vocabulary cannot see ("do not exceed 10 mg with strong inhibitors");
+reading NMI there would be the worst error. In doubt the result is `not_read`.
+A strength level that fired still wins.
+
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
 """
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 
 LEVELS = ("contraindicated", "avoid", "adjust_dose", "monitor",
@@ -52,11 +73,11 @@ def _rule(level: str, name: str, regex: str) -> AdviceRule:
 
 
 ADVICE_RULES: tuple[AdviceRule, ...] = (
-    # The two lookbehinds are the negation guard:
-    # "not/no contraindicated" must not fire.
-    _rule("contraindicated", "contraindicated",
-          r"(?<!not )(?<!no )\bcontraindicated\b"),
+    # Negation ("not contraindicated") is masked in _read_scope, not here.
+    _rule("contraindicated", "contraindicated", r"\bcontraindicated\b"),
     _rule("avoid", "avoid", r"\bavoid(?:ed|ing)?\b"),
+    _rule("avoid", "not_recommended", r"\bnot recommended\b"),
+    _rule("avoid", "do_not_use", r"\b(?:do|should) not (?:be )?use[d]?\b"),
     _rule("avoid", "do_not_coadminister",
           r"\bdo not co-?administer\b|\bshould not be co-?administered\b"),
     _rule("adjust_dose", "reduce_dose",
@@ -74,8 +95,9 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
           r"\bno (?:clinically )?(?:significant|meaningful|relevant) "
           r"(?:\w+ )?(?:interactions?|effects?)\b"),
     _rule(NMI, "no_dose_adjustment",
-          r"\bno (?:(?:initial|starting|specific) )?dos(?:e|age) adjustments?\b"
-          r"|\bdos(?:e|age) adjustments? (?:is|are) not "
+          r"\bno (?:(?:initial|starting|specific) )?dos(?:e|age) "
+          r"(?:adjustments?|reductions?)\b"
+          r"|\bdos(?:e|age) (?:adjustments?|reductions?) (?:is|are) not "
           r"(?:needed|required|necessary)\b"),
 )
 
@@ -91,55 +113,78 @@ class AdviceReading:
 
 
 # --- scope finding ------------------------------------------------------
+# Starts and markers are computed ONCE per read_advice call and passed down;
+# every helper below works from offsets, never re-slicing the text (a section
+# can be 50k+ characters, and per-boundary slicing was quadratic).
 
 # "7.2 Heading": numbers with a dot, then an upper-case word, at a word start.
 _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # A sentence ends at "." or ";" followed by space and an upper-case letter/digit.
-_BOUNDARY = re.compile(r"[.;](?=\s+[A-Z0-9])")
+# The match consumes the whitespace, so m.end() is the next sentence's start.
+_BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
+# R6: any of these in the scope forbids reading NMI.
+_CONTRAST = re.compile(r"[;]|\b(?:except|unless|but|however|although|while|whereas)\b",
+                       re.IGNORECASE)
+# Negated contraindication, masked before the strength rules.
+_NEG_CONTRA = re.compile(r"\b(?:not|no)\s+(?:\w+\s+)?contraindicated\b", re.IGNORECASE)
 
 
-def _sentence_starts(text: str) -> list[int]:
+def _markers(text: str) -> list[int]:
+    return [m.start() for m in _MARKER.finditer(text)]
+
+
+def _sentence_starts(text: str, markers: list[int]) -> list[int]:
     """Sorted offsets where a sentence begins (always includes 0)."""
-    starts = {0}
+    starts = {0, *markers}
     for m in _BOUNDARY.finditer(text):
-        if _ABBREV.search(text[: m.end()]):
-            continue  # "e.g. Ketoconazole" is not a sentence end
-        starts.add(len(text) - len(text[m.end():].lstrip()))
-    starts.update(m.start() for m in _MARKER.finditer(text))
+        # short window only: "e.g." is at most 6 characters before the dot
+        if _ABBREV.search(text, max(0, m.start() - 6), m.start() + 1):
+            continue
+        starts.add(m.end())
     return sorted(starts)
+
+
+def _span_from(starts: list[int], n: int, char_start: int) -> tuple[int, int]:
+    i = bisect_right(starts, char_start)
+    return starts[i - 1], (starts[i] if i < len(starts) else n)
 
 
 def sentence_span(text: str, char_start: int, char_end: int) -> tuple[int, int]:
     """The sentence holding the span (`char_end` is unused; the start decides)."""
-    starts = _sentence_starts(text)
-    s = max(p for p in starts if p <= char_start)
-    after = [p for p in starts if p > char_start]
-    return s, (after[0] if after else len(text))
+    return _span_from(_sentence_starts(text, _markers(text)), len(text), char_start)
+
+
+def _block_from(text: str, markers: list[int], starts: list[int],
+                char_start: int) -> tuple[int, int] | None:
+    i = bisect_right(markers, char_start)
+    if i == 0:
+        return None
+    m = markers[i - 1]
+    after_marker = _MARKER.match(text, m).end()
+    if len(text[after_marker:char_start].split()) > 8:
+        return None
+    if _span_from(starts, len(text), char_start)[0] > m:
+        return None  # a sentence boundary lies between marker and mention
+    return m, (markers[i] if i < len(markers) else len(text))
 
 
 def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
     """Marker-to-next-marker span when a marker sits <= 8 tokens before the mention."""
-    before = [m for m in _MARKER.finditer(text) if m.start() <= char_start]
-    if not before:
-        return None
-    m = before[-1]
-    if len(text[m.end():char_start].split()) > 8:
-        return None
-    if sentence_span(text, char_start, char_start)[0] > m.start():
-        return None  # a sentence boundary lies between marker and mention
-    nxt = [n.start() for n in _MARKER.finditer(text) if n.start() > char_start]
-    return m.start(), (nxt[0] if nxt else len(text))
+    mk = _markers(text)
+    return _block_from(text, mk, _sentence_starts(text, mk), char_start)
 
 
 # --- reading ------------------------------------------------------------
 
 def _read_scope(chunk: str, allow_nmi: bool) -> tuple[str, bool, str | None] | None:
     """(level, mixed, rule_id) for one chunk of text, or None when nothing is read."""
-    nmi_hits = [(m.start(), m.end()) for r in ADVICE_RULES if r.level == NMI
-                for m in r.pattern.finditer(chunk)]
+    nmi_hits = sorted((m.start(), r.rule_id, m.end()) for r in ADVICE_RULES
+                      if r.level == NMI for m in r.pattern.finditer(chunk))
     masked = chunk
-    for a, b in nmi_hits:  # "no dose adjustment" must not fire adjust_dose
+    spans = [(a, b) for a, _, b in nmi_hits]
+    spans += [m.span() for m in _NEG_CONTRA.finditer(chunk)]
+    for a, b in spans:  # "no dose adjustment" must not fire adjust_dose
         masked = masked[:a] + " " * (b - a) + masked[b:]
     first: dict[str, tuple[int, str]] = {}
     for r in ADVICE_RULES:
@@ -151,20 +196,20 @@ def _read_scope(chunk: str, allow_nmi: bool) -> tuple[str, bool, str | None] | N
     for level in STRENGTH:
         if level in first:
             return level, len(first) > 1, first[level][1]
-    if allow_nmi and nmi_hits:
-        first_rule = min((m.start(), r.rule_id) for r in ADVICE_RULES if r.level == NMI
-                         for m in r.pattern.finditer(chunk))
-        return NMI, False, first_rule[1]
+    if allow_nmi and nmi_hits and not _CONTRAST.search(chunk):
+        return NMI, False, nmi_hits[0][1]
     return None
 
 
 def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     """Read the label's advice for the mention at [char_start, char_end)."""
-    s, e = sentence_span(text, char_start, char_end)
+    mk = _markers(text)
+    starts = _sentence_starts(text, mk)
+    s, e = _span_from(starts, len(text), char_start)
     got = _read_scope(text[s:e], allow_nmi=True)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
-    block = heading_block_span(text, char_start)
+    block = _block_from(text, mk, starts, char_start)
     if block:
         # NMI is not read here: a block can mix statements about different things.
         got = _read_scope(text[block[0]:block[1]], allow_nmi=False)
