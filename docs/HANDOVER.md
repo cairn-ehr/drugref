@@ -13,26 +13,20 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/citation-census`; PR #212 OPEN (to `main`) for #210. PRs #208 and #211 are MERGED (#202, #206,
-#207, #209 CLOSED). Schema still ends at `db/065`; this round adds no migration.** The suite total lives in
-PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
-suite disagree.
+**Branch `claude/spl-class-mentions` (from `main` after PR #212 MERGED, closing #210). PRs #208, #211, #212
+MERGED. Schema still ends at `db/065`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
+**nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ JUST FINISHED: #210.** `citation_audit.miscited(conn)` reports every curated row (all four tables, superseded
-rows too) whose `question_uuid` is not one its own key may cite, using the writers' own candidate functions (now
-named: `curation.interaction_questions` / `condition_questions` / `class_interaction_questions`,
-`curation_property.answerable_questions`) via `questions.cites_own_question`, the non-raising half of
-`require_question_for`. Runner: `uv run python -m tools.citation_census --dsn ...` (exit 1 on a live finding; a superseded one is permanent, printed only).
-**Measured: 0 on `drugref_profiles`; only `drugref_reviewer_dev` has findings (2), GUI test data citing a
-hand-made uuid4 question** (PROJECT-NOTES § "The class-profiles round"). Report only: no row was superseded.
+**⇒ LAST ROUND: #210.** `citation_audit.miscited(conn)` / `uv run python -m tools.citation_census --dsn ...`
+(exit 1 on a live finding). 0 findings on `drugref_profiles`; 2 on `drugref_reviewer_dev` (GUI test data).
 
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests tools` clean.
-(`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
-**Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND: SPL class-mention extraction** (item 6 below) — opens with its own brainstorm/design round.
+`ruff format` is NOT applied in this repo (most files fail `--check`); match the hand style. **Do not add
+`-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
 ## ⇒ DO THIS NEXT
 
-1. **Get this PR reviewed and merged.** Then the owner's **clinical read of the class-profiles results §5**
+1. The owner's **clinical read of the class-profiles results §5**
    (beta blockers, ACE inhibitors, SSRIs); nothing so far drew a clinical conclusion. **After that read**,
    write the docs-site *Design decisions* record for class profiles (living decisions only).
 2. **Owner design call on #204**: interaction rulings never reach the prescribing-alert path. **Curators must
@@ -51,7 +45,7 @@ hand-made uuid4 question** (PROJECT-NOTES § "The class-profiles round"). Report
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open
-from class profiles: #203, #204; #210 closes on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+from class profiles: #203, #204; #210 CLOSED (PR #212).** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve

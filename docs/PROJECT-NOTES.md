@@ -6047,7 +6047,7 @@ questions until it is decided · **[#206](https://github.com/cairn-ehr/drugref/i
 **[#207](https://github.com/cairn-ehr/drugref/issues/207)** (filed by the pre-merge review) **FIXED by the
 class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by
 PR #208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a
-report-only census, no migration (§ "The class-profiles round"). Figures on the issues and in the
+report-only census, no migration, CLOSED (PR #212) (§ "The class-profiles round"). Figures on the issues and in the
 results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
 GitHub 2026-11-07**, alongside #130.
 

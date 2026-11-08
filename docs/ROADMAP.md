@@ -1339,7 +1339,7 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   follow-up round** (`db/064`'s eligible denominator; one shared question guard), which also shows what a
   subclass-only drug inherits on the parent's profile (spec §4) and adds a names check to the census.
   Rows written before that guard are audited by `tools.citation_census`
-  ([#210](https://github.com/cairn-ehr/drugref/issues/210), report only): 0 findings on `drugref_profiles`.
+  ([#210](https://github.com/cairn-ehr/drugref/issues/210), report only; CLOSED by PR #212): 0 findings on `drugref_profiles`.
 - **Still owed**: the clinician read of the three spot checks (beta blockers, ACE inhibitors, SSRIs) pasted
   in the results record §5.
 - **Feeds from next**: SPL class-mention extraction (§ "5c.3 — SPL/DailyMed mining", its class half) — today no source states a
