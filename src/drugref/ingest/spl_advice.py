@@ -34,19 +34,19 @@ modelled; the vocabulary avoids phrases that negation would flip.
 reader something is to be done. That is the safe direction (it can over-warn
 slightly, never produces an all-clear).
 
-**RULING R6 (single-clause NMI).** `no_meaningful_interaction` is read only when
-the sentence scope has no ';' and none of the contrast words
-except/unless/but/however/although/while/whereas. A clause such as "no dose
-adjustment with weak inhibitors" often sits beside advice about the mention that
-the seed vocabulary cannot see ("do not exceed 10 mg with strong inhibitors");
-reading NMI there would be the worst error. In doubt the result is `not_read`.
-A strength level that fired still wins.
-
-**RULING R7 (widened blocker).** The seed vocabulary will always be incomplete, so
-NMI is refused whenever the scope might carry a second statement: also on
-", and/or/nor", on "and no", and on dose-limit/caution words
-(exceed*, limit*, maximum, caution*, consider*). Reading too little is safe;
-reading an all-clear beside unseen advice is not.
+**RULING R8 (structural NMI rule; replaced the R6/R7 blocklists).**
+`no_meaningful_interaction` is the worst error this module can make, and the
+reading is meant to be RARE. A blocklist of "contrast words" leaks by
+construction (the seed vocabulary and any word list are always incomplete: "with
+the exception of", ", no dose adjustment...", "whilst" all slipped through), so
+NMI is read only when the whole sentence scope is plainly one simple statement:
+(a) it contains none of , ; : ( ) or a newline; (b) it contains no whole-word
+and/or/nor/yet/whilst/while/but/however/although/whereas/unless/instead/only/
+except*/exception*, no "other than"/"apart from", and none of the dose-limit
+words exceed*/limit*/maximum/caution*/consider*; and (c) the mention comes AFTER
+the start of the NMI phrase ("No ... interaction ... with X"), so a mention that
+merely precedes some other clause's all-clear is not covered by it. Otherwise
+the result is `not_read`; a strength level that fired still wins.
 
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
@@ -129,12 +129,13 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# R6/R7: any of these in the scope forbids reading NMI.
-# R7 widens it: coordination (", and" / "and no") and dose-limit words too.
+# R8: any of these in the scope refuses NMI (a structural rule, see the docstring).
 _NMI_BLOCKER = re.compile(
-    r";|\b(?:except|unless|but|however|although|while|whereas)\b"
-    r"|,\s*(?:and|or|nor)\b|\band\s+no\b"
-    r"|\b(?:exceed\w*|limit\w*|maximum|caution\w*|consider\w*)\b",
+    r"[,;:()\n]"
+    r"|\b(?:and|or|nor|yet|whilst|while|but|however|although|whereas|unless|instead"
+    r"|only|except\w*|exception\w*|exceed\w*|limit\w*|maximum|caution\w*"
+    r"|consider\w*)\b"
+    r"|\bother than\b|\bapart from\b",
     re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
 # "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
@@ -190,7 +191,8 @@ def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
 
 # --- reading ------------------------------------------------------------
 
-def _read_scope(chunk: str, allow_nmi: bool) -> tuple[str, bool, str | None] | None:
+def _read_scope(chunk: str, allow_nmi: bool,
+                rel_start: int = 0) -> tuple[str, bool, str | None] | None:
     """(level, mixed, rule_id) for one chunk of text, or None when nothing is read."""
     nmi_hits = sorted((m.start(), r.rule_id, m.end()) for r in ADVICE_RULES
                       if r.level == NMI for m in r.pattern.finditer(chunk))
@@ -209,8 +211,11 @@ def _read_scope(chunk: str, allow_nmi: bool) -> tuple[str, bool, str | None] | N
     for level in STRENGTH:
         if level in first:
             return level, len(first) > 1, first[level][1]
+    # R8 (c): the mention must come after the phrase that fired.
     if allow_nmi and nmi_hits and not _NMI_BLOCKER.search(chunk):
-        return NMI, False, nmi_hits[0][1]
+        hit = next((h for h in nmi_hits if h[0] < rel_start), None)
+        if hit:
+            return NMI, False, hit[1]
     return None
 
 
@@ -219,7 +224,7 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
     s, e = _span_from(starts, len(text), char_start)
-    got = _read_scope(text[s:e], allow_nmi=True)
+    got = _read_scope(text[s:e], allow_nmi=True, rel_start=char_start - s)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
     block = _block_from(text, mk, starts, char_start)

@@ -172,3 +172,33 @@ def test_plain_single_clause_nmi_still_reads():
 def test_not_only_contraindicated_is_still_contraindicated():
     r = _read("Ketoconazole is not only contraindicated with simvastatin.", "simvastatin")
     assert r.level == "contraindicated"
+
+
+def test_r8_leaky_probes_are_never_nmi():
+    s = "strong CYP3A inhibitors"
+    probes = [
+        ("No dose adjustment is required, with the exception of strong CYP3A inhibitors.", s),
+        ("No dose adjustment is required other than with strong CYP3A inhibitors.", s),
+        ("No dose adjustment is required apart from strong CYP3A inhibitors.", s),
+        ("Do not take with strong inhibitors, no dose adjustment is needed with weak "
+         "inhibitors.", "strong inhibitors"),
+        ("Strong inhibitors: use 5 mg once daily, weak inhibitors: no dose adjustment "
+         "needed.", "Strong inhibitors"),
+        ("Strong inhibitors: use 5 mg once daily\nWeak inhibitors: no dose adjustment "
+         "needed.", "Strong inhibitors"),
+        ("No dose adjustment is needed with weak inhibitors (use 5 mg with strong "
+         "inhibitors).", "strong inhibitors"),
+        ("With strong inhibitors use 5 mg and with weak inhibitors no dose adjustment is "
+         "needed.", "strong inhibitors"),
+        ("No dose adjustment is needed whilst strong inhibitors require 5 mg.",
+         "strong inhibitors"),
+        ("No dose adjustment is needed, yet strong inhibitors require 5 mg.",
+         "strong inhibitors"),
+    ]
+    for t, name in probes:
+        assert _read(t, name).level != "no_meaningful_interaction", t
+
+
+def test_r8_mention_before_the_phrase_is_refused():
+    r = _read("Antacids showed no clinically significant interaction.", "Antacids")
+    assert r.level == "not_read"
