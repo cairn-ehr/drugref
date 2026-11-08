@@ -22,7 +22,7 @@ suite disagree.
 rows too) whose `question_uuid` is not one its own key may cite, using the writers' own candidate functions (now
 named: `curation.interaction_questions` / `condition_questions` / `class_interaction_questions`,
 `curation_property.answerable_questions`) via `questions.cites_own_question`, the non-raising half of
-`require_question_for`. Runner: `uv run python -m tools.citation_census --dsn ...` (exit 1 on findings).
+`require_question_for`. Runner: `uv run python -m tools.citation_census --dsn ...` (exit 1 on a live finding; a superseded one is permanent, printed only).
 **Measured: 0 on `drugref_profiles`; only `drugref_reviewer_dev` has findings (2), GUI test data citing a
 hand-made uuid4 question** (PROJECT-NOTES § "The class-profiles round"). Report only: no row was superseded.
 

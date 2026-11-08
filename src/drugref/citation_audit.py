@@ -7,10 +7,11 @@ question alive for as long as the citing row exists, so the row pins an unrelate
 question to the registry forever.
 
 This module only REPORTS. The tables are append-only, so a miscited row is never
-UPDATEd; the fix is a curator re-recording the ruling through its writer (with the
-right question, or none), which supersedes it. A superseded row still pins its
-question, though -- the retention guard reads every row, live or not -- so the census
-reads every row too and says which are live.
+UPDATEd. A curator re-recording the ruling through its writer (with the right
+question, or none) corrects the LIVE ruling's citation -- but the superseded row
+stays, and so does the pin: the retention guard reads every row, live or not. So the
+census reads every row too and says which are live; a superseded finding is permanent
+and is reported for awareness, not action.
 
 The check is the writers' own: each table's candidate list comes from the function
 its writer calls (curation.*_questions, curation_property.answerable_questions), and

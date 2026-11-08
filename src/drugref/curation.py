@@ -38,10 +38,11 @@ from drugref import overlay, questions
 
 # ---- Which question each writer's row may cite (#207, #210) -------------------
 #
-# One function per curated table, returning the (gap_kind, key columns) candidates
-# questions.require_question_for checks a new row against. They are named, not
-# inlined in the writers, because citation_audit asks the SAME question of rows
-# already written -- two spellings of one candidate list could disagree.
+# One function per curated table written here (curated_property_ruling's is
+# curation_property.answerable_questions), returning the (gap_kind, key columns)
+# candidates questions.require_question_for checks a new row against. They are
+# named, not inlined in the writers, because citation_audit asks the SAME question
+# of rows already written -- two spellings of one candidate list could disagree.
 
 
 def interaction_questions(subject_moiety_uuid, object_class_uuid, relationship):

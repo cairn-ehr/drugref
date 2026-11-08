@@ -5921,11 +5921,12 @@ not here.** What the next round inherits:
   gap-19 `interacts_with class` question about the same pair, though spec §4 counts `applies = false` there as
   a confirmed exception. Widen the candidate list if curators need that cross-citation.
 - **Rows written before that guard are audited by `citation_audit.miscited`** (#210; run it as
-  `uv run python -m tools.citation_census --dsn ...`, exit 1 on any finding). It reads every row, superseded
+  `uv run python -m tools.citation_census --dsn ...`, exit 1 on any LIVE finding). It reads every row, superseded
   ones too (the retention guard keeps a question alive for any citing row), and checks each with the writers'
   own candidate functions (`curation.*_questions`, `curation_property.answerable_questions`) through
-  `questions.cites_own_question`, the non-raising half of the guard. Report only: the fix is re-recording
-  through the writer, never an UPDATE. **2026-11-08: 0 findings on `drugref_profiles`; every other local
+  `questions.cites_own_question`, the non-raising half of the guard. Report only: re-recording through the
+  writer corrects a live row (never an UPDATE), but the superseded row keeps its pin forever, so a superseded
+  finding is permanent, printed for awareness and does not fail the exit status. **2026-11-08: 0 findings on `drugref_profiles`; every other local
   database holds no cited row except `drugref_reviewer_dev`**, whose 2 findings (one live, one superseded
   `curated_interaction`) cite a hand-inserted "Test decision?" question with a random uuid4: its gap_key
   equals the row's own key, but its uuid was never minted from it. GUI test data, not a curation error.
@@ -6219,7 +6220,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 2987 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 2990 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
