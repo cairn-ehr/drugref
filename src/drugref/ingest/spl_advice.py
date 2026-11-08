@@ -90,6 +90,18 @@ SCOPE_SENTENCE = "sentence"
 SCOPE_HEADING_BLOCK = "heading_block"
 SCOPES = (SCOPE_SENTENCE, SCOPE_HEADING_BLOCK)
 
+#: (level, scope) readings WITHHELD from what ships: read, then mapped to not_read
+#: (design 7: a level that cannot reach its gate after tuning is withheld). Task 9B,
+#: after the two permitted tuning iterations, final hand sample on SPL run 14:
+#: sentence-scope avoid 39/50 (78%) and monitor 44/50 (88%) exact agreement against
+#: the owner's 90% gate. The misses are mostly advice belonging to ANOTHER drug in a
+#: merged table row or bullet run, which a phrase reader cannot attribute. Every
+#: other (level, scope) cleared its gate. Recorded in the results record, "Gates".
+WITHHELD: frozenset[tuple[str, str]] = frozenset({
+    ("avoid", SCOPE_SENTENCE),
+    ("monitor", SCOPE_SENTENCE),
+})
+
 
 @dataclass(frozen=True)
 class AdviceRule:
@@ -423,8 +435,22 @@ def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
     return (NMI, False, hit.rule_id) if hit else None
 
 
-def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
-    """Read the label's advice for the mention at [char_start, char_end)."""
+def read_advice(text: str, char_start: int, char_end: int, *,
+                withheld: frozenset[tuple[str, str]] = WITHHELD) -> AdviceReading:
+    """Read the label's advice for the mention at [char_start, char_end).
+
+    A reading whose (level, scope) is in `withheld` ships as not_read over its own
+    scope. Tests of the phrase rules pass `withheld=frozenset()`.
+    """
+    r = _read_advice(text, char_start, char_end)
+    if (r.level, r.scope) in withheld:
+        return AdviceReading("not_read", False, None, r.scope,
+                             r.scope_start, r.scope_end)
+    return r
+
+
+def _read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
+    """The phrase reader before withholding (see `read_advice`)."""
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
     s, e0 = _span_from(starts, len(text), char_start)

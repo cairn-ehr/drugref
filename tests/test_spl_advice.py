@@ -9,8 +9,10 @@ from drugref.ingest.spl_advice import (ADVICE_RULES, LEVELS, NMI_TEMPLATES, read
 
 
 def _read(text, name):
+    """The phrase reader itself: these tests pin the RULES, so nothing is withheld
+    here; the shipped withholding (`WITHHELD`) has its own tests at the end."""
     i = text.index(name)
-    return read_advice(text, i, i + len(name))
+    return read_advice(text, i, i + len(name), withheld=frozenset())
 
 
 def test_contraindicated():
@@ -547,3 +549,37 @@ def test_glued_or_truncated_clinical_impact_labels_are_row_labels():
     text = ("Widget Oxidase Inhibitors (WOIs) ClinicalImpact: The risk rises. Intervention: "
             "Drug A is contraindicated in patients taking WOIs.")
     assert _read(text, "Widget Oxidase Inhibitors").level == "contraindicated"
+
+
+# ---- Task 9B gates: levels withheld after the two tuning iterations -------------------
+
+def _shipped(text, name):
+    i = text.index(name)
+    return read_advice(text, i, i + len(name))
+
+
+def test_the_withheld_levels_are_sentence_avoid_and_sentence_monitor():
+    """After two tuning iterations the final hand sample (SPL run 14) read sentence-scope
+    avoid at 78% and monitor at 88% exact agreement, under the owner's 90% gate; both
+    are withheld (design 7). Every other level/scope shipped."""
+    from drugref.ingest.spl_advice import WITHHELD
+    assert WITHHELD == frozenset({("avoid", "sentence"), ("monitor", "sentence")})
+
+
+def test_a_withheld_reading_ships_as_not_read():
+    for text, name in (("Avoid widgetines with drug A.", "widgetines"),
+                       ("Monitor INR in patients on widgetants.", "widgetants")):
+        r = _shipped(text, name)
+        assert (r.level, r.rule_id, r.mixed, r.scope) == ("not_read", None, False, "sentence")
+        assert r.scope_start <= text.index(name) and r.scope_end >= text.index(name) + len(name)
+
+
+def test_levels_and_scopes_that_cleared_their_gate_still_ship():
+    assert _shipped("Use with widgetines is contraindicated.", "widgetines").level == (
+        "contraindicated")
+    assert _shipped("Reduce the dose of drug A with widgetines.", "widgetines").level == (
+        "adjust_dose")
+    text = ("7.1 Warfarin text here. 7.2 Potassium-Sparing Diuretics Concomitant use "
+            "increases potassium. Avoid concomitant use. 7.3 Other text.")
+    r = _shipped(text, "Potassium-Sparing Diuretics")
+    assert (r.level, r.scope) == ("avoid", "heading_block")
