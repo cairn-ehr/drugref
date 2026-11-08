@@ -120,6 +120,7 @@ QUERIES: tuple[tuple[str, str], ...] = (
                     count(DISTINCT (char_start, char_end)) AS spans
                FROM occ GROUP BY axis, pop, text_key, label_count) p
       GROUP BY axis, pop ORDER BY axis, pop"""),
+    # The PK/APC filter below must change with spl_class_vocab.is_matchable.
     ("Classes mentioned at least once vs classes matchable, per axis",
      """
      SELECT c.source || ' ' || c.concept_type AS axis,

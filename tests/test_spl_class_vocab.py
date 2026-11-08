@@ -27,8 +27,9 @@ def test_fda_cyp_label_orders_skips_substrates_and_unbanded():
     assert fda_cyp_label_orders("P-gp inhibitor") == ()
 
 
-def test_is_matchable_excludes_only_medrt_pk():
+def test_is_matchable_excludes_only_medrt_pk_and_apc():
     assert not is_matchable("MED-RT", "PK")
+    assert not is_matchable("MED-RT", "APC")
     assert is_matchable("FDA-CYP", "PK") and is_matchable("MeSH", "PA")
     assert is_matchable("MED-RT", "EPC")
 

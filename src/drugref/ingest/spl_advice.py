@@ -268,10 +268,12 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     """Read the label's advice for the mention at [char_start, char_end)."""
     mk = _markers(text)
     starts = _sentence_starts(text, mk)
-    s, e = _span_from(starts, len(text), char_start)
-    # Defensive on EVERY return path: db/066's CHECK needs scope to contain the span.
-    e = max(e, char_end)
-    got = _read_scope(text[s:e], allow_nmi=True, rel_start=char_start - s,
+    s, e0 = _span_from(starts, len(text), char_start)
+    # READ the original sentence (so a mention running past its end still refuses
+    # NMI inside _read_scope) but WIDEN the returned scope on EVERY path: db/066's
+    # CHECK needs scope to contain the span.
+    e = max(e0, char_end)
+    got = _read_scope(text[s:e0], allow_nmi=True, rel_start=char_start - s,
                       rel_end=char_end - s)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)

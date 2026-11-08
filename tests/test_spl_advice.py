@@ -333,3 +333,16 @@ def test_span_crosses_sentence_boundary():
     assert not crosses(text, 6, 15)                      # the boundary is its end
     assert not crosses("Use e.g. Statins now.", 4, 15)   # an abbreviation is not one
     assert crosses("Use Potassium; Salts now.", 4, 20)   # ';' counts like '.'
+
+
+def test_nmi_is_refused_for_a_mention_running_past_the_sentence_end():
+    """The scope is widened only on the RETURNED reading; the read itself stays on the
+    original sentence so _read_scope's refusal of NMI for a mention that runs past the
+    sentence end still fires (zero-tolerance level, two defensive layers)."""
+    text = ("No clinically significant interaction was observed with Potassium. "
+            "Salts were given daily.")
+    start = text.index("Potassium")
+    end = text.index("Salts") + len("Salts")
+    r = read_advice(text, start, end)
+    assert r.level == "not_read"
+    assert r.scope_start <= start and r.scope_end >= end
