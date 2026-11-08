@@ -10,7 +10,7 @@ Sections "Precision sample" and "Gates" are Task 9B's.
 |---|---|
 | git head at build | `d165f39` plus the Task 9A commits (tool, scope fixes R16/R17); run 12 at `6e7b749` (R19) |
 | database | `drugref_classmentions`, built from nothing (createdb, then migrate through db/066) |
-| SPL run | **ingest_run 15** (what ships: R19 hygiene + two advice-tuning iterations + the withheld levels; per-source rebuilds on the same DB, db/066 untouched). Run 12 = R19 rebuild, run 13 = tuning iteration 1, run 14 = iteration 2. Run 11 is the R16/R17 rebuild the class hygiene sample was drawn on; run 10 the superseded first full run; run 9 aborted, left as an unfinished row |
+| SPL run | **ingest_run 16** (what ships: R19 hygiene + two advice-tuning iterations + the withheld levels + the R20 contraindication fix; per-source rebuilds on the same DB, db/066 untouched). Run 12 = R19 rebuild, run 13 = tuning iteration 1, run 14 = iteration 2, run 15 = withheld levels. Run 11 is the R16/R17 rebuild the class hygiene sample was drawn on; run 10 the superseded first full run; run 9 aborted, left as an unfinished row |
 | SPL release tag | `openfda-2026-08-22+dailymed-2026-08-21` |
 | other releases | UNII 26Feb2026, MED-RT 2026.07.06, MeSH 2026 (+ mesh-relations 2026.07.06), GSRS 2026-02-26, ONCHIGH 2026-08-12, FDA-CYP 2026-05-29, DrugCentral 11012023 |
 | checksums | all 20 files (14 openFDA partitions, 6 DailyMed parts) `shasum -a 256`-verified equal to the table in the [mining record §2](2026-08-24-drugref-slice-5c3-spl-mining-measurement.md); no mismatch |
@@ -63,17 +63,24 @@ that figure is rows); P3 excludes MeSH PA `Hormones`. `drugref ingest spl` now r
 
 The advice hand sample (below) failed the gates on run 12; two tuning iterations followed, each
 test-first and re-ingested (run 13: `4d4819d`, run 14: `9172f13`), then the two (level, scope)
-pairs still under the gate were withheld (run 15: `5b133f2`, `spl_advice.WITHHELD`). Class
-mentions are unchanged from run 12 (227,990 spans); only readings moved.
+pairs still under the gate were withheld (run 15: `5b133f2`, `spl_advice.WITHHELD`). Under
+controller ruling R20 one further, narrowly scoped round fixed only the four garbled-text
+contraindication misses (run 16: `9d3e25b`): a split "see", the section name glued to the next
+word, and a truncated "Contraindicate" cell. **Run 16 differs from run 15 only in those readings:
+8 spans changed level, all not_read -> contraindicated** (the 4 targeted misses, plus 4 spans of
+the effect class "decreased blood pressure" carrying the same split cross-reference -- a
+non-mention over-warning, the safe direction). No other rule changed and no new random sample was
+drawn: the run-14/15 gate readings stand. Class mentions are unchanged from run 12 (227,990
+spans); only readings moved.
 
-## Headline (run 15 -- what ships)
+## Headline (run 16 -- what ships)
 
-* Drug x drug pairs **29,952 / 26,598 novel -- identical** on every run 11-15 (floors 29,258 /
+* Drug x drug pairs **29,952 / 26,598 novel -- identical** on every run 11-16 (floors 29,258 /
   25,960 cleared).
 * **227,990 mentions (distinct spans)**, as 304,682 (span, class) rows, over 23,440 of 27,406
   wordings (85.5%). 60,464 spans (26.5%) are ambiguous (fold onto >1 class).
 * Statements (labelling drug x class): 14,135 over 469 classes (sum of the per-axis table).
-* Advice per SPAN: **77.3% not_read**; 51,702 strength spans -- contraindicated 5,374 (930 of
+* Advice per SPAN: **77.3% not_read**; 51,710 strength spans -- contraindicated 5,382 (930 of
   them heading/row block), adjust_dose 25,520 (9,696 block), avoid 8,761 (all block), monitor
   12,047 (all block). **Sentence-scope avoid and monitor are withheld** (Gates). 37.8% of
   strength spans are mixed (several strength levels in the scope).
@@ -96,7 +103,7 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
   (26.0% of spans), and statements count each class separately.
 * MED-RT PE: 1,291 classes with no direct member, 1 ever mentioned.
 
-## Census tables (verbatim tool output of run 15)
+## Census tables (verbatim tool output of run 16)
 
 ### Totals: (span, class) rows vs distinct spans (mentions)
 
@@ -166,11 +173,11 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
 
 | advice_level | spans | pct | wordings | mixed |
 |---|---|---|---|---|
-| not_read | 176,288 | 77.32 | 23,030 | 0 |
+| not_read | 176,280 | 77.32 | 23,030 | 0 |
 | adjust_dose | 25,520 | 11.19 | 7,083 | 12,233 |
 | monitor | 12,047 | 5.28 | 4,313 | 0 |
 | avoid | 8,761 | 3.84 | 2,042 | 6,067 |
-| contraindicated | 5,374 | 2.36 | 2,869 | 1,231 |
+| contraindicated | 5,382 | 2.36 | 2,872 | 1,231 |
 
 ### Level x scope (per span)
 
@@ -180,9 +187,9 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
 | adjust_dose | sentence | 15,824 |
 | avoid | heading_block | 8,761 |
 | contraindicated | heading_block | 930 |
-| contraindicated | sentence | 4,444 |
+| contraindicated | sentence | 4,452 |
 | monitor | heading_block | 12,047 |
-| not_read | sentence | 176,288 |
+| not_read | sentence | 176,280 |
 
 ### Level x axis ((span, class) rows)
 
@@ -195,19 +202,19 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
 | FDA-CYP PK | not_read | 5,200 |
 | MED-RT EPC | adjust_dose | 14,383 |
 | MED-RT EPC | avoid | 6,468 |
-| MED-RT EPC | contraindicated | 3,829 |
+| MED-RT EPC | contraindicated | 3,832 |
 | MED-RT EPC | monitor | 6,434 |
-| MED-RT EPC | not_read | 102,736 |
+| MED-RT EPC | not_read | 102,733 |
 | MED-RT MoA | adjust_dose | 2,637 |
 | MED-RT MoA | avoid | 1,004 |
-| MED-RT MoA | contraindicated | 2,440 |
+| MED-RT MoA | contraindicated | 2,443 |
 | MED-RT MoA | monitor | 1,812 |
-| MED-RT MoA | not_read | 24,148 |
+| MED-RT MoA | not_read | 24,145 |
 | MED-RT PE | adjust_dose | 778 |
 | MED-RT PE | avoid | 312 |
-| MED-RT PE | contraindicated | 149 |
+| MED-RT PE | contraindicated | 153 |
 | MED-RT PE | monitor | 45 |
-| MED-RT PE | not_read | 8,157 |
+| MED-RT PE | not_read | 8,153 |
 | MED-RT TC | adjust_dose | 1,485 |
 | MED-RT TC | avoid | 1,500 |
 | MED-RT TC | contraindicated | 255 |
@@ -215,32 +222,32 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
 | MED-RT TC | not_read | 13,015 |
 | MeSH PA | adjust_dose | 10,513 |
 | MeSH PA | avoid | 1,740 |
-| MeSH PA | contraindicated | 2,807 |
+| MeSH PA | contraindicated | 2,811 |
 | MeSH PA | monitor | 6,165 |
-| MeSH PA | not_read | 83,762 |
+| MeSH PA | not_read | 83,758 |
 
 ### Phrase rules that fired (per span)
 
 | rule | spans | wordings |
 |---|---|---|
-| (not_read) | 176,288 | 23,030 |
+| (not_read) | 176,280 | 23,030 |
 | adjust_dose.dose_change | 14,329 | 4,541 |
 | monitor.monitor | 7,992 | 3,563 |
 | avoid.reserve | 4,638 | 687 |
 | adjust_dose.reduce_dose | 3,849 | 1,583 |
 | adjust_dose.dose_adjustment | 3,369 | 1,869 |
-| contraindicated.contraindicated | 3,326 | 1,460 |
+| contraindicated.contraindicated | 3,327 | 1,460 |
 | monitor.observe | 3,209 | 705 |
 | avoid.avoid | 2,625 | 1,431 |
 | adjust_dose.separate_administration | 2,230 | 880 |
-| contraindicated.see_contraindications | 1,992 | 1,548 |
+| contraindicated.see_contraindications | 2,000 | 1,552 |
 | adjust_dose.dose_cap | 1,174 | 413 |
 | avoid.not_recommended | 1,140 | 870 |
 | monitor.caution | 711 | 547 |
 | adjust_dose.titrate | 569 | 326 |
 | avoid.do_not_use | 336 | 334 |
 | monitor.observe_closely | 135 | 59 |
-| contraindicated.contraindications_section | 56 | 19 |
+| contraindicated.contraindications_section | 55 | 19 |
 | avoid.do_not_coadminister | 22 | 19 |
 
 ### Spans covered by an existing quote window, per level
@@ -249,9 +256,9 @@ mentions are unchanged from run 12 (227,990 spans); only readings moved.
 |---|---|---|
 | adjust_dose | 25,520 | 6,323 |
 | avoid | 8,761 | 2,404 |
-| contraindicated | 5,374 | 1,686 |
+| contraindicated | 5,382 | 1,687 |
 | monitor | 12,047 | 3,563 |
-| not_read | 176,288 | 46,870 |
+| not_read | 176,280 | 46,869 |
 
 ### TOP OFFENDERS: the 15 classes with most (span, class) rows (a class matching ordinary English shows up here)
 
@@ -538,6 +545,7 @@ next sentence / row Intervention does, listed and read (`9b-work/p2_contra_hunt*
 | 12 | 1,997 | 341 | 3,236 |
 | 13 | 102 | 2 | 2,083 |
 | 14/15 | 32 | 0 | 2,070 |
+| 16 (R20) | 24 | 0 | 2,068 |
 
 Run 12's in-scope cases were mostly "[See ... Contraindications (4.1)]" cross-references for
 MAOIs and a glued table footnote "Contraindicateda"; the 341 were PLR rows whose Intervention
@@ -549,6 +557,15 @@ misses** caused by extraction garble: "[s ee ... Contraindications (4.1)]" (2 sp
 "See CONTRAINDICATIONSand WARNINGS" (1, MAOIs), and a table cell "Contraindicate" (1,
 "Anticoagulants and Antiplatelets" row). The "next sentence" column is outside the reader's
 scope by design (mostly other drugs' contraindications); it is reported, not counted.
+
+**Run 16 (R20): 0 genuine misses.** Method: every span of the run read below contraindicated
+whose scope contains the letters "contraindicat" (any case), plus every not_read span whose next
+row-Intervention cell does, listed in full and read by hand. Of the 24 in-scope spans left, all
+are correct: 16 negated ("NOT contraindicated", "not contraindicated with ..." -> adjust_dose),
+2 "not a contraindication", 1 table-of-contents line, 4 cross-references that belong to another
+table row, and 1 span of the effect class "decreased blood pressure" with a glued "sSee" (not a
+class mention). None is a contraindication of the mentioned class read lower. The
+row-Intervention column is 0.
 
 <details><summary>Per-span readings, draw 1 (run 12, before tuning)</summary>
 
@@ -1455,7 +1472,7 @@ the withheld pairs mapped to not_read):
 |---|---|---|
 | `no_meaningful_interaction`: zero wrong readings | 0 spans read NMI on every run | **met (vacuous)**; the level ships empty |
 | zero contraindicated read lower -- random strata | 0 in draw 3 (the one in draw 2 was fixed by iteration 2) | met |
-| zero contraindicated read lower -- targeted hunt | **4 garbled-text spans** still read not_read on run 14/15 | **NOT met** (see below) |
+| zero contraindicated read lower -- targeted hunt | 4 garbled-text spans on run 14/15; **0 on run 16** after R20 | **met** (run 16) |
 | avoid >= 90%, sentence | 39/50 = 78% (83% excluding non-mentions) | **failed -> withheld** |
 | avoid >= 90%, heading block | 20/20 = 100% | met, ships |
 | adjust_dose >= 90%, sentence | 29/30 = 97% (draw 2: 48/50 = 96%) | met, ships |
@@ -1470,10 +1487,10 @@ phrase reader cannot attribute, plus non-mention spans. What ships: contraindica
 4,444, block 930), adjust_dose (sentence 15,824, block 9,696), avoid and monitor from heading /
 row blocks only (8,761 and 12,047). Heading-block strata are n = 20: one miss is 5 points.
 
-**Open, for a ruling.** (1) The 4 garbled contraindication spans fail the zero-tolerance gate
-read strictly; fixing them needs a third tuning iteration (three regex variants: a split
-"s ee", "CONTRAINDICATIONS" glued to the next word, the truncated "Contraindicate"), which the
-brief does not permit without a ruling. (2) A hygiene ruling would lift sentence monitor over
+**Contraindicated gate (R20).** The 4 garbled contraindication spans of run 14/15 were fixed in
+the one extra round ruling R20 allowed (a split "s ee"/"se e", "CONTRAINDICATIONS" glued to the
+next word, the truncated "Contraindicate"; the negation mask covers the widened forms); the
+targeted search on run 16 finds 0. **Open, for a ruling.** A hygiene ruling would lift sentence monitor over
 the gate (93.6% without the non-mentions): `Electrolyte [EPC]` matching the lab analyte
 ("monitor electrolytes"), the dosage-form class `Ophthalmic Solutions`, and class words inside
 "non-potassium-sparing" / "anti-fibrinolytic". Sentence avoid stays under the gate either way.
