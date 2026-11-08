@@ -465,3 +465,85 @@ def test_a_row_without_an_intervention_cell_stays_not_read():
     text = ("Widget Inhibitors Clinical Impact: Levels rise. Gizmocin Clinical Impact: "
             "Levels fall. Intervention: Avoid gizmocin.")
     assert _read(text, "Widget Inhibitors").level == "not_read"
+
+
+# ---- Task 9B tuning, iteration 2 (fresh hand sample on run 13) -----------------------
+
+def test_a_middle_dot_bullet_starts_a_sentence():
+    text = ("· Avoid co-administration of gizmocin with drug A. ( 7.2 ) · Absorption of drug A "
+            "is impaired by widgetacids containing aluminum. ( 7.3 )")
+    assert _read(text, "widgetacids").level == "not_read"
+
+
+def test_contraindications_cross_reference_variants():
+    """Square brackets inside the reference, a glued 'SeeCONTRAINDICATIONS', and a table
+    cell carrying the bare section name all file the row under Contraindications."""
+    for text, name in (
+            ("Widget Inhibitors: See DOSAGE AND ADMINISTRATION [2.5 and 2.6] , "
+             "CONTRAINDICATIONS [4.2] and WARNINGS.", "Widget Inhibitors"),
+            ("CYP Inhibitors (e.g. Widgetolides) SeeCONTRAINDICATIONS and WARNINGS.",
+             "Widgetolides"),
+            ("CONTRAINDICATIONS In vitro Widgetics gizmofetilide: increased QT risk.",
+             "Widgetics")):
+        assert _read(text, name).level == "contraindicated", text
+
+
+def test_reserve_concomitant_prescribing_is_avoid():
+    """'Reserve concomitant prescribing for patients for whom alternative options are
+    inadequate' and 'cessation ... is preferred' are avoid-unless-necessary advice."""
+    for text, name in (
+            ("Intervention: Reserve concomitant prescribing of widgetines for patients for "
+             "whom alternative treatment options are inadequate.", "widgetines"),
+            ("Intervention: Cessation of widgetines is preferred in most cases.",
+             "widgetines")):
+        assert _read(text, name).level == "avoid", text
+
+
+def test_dose_adjustment_as_a_time_reference_is_not_dose_advice():
+    for text, name in (
+            ("If concomitant use is warranted, carefully observe the patient, particularly "
+             "during treatment initiation and dose adjustment, with widgetines.", "widgetines"),
+            ("Obtain an INR after initiation, dose titration, or discontinuation in patients "
+             "on widgetants and monitor INR.", "widgetants")):
+        assert _read(text, name).level == "monitor", text
+
+
+def test_more_dose_phrasings_read_adjust_dose():
+    for text, name in (
+            ("Widgetines may affect the response; dosage adjustments may be necessary.",
+             "Widgetines"),
+            ("With widgetines use only with caution; low initial dosing and small gradual "
+             "increases should be employed.", "widgetines"),
+            ("Drug A should be given at least 1 hour before the ingestion of widgetacids.",
+             "widgetacids"),
+            ("Drug A and widgetosides are recommended for separate administration.",
+             "widgetosides")):
+        assert _read(text, name).level == "adjust_dose", text
+
+
+def test_more_monitoring_phrasings_read_monitor():
+    for text, name in (
+            ("Patients on widgetics should be observed carefully for arrhythmias.", "widgetics"),
+            ("Intervention: Evaluate patients for urinary retention with widgetics.",
+             "widgetics")):
+        assert _read(text, name).level == "monitor", text
+
+
+def test_a_row_heading_glued_to_the_previous_cell_reads_its_own_row():
+    """No full stop ends the previous row's cell, so the next row's heading is glued
+    on: 'Intervention: Avoid concomitant use Examples: gizmorphan Widget Relaxants
+    Clinical Impact: ...'. The heading belongs to the row that follows it."""
+    text = ("Gizmo Agonists Clinical Impact: May reduce the effect. Intervention: Avoid "
+            "concomitant use Examples: gizmorphan, gizmobuphine Widget Relaxants Clinical "
+            "Impact: Drug A may enhance the blocking action. Intervention: Monitor patients "
+            "and decrease the dosage of the widget relaxant as necessary.")
+    r = _read(text, "Widget Relaxants")
+    assert (r.level, r.scope) == ("adjust_dose", "heading_block")
+    # ... and the Examples list itself still belongs to the earlier row.
+    assert _read(text, "gizmorphan").level in ("avoid", "not_read")
+
+
+def test_glued_or_truncated_clinical_impact_labels_are_row_labels():
+    text = ("Widget Oxidase Inhibitors (WOIs) ClinicalImpact: The risk rises. Intervention: "
+            "Drug A is contraindicated in patients taking WOIs.")
+    assert _read(text, "Widget Oxidase Inhibitors").level == "contraindicated"

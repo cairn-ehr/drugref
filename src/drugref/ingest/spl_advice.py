@@ -114,19 +114,30 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
     # Dosage and Administration (2.5), Contraindications (4.1)]"). Read lower, that is
     # an under-warning; when the reference belongs to another clause it over-warns,
     # which is the safe direction (Task 9B hand sample).
+    # Iteration 2: brackets may sit inside the reference ("See D&A [2.5], CONTRA-
+    # INDICATIONS [4.2]") and "See" may be glued to the section name.
     _rule("contraindicated", "see_contraindications",
-          r"\bsee\b[^\]\n]{0,120}?\bcontraindications?\b"),
+          r"\bsee(?-i:CONTRAINDICATIONS)\b|\bsee\b[^\n]{0,120}?\bcontraindications?\b"),
+    # A table cell carrying the bare upper-case section name files the row under it.
+    # Where a garbled extraction leaves the word in another row it over-warns (the
+    # safe direction); measured in the results record.
+    _rule("contraindicated", "contraindications_section",
+          r"(?-i:\bCONTRAINDICATIONS\b)"),
     _rule("avoid", "avoid", r"\bavoid(?:ed|ing)?\b"),
     _rule("avoid", "not_recommended",
           r"\bnot (?:generally |ordinarily |usually |routinely )?recommended\b"),
     _rule("avoid", "do_not_use", r"\b(?:do|should) not (?:be )?use[d]?\b"),
     _rule("avoid", "do_not_coadminister",
           r"\bdo not co-?administer\b|\bshould not be co-?administered\b"),
+    # "Reserve concomitant prescribing for patients for whom alternative treatment
+    # options are inadequate" / "cessation ... is preferred": avoid unless necessary.
+    _rule("avoid", "reserve",
+          r"\breserve\s+concomitant\b|\bcessation\s+of\b[^.;]{0,80}?\bis\s+preferred\b"),
     _rule("adjust_dose", "reduce_dose",
           r"\b(?:reduce|decrease|lower)(?:d|ing)? (?:the )?(?:dose|dosage)\b"
           r"|\bdose reduction\b"),
     _rule("adjust_dose", "dose_adjustment",
-          r"\bdos(?:e|age)[- ]adjust(?:ment|ed)\b"
+          r"\bdos(?:e|age)[- ]adjust(?:ments?|ed)\b"
           r"|\badjust(?:ing|ment of)? (?:the )?dos(?:e|age)\b"),
     # Task 9B: the dose-change phrasings the seed missed. Up to two words may sit
     # between verb and dose word ("reduce the starting dose", "adjust insulin
@@ -145,7 +156,14 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
           r"|\blowest\s+(?:\w+\s+){0,2}?" + _DOSE_WORD + r"\b"
           r"|\b(?:at|with)\s+(?:a\s+)?low(?:er)?\s+(?:\w+\s+){0,3}?"
           + _DOSE_WORD + r"\b"
-          r"|\blimit(?:ing)?\s+(?:the\s+)?" + _DOSE_WORD + r"\b"),
+          r"|\blimit(?:ing)?\s+(?:the\s+)?" + _DOSE_WORD + r"\b"
+          r"|\blow(?:er)?\s+(?:initial|starting)\s+" + _DOSE_WORD + r"\b"),
+    # Separating the doses in time is a regimen adjustment, read in the adjust_dose
+    # band (a Task 9B reading convention, recorded for the owner's review).
+    _rule("adjust_dose", "separate_administration",
+          r"\bseparate(?:ly)?\s+(?:administration|dosing|administered|doses)\b"
+          r"|\badminist\w*\s+separately\b"
+          r"|\bat\s+least\s+\d+(?:\.\d+)?\s*(?:hours?|h|hrs?)\s+(?:before|after|prior|apart)\b"),
     _rule("adjust_dose", "dose_cap", r"\b(?:should not|do not|not to) exceed\b"),
     _rule("adjust_dose", "titrate", r"\btitrat(?:e|ed|es|ing|ion)\b"),
     _rule("monitor", "monitor", r"\bmonitor(?:ed|ing)?\b"),
@@ -154,6 +172,9 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
     # "Use with caution": a warning to watch, the monitor band. `\b` keeps the
     # section name PRECAUTIONS out.
     _rule("monitor", "caution", r"\bcaution(?:ed)?\b|\bcautious(?:ly)?\b"),
+    _rule("monitor", "observe",
+          r"\bobserve[sd]?\s+carefully\b|\bcarefully\s+observe[sd]?\b"
+          r"|\bevaluate\s+(?:the\s+)?patients?\b|\bfollow\s+(?:the\s+)?patients?\b"),
     # NMI needs an explicit "interaction/effect" noun: "no significant
     # difference" is not an all-clear.
     _rule(NMI, "no_clinically_significant",
@@ -214,8 +235,18 @@ _NEG_CONTRA = re.compile(
 # Task 9B: highlights end an item with a cross-reference "(7.1)", "( 5.6 , 7.2 )"
 # and no full stop before the next item; a bullet "•" starts one. Both are sentence
 # starts, or the next item inherits the previous item's advice.
-_XREF_END = re.compile(r"\(\s*\d+(?:\.\d+)*(?:\s*,\s*\d+(?:\.\d+)*)*\s*\)\s+(?=[A-Z•])")
-_BULLET = re.compile(r"•\s*")
+_XREF_END = re.compile(
+    r"\(\s*\d+(?:\.\d+)*(?:\s*,\s*\d+(?:\.\d+)*)*\s*\)\s+(?=[A-Z•·])")
+_BULLET = re.compile(r"•\s*|(?<=\s)·\s*|^·\s*")
+# PLR table cell labels start a sentence: without a full stop between cells, the
+# next row's heading and the previous row's Intervention would read as one.
+_CELL_LABEL = re.compile(
+    r"(?<=\s)(?:Clinical\s*Impact|linical\s+Impact|Intervention|Examples?)(?=\s*:|\s)")
+# A time reference, not advice ("during treatment initiation and dose adjustment",
+# "after initiation, dose titration, or discontinuation"): masked like the NMI phrases.
+_NOT_ADVICE = re.compile(
+    r"\bduring\s+(?:\w+\s+){0,3}?(?:and\s+)?dose\s+(?:titration|adjustment)s?\b"
+    r"|\binitiation,?\s+(?:and\s+)?dose\s+(?:titration|adjustment)s?\b", re.IGNORECASE)
 
 
 def _markers(text: str) -> list[int]:
@@ -227,6 +258,7 @@ def _sentence_starts(text: str, markers: list[int]) -> list[int]:
     starts = {0, *markers}
     starts.update(m.end() for m in _XREF_END.finditer(text))
     starts.update(m.start() for m in _BULLET.finditer(text))
+    starts.update(m.start() for m in _CELL_LABEL.finditer(text))
     for m in _BOUNDARY.finditer(text):
         # short window only: "e.g." is at most 6 characters before the dot
         if _ABBREV.search(text, max(0, m.start() - 6), m.start() + 1):
@@ -289,48 +321,73 @@ def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
 # heading, design 5.2), and only when the row structure is unambiguous: an Impact
 # cell at or just before the mention, no other row in between, an Intervention cell
 # within a few sentences. Anything else stays not_read.
-_ROW_IMPACT = re.compile(r"\bClinical Impact\b", re.IGNORECASE)
+_ROW_IMPACT = re.compile(r"\s*(?:Clinical\s*|linical\s+)Impact\b", re.IGNORECASE)
 _ROW_INTERVENTION = re.compile(r"\s*Intervention\b", re.IGNORECASE)
 _ROW_EXAMPLES = re.compile(r"\s*Examples?\b", re.IGNORECASE)
 _ROW_LOOK = 6  # sentences searched either way; a table cell is rarely longer
 _ROW_CELL = 2  # sentences an Intervention cell may run on after its first
+_ROW_HEADING_TAIL = 8  # tokens a row heading may run on after the mention
+
+
+def _intervention_end(sent, n: int, k0: int) -> int | None:
+    """Index of the last sentence of the first Intervention cell from `k0`, or None
+    when another row's Impact cell comes first. The cell runs on for up to
+    `_ROW_CELL` sentences, stopping at an Examples cell, a new row or a bullet."""
+    for k in range(k0, min(n, k0 + _ROW_LOOK)):
+        if _ROW_INTERVENTION.match(sent(k)):
+            end = k
+            for m in range(k + 1, min(n, k + 1 + _ROW_CELL)):
+                nxt = sent(m)
+                if (_ROW_EXAMPLES.match(nxt) or _ROW_IMPACT.match(nxt)
+                        or nxt.lstrip()[:1] in ("•", "·")
+                        or (m + 1 < n and _ROW_IMPACT.match(sent(m + 1)))):
+                    break  # ... or `nxt` is the next row's heading
+                end = m
+            return end
+        if _ROW_IMPACT.match(sent(k)):
+            return None  # the next row began first: this row has no Intervention
+    return None
 
 
 def _row_block(text: str, starts: list[int], char_start: int,
-               char_end: int) -> tuple[int, int] | None:
-    """`(start, end)` of the PLR table row holding the mention, or None."""
+               char_end: int) -> tuple[int, int, bool] | None:
+    """`(start, end, is_heading)` of the PLR table row holding the mention, or None.
+
+    Cell labels are sentence starts (`_CELL_LABEL`), so a row heading sits at the
+    END of the sentence before its Impact cell -- glued to the previous row's cell
+    when no full stop separates them. `is_heading` says the mention is that heading:
+    nothing but a few words, no comma, between it and the Impact cell. The caller
+    reads a heading's row BEFORE its sentence, which holds the previous row's text.
+    """
     bounds = list(zip(starts, starts[1:] + [len(text)]))
+    n = len(bounds)
     i = bisect_right(starts, char_start) - 1
 
     def sent(j: int) -> str:
         return text[bounds[j][0]:bounds[j][1]]
 
+    tail = text[char_end:bounds[i][1]]
+    if (i + 1 < n and _ROW_IMPACT.match(sent(i + 1)) and not re.search(r"[,;]", tail)
+            and len(tail.split()) <= _ROW_HEADING_TAIL):
+        end = _intervention_end(sent, n, i + 2)
+        return None if end is None else (char_start, bounds[end][1], True)
     if _ROW_EXAMPLES.match(sent(i)):
         # An Examples cell belongs to the row whose Intervention precedes it.
         for j in range(i - 1, max(-1, i - _ROW_LOOK), -1):
             if _ROW_INTERVENTION.match(sent(j)):
-                return bounds[j][0], max(bounds[i][1], char_end)
-            if _ROW_IMPACT.search(sent(j)):
+                return bounds[j][0], max(bounds[i][1], char_end), False
+            if _ROW_IMPACT.match(sent(j)):
                 return None  # reached the Impact cell without an Intervention
         return None
     for j in range(i, max(-1, i - _ROW_LOOK), -1):  # the row's Impact cell
         if j < i and (_ROW_INTERVENTION.match(sent(j)) or _ROW_EXAMPLES.match(sent(j))):
             return None  # a previous row's cell lies between: not inside a row
-        if _ROW_IMPACT.search(sent(j)):
+        if _ROW_IMPACT.match(sent(j)):
             break
     else:
         return None
-    for k in range(i + 1, min(len(bounds), i + 1 + _ROW_LOOK)):
-        if _ROW_INTERVENTION.match(sent(k)):
-            end = k
-            for m in range(k + 1, min(len(bounds), k + 1 + _ROW_CELL)):
-                if _ROW_EXAMPLES.match(sent(m)) or _ROW_IMPACT.search(sent(m)):
-                    break
-                end = m
-            return bounds[j][0], max(bounds[end][1], char_end)
-        if _ROW_IMPACT.search(sent(k)):
-            return None  # the next row began first: this row has no Intervention
-    return None
+    end = _intervention_end(sent, n, i + 1)
+    return None if end is None else (bounds[j][0], max(bounds[end][1], char_end), False)
 
 
 # --- reading ------------------------------------------------------------
@@ -345,6 +402,7 @@ def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
     spans = [m.span() for r in ADVICE_RULES if r.level == NMI
              for m in r.pattern.finditer(chunk)]
     spans += [m.span() for m in _NEG_CONTRA.finditer(chunk)]
+    spans += [m.span() for m in _NOT_ADVICE.finditer(chunk)]
     for a, b in spans:  # "no dose adjustment" must not fire adjust_dose
         masked = masked[:a] + " " * (b - a) + masked[b:]
     first: dict[str, tuple[int, str]] = {}
@@ -374,15 +432,19 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
     # NMI inside _read_scope) but WIDEN the returned scope on EVERY path: db/066's
     # CHECK needs scope to contain the span.
     e = max(e0, char_end)
+    row = _row_block(text, starts, char_start, char_end)
+    if row and row[2]:  # a row heading: its sentence is the previous row's text
+        got = _read_scope(text[row[0]:row[1]], allow_nmi=False)
+        if got:
+            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row[:2])
     got = _read_scope(text[s:e0], allow_nmi=True, rel_start=char_start - s,
                       rel_end=char_end - s)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
-    row = _row_block(text, starts, char_start, char_end)
-    if row:  # NMI is not read here either: a row mixes cells.
+    if row and not row[2]:  # NMI is not read here either: a row mixes cells.
         got = _read_scope(text[row[0]:row[1]], allow_nmi=False)
         if got:
-            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row)
+            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row[:2])
     block = _block_from(text, mk, starts, char_start)
     if block and block[1] >= char_end:
         # NMI is not read here: a block can mix statements about different things.
