@@ -741,20 +741,29 @@ def test_an_unresolved_subject_is_ABSENT_from_the_pairs_and_PRESENT_in_the_gap(
 
 
 @pytest.mark.usefixtures("_clean")
-def test_the_gap_view_is_NOT_registered_as_an_open_question_kind(conn, corpus):
+def test_the_gap_view_is_NOT_registered_as_an_open_question_kind(
+        conn, corpus, tmp_path):
     """Every other gap_* view here feeds questions._GAP_SOURCES; this one must
     not. A curator cannot answer 'not in the current DailyMed release', and
-    34,542 immortal question_uuids would bury the eighteen kinds they can."""
+    34,542 immortal question_uuids would bury the twenty kinds they can."""
     from drugref import questions
     views = {spec["view"] for spec in questions._GAP_SOURCES.values()}
     assert "gap_unresolved_spl_subject" not in views
     _seed_registry(conn)
-    _ingest(conn, corpus)
-    # The run now registers questions (for the label-class kind), which also derives
-    # the registry kinds; but nothing it writes may be about an unresolved SPL subject.
+    questions.register_from_gaps(conn, w.run(conn))
+    other = ("SELECT count(*) FROM drugref.open_question "
+             "WHERE gap_kind <> 'unconfirmed_label_class_statement'")
+    before = conn.execute(other).fetchone()
+    # An empty DailyMed release leaves every openFDA label unresolved: a non-empty gap.
+    empty = tmp_path / "dm_spl_release_human_rx_part9.zip"
+    with zipfile.ZipFile(empty, "w"):
+        pass
+    _ingest(conn, (corpus[0], [empty]))
+    # The run's own registration adds no question beyond the label-class kind, although
+    # the gap view has rows: unresolved subjects are not curator-answerable.
+    assert conn.execute(other).fetchone() == before
     assert conn.execute(
-        "SELECT count(*) FROM drugref.open_question WHERE gap_kind ILIKE '%spl%' "
-        "OR gap_kind ILIKE '%subject%'").fetchone() == (0,)
+        "SELECT count(*) FROM drugref.gap_unresolved_spl_subject").fetchone()[0] > 0
 
 
 @pytest.mark.usefixtures("_clean")

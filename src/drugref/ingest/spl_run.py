@@ -474,9 +474,11 @@ def ingest_spl(
             records_field_blank=summary.records_field_blank,
             labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
 
-        # This run now feeds a gap kind (unconfirmed_label_class_statement, from the
-        # class pass), so the question registry must see it, inside this transaction so
-        # a rollback leaves no question behind. Re-deriving the other kinds is a no-op.
+        # This run now feeds a gap kind (unconfirmed_label_class_statement), so it
+        # registers questions. Like fda_cyp_run it re-derives EVERY kind and stamps
+        # last_derived_ingest with this run ("when last seen"); that is the repo
+        # convention. gap_unresolved_spl_subject stays deliberately NOT a question
+        # kind (db/051 section 8). Inside the transaction: a rollback leaves none.
         questions.register_from_gaps(conn, run_id)
 
         provenance.finish_run(conn, run_id)

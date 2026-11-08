@@ -235,7 +235,10 @@ CREATE OR REPLACE VIEW drugref.gap_unconfirmed_label_class_statement AS
 SELECT st.subject_moiety AS moiety_uuid,
        st.class_uuid,
        st.strongest_level,
-       st.label_count
+       st.label_count,
+       -- Labels at the strongest level itself (label_count spans EVERY level), so
+       -- the curator's question can say "k of n labels".
+       (st.level_counts ->> st.strongest_level)::int AS strongest_level_labels
 FROM   drugref.spl_class_statement st
 JOIN   drugref.spl_advice_level a ON a.level = st.strongest_level
 WHERE  a.strength_rank IS NOT NULL
@@ -247,7 +250,8 @@ WHERE  a.strength_rank IS NOT NULL
 
 COMMENT ON VIEW drugref.gap_unconfirmed_label_class_statement IS
     'Gap kind unconfirmed_label_class_statement: one row per (moiety, class) whose '
-    'labels carry a machine-read STRENGTH level and which has no live '
+    'labels carry a machine-read STRENGTH level (strongest_level_labels of label_count '
+    'labels say it; label_count spans every level) and which has no live '
     'curated_property_ruling of any verdict. MACHINE-READ, NOT CONFIRMED, never an '
     'assertion, and "not confirmed" is NOT "safe". Frozen gap key (registered by the '
     'question registry): SPLCLASS:<moiety_uuid>:<class_uuid>.';

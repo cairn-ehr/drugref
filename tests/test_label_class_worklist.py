@@ -5,8 +5,9 @@ only a curator's `holds` ruling promotes it (to class_asserted_property).
 """
 import pytest
 
+from drugref import spl_evidence
 from drugref import citation_audit, curation_property, ids, questions
-from tests.test_spl_class_schema import _label, _occ, world  # noqa: F401  (fixture)
+from tests.test_spl_class_schema import KEY, _label, _occ, world  # noqa: F401  (fixture)
 
 KIND = "unconfirmed_label_class_statement"
 
@@ -32,10 +33,26 @@ def test_label_class_question_registered_after_register_from_gaps(conn, world): 
     _label(conn, r, a, "S1")
     q, text, _key = _registered(conn, r, a, k)
     assert q == ids.mint_question_uuid(KIND, f"SPLCLASS:{a}:{k}")
-    assert "1 label(s)" in text and "avoid" in text
+    assert "1 of 1 label(s)" in text and "avoid" in text
     assert "machine-read, not confirmed" in text
     assert text.endswith("Answering does not change prescribing alerts.")
-    assert "safe" not in text.lower().replace("not confirmed", "")
+    assert "safe" not in text.lower()
+
+
+def test_question_text_counts_labels_at_the_strongest_level(conn, world):  # noqa: F811
+    """3 labels, only 1 saying the strongest level: the text must say '1 of 3'."""
+    r, k, a, _b = world
+    k2, k3 = "b" * 64, "c" * 64
+    spl_evidence.write_wordings(
+        conn, [spl_evidence.WordingRow(text_key=t, char_length=1_000, label_count=1)
+               for t in (k2, k3)], ingest_run_id=r, source="SPL")
+    _occ(conn, r, k, level="avoid")
+    _occ(conn, r, k, level="not_read", rule=None, text_key=k2)
+    _occ(conn, r, k, level="monitor", rule="monitor.x", text_key=k3)
+    for sid, key in (("S1", KEY), ("S2", k2), ("S3", k3)):
+        _label(conn, r, a, sid, text_key=key)
+    text = _registered(conn, r, a, k)[1]
+    assert "1 of 3 label(s)" in text and "say avoid" in text
 
 
 def test_ruling_may_cite_label_class_question(conn, world):  # noqa: F811
