@@ -61,7 +61,8 @@ KIND_MOIETY = "moiety"
 KIND_SUPPRESS = "suppress"
 #: A drug CLASS name. **The shipped moiety vocabulary holds none**, and that
 #: exclusion is measured rather than assumed:
-#: `tools/spl_class_vocabulary_delta.py` adds the 8,534 class entries back and reproduces the design round's 20,554 pairs over
+#: `tools/spl_class_vocabulary_delta.py` adds the
+#: 8,534 class entries back and reproduces the design round's 20,554 pairs over
 #: 26,721 wordings exactly, because longest-match-wins had class names consuming
 #: 11,169 moiety spans. Deferring them RAISED the drug x drug yield by 193 pairs.
 #: The shipped ingest runs a SEPARATE class-only pass (`spl_class_evidence`)
