@@ -52,8 +52,8 @@ if TYPE_CHECKING:                       # pragma: no cover
 #: **CHILDREN FIRST**: `db.clear_source_tables` deletes front to back and
 #: preserves the order exactly, because a caller whose tables reference each other
 #: must list children first or the foreign key refuses the delete.
-#: `spl_wording_quote`, `spl_entity_occurrence` and `spl_label` all reference
-#: `spl_wording`; `spl_label_subject` references `spl_label`.
+#: `spl_wording_quote`, `spl_entity_occurrence`, `spl_class_occurrence` (db/066) and
+#: `spl_label` all reference `spl_wording`; `spl_label_subject` references `spl_label`.
 #:
 #: Registered in tests/test_source_clear_contract.py's EXPECTED_TABLES, which is
 #: what turns a table silently dropped from this tuple into a failing test rather
@@ -61,6 +61,7 @@ if TYPE_CHECKING:                       # pragma: no cover
 SPL_TABLES = (
     "spl_wording_quote",
     "spl_entity_occurrence",
+    "spl_class_occurrence",
     "spl_label_subject",
     "spl_label",
     "spl_wording",
