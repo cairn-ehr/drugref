@@ -32,11 +32,14 @@ the yield:
 3. **Longest match wins, and matches never overlap.** Otherwise a name nested
    inside a longer one is counted twice and the pair yield double-counts.
 
-**CLASSES ARE NOT MATCHED.** This slice is drug x drug only (owner's call,
-2026-08-24): 32.3% of class occurrences name an EMPTY class, MED-RT's PK axis is
-97.2% empty and is not a drug-class vocabulary (#155), and `Diuretics` (MeSH) and
-`Diuretic [APC]` (MED-RT) fold to one string with no cross-source class identity.
-The class half is its own slice, with its own measurement.
+**CLASSES ARE NOT PART OF THE MOIETY PASS.** The drug x drug slice (owner's call,
+2026-08-24) matches moieties only: 32.3% of class occurrences name an EMPTY class,
+MED-RT's PK axis is 97.2% empty and is not a drug-class vocabulary (#155), and
+`Diuretics` (MeSH) and `Diuretic [APC]` (MED-RT) fold to one string with no
+cross-source class identity. Class entries (`KIND_CLASS`, carrying a `class_uuid`)
+are matched in a SEPARATE pass, `class_occurrences`, which keeps one row per
+distinct class and flags a span several classes share as ambiguous instead of
+choosing; `moiety_occurrences` ignores class entries and vice versa.
 """
 from __future__ import annotations
 
@@ -113,6 +116,10 @@ class Entry:
     key: str
     display: str
     moiety_uuid: str | None = None
+    #: Set on `class` entries only: the registry identity of the class.
+    class_uuid: str | None = None
+    #: How the key was derived from the stored name (one of `MATCH_FORMS`).
+    form: str = FORM_STORED
 
     def __post_init__(self) -> None:
         """`kind` and `moiety_uuid` are a MUTUAL-CONSISTENCY PAIR, not two fields.
@@ -133,6 +140,16 @@ class Entry:
                 f"moiety_uuid={self.moiety_uuid!r}: a moiety entry names a "
                 "moiety and a suppression entry does not, or the matcher "
                 "recognises the name and then yields nothing for it")
+        # Same silent-vanish hazard for classes: a class entry with no uuid
+        # would match and then yield no occurrence.
+        if (self.kind == KIND_CLASS) != (self.class_uuid is not None):
+            raise ValueError(
+                f"entry {self.key!r} is a {self.kind!r} carrying "
+                f"class_uuid={self.class_uuid!r}: only class entries name a class, "
+                "and a class entry without one would vanish silently")
+        if self.form not in MATCH_FORMS:
+            raise ValueError(
+                f"entry form {self.form!r} is not one of {MATCH_FORMS}")
 
 
 @dataclass(frozen=True)
@@ -395,3 +412,42 @@ def moiety_occurrences(matches: Iterable[Match]) -> tuple[Occurrence, ...]:
                 char_end=match.char_end,
                 ambiguous=match.ambiguous))
     return tuple(occurrences)
+
+
+@dataclass(frozen=True)
+class ClassOccurrence:
+    """One class named at one span. `ambiguous`: several classes share the span."""
+
+    class_uuid: str
+    display: str
+    char_start: int
+    char_end: int
+    ambiguous: bool
+    form: str
+
+
+def class_occurrences(matches: Iterable[Match]) -> tuple[ClassOccurrence, ...]:
+    """One row per distinct class per span, in document order.
+
+    Mirrors `moiety_occurrences`: a span several classes fold onto yields a row
+    for each, all flagged ambiguous -- nothing here picks a winner. When one class
+    reaches the span through two forms (stored and number variant) the earlier
+    form in `MATCH_FORMS` is kept, so the row says the most direct way it matched.
+    """
+    out: list[ClassOccurrence] = []
+    for match in matches:
+        best: dict[str, Entry] = {}
+        for entry in match.entries:
+            if entry.kind != KIND_CLASS or entry.class_uuid is None:
+                continue
+            seen = best.get(entry.class_uuid)
+            if seen is None or (MATCH_FORMS.index(entry.form)
+                                < MATCH_FORMS.index(seen.form)):
+                best[entry.class_uuid] = entry
+        ambiguous = len(best) > 1
+        for class_uuid, entry in best.items():
+            out.append(ClassOccurrence(
+                class_uuid=class_uuid, display=entry.display,
+                char_start=match.char_start, char_end=match.char_end,
+                ambiguous=ambiguous, form=entry.form))
+    return tuple(out)

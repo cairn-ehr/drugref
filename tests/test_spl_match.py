@@ -332,3 +332,49 @@ def test_a_vocabulary_whose_derived_maps_LIE_is_refused():
     with pytest.raises(ValueError, match="longest key holds"):
         spl_match.Vocabulary(by_key=good.by_key, max_tokens=1,
                              max_tokens_by_first=good.max_tokens_by_first)
+
+
+def test_class_entry_requires_class_uuid():
+    with pytest.raises(ValueError):
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="diuretics", display="Diuretics")
+
+
+def test_moiety_entry_refuses_class_uuid():
+    with pytest.raises(ValueError):
+        spl_match.Entry(kind=spl_match.KIND_MOIETY, key="x", display="x", moiety_uuid="m", class_uuid="c")
+
+
+def test_entry_refuses_unknown_form():
+    with pytest.raises(ValueError):
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="x", display="x", class_uuid="c", form="bogus")
+
+
+def test_class_occurrences_one_per_class_flagged_ambiguous():
+    vocab = spl_match.build_vocabulary([
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="Diuretics", display="Diuretics", class_uuid="c-mesh"),
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="Diuretics", display="Diuretic [APC]", class_uuid="c-apc",
+              form=spl_match.FORM_NUMBER)])
+    found = spl_match.class_occurrences(spl_match.find_matches("Avoid diuretics.", vocab))
+    assert {o.class_uuid for o in found} == {"c-mesh", "c-apc"}
+    assert all(o.ambiguous for o in found) and found[0].char_start == 6
+
+
+def test_class_occurrences_keeps_first_form_for_one_class():
+    vocab = spl_match.build_vocabulary([
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="Diuretics", display="D", class_uuid="c",
+              form=spl_match.FORM_NUMBER),
+        spl_match.Entry(kind=spl_match.KIND_CLASS, key="Diuretics", display="D", class_uuid="c")])
+    (only,) = spl_match.class_occurrences(spl_match.find_matches("diuretics", vocab))
+    assert only.form == spl_match.FORM_STORED and not only.ambiguous
+
+
+def test_class_occurrences_ignores_moiety_entries():
+    vocab = spl_match.build_vocabulary([spl_match.Entry(kind=spl_match.KIND_MOIETY, key="warfarin", display="warfarin",
+                                    moiety_uuid="m")])
+    assert spl_match.class_occurrences(spl_match.find_matches("warfarin", vocab)) == ()
+
+
+def test_moiety_occurrences_ignores_class_entries():
+    vocab = spl_match.build_vocabulary([spl_match.Entry(kind=spl_match.KIND_CLASS, key="Diuretics", display="Diuretics",
+                                    class_uuid="c")])
+    assert spl_match.moiety_occurrences(spl_match.find_matches("diuretics", vocab)) == ()

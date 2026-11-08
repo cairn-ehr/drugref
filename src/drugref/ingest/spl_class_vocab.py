@@ -54,6 +54,8 @@ def class_match_keys(class_name: str, source: str) -> tuple[tuple[str, str], ...
     """`(key, form)` pairs: stored form first, then number variants, then (FDA-CYP
     only) label orders. Deduplicated by `fold`, so the first derivation wins."""
     base = strip_axis_tag(class_name)
+    if not base:  # a bare '[EPC]' would otherwise yield the one-letter key 's'
+        return ()
     candidates = [(base, FORM_STORED)]
     candidates += [(v, FORM_NUMBER) for v in number_variants(base)]
     if source == "FDA-CYP":

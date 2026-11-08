@@ -55,12 +55,13 @@ def load_class_entries(dsn: str) -> list[spl_match.Entry]:
     """Every class name, as the measurement round offered them to the matcher."""
     entries: list[spl_match.Entry] = []
     with db.connect(dsn) as conn:
-        for (class_name,) in conn.execute(
-                "SELECT class_name FROM drugref.substance_class").fetchall():
+        for class_uuid, class_name in conn.execute(
+                "SELECT class_uuid, class_name "
+                "FROM drugref.substance_class").fetchall():
             for variant in class_variants(class_name):
                 entries.append(spl_match.Entry(
                     kind="class", key=variant, display=class_name,
-                    moiety_uuid=None))
+                    class_uuid=str(class_uuid)))
     return entries
 
 

@@ -45,5 +45,19 @@ def test_class_match_keys_no_label_order_outside_fda_cyp():
 
 
 def test_class_match_keys_dedupes_by_fold():
-    keys = class_match_keys("Thiazides [EPC]", "MED-RT")
-    assert len({spl_match.fold(k) for k, _ in keys}) == len(keys)
+    # No real class name collides, so this uses a degenerate FDA-CYP name whose
+    # "enzyme" equals its band: the label-order rewrite of
+    # "strong strong inhibitor" is that same string, a genuine fold collision.
+    name = "strong strong inhibitor [FDA-CYP]"
+    raw = ([strip := "strong strong inhibitor"]
+           + list(number_variants(strip))
+           + list(fda_cyp_label_orders(strip)))
+    keys = class_match_keys(name, "FDA-CYP")
+    distinct = {spl_match.fold(k) for k in raw}
+    assert len(keys) == len(distinct) < len(raw)
+    assert keys[0] == (strip, FORM_STORED)  # first derivation wins the collision
+
+
+def test_class_match_keys_empty_base_yields_nothing():
+    # '[EPC]' strips to '' and number_variants('') would be 's'.
+    assert class_match_keys("[EPC]", "MED-RT") == ()
