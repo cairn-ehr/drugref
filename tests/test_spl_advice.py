@@ -346,3 +346,122 @@ def test_nmi_is_refused_for_a_mention_running_past_the_sentence_end():
     r = read_advice(text, start, end)
     assert r.level == "not_read"
     assert r.scope_start <= start and r.scope_end >= end
+
+
+# ---- Task 9B tuning, iteration 1 (each test is a hand-sample failure, synthesised) ----
+# The hand sample on SPL run 12 read avoid 60%, adjust_dose 82%, monitor 70% exact
+# agreement (gate 90%), and found contraindications the reader could not see. Every
+# test below reproduces one failure shape with invented wording (rule 6).
+
+def test_contraindicated_with_a_table_footnote_letter():
+    """A table cell 'Contraindicated' with a footnote letter glued on ('...dicateda')
+    defeated the whole-word match: a contraindication read not_read."""
+    r = _read("Supplements containing widgetines Contraindicateda HR", "widgetines")
+    assert r.level == "contraindicated"
+
+
+def test_a_cross_reference_to_the_contraindications_section_reads_contraindicated():
+    """'X [See Dosage and Administration (2.5), Contraindications (4.1)]' is the label
+    filing X under its Contraindications section; reading it lower under-warns."""
+    r = _read("7.1 Widget Inhibitors (WIs) [See Dosage and Administration (2.5), "
+              "Contraindications (4.1) and Warnings and Precautions (5.2)].", "Widget Inhibitors")
+    assert (r.level, r.rule_id) == ("contraindicated", "contraindicated.see_contraindications")
+    r = _read("Drug A should not be used with widget inducers (See CONTRAINDICATIONS).",
+              "widget inducers")
+    assert r.level == "contraindicated"
+
+
+def test_a_highlights_cross_reference_ends_a_sentence():
+    """Highlights write '... is not recommended. (7.1) Next item ...': without a split
+    at the '(7.1)' the next item inherited the previous item's advice."""
+    text = ("Co-administration with gizmocid is not recommended. (7.1) Concomitant use "
+            "with oral widgetants may prolong clotting time. (7.2) Gizmo may reduce efficacy.")
+    assert _read(text, "widgetants").level == "not_read"
+    text = "Avoid gizmocid ( 5.6 , 7.2 ) Widget blockers may cause bradycardia. ( 7.3 )"
+    assert _read(text, "Widget blockers").level == "not_read"
+
+
+def test_a_bullet_starts_a_sentence():
+    text = ("• Class I widgetics: Contraindicated. ( 4 , 7.1 ) • Widget channel blockers "
+            "(WCB): Initiate WCB with low dose and increase after ECG verification.")
+    assert _read(text, "Widget channel blockers").level == "adjust_dose"
+
+
+def test_not_generally_recommended_is_avoid():
+    r = _read("Concomitant use of drug A and widgetacids is not generally recommended.",
+              "widgetacids")
+    assert (r.level, r.rule_id) == ("avoid", "avoid.not_recommended")
+
+
+def test_dose_change_phrasings_read_adjust_dose():
+    """Each of these was read monitor or not_read in the hand sample."""
+    for text, name in (
+            ("Monitor glucose, and the dose of the widgetylurea should be adjusted as "
+             "necessary.", "widgetylurea"),
+            ("Monitor blood glucose and adjust widgetin dosage regimen as needed.", "widgetin"),
+            ("Use of widgetics with drug A may require lower doses than usually prescribed.",
+             "widgetics"),
+            ("When widgetates and drug A are coadministered, use the lowest possible doses "
+             "for each drug.", "widgetates"),
+            ("A dose decrease may be needed for these widgetants.", "widgetants"),
+            ("Hypotension can be minimized by decreasing the dose of widgetics first.",
+             "widgetics"),
+            ("Adjustments in the dose of oral widgetants may be necessary.", "widgetants"),
+            ("Patients on widgetant therapy may require downward adjustment of their "
+             "widgetant dosage.", "widgetant therapy"),
+            ("In patients taking widgetavir, the dose of drug A should not exceed 40 mg.",
+             "widgetavir"),
+            ("Initiate widgetics at a lower than usual dose and monitor carefully.", "widgetics"),
+            ("An increased dose of widgetines may be required.", "widgetines"),
+            ("Widgetines should each be titrated carefully.", "Widgetines"),
+            ("Dosage of widgetin or other drugs may need adjustment.", "widgetin")):
+        assert _read(text, name).level == "adjust_dose", text
+
+
+def test_low_dose_as_a_product_descriptor_is_not_dose_advice():
+    """'low-dose aspirin' names a product strength, not advice to lower a dose."""
+    assert _read("Patients taking widgetants with low-dose aspirin bleed more.",
+                 "widgetants").level == "not_read"
+
+
+def test_caution_reads_monitor():
+    for text, name in (
+            ("Widgetines should be administered with caution to these patients.", "Widgetines"),
+            ("Oral widgetants: Warfarin Use With Caution.", "widgetants"),
+            ("Caution is warranted when widgetines are used.", "widgetines"),
+            ("Use widgetines cautiously.", "widgetines")):
+        assert _read(text, name).level == "monitor", text
+
+
+def test_precautions_section_name_is_not_caution():
+    assert _read("Widgetines (see PRECAUTIONS).", "Widgetines").level == "not_read"
+
+
+def test_a_table_row_reads_its_intervention_cell():
+    """PLR tables: '<row> Clinical Impact: ... . Intervention: ... contraindicated ...'.
+    The mention sits in the row heading; the advice in the Intervention cell."""
+    text = ("Table 3: Interactions with Drug A Widget Oxidase Inhibitors (WOIs) Clinical "
+            "Impact: Concomitant use increases the risk of syndrome X. Intervention: Drug A "
+            "is contraindicated in patients taking WOIs. Gizmocin Clinical Impact: Gizmocin "
+            "raises levels. Intervention: Monitor levels.")
+    r = _read(text, "Widget Oxidase Inhibitors")
+    assert (r.level, r.scope) == ("contraindicated", "heading_block")
+    assert r.scope_end <= text.index("Gizmocin Clinical")
+    # The next row is read from its own Intervention, not the previous row's.
+    assert _read(text, "Gizmocin").level == "monitor"
+
+
+def test_a_table_row_examples_cell_reads_the_row_intervention():
+    text = ("Widget Depressants Clinical Impact: Additive effects. Intervention: Limit "
+            "dosages to the minimum required. Examples: Widgetines and other sedatives. "
+            "Gizmos Clinical Impact: none known.")
+    r = _read(text, "Widgetines")
+    assert (r.level, r.scope) == ("adjust_dose", "heading_block")
+    assert r.scope_start <= text.index("Widgetines") and r.scope_end >= text.index(
+        "Widgetines") + len("Widgetines")
+
+
+def test_a_row_without_an_intervention_cell_stays_not_read():
+    text = ("Widget Inhibitors Clinical Impact: Levels rise. Gizmocin Clinical Impact: "
+            "Levels fall. Intervention: Avoid gizmocin.")
+    assert _read(text, "Widget Inhibitors").level == "not_read"

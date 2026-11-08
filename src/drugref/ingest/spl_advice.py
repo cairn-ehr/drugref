@@ -68,6 +68,13 @@ direction; Task 9 measures it).
 
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
+
+**TASK 9B TUNING (measured on SPL run 12, recorded in the results record).** The
+hand sample found the reader too weak on dose phrasing (dose_change, dose_cap,
+titrate), on "caution", on "not generally recommended", blind to a glued table
+footnote ("Contraindicateda") and to a cross-reference into the Contraindications
+section, merging highlight items that end in "(7.1)" or start with "•", and blind
+to the Intervention cell of a PLR table row (`_row_block`). Each fix has a test.
 """
 
 import re
@@ -96,11 +103,22 @@ def _rule(level: str, name: str, regex: str) -> AdviceRule:
     return AdviceRule(f"{level}.{name}", level, re.compile(regex, re.IGNORECASE))
 
 
+# A dose word, singular or plural ("dose", "dosages", "dosing").
+_DOSE_WORD = r"(?:dose|doses|dosage|dosages|dosing)"
+
 ADVICE_RULES: tuple[AdviceRule, ...] = (
     # Negation ("not contraindicated") is masked in _read_scope, not here.
-    _rule("contraindicated", "contraindicated", r"\bcontraindicated\b"),
+    # `[a-z]?`: a table cell can carry a glued footnote letter ("Contraindicateda").
+    _rule("contraindicated", "contraindicated", r"\bcontraindicated[a-z]?\b"),
+    # The label filing the interaction under its Contraindications section ("[See
+    # Dosage and Administration (2.5), Contraindications (4.1)]"). Read lower, that is
+    # an under-warning; when the reference belongs to another clause it over-warns,
+    # which is the safe direction (Task 9B hand sample).
+    _rule("contraindicated", "see_contraindications",
+          r"\bsee\b[^\]\n]{0,120}?\bcontraindications?\b"),
     _rule("avoid", "avoid", r"\bavoid(?:ed|ing)?\b"),
-    _rule("avoid", "not_recommended", r"\bnot recommended\b"),
+    _rule("avoid", "not_recommended",
+          r"\bnot (?:generally |ordinarily |usually |routinely )?recommended\b"),
     _rule("avoid", "do_not_use", r"\b(?:do|should) not (?:be )?use[d]?\b"),
     _rule("avoid", "do_not_coadminister",
           r"\bdo not co-?administer\b|\bshould not be co-?administered\b"),
@@ -110,9 +128,32 @@ ADVICE_RULES: tuple[AdviceRule, ...] = (
     _rule("adjust_dose", "dose_adjustment",
           r"\bdos(?:e|age)[- ]adjust(?:ment|ed)\b"
           r"|\badjust(?:ing|ment of)? (?:the )?dos(?:e|age)\b"),
+    # Task 9B: the dose-change phrasings the seed missed. Up to two words may sit
+    # between verb and dose word ("reduce the starting dose", "adjust insulin
+    # dosage", "downward adjustment of their anticoagulant dosage"); "low-dose" (a
+    # product strength) is not matched because the low/lower forms need a space.
+    _rule("adjust_dose", "dose_change",
+          r"\b(?:reduc|decreas|increas|lower)(?:e|es|ed|ing)?\s+(?:the\s+|their\s+|a\s+)?"
+          r"(?:\w+\s+){0,2}?" + _DOSE_WORD + r"\b"
+          r"|\b(?:downward\s+)?adjust(?:s|ed|ing|ment|ments)?\s+(?:(?:in|of|to)\s+)?"
+          r"(?:the\s+|their\s+)?(?:\w+\s+){0,2}?" + _DOSE_WORD + r"\b"
+          r"|\b" + _DOSE_WORD
+          + r"\s+(?:of\s+(?:the\s+)?(?:[\w/-]+\s+){1,3})?(?:\w+\s+){0,2}?"
+          r"(?:be|is|are)\s+(?:adjusted|reduced|decreased|lowered|increased|titrated)\b"
+          r"|\bdos(?:e|age)\s+(?:decrease|reduction|increase)s?\b"
+          r"|\b(?:need|needs|require|requires)\s+adjustment\b"
+          r"|\blowest\s+(?:\w+\s+){0,2}?" + _DOSE_WORD + r"\b"
+          r"|\b(?:at|with)\s+(?:a\s+)?low(?:er)?\s+(?:\w+\s+){0,3}?"
+          + _DOSE_WORD + r"\b"
+          r"|\blimit(?:ing)?\s+(?:the\s+)?" + _DOSE_WORD + r"\b"),
+    _rule("adjust_dose", "dose_cap", r"\b(?:should not|do not|not to) exceed\b"),
+    _rule("adjust_dose", "titrate", r"\btitrat(?:e|ed|es|ing|ion)\b"),
     _rule("monitor", "monitor", r"\bmonitor(?:ed|ing)?\b"),
     _rule("monitor", "observe_closely",
           r"\bobserve[sd]? closely\b|\bclosely observe[sd]?\b"),
+    # "Use with caution": a warning to watch, the monitor band. `\b` keeps the
+    # section name PRECAUTIONS out.
+    _rule("monitor", "caution", r"\bcaution(?:ed)?\b|\bcautious(?:ly)?\b"),
     # NMI needs an explicit "interaction/effect" noun: "no significant
     # difference" is not an all-clear.
     _rule(NMI, "no_clinically_significant",
@@ -168,8 +209,13 @@ _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
 # "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
 _NEG_CONTRA = re.compile(
-    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicated\b",
+    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicated[a-z]?\b",
     re.IGNORECASE)
+# Task 9B: highlights end an item with a cross-reference "(7.1)", "( 5.6 , 7.2 )"
+# and no full stop before the next item; a bullet "•" starts one. Both are sentence
+# starts, or the next item inherits the previous item's advice.
+_XREF_END = re.compile(r"\(\s*\d+(?:\.\d+)*(?:\s*,\s*\d+(?:\.\d+)*)*\s*\)\s+(?=[A-Z•])")
+_BULLET = re.compile(r"•\s*")
 
 
 def _markers(text: str) -> list[int]:
@@ -179,6 +225,8 @@ def _markers(text: str) -> list[int]:
 def _sentence_starts(text: str, markers: list[int]) -> list[int]:
     """Sorted offsets where a sentence begins (always includes 0)."""
     starts = {0, *markers}
+    starts.update(m.end() for m in _XREF_END.finditer(text))
+    starts.update(m.start() for m in _BULLET.finditer(text))
     for m in _BOUNDARY.finditer(text):
         # short window only: "e.g." is at most 6 characters before the dot
         if _ABBREV.search(text, max(0, m.start() - 6), m.start() + 1):
@@ -232,6 +280,59 @@ def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
     return _block_from(text, mk, _sentence_starts(text, mk), char_start)
 
 
+# --- PLR table rows (Task 9B) --------------------------------------------
+# A PLR interaction table writes each row as "<row heading> Clinical Impact: ... .
+# Intervention: ... . [Examples: ...]". The class is named in the heading (or the
+# Impact or Examples cell) and the advice sits in the Intervention cell, a sentence
+# or more away -- 341 run-12 mentions read not_read whose own row says
+# "contraindicated". The row is read as a heading block (it IS the block under a
+# heading, design 5.2), and only when the row structure is unambiguous: an Impact
+# cell at or just before the mention, no other row in between, an Intervention cell
+# within a few sentences. Anything else stays not_read.
+_ROW_IMPACT = re.compile(r"\bClinical Impact\b", re.IGNORECASE)
+_ROW_INTERVENTION = re.compile(r"\s*Intervention\b", re.IGNORECASE)
+_ROW_EXAMPLES = re.compile(r"\s*Examples?\b", re.IGNORECASE)
+_ROW_LOOK = 6  # sentences searched either way; a table cell is rarely longer
+_ROW_CELL = 2  # sentences an Intervention cell may run on after its first
+
+
+def _row_block(text: str, starts: list[int], char_start: int,
+               char_end: int) -> tuple[int, int] | None:
+    """`(start, end)` of the PLR table row holding the mention, or None."""
+    bounds = list(zip(starts, starts[1:] + [len(text)]))
+    i = bisect_right(starts, char_start) - 1
+
+    def sent(j: int) -> str:
+        return text[bounds[j][0]:bounds[j][1]]
+
+    if _ROW_EXAMPLES.match(sent(i)):
+        # An Examples cell belongs to the row whose Intervention precedes it.
+        for j in range(i - 1, max(-1, i - _ROW_LOOK), -1):
+            if _ROW_INTERVENTION.match(sent(j)):
+                return bounds[j][0], max(bounds[i][1], char_end)
+            if _ROW_IMPACT.search(sent(j)):
+                return None  # reached the Impact cell without an Intervention
+        return None
+    for j in range(i, max(-1, i - _ROW_LOOK), -1):  # the row's Impact cell
+        if j < i and (_ROW_INTERVENTION.match(sent(j)) or _ROW_EXAMPLES.match(sent(j))):
+            return None  # a previous row's cell lies between: not inside a row
+        if _ROW_IMPACT.search(sent(j)):
+            break
+    else:
+        return None
+    for k in range(i + 1, min(len(bounds), i + 1 + _ROW_LOOK)):
+        if _ROW_INTERVENTION.match(sent(k)):
+            end = k
+            for m in range(k + 1, min(len(bounds), k + 1 + _ROW_CELL)):
+                if _ROW_EXAMPLES.match(sent(m)) or _ROW_IMPACT.search(sent(m)):
+                    break
+                end = m
+            return bounds[j][0], max(bounds[end][1], char_end)
+        if _ROW_IMPACT.search(sent(k)):
+            return None  # the next row began first: this row has no Intervention
+    return None
+
+
 # --- reading ------------------------------------------------------------
 
 def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
@@ -277,6 +378,11 @@ def read_advice(text: str, char_start: int, char_end: int) -> AdviceReading:
                       rel_end=char_end - s)
     if got:
         return AdviceReading(got[0], got[1], got[2], SCOPE_SENTENCE, s, e)
+    row = _row_block(text, starts, char_start, char_end)
+    if row:  # NMI is not read here either: a row mixes cells.
+        got = _read_scope(text[row[0]:row[1]], allow_nmi=False)
+        if got:
+            return AdviceReading(got[0], got[1], got[2], SCOPE_HEADING_BLOCK, *row)
     block = _block_from(text, mk, starts, char_start)
     if block and block[1] >= char_end:
         # NMI is not read here: a block can mix statements about different things.
