@@ -222,8 +222,9 @@ def _write_evidence(
         quoted_chars += sum(row.char_end - row.char_start for row in quote_rows)
         if progress is not None:
             progress(min(start + WORDING_CHUNK, len(keys)), len(keys))
-    return spl_class_evidence.EvidenceCounts(occurrences, with_moiety, quotes, quoted_chars,
-                                          class_total, with_class, inside)
+    return spl_class_evidence.EvidenceCounts(
+        occurrences, with_moiety, quotes, quoted_chars,
+        class_total, with_class, inside)
 
 
 def ingest_spl(
