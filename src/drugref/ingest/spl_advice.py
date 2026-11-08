@@ -42,6 +42,12 @@ the seed vocabulary cannot see ("do not exceed 10 mg with strong inhibitors");
 reading NMI there would be the worst error. In doubt the result is `not_read`.
 A strength level that fired still wins.
 
+**RULING R7 (widened blocker).** The seed vocabulary will always be incomplete, so
+NMI is refused whenever the scope might carry a second statement: also on
+", and/or/nor", on "and no", and on dose-limit/caution words
+(exceed*, limit*, maximum, caution*, consider*). Reading too little is safe;
+reading an all-clear beside unseen advice is not.
+
 Levels are fixed (`LEVELS`). The phrase vocabulary (`ADVICE_RULES`) is a seed to
 be tuned against the corpus.
 """
@@ -123,11 +129,18 @@ _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
 # The match consumes the whitespace, so m.end() is the next sentence's start.
 _BOUNDARY = re.compile(r"[.;]\s+(?=[A-Z0-9])")
 _ABBREV = re.compile(r"(?:\be\.g|\bi\.e|\bapprox|\bvs)\.$", re.IGNORECASE)
-# R6: any of these in the scope forbids reading NMI.
-_CONTRAST = re.compile(r"[;]|\b(?:except|unless|but|however|although|while|whereas)\b",
-                       re.IGNORECASE)
+# R6/R7: any of these in the scope forbids reading NMI.
+# R7 widens it: coordination (", and" / "and no") and dose-limit words too.
+_NMI_BLOCKER = re.compile(
+    r";|\b(?:except|unless|but|however|although|while|whereas)\b"
+    r"|,\s*(?:and|or|nor)\b|\band\s+no\b"
+    r"|\b(?:exceed\w*|limit\w*|maximum|caution\w*|consider\w*)\b",
+    re.IGNORECASE)
 # Negated contraindication, masked before the strength rules.
-_NEG_CONTRA = re.compile(r"\b(?:not|no)\s+(?:\w+\s+)?contraindicated\b", re.IGNORECASE)
+# "not only/merely/just contraindicated" is NOT a negation: it is stronger advice.
+_NEG_CONTRA = re.compile(
+    r"\b(?:not|no)\s+(?:(?!only\b|merely\b|just\b)\w+\s+)?contraindicated\b",
+    re.IGNORECASE)
 
 
 def _markers(text: str) -> list[int]:
@@ -196,7 +209,7 @@ def _read_scope(chunk: str, allow_nmi: bool) -> tuple[str, bool, str | None] | N
     for level in STRENGTH:
         if level in first:
             return level, len(first) > 1, first[level][1]
-    if allow_nmi and nmi_hits and not _CONTRAST.search(chunk):
+    if allow_nmi and nmi_hits and not _NMI_BLOCKER.search(chunk):
         return NMI, False, nmi_hits[0][1]
     return None
 

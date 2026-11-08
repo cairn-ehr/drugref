@@ -150,3 +150,25 @@ def test_long_text_is_read_fast():
     t0 = time.perf_counter()
     r = _read(t, "nitrates")
     assert r.level == "avoid" and time.perf_counter() - t0 < 1.0
+
+
+def test_r7_coordinated_second_clause_blocks_nmi():
+    for t in ("Do not exceed 10 mg with strong inhibitors, and no dose adjustment is needed "
+              "with weak inhibitors.",
+              "Limit the dose to 10 mg with strong inhibitors, and no dose reduction is "
+              "needed with weak inhibitors.",
+              "Use caution with strong inhibitors and no dose adjustment is needed with weak "
+              "ones."):
+        assert _read(t, "strong inhibitors").level != "no_meaningful_interaction", t
+    assert _read("Take the tablet with food and no dose adjustment is needed with antacids.",
+                 "antacids").level == "not_read"
+
+
+def test_plain_single_clause_nmi_still_reads():
+    r = _read("No clinically significant interaction was observed with antacids.", "antacids")
+    assert r.level == "no_meaningful_interaction"
+
+
+def test_not_only_contraindicated_is_still_contraindicated():
+    r = _read("Ketoconazole is not only contraindicated with simvastatin.", "simvastatin")
+    assert r.level == "contraindicated"
