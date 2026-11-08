@@ -45,7 +45,25 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
         out.append("  in subclasses only:")
         n_asserted = sum(cp.is_asserted for cp in p.properties)
         out.extend(_subclass_only_line(e, n_asserted) for e in p.subclass_only)
+    if p.label_statements:
+        # Kept apart from the properties above on purpose: a machine reading of label
+        # prose is not a confirmed fact; a curator's does_not_hold is shown, not hidden.
+        out.append("  What labels say about this class (machine-read, not confirmed):")
+        out.extend(_label_line(s) for s in p.label_statements)
     return out
+
+
+def _label_line(s: cpr.LabelStatement) -> str:
+    line = f"    {s.drug}'s label: {s.strongest_level} ({s.label_count} label(s))"
+    if s.mixed:
+        line += "; mixed"
+    if s.ambiguous:
+        line += "; name also matches another class"
+    if s.subject_in_class:
+        line += "; its own class"
+    if s.ruling:
+        line += f"; curator ruled: {s.ruling}"
+    return line
 
 
 def _subclass_only_line(e: cpr.SubclassOnlyDrug, n_asserted: int) -> str:

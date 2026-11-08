@@ -234,3 +234,103 @@ def test_a_drug_with_no_class_tag_shows_its_own_properties(conn):
     assert p.lenses == () and _names(p.own_properties) == ["Gouty"]
     tagged = cpr.drug_profile(conn, _world(conn)["a"])
     assert tagged.own_properties == ()
+
+
+# --- "What labels say about this class" (SPL class mentions, design 6.3/6.4) -------------
+def _spl_world(conn):
+    """An SPL ingest run to hang label evidence on."""
+    from drugref.ingest import spl
+    return conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, writer) "
+        "VALUES (%s, '2026-08-22', 'deadbeef', %s) RETURNING ingest_run_id",
+        (spl.SOURCE, spl.WRITER)).fetchone()[0]
+
+
+def _mention(conn, r, drug, klass, *labels, level="avoid", mixed=False,
+             ambiguous=False, key="a"):
+    """Labels `labels` (subject = drug) sharing one wording that mentions `klass`.
+    Level lives on the wording's span, so a different reading needs a different `key`."""
+    from drugref import spl_evidence
+    from drugref.ingest import spl
+    tk = key * 64
+    if not _has_wording(conn, r, tk):      # the same wording may gain a second class
+        spl_evidence.write_wordings(
+            conn, [spl_evidence.WordingRow(text_key=tk, char_length=1_000,
+                                           label_count=len(labels))],
+            ingest_run_id=r, source=spl.SOURCE)
+    for set_id in labels:
+        spl_evidence.write_labels(
+            conn, [spl_evidence.LabelRow(set_id=set_id, version="1",
+                                         effective_time="20260101",
+                                         product_type=None, text_key=tk)],
+            ingest_run_id=r, source=spl.SOURCE)
+        conn.execute(
+            "INSERT INTO drugref.spl_label_subject (ingest_run, source, set_id, version, "
+            "subject_ordinal, moiety_uuid, route) "
+            "VALUES (%s,'SPL',%s,'1',0,%s,'openfda_unii')", (r, set_id, drug))
+    conn.execute(
+        "INSERT INTO drugref.spl_class_occurrence (ingest_run, source, text_key, "
+        "char_start, char_end, class_uuid, match_ambiguous, match_form, advice_level, "
+        "advice_mixed, advice_rule, advice_scope, scope_start, scope_end) "
+        "VALUES (%s,'SPL',%s,10,15,%s,%s,'stored',%s,%s,%s,'sentence',0,100)",
+        (r, tk, klass, ambiguous, level, mixed,
+         None if level == "not_read" else "x.y"))
+
+
+def _has_wording(conn, r, tk):
+    return conn.execute("SELECT 1 FROM drugref.spl_wording WHERE ingest_run = %s "
+                        "AND text_key = %s", (r, tk)).fetchone() is not None
+
+
+def test_label_statements_ordered_and_flagged(conn):
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    sr = _spl_world(conn)
+    zdrug, ydrug, xdrug = (w.moiety(conn, r, n) for n in ("zdrug", "ydrug", "xdrug"))
+    _mention(conn, sr, zdrug, k, "S1", level="monitor", key="b")
+    _mention(conn, sr, ydrug, k, "S2", "S3", level="avoid", mixed=True, key="c")
+    _mention(conn, sr, xdrug, k, "S4", level="not_read", key="d")   # unranked: last
+    _mention(conn, sr, x["a"], k, "S5", level="avoid", key="e")  # member: its own class
+    got = cpr.class_profile(conn, k).label_statements
+    # Strict check of the documented order: rank, then label_count desc, then name.
+    assert [s.drug for s in got] == ["ydrug", "adrug", "zdrug", "xdrug"]
+    assert all(s.ruling is None and not s.ambiguous for s in got)
+
+
+def test_ambiguous_statement_on_both_classes(conn):
+    x = _world(conn)
+    r, k, s = x["r"], x["k"], x["s"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    # One span whose name folds onto two classes: a row each, both flagged ambiguous.
+    _mention(conn, sr, drug, k, "S1", ambiguous=True)
+    _mention(conn, sr, drug, s, ambiguous=True)     # same wording and label
+    for cls in (k, s):
+        (st,) = cpr.class_profile(conn, cls).label_statements
+        assert st.drug == "qdrug" and st.ambiguous
+
+
+def test_does_not_hold_ruling_still_shown(conn):
+    from drugref import curation_property
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    sr = _spl_world(conn)
+    drug = w.moiety(conn, r, "qdrug")
+    _mention(conn, sr, drug, k, "S1")
+    curation_property.record_property_ruling(
+        conn, subject_moiety_uuid=drug, relationship="interacts_with",
+        object_kind="class", object_uuid=k, verdict="does_not_hold",
+        reviewed_by="t", reviewed_against="t")
+    (st,) = cpr.class_profile(conn, k).label_statements
+    assert st.ruling == "does_not_hold"      # visible, marked -- never dropped
+
+
+def test_label_statement_not_in_asserted_properties(conn):
+    x = _world(conn)
+    r, k = x["r"], x["k"]
+    before = cpr.class_profile(conn, k).properties
+    sr = _spl_world(conn)
+    _mention(conn, sr, w.moiety(conn, r, "qdrug"), k, "S1", level="contraindicated")
+    p = cpr.class_profile(conn, k)
+    assert len(p.label_statements) == 1
+    assert p.properties == before            # machine-read stays separate (owner decision)

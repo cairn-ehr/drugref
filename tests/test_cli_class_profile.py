@@ -150,3 +150,26 @@ def test_a_class_does_not_hold_warns_what_it_does_not_do(conn, monkeypatch, caps
                      "--object", str(c), "--verdict", "does_not_hold",
                      "--reviewed-by", "t", "--reviewed-against", "t"]) == 0
     assert "only withdraws" in capsys.readouterr().err
+
+
+def _stmt(drug="qdrug", level="avoid", n=2, **kw):
+    return cpr.LabelStatement(drug, level, n, **{
+        "mixed": False, "ambiguous": False, "subject_in_class": False, "ruling": None,
+        **kw})
+
+
+def test_render_omits_section_when_empty():
+    assert "What labels say" not in "\n".join(ccp.render_class_profile(_profile()))
+
+
+def test_render_section_lines():
+    import dataclasses
+    prof = dataclasses.replace(_profile(), label_statements=(
+        _stmt(), _stmt("rdrug", "monitor", 1, mixed=True, ambiguous=True,
+                       subject_in_class=True, ruling="does_not_hold")))
+    out = ccp.render_class_profile(prof)
+    i = out.index("  What labels say about this class (machine-read, not confirmed):")
+    assert out[i + 1:i + 3] == [
+        "    qdrug's label: avoid (2 label(s))",
+        "    rdrug's label: monitor (1 label(s)); mixed; name also matches another "
+        "class; its own class; curator ruled: does_not_hold"]
