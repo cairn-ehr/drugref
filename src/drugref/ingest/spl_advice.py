@@ -265,7 +265,7 @@ _CELL_LABEL = re.compile(
 _NOT_ADVICE = re.compile(
     r"\bduring\s+(?:\w+\s+){0,3}?(?:and\s+)?dose\s+(?:titration|adjustment)s?\b"
     r"|\binitiation,?\s+(?:and\s+)?dose\s+(?:titration|adjustment)s?\b"
-    r"|\bseparate(?:ly)?\s+(?:administration|dosing|doses)\b[^.;]{0,80}?"
+    r"|\bseparate(?:ly)?\s+(?:administration|dosing|doses)\b(?P<gap>[^.;,]{0,80}?)"
     r"\b(?:is|are)\s+not\s+(?:necessary|needed|required)\b", re.IGNORECASE)
 
 
@@ -422,7 +422,10 @@ def _read_scope(chunk: str, allow_nmi: bool, rel_start: int = 0,
     spans = [m.span() for r in ADVICE_RULES if r.level == NMI
              for m in r.pattern.finditer(chunk)]
     spans += [m.span() for m in _NEG_CONTRA.finditer(chunk)]
-    spans += [m.span() for m in _NOT_ADVICE.finditer(chunk)]
+    # R24: a strength word inside the "separate ... not needed" gap must stay visible.
+    spans += [m.span() for m in _NOT_ADVICE.finditer(chunk)
+              if not any(r.pattern.search(m.group("gap") or "")
+                         for r in ADVICE_RULES if r.level != NMI)]
     for a, b in spans:  # "no dose adjustment" must not fire adjust_dose
         masked = masked[:a] + " " * (b - a) + masked[b:]
     first: dict[str, tuple[int, str]] = {}

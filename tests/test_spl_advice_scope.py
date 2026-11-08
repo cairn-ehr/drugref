@@ -78,3 +78,12 @@ def test_separate_administration_not_necessary_is_not_dose_advice():
 def test_plain_separate_administration_still_reads_adjust_dose():
     assert _read("Separate administration of drug A and widgetacids by 2 hours.",
                  "widgetacids").level == "adjust_dose"
+
+
+def test_separate_administration_mask_never_hides_a_strength_word():
+    """R24: a contraindication inside the gap must still be read (comma or not)."""
+    for text in ("Separate dosing with widgetacids, which are contraindicated in renal "
+                 "failure, is not needed.",
+                 "Separate dosing with widgetacids contraindicated in renal failure is "
+                 "not needed."):
+        assert _read(text, "widgetacids").level == "contraindicated", text
