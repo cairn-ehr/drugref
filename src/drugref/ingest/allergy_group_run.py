@@ -167,14 +167,12 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
                                           run_id)
                 member_moieties.add(moiety_uuid)
 
-    # 4. Placement: "does MeSH know this drug at all?" -- every moiety ANY key value
-    #    resolves to. placement_keys is a union across records, so the per-record
-    #    UNII-before-CAS rule cannot apply; each value is looked up on its own.
+    # 4. Placement: "does MeSH know this drug at all?" -- every moiety a keyed MeSH
+    #    record bridges to, record by record through the SAME two-key rule as
+    #    membership (a CAS is tried only when the record's UNIIs resolve nothing).
     placed = set(member_moieties)
-    for value in parsed.placement_keys.unii:
-        placed.update(unii_index.get(value, ()))
-    for value in parsed.placement_keys.cas:
-        placed.update(cas_index.get(value, ()))
+    for keys in parsed.placement_keys:
+        placed.update(resolve_moieties(keys, unii_index, cas_index))
     for moiety_uuid in sorted(placed):
         conn.execute("INSERT INTO drugref.allergy_mesh_placement "
                      "(moiety_uuid, ingest_run) VALUES (%s, %s)", (moiety_uuid, run_id))

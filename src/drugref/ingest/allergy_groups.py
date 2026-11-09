@@ -47,11 +47,14 @@ class GroupMemberKeys:
 
 @dataclass(frozen=True)
 class ParsedAllergyGroups:
-    """`placement_keys` is the union of EVERY record's keys, in or out of a group,
-    so the orchestrator can place each moiety's own MeSH identity."""
+    """`placement_keys` holds the keys of EVERY record that carries any, in or out
+    of a group -- ONE ENTRY PER RECORD, not a union, so the orchestrator can bridge
+    each record UNII-first/CAS-fallback exactly as for membership. A union would let
+    a salt-form CAS place a moiety MeSH never named, turning "unplaced" into a
+    silent "no-match"."""
     root_names: dict[str, str]
     members: tuple[GroupMemberKeys, ...]
-    placement_keys: MemberKeys
+    placement_keys: tuple[MemberKeys, ...]
     scr_records: int
     desc_records: int
 
@@ -110,6 +113,9 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
     Two passes: desc is read whole first (a root may come after its descendants
     in UI order), then supp is streamed. Raises ValueError if any group's root or
     excluded UI is not a descriptor in the release.
+
+    PLACEMENT: every desc or SCR record carrying any UNII/CAS contributes its own
+    MemberKeys entry to `placement_keys` (keyless records are omitted).
     """
     desc: dict[str, tuple[str, tuple[str, ...], MemberKeys]] = {}
     for rec in iter_records(desc_path, "DescriptorRecord"):
@@ -142,15 +148,14 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
             inside.add(ui)
             members.append(GroupMemberKeys(g.root_ui, f"descriptor:{ui}", keys))
 
-    unii = {u for _, _, k in desc.values() for u in k.unii}
-    cas = {c for _, _, k in desc.values() for c in k.cas}
+    placement = [k for _, _, k in desc.values() if k.unii or k.cas]
     scr_records = 0
     for rec in iter_records(supp_path, "SupplementalRecord"):
         scr_records += 1
         u, c = registry_keys(texts(rec, "RegistryNumber"))
-        unii |= u
-        cas |= c
         keys = MemberKeys(frozenset(u), frozenset(c))
+        if u or c:
+            placement.append(keys)
         # HeadingMappedTo only: IndexingInformation also holds DescriptorUIs.
         mapped = {m.lstrip("*") for hm in rec.iter("HeadingMappedTo")
                   for m in texts(hm, "DescriptorUI")}
@@ -162,5 +167,5 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
     return ParsedAllergyGroups(
         root_names={g.root_ui: desc.get(g.root_ui, (g.root_ui,))[0] for g in groups},
         members=tuple(members),
-        placement_keys=MemberKeys(frozenset(unii), frozenset(cas)),
+        placement_keys=tuple(placement),
         scr_records=scr_records, desc_records=len(desc))

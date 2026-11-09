@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from drugref import class_grain_read, ids
+from drugref import class_grain_read, claims, ids
 from drugref.ingest import mesh_run
 from tests import allergy_world as world
 from tests import class_profile_world as cpw
@@ -93,6 +93,19 @@ def test_placement(conn, moieties):
     # Every member is placed, including the include-only ones.
     assert set(_members(conn)) <= placed
     assert summary.placed_moieties == len(placed)
+
+
+def test_placement_is_unii_primary_per_record(conn, moieties):
+    # MeSH Amoxicillin (D000658) carries UNIIs 804826J2HU/9EM05410Q9 AND CAS
+    # 26889-93-0. Its UNIIs resolve, so -- as for membership -- its CAS is never
+    # tried, and a moiety holding only that CAS must stay unplaced, not "no-match".
+    run_id = conn.execute("SELECT max(ingest_run_id) FROM drugref.ingest_run"
+                          ).fetchone()[0]
+    cas_only = ids.mint_moiety_uuid("XXXXXXXXXX")
+    claims.upsert_moiety(conn, cas_only, "cas-only test moiety", run_id)
+    claims.add_claim(conn, cas_only, "CAS", "26889-93-0", run_id)
+    world.run_allergy_ingest(conn)
+    assert "cas-only test moiety" not in _placed(conn)
 
 
 def test_unresolved_include_reported(conn, moieties, tmp_path):

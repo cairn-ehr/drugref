@@ -75,8 +75,16 @@ def test_outside_tree_not_member(parsed):
 
 def test_placement_covers_everything(parsed):
     # sulbactam pivoxyl 2X0WTA96KX and bevonium 34B0471E08 are SCRs, too.
+    # One entry per keyed record, so each can be bridged UNII-first on its own.
+    all_unii = set().union(*(k.unii for k in parsed.placement_keys))
     assert {"2X0WTA96KX", "34B0471E08", "03QB156W6I",
-            "S4TF6I2330", "SE10G96M8W"} <= parsed.placement_keys.unii
+            "S4TF6I2330", "SE10G96M8W"} <= all_unii
+    assert all(k.unii or k.cas for k in parsed.placement_keys)
+    # Amoxicillin's record keeps its CAS beside its UNIIs, not merged into a union.
+    assert any({"804826J2HU", "9EM05410Q9"} <= k.unii and "26889-93-0" in k.cas
+               for k in parsed.placement_keys)
+    # 11 desc + 3 SCR records, minus the 2 keyless ones (D010406, D002511).
+    assert len(parsed.placement_keys) == 12
     assert parsed.root_names["D010406"] == "Penicillins"
     assert parsed.desc_records == 11 and parsed.scr_records == 3
 
