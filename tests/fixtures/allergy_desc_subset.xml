@@ -98,6 +98,38 @@
   </ConceptList>
  </DescriptorRecord>
  <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000667</DescriptorUI>
+  <DescriptorName>
+   <String>Ampicillin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.750.050</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000667</ConceptUI>
+    <ConceptName>
+     <String>Ampicillin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>7C782967RD</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>JFN36L5S8K</RegistryNumber>
+     <RegistryNumber>HXQ6A1N7R6</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>69-52-3 (mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>69-53-4 (Ampicillin)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>7177-48-2 (trihydrate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>HXQ6A1N7R6</RelatedRegistryNumber>
+     <RelatedRegistryNumber>JFN36L5S8K</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D002506</DescriptorUI>
   <DescriptorName>
    <String>Cephalexin</String>
@@ -210,6 +242,41 @@
     <RegistryNumberList>
      <RegistryNumber>87-53-6</RegistryNumber>
     </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D010400</DescriptorUI>
+  <DescriptorName>
+   <String>Penicillin G</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.750</TreeNumber>
+   <TreeNumber>D02.886.108.750.750</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD010400</ConceptUI>
+    <ConceptName>
+     <String>Penicillin G</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>Q42T66VG0C</RegistryNumber>
+     <RegistryNumber>YS5LY7JF4N</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>VL775ZTH4C</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>113-98-4 (mono-K salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>21193-94-2 (sulfate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>47294-44-0 ((6 alpha)-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>61-33-6 (Penicillin G)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>69-57-8 (mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>75333-20-9 (mono-NH4 salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>VL775ZTH4C</RelatedRegistryNumber>
+     <RelatedRegistryNumber>YS5LY7JF4N</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
    </Concept>
   </ConceptList>
  </DescriptorRecord>

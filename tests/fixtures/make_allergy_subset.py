@@ -8,7 +8,8 @@ make_mesh_subset.py, whose helpers this reuses). The ONLY synthetic thing is the
 
 WHAT IT KEEPS -- one small set that exercises every membership rule of the
 penicillin allergy group (spec 2026-11-08 section 4.2):
-  * the root (D010406) and its descendants (floxacillin, amoxicillin);
+  * the root (D010406) and its descendants (floxacillin, amoxicillin,
+    penicillin G, ampicillin);
   * excluded descriptors (sulbactam, tazobactam, penicillanic acid);
   * descriptors OUTSIDE the tree (perindopril, cephalexin, procaine) and one
     in-tree-by-name-only decoy (D000077725), kept so placement_keys has work to do;
@@ -26,7 +27,11 @@ import make_mesh_subset
 from make_mesh_subset import _iter, _release_file, _texts, write_desc
 
 KEEP_DESC = {"D010406", "D005436", "D000658", "D013407", "D000078142", "D010397",
-             "D000077725", "D020913", "D002511", "D002506", "D011343"}
+             "D000077725", "D020913", "D002511", "D002506", "D011343",
+             # Penicillin G and Ampicillin: the fold components of Task 4's
+             # composition cases (penicillin g procaine, clemizole penicillin,
+             # ampicillin sodium).
+             "D010400", "D000667"}
 KEEP_SCR = {"C031367", "C035975", "C000002"}
 
 _HEADER = ("<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_allergy_subset.py. "

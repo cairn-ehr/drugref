@@ -83,10 +83,10 @@ def test_placement_covers_everything(parsed):
     # Amoxicillin's record keeps its CAS beside its UNIIs, not merged into a union.
     assert any({"804826J2HU", "9EM05410Q9"} <= k.unii and "26889-93-0" in k.cas
                for k in parsed.placement_keys)
-    # 11 desc + 3 SCR records, minus the 2 keyless ones (D010406, D002511).
-    assert len(parsed.placement_keys) == 12
+    # 13 desc + 3 SCR records, minus the 2 keyless ones (D010406, D002511).
+    assert len(parsed.placement_keys) == 14
     assert parsed.root_names["D010406"] == "Penicillins"
-    assert parsed.desc_records == 11 and parsed.scr_records == 3
+    assert parsed.desc_records == 13 and parsed.scr_records == 3
 
 
 @pytest.mark.parametrize("body, missing", [

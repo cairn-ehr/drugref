@@ -44,11 +44,18 @@ MOIETIES = {
     "perindopril": "Y5GMK36KGY",
     "cephalexin": "OBN7UDS42Y",
     "procaine": "4Z8Y51M438",
-    # Composition components for Task 4's fold cases. NOTE: the fixtures carry no
-    # Penicillin G / Ampicillin descriptor, so these two are NOT members here.
+    # Composition components for Task 4's fold cases. Penicillin G (D010400) and
+    # Ampicillin (D000667) are in-tree descriptors, so both are members; clemizole
+    # has no MeSH record here.
     "penicillin g": "Q42T66VG0C",
     "clemizole": "T97CB3796L",
     "ampicillin": "7C782967RD",
+    # The composites themselves (real drugref moieties; see COMPOSITIONS). Ampicillin
+    # sodium is ALSO a direct member: MeSH's Ampicillin descriptor lists JFN36L5S8K
+    # as a registry number. The other two reach the group only through the fold.
+    "penicillin g procaine": "17R794ESYN",
+    "clemizole penicillin": "5UL276H6TF",
+    "ampicillin sodium": "JFN36L5S8K",
     # Made-up but well-formed: no MeSH record carries it, so it stays unplaced.
     "unplaced test moiety": "ZZZZZZZZZZ",
 }
