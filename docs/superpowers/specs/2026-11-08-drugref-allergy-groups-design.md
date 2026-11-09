@@ -108,14 +108,25 @@ A reviewed data file in `src/drugref/data/` (like `onc_high_priority.toml`) name
   carry no UNII of their own that maps to a single moiety. The builder confirms what they bridge to, and
   excludes them if they bridge to the inhibitor.
 
-The file records who reviewed it and against what, and is marked **"structural seed — not clinically
+- included explicitly (the `has_SC` cross-check's two misses, §6): `piperacillin anhydrous` (UNII
+  `9I628532GX`) and `carbenicillin indanyl sodium` (`4OUL81K2RT`), each with the reason "MED-RT has_SC files
+  it under Penicillins; MeSH carries no bridge key for this form".
+
+An exclusion removes the excluded descriptor's whole subtree, and any supplementary record mapped only to
+excluded descriptors. The file records who reviewed it and against what, and is marked **"structural seed — not clinically
 reviewed"** until it is.
 
 ### 4.2 Membership
 
-A moiety is a **direct member** of a group if a MeSH descriptor **at or below the root** in the tree (any of
-the root's tree numbers), not excluded, carries a `<RegistryNumber>` UNII (CAS as the existing fallback)
-that bridges to that moiety by the existing two-key rule. Membership is materialised at ingest, with the
+A moiety is a **direct member** of a group if either of these, not excluded, carries a `<RegistryNumber>`
+UNII (CAS as the existing fallback) that bridges to that moiety by the existing two-key rule:
+
+- a MeSH **descriptor** at or below the root in the tree (any of the root's tree numbers), or
+- a MeSH **supplementary concept record** (`supp2026`) whose `HeadingMappedTo` names such a descriptor
+  (leading `*` stripped).
+
+**The supplementary records are not optional** (measured 2026-11-09, below). Many drugs exist in MeSH only as
+supplementary records: temocillin, bacampicillin, sultamicillin, clemizole penicillin. Membership is materialised at ingest, with the
 group registered as a class (new `concept_type`, e.g. `'CS'`, chemical-structure group) so that it has a
 stable `class_uuid` cairn can store.
 
@@ -151,10 +162,10 @@ Input: `prescribed` (a `moiety_uuid`) and `allergen` (a `moiety_uuid` **or** a g
    both sides, the group (name, MeSH UI, `class_uuid`), and the group's review status from §4.1.
 5. **Three outcomes, never two**: `match`; `no-match`; `unplaced`. The last must be distinguishable so cairn can
    show "not checked". **"Placed" means the folded moiety bridges to at least one MeSH descriptor anywhere in
-   the tree** (designer's call). A drug with a MeSH descriptor outside the group's subtree is genuinely not
+   the tree, or a supplementary record, directly or through any member of its fold** (designer's call). A drug with a MeSH descriptor outside the group's subtree is genuinely not
    in the group. A drug with no descriptor bridge at all could be a penicillin MeSH never filed, so it answers
    `unplaced`, never `no-match`. That needs a placement set covering every bridgeable moiety in `desc2026`,
-   not just the subtree. It's cheap, because `desc2026` is already read whole. So:
+   and supplementary record, not just the subtree. It's cheap, because both files are already read whole. So:
    - `no-match`: both sides placed, nothing shared.
    - `unplaced`: an input UUID drugref does not hold; a prescribed side with no MeSH bridge; or an allergen
      moiety that is in no group (only `same-drug` could be checked; a `same-drug` hit still answers `match`).
@@ -170,6 +181,27 @@ with paths to word its warning. Case (c) answers `no-match` this round; cairn mu
 "cephalosporins are safe". This goes in the read's documentation and in cairn's slice notes.
 
 ## 6. Measurement and tests (before it ships)
+
+**Pre-build measurement (2026-11-09, `drugref_profiles`, MeSH 2026, throwaway script; the build repeats it
+with the real code):**
+
+| | descriptors only | + supplementary records |
+|---|---:|---:|
+| moieties placed in MeSH at all | 2,816 of 19,438 | **9,930** of 19,438 |
+| penicillin group members (exclusions applied) | 45 | **78** |
+| `-cillin` moieties not reached after the fold | 50 of 104 | **22** of 104 |
+
+- The 22 left over are mostly obscure INN-only research penicillins with no MeSH record or no bridge key.
+  `penicillinase` is an enzyme and is correctly out.
+- The `has_SC` cross-check has two misses: `piperacillin anhydrous` and `carbenicillin indanyl sodium`. Both
+  become explicit `include` entries in the allow-list.
+- `penimepicycline` and `penimocycline` (tetracycline–penicillin V salts) are in the group, correctly, because
+  they contain penicillin.
+- Perindopril, cephalexin and lisinopril are all placed.
+- **About half of drugref's moieties have no MeSH placement, so they would answer `unplaced` against a group
+  allergen.** That is the honest answer, and cairn shows it as "not checked". The build measures what share
+  of *prescribable* moieties (those with an RxNorm or PBS claim) that is, and reports it.
+
 
 - The owner's three cases and the amoxicillin-allergen → flucloxacillin case as tests (case c pinned as
   `no-match`, documented as a known gap). Plus fold cases: `clemizole penicillin` and `benethamine
