@@ -76,6 +76,7 @@ nav:
       - The candidate tier carries an upstream severity: decisions/upstream-severity-is-data.md
       - A label naming two drugs is evidence, not an assertion: decisions/evidence-is-not-an-assertion.md
       - A bounded quoted window is bundled, not the section: decisions/bundling-a-quoted-window.md
+      - An allergy group is an allow-listed root, never a structural class: decisions/allergy-groups-allow-list.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

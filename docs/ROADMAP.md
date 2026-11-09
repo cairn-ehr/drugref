@@ -1363,6 +1363,21 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   level, always marked as label evidence and never as a confirmed property. Condition class properties are still
   observed until a curator confirms them.
 
+### Allergy groups ✅ BUILT AND MEASURED (2026-11-09) — `db/067`–`db/068`, on `drugref_allergy`
+[Design](superpowers/specs/2026-11-08-drugref-allergy-groups-design.md) ·
+[What it measured](superpowers/specs/2026-11-09-drugref-allergy-groups-results.md); full account: PROJECT-NOTES
+§ "The allergy-groups round". **Read the numbers there, not here.**
+
+A MeSH-seeded penicillin allergy group behind a reviewed allow-list, and `drugref.allergy_check(prescribed,
+allergen)` (`match` / `no-match` / `unplaced`, with the path). Unblocks cairn-ehr's allergy slice. Cefalexin
+(case c) answers `no-match`: a `no-match` is never "safe" for cross-reactivity.
+
+- **Follow-ups**: (1) case (c) cross-reactivity at the **R1 side-chain** grain, as curated, cited groups rather
+  than a blanket penicillin-cephalosporin rule; (2) **a reviewer for the allow-list**, so the `structural-seed`
+  label can come off; (3) **MED-RT `has_SC` ingestion** (used only as a recall cross-check here), which first
+  needs [#223](https://github.com/cairn-ehr/drugref/issues/223) (the registry lacks MED-RT's RxCUIs for
+  ampicillin, amoxicillin, nafcillin sodium and Penicillin); (4) more groups (each needs an allow-list entry).
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

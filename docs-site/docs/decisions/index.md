@@ -85,3 +85,7 @@ history is never lost — it remains in the git log and in the dated design spec
   two publishers take opposite copyright positions on the same bytes, so clearance was decided per column;
   the measured reason a per-occurrence window is not a quote but the section reassembled (82.7% of it); and
   why the 25% budget is a deferred database trigger rather than a convention.
+- [An allergy group is an allow-listed root, never a structural class](allergy-groups-allow-list.md) — why
+  only a reviewed MeSH root is an allergy group (the sulfa trap), why every exclusion and include carries a
+  reason, why the salt/ester fold covers every component, and why `no-match` is not "safe" for
+  cross-reactivity (cefalexin answers `no-match`).

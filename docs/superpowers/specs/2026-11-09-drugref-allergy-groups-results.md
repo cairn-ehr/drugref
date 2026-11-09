@@ -46,7 +46,11 @@ the real parser with a UNII-only bridge on this database reproduces the pre-buil
   a CAS number the registry holds but not their UNII) and +2 from the allow-list includes (`piperacillin
   anhydrous`, `carbenicillin indanyl sodium`). The 84th row is `propicillin potassium`, which is a member twice
   over (via `scr:C006801` and `scr:C100135`): rows are `(group, moiety, via)`, moieties are distinct.
-  By route: 45 moieties via a descriptor, 36 via a supplementary record, 2 via include (one overlap).
+  By route: 45 moieties via a descriptor, 36 via a supplementary record, 2 via include; these three sum to 83
+  distinct moieties, so no moiety is counted twice. The 84th row is not an overlap between routes: it is
+  `propicillin potassium`'s two `scr` rows (37 supplementary rows give 36 moieties).
+  The UNII-only re-run was a throwaway run of the build's own bridging code restricted to UNII keys (empty CAS
+  index, no includes); the script was not kept.
 - **Placed 9,930 to 10,739.** +807 from the CAS fallback (two-key bridge gives 10,737 on its own) and +2 from the
   two include moieties, which no MeSH record carried a key for.
 - **`-cillin` 22 to 17.** Exactly the five new members above (3 CAS + 2 includes). The remaining 17 are all
@@ -71,7 +75,7 @@ up against unsuperseded `RXNORM_IN` claims, then `allergy_check(moiety, penicill
   `RXNORM_IN` values (`ampicillin` 221058, `amoxicillin` 133008, `nafcillin sodium` 485026, `penicillin g` 7980),
   and `amoxicillin` and `ampicillin` are group members. They are an identifier-coverage observation: the
   registry's `RXNORM_IN` claims do not use MED-RT's RxCUIs for these four, so a join by MED-RT RxCUI misses them.
-  No RxCUI tried was present under any `RXNORM*` scheme. Not acted on here.
+  No RxCUI tried was present under any `RXNORM*` scheme. Filed as [#223](https://github.com/cairn-ehr/drugref/issues/223); not acted on here.
 
 ## 4. The acceptance cases (verbatim, `drugref allergy check PRESCRIBED ALLERGEN`)
 

@@ -6028,6 +6028,41 @@ The same review FIXED in-PR: NMI no longer outvotes `not_read` in `spl_class_sta
 floor (`MEASURED_CLASS_FLOOR` = 304,682, gated by `--no-pair-floor`); `read_official_names` reads strictly
 (QUOTE_NONE, no `errors="replace"`) and refuses a file yielding 0 official names.
 
+## The allergy-groups round (2026-11-09) — `db/067`–`db/068`, measured on `drugref_allergy`
+
+**Every figure is in the [results record](superpowers/specs/2026-11-09-drugref-allergy-groups-results.md); the
+[design](superpowers/specs/2026-11-08-drugref-allergy-groups-design.md) is immutable.** The decision record:
+[an allergy group is an allow-listed root](../docs-site/docs/decisions/allergy-groups-allow-list.md). It unblocks
+cairn-ehr's allergy slice.
+
+**What it is.** A MeSH-seeded penicillin allergy group (83 moieties) behind a reviewed allow-list, and the SQL read
+`drugref.allergy_check(prescribed, allergen)` returning `match` / `no-match` / `unplaced` with a path. Code map:
+`db/067` (`allergy_group`, `allergy_group_member`, `allergy_mesh_placement`; source `DRUGREF-ALLERGY`, rebuilt per
+source, no `class_parent` edges so no existing walk sees a group) · `db/068` (`moiety_allergy_fold`,
+`allergy_check`) · `src/drugref/ingest/allergy_groups.py` (pure MeSH parser + allow-list loader) ·
+`src/drugref/data/allergy_groups.toml` (the allow-list, `structural-seed`, not clinically reviewed) ·
+`ingest/allergy_group_run.py` (orchestrator, the only writer) · `allergy_read.py` · `cli_allergy.py`
+(`drugref ingest allergy-groups`, `drugref allergy check`) · `tools/allergy_group_measure.py`.
+
+**Traps.**
+- **`no-match` is not "safe" for cross-reactivity.** Case (c), cefalexin for a penicillin allergy, answers
+  `no-match`: no cross-reactivity rule exists yet. Cairn must not render it as safe.
+- **`unplaced` means not checked.** 2,661 of 8,861 prescribable moieties are unplaced against the penicillin group.
+- **The fold ignores `is_active_component`** on purpose (clemizole penicillin marks penicillin G FALSE); the
+  partner of a salt therefore also matches. `moiety_active_in_composite` is NOT the fold.
+- **Allow-list entries need a reason**; the loader refuses one without. An edit is a clinical decision.
+- The group's ancestors (beta-Lactams, Lactams) are never groups; Sulfonamides is not listed, deliberately.
+- Membership bridges by UNII, then CAS (+3 members, +807 placed); includes resolve by UNII only.
+
+**Open.** [#223](https://github.com/cairn-ehr/drugref/issues/223): the registry's `RXNORM_IN` claims lack MED-RT's
+RxCUIs for ampicillin (733), amoxicillin (723), nafcillin sodium (9893), Penicillin (70618), so a join by MED-RT
+RxCUI (`has_SC`) misses them. Follow-ups (ROADMAP): case (c) at the R1 side-chain grain; a reviewer for the
+allow-list so `structural-seed` can come off; MED-RT `has_SC` ingestion.
+
+**Databases.** `drugref_test_allergy` is this branch's test DB (recreated by pytest). **`drugref_allergy`** = a
+`createdb -T drugref_profiles` copy, migrated to `db/068`, allergy groups ingested (MeSH 2026); **never patch it**.
+`drugref_profiles` was left untouched at `db/065`. Suite: 3221 collected.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6792,6 +6827,8 @@ ran in CI and `ruff` was not even a project dependency.
   counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
   only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
   `drugref status` refusing to call their stamps a duration. Keep both.
+- **`drugref_allergy` is the allergy-groups round's verification database** (2026-11-09): `createdb -T drugref_profiles`,
+  migrated to `db/068`, allergy groups ingested (MeSH 2026). `drugref_test_allergy` was this branch's test DB. **Never patch it.**
 - **`drugref_classmentions` is the SPL class-mentions round's verification database** (2026-11-08): built from
   **nothing** at `db/066` (`createdb` → `migrate` → chain + `onchigh` + `fda-cyp` + `drugcentral` + `ingest spl`).
   **SPL run 17 is the shipped measurement**; the database also carries an aborted run 9 and the superseded runs
@@ -6832,7 +6869,7 @@ ran in CI and `ruff` was not even a project dependency.
 - Public docs site: `docs-site/` (MkDocs Material) → `docs.drugref.org`, deployed by `.github/workflows/docs.yml`; `uv run
   --group docs mkdocs build --strict -f docs-site/mkdocs.yml` is its test. Its **Design decisions** section holds *living*
   records and is **where a standing correction to an artefact that cannot be edited — an immutable spec, or a MERGED
-  migration's prose — goes**. **Thirteen** live there (re-count with `ls docs-site/docs/decisions/*.md` and
-  SUBTRACT `index.md`, which is the section's landing page and not a record — 14 files, 13 records; the count
+  migration's prose — goes**. **Fourteen** live there (re-count with `ls docs-site/docs/decisions/*.md` and
+  SUBTRACT `index.md`, which is the section's landing page and not a record — 15 files, 14 records; the count
   read "eleven" for two rounds because that subtraction was never written down here); a reversed decision is
   removed, not tombstoned.
