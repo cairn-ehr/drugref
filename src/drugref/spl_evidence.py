@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import psycopg
 
-from drugref import analyze, db
+from drugref import analyze, db, spl_class_evidence
 
 if TYPE_CHECKING:                       # pragma: no cover
     # Import-time-free: this module is the WRITER and `spl_quote` is a pure
@@ -52,8 +52,8 @@ if TYPE_CHECKING:                       # pragma: no cover
 #: **CHILDREN FIRST**: `db.clear_source_tables` deletes front to back and
 #: preserves the order exactly, because a caller whose tables reference each other
 #: must list children first or the foreign key refuses the delete.
-#: `spl_wording_quote`, `spl_entity_occurrence` and `spl_label` all reference
-#: `spl_wording`; `spl_label_subject` references `spl_label`.
+#: `spl_wording_quote`, `spl_entity_occurrence`, `spl_class_occurrence` (db/066) and
+#: `spl_label` all reference `spl_wording`; `spl_label_subject` references `spl_label`.
 #:
 #: Registered in tests/test_source_clear_contract.py's EXPECTED_TABLES, which is
 #: what turns a table silently dropped from this tuple into a failing test rather
@@ -61,6 +61,7 @@ if TYPE_CHECKING:                       # pragma: no cover
 SPL_TABLES = (
     "spl_wording_quote",
     "spl_entity_occurrence",
+    "spl_class_occurrence",
     "spl_label_subject",
     "spl_label",
     "spl_wording",
@@ -281,6 +282,7 @@ _TABLE_FOR_ROW = {
     "LabelRow": "spl_label",
     "SubjectRow": "spl_label_subject",
     "OccurrenceRow": "spl_entity_occurrence",
+    "ClassOccurrenceRow": "spl_class_occurrence",
     "QuoteRow": "spl_wording_quote",
 }
 
@@ -488,3 +490,11 @@ def _analyze(conn: psycopg.Connection, tables: Iterable[str]) -> None:
             "ANALYZE names its tables directly and may only name one "
             "this module owns")
     analyze.analyze_tables(conn, names)
+
+
+def write_class_occurrences(conn: psycopg.Connection,
+                            rows: Iterable[spl_class_evidence.ClassOccurrenceRow], *,
+                            ingest_run_id: int, source: str) -> int:
+    """Write machine-read class mentions (db/066): NOT CONFIRMED, never assertions."""
+    return _copy(conn, spl_class_evidence.ClassOccurrenceRow, rows,
+                 ingest_run_id=ingest_run_id, source=source)

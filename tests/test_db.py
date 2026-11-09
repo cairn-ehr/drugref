@@ -369,6 +369,11 @@ def test_apply_migrations_is_idempotent(conn):
         # but whose drift between releases is the signal. HISTORY, keyed by the
         # run, so the per-source clear never touches it.
         "spl_run_census",
+        # db/066: class occurrences (machine-read advice level, NOT CONFIRMED), the
+        # reading vocabulary, two read views (evidence grain, then subject x class
+        # grain) and the curator worklist for readings without a live ruling.
+        "spl_class_occurrence", "spl_advice_level", "spl_class_statement_evidence",
+        "spl_class_statement", "gap_unconfirmed_label_class_statement",
     }
 
 

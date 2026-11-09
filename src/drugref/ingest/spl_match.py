@@ -32,11 +32,14 @@ the yield:
 3. **Longest match wins, and matches never overlap.** Otherwise a name nested
    inside a longer one is counted twice and the pair yield double-counts.
 
-**CLASSES ARE NOT MATCHED.** This slice is drug x drug only (owner's call,
-2026-08-24): 32.3% of class occurrences name an EMPTY class, MED-RT's PK axis is
-97.2% empty and is not a drug-class vocabulary (#155), and `Diuretics` (MeSH) and
-`Diuretic [APC]` (MED-RT) fold to one string with no cross-source class identity.
-The class half is its own slice, with its own measurement.
+**CLASSES ARE NOT PART OF THE MOIETY PASS.** The drug x drug slice (owner's call,
+2026-08-24) matches moieties only: 32.3% of class occurrences name an EMPTY class,
+MED-RT's PK axis is 97.2% empty and is not a drug-class vocabulary (#155), and
+`Diuretics` (MeSH) and `Diuretic [APC]` (MED-RT) fold to one string with no
+cross-source class identity. Class entries (`KIND_CLASS`, carrying a `class_uuid`)
+are matched in a SEPARATE pass, `class_occurrences`, which keeps one row per
+distinct class and flags a span several classes share as ambiguous instead of
+choosing; `moiety_occurrences` ignores class entries and vice versa.
 """
 from __future__ import annotations
 
@@ -56,15 +59,27 @@ _TOKEN = re.compile(r"[A-Za-z0-9]+")
 #: at all; see `Entry`.
 KIND_MOIETY = "moiety"
 KIND_SUPPRESS = "suppress"
-#: A drug CLASS name. **The shipped ingest offers none**, and that exclusion is
-#: measured rather than assumed: `tools/spl_class_vocabulary_delta.py` adds the
+#: A drug CLASS name. **The shipped moiety vocabulary holds none**, and that
+#: exclusion is measured rather than assumed:
+#: `tools/spl_class_vocabulary_delta.py` adds the
 #: 8,534 class entries back and reproduces the design round's 20,554 pairs over
 #: 26,721 wordings exactly, because longest-match-wins had class names consuming
 #: 11,169 moiety spans. Deferring them RAISED the drug x drug yield by 193 pairs.
+#: The shipped ingest runs a SEPARATE class-only pass (`spl_class_evidence`)
+#: with its own vocabulary, which is why the drug x drug yield is unchanged.
 #: The kind is named here so that tool builds the same type the matcher does --
 #: and so `Entry`'s check below can say a class entry carries no `moiety_uuid`
 #: rather than treating the whole kind as malformed.
 KIND_CLASS = "class"
+
+#: How a class match key was derived from the stored class name. They live here,
+#: not in `spl_class_vocab`, because `spl_class_vocab` imports `fold` from this
+#: module: defining them there would make an import cycle as soon as `Entry`
+#: validates its form against them. `spl_class_vocab` re-exports them.
+FORM_STORED = "stored"            # the stored name, axis tag removed
+FORM_NUMBER = "number"            # the same name in the other grammatical number
+FORM_LABEL_ORDER = "label_order"  # FDA-CYP only: label word order
+MATCH_FORMS = (FORM_STORED, FORM_NUMBER, FORM_LABEL_ORDER)
 
 #: Every kind `Entry` admits. Only `KIND_MOIETY` carries a `moiety_uuid`.
 ENTRY_KINDS = (KIND_MOIETY, KIND_SUPPRESS, KIND_CLASS)
@@ -79,9 +94,11 @@ class Entry:
     transposed -- constructs cleanly and folds a vocabulary key of "warfarin"
     under a kind of "warfarin", which `moiety_occurrences` then skips silently.
 
-    `kind` is one of `ENTRY_KINDS`. The shipped ingest offers `moiety` and
-    `suppress`; `class` exists for the measurement tool that quantifies what
-    excluding classes bought.
+    `kind` is one of `ENTRY_KINDS`. The shipped moiety vocabulary offers
+    `moiety` and `suppress`; `class` entries go to a SEPARATE class-only pass
+    (`spl_class_evidence`), so the moiety vocabulary holds none and the drug x
+    drug yield is unchanged (`tools/spl_class_vocabulary_delta.py` measures what
+    mixing them would cost).
 
     A **suppress** entry names a longer term that is not an entity: `prothrombin
     time` is a lab test, `serotonin syndrome` is an adverse event, `lead to` is a
@@ -104,6 +121,10 @@ class Entry:
     key: str
     display: str
     moiety_uuid: str | None = None
+    #: Set on `class` entries only: the registry identity of the class.
+    class_uuid: str | None = None
+    #: How the key was derived from the stored name (one of `MATCH_FORMS`).
+    form: str = FORM_STORED
 
     def __post_init__(self) -> None:
         """`kind` and `moiety_uuid` are a MUTUAL-CONSISTENCY PAIR, not two fields.
@@ -124,6 +145,16 @@ class Entry:
                 f"moiety_uuid={self.moiety_uuid!r}: a moiety entry names a "
                 "moiety and a suppression entry does not, or the matcher "
                 "recognises the name and then yields nothing for it")
+        # Same silent-vanish hazard for classes: a class entry with no uuid
+        # would match and then yield no occurrence.
+        if (self.kind == KIND_CLASS) != (self.class_uuid is not None):
+            raise ValueError(
+                f"entry {self.key!r} is a {self.kind!r} carrying "
+                f"class_uuid={self.class_uuid!r}: only class entries name a class, "
+                "and a class entry without one would vanish silently")
+        if self.form not in MATCH_FORMS:
+            raise ValueError(
+                f"entry form {self.form!r} is not one of {MATCH_FORMS}")
 
 
 @dataclass(frozen=True)
@@ -386,3 +417,42 @@ def moiety_occurrences(matches: Iterable[Match]) -> tuple[Occurrence, ...]:
                 char_end=match.char_end,
                 ambiguous=match.ambiguous))
     return tuple(occurrences)
+
+
+@dataclass(frozen=True)
+class ClassOccurrence:
+    """One class named at one span. `ambiguous`: several classes share the span."""
+
+    class_uuid: str
+    display: str
+    char_start: int
+    char_end: int
+    ambiguous: bool
+    form: str
+
+
+def class_occurrences(matches: Iterable[Match]) -> tuple[ClassOccurrence, ...]:
+    """One row per distinct class per span, in document order.
+
+    Mirrors `moiety_occurrences`: a span several classes fold onto yields a row
+    for each, all flagged ambiguous -- nothing here picks a winner. When one class
+    reaches the span through two forms (stored and number variant) the earlier
+    form in `MATCH_FORMS` is kept, so the row says the most direct way it matched.
+    """
+    out: list[ClassOccurrence] = []
+    for match in matches:
+        best: dict[str, Entry] = {}
+        for entry in match.entries:
+            if entry.kind != KIND_CLASS or entry.class_uuid is None:
+                continue
+            seen = best.get(entry.class_uuid)
+            if seen is None or (MATCH_FORMS.index(entry.form)
+                                < MATCH_FORMS.index(seen.form)):
+                best[entry.class_uuid] = entry
+        ambiguous = len(best) > 1
+        for class_uuid, entry in best.items():
+            out.append(ClassOccurrence(
+                class_uuid=class_uuid, display=entry.display,
+                char_start=match.char_start, char_end=match.char_end,
+                ambiguous=ambiguous, form=entry.form))
+    return tuple(out)

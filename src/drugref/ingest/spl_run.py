@@ -8,7 +8,8 @@ ORDER MATTERS, and here it matters more than in any sibling because the expensiv
 pass is 19.3 GB long:
 
   1. read openFDA and run the floor check;
-  2. read the registry -- one statement, one snapshot;
+  2. read the registry and the class names -- one transaction, rolled back before
+     the scan;
   3. decide which labels the DailyMed pass has to look for;
   4. scan DailyMed once, and REFUSE if it dropped anything for a reading reason;
   5. only now open the run, clear this source's rows and write.
@@ -54,18 +55,19 @@ from collections.abc import Callable, Mapping, Sequence
 
 import psycopg
 
-from drugref import provenance, registry_read, spl_evidence
+from drugref import (
+    provenance, questions, registry_read, spl_class_evidence, spl_evidence)
 from drugref.ingest import (
     spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release, spl_suppress,
     spl_subject,
 )
 from drugref.ingest.checksum import checksum
 from drugref.ingest.spl_checks import (
-    MEASURED_NOVEL_FLOOR, MEASURED_PAIR_FLOOR, SplSummary,
+    MEASURED_CLASS_FLOOR, MEASURED_NOVEL_FLOOR, MEASURED_PAIR_FLOOR, SplSummary,
 )
 
-__all__ = ["MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR", "SplSummary",
-           "build_vocabulary", "ingest_spl"]
+__all__ = ["MEASURED_CLASS_FLOOR", "MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR",
+           "SplSummary", "build_vocabulary", "ingest_spl"]
 
 log = logging.getLogger(__name__)
 
@@ -176,39 +178,56 @@ def _evidence_for_wording(
 
 
 def _write_evidence(
-    conn: psycopg.Connection, corpus: spl.Corpus, vocab: spl_match.Vocabulary, *,
+    conn: psycopg.Connection, corpus: spl.Corpus, vocab: spl_match.Vocabulary,
+    class_vocab: spl_match.Vocabulary, *,
     ingest_run_id: int, source: str,
     progress: Callable[[int, int], None] | None = None,
-) -> tuple[int, int, int, int]:
+) -> spl_class_evidence.EvidenceCounts:
     """Match every wording and write its evidence, in bounded chunks.
 
-    Returns `(occurrences, wordings_with_a_moiety, quotes, quoted_chars)`.
+    The class pass is SEPARATE from the moiety pass (own vocabulary, own table), so
+    the moiety figures cannot move. REQUIRED: no caller can skip it silently.
 
-    CHUNKED so peak memory does not scale with the corpus: 1.3 million occurrence
-    rows held at once is hundreds of megabytes to say something that can be
-    written 96,000 rows at a time.
+    CHUNKED so peak memory does not scale with the corpus (1.3M rows is 100s of MB).
     """
     keys = sorted(corpus.wordings)
     occurrences = with_moiety = quotes = quoted_chars = 0
+    class_total = with_class = inside = boundary_drops = head_drops = 0
     for start in range(0, len(keys), WORDING_CHUNK):
         chunk = keys[start:start + WORDING_CHUNK]
         occurrence_rows: list[spl_evidence.OccurrenceRow] = []
         quote_rows: list[spl_evidence.QuoteRow] = []
+        class_rows: list[spl_class_evidence.ClassOccurrenceRow] = []
         for text_key in chunk:
             found, quoted = _evidence_for_wording(
                 text_key, corpus.wordings[text_key], vocab)
             if found:
                 with_moiety += 1
+            cp = spl_class_evidence.class_pass_for_wording(
+                text_key, corpus.wordings[text_key], class_vocab,
+                [(o.char_start, o.char_end) for o in found])
+            with_class += bool(cp.rows)
+            inside += cp.moiety_spans_inside
+            boundary_drops += cp.boundary_drops
+            head_drops += cp.head_drops
+            class_rows.extend(cp.rows)
             occurrence_rows.extend(found)
             quote_rows.extend(quoted)
         occurrences += spl_evidence.write_occurrences(
             conn, occurrence_rows, ingest_run_id=ingest_run_id, source=source)
+        class_total += spl_evidence.write_class_occurrences(
+            conn, class_rows, ingest_run_id=ingest_run_id, source=source)
         quotes += spl_evidence.write_quotes(
             conn, quote_rows, ingest_run_id=ingest_run_id, source=source)
         quoted_chars += sum(row.char_end - row.char_start for row in quote_rows)
         if progress is not None:
             progress(min(start + WORDING_CHUNK, len(keys)), len(keys))
-    return occurrences, with_moiety, quotes, quoted_chars
+    return spl_class_evidence.EvidenceCounts(
+        occurrences=occurrences, wordings_with_a_moiety=with_moiety, quotes=quotes,
+        quoted_chars=quoted_chars, class_occurrences=class_total,
+        wordings_with_a_class=with_class, moiety_spans_inside_class_spans=inside,
+        class_spans_dropped_at_a_boundary=boundary_drops,
+        class_spans_dropped_on_a_non_drug_head=head_drops)
 
 
 def ingest_spl(
@@ -218,7 +237,9 @@ def ingest_spl(
     release: str,
     pair_floor: int | None = None,
     novel_floor: int | None = None,
+    class_floor: int | None = None,
     progress: Callable[[str], None] | None = None,
+    unii_names: str | pathlib.Path | None = None,
 ) -> SplSummary:
     """Read both corpora and rebuild this source's projection.
 
@@ -227,10 +248,10 @@ def ingest_spl(
     before any writing begins, so a crash from there on leaves that row standing
     with `finished_at IS NULL` rather than no trace at all.
 
-    `pair_floor` / `novel_floor`, when given, assert the measured floor with `>=`.
-    They default to `None` here and to `MEASURED_PAIR_FLOOR` /
-    `MEASURED_NOVEL_FLOOR` at the CLI, which is the production path -- so a real
-    run checks by default and a partial-corpus run has to say so out loud.
+    `pair_floor` / `novel_floor` / `class_floor`, when given, assert the measured
+    floor with `>=`: None here, `MEASURED_*_FLOOR` at the CLI (the production
+    path), so a real run checks by default. `unii_names` (UNII_Names_*.txt,
+    required by the CLI) drives R19/P1; None skips P1, warned on "registry:".
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.
@@ -271,7 +292,7 @@ def ingest_spl(
     say(f"  {corpus.field_absent:,} absent, {corpus.field_blank:,} blank, "
         f"{corpus.labels_keyed_on_document_id:,} keyed on document id")
 
-    # ---- 2. the registry, in ONE statement ----------------------------------
+    # ---- 2. the registry (and class names), read before the run opens --------
     # Read BEFORE the run is opened: it is a read, a single statement sees a
     # single snapshot at any isolation level, and everything that can refuse
     # below needs it. `substance_moiety` rows are immortal, so a uuid read here
@@ -291,6 +312,11 @@ def ingest_spl(
             "unii` and `ingest chebi` first.")
     vocab = build_vocabulary(names)
     say(f"  registry: {len(names):,} moiety names, {len(known_uniis):,} UNIIs")
+    # Classes: a 2nd statement (READ COMMITTED: maybe a later snapshot; nothing
+    # writes either mid-ingest). Zero is legitimate; the CLI's class floor refuses.
+    class_vocab, class_keys = spl_class_evidence.class_vocabulary_for_run(
+        conn, names, known_uniis, unii_names)
+    say(f"  registry: {class_keys}")
     # Reported rather than merely counted. A UNII two moieties claim resolves
     # first-wins, so every subject derived from it names ONE of them and the
     # other silently never appears -- `identity_claim` permits this by design, so
@@ -385,8 +411,8 @@ def ingest_spl(
             conn, subject_rows, ingest_run_id=run_id, source=spl.SOURCE)
 
         say(f"matching {len(corpus.wordings):,} wordings")
-        occurrences, with_moiety, quotes, quoted_chars = _write_evidence(
-            conn, corpus, vocab, ingest_run_id=run_id, source=spl.SOURCE,
+        counts = _write_evidence(
+            conn, corpus, vocab, class_vocab, ingest_run_id=run_id, source=spl.SOURCE,
             progress=(lambda done, total: say(f"  {done:,}/{total:,}"))
             if progress else None)
 
@@ -406,7 +432,9 @@ def ingest_spl(
         # database keeps the previous projection rather than a miscounted one.
         spl_checks.reconcile(conn, run_id,
                    wordings=stored_wordings, labels=stored_labels,
-                   subjects=len(subject_rows), occurrences=occurrences)
+                   subjects=len(subject_rows),
+                   occurrences=counts.occurrences,
+                   class_occurrences=counts.class_occurrences)
 
         pairs, novel, self_pairs = spl_checks.read_pairs(conn, run_id)
         quotable = sum(spl_quote.quote_budget(row.char_length)
@@ -424,17 +452,23 @@ def ingest_spl(
             dailymed_documents_read=scan.documents_read,
             dailymed_found=len(scan.found),
             dailymed_reported_skips=reported,
-            occurrences=occurrences,
-            wordings_with_a_moiety=with_moiety,
-            quotes=quotes,
-            quoted_chars=quoted_chars,
+            occurrences=counts.occurrences,
+            wordings_with_a_moiety=counts.wordings_with_a_moiety,
+            quotes=counts.quotes,
+            quoted_chars=counts.quoted_chars,
             quotable_chars=quotable,
             self_pairs=self_pairs,
             pairs=pairs,
-            novel_pairs=novel)
+            novel_pairs=novel,
+            class_occurrences=counts.class_occurrences,
+            wordings_with_a_class=counts.wordings_with_a_class,
+            moiety_spans_inside_class_spans=(
+                counts.moiety_spans_inside_class_spans),
+            **counts.class_drop_fields(), **class_keys.summary_fields())
 
         spl_checks.check_floors(
-            summary, pair_floor=pair_floor, novel_floor=novel_floor)
+            summary, pair_floor=pair_floor, novel_floor=novel_floor,
+            class_floor=class_floor)
         # #186: the counts #163 says must never refuse, kept per run so the next
         # release has this one to compare against (db/057). Inside the
         # transaction, so a run that rolls back leaves no census behind.
@@ -445,13 +479,12 @@ def ingest_spl(
             records_field_blank=summary.records_field_blank,
             labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
 
-        # `register_from_gaps` IS DELIBERATELY NOT CALLED, unlike in every
-        # sibling orchestrator. This run writes only its own five projection
-        # tables and its db/057 census row, and
-        # `gap_unresolved_spl_subject` is not an `open_question` kind -- db/051
-        # section 8 says why, at length. Calling it would re-derive eighteen
-        # kinds this run cannot have changed, and would stamp SPL's run id as
-        # `last_derived_ingest` on questions it had no part in deriving.
+        # This run now feeds a gap kind (unconfirmed_label_class_statement), so it
+        # registers questions. Like fda_cyp_run it re-derives EVERY kind and stamps
+        # last_derived_ingest with this run ("when last seen"); that is the repo
+        # convention. gap_unresolved_spl_subject stays deliberately NOT a question
+        # kind (db/051 section 8). Inside the transaction: a rollback leaves none.
+        questions.register_from_gaps(conn, run_id)
 
         provenance.finish_run(conn, run_id)
         # THE DEFERRED QUOTE-BUDGET TRIGGER FIRES HERE, at this commit, over

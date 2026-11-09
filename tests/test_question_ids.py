@@ -165,6 +165,15 @@ def test_ungraded_contribution_question_matches_frozen_literal():
     )) == "4a5eab60-524e-5695-bc55-e395cbc4de61"
 
 
+def test_unconfirmed_label_class_statement_question_matches_frozen_literal():
+    """Fixed uuids on purpose: the pin freezes the 'SPLCLASS:<moiety>:<class>' format."""
+    m = uuid.UUID(int=0xA1)
+    c = uuid.UUID(int=0xB2)
+    assert str(ids.mint_question_uuid(
+        "unconfirmed_label_class_statement", f"SPLCLASS:{m}:{c}"
+    )) == "790d0177-49e1-504e-a828-4207a9209bad"
+
+
 def test_a_compound_key_does_not_collide_with_its_halves():
     """The reason the compound key names BOTH classes: the same contributor class may
     be a sound promotion for one effect and a no-op for another, so folding the pair
@@ -205,4 +214,5 @@ def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped(
         "unruled_composition_activity", "uncurated_condition_contradiction",
         "uncurated_interaction_rule", "unresolved_onc_endpoint",
         "uncurated_class_interaction_rule", "fda_cyp_unadjudicated",
-        "unresolved_ddi_endpoint", "unconfirmed_class_property"]
+        "unresolved_ddi_endpoint", "unconfirmed_class_property",
+        "unconfirmed_label_class_statement"]

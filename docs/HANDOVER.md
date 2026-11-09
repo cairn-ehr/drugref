@@ -13,46 +13,58 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/citation-census`; PR #212 OPEN (to `main`) for #210. PRs #208 and #211 are MERGED (#202, #206,
-#207, #209 CLOSED). Schema still ends at `db/065`; this round adds no migration.** The suite total lives in
+**Branch `claude/spl-class-mentions` (from `main` after PR #212). PR #219 OPEN (to `main`). Schema now ends at `db/066`.** The suite total lives in
 PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected
 suite disagree.
 
-**⇒ JUST FINISHED: #210.** `citation_audit.miscited(conn)` reports every curated row (all four tables, superseded
-rows too) whose `question_uuid` is not one its own key may cite, using the writers' own candidate functions (now
-named: `curation.interaction_questions` / `condition_questions` / `class_interaction_questions`,
-`curation_property.answerable_questions`) via `questions.cites_own_question`, the non-raising half of
-`require_question_for`. Runner: `uv run python -m tools.citation_census --dsn ...` (exit 1 on a live finding; a superseded one is permanent, printed only).
-**Measured: 0 on `drugref_profiles`; only `drugref_reviewer_dev` has findings (2), GUI test data citing a
-hand-made uuid4 question** (PROJECT-NOTES § "The class-profiles round"). Report only: no row was superseded.
-
-**⇒ VERIFIED.** `uv run pytest` with the DB: green at the PROJECT-NOTES total. `ruff check src tests tools` clean.
-(`ruff format` is NOT applied in this repo — most existing files fail `--check`; match the hand style.)
-**Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND (built, docs done): SPL class-mention extraction.** Every figure is in the
+[results record](superpowers/specs/2026-11-08-drugref-spl-class-mentions-results.md) (SPL run 17 ships); the
+account and traps are PROJECT-NOTES § "The SPL class-mentions round"; the decision record was revised in place
+([evidence is not an assertion](../docs-site/docs/decisions/evidence-is-not-an-assertion.md)). Sentence-scope
+`avoid` / `monitor` are WITHHELD by the owner's 90% gate; `no_meaningful_interaction` ships empty.
+`ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
+run**: `test_suite_count.py` then fails two tests that are not real.
 
 ## ⇒ DO THIS NEXT
 
-1. **Get this PR reviewed and merged.** Then the owner's **clinical read of the class-profiles results §5**
-   (beta blockers, ACE inhibitors, SSRIs); nothing so far drew a clinical conclusion. **After that read**,
-   write the docs-site *Design decisions* record for class profiles (living decisions only).
-2. **Owner design call on #204**: interaction rulings never reach the prescribing-alert path. **Curators must
+1. **Owner's clinical read of this round's precision sample** (results record, "Precision sample" and "Gates").
+   Trade-offs to decide:
+   - Sentence-scope avoid / monitor are withheld by EXACT agreement. Most disagreements were the machine reading
+     STRONGER than the label (the safe direction). Should the gate count safe-direction disagreement, and
+     re-admit those levels?
+   - Contraindicated reads stronger than the label in 22 of 100 (safe direction; zero read lower). Acceptable?
+   - **#220**: withheld readings are stored as `not_read`, so no curator ever sees them. Store the level, and
+     put withheld strength readings on the worklist? (Also decide **#221** and **#222**.)
+   - The reader's two conventions: "Reserve concomitant prescribing ..." reads `avoid` (4,638 spans);
+     "separate administration" reads `adjust_dose`. Keep, or change?
+   - Wilson lower bounds are below 90% at n = 50 (results record gate table): is a larger sample wanted?
+2. The still-owed **clinical read of the class-profiles results §5** (beta blockers, ACE inhibitors, SSRIs);
+   **then** write its docs-site *Design decisions* record (living decisions only).
+3. **Owner design call on #204**: interaction rulings never reach the prescribing-alert path. **Curators must
    not work `interacts_with` questions until it is decided.**
-3. **Owner design calls on #203** before curators work the rest of the worklist: exclude MED-RT's "Unknown ..."
-   catch-all classes the way PK is excluded? Treat near-universal properties (`CI_with Drug Hypersensitivity`)
-   differently? Whatever is chosen, "not confirmed" stays "not confirmed".
-4. **Owner question**: should an ASSERTED property passing down to a subclass honour a
-   `class_expansion_policy` deny? Today it does not (db/060 and db/065 read no policy).
-5. **Owner question (from #207)**: may a `curated_interaction` cite the gap-19 `interacts_with class` question
-   about the same pair? Today the guard says no (only its `uncurated_interaction_rule` question).
-6. **SPL class-mention extraction** (the old class half of 5c.3: #102, #155, word order) is the next project
-   and FEEDS class profiles. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is
-   gated on a clinician review that has not happened.
+4. **Owner design calls on #203** (MED-RT "Unknown ..." catch-all classes; near-universal properties such as
+   `CI_with Drug Hypersensitivity`). Whatever is chosen, "not confirmed" stays "not confirmed".
+5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
+   deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
+   about the same pair (today the guard says no; from #207)?
+6. **#213 (high value)**: add acetaminophen / nicotinic acid display names to the registry; the drug pass misses
+   6,588 acetaminophen spans in the shipped drug grain. Then **#214** (class-hygiene candidates: `Electrolyte
+   [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
+   avoid phrasing) and **#215** (store the class-pass drop counts per run).
+   **#218** (latent: the negation mask can still hide "contraindicated" in glued cells such as "Do not use
+   Contraindicated"; 0 occurrences today) — fix it together with **#216** (split `spl_run.py`, `spl_evidence.py`,
+   `spl_advice.py`, all at ~500 lines, and cache the reader's scope per wording). **#217**: order the label
+   class-statement worklist strongest level first.
+7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
+   Owner to close it or say what remains.
+8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
+   that has not happened.
 
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open
-from class profiles: #203, #204; #210 closes on this PR's merge.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
-**#169**. Standing: **#155** and **#102**, both inherited by SPL class-mention extraction; **#67** (salt↔base)
+from class profiles: #203, #204. From class mentions: #213–#218, #220–#222.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+**#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #213/#214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
 #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -62,6 +74,9 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
+- **`drugref_classmentions` is this round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +
+  `drugcentral` + `ingest spl`). **SPL run 17 is the shipped measurement**; it also carries an aborted run 9 and
+  superseded runs 10-16. **Never patch it**; census: `uv run python -m tools.spl_class_census --dsn ... --openfda downloads/OPENFDA`.
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
   `fda-cyp` + `drugcentral`, no SPL), migrated to `db/065`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #203 there (#202's figures: its §6 `db/065` addendum).

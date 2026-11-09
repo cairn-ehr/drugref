@@ -1,9 +1,10 @@
 """What does DROPPING the class vocabulary do to the drug x drug yield?
 
 The slice-5c.3 measurement round matched with a vocabulary holding **moieties and
-classes together**, because it was sizing both grains at once. The shipped ingest
-is **drug x drug only** (owner's call, 2026-08-24), so its vocabulary holds
-moieties and the negative terms and nothing else.
+classes together**, because it was sizing both grains at once. The shipped ingest's
+**moiety** pass is drug x drug only (owner's call, 2026-08-24), so its vocabulary
+holds moieties and the negative terms and nothing else; classes are matched by a
+SEPARATE class pass (db/066) that cannot consume a moiety span.
 
 That is not a neutral difference, and this tool exists because the ingest
 published a figure the measurement did not: **20,747 distinct pairs on the
@@ -28,17 +29,10 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import re
 
 from drugref import db, registry_read, server_messages
 from drugref.ingest import spl, spl_match, spl_run
-
-#: MED-RT and drugref tag a class with its axis -- 'Cytochrome P450 1A2
-#: Inhibitors [MoA]'. That tag never appears on a drug label, so the measurement
-#: round stripped it before matching, and this reproduces that exactly: a
-#: comparison against a vocabulary built differently would measure the rebuild.
-_AXIS_TAG = re.compile(r"\s*\[[A-Za-z0-9-]+\]\s*$")
-
+from drugref.ingest.spl_class_vocab import number_variants, strip_axis_tag
 
 def class_variants(class_name: str) -> tuple[str, ...]:
     """The measurement round's class spellings: the stored name, plus its other
@@ -49,8 +43,8 @@ def class_variants(class_name: str) -> tuple[str, ...]:
     rewrites word order or expands 'Cytochrome P450' to 'CYP', because those are
     real differences between drugref's vocabulary and label prose.
     """
-    base = _AXIS_TAG.sub("", class_name).strip()
-    variants = [base, base[:-1] if base.endswith("s") else base + "s"]
+    base = strip_axis_tag(class_name)
+    variants = [base, *number_variants(base)]
     seen: dict[str, None] = {}
     for variant in variants:
         if variant:
@@ -62,12 +56,13 @@ def load_class_entries(dsn: str) -> list[spl_match.Entry]:
     """Every class name, as the measurement round offered them to the matcher."""
     entries: list[spl_match.Entry] = []
     with db.connect(dsn) as conn:
-        for (class_name,) in conn.execute(
-                "SELECT class_name FROM drugref.substance_class").fetchall():
+        for class_uuid, class_name in conn.execute(
+                "SELECT class_uuid, class_name "
+                "FROM drugref.substance_class").fetchall():
             for variant in class_variants(class_name):
                 entries.append(spl_match.Entry(
                     kind="class", key=variant, display=class_name,
-                    moiety_uuid=None))
+                    class_uuid=str(class_uuid)))
     return entries
 
 

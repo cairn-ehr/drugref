@@ -15,6 +15,7 @@ from drugref import cli_spl
 from drugref.ingest import spl_run
 
 _MINIMAL = ["spl", "--openfda", "/tmp/o", "--dailymed", "/tmp/a.zip",
+            "--unii-names", "/tmp/UNII_Names.txt",
             "--release", "openfda-2026-08-22+dailymed-2026-08-21"]
 
 
@@ -45,15 +46,17 @@ def test_the_measured_floors_are_ON_by_default(parse, captured_kwargs, capsys):
     assert cli_spl.handle_spl(None, parse(_MINIMAL)) == 0
     assert captured_kwargs["pair_floor"] == spl_run.MEASURED_PAIR_FLOOR
     assert captured_kwargs["novel_floor"] == spl_run.MEASURED_NOVEL_FLOOR
+    assert captured_kwargs["class_floor"] == spl_run.MEASURED_CLASS_FLOOR
 
 
-def test_no_pair_floor_turns_off_BOTH_measured_floors(parse, captured_kwargs):
-    """One flag gates two figures. A reader of `--help` would not guess that the
-    flag named for the pair floor also drops the novel one, so it is asserted
-    rather than left to the name."""
+def test_no_pair_floor_turns_off_EVERY_measured_floor(parse, captured_kwargs):
+    """One flag gates three figures. A reader of `--help` would not guess that the
+    flag named for the pair floor also drops the novel and class ones, so it is
+    asserted rather than left to the name."""
     cli_spl.handle_spl(None, parse([*_MINIMAL, "--no-pair-floor"]))
     assert captured_kwargs["pair_floor"] is None
     assert captured_kwargs["novel_floor"] is None
+    assert captured_kwargs["class_floor"] is None
 
 
 def test_progress_is_wired_so_a_long_scan_is_not_a_silent_terminal(
@@ -83,3 +86,14 @@ def test_the_release_tag_is_REQUIRED_because_two_corpora_have_two_stamps(parse):
     drugref guessed would be a provenance claim nobody made."""
     with pytest.raises(SystemExit):
         parse(["spl", "--openfda", "/tmp/o", "--dailymed", "/tmp/a.zip"])
+
+
+def test_the_unii_names_file_is_REQUIRED_and_handed_through(parse, captured_kwargs):
+    """R19/P1 drops class keys that are a UNII official name ('Acetaminophen [EPC]').
+    The orchestrator skips the rule when given no file, so the production path must
+    not be able to forget it."""
+    cli_spl.handle_spl(None, parse(_MINIMAL))
+    assert str(captured_kwargs["unii_names"]) == "/tmp/UNII_Names.txt"
+    without = [a for a in _MINIMAL if a not in ("--unii-names", "/tmp/UNII_Names.txt")]
+    with pytest.raises(SystemExit):
+        parse(without)

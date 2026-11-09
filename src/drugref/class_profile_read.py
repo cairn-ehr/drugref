@@ -1,11 +1,13 @@
 """Read side of class profiles: a thin Python reader over the class-profile views.
 
-The SQL views (db/059-db/065; db/062, db/064 and db/065 replace class_property,
+The SQL views (db/059-db/066; db/062, db/064 and db/065 replace class_property,
 db/063 class_property_member) are the consumer contract -- a prescribing front end reads
 them directly. This module only turns their rows into frozen dataclasses with NAMES
 instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
 
-Every tuple is sorted (by name, then relationship) so output and tests are stable.
+Every tuple is sorted so output and tests are stable: properties by name, then
+relationship; label statements strongest level first (then the all-clear, then
+not_read), then label count descending, then name.
 """
 import uuid
 from collections.abc import Mapping, Sequence
@@ -52,6 +54,29 @@ class SubclassOnlyDrug:
 
 
 @dataclass(frozen=True)
+class LabelStatement:
+    """What one drug's drug labels say about this class: a MACHINE-READ statement.
+
+    Deliberately NOT a ClassProperty (owner decision, design 6.3): a phrase-matching
+    reader's level stays in its own section until a curator confirms it. A
+    `does_not_hold` ruling does not hide the row; it is shown beside it (`ruling`),
+    because hiding it would erase that the labels do say something.
+    """
+    drug: str
+    strongest_level: str     # contraindicated | avoid | adjust_dose | monitor | ...
+    label_count: int
+    mixed: bool              # ANY reading (any label/scope) had >1 strength level
+    ambiguous: bool          # the class name also matches another class
+    subject_in_class: bool   # the drug is itself a member (a label on its own class)
+    ruling: str | None       # live curated verdict for drug -> interacts_with -> class
+    # label_count spans every level; level_labels is how many say strongest_level.
+    level_labels: int
+    cite_set_id: str         # ONE citing label at the strongest level (design 6.3)
+    cite_version: str
+    quote: str | None        # its existing quote window over the span; None if none
+
+
+@dataclass(frozen=True)
 class ClassProfile:
     class_uuid: uuid.UUID
     class_name: str
@@ -61,6 +86,8 @@ class ClassProfile:
     properties: tuple[ClassProperty, ...]
     peculiarities: Mapping[str, tuple[PropertyLine, ...]]
     subclass_only: tuple[SubclassOnlyDrug, ...]
+    # Defaulted so a profile built without label evidence stays valid.
+    label_statements: tuple[LabelStatement, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -142,6 +169,32 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
     ids = {p[2] for p in props} | {s[3] for s in standing} | {p[0] for p in pec} \
         | {p[3] for p in pec} | {s[0] for s in sub} | {s[1] for s in sub} | set(members)
     ids |= {c for p in props for c in p[4]}
+    # Machine-read label statements (db/066): one row per drug, LEFT JOINed to the live
+    # (superseded_by IS NULL) ruling. Ordered strongest first; the two levels that are
+    # not a strength have a NULL rank and sort last, then most labels, then drug name
+    # (names only exist in Python, so the final order is applied below).
+    stmts = conn.execute(
+        "SELECT st.subject_moiety, st.strongest_level, st.label_count, st.any_mixed, "
+        "st.any_ambiguous, st.subject_in_class, r.verdict, al.strength_rank, "
+        "(st.level_counts ->> st.strongest_level)::int, c.set_id, c.version, "
+        "c.quote_text "
+        "FROM drugref.spl_class_statement st "
+        "JOIN drugref.spl_advice_level al ON al.level = st.strongest_level "
+        "LEFT JOIN drugref.curated_property_ruling r "
+        "  ON r.subject_kind = 'moiety' AND r.subject_uuid = st.subject_moiety "
+        " AND r.relationship = 'interacts_with' AND r.object_kind = 'class' "
+        " AND r.object_uuid = st.class_uuid AND r.superseded_by IS NULL "
+        "JOIN LATERAL ( "     # citation: newest strongest-level label
+        "  SELECT e.set_id, e.version, e.quote_text "
+        "  FROM drugref.spl_class_statement_evidence e "
+        "  WHERE e.subject_moiety = st.subject_moiety AND e.class_uuid = st.class_uuid "
+        "    AND e.advice_level = st.strongest_level "
+        "  ORDER BY e.effective_time DESC NULLS LAST, e.set_id, e.version, "
+        "           e.char_start, e.quote_text NULLS LAST LIMIT 1) c ON true "
+        "WHERE st.class_uuid = %s "
+        "ORDER BY al.strength_rank NULLS LAST, st.label_count DESC",   # names: below
+        (class_uuid,)).fetchall()
+    ids |= {s[0] for s in stmts}
     names = _names(conn, ids)
 
     by_prop: dict[tuple, dict[str, list[str]]] = {}
@@ -170,13 +223,21 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
             _sorted_lines(st.get("confirmed_exception", ()))))
     subclass_only.sort(key=lambda e: (e.name, e.via))
 
+    label_statements = tuple(sorted(
+        # strength by rank; then no_meaningful_interaction; not_read last.
+        ((rank is None, rank or 0, lvl == "not_read", -n, names[m],
+          LabelStatement(names[m], lvl, n, mixed, amb, own, ruling, k, sid, ver, q))
+         for m, lvl, n, mixed, amb, own, ruling, rank, k, sid, ver, q in stmts),
+        key=lambda t: t[:5]))
+    label_statements = tuple(t[5] for t in label_statements)
+
     pecs: dict[str, list[PropertyLine]] = {}
     for mo, rel, kind, obj in pec:
         pecs.setdefault(names[mo], []).append(_line(names, rel, kind, obj))
     return ClassProfile(
         class_uuid, head[0], head[1], head[2], tuple(sorted(names[m] for m in members)),
         tuple(out), {k: _sorted_lines(v) for k, v in sorted(pecs.items())},
-        tuple(subclass_only))
+        tuple(subclass_only), label_statements)
 
 
 def drug_profile(conn: psycopg.Connection, moiety_uuid: uuid.UUID,

@@ -81,8 +81,8 @@ EXPECTED_TABLES = {
     # Restated here independently, so dropping one from the writer fails.
     "spl_evidence.SPL_TABLES": (
         spl_evidence.SPL_TABLES,
-        ("spl_wording_quote", "spl_entity_occurrence", "spl_label_subject",
-         "spl_label", "spl_wording")),
+        ("spl_wording_quote", "spl_entity_occurrence", "spl_class_occurrence",
+         "spl_label_subject", "spl_label", "spl_wording")),
     "interactions.MESH_CONTRAINDICATION_TABLES": (
         interactions.MESH_CONTRAINDICATION_TABLES,
         ("moiety_condition_contraindication", "moiety_contraindication",
@@ -223,6 +223,8 @@ def test_every_spl_foreign_key_points_LATER_in_the_clear_order(conn):
     for child, parent in edges:
         child_table = child.split(".")[-1]
         parent_table = parent.split(".")[-1]
+        if parent_table == "spl_advice_level":
+            continue  # db/066's static vocabulary table: never cleared, so never ordered
         assert position[child_table] < position[parent_table], (child, parent)
 
 

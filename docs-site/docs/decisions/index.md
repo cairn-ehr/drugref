@@ -79,7 +79,8 @@ history is never lost — it remains in the git log and in the dated design spec
   34073-7 is prose, so drugref records which known drugs a label's interactions section *names*, with offsets,
   and never what the sentence *means*; why there is no severity and no direction on that tier at all; and why
   it is deliberately not an arm of `exact_ddi_pair`, since a read path that cannot tell "an authority asserts
-  these interact" from "a label names both" makes the stronger claim unfalsifiable.
+  these interact" from "a label names both" makes the stronger claim unfalsifiable. Class mentions are the one
+  place the line moved (2026-11-08): they carry a machine-read advice level, still evidence, never an assertion.
 - [A bounded quoted window is bundled; the section is not](bundling-a-quoted-window.md) — the one source whose
   two publishers take opposite copyright positions on the same bytes, so clearance was decided per column;
   the measured reason a per-occurrence window is not a quote but the section reassembled (82.7% of it); and
