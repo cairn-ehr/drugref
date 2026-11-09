@@ -57,6 +57,8 @@ class AllergyGroupSummary:
       allergy_group_member and allergy_mesh_placement
     * members_no_key -- group records with neither UNII nor CAS (e.g. combinations)
     * members_key_not_in_registry -- group records whose keys no moiety carries
+    * desc_records / scr_records -- MeSH records parsed (a worklist figure: a run
+      that read far fewer than last time read a truncated file)
     * includes_unresolved -- allow-list include UNIIs no moiety carries (reported,
       not fatal: the allow-list may name a moiety this registry has not admitted)
     """
@@ -66,6 +68,8 @@ class AllergyGroupSummary:
     members_no_key: int
     members_key_not_in_registry: int
     includes_unresolved: tuple[str, ...]
+    desc_records: int
+    scr_records: int
 
 
 def ingest_allergy_groups(conn: psycopg.Connection, *, desc_path, supp_path,
@@ -109,6 +113,11 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
     groups = allergy_groups.load_allow_list(allow_list_path)
     parsed = allergy_groups.parse(desc_path=desc_path, supp_path=supp_path,
                                   groups=groups)
+    # SHRINK GUARD: an empty file would rebuild every group from nothing, deleting
+    # real members (a missed allergy warning). parse() refuses an empty desc file.
+    if parsed.scr_records == 0:
+        raise ValueError(f"MeSH supplemental file {supp_path} holds no "
+                         "SupplementalRecord (truncated or wrong file?)")
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
@@ -183,4 +192,5 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
         groups=len(groups), members=members, placed_moieties=len(placed),
         members_no_key=members_no_key,
         members_key_not_in_registry=members_key_not_in_registry,
-        includes_unresolved=tuple(unresolved))
+        includes_unresolved=tuple(unresolved),
+        desc_records=parsed.desc_records, scr_records=parsed.scr_records)

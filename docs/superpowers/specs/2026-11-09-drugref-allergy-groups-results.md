@@ -26,7 +26,7 @@ Sources (`downloads/` is gitignored, so the hashes are recorded here):
 | `downloads/MEDRT/Core_MEDRT_2026.07.06_XML.xml` (MED-RT 2026.07.06; cross-check only) | not hashed (release name is the identity) |
 
 Allow-list: the packaged `src/drugref/data/allergy_groups.toml`. Ingest summary as printed:
-`groups=1 members=84 placed_moieties=10739 members_no_key=27 members_key_not_in_registry=98 includes_unresolved=()`.
+`groups=1 members=84 placed_moieties=10739 members_no_key=27 members_key_not_in_registry=97 desc_records=31110 scr_records=324045 includes_unresolved=()`.
 
 ## 2. Figures against the pre-build table (spec §6)
 

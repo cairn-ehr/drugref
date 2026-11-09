@@ -6038,7 +6038,7 @@ cairn-ehr's allergy slice.
 **What it is.** A MeSH-seeded penicillin allergy group (83 moieties) behind a reviewed allow-list, and the SQL read
 `drugref.allergy_check(prescribed, allergen)` returning `match` / `no-match` / `unplaced` with a path. Code map:
 `db/067` (`allergy_group`, `allergy_group_member`, `allergy_mesh_placement`; source `DRUGREF-ALLERGY`, rebuilt per
-source, no `class_parent` edges so no existing walk sees a group) · `db/068` (`moiety_allergy_fold`,
+source, no `class_parent` edges and no `class_membership` rows; `class_subtree` does gain the group's self-row, which is inert because every view on it joins `class_membership`, so no walk reaches a member) · `db/068` (`moiety_allergy_fold`,
 `allergy_check`) · `src/drugref/ingest/allergy_groups.py` (pure MeSH parser + allow-list loader) ·
 `src/drugref/data/allergy_groups.toml` (the allow-list, `structural-seed`, not clinically reviewed) ·
 `ingest/allergy_group_run.py` (orchestrator, the only writer) · `allergy_read.py` · `cli_allergy.py`
@@ -6060,7 +6060,7 @@ RxCUI (`has_SC`) misses them. Follow-ups (ROADMAP): case (c) at the R1 side-chai
 allow-list so `structural-seed` can come off; MED-RT `has_SC` ingestion.
 
 **Databases.** `drugref_test_allergy` is this branch's test DB (recreated by pytest). **`drugref_allergy`** = a
-`createdb -T drugref_profiles` copy, migrated to `db/068`, allergy groups ingested (MeSH 2026); **never patch it**.
+`createdb -T drugref_profiles` copy, migrated to `db/069` (a COMMENT-only wording fix; `db/068` was left untouched because the ledger refuses a changed checksum), allergy groups ingested (MeSH 2026); **never patch it**.
 `drugref_profiles` was left untouched at `db/065`.
 
 ## The standing open-issue ledger
@@ -6329,7 +6329,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3221 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3226 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6828,7 +6828,7 @@ ran in CI and `ruff` was not even a project dependency.
   only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
   `drugref status` refusing to call their stamps a duration. Keep both.
 - **`drugref_allergy` is the allergy-groups round's verification database** (2026-11-09): `createdb -T drugref_profiles`,
-  migrated to `db/068`, allergy groups ingested (MeSH 2026). `drugref_test_allergy` was this branch's test DB. **Never patch it.**
+  migrated to `db/069` (a COMMENT-only wording fix; `db/068` was left untouched because the ledger refuses a changed checksum), allergy groups ingested (MeSH 2026). `drugref_test_allergy` was this branch's test DB. **Never patch it.**
 - **`drugref_classmentions` is the SPL class-mentions round's verification database** (2026-11-08): built from
   **nothing** at `db/066` (`createdb` → `migrate` → chain + `onchigh` + `fda-cyp` + `drugcentral` + `ingest spl`).
   **SPL run 17 is the shipped measurement**; the database also carries an aborted run 9 and the superseded runs

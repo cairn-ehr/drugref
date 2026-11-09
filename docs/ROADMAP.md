@@ -1377,6 +1377,7 @@ allergen)` (`match` / `no-match` / `unplaced`, with the path). Unblocks cairn-eh
   label can come off; (3) **MED-RT `has_SC` ingestion** (used only as a recall cross-check here), which first
   needs [#223](https://github.com/cairn-ehr/drugref/issues/223) (the registry lacks MED-RT's RxCUIs for
   ampicillin, amoxicillin, nafcillin sodium and Penicillin); (4) more groups (each needs an allow-list entry).
+  Deferred minors of the round: [#224](https://github.com/cairn-ehr/drugref/issues/224).
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

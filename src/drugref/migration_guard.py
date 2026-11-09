@@ -75,7 +75,10 @@ from drugref import db
 # `UndefinedColumn` is a SIBLING of `UndefinedTable` under `ProgrammingError`, not a
 # subclass, so catching the latter alone misses every database holding the view in an
 # older shape -- which is every deployment between pulling this code and migrating.
-WRONG_SHAPE = (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn)
+# `UndefinedFunction`: db/068's `allergy_check` is a function, so a database predating
+# it fails with 42883, not a missing relation.
+WRONG_SHAPE = (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn,
+               psycopg.errors.UndefinedFunction)
 
 
 @dataclass(frozen=True)

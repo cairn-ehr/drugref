@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 from drugref import class_grain_read, claims, ids, spl_class_evidence
-from drugref.ingest import mesh_run
+from drugref.ingest import allergy_group_run, mesh_run
 from tests import allergy_world as world
 from tests import class_profile_world as cpw
 
@@ -241,3 +241,23 @@ def test_existing_readers_unchanged(conn, moieties):
     counts = _counts(conn)
     assert (counts["class_membership"], counts["class_parent"]) == \
         (edges["class_membership"], edges["class_parent"])
+
+
+@pytest.mark.parametrize("empty", ["desc", "supp"])
+def test_empty_mesh_file_is_refused_before_any_write(conn, moieties, tmp_path, empty):
+    # A truncated download parses to zero records and would silently rebuild an empty
+    # group set (a shrunk allergy table = missed warnings). Refuse, name the file.
+    bad = tmp_path / "empty.xml"
+    bad.write_text("<Set/>")
+    paths = {"desc_path": world.DESC, "supp_path": world.SUPP}
+    paths[f"{empty}_path"] = bad
+    with pytest.raises(ValueError, match="empty.xml"):
+        allergy_group_run.ingest_allergy_groups(
+            conn, allow_list_path=world.SHIPPED_ALLOW_LIST, upstream_release="x",
+            **paths)
+    assert conn.execute("SELECT count(*) FROM drugref.ingest_run").fetchone()[0] == 0
+
+
+def test_summary_reports_the_record_counts(conn, moieties):
+    s = world.run_allergy_ingest(conn)
+    assert (s.desc_records, s.scr_records) == (14, 3)

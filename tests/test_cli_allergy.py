@@ -76,3 +76,14 @@ def test_check_unplaced_exits_3(conn, capsys):
                    str(uuid.uuid4())])
     assert rc == 3
     assert capsys.readouterr().out.startswith("unplaced")
+
+
+def test_check_on_a_database_without_the_function_is_a_guard_sentence(conn, capsys):
+    # A database that predates db/068 has no drugref.allergy_check: the operator must
+    # get the guard's sentence and a non-zero exit, not a psycopg traceback. The DROP
+    # is rolled back by the guard's own diagnosis (missing_relations rolls back).
+    conn.execute("DROP FUNCTION drugref.allergy_check(uuid, uuid)")
+    rc = cli.main(["--dsn", "x", "allergy", "check", str(uuid.uuid4()),
+                   str(uuid.uuid4())])
+    assert rc != 0
+    assert "db/068" in capsys.readouterr().err

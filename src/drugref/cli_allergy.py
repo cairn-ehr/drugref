@@ -11,7 +11,7 @@ import pathlib
 import sys
 import uuid
 
-from drugref import allergy_read
+from drugref import allergy_read, migration_guard
 from drugref.ingest import allergy_group_run
 
 # The allow-list ships inside the package (same place the other closed seeds live).
@@ -55,7 +55,11 @@ def render_match(conn, m: allergy_read.AllergyMatch) -> str:
 
 
 def _handle_check(conn, args) -> int:
-    ans = allergy_read.check(conn, args.prescribed, args.allergen)
+    # A database predating db/068 has no allergy_check function: say so, no traceback.
+    with migration_guard.guarded(
+            conn, relations=("drugref.allergy_group",), migration="068",
+            consequence="allergy checks cannot be answered"):
+        ans = allergy_read.check(conn, args.prescribed, args.allergen)
     print(ans.outcome + (f"  ({ans.reason})" if ans.reason else ""))
     for m in ans.matches:
         print(render_match(conn, m))

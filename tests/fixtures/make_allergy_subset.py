@@ -31,7 +31,10 @@ KEEP_DESC = {"D010406", "D005436", "D000658", "D013407", "D000078142", "D010397"
              # Penicillin G and Ampicillin: the fold components of Task 4's
              # composition cases (penicillin g procaine, clemizole penicillin,
              # ampicillin sodium).
-             "D010400", "D000667"}
+             "D010400", "D000667",
+             # Amoxicillin-Potassium Clavulanate: in the Penicillins subtree, excluded by
+             # the allow-list so a mixture key can never pull clavulanate in.
+             "D019980"}
 KEEP_SCR = {"C031367", "C035975", "C000002"}
 
 _HEADER = ("<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_allergy_subset.py. "

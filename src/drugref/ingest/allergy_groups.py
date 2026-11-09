@@ -124,6 +124,10 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
             findtext(rec, "String"), tuple(texts(rec, "TreeNumber")),
             MemberKeys(frozenset(unii), frozenset(cas)))
 
+    if not desc:  # before the missing-UI check, which would blame the allow-list
+        raise ValueError(f"MeSH descriptor file {desc_path} holds no DescriptorRecord "
+                         "(truncated or wrong file?)")
+
     # Fail loudly: a root or exclude UI the release lacks would otherwise give an
     # empty group, or -- worse -- a typo'd exclusion that silently admits an inhibitor.
     missing = sorted({ui for g in groups

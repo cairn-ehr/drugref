@@ -27,7 +27,7 @@ traps: PROJECT-NOTES § "The allergy-groups round"; decision record:
 run**: `test_suite_count.py` then fails two tests that are not real.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
-cross-reactivity. Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
+cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
 exists yet). `unplaced` means "not checked" (30% of prescribable moieties). The group is `structural-seed`, not
 clinically reviewed, and the read says so.
 

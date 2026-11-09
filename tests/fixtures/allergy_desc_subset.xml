@@ -360,6 +360,35 @@
   </ConceptList>
  </DescriptorRecord>
  <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D019980</DescriptorUI>
+  <DescriptorName>
+   <String>Amoxicillin-Potassium Clavulanate Combination</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.374.160.060</TreeNumber>
+   <TreeNumber>D02.065.589.099.750.750.050.050.060</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050.050.060</TreeNumber>
+   <TreeNumber>D03.633.100.300.374.160.060</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050.050.500</TreeNumber>
+   <TreeNumber>D26.310.102</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD019980</ConceptUI>
+    <ConceptName>
+     <String>Amoxicillin-Potassium Clavulanate Combination</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>74469-00-4</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>79198-29-1 (parent)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D020913</DescriptorUI>
   <DescriptorName>
    <String>Perindopril</String>
