@@ -1,0 +1,19 @@
+# Reviewed allow-list of allergy groups (spec 2026-11-08 section 4.1).
+# A group is a MeSH descriptor subtree (root) minus `exclude`, plus MED-RT
+# members named in `include`. Edits here are clinical decisions: say why in `reason`.
+
+[[group]]
+root = "D010406"              # Penicillins
+review_status = "structural-seed"
+reviewed_by = "drugref allergy-groups slice (2026-11-09), structural seed; not clinically reviewed"
+reviewed_against = "MeSH 2026 desc/supp; spec 2026-11-08 §4.1"
+exclude = [
+  { ui = "D013407", reason = "sulbactam: beta-lactamase inhibitor, not a penicillin-allergy trigger alone" },
+  { ui = "D000078142", reason = "tazobactam: as sulbactam" },
+  { ui = "D010397", reason = "penicillanic acid: not a drug. ITS SUBTREE also holds tazobactam (D000078142) and piperacillin/tazobactam (D000077725), which this exclusion removes too: piperacillin itself stays in via its own descriptor" },
+  { ui = "D019980", reason = "amoxicillin/clavulanate combination: amoxicillin is reached via D000658; excluded so a mixture key can never pull clavulanate into the group" },
+]
+include = [
+  { unii = "9I628532GX", reason = "piperacillin anhydrous: MED-RT has_SC files it under Penicillins; MeSH carries no bridge key for this form" },
+  { unii = "4OUL81K2RT", reason = "carbenicillin indanyl sodium: as above" },
+]

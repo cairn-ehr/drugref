@@ -1,0 +1,440 @@
+<?xml version="1.0"?>
+<!-- EXTRACTED FROM A REAL MeSH 2026 RELEASE by make_allergy_subset.py. Do not hand-edit.
+     Regenerate: python tests/fixtures/make_allergy_subset.py DOWNLOADS_DIR
+     Registry/tree numbers, names, classes and HeadingMappedTo UIs are copied from the release;
+     only the ConceptUI wrapper id is synthetic (M+UI, never read).
+     MeSH is attributable (see NOTICE); nothing is redacted. -->
+<DescriptorRecordSet LanguageCode="eng">
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000077725</DescriptorUI>
+  <DescriptorName>
+   <String>Piperacillin, Tazobactam Drug Combination</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.687.750.500</TreeNumber>
+   <TreeNumber>D02.065.589.099.750.750.050.650.500</TreeNumber>
+   <TreeNumber>D02.886.108.750.687.750.500</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050.650.500</TreeNumber>
+   <TreeNumber>D02.886.590.841.500</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.687.750.500</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050.650.500</TreeNumber>
+   <TreeNumber>D26.310.625</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000077725</ConceptUI>
+    <ConceptName>
+     <String>Piperacillin, Tazobactam Drug Combination</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>157044-21-8</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000078142</DescriptorUI>
+  <DescriptorName>
+   <String>Tazobactam</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.687.750</TreeNumber>
+   <TreeNumber>D02.886.108.750.687.750</TreeNumber>
+   <TreeNumber>D02.886.590.841</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.687.750</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000078142</ConceptUI>
+    <ConceptName>
+     <String>Tazobactam</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>SE10G96M8W</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>UXA545ABTT</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>93528-38-2 (Tazobactam)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>UXA545ABTT</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000658</DescriptorUI>
+  <DescriptorName>
+   <String>Amoxicillin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.750.050.050</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050.050</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050.050</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000658</ConceptUI>
+    <ConceptName>
+     <String>Amoxicillin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>804826J2HU</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>26889-93-0</RegistryNumber>
+     <RegistryNumber>544Y3D6MYH</RegistryNumber>
+     <RegistryNumber>34642-78-9</RegistryNumber>
+     <RegistryNumber>9EM05410Q9</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>26787-78-0 (Amoxicillin)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>26889-93-0 ((R*)-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>34642-78-9 (mono-K salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>544Y3D6MYH</RelatedRegistryNumber>
+     <RelatedRegistryNumber>61336-70-7 (Amoxicillin trihydrate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>9EM05410Q9</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D000667</DescriptorUI>
+  <DescriptorName>
+   <String>Ampicillin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.750.050</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD000667</ConceptUI>
+    <ConceptName>
+     <String>Ampicillin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>7C782967RD</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>JFN36L5S8K</RegistryNumber>
+     <RegistryNumber>HXQ6A1N7R6</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>69-52-3 (mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>69-53-4 (Ampicillin)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>7177-48-2 (trihydrate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>HXQ6A1N7R6</RelatedRegistryNumber>
+     <RelatedRegistryNumber>JFN36L5S8K</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001561</DescriptorUI>
+  <DescriptorName>
+   <String>Benzilates</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.241.223.601.238.306</TreeNumber>
+   <TreeNumber>D02.241.511.085</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD001561</ConceptUI>
+    <ConceptName>
+     <String>Benzilates</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D002506</DescriptorUI>
+  <DescriptorName>
+   <String>Cephalexin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.249.200</TreeNumber>
+   <TreeNumber>D02.886.665.074.200</TreeNumber>
+   <TreeNumber>D03.633.100.300.249.200</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD002506</ConceptUI>
+    <ConceptName>
+     <String>Cephalexin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>OBN7UDS42Y</RegistryNumber>
+     <RegistryNumber>34632-04-7</RegistryNumber>
+     <RegistryNumber>38932-40-0</RegistryNumber>
+     <RegistryNumber>56337-81-6</RegistryNumber>
+     <RegistryNumber>59695-59-9</RegistryNumber>
+     <RegistryNumber>66905-57-5</RegistryNumber>
+     <RegistryNumber>79814-91-8</RegistryNumber>
+     <RegistryNumber>86589-33-5</RegistryNumber>
+     <RegistryNumber>27726-35-8</RegistryNumber>
+     <RegistryNumber>6VJE5G3D98</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>105879-42-3 (mono-HCl,mono-H2O)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>108260-04-4 (cpd without isomeric designation)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>15686-71-2 (Cephalexin)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>23325-78-2 (mono-H2O)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>27726-35-8 ((6R-(6alpha,7beta))-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>34632-04-7 ((6R-(6alpha,7beta(S*)))-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>38932-40-0 (mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>56337-81-6 ((6R-(6alpha,7beta isomer)), mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>59695-59-9 (mono-HCl)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>66905-57-5 (di-H2O)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>6VJE5G3D98</RelatedRegistryNumber>
+     <RelatedRegistryNumber>79814-91-8 ((6R-(6alpha,7alpha(R*)))-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>86589-33-5 (hemi-H2O)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D002511</DescriptorUI>
+  <DescriptorName>
+   <String>Cephalosporins</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.249</TreeNumber>
+   <TreeNumber>D02.886.665.074</TreeNumber>
+   <TreeNumber>D03.633.100.300.249</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD002511</ConceptUI>
+    <ConceptName>
+     <String>Cephalosporins</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D005436</DescriptorUI>
+  <DescriptorName>
+   <String>Floxacillin</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.625.150.250</TreeNumber>
+   <TreeNumber>D02.886.108.750.625.150.250</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.625.150.250</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD005436</ConceptUI>
+    <ConceptName>
+     <String>Floxacillin</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>43B2M34G2V</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>5250-39-5 (Floxacillin)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D010397</DescriptorUI>
+  <DescriptorName>
+   <String>Penicillanic Acid</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.687</TreeNumber>
+   <TreeNumber>D02.886.108.750.687</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.687</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD010397</ConceptUI>
+    <ConceptName>
+     <String>Penicillanic Acid</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>87-53-6</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D010400</DescriptorUI>
+  <DescriptorName>
+   <String>Penicillin G</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.750</TreeNumber>
+   <TreeNumber>D02.886.108.750.750</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD010400</ConceptUI>
+    <ConceptName>
+     <String>Penicillin G</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>Q42T66VG0C</RegistryNumber>
+     <RegistryNumber>YS5LY7JF4N</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>VL775ZTH4C</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>113-98-4 (mono-K salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>21193-94-2 (sulfate)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>47294-44-0 ((6 alpha)-isomer)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>61-33-6 (Penicillin G)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>69-57-8 (mono-Na salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>75333-20-9 (mono-NH4 salt)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>VL775ZTH4C</RelatedRegistryNumber>
+     <RelatedRegistryNumber>YS5LY7JF4N</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D010406</DescriptorUI>
+  <DescriptorName>
+   <String>Penicillins</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750</TreeNumber>
+   <TreeNumber>D02.886.108.750</TreeNumber>
+   <TreeNumber>D03.633.100.300.750</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD010406</ConceptUI>
+    <ConceptName>
+     <String>Penicillins</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D011343</DescriptorUI>
+  <DescriptorName>
+   <String>Procaine</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.241.223.100.050.500.906</TreeNumber>
+   <TreeNumber>D02.455.426.559.389.127.020.937.906</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD011343</ConceptUI>
+    <ConceptName>
+     <String>Procaine</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>4Z8Y51M438</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>95URV01IDQ</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>51-05-8 (HCl)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>59-46-1 (Procaine)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>95URV01IDQ</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D013407</DescriptorUI>
+  <DescriptorName>
+   <String>Sulbactam</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.750.812</TreeNumber>
+   <TreeNumber>D02.886.108.750.812</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.812</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD013407</ConceptUI>
+    <ConceptName>
+     <String>Sulbactam</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>S4TF6I2330</RegistryNumber>
+     <RegistryNumber>DKQ4T82YE6</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>68373-14-8 (Sulbactam)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>69388-84-7 (Sulbactam Sodium)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>DKQ4T82YE6</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D019980</DescriptorUI>
+  <DescriptorName>
+   <String>Amoxicillin-Potassium Clavulanate Combination</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.065.589.099.374.160.060</TreeNumber>
+   <TreeNumber>D02.065.589.099.750.750.050.050.060</TreeNumber>
+   <TreeNumber>D02.886.108.750.750.050.050.060</TreeNumber>
+   <TreeNumber>D03.633.100.300.374.160.060</TreeNumber>
+   <TreeNumber>D03.633.100.300.750.750.050.050.500</TreeNumber>
+   <TreeNumber>D26.310.102</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD019980</ConceptUI>
+    <ConceptName>
+     <String>Amoxicillin-Potassium Clavulanate Combination</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>74469-00-4</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>79198-29-1 (parent)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D020913</DescriptorUI>
+  <DescriptorName>
+   <String>Perindopril</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D03.633.100.473.766</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD020913</ConceptUI>
+    <ConceptName>
+     <String>Perindopril</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>Y5GMK36KGY</RegistryNumber>
+     <RegistryNumber>0</RegistryNumber>
+     <RegistryNumber>1964X464OJ</RegistryNumber>
+    </RegistryNumberList>
+    <RelatedRegistryNumberList>
+     <RelatedRegistryNumber>107133-36-8 (perindopril erbumine)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>1964X464OJ</RelatedRegistryNumber>
+     <RelatedRegistryNumber>82834-16-0 (Perindopril)</RelatedRegistryNumber>
+     <RelatedRegistryNumber>99149-83-4 (cpd with unspecified MF)</RelatedRegistryNumber>
+    </RelatedRegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+</DescriptorRecordSet>

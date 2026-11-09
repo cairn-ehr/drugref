@@ -57,9 +57,10 @@ def test_substance_class_admits_the_fda_cyp_source(conn):
     """
     live = db.constraint_definition(conn, "substance_class", "substance_class_source")
     values = set(re.findall(r"'([^']+)'", live))
-    assert values == {"MED-RT", "MeSH", "DRUGREF", "FDA-CYP"}, (
+    # db/067 later adds 'DRUGREF-ALLERGY'; the pre-db/039 set plus FDA-CYP must survive.
+    assert values == {"MED-RT", "MeSH", "DRUGREF", "FDA-CYP", "DRUGREF-ALLERGY"}, (
         "the widened set must be exactly the pre-db/039 set ({'MED-RT', 'MeSH', "
-        f"'DRUGREF'}} plus 'FDA-CYP' -- got {values!r}")
+        f"'DRUGREF'}} plus 'FDA-CYP' and db/067's 'DRUGREF-ALLERGY' -- got {values!r}")
 
 
 @pytest.mark.usefixtures("conn")

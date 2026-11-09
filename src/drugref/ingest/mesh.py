@@ -50,7 +50,7 @@ StrPath = str | pathlib.Path
 # n-nn-n (1-7 digits, then 2, then 1 check digit). Anything else -- the placeholder
 # "0", an "EC ..." enzyme number, empty -- is neither, and is not a moiety identity
 # key drugref holds. These two shapes never overlap (a UNII has no hyphens).
-_UNII_RE = re.compile(r"^[0-9A-Z]{10}$")
+UNII_RE = re.compile(r"^[0-9A-Z]{10}$")
 _CAS_RE = re.compile(r"^[0-9]{1,7}-[0-9]{2}-[0-9]$")
 
 
@@ -140,7 +140,7 @@ def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
     cas: set[str] = set()
     for raw in values:
         token = (raw or "").strip().split(" ", 1)[0]   # drop any " (name)" annotation
-        if _UNII_RE.match(token):
+        if UNII_RE.match(token):
             uniis.add(token)
         elif _CAS_RE.match(token):
             cas.add(token)
@@ -148,7 +148,7 @@ def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
     return uniis, cas
 
 
-def _local(tag: str) -> str:
+def local_name(tag: str) -> str:
     """The local name of a (possibly namespaced) tag. MeSH ships without a
     namespace today, but stripping any prefix keeps the parser robust to one."""
     return tag.rsplit("}", 1)[-1]
@@ -193,22 +193,22 @@ def iter_records(path: StrPath, record_tag: str):
         context = ET.iterparse(fh, events=("start", "end"))
         _event, root = next(context)                   # grab the root to clear it
         for event, elem in context:
-            if event == "end" and _local(elem.tag) == record_tag:
+            if event == "end" and local_name(elem.tag) == record_tag:
                 yield elem
                 elem.clear()
                 root.clear()
 
 
-def _texts(record, tag: str) -> list[str]:
+def texts(record, tag: str) -> list[str]:
     """Every non-empty text of `tag` anywhere under a record (across its concepts)."""
     return [e.text.strip() for e in record.iter()
-            if _local(e.tag) == tag and e.text and e.text.strip()]
+            if local_name(e.tag) == tag and e.text and e.text.strip()]
 
 
-def _findtext(record, tag: str) -> str:
+def findtext(record, tag: str) -> str:
     """The first non-empty text of `tag` under a record, or ''."""
     for e in record.iter():
-        if _local(e.tag) == tag and e.text and e.text.strip():
+        if local_name(e.tag) == tag and e.text and e.text.strip():
             return e.text.strip()
     return ""
 
@@ -232,7 +232,7 @@ def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]], i
         # The PA class is named inside DescriptorReferredTo; members inside
         # PharmacologicalActionSubstanceList. Both descriptor and member names sit
         # in <String>, so read the structural UI tags rather than names.
-        dui = _findtext(pa, "DescriptorUI")
+        dui = findtext(pa, "DescriptorUI")
         if not dui:
             # No DescriptorUI, no identity: class_uuid is minted from it, so there
             # is nothing to key a class on and the record cannot be ingested.
@@ -240,9 +240,9 @@ def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]], i
             # that simply stopped containing the record (#17).
             without_descriptor += 1
             continue
-        class_name[dui] = _findtext(pa, "String")      # DescriptorName is first String
+        class_name[dui] = findtext(pa, "String")      # DescriptorName is first String
         member_uis = [e.text.strip() for e in pa.iter()
-                      if _local(e.tag) == "RecordUI" and e.text and e.text.strip()]
+                      if local_name(e.tag) == "RecordUI" and e.text and e.text.strip()]
         members.setdefault(dui, []).extend(member_uis)
     return class_name, members, without_descriptor
 
@@ -259,12 +259,12 @@ def _parse_desc(desc_path: StrPath, want_classes: set[str], want_members: set[st
     names: dict[str, str] = {}
     keys: dict[str, MemberKeys] = {}
     for rec in iter_records(desc_path, "DescriptorRecord"):
-        ui = _findtext(rec, "DescriptorUI")
+        ui = findtext(rec, "DescriptorUI")
         if ui in want_classes:
-            trees[ui] = tuple(_texts(rec, "TreeNumber"))
-            names[ui] = _findtext(rec, "String")
+            trees[ui] = tuple(texts(rec, "TreeNumber"))
+            names[ui] = findtext(rec, "String")
         if ui in want_members:
-            unii, cas = registry_keys(_texts(rec, "RegistryNumber"))
+            unii, cas = registry_keys(texts(rec, "RegistryNumber"))
             keys[ui] = MemberKeys(frozenset(unii), frozenset(cas))
     return trees, names, keys
 
@@ -273,9 +273,9 @@ def _parse_supp(supp_path: StrPath, want_members: set[str]) -> dict[str, MemberK
     """Read supp2026 once, harvesting each wanted SCR member's identity keys."""
     keys: dict[str, MemberKeys] = {}
     for rec in iter_records(supp_path, "SupplementalRecord"):
-        ui = _findtext(rec, "SupplementalRecordUI")
+        ui = findtext(rec, "SupplementalRecordUI")
         if ui in want_members:
-            unii, cas = registry_keys(_texts(rec, "RegistryNumber"))
+            unii, cas = registry_keys(texts(rec, "RegistryNumber"))
             keys[ui] = MemberKeys(frozenset(unii), frozenset(cas))
     return keys
 

@@ -33,7 +33,9 @@ from drugref import accumulation, ids
 # admits -- a KeyError here means this map has fallen behind that constraint.
 _WRITER_BY_SOURCE = {"DRUGREF": "curation", "MED-RT": "medrt_run", "MeSH": "mesh_run",
                      # Slice 5c.2g, db/039: FDA-CYP joins the trio.
-                     "FDA-CYP": "fda_cyp_run"}
+                     "FDA-CYP": "fda_cyp_run",
+                     # db/067: DRUGREF-ALLERGY joins the trio.
+                     "DRUGREF-ALLERGY": "allergy_group_run"}
 
 
 def _run(conn, source="DRUGREF"):

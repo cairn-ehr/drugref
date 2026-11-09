@@ -84,6 +84,9 @@ _SOURCE_CANONICAL = {
     # source to a spelling the CHECK does not admit, and a per-source rebuild
     # would then delete nothing and report success.
     "SPL": "SPL",
+    # Allergy groups (db/067). Listed explicitly, as the entries above are: the
+    # CHECKs, this table and provenance.WRITERS ('allergy_group_run') are a trio.
+    "DRUGREF-ALLERGY": "DRUGREF-ALLERGY",
 }
 
 # The key prefix each canonical authority contributes to a class UUID.
