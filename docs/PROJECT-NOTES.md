@@ -6061,7 +6061,7 @@ allow-list so `structural-seed` can come off; MED-RT `has_SC` ingestion.
 
 **Databases.** `drugref_test_allergy` is this branch's test DB (recreated by pytest). **`drugref_allergy`** = a
 `createdb -T drugref_profiles` copy, migrated to `db/068`, allergy groups ingested (MeSH 2026); **never patch it**.
-`drugref_profiles` was left untouched at `db/065`. Suite: 3221 collected.
+`drugref_profiles` was left untouched at `db/065`.
 
 ## The standing open-issue ledger
 
