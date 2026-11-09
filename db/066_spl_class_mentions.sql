@@ -46,7 +46,8 @@ ON CONFLICT (level) DO NOTHING;
 COMMENT ON TABLE drugref.spl_advice_level IS
     'The machine-read advice vocabulary and its strength order (1 = strongest). '
     'MACHINE-READ, NOT CONFIRMED: a level is what a phrase-matching reader made of one '
-    'sentence, never an assertion. no_meaningful_interaction and not_read have no rank '
+    'scope (a sentence, heading block or table row), never an assertion. '
+    'no_meaningful_interaction and not_read have no rank '
     'because neither is a strength. Second home of spl_advice.LEVELS / STRENGTH.';
 
 -- ============================================================================
@@ -78,7 +79,9 @@ CREATE TABLE IF NOT EXISTS drugref.spl_class_occurrence (
     -- reader read nothing.
     advice_rule     text,
     -- The span of text the reader looked at: the sentence, or the heading block when
-    -- the mention stands in a list under a heading. Second home of spl_advice.SCOPES.
+    -- the mention stands in a list under a heading (a PLR table row is stored as a
+    -- heading_block too: it is the block under its row heading). Second home of
+    -- spl_advice.SCOPES.
     advice_scope    text    NOT NULL
         CONSTRAINT spl_class_occurrence_scope
         CHECK (advice_scope IN ('sentence', 'heading_block')),
@@ -109,7 +112,8 @@ CREATE INDEX IF NOT EXISTS spl_class_occurrence_by_wording
 
 COMMENT ON TABLE drugref.spl_class_occurrence IS
     'Every drug CLASS a section-34073-7 wording names, with the exact span and a '
-    'MACHINE-READ advice level for the sentence around it. Facts and offsets only, no '
+    'MACHINE-READ advice level for the scope around it (sentence, heading block '
+    'or table row). Facts and offsets only, no '
     'prose. NOT CONFIRMED and never an assertion: the level is a phrase reader''s '
     'guess, mixed/ambiguous flags say where it is weakest, and nothing here may feed '
     'class_asserted_property or any alert path. Only a curator''s holds ruling '
@@ -186,7 +190,8 @@ WITH per_level AS (
     SELECT p.subject_moiety, p.class_uuid,
            jsonb_object_agg(p.advice_level, p.labels) AS level_counts,
            min(a.strength_rank)                       AS best_rank,
-           bool_or(p.advice_level = 'no_meaningful_interaction') AS has_nmi
+           bool_or(p.advice_level = 'no_meaningful_interaction') AS has_nmi,
+           bool_or(p.advice_level = 'not_read')                  AS has_unread
       FROM per_level p
       JOIN drugref.spl_advice_level a ON a.level = p.advice_level
      GROUP BY p.subject_moiety, p.class_uuid
@@ -204,11 +209,12 @@ SELECT t.subject_moiety,
        t.class_uuid,
        t.label_count,
        t.wording_count,
-       -- Strongest level by rank; failing any strength, an all-clear if ANY row has
-       -- one, else not_read.
+       -- Strongest level by rank; failing any strength, an all-clear only when EVERY
+       -- row is one, else not_read. A not_read row may be a WITHHELD avoid/monitor
+       -- (spl_advice.WITHHELD), so one label's all-clear must never outvote it.
        CASE WHEN v.best_rank IS NOT NULL
             THEN (SELECT level FROM drugref.spl_advice_level WHERE strength_rank = v.best_rank)
-            WHEN v.has_nmi THEN 'no_meaningful_interaction'
+            WHEN v.has_nmi AND NOT v.has_unread THEN 'no_meaningful_interaction'
             ELSE 'not_read' END AS strongest_level,
        v.level_counts,
        t.any_mixed,
@@ -221,8 +227,9 @@ COMMENT ON VIEW drugref.spl_class_statement IS
     '(SUBJECT, CLASS) GRAIN -- one row per subject moiety x class a label names. '
     'label_count / wording_count count DISTINCT labels / wordings (2.5 labels to a '
     'wording, so never quote one as the other). strongest_level is the lowest '
-    'strength_rank present, else no_meaningful_interaction if any row has it, else '
-    'not_read; level_counts is level -> label count. MACHINE-READ, NOT CONFIRMED, '
+    'strength_rank present, else no_meaningful_interaction only if EVERY row has it, '
+    'else not_read (a not_read row may hide a withheld strength level); '
+    'level_counts is level -> label count. MACHINE-READ, NOT CONFIRMED, '
     'never an assertion.';
 
 -- ============================================================================

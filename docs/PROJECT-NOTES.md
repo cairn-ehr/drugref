@@ -5954,8 +5954,8 @@ not here.** What the next round inherits:
   near-universal object (`CI_with Drug Hypersensitivity`) dominates it, and MED-RT's catch-all "Unknown ..."
   MoA/PE classes act as drug classes — the PK argument of #155 again, one axis over.
 - **SPL class-mention extraction (the old class half of 5c.3, #102/#155) is DONE (2026-11-08, `db/066`) and
-  feeds this one** (§ "The SPL class-mentions round"): `class_profile_read` shows "What labels say about this
-  class". No source states a *condition* about a class, so condition class properties are still observed.
+  feeds this one** (§ "The SPL class-mentions round"): `class_profile_read.label_statements` feeds the
+  "What labels say about this class" section `cli_class_profile.render_class_profile` prints. No source states a *condition* about a class, so condition class properties are still observed.
 
 ## The SPL class-mentions round (2026-11-08) — `db/066`, measured on `drugref_classmentions`
 
@@ -5973,12 +5973,14 @@ class names, stores one row per (span, class) in `spl_class_occurrence` with a m
 **What is withheld.** Sentence-scope `avoid` and `monitor` (`spl_advice.WITHHELD`, tested) missed the owner's 90%
 gate; they ship only from a table row / heading block. `no_meaningful_interaction` ships empty. A withheld
 sentence reading is skipped like an empty one and the reader falls through to the row / heading block (R21);
-a withheld MIXED sentence still ships `not_read`, never its weaker co-reading.
+a withheld MIXED sentence falls through the same way, and never ships its weaker co-reading. Because a
+`not_read` row may hide a withheld level, `spl_class_statement` reports `no_meaningful_interaction` only when
+EVERY row for the (drug, class) is one (final review); any `not_read` row makes the statement `not_read`.
 
 ### Traps learned this round
 
 - **Blocklists leak by construction (R6–R11).** "no meaningful interaction" is the worst error (a missed warning
-  reads as an all-clear). Three rounds of "refuse if the sentence contains a contrast word" each leaked. The
+  reads as an all-clear). Four rounds (R6–R9) of "refuse if the sentence contains a contrast word" each leaked. The
   answer is a CLOSED full-match template list (`NMI_TEMPLATES`): the whole sentence must match one fixed
   template whose only open slot is the mention. If a phrasing is not in the list it reads `not_read`.
 - **A mention is a distinct SPAN, not a row.** A span several classes fold onto has several (span, class) rows.
@@ -6015,7 +6017,16 @@ at ~500 lines — split before the next change, and cache `read_advice`'s scope 
 [#217](https://github.com/cairn-ehr/drugref/issues/217) label class-statement worklist not ordered strongest
 level first (design §6.4) · [#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can
 still hide "contraindicated" when the intervening word ends another strength phrase (0 occurrences; R24's rule
-not yet applied to it).
+not yet applied to it). From the final review (`/finalcheck`):
+[#220](https://github.com/cairn-ehr/drugref/issues/220) withheld readings are stored as `not_read`, so they never
+reach the census or a curator (owner call; tied to the gate trade-off) ·
+[#221](https://github.com/cairn-ehr/drugref/issues/221) latent: a sentence NMI ships even when the NEXT sentence
+qualifies it ("Exception: contraindicated ...") ·
+[#222](https://github.com/cairn-ehr/drugref/issues/222) any live ruling suppresses a (drug, class) question even
+after the label evidence strengthens · #214 gained the `effects` head-word candidate.
+The same review FIXED in-PR: NMI no longer outvotes `not_read` in `spl_class_statement`; a measured class-row
+floor (`MEASURED_CLASS_FLOOR` = 304,682, gated by `--no-pair-floor`); `read_official_names` reads strictly
+(QUOTE_NONE, no `errors="replace"`) and refuses a file yielding 0 official names.
 
 ## The standing open-issue ledger
 
@@ -6283,7 +6294,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3155 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3162 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

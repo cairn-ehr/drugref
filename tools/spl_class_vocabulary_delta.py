@@ -1,9 +1,10 @@
 """What does DROPPING the class vocabulary do to the drug x drug yield?
 
 The slice-5c.3 measurement round matched with a vocabulary holding **moieties and
-classes together**, because it was sizing both grains at once. The shipped ingest
-is **drug x drug only** (owner's call, 2026-08-24), so its vocabulary holds
-moieties and the negative terms and nothing else.
+classes together**, because it was sizing both grains at once. The shipped ingest's
+**moiety** pass is drug x drug only (owner's call, 2026-08-24), so its vocabulary
+holds moieties and the negative terms and nothing else; classes are matched by a
+SEPARATE class pass (db/066) that cannot consume a moiety span.
 
 That is not a neutral difference, and this tool exists because the ingest
 published a figure the measurement did not: **20,747 distinct pairs on the

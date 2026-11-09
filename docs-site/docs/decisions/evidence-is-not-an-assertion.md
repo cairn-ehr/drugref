@@ -80,9 +80,11 @@ sentence a clinician wants to be reminded of. A mention with no advice cannot do
   none reads `not_read` (76.5% of spans at the shipped run). It does **not** attribute a phrase to the class:
   it reads any strength phrase in the scope, so a miss is another drug's advice in the same sentence or block
   (the `contraindicated` level over-reads in 22 of the 100 sampled spans, the safe direction).
-  `no_meaningful_interaction` ships only from closed, enumerated templates, and a (scope, level) pair whose
-  measured agreement with the designer's hand reading fell below the owner's 90% gate is **withheld**
-  (sentence-scope avoid and monitor), not shipped with a caveat. The owner's own clinical reading of the
+  `no_meaningful_interaction` ships only from closed, enumerated templates. An avoid, adjust_dose or
+  monitor (scope, level) pair whose measured agreement with the designer's hand reading fell below the
+  owner's 90% gate is **withheld** (sentence-scope avoid and monitor), not shipped with a caveat;
+  `contraindicated` is gated instead on never reading weaker than the label (zero did). A withheld reading
+  is stored as `not_read`, so a single label's all-clear never outranks it. The owner's own clinical reading of the
   sample is still owed.
 
 The cost is that a machine reading now exists at all, so it has to be measured: the precision sample, the gates

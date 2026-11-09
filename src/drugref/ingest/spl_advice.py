@@ -1,5 +1,6 @@
 # src/drugref/ingest/spl_advice.py
-"""Read a drug label's OWN advice level for the sentence around a mention.
+"""Read a drug label's OWN advice level for the scope around a mention (its
+sentence, or the heading block / PLR table row it stands in; see `read_advice`).
 
 PURE: no database, no I/O, standard library `re` only.
 
@@ -22,13 +23,15 @@ absent. Hence: (1) the reader prefers `not_read` to a guess; (2) a strength leve
 "contraindicated" (that would over-warn the other way, and is plainly wrong), but
 is left `not_read` rather than being promoted to an all-clear.
 
-**NEGATION.** Only two negations are understood. "not/no ... contraindicated"
+**NEGATION.** Only three negations are understood. "not/no ... contraindicated"
 (up to one word between, any whitespace) is masked before the strength rules, so it
 reads `not_read`, never `contraindicated`. "no dose adjustment/reduction", "no
 clinically significant interaction", "dose adjustment is not required" are the NMI
 phrases in `ADVICE_RULES`; they are MASKS ONLY, so "dose adjustment" inside them
-cannot fire `adjust_dose`. A mask hit alone never yields NMI (see R10). Any other
-negation is not modelled; the vocabulary avoids phrases that negation would flip.
+cannot fire `adjust_dose`. A mask hit alone never yields NMI (see R10). "separate
+administration ... is not necessary/needed/required" is masked by `_NOT_ADVICE`
+(R24), so it cannot read `adjust_dose`. Any other negation is not modelled; the
+vocabulary avoids phrases that negation would flip.
 
 **CONDITIONALS.** "If coadministration is necessary, reduce the dose" is read as
 `adjust_dose`: the label does give dose advice, and a conditional still tells the
@@ -112,7 +115,9 @@ class AdviceRule:
 
 
 def _rule(level: str, name: str, regex: str) -> AdviceRule:
-    """Build a rule; patterns are case-insensitive and whole-word (`\\b`) by hand."""
+    """Build a rule; patterns are case-insensitive (except inline `(?-i:...)`
+    groups, used where only a capitalised heading counts) and whole-word (`\\b`)
+    by hand."""
     return AdviceRule(f"{level}.{name}", level, re.compile(regex, re.IGNORECASE))
 
 
@@ -234,9 +239,9 @@ class AdviceReading:
 
 
 # --- scope finding ------------------------------------------------------
-# Starts and markers are computed ONCE per read_advice call and passed down;
-# every helper below works from offsets, never re-slicing the text (a section
-# can be 50k+ characters, and per-boundary slicing was quadratic).
+# Starts and markers are computed ONCE per read_advice call and passed down; no
+# per-boundary re-slicing (quadratic on 50k+ sections). read_advice still runs
+# once per MENTION, rescanning the wording each time: caching is issue #216.
 
 # "7.2 Heading": numbers with a dot, then an upper-case word, at a word start.
 _MARKER = re.compile(r"(?<!\S)\d+(?:\.\d+)+\s+(?=[A-Z])")
@@ -325,12 +330,6 @@ def _block_from(text: str, markers: list[int], starts: list[int],
     if _span_from(starts, len(text), char_start)[0] > m:
         return None  # a sentence boundary lies between marker and mention
     return m, (markers[i] if i < len(markers) else len(text))
-
-
-def heading_block_span(text: str, char_start: int) -> tuple[int, int] | None:
-    """Marker-to-next-marker span when a marker sits <= 8 tokens before the mention."""
-    mk = _markers(text)
-    return _block_from(text, mk, _sentence_starts(text, mk), char_start)
 
 
 # --- PLR table rows (Task 9B) --------------------------------------------

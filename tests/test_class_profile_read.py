@@ -295,9 +295,12 @@ def test_label_statements_ordered_and_flagged(conn):
     _mention(conn, sr, ydrug, k, "S2", "S3", level="avoid", mixed=True, key="c")
     _mention(conn, sr, xdrug, k, "S4", level="not_read", key="d")   # unranked: last
     _mention(conn, sr, x["a"], k, "S5", level="avoid", key="e")  # member: its own class
+    wdrug = w.moiety(conn, r, "zzdrug")   # an all-clear on fewer labels than xdrug
+    _mention(conn, sr, wdrug, k, "S6", level="no_meaningful_interaction", key="f")
     got = cpr.class_profile(conn, k).label_statements
-    # Strict check of the documented order: rank, then label_count desc, then name.
-    assert [s.drug for s in got] == ["ydrug", "adrug", "zdrug", "xdrug"]
+    # Strict check of the documented order: rank, then the all-clear before
+    # not_read, then label_count desc, then name.
+    assert [s.drug for s in got] == ["ydrug", "adrug", "zdrug", "zzdrug", "xdrug"]
     assert all(s.ruling is None and not s.ambiguous for s in got)
 
 

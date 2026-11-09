@@ -1341,7 +1341,31 @@ def test_the_summary_reports_the_r19_class_drops():
     text = str(_summary(class_keys_shadowed_by_official_names=2,
                         class_spans_dropped_on_a_non_drug_head=7))
     assert "2 class keys dropped as UNII official names" in text
-    assert "7 class spans dropped on a non-drug head word" in text
+    assert "7 class rows dropped on a non-drug head word" in text
+    # The figure counts (span, class) ROWS, not mentions (PROJECT-NOTES' run-10 trap).
+    assert "5 class (span, class) rows over 2 wordings" in text
+
+
+@pytest.mark.parametrize("overrides,match", [
+    ({"wordings_with_a_class": 5, "class_occurrences": 9}, "name a class but only 4"),
+    ({"wordings_with_a_class": 3, "class_occurrences": 2},
+     "only 2 class occurrences"),
+    ({"moiety_spans_inside_class_spans": 41}, "of only 40 moiety occurrences"),
+])
+def test_the_summary_refuses_impossible_class_counts(overrides, match):
+    with pytest.raises(ValueError, match=match):
+        _summary(**overrides)
+
+
+def test_a_class_row_count_below_the_MEASURED_floor_is_REFUSED():
+    """An empty class pass (a matcher regression, an empty substance_class) is
+    self-consistent, and register_from_gaps would then close every SPLCLASS:
+    question; the measured floor is what stops it on a full corpus."""
+    with pytest.raises(ValueError, match="class rows, below the measured floor"):
+        spl_checks.check_floors(_summary(), pair_floor=None, novel_floor=None,
+                                class_floor=6)
+    spl_checks.check_floors(_summary(), pair_floor=None, novel_floor=None,
+                            class_floor=5)
 
 
 def test_the_summary_refuses_to_exist_unless_the_route_buckets_sum():

@@ -38,6 +38,10 @@ from drugref.ingest.counts import refuse_negative_counts
 #: difference is VISIBLE rather than absorbed.
 MEASURED_PAIR_FLOOR = 29_258
 MEASURED_NOVEL_FLOOR = 25_960
+#: Class (span, class) rows SPL run 17 wrote on the 2026-08-22 corpus (227,990
+#: distinct spans). A floor like the two above: an empty class pass is
+#: self-consistent, and `register_from_gaps` would close every SPLCLASS: question.
+MEASURED_CLASS_FLOOR = 304_682
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -90,7 +94,8 @@ class SplSummary:
     pairs: int
     novel_pairs: int
     #: The class pass (spl_class_evidence), beside the moiety pass. Machine-read
-    #: mentions of registered classes; none of it feeds the pair figures above.
+    #: (span, class) ROWS -- a span folding onto two classes is two rows, so this is
+    #: not a mention count; none of it feeds the pair figures above.
     class_occurrences: int
     wordings_with_a_class: int
     #: Moiety occurrences lying WHOLLY inside a class span of the same wording.
@@ -98,13 +103,14 @@ class SplSummary:
     #: combined vocabulary) are excluded, so this is not directly comparable with
     #: the design round's 11,169 consumed moiety spans.
     moiety_spans_inside_class_spans: int
-    #: Class matches dropped because the span held a sentence boundary -- the
-    #: design 7 "sentence-splitter failure" signal (R17) -- and class match keys
-    #: dropped because they equal a moiety display name (R16).
+    #: Class (span, class) rows dropped because the span held a sentence boundary
+    #: -- the design 7 "sentence-splitter failure" signal (R17) -- and class match
+    #: keys dropped because they equal a moiety display name (R16).
     class_spans_dropped_at_a_boundary: int = 0
     class_keys_shadowed_by_moieties: int = 0
-    #: R19: class keys equal to a UNII official name (a drug, P1), and class spans
-    #: whose word qualifies a non-drug head ('anticoagulant effect', P2).
+    #: R19: class keys equal to a UNII official name (a drug, P1), and class
+    #: (span, class) rows whose word qualifies a non-drug head ('anticoagulant
+    #: effect', P2).
     class_keys_shadowed_by_official_names: int = 0
     class_spans_dropped_on_a_non_drug_head: int = 0
 
@@ -189,11 +195,11 @@ class SplSummary:
             f"({self.novel_pairs:,} novel); subjects: {routes}; "
             f"{self.occurrences:,} occurrences over "
             f"{self.wordings_with_a_moiety:,} wordings; {self.class_occurrences:,} "
-            f"class mentions over {self.wordings_with_a_class:,} wordings "
+            f"class (span, class) rows over {self.wordings_with_a_class:,} wordings "
             f"({self.moiety_spans_inside_class_spans:,} moiety occurrences lie "
-            f"inside one; {self.class_spans_dropped_at_a_boundary:,} class spans "
-            f"dropped at a sentence boundary, "
-            f"{self.class_spans_dropped_on_a_non_drug_head:,} class spans dropped "
+            f"inside a class span; {self.class_spans_dropped_at_a_boundary:,} class "
+            f"rows dropped at a sentence boundary, "
+            f"{self.class_spans_dropped_on_a_non_drug_head:,} class rows dropped "
             f"on a non-drug head word, {self.class_keys_shadowed_by_moieties:,} "
             f"class keys dropped as moiety names, "
             f"{self.class_keys_shadowed_by_official_names:,} class keys dropped "
@@ -370,7 +376,7 @@ def read_pairs(conn: psycopg.Connection, run_id: int) -> tuple[int, int, int]:
 
 
 def check_floors(summary: SplSummary, *, pair_floor: int | None,
-                  novel_floor: int | None) -> None:
+                  novel_floor: int | None, class_floor: int | None = None) -> None:
     """Refuse a run that published nothing, or less than the measured floor.
 
     db/050's pattern. **Every reconciliation above proves self-consistency and
@@ -378,9 +384,10 @@ def check_floors(summary: SplSummary, *, pair_floor: int | None,
     of them -- `stored (0) == written (0)` four times over -- while
     `clear_source_spl` has already deleted the previous release's rows.
 
-    The four structural floors below are unconditional because none of them can
+    The five structural floors below are unconditional because none of them can
     legitimately be zero on any corpus that carried a section at all. The two
-    MEASURED floors are optional and assert `>=`, because the figures are floors
+    MEASURED floors (pairs, novel pairs, class rows) are optional and assert
+    `>=`, because the figures are floors
     rather than targets and a partial corpus has to be able to say so.
     """
     for label, value in (("labels", summary.labels),
@@ -403,3 +410,10 @@ def check_floors(summary: SplSummary, *, pair_floor: int | None,
         raise ValueError(
             f"spl: {summary.novel_pairs:,} novel pairs, below the measured "
             f"floor of {novel_floor:,}.")
+    # Class rows are NOT a structural floor: zero classes is legitimate on a
+    # registry without MED-RT/MeSH. On the full corpus it is not.
+    if class_floor is not None and summary.class_occurrences < class_floor:
+        raise ValueError(
+            f"spl: {summary.class_occurrences:,} class rows, below the measured "
+            f"floor of {class_floor:,}. An empty class pass would close every "
+            "SPLCLASS: question.")

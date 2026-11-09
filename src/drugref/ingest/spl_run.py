@@ -63,11 +63,11 @@ from drugref.ingest import (
 )
 from drugref.ingest.checksum import checksum
 from drugref.ingest.spl_checks import (
-    MEASURED_NOVEL_FLOOR, MEASURED_PAIR_FLOOR, SplSummary,
+    MEASURED_CLASS_FLOOR, MEASURED_NOVEL_FLOOR, MEASURED_PAIR_FLOOR, SplSummary,
 )
 
-__all__ = ["MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR", "SplSummary",
-           "build_vocabulary", "ingest_spl"]
+__all__ = ["MEASURED_CLASS_FLOOR", "MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR",
+           "SplSummary", "build_vocabulary", "ingest_spl"]
 
 log = logging.getLogger(__name__)
 
@@ -203,15 +203,14 @@ def _write_evidence(
                 text_key, corpus.wordings[text_key], vocab)
             if found:
                 with_moiety += 1
-            mentions, within, dropped, on_head = (
-                spl_class_evidence.class_pass_for_wording(
-                    text_key, corpus.wordings[text_key], class_vocab,
-                    [(o.char_start, o.char_end) for o in found]))
-            with_class += bool(mentions)
-            inside += within
-            boundary_drops += dropped
-            head_drops += on_head
-            class_rows.extend(mentions)
+            cp = spl_class_evidence.class_pass_for_wording(
+                text_key, corpus.wordings[text_key], class_vocab,
+                [(o.char_start, o.char_end) for o in found])
+            with_class += bool(cp.rows)
+            inside += cp.moiety_spans_inside
+            boundary_drops += cp.boundary_drops
+            head_drops += cp.head_drops
+            class_rows.extend(cp.rows)
             occurrence_rows.extend(found)
             quote_rows.extend(quoted)
         occurrences += spl_evidence.write_occurrences(
@@ -238,6 +237,7 @@ def ingest_spl(
     release: str,
     pair_floor: int | None = None,
     novel_floor: int | None = None,
+    class_floor: int | None = None,
     progress: Callable[[str], None] | None = None,
     unii_names: str | pathlib.Path | None = None,
 ) -> SplSummary:
@@ -248,10 +248,10 @@ def ingest_spl(
     before any writing begins, so a crash from there on leaves that row standing
     with `finished_at IS NULL` rather than no trace at all.
 
-    `pair_floor` / `novel_floor`, when given, assert the measured floor with `>=`:
-    None here, `MEASURED_*_FLOOR` at the CLI (the production path), so a real run
-    checks by default. `unii_names` (UNII_Names_*.txt, required by the CLI) drives
-    R19/P1; None skips P1 and the "registry:" progress line says so as a WARNING.
+    `pair_floor` / `novel_floor` / `class_floor`, when given, assert the measured
+    floor with `>=`: None here, `MEASURED_*_FLOOR` at the CLI (the production
+    path), so a real run checks by default. `unii_names` (UNII_Names_*.txt,
+    required by the CLI) drives R19/P1; None skips P1, warned on "registry:".
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.
@@ -312,9 +312,8 @@ def ingest_spl(
             "unii` and `ingest chebi` first.")
     vocab = build_vocabulary(names)
     say(f"  registry: {len(names):,} moiety names, {len(known_uniis):,} UNIIs")
-    # Classes are read in the SAME TRANSACTION as the registry, before the
-    # rollback below. Zero classes is legitimate (the drug grain needs none), so
-    # it is reported, not refused; an empty vocabulary simply matches nothing.
+    # Classes: a 2nd statement (READ COMMITTED: maybe a later snapshot; nothing
+    # writes either mid-ingest). Zero is legitimate; the CLI's class floor refuses.
     class_vocab, class_keys = spl_class_evidence.class_vocabulary_for_run(
         conn, names, known_uniis, unii_names)
     say(f"  registry: {class_keys}")
@@ -468,7 +467,8 @@ def ingest_spl(
             **counts.class_drop_fields(), **class_keys.summary_fields())
 
         spl_checks.check_floors(
-            summary, pair_floor=pair_floor, novel_floor=novel_floor)
+            summary, pair_floor=pair_floor, novel_floor=novel_floor,
+            class_floor=class_floor)
         # #186: the counts #163 says must never refuse, kept per run so the next
         # release has this one to compare against (db/057). Inside the
         # transaction, so a run that rolls back leaves no census behind.

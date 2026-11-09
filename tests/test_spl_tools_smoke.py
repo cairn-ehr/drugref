@@ -184,3 +184,7 @@ def test_spl_class_census_runs(conn):
     assert "| 3 | 1 | 3 |" in out               # all 3 rows near "Intervention", 1 wording
     spelled = {key: "cytochrome P450 3A4 (CYP3A4) inhibitors " + text}
     assert "| 1 | 3 |" in cc.prose_figures(conn, run, spelled, {key: 3})
+    # A corpus missing the run's wordings (another release) is refused, not
+    # silently undercounted.
+    with pytest.raises(ValueError, match="not in the supplied corpus"):
+        cc.prose_figures(conn, run, {}, {})

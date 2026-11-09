@@ -192,6 +192,22 @@ def test_official_names_refuses_a_file_without_its_columns():
         ce.official_names(["UNII\tDisplay Name\tRXCUI\n"], {"U1"})
 
 
+def test_a_names_file_yielding_no_official_name_for_held_uniis_is_refused(tmp_path):
+    """The right columns but 0 names (a changed TYPE code, a UNII format drift)
+    would skip R19/P1 with no warning; it raises instead."""
+    import pytest
+    f = tmp_path / "UNII_Names.txt"
+    f.write_text(_NAMES_HEADER + "WIDGETOL\tOF\tU1\tWIDGETOL\n")
+    with pytest.raises(ValueError, match="0 official names"):
+        ce.read_official_names(f, {"U1"})
+
+
+def test_a_stray_quote_does_not_swallow_the_following_rows():
+    """UNII names carry no quoting convention (ingest/unii.py's QUOTE_NONE trap)."""
+    lines = [_NAMES_HEADER, '"5-NUCLEOTIDE\tof\tU2\tX\n', "PARACETAMOL\tof\tU1\tX\n"]
+    assert ce.official_names(lines, {"U1", "U2"}) == {'"5-NUCLEOTIDE', "PARACETAMOL"}
+
+
 def test_class_key_shadowing_counts_moiety_names_and_official_names_apart():
     ent = lambda k, u: spl_match.Entry(  # noqa: E731
         kind=spl_match.KIND_CLASS, key=k, display=k, class_uuid=u)

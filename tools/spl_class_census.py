@@ -9,8 +9,9 @@ many mentions, on which axes, read as what, at what yield. This prints them all.
 ⇒ EVERY FIGURE IS PER WORDING, NOT PER LABEL. A wording is shared by ~2.5 labels on
 average, so counts are of distinct wording texts; the
 `labels` column is the same population weighted by `spl_wording.label_count`, shown
-only so a reader can see the 2.5x trap rather than fall into it. The one exception
-is "statements", which are (labelling drug x class) pairs and so label-derived.
+only so a reader can see the 2.5x trap rather than fall into it. The exceptions are
+"statements", which are (labelling drug x class) pairs and so label-derived, and the
+drug x drug pair and classes-mentioned counts, which are counted in their own unit.
 
 ⇒ UNITS, BECAUSE THEY WERE CONFUSED ONCE: a MENTION is a distinct SPAN
 (text_key, char_start, char_end). The table holds one row per (span, class), and a
@@ -269,7 +270,7 @@ def prose_figures(conn: psycopg.Connection, run: int,
     """The two figures only the corpus can give (see the module docstring)."""
     with_spelling = [k for k, t in wordings.items() if has_parenthetical_spelling(t)]
     near_occ, near_words = 0, set()
-    total = 0
+    total = missing = 0
     with conn.cursor(name="census_occ") as cur:
         cur.execute(
             "SELECT text_key, char_start, char_end FROM drugref.spl_class_occurrence "
@@ -277,9 +278,14 @@ def prose_figures(conn: psycopg.Connection, run: int,
         for key, start, end in cur:
             total += 1
             text = wordings.get(key)
+            missing += text is None
             if text is not None and near_table_label(text, start, end):
                 near_occ += 1
                 near_words.add(key)
+    if missing:
+        raise ValueError(
+            f"{missing:,} of {total:,} class rows name a wording not in the supplied "
+            "corpus: --openfda is not the release this run was built from")
     rows_a = [("wordings WITH the long-form spelling near a role word (presence)",
                len(with_spelling), sum(label_counts[k] for k in with_spelling))]
     rows_b = [("(span, class) rows within 80 chars of Intervention/Clinical Impact",

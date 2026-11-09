@@ -5,7 +5,8 @@ query) and `read_official_names` (one file read); the writer lives in `spl_evide
 and the orchestrator owns the transaction.
 
 Everything produced here is MACHINE-READ and NOT CONFIRMED: the advice level is a
-phrase reader's guess about one sentence, never an assertion (see db/066).
+phrase reader's guess about one scope (a sentence, a heading block or a table
+row), never an assertion (see db/066).
 
 This is its own module, not part of `spl_evidence`, because that file is at its
 size budget and this logic is not about writing rows.
@@ -48,7 +49,7 @@ class ClassOccurrenceRow:
 
 
 class EvidenceCounts(NamedTuple):
-    """What `_write_evidence` wrote, by NAME (seven ints by position invite swaps)."""
+    """What `_write_evidence` wrote, by NAME (nine ints by position invite swaps)."""
 
     occurrences: int
     wordings_with_a_moiety: int
@@ -106,7 +107,9 @@ def official_names(lines: Iterable[str], held_uniis: Collection[str]) -> set[str
     is the substance's US official name, which UNII_Names carries. Pure: `lines`
     is the file's text, header first.
     """
-    reader = csv.DictReader(lines, delimiter="\t")
+    # QUOTE_NONE, as ingest/unii.py: the file has no quoting convention, so a
+    # leading '"' would otherwise swallow every following row into one field.
+    reader = csv.DictReader(lines, delimiter="\t", quoting=csv.QUOTE_NONE)
     missing = [c for c in _NAMES_COLUMNS if c not in (reader.fieldnames or ())]
     if missing:
         raise ValueError(
@@ -118,9 +121,21 @@ def official_names(lines: Iterable[str], held_uniis: Collection[str]) -> set[str
 
 def read_official_names(path: str | pathlib.Path,
                         held_uniis: Collection[str]) -> set[str]:
-    """`official_names` over a UNII_Names_*.txt file (streamed, never held whole)."""
-    with open(path, encoding="utf-8", errors="replace", newline="") as f:
-        return official_names(f, held_uniis)
+    """`official_names` over a UNII_Names_*.txt file (streamed, never held whole).
+
+    Read strictly (as ingest/unii.py reads the same release): a decoding error
+    raises rather than becoming names that silently match nothing. A file with the
+    right columns that yields NO official name for a non-empty registry raises
+    too, because R19/P1 would then be skipped with no warning at all.
+    """
+    with open(path, encoding="utf-8", newline="") as f:
+        names = official_names(f, held_uniis)
+    if held_uniis and not names:
+        raise ValueError(
+            f"{path}: 0 official names (TYPE {OFFICIAL_NAME_TYPE!r}) for the "
+            f"{len(held_uniis):,} UNIIs the registry holds -- has the release "
+            "changed its TYPE codes or UNII format?")
+    return names
 
 
 class ClassKeyCounts(NamedTuple):
@@ -281,11 +296,20 @@ def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
                if any(c_start <= start and end <= c_end for c_start, c_end in classes))
 
 
+class ClassPass(NamedTuple):
+    """One wording's class pass, by NAME: three ints by position invite swaps."""
+
+    rows: list[ClassOccurrenceRow]
+    moiety_spans_inside: int
+    boundary_drops: int
+    head_drops: int
+
+
 def class_pass_for_wording(
     text_key: str, text: str, vocab: spl_match.Vocabulary,
     moiety_spans: Sequence[tuple[int, int]],
-) -> tuple[list[ClassOccurrenceRow], int, int, int]:
-    """`(class rows, moiety spans inside a class span, boundary drops, head drops)`.
+) -> ClassPass:
+    """The class rows, moiety spans inside a class span, boundary and head drops.
 
     Kept here so `spl_run` (at its size budget) makes ONE call per wording.
     `moiety_spans` are that wording's moiety occurrences from the moiety pass.
@@ -293,4 +317,4 @@ def class_pass_for_wording(
     rows, boundary, heads = _rows_and_drops(text_key, text, vocab)
     inside = moiety_spans_inside_class_spans(
         moiety_spans, [(r.char_start, r.char_end) for r in rows])
-    return rows, inside, boundary, heads
+    return ClassPass(rows, inside, boundary, heads)

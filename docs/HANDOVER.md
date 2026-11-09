@@ -33,6 +33,8 @@ run**: `test_suite_count.py` then fails two tests that are not real.
      STRONGER than the label (the safe direction). Should the gate count safe-direction disagreement, and
      re-admit those levels?
    - Contraindicated reads stronger than the label in 22 of 100 (safe direction; zero read lower). Acceptable?
+   - **#220**: withheld readings are stored as `not_read`, so no curator ever sees them. Store the level, and
+     put withheld strength readings on the worklist? (Also decide **#221** and **#222**.)
    - The reader's two conventions: "Reserve concomitant prescribing ..." reads `avoid` (4,638 spans);
      "separate administration" reads `adjust_dose`. Keep, or change?
    - Wilson lower bounds are below 90% at n = 50 (results record gate table): is a larger sample wanted?
@@ -61,7 +63,7 @@ run**: `test_suite_count.py` then fails two tests that are not real.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open
-from class profiles: #203, #204. From class mentions: #213–#218.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+from class profiles: #203, #204. From class mentions: #213–#218, #220–#222.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
 **#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #213/#214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve

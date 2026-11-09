@@ -1,11 +1,13 @@
 """Read side of class profiles: a thin Python reader over the class-profile views.
 
-The SQL views (db/059-db/065; db/062, db/064 and db/065 replace class_property,
+The SQL views (db/059-db/066; db/062, db/064 and db/065 replace class_property,
 db/063 class_property_member) are the consumer contract -- a prescribing front end reads
 them directly. This module only turns their rows into frozen dataclasses with NAMES
 instead of UUIDs so the `drugref profile` command can print them. All SQL lives here.
 
-Every tuple is sorted (by name, then relationship) so output and tests are stable.
+Every tuple is sorted so output and tests are stable: properties by name, then
+relationship; label statements strongest level first (then the all-clear, then
+not_read), then label count descending, then name.
 """
 import uuid
 from collections.abc import Mapping, Sequence
@@ -63,7 +65,7 @@ class LabelStatement:
     drug: str
     strongest_level: str     # contraindicated | avoid | adjust_dose | monitor | ...
     label_count: int
-    mixed: bool              # more than one strength level fired in a cited sentence
+    mixed: bool              # ANY reading (any label/scope) had >1 strength level
     ambiguous: bool          # the class name also matches another class
     subject_in_class: bool   # the drug is itself a member (a label on its own class)
     ruling: str | None       # live curated verdict for drug -> interacts_with -> class
@@ -222,11 +224,12 @@ def class_profile(conn: psycopg.Connection, class_uuid: uuid.UUID) -> ClassProfi
     subclass_only.sort(key=lambda e: (e.name, e.via))
 
     label_statements = tuple(sorted(
-        ((rank is None, rank or 0, -n, names[m],
+        # strength by rank; then no_meaningful_interaction; not_read last.
+        ((rank is None, rank or 0, lvl == "not_read", -n, names[m],
           LabelStatement(names[m], lvl, n, mixed, amb, own, ruling, k, sid, ver, q))
          for m, lvl, n, mixed, amb, own, ruling, rank, k, sid, ver, q in stmts),
-        key=lambda t: t[:4]))
-    label_statements = tuple(t[4] for t in label_statements)
+        key=lambda t: t[:5]))
+    label_statements = tuple(t[5] for t in label_statements)
 
     pecs: dict[str, list[PropertyLine]] = {}
     for mo, rel, kind, obj in pec:

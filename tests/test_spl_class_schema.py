@@ -152,14 +152,17 @@ def test_statement_views_group_by_subject_and_class(conn, world):
                    True, False, True)
 
 
-def test_nmi_beats_not_read_but_loses_to_strength(conn, world):
+def test_nmi_needs_every_row_and_loses_to_strength(conn, world):
     r, k, a, b = world
-    _occ(conn, r, k, level="not_read", rule=None)
     _occ(conn, r, k, start=30, end=40, level="no_meaningful_interaction", rule="n.x")
     _label(conn, r, b, "S1")
     q = "SELECT strongest_level FROM drugref.spl_class_statement"
     assert conn.execute(q).fetchone() == ("no_meaningful_interaction",)
-    # ... but any strength level outranks the all-clear.
+    # A not_read row may be a WITHHELD avoid/monitor: one all-clear must not
+    # outvote it, so the statement says not_read, never the all-clear.
+    _occ(conn, r, k, level="not_read", rule=None)
+    assert conn.execute(q).fetchone() == ("not_read",)
+    # ... and any strength level outranks both.
     _occ(conn, r, k, start=50, end=60, level="monitor", rule="monitor.x")
     assert conn.execute(q).fetchone() == ("monitor",)
 
@@ -201,9 +204,11 @@ def test_any_live_verdict_clears_the_worklist_and_supersession_keeps_it_cleared(
     assert conn.execute(q).fetchone() == (1,)
 
 
-def test_worklist_skips_nmi_and_not_read(conn, world):
+@pytest.mark.parametrize("level,rule", [("not_read", None),
+                                        ("no_meaningful_interaction", "n.x")])
+def test_worklist_skips_nmi_and_not_read(conn, world, level, rule):
     r, k, a, b = world
-    _occ(conn, r, k, level="not_read", rule=None)
+    _occ(conn, r, k, level=level, rule=rule)
     _label(conn, r, a, "S1")
     assert conn.execute(
         "SELECT count(*) FROM drugref.gap_unconfirmed_label_class_statement"

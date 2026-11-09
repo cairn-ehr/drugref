@@ -55,12 +55,17 @@ def render_class_profile(p: cpr.ClassProfile) -> list[str]:
 
 
 def _label_lines(s: cpr.LabelStatement) -> list[str]:
+    # §6.3: no_meaningful_interaction and not_read are listed but VISIBLY not an
+    # interaction, so neither is printed in the "label: <level>" form a strength uses.
     if s.strongest_level == "not_read":
-        # §6.3: visibly not an interaction -- the label names the class, nothing more.
-        return [f"    {s.drug}'s label mentions the class; advice not read "
-                f"({s.label_count} label(s))"]
-    line = (f"    {s.drug}'s label: {s.strongest_level} "
-            f"({s.level_labels} of {s.label_count} label(s))")
+        line = (f"    {s.drug}'s label mentions the class; advice not read "
+                f"({s.label_count} label(s))")
+    elif s.strongest_level == "no_meaningful_interaction":
+        line = (f"    {s.drug}'s label says no meaningful interaction "
+                f"({s.level_labels} of {s.label_count} label(s))")
+    else:
+        line = (f"    {s.drug}'s label: {s.strongest_level} "
+                f"({s.level_labels} of {s.label_count} label(s))")
     if s.mixed:
         line += "; mixed"
     if s.ambiguous:
@@ -69,6 +74,8 @@ def _label_lines(s: cpr.LabelStatement) -> list[str]:
         line += "; its own class"
     if s.ruling:
         line += f"; curator ruled: {s.ruling}"
+    if s.strongest_level == "not_read":
+        return [line]  # nothing was read, so there is no reading to cite
     cite = f"      cited: SPL set {s.cite_set_id} version {s.cite_version}"
     return [line, cite + (f': "{s.quote}"' if s.quote else "")]
 
