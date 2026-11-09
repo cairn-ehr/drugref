@@ -374,6 +374,8 @@ def test_apply_migrations_is_idempotent(conn):
         # grain) and the curator worklist for readings without a live ruling.
         "spl_class_occurrence", "spl_advice_level", "spl_class_statement_evidence",
         "spl_class_statement", "gap_unconfirmed_label_class_statement",
+        # db/067: allergy groups, their members, and the MeSH-placement ledger.
+        "allergy_group", "allergy_group_member", "allergy_mesh_placement",
     }
 
 
