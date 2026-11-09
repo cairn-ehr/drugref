@@ -17,10 +17,9 @@ pass is 19.3 GB long:
 **EVERY REFUSAL IN STEPS 1-4 HAPPENS BEFORE THE RUN ROW EXISTS**, which is
 stricter than `drugcentral_run`'s ordering and for the same reason it gives: a
 refusal must leave the database exactly as it was, and an `ingest_run` with
-`finished_at NULL` is not "exactly as it was". Here the scan is minutes long --
-2 min 09 s over 19.3 GB since issue 160 dropped it from 12 min 51 s; it read "tens
-of minutes" until that round and nobody updated it -- so a run row opened before it
-would sit unfinished for the whole of a pass that might yet refuse.
+`finished_at NULL` is not "exactly as it was". Here the scan takes minutes (2 min
+09 s over 19.3 GB since issue 160), so a run row opened before it would sit
+unfinished for the whole of a pass that might yet refuse.
 
 **THE CHECKS IN STEP 5 ARE DELIBERATELY AFTER IT**, and the claim above used to
 be written without that qualification, which made it false: `reconcile`,
@@ -58,8 +57,8 @@ import psycopg
 from drugref import (
     provenance, questions, registry_read, spl_class_evidence, spl_evidence)
 from drugref.ingest import (
-    spl, spl_checks, spl_dailymed, spl_match, spl_quote, spl_release, spl_suppress,
-    spl_subject,
+    spl, spl_checks, spl_dailymed, spl_match, spl_official_names, spl_quote,
+    spl_release, spl_suppress, spl_subject,
 )
 from drugref.ingest.checksum import checksum
 from drugref.ingest.spl_checks import (
@@ -86,13 +85,13 @@ WORDING_CHUNK = 2_000
 def build_vocabulary(
     names: Mapping[str, str], suppression_terms: Sequence[str] | None = None
 ) -> spl_match.Vocabulary:
-    """The matcher's vocabulary: every registry display name, plus suppression.
+    """The matcher's vocabulary: every name in `names`, plus suppression.
 
-    `names` is `display_name -> moiety_uuid`. The suppression vocabulary defaults
-    to the SHIPPED one, so an ingest that forgot to pass it gets the measured
-    behaviour rather than the naive one -- the baseline the 29,258-pair floor was
-    measured against includes suppression, and a run without it measures a
-    different corpus.
+    `names` is `match key -> moiety_uuid` (display names plus the official names
+    `spl_official_names` adopted, #213). Suppression defaults to the SHIPPED
+    list, so an ingest that forgot to pass it gets the measured behaviour rather
+    than the naive one -- the pair floor's baseline includes suppression, and a
+    run without it measures a different corpus.
 
     A registry name folding to no tokens is DROPPED rather than refused: a key of
     `()` would match at every position, and one unfortunate display name is not a
@@ -310,17 +309,20 @@ def ingest_spl(
             "subject through UNII and every occurrence through display_name, so "
             "against an empty registry it would publish nothing -- run `ingest "
             "unii` and `ingest chebi` first.")
-    vocab = build_vocabulary(names)
     say(f"  registry: {len(names):,} moiety names, {len(known_uniis):,} UNIIs")
+    # UNII_Names read ONCE: the drug pass adopts its names (#213), R19/P1 drops them.
+    official = (spl_class_evidence.read_official_name_rows(unii_names, known_uniis)
+                if unii_names else None)
+    adopted, adoption = spl_official_names.for_run(names, official, by_unii=known_uniis)
+    vocab = build_vocabulary(adopted)
+    say(f"  registry: {adoption}")
     # Classes: a 2nd statement (READ COMMITTED: maybe a later snapshot; nothing
     # writes either mid-ingest). Zero is legitimate; the CLI's class floor refuses.
     class_vocab, class_keys = spl_class_evidence.class_vocabulary_for_run(
-        conn, names, known_uniis, unii_names)
+        conn, names, None if official is None else {n for n, _ in official})
     say(f"  registry: {class_keys}")
-    # Reported rather than merely counted. A UNII two moieties claim resolves
-    # first-wins, so every subject derived from it names ONE of them and the
-    # other silently never appears -- `identity_claim` permits this by design, so
-    # the operator has to be able to see how often it happened.
+    # Reported, not merely counted: a UNII two moieties claim resolves first-wins,
+    # so the other silently never appears (`identity_claim` permits this by design).
     if registry.name_collisions or registry.unii_collisions:
         say(f"  registry collisions (first-wins): "
             f"{registry.name_collisions:,} display name(s), "
@@ -332,12 +334,10 @@ def ingest_spl(
     # far side of the DailyMed scan and the checksum. Measured 2026-09-01, that
     # window is ~50 s of `idle in transaction` -- the scan plus the 19.3 GB
     # checksum, not the whole run, and not the 262,032-record openFDA read, which
-    # happens above `load_registry`. (`open_run` DOES end this transaction:
-    # `provenance.open_run` commits, and says so. The rollback below is what makes
-    # the window ~0 rather than ~50 s; it is not what makes the window finite.)
-    # A connection holding a snapshot even that long:
-    # pins `xmin` database-wide, so autovacuum can reclaim nothing in ANY table
-    # for the duration, and where `idle_in_transaction_session_timeout` is set
+    # happens above `load_registry`. (`open_run` commits, so the window is finite
+    # anyway; this rollback makes it ~0 rather than ~50 s.) A snapshot held even
+    # that long pins `xmin` database-wide, so autovacuum can reclaim nothing in
+    # ANY table for the duration, and where `idle_in_transaction_session_timeout` is set
     # the backend is killed at the END of the most expensive step in the ingest.
     # Rolling back is safe and costs nothing -- the registry is already
     # materialised in Python above (`fetchall`), and `substance_moiety` rows are

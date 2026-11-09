@@ -199,6 +199,8 @@ def test_the_shipped_suppression_vocabulary_loads_and_is_not_empty():
     terms = spl_suppress.shipped_suppression_terms()
     assert "lead to" in terms
     assert "serotonin syndrome" in terms
+    # #213: 'secretin' became a key through its UNII official name.
+    assert "secretin stimulation" in terms
 
 
 # --------------------------------------------------------------------------

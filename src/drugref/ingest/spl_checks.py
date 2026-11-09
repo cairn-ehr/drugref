@@ -36,8 +36,13 @@ from drugref.ingest.counts import refuse_negative_counts
 #: a UNII drugref does not hold were filed as keyed by the probe's classifiers.
 #: This ingest scans both populations, and prints the actual figure so the
 #: difference is VISIBLE rather than absorbed.
-MEASURED_PAIR_FLOOR = 29_258
-MEASURED_NOVEL_FLOOR = 25_960
+#:
+#: RESTATED by #213 (2026-11-10) from the design round's 29,258 / 25,960 to what
+#: the shipped ingest measures once UNII official names are moiety keys
+#: (`spl_official_names`): 30,624 / 27,194, up from SPL run 17's 29,952 / 26,598
+#: on the same corpus. So a run that silently loses those names now refuses.
+MEASURED_PAIR_FLOOR = 30_624
+MEASURED_NOVEL_FLOOR = 27_194
 #: Class (span, class) rows SPL run 17 wrote on the 2026-08-22 corpus (227,990
 #: distinct spans). A floor like the two above: an empty class pass is
 #: self-consistent, and `register_from_gaps` would close every SPLCLASS: question.

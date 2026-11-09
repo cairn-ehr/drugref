@@ -35,3 +35,8 @@ serotonin syndrome
 serotonin reuptake
 serotonin release
 serotonin norepinephrine
+
+# 'secretin' (a key since #213 adopted UNII official names): 503 spans, 497
+# (98.8%) followed by 'stimulation' -- the Secretin Stimulation Test, a lab
+# test PPI labels warn about, not a co-prescribed drug.
+secretin stimulation

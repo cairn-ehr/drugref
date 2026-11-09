@@ -199,7 +199,15 @@ def test_a_names_file_yielding_no_official_name_for_held_uniis_is_refused(tmp_pa
     f = tmp_path / "UNII_Names.txt"
     f.write_text(_NAMES_HEADER + "WIDGETOL\tOF\tU1\tWIDGETOL\n")
     with pytest.raises(ValueError, match="0 official names"):
-        ce.read_official_names(f, {"U1"})
+        ce.read_official_name_rows(f, {"U1"})
+
+
+def test_official_name_rows_keep_each_names_unii():
+    """#213 needs the UNII too: the drug pass maps the name onto its moiety."""
+    lines = [_NAMES_HEADER, "ACETAMINOPHEN\tof\tU1\tX\n", "NIACIN\tof\tU2\tX\n",
+             "TYLENOL\tbn\tU1\tX\n"]
+    assert ce.official_name_rows(lines, {"U1", "U2"}) == [
+        ("ACETAMINOPHEN", "U1"), ("NIACIN", "U2")]
 
 
 def test_a_stray_quote_does_not_swallow_the_following_rows():
@@ -234,6 +242,6 @@ def test_class_vocabulary_without_unii_names_warns_that_p1_was_skipped():
         def execute(self, _sql):
             return []
 
-    _, keys = ce.class_vocabulary_for_run(_NoClasses(), [], [], None)
+    _, keys = ce.class_vocabulary_for_run(_NoClasses(), [], None)
     assert "WARNING" in str(keys) and "unii" in str(keys).lower()
     assert ce.ClassKeyCounts(0, [], []).official_names_skipped is False
