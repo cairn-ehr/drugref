@@ -376,6 +376,9 @@ def test_apply_migrations_is_idempotent(conn):
         "spl_class_statement", "gap_unconfirmed_label_class_statement",
         # db/067: allergy groups, their members, and the MeSH-placement ledger.
         "allergy_group", "allergy_group_member", "allergy_mesh_placement",
+        # db/068: the allergy fold (every composition component, NOT the
+        # active-only moiety_active_in_composite) that allergy_check reads.
+        "moiety_allergy_fold",
     }
 
 
