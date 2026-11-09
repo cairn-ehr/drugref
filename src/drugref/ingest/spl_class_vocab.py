@@ -57,7 +57,8 @@ EXCLUDED_CLASSES: frozenset[tuple[str, str, str]] = frozenset({
 
 
 def is_matchable(source: str, concept_type: str, class_name: str | None = None) -> bool:
-    """False for MED-RT's PK and APC axes, and for a class in `EXCLUDED_CLASSES`.
+    """False for MED-RT's PK and APC axes, allergy groups ('AG'), and for a class
+    in `EXCLUDED_CLASSES`.
 
     FDA-CYP is also 'PK' but is matched, hence the source check. PK is excluded
     because its names are ordinary English (#155). APC is excluded for the same
@@ -67,6 +68,9 @@ def is_matchable(source: str, concept_type: str, class_name: str | None = None) 
     pharmacologic-action name that IS matched. `class_name` is optional so an
     axis-level caller can still ask about the axis alone.
     """
+    # Allergy groups: drugref's own structural seeds, not a vocabulary labels write.
+    if concept_type == "AG":
+        return False
     if (source, concept_type, class_name) in EXCLUDED_CLASSES:
         return False
     return not (source == "MED-RT" and concept_type in ("PK", "APC"))

@@ -81,3 +81,9 @@ def test_the_one_named_exclusion_is_mesh_hormones():
     assert is_matchable("MeSH", "PA", "Hormone Antagonists")
     assert is_matchable("MED-RT", "EPC", "Hormones")
     assert is_matchable("MeSH", "PA")  # the name is optional for axis-only callers
+
+
+def test_an_allergy_group_is_not_matchable():
+    # 'AG' classes are drugref's own structural seeds, not a vocabulary labels write.
+    assert not is_matchable("DRUGREF-ALLERGY", "AG")
+    assert not is_matchable("DRUGREF-ALLERGY", "AG", "Penicillins (allergy group)")

@@ -5,10 +5,11 @@ fixtures, the shipped allow-list. The orchestrator commits, so every test starts
 from a TRUNCATE rather than relying on the conn fixture's rollback.
 """
 import pathlib
+import uuid
 
 import pytest
 
-from drugref import class_grain_read, claims, ids
+from drugref import class_grain_read, claims, ids, spl_class_evidence
 from drugref.ingest import mesh_run
 from tests import allergy_world as world
 from tests import class_profile_world as cpw
@@ -167,35 +168,76 @@ def test_coexists_with_mesh_run(conn, moieties):
     assert _counts(conn) == both
 
 
+# Readers spec 6 says must not move, chosen by name from the catalog so a new
+# view of these families is covered without editing this list.
+_READER_VIEWS_SQL = (
+    "SELECT table_name FROM information_schema.views WHERE table_schema = 'drugref' "
+    "AND (table_name LIKE 'gap\\_%' OR table_name LIKE 'class\\_%' "
+    "  OR table_name LIKE '%property%' OR table_name IN ('ci_class_subtree', "
+    "  'curated_ddi_pair', 'ddi_candidate_pair', 'expansion_policy_unresolved')) "
+    "ORDER BY 1")
+
+
 def _snapshot(conn):
-    """Every reader the spec says must not move (spec 6), as comparable values."""
-    views = [r[0] for r in conn.execute(
-        "SELECT table_name FROM information_schema.views WHERE table_schema = "
-        "'drugref' AND (table_name LIKE 'gap\\_%' OR table_name = 'ci_class_subtree')"
-    ).fetchall()]
-    assert "ci_class_subtree" in views and len(views) > 1
+    """{reader: its whole output, order-free} for every reader under test."""
+    views = [r[0] for r in conn.execute(_READER_VIEWS_SQL).fetchall()]
+    assert {"ci_class_subtree", "class_subtree", "class_property", "member_property",
+            "class_subclass_only_member", "class_pair_rule_reach", "curated_ddi_pair",
+            "ddi_candidate_pair", "expansion_policy_unresolved"} <= set(views)
     snap = {v: sorted(map(repr, conn.execute(f"SELECT * FROM drugref.{v}").fetchall()))
             for v in views}
     snap["class_grain_counts"] = class_grain_read.class_grain_counts(conn)
+    snap["spl_class_entries"] = sorted(
+        map(repr, spl_class_evidence.load_class_entries(conn)))
     return snap
 
 
-def test_existing_readers_unchanged(conn, moieties):
-    # A MED-RT world over the same moieties: a penicillin EPC under a parent, a
-    # contraindication against it, and an unclassified moiety (gap_unclassified).
+def _profile_world(conn, moieties):
+    """A MED-RT world over the allergy moieties, rich enough that every class-profile
+    reader has rows: an EPC (two direct members, both indicated for one condition)
+    under a MoA parent, a subclass-only member, a contraindication against the EPC,
+    a class-pair rule, and a CI_MoA rule with a has_MoA member."""
     r = cpw.run(conn, "MED-RT")
     epc = cpw.klass(conn, r, "Penicillin-class Antibacterial")
     top = cpw.klass(conn, r, "Antibacterial", concept_type="MoA")
+    sub = cpw.klass(conn, r, "Isoxazolyl Penicillin")
     cpw.parent(conn, r, epc, top)
-    cpw.member(conn, r, moieties["amoxicillin"], epc)
+    cpw.parent(conn, r, sub, epc)
+    infection = cpw.condition(conn, r, "Bacterial Infections")
+    for name in ("amoxicillin", "amoxicillin anhydrous"):
+        cpw.member(conn, r, moieties[name], epc)
+        cpw.indication(conn, r, moieties[name], infection)
+    cpw.member(conn, r, moieties["flucloxacillin"], sub)
     cpw.class_ci(conn, r, moieties["perindopril"], epc)
     cpw.class_pair_ci(conn, r, epc, top)
+    # A CI_MoA rule (raw and curated) against the MoA class, which has a has_MoA
+    # member: what ddi_candidate_pair and curated_ddi_pair expand.
+    cpw.member(conn, r, moieties["cephalexin"], top, "has_MoA")
+    cpw.class_ci(conn, r, moieties["perindopril"], top)
+    cpw.curated_ci(conn, moieties["perindopril"], top)
     conn.commit()
+
+
+def test_existing_readers_unchanged(conn, moieties):
+    _profile_world(conn, moieties)
     before, edges = _snapshot(conn), _counts(conn)
+    for reader in ("class_property", "member_property", "class_subclass_only_member",
+                   "class_subtree", "ci_class_subtree", "spl_class_entries",
+                   "class_pair_rule_reach", "curated_ddi_pair", "ddi_candidate_pair",
+                   "expansion_policy_unresolved"):
+        assert before[reader], f"{reader} is empty: the comparison would be vacuous"
 
     world.run_allergy_ingest(conn)
 
-    assert _snapshot(conn) == before
-    after = _counts(conn)
-    assert (after["class_membership"], after["class_parent"]) == \
+    after = _snapshot(conn)
+    # The ONE accepted delta: class_subtree (db/021) lists every class as its own
+    # root, so the AG class adds its self-row. An isolated root (no class_parent
+    # edges) reaches nothing, and its consumers join class_membership, which the
+    # allergy run never writes -- so no profile or expansion output can move.
+    pen = uuid.UUID(world.PENICILLINS_UUID)
+    assert after.pop("class_subtree") == sorted(
+        before.pop("class_subtree") + [repr((pen, pen))])
+    assert after == before
+    counts = _counts(conn)
+    assert (counts["class_membership"], counts["class_parent"]) == \
         (edges["class_membership"], edges["class_parent"])
