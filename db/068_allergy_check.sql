@@ -69,6 +69,7 @@ RETURNS TABLE (outcome              text,
                reason               text,
                group_class_uuid     uuid,
                group_name           text,
+               group_mesh_ui        text,
                review_status        text,
                allergen_component   uuid,
                prescribed_component uuid)
@@ -130,16 +131,16 @@ AS $$
         FROM facts
     )
     SELECT 'match', h.kind, NULL::text, h.class_uuid, sc.class_name,
-           ag.review_status, h.a_c, h.p_c
+           ag.mesh_root_ui, ag.review_status, h.a_c, h.p_c
     FROM hits h
     LEFT JOIN drugref.substance_class sc ON sc.class_uuid = h.class_uuid
     LEFT JOIN drugref.allergy_group  ag ON ag.class_uuid = h.class_uuid
     UNION ALL
     SELECT CASE WHEN v.reason IS NULL THEN 'no-match' ELSE 'unplaced' END,
-           NULL, v.reason, NULL, NULL, NULL, NULL, NULL
+           NULL, v.reason, NULL, NULL, NULL, NULL, NULL, NULL
     FROM verdict v
     WHERE NOT EXISTS (SELECT 1 FROM hits)
-    ORDER BY 2, 5, 7, 8
+    ORDER BY 2, 5, 8, 9
 $$;
 
 COMMENT ON FUNCTION drugref.allergy_check(uuid, uuid) IS
@@ -148,7 +149,8 @@ COMMENT ON FUNCTION drugref.allergy_check(uuid, uuid) IS
     'two: unplaced (with a reason: unknown-prescribed, unknown-allergen, '
     'allergen-not-a-group, allergen-in-no-group, prescribed-not-in-mesh) means '
     '"not checked" and must never be shown as safe. match rows (one per path) give '
-    'match_kind same-drug | same-group, the group and its review_status, and the '
+    'match_kind same-drug | same-group, the group (class_uuid, name, MeSH root UI) '
+    'and its review_status, and the '
     'fold components that matched on each side. Both sides are folded through '
     'moiety_allergy_fold (every composition component). KNOWN GAP: no '
     'penicillin-cephalosporin cross-allergy rule yet, so cephalexin vs penicillins '

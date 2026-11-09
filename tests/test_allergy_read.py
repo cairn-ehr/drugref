@@ -46,6 +46,11 @@ def _kinds(answer) -> set[str]:
 
 def test_case_a_perindopril(conn, m):
     assert allergy_read.check(conn, m["perindopril"], P).outcome == "no-match"
+    # The SQL no-match row carries no group: its group columns are NULL.
+    assert conn.execute(
+        "SELECT group_class_uuid, group_name, group_mesh_ui "
+        "FROM drugref.allergy_check(%s, %s)", (m["perindopril"], P)).fetchall() == \
+        [(None, None, None)]
 
 
 @pytest.mark.parametrize("name", ["amoxicillin", "amoxicillin anhydrous"])
@@ -53,6 +58,7 @@ def test_case_b_amoxicillin(conn, m, name):
     a = allergy_read.check(conn, m[name], P)
     assert a.outcome == "match" and _kinds(a) == {"same-group"}
     assert all(x.group_class_uuid == P for x in a.matches)
+    assert all(x.group_mesh_ui == "D010406" for x in a.matches)
 
 
 def test_case_c_cephalexin_known_gap(conn, m):
@@ -96,6 +102,9 @@ def test_procaine_partner(conn, m):
     assert all(x.allergen_component == m["procaine"] for x in a.matches)
     assert any(x.kind == "same-drug" and x.prescribed_component == m["procaine"]
                for x in a.matches)
+    # A same-drug row names no group: every group column is None.
+    assert all(x.group_mesh_ui is None and x.group_class_uuid is None
+               for x in a.matches if x.kind == "same-drug")
 
 
 def _non_ag_class(conn) -> uuid.UUID:

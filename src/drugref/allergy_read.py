@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass
 
 import psycopg
+from psycopg.rows import dict_row
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class AllergyMatch:
     kind: str                            # 'same-drug' | 'same-group'
     group_class_uuid: uuid.UUID | None   # None for same-drug
     group_name: str | None
+    group_mesh_ui: str | None            # the group's MeSH root, e.g. 'D010406'
     review_status: str | None            # 'structural-seed' | 'reviewed'
     allergen_component: uuid.UUID | None  # None when the allergen IS a group
     prescribed_component: uuid.UUID
@@ -39,6 +41,7 @@ class AllergyMatch:
 
 @dataclass(frozen=True)
 class AllergyAnswer:
+    """drugref.allergy_check's answer: one outcome, and every path when it matches."""
     outcome: str                         # 'match' | 'no-match' | 'unplaced'
     reason: str | None                   # set only for 'unplaced'
     matches: tuple[AllergyMatch, ...]    # empty unless outcome == 'match'
@@ -47,9 +50,17 @@ class AllergyAnswer:
 def check(conn: psycopg.Connection, prescribed: uuid.UUID,
           allergen: uuid.UUID) -> AllergyAnswer:
     """Ask drugref.allergy_check; every row it returns shares one outcome/reason."""
-    rows = conn.execute(
-        "SELECT outcome, reason, match_kind, group_class_uuid, group_name, "
-        "review_status, allergen_component, prescribed_component "
-        "FROM drugref.allergy_check(%s, %s)", (prescribed, allergen)).fetchall()
-    matches = tuple(AllergyMatch(*r[2:]) for r in rows if r[0] == "match")
-    return AllergyAnswer(outcome=rows[0][0], reason=rows[0][1], matches=matches)
+    # By column NAME (dict_row), so a column added to the function can never
+    # silently shift allergen_component into prescribed_component.
+    with conn.cursor(row_factory=dict_row) as cur:
+        rows = cur.execute("SELECT * FROM drugref.allergy_check(%s, %s)",
+                           (prescribed, allergen)).fetchall()
+    matches = tuple(
+        AllergyMatch(kind=r["match_kind"], group_class_uuid=r["group_class_uuid"],
+                     group_name=r["group_name"], group_mesh_ui=r["group_mesh_ui"],
+                     review_status=r["review_status"],
+                     allergen_component=r["allergen_component"],
+                     prescribed_component=r["prescribed_component"])
+        for r in rows if r["outcome"] == "match")
+    return AllergyAnswer(outcome=rows[0]["outcome"], reason=rows[0]["reason"],
+                         matches=matches)
