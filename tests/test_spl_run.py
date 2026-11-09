@@ -352,8 +352,8 @@ def test_a_class_key_that_is_a_unii_official_name_is_dropped_and_counted(
     """R19/P1 end to end: the class's stored key equals the official name of a UNII the
     registry holds, so it is a DRUG name (as 'Acetaminophen [EPC]' is) and is dropped.
     Since #213 the drug pass ADOPTS that same name, so 'rifampin inducers' now
-    resolves to the substance whose official name it is: the span count holds,
-    the pairs move (the next test pins the adoption itself)."""
+    resolves to the substance whose official name it is. Only the class side is
+    pinned here; the next test pins the adoption itself."""
     _seed_registry(conn)
     _seed_class(conn)
     text = _text_corpus(corpus)
@@ -378,9 +378,17 @@ def test_a_unii_official_name_becomes_a_moiety_key_for_the_drug_pass(
     names = tmp_path / "UNII_Names.txt"
     names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
                      f"BLEEDING\tof\t{sorted(_fixture_uniis())[0]}\tX\n")
+    # The occurrence must land on the UNII's OWN moiety, unambiguously: a key
+    # mapped to the wrong moiety, or a flagged span, would pass the counts alone.
+    owned = ("SELECT count(*) FROM drugref.spl_entity_occurrence o "
+             "  JOIN drugref.identity_claim c USING (moiety_uuid) "
+             " WHERE c.scheme = 'UNII' AND c.value = %s AND NOT o.match_ambiguous")
+    unii = sorted(_fixture_uniis())[0]
     without = _ingest(conn, corpus)
+    owned_without = conn.execute(owned, (unii,)).fetchone()[0]
     adopted = _ingest(conn, corpus, unii_names=names)
     assert adopted.occurrences == without.occurrences + 1
+    assert conn.execute(owned, (unii,)).fetchone()[0] == owned_without + 1
     assert adopted.pairs > without.pairs
 
 

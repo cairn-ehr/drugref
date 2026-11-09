@@ -95,8 +95,8 @@ def build_vocabulary(
 
     A registry name folding to no tokens is DROPPED rather than refused: a key of
     `()` would match at every position, and one unfortunate display name is not a
-    reason to refuse a whole release. It is counted by the caller through the
-    difference between `len(names)` and the vocabulary's size.
+    reason to refuse a whole release. Uncounted here (`spl_official_names`
+    counts its own as `unfoldable`).
     """
     terms = (spl_suppress.shipped_suppression_terms()
              if suppression_terms is None else tuple(suppression_terms))
@@ -250,7 +250,7 @@ def ingest_spl(
     `pair_floor` / `novel_floor` / `class_floor`, when given, assert the measured
     floor with `>=`: None here, `MEASURED_*_FLOOR` at the CLI (the production
     path), so a real run checks by default. `unii_names` (UNII_Names_*.txt,
-    required by the CLI) drives R19/P1; None skips P1, warned on "registry:".
+    required by the CLI) drives #213 adoption and R19/P1; None skips both, warned.
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # AUTOCOMMIT VOIDS EVERY GUARANTEE BELOW, AND POSTGRES ONLY WHISPERS ABOUT IT.

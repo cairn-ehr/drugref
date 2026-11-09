@@ -14,8 +14,10 @@ drugref names each moiety once, with its registry display name, which is usually
 matching those names. US labels use the USAN instead: *acetaminophen*, *rifampin*, *glyburide*, *albuterol*.
 
 Measured over the 27,406 distinct interaction wordings of the 2026-08-22 openFDA corpus, the drug pass never
-saw 13,693 *rifampin* spans, 6,588 *acetaminophen*, 2,440 *glyburide*, 1,135 *albuterol*, and so on: 35,901
-spans across 85 names. Rifampin is one of the strongest CYP3A4 inducers there is, so missing it is serious.
+saw 13,693 *rifampin* spans, 6,588 *acetaminophen*, 2,440 *glyburide*, 1,135 *albuterol*, and so on. Official
+names that are not display names account for 35,901 spans across 85 names. That total also counts names this
+decision keeps out (*glucose*, *secretin*) and salt names the pass already saw in part (*esomeprazole
+magnesium* as *esomeprazole*). Rifampin is one of the strongest CYP3A4 inducers there is, so missing it is serious.
 
 ## Decision
 
@@ -27,7 +29,7 @@ that substance's moiety**, with four rules:
 - a name two moieties claim is dropped. drugref never settles that kind of ambiguity by "first wins";
 - a short, reviewed exclusion list keeps out official names that are ordinary words in a label, each justified
   by a measured context distribution: *glucose* (blood glucose, glucose tests), *retinal* (the adjective), *pca*
-  (patient-controlled administration), *glycol* (the tail of *propylene glycol*);
+  (patient-controlled administration), *glycol* (ethylene glycol's official name, and in a label the tail of *polyethylene glycol*);
 - *secretin stimulation* is a suppression term: 497 of 503 *secretin* spans name the lab test.
 
 UNII_Names is FDA public-domain data, so this adds no licensing question. The ingest already reads the file for

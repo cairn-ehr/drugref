@@ -30,17 +30,17 @@ from drugref.ingest.counts import refuse_negative_counts
 #: THE MEASURED PAIR FLOOR, on the 2026-08-22 openFDA and 2026-08-21 DailyMed
 #: releases. **A FLOOR, NOT A TARGET, and the check asserts `>=`.**
 #:
-#: An ingest reproducing MORE is not failing: the measurement scanned only
-#: orphan-wording labels, so the 14,455 unkeyed labels sharing a keyed label's
-#: wording contributed no subject and therefore no pairs, and 200 labels carrying
-#: a UNII drugref does not hold were filed as keyed by the probe's classifiers.
-#: This ingest scans both populations, and prints the actual figure so the
-#: difference is VISIBLE rather than absorbed.
+#: An ingest reproducing MORE is not failing, and the run prints the actual
+#: figure so a rise is VISIBLE rather than absorbed. (The design round's lower
+#: probe figure scanned only orphan-wording labels; that is history now -- see
+#: RESTATED below.)
 #:
 #: RESTATED by #213 (2026-11-10) from the design round's 29,258 / 25,960 to what
 #: the shipped ingest measures once UNII official names are moiety keys
 #: (`spl_official_names`): 30,624 / 27,194, up from SPL run 17's 29,952 / 26,598
-#: on the same corpus. So a run that silently loses those names now refuses.
+#: on the same corpus. The floor is now the shipped ingest's own exact output,
+#: so it has NO headroom: a run that silently loses those names refuses, and so
+#: does any other drop on this corpus (re-measure, never lower it to pass).
 MEASURED_PAIR_FLOOR = 30_624
 MEASURED_NOVEL_FLOOR = 27_194
 #: Class (span, class) rows SPL run 17 wrote on the 2026-08-22 corpus (227,990

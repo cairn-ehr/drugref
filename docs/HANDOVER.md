@@ -22,7 +22,9 @@ by its UNII official names (*rifampin*, *acetaminophen*, *glyburide*, *albuterol
 file (`glucose`, `retinal`, `pca`, `glycol`) and a new suppression term `secretin stimulation`. Pairs 29,952 →
 **30,624**, novel 26,598 → **27,194**; floors restated. Account and traps: PROJECT-NOTES § "The US-label-spellings
 round"; decision record: [us-label-spellings](../docs-site/docs/decisions/us-label-spellings.md). Follow-up filed:
-**#226** (FDA-CYP / onchigh resolve by display name; `gate.py`'s 5-row hand crosswalk duplicates the rule).
+**#226** (FDA-CYP / onchigh resolve by display name; `gate.py`'s 5-row hand crosswalk duplicates the rule); from the
+PR review: **#228** (source_checksum omits UNII_Names + SPL data files), **#229** (adoption counts never stored),
+**#230** (adoption inherits `by_unii` first-wins on a colliding UNII). An exclusion matching nothing now warns.
 **`spl_run.py` is at exactly the 500-line cap**: do #216 (the split) before adding anything there.
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.

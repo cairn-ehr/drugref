@@ -17,9 +17,15 @@ THE RULES, each one tested in tests/test_spl_official_names.py:
   name stays the sole owner of its key. ('epinephrine' is an official name of
   the racemate's UNII; the registry names the L-isomer 'epinephrine'.)
 * A name two moieties claim is dropped -- ambiguity is never resolved by
-  "first wins" (`spl_match.Match.ambiguous`'s rule).
+  "first wins" (`spl_match.Match.ambiguous`'s rule). LIMIT: this sees moieties
+  through `by_unii`, which is itself first-wins when two moieties claim ONE UNII
+  (`registry_read.load_registry`; reported on the run's "registry collisions"
+  line, zero on the 2026-11-10 registry). Such a name follows the UNII's winner (#230).
 * A name in the shipped exclusion file is not adopted. Every line there carries
-  the measurement that justified it, as the suppression file does.
+  the measurement that justified it, as the suppression file does. An entry
+  that matched NO official name is listed (`unused_exclusions`) and warned: a
+  typo there would otherwise quietly re-admit the name it was meant to keep out,
+  and the `>=` pair floor cannot notice MORE pairs.
 
 PURE: the caller reads UNII_Names (`spl_class_evidence.read_official_name_rows`)
 and the registry; this module only decides.
@@ -54,6 +60,10 @@ class OfficialNameCounts(NamedTuple):
     excluded: list[str]
     #: True when no UNII names file was given, so nothing was adopted at all.
     skipped: bool = False
+    #: Official names folding to no tokens (e.g. punctuation only): never keys.
+    unfoldable: int = 0
+    #: Exclusion entries no official name folded onto (a typo, or a renamed name).
+    unused_exclusions: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         if self.skipped:
@@ -64,7 +74,11 @@ class OfficialNameCounts(NamedTuple):
                 f"{len(self.shadowed):,} shadowed by another moiety's name: "
                 f"{sorted(self.shadowed)[:12]}; {len(self.ambiguous):,} claimed "
                 f"by several moieties: {sorted(self.ambiguous)[:12]}; "
-                f"{len(self.excluded):,} excluded: {sorted(self.excluded)})")
+                f"{len(self.excluded):,} excluded: {sorted(self.excluded)}; "
+                f"{self.unfoldable:,} folding to no tokens)"
+                + (f"; WARNING: exclusion(s) matching no official name: "
+                   f"{sorted(self.unused_exclusions)}" if self.unused_exclusions
+                   else ""))
 
 
 def skipped() -> OfficialNameCounts:
@@ -93,13 +107,15 @@ def adopt(
     modified) and what happened to every name.
     """
     owner_of_key = {fold(name): uuid for name, uuid in names.items()}
-    excluded_keys = {fold(term) for term in excluded}
+    excluded_by_key = {fold(term): term for term in excluded}
     # Group by folded key first, so "two moieties claim it" is seen whole rather
     # than depending on which row came first.
     claims: dict[str, tuple[str, set[str]]] = {}
+    unfoldable = 0
     for name, unii in rows:
         key = fold(name)
         if not key:
+            unfoldable += 1
             continue
         _, moieties = claims.setdefault(key, (name, set()))
         moieties.add(by_unii[unii])
@@ -113,12 +129,15 @@ def adopt(
             already_named += 1
         elif owner is not None:
             shadowed.append(name)
-        elif key in excluded_keys:
+        elif key in excluded_by_key:
             dropped.append(name)
         elif len(moieties) > 1:
             ambiguous.append(name)
         else:
             merged[name] = next(iter(moieties))
             adopted.append(name)
+    unused = tuple(term for key, term in excluded_by_key.items()
+                   if key not in claims)
     return merged, OfficialNameCounts(adopted, already_named, shadowed,
-                                      ambiguous, dropped)
+                                      ambiguous, dropped, unfoldable=unfoldable,
+                                      unused_exclusions=unused)
