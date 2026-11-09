@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/allergy-groups` (from `main` after PR #219). PR not yet opened (the controller opens it after the
-final review). Schema now ends at `db/068`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
+**Branch `claude/allergy-groups` (from `main` after PR #219). PR #225 OPEN (to `main`). Schema now ends at
+`db/069`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
 **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, docs done): allergy groups.** A MeSH-seeded penicillin allergy group (83 moieties) behind a
@@ -84,7 +84,7 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_allergy` is this round's** — `createdb -T drugref_profiles`, migrated to `db/068`, allergy groups ingested
+- **`drugref_allergy` is this round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
   (MeSH 2026); never patch it. Test DB this branch: `drugref_test_allergy` (recreated by pytest). `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +
   `drugcentral` + `ingest spl`). **SPL run 17 is the shipped measurement**; it also carries an aborted run 9 and

@@ -20,7 +20,8 @@ Order:
   2. open the run; upsert each group's class row;
   3. clear this source's allergy tables (children first);
   4. write allergy_group, then members (MeSH-bridged, then allow-list includes),
-     then placement (every moiety MeSH knows at all, plus every member);
+     refusing a group left with no member at all, then placement (every moiety
+     MeSH knows at all, plus every member);
   5. finish the run and commit -- or roll back and re-raise.
 
 WORKLIST NUMBERS, NOT SILENT DROPS (mesh_run's posture): a group record that becomes
@@ -124,7 +125,7 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
         source_checksum=checksum(allow_list_path, desc_path, supp_path),
         writer=WRITER, clock=clock)
 
-    # 1. Class rows first: allergy_group references substance_class. The MeSH root
+    # Step 2. Class rows first: allergy_group references substance_class. The MeSH root
     #    UI is the identity key, so the class_uuid is stable across releases.
     uuid_by_root: dict[str, uuid.UUID] = {}
     for g in groups:
@@ -134,7 +135,7 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
         uuid_by_root[g.root_ui], _ = class_writer.upsert_class(
             conn, concept, run_id, SOURCE)
 
-    # 2. Drop this source's previous rows before writing this run's.
+    # Step 3. Drop this source's previous rows before writing this run's.
     db.clear_source_tables(conn, ALLERGY_TABLES, SOURCE)
 
     for g in groups:
@@ -145,11 +146,12 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
             (uuid_by_root[g.root_ui], g.root_ui, g.review_status, g.reviewed_by,
              g.reviewed_against, run_id))
 
-    # 3. Members, through mesh_run's two-key bridge (UNII-primary, CAS-fallback).
+    # Step 4a. Members, via mesh_run's two-key bridge (UNII-primary, CAS-fallback).
     unii_index = class_writer.moieties_by_scheme(conn, "UNII")
     cas_index = class_writer.moieties_by_scheme(conn, "CAS")
     members = members_no_key = members_key_not_in_registry = 0
     member_moieties: set[uuid.UUID] = set()
+    grouped: set[str] = set()                  # roots that got at least one member
     for m in parsed.members:
         if not m.keys.unii and not m.keys.cas:
             members_no_key += 1
@@ -162,6 +164,7 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
             members += _insert_member(conn, uuid_by_root[m.root_ui], moiety_uuid,
                                       m.via, None, run_id)
             member_moieties.add(moiety_uuid)
+            grouped.add(m.root_ui)
 
     # Includes resolve by UNII only: the allow-list names a moiety by its own UNII.
     unresolved: list[str] = []
@@ -175,9 +178,18 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
                                           f"include:{inc.ui_or_unii}", inc.reason,
                                           run_id)
                 member_moieties.add(moiety_uuid)
+                grouped.add(g.root_ui)
 
-    # 4. Placement: "does MeSH know this drug at all?" -- every moiety a keyed MeSH
-    #    record bridges to, record by record through the SAME two-key rule as
+    # An EMPTY group answers no-match for every placed drug (a missed allergy
+    # warning), so a group that bridged to no moiety at all is refused; the
+    # rollback keeps the previous build.
+    empty = sorted({g.root_ui for g in groups} - grouped)
+    if empty:
+        raise ValueError(f"allergy group(s) {', '.join(empty)} would have no member "
+                         "moiety (wrong root, or registry not yet seeded?)")
+
+    # Step 4b. Placement: "does MeSH know this drug at all?" -- every moiety a keyed
+    #    MeSH record bridges to, record by record through the SAME two-key rule as
     #    membership (a CAS is tried only when the record's UNIIs resolve nothing).
     placed = set(member_moieties)
     for keys in parsed.placement_keys:

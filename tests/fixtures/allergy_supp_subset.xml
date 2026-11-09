@@ -16,11 +16,6 @@
      <DescriptorUI>*D001561</DescriptorUI>
     </DescriptorReferredTo>
    </HeadingMappedTo>
-   <HeadingMappedTo>
-    <DescriptorReferredTo>
-     <DescriptorUI>D000894</DescriptorUI>
-    </DescriptorReferredTo>
-   </HeadingMappedTo>
   </HeadingMappedToList>
   <ConceptList>
    <Concept PreferredConceptYN="Y">
@@ -42,11 +37,6 @@
    <HeadingMappedTo>
     <DescriptorReferredTo>
      <DescriptorUI>*D010406</DescriptorUI>
-    </DescriptorReferredTo>
-   </HeadingMappedTo>
-   <HeadingMappedTo>
-    <DescriptorReferredTo>
-     <DescriptorUI>D000900</DescriptorUI>
     </DescriptorReferredTo>
    </HeadingMappedTo>
   </HeadingMappedToList>

@@ -130,6 +130,27 @@
   </ConceptList>
  </DescriptorRecord>
  <DescriptorRecord DescriptorClass="1">
+  <DescriptorUI>D001561</DescriptorUI>
+  <DescriptorName>
+   <String>Benzilates</String>
+  </DescriptorName>
+  <TreeNumberList>
+   <TreeNumber>D02.241.223.601.238.306</TreeNumber>
+   <TreeNumber>D02.241.511.085</TreeNumber>
+  </TreeNumberList>
+  <ConceptList>
+   <Concept PreferredConceptYN="Y">
+    <ConceptUI>MD001561</ConceptUI>
+    <ConceptName>
+     <String>Benzilates</String>
+    </ConceptName>
+    <RegistryNumberList>
+     <RegistryNumber>0</RegistryNumber>
+    </RegistryNumberList>
+   </Concept>
+  </ConceptList>
+ </DescriptorRecord>
+ <DescriptorRecord DescriptorClass="1">
   <DescriptorUI>D002506</DescriptorUI>
   <DescriptorName>
    <String>Cephalexin</String>

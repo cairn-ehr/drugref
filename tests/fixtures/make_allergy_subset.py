@@ -14,7 +14,10 @@ penicillin allergy group (spec 2026-11-08 section 4.2):
   * descriptors OUTSIDE the tree (perindopril, cephalexin, procaine) and one
     in-tree-by-name-only decoy (D000077725), kept so placement_keys has work to do;
   * SCRs: temocillin (maps into the tree), sulbactam pivoxyl (maps ONLY to the
-    excluded sulbactam), bevonium (maps outside the tree).
+    excluded sulbactam), bevonium (maps outside the tree);
+  * every descriptor a kept SCR's HeadingMappedTo names, added automatically:
+    the parser refuses an SCR whose heading is absent from the desc file (the
+    sign of desc and supp from different releases), so the subset must be closed.
 
 USAGE:  python tests/fixtures/make_allergy_subset.py <downloads_dir> [<out_dir>]
 Do not hand-edit the output files.
@@ -51,17 +54,7 @@ make_mesh_subset._HEADER = _HEADER
 
 
 def extract(dl: pathlib.Path):
-    descriptors = {}
-    for rec in _iter(_release_file(dl, "desc2026"), "DescriptorRecord"):
-        ui = rec.findtext("DescriptorUI")
-        if ui in KEEP_DESC:
-            descriptors[ui] = {
-                "name": rec.findtext("DescriptorName/String") or "",
-                "cls": rec.get("DescriptorClass", "1"),
-                "reg": _texts(rec, "RegistryNumber"),
-                "related": _texts(rec, "RelatedRegistryNumber"),
-                "trees": _texts(rec, "TreeNumber"),
-            }
+    # supp first: the kept SCRs' headings decide which extra descriptors to keep.
     scrs = {}
     for rec in _iter(_release_file(dl, "supp2026"), "SupplementalRecord"):
         ui = rec.findtext("SupplementalRecordUI")
@@ -70,10 +63,25 @@ def extract(dl: pathlib.Path):
                 "name": rec.findtext("SupplementalRecordName/String") or "",
                 "cls": rec.get("SCRClass", "1"),
                 "reg": _texts(rec, "RegistryNumber"),
-                # Copied verbatim, leading "*" included (the parser strips it).
-                "mapped": _texts(rec, "DescriptorUI"),
+                # HeadingMappedTo ONLY (IndexingInformation also holds DescriptorUIs),
+                # copied verbatim, leading "*" included (the parser strips it).
+                "mapped": [m for hm in rec.iter("HeadingMappedTo")
+                           for m in _texts(hm, "DescriptorUI")],
             }
-    missing = (KEEP_DESC - set(descriptors)) | (KEEP_SCR - set(scrs))
+    headings = {m.lstrip("*") for s in scrs.values() for m in s["mapped"]}
+    keep_desc = KEEP_DESC | headings
+    descriptors = {}
+    for rec in _iter(_release_file(dl, "desc2026"), "DescriptorRecord"):
+        ui = rec.findtext("DescriptorUI")
+        if ui in keep_desc:
+            descriptors[ui] = {
+                "name": rec.findtext("DescriptorName/String") or "",
+                "cls": rec.get("DescriptorClass", "1"),
+                "reg": _texts(rec, "RegistryNumber"),
+                "related": _texts(rec, "RelatedRegistryNumber"),
+                "trees": _texts(rec, "TreeNumber"),
+            }
+    missing = (keep_desc - set(descriptors)) | (KEEP_SCR - set(scrs))
     if missing:
         raise SystemExit(f"make_allergy_subset.py: not in release: {sorted(missing)}")
     return descriptors, scrs

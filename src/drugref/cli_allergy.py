@@ -3,13 +3,15 @@
 No SQL beyond a name lookup: the ingest is ingest/allergy_group_run and the check is
 allergy_read.check (a wrapper over the SQL function cairn-ehr calls directly).
 
-EXIT CODES of `allergy check`: 0 for `match` or `no-match`, 3 for `unplaced`, so a
-script can never mistake "not checked" for "no match" (a wrong no-match is a missed
-allergy warning).
+EXIT CODES of `allergy check`: 0 for `no-match`, 4 for `match`, 3 for `unplaced`, so
+a script can never mistake "not checked" or "allergy match" for "no match" (a wrong
+no-match is a missed allergy warning; `check && dispense` must stop on a match).
+1 and 2 stay what they mean everywhere else: an error, an argparse usage error.
 """
 import pathlib
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 
 from drugref import allergy_read, migration_guard
 from drugref.ingest import allergy_group_run
@@ -18,6 +20,7 @@ from drugref.ingest import allergy_group_run
 DEFAULT_ALLOW_LIST = (pathlib.Path(__file__).parent / "data" / "allergy_groups.toml")
 
 UNPLACED_EXIT = 3
+MATCH_EXIT = 4
 
 
 def _handle_ingest(conn, args) -> int:
@@ -25,8 +28,10 @@ def _handle_ingest(conn, args) -> int:
         summary = allergy_group_run.ingest_allergy_groups(
             conn, desc_path=args.desc, supp_path=args.supp,
             allow_list_path=args.allow_list, upstream_release=args.release)
-    except (OSError, ValueError, LookupError) as exc:
-        # Bad path or malformed input: an operator problem, one line, exit 1.
+    except (OSError, EOFError, ET.ParseError, ValueError) as exc:
+        # Bad path, truncated .gz (EOFError), malformed XML (ParseError) or a refused
+        # allow-list/release (ValueError): an operator problem, one line, exit 1.
+        # Nothing broader: a KeyError here is a bug and should show its traceback.
         print(f"drugref: allergy-groups ingest failed: {exc}", file=sys.stderr)
         return 1
     for field, value in vars(summary).items():
@@ -63,7 +68,7 @@ def _handle_check(conn, args) -> int:
     print(ans.outcome + (f"  ({ans.reason})" if ans.reason else ""))
     for m in ans.matches:
         print(render_match(conn, m))
-    return UNPLACED_EXIT if ans.outcome == "unplaced" else 0
+    return {"unplaced": UNPLACED_EXIT, "match": MATCH_EXIT}.get(ans.outcome, 0)
 
 
 def add_parser(sources) -> None:
@@ -88,7 +93,8 @@ def register(commands) -> None:
     allergy = commands.add_parser("allergy", help="allergy-group checks")
     sub = allergy.add_subparsers(dest="allergy_command", required=True)
     c = sub.add_parser("check", help="would PRESCRIBED trigger an ALLERGEN allergy? "
-                                     "(exit 3 = unplaced, i.e. not checked)")
+                                     "(exit 0 = no-match, 4 = match, "
+                                     "3 = unplaced, i.e. not checked)")
     c.add_argument("prescribed", type=uuid.UUID, metavar="PRESCRIBED_UUID")
     c.add_argument("allergen", type=uuid.UUID, metavar="ALLERGEN_UUID")
     c.set_defaults(handler=_handle_check)

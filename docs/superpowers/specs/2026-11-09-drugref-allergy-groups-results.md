@@ -10,6 +10,7 @@ A moiety that answers `unplaced` means *not checked*, never *safe*.
 
 `drugref_allergy` was made with `createdb -T drugref_profiles` (19,438 moieties, schema at `db/065`), so
 `drugref_profiles` itself stayed untouched. It was then migrated to `db/068` with `db.apply_migrations`.
+(`db/069`, a COMMENT-only rewording of `allergy_check`, was applied afterwards; no figure here moves.)
 
 | step | command | wall |
 |---|---|---|

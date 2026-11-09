@@ -84,10 +84,11 @@ def test_placement_covers_everything(parsed):
     # Amoxicillin's record keeps its CAS beside its UNIIs, not merged into a union.
     assert any({"804826J2HU", "9EM05410Q9"} <= k.unii and "26889-93-0" in k.cas
                for k in parsed.placement_keys)
-    # 14 desc + 3 SCR records, minus the 2 keyless ones (D010406, D002511).
+    # 15 desc + 3 SCR records, minus the 3 keyless ones (D010406, D002511 and
+    # D001561, bevonium's heading, kept so every SCR heading is in the desc file).
     assert len(parsed.placement_keys) == 15
     assert parsed.root_names["D010406"] == "Penicillins"
-    assert parsed.desc_records == 14 and parsed.scr_records == 3
+    assert parsed.desc_records == 15 and parsed.scr_records == 3
 
 
 @pytest.mark.parametrize("body, missing", [
@@ -105,11 +106,14 @@ def test_parse_refuses_a_ui_absent_from_the_release(tmp_path, body, missing):
 
 
 def _desc_xml(*recs):
-    """Minimal MeSH descriptor file: recs are (ui, tree, unii-or-None)."""
+    """Minimal MeSH descriptor file: recs are (ui, tree-or-trees, unii-or-None)."""
     body = "".join(
         f"<DescriptorRecord><DescriptorUI>{ui}</DescriptorUI>"
         f"<DescriptorName><String>n{ui}</String></DescriptorName>"
-        f"<TreeNumberList><TreeNumber>{tree}</TreeNumber></TreeNumberList>"
+        "<TreeNumberList>"
+        + "".join(f"<TreeNumber>{t}</TreeNumber>"
+                  for t in ((tree,) if isinstance(tree, str) else tree))
+        + "</TreeNumberList>"
         + (f"<ConceptList><Concept><RegistryNumber>{unii}</RegistryNumber></Concept>"
            "</ConceptList>" if unii else "") + "</DescriptorRecord>"
         for ui, tree, unii in recs)
@@ -127,4 +131,96 @@ def test_descriptor_strictly_below_an_excluded_one_is_not_member(tmp_path):
     a.write_text('[[group]]\nroot = "D000001"\nreview_status = "structural-seed"\n'
                  'exclude = [{ ui = "D000002", reason = "r" }]\n')
     got = parse(desc_path=d, supp_path=s, groups=load_allow_list(a))
+    assert _vias(got) == {"descriptor:D000001", "descriptor:D000004"}
+
+
+# --- Review round (PR #225): mistakes that used to pass silently ------------------
+
+@pytest.mark.parametrize("body", [
+    "",                                                   # zero groups: wipes them all
+    "[[groups]]\n" + _GOOD,                               # misspelt table: zero groups
+    "[[group]]\n" + _GOOD + 'exlude = [{ ui = "D013407", reason = "r" }]\n',
+    "[[group]]\n" + _GOOD + 'exclude = [{ ui = "D013407", reasn = "r" }]\n',
+    'title = "x"\n[[group]]\n' + _GOOD,                   # unknown top-level key
+])
+def test_load_allow_list_refuses_empty_or_unknown_keys(tmp_path, body):
+    # Each of these used to load as "no groups" or "no exclusions" and run to exit 0.
+    p = tmp_path / "a.toml"
+    p.write_text(body)
+    with pytest.raises(ValueError):
+        load_allow_list(p)
+
+
+@pytest.mark.parametrize("excluded", ["D010406",    # the root itself: empties the group
+                                      "D020913"])   # perindopril, outside: a no-op
+def test_parse_refuses_an_exclude_not_strictly_below_the_root(tmp_path, excluded):
+    p = tmp_path / "a.toml"
+    p.write_text("[[group]]\n" + _GOOD + f'exclude = [{{ ui = "{excluded}", '
+                 'reason = "r" }]\n')
+    with pytest.raises(ValueError, match=excluded):
+        parse(desc_path=FIX / "allergy_desc_subset.xml",
+              supp_path=FIX / "allergy_supp_subset.xml", groups=load_allow_list(p))
+
+
+def _supp_xml(*recs, ns=""):
+    """Minimal MeSH supp file: recs are (ui, heading UIs, unii, indexing UIs)."""
+    body = "".join(
+        f"<SupplementalRecord><SupplementalRecordUI>{ui}</SupplementalRecordUI>"
+        "<HeadingMappedToList>"
+        + "".join(f"<HeadingMappedTo><DescriptorReferredTo><DescriptorUI>{h}"
+                  "</DescriptorUI></DescriptorReferredTo></HeadingMappedTo>"
+                  for h in heads)
+        + "</HeadingMappedToList>"
+        + "".join(f"<IndexingInformationList><IndexingInformation><DescriptorReferredTo>"
+                  f"<DescriptorUI>{i}</DescriptorUI></DescriptorReferredTo>"
+                  "</IndexingInformation></IndexingInformationList>" for i in indexing)
+        + f"<ConceptList><Concept><RegistryNumber>{unii}</RegistryNumber></Concept>"
+        "</ConceptList></SupplementalRecord>"
+        for ui, heads, unii, indexing in recs)
+    return f'<SupplementalRecordSet{ns}>{body}</SupplementalRecordSet>'
+
+
+_TINY_DESC = (("D000001", "D01.1", None),             # the root
+              ("D000005", "D02.1", "CCCCCCCCCC"))     # outside the tree
+_TINY_ALLOW = '[[group]]\nroot = "D000001"\nreview_status = "structural-seed"\n'
+
+
+def _tiny(tmp_path, supp, desc=_TINY_DESC, allow=_TINY_ALLOW):
+    d, s, a = tmp_path / "d.xml", tmp_path / "s.xml", tmp_path / "a.toml"
+    d.write_text(_desc_xml(*desc))
+    s.write_text(supp)
+    a.write_text(allow)
+    return parse(desc_path=d, supp_path=s, groups=load_allow_list(a))
+
+
+def test_indexing_information_never_makes_an_scr_a_member(tmp_path):
+    # Mapped outside the tree, INDEXED against the root: placed, but not a member.
+    got = _tiny(tmp_path, _supp_xml(("C1", ["*D000005"], "DDDDDDDDDD", ["D000001"])))
+    assert "scr:C1" not in _vias(got)
+    assert any("DDDDDDDDDD" in k.unii for k in got.placement_keys)
+
+
+def test_scr_membership_survives_an_xml_namespace(tmp_path):
+    # iter_records/texts match on local names; the HeadingMappedTo walk must too, or
+    # a namespaced release would drop every SCR member (a missed allergy warning).
+    got = _tiny(tmp_path, _supp_xml(("C1", ["*D000001"], "DDDDDDDDDD", []),
+                                    ns=' xmlns="urn:example:mesh"'))
+    assert "scr:C1" in _vias(got)
+
+
+def test_parse_refuses_an_scr_heading_absent_from_the_desc_file(tmp_path):
+    # desc and supp from different releases: the SCR would be placed but could not
+    # be a member, answering no-match. A consistent release has none (MeSH 2026: 0).
+    with pytest.raises(ValueError, match="C1"):
+        _tiny(tmp_path, _supp_xml(("C1", ["*D009999"], "DDDDDDDDDD", [])))
+
+
+def test_descriptor_with_several_trees(tmp_path):
+    # Exclusion wins if ANY tree is under an excluded one; a tree elsewhere is harmless.
+    desc = (("D000001", "D01.1", None),
+            ("D000002", "D01.1.1", None),                         # excluded
+            ("D000003", ("D01.1.2", "D01.1.1.5"), "AAAAAAAAAA"),  # in AND under excluded
+            ("D000004", ("D01.1.3", "D09.9"), "BBBBBBBBBB"))      # in AND elsewhere
+    got = _tiny(tmp_path, "<SupplementalRecordSet/>", desc=desc,
+                allow=_TINY_ALLOW + 'exclude = [{ ui = "D000002", reason = "r" }]\n')
     assert _vias(got) == {"descriptor:D000001", "descriptor:D000004"}

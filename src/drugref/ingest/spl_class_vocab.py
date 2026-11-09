@@ -68,7 +68,8 @@ def is_matchable(source: str, concept_type: str, class_name: str | None = None) 
     pharmacologic-action name that IS matched. `class_name` is optional so an
     axis-level caller can still ask about the axis alone.
     """
-    # Allergy groups: drugref's own structural seeds, not a vocabulary labels write.
+    # Allergy groups are drugref's own structural seeds, not a vocabulary that label
+    # text is written in, so label text is never matched against them.
     if concept_type == "AG":
         return False
     if (source, concept_type, class_name) in EXCLUDED_CLASSES:

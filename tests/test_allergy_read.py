@@ -107,6 +107,17 @@ def test_procaine_partner(conn, m):
                for x in a.matches if x.kind == "same-drug")
 
 
+def test_composite_allergen_matches_through_its_component(conn, m):
+    # The ALLERGEN-side fold (rule 4b): a patient allergic to clemizole penicillin
+    # is prescribed amoxicillin. Clemizole penicillin is a member only through its
+    # penicillin g component (is_active_component false, folded anyway), so without
+    # the fold this is a missed warning.
+    a = allergy_read.check(conn, m["amoxicillin"], m["clemizole penicillin"])
+    assert a.outcome == "match" and "same-group" in _kinds(a)
+    assert any(x.kind == "same-group" and x.allergen_component == m["penicillin g"]
+               for x in a.matches)
+
+
 def _non_ag_class(conn) -> uuid.UUID:
     run_id = world._run(conn, "MeSH", "mesh_run")
     class_uuid, _ = upsert_class(

@@ -22,8 +22,9 @@ from drugref import db, server_messages
 def has_sc_penicillin_rxcuis(path) -> list[tuple[str, str]]:
     """(rxcui, name) for each RxNorm has_SC association whose target is 'Penicillins'.
 
-    Streams the file (iterparse, clearing each association) so the 45 MB release is
-    never held in memory.
+    iterparse, clearing each association as it goes. NOT constant-memory: the other
+    elements (concepts, namespaces) stay in the tree, which is fine for the 45 MB
+    MED-RT release this one-off tool reads.
     """
     found = []
     for _, el in ET.iterparse(path):
@@ -51,10 +52,20 @@ def _scalar(conn, sql, *args):
     return conn.execute(sql, args).fetchone()[0]
 
 
+def _penicillin_group(conn):
+    """The penicillin group's class_uuid, by its MeSH root (not "the first group":
+    the recall figures below are penicillin-specific)."""
+    row = conn.execute(
+        "SELECT class_uuid FROM drugref.allergy_group WHERE mesh_root_ui = 'D010406'"
+    ).fetchone()
+    if row is None:
+        raise SystemExit("no penicillin allergy group: run `drugref ingest "
+                         "allergy-groups` first")
+    return row[0]
+
+
 def report(conn, medrt_path) -> None:
-    group = _scalar(
-        conn, "SELECT class_uuid FROM drugref.allergy_group LIMIT 1"
-    )  # one group today
+    group = _penicillin_group(conn)
     n_members = _scalar(
         conn,
         "SELECT count(DISTINCT moiety_uuid) FROM drugref.allergy_group_member "
@@ -144,7 +155,7 @@ def timing(conn, n: int) -> None:
             "ORDER BY moiety_uuid LIMIT 50"
         )
     ]
-    group = _scalar(conn, "SELECT class_uuid FROM drugref.allergy_group LIMIT 1")
+    group = _penicillin_group(conn)
     calls = [
         (ms[i % len(ms)], group if i % 2 else ms[(i + 7) % len(ms)]) for i in range(n)
     ]

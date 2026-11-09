@@ -4,6 +4,7 @@ DB-gated; the ingest commits, so each test starts from a TRUNCATE (as
 test_allergy_group_run.py does).
 """
 import contextlib
+import gzip
 import uuid
 
 import pytest
@@ -45,6 +46,23 @@ def test_ingest_with_a_missing_file_exits_1(conn, capsys):
     assert "drugref:" in capsys.readouterr().err
 
 
+def test_ingest_with_a_malformed_xml_file_exits_1(conn, capsys, tmp_path):
+    # A truncated download raises xml ParseError (a SyntaxError, not a ValueError):
+    # the operator gets one line and exit 1, not a traceback; nothing is written.
+    bad = tmp_path / "half.xml"
+    bad.write_text("<DescriptorRecordSet><DescriptorRecord>")
+    assert cli.main(_ingest_argv(**{"--desc": str(bad)})) == 1
+    assert "allergy-groups ingest failed" in capsys.readouterr().err
+    assert conn.execute("SELECT count(*) FROM drugref.ingest_run").fetchone()[0] == 0
+
+
+def test_ingest_with_a_truncated_gz_exits_1(conn, tmp_path):
+    data = gzip.compress(w.DESC.read_bytes())
+    bad = tmp_path / "desc.xml.gz"
+    bad.write_bytes(data[: len(data) // 2])                  # EOFError mid-stream
+    assert cli.main(_ingest_argv(**{"--desc": str(bad)})) == 1
+
+
 def test_check_match_prints_group_and_component_names(conn, capsys):
     m = w.seed_moieties(conn)
     conn.commit()
@@ -52,7 +70,9 @@ def test_check_match_prints_group_and_component_names(conn, capsys):
     rc = cli.main(["--dsn", "x", "allergy", "check", str(m["flucloxacillin"]),
                    str(m["amoxicillin"])])
     out = capsys.readouterr().out
-    assert rc == 0
+    # A match must not share no-match's exit 0: `check && dispense` would treat an
+    # allergy match as safe.
+    assert rc == 4
     assert out.splitlines()[0] == "match"
     assert ("same-group  Penicillins (allergy group) [structural-seed] D010406  "
             "allergen:amoxicillin -> prescribed:flucloxacillin") in out

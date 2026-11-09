@@ -148,7 +148,7 @@ def registry_keys(values: Iterable[str]) -> tuple[set[str], set[str]]:
     return uniis, cas
 
 
-def _local(tag: str) -> str:
+def local_name(tag: str) -> str:
     """The local name of a (possibly namespaced) tag. MeSH ships without a
     namespace today, but stripping any prefix keeps the parser robust to one."""
     return tag.rsplit("}", 1)[-1]
@@ -193,7 +193,7 @@ def iter_records(path: StrPath, record_tag: str):
         context = ET.iterparse(fh, events=("start", "end"))
         _event, root = next(context)                   # grab the root to clear it
         for event, elem in context:
-            if event == "end" and _local(elem.tag) == record_tag:
+            if event == "end" and local_name(elem.tag) == record_tag:
                 yield elem
                 elem.clear()
                 root.clear()
@@ -202,13 +202,13 @@ def iter_records(path: StrPath, record_tag: str):
 def texts(record, tag: str) -> list[str]:
     """Every non-empty text of `tag` anywhere under a record (across its concepts)."""
     return [e.text.strip() for e in record.iter()
-            if _local(e.tag) == tag and e.text and e.text.strip()]
+            if local_name(e.tag) == tag and e.text and e.text.strip()]
 
 
 def findtext(record, tag: str) -> str:
     """The first non-empty text of `tag` under a record, or ''."""
     for e in record.iter():
-        if _local(e.tag) == tag and e.text and e.text.strip():
+        if local_name(e.tag) == tag and e.text and e.text.strip():
             return e.text.strip()
     return ""
 
@@ -242,7 +242,7 @@ def _parse_pa(pa_path: StrPath) -> tuple[dict[str, str], dict[str, list[str]], i
             continue
         class_name[dui] = findtext(pa, "String")      # DescriptorName is first String
         member_uis = [e.text.strip() for e in pa.iter()
-                      if _local(e.tag) == "RecordUI" and e.text and e.text.strip()]
+                      if local_name(e.tag) == "RecordUI" and e.text and e.text.strip()]
         members.setdefault(dui, []).extend(member_uis)
     return class_name, members, without_descriptor
 

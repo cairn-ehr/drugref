@@ -6028,7 +6028,7 @@ The same review FIXED in-PR: NMI no longer outvotes `not_read` in `spl_class_sta
 floor (`MEASURED_CLASS_FLOOR` = 304,682, gated by `--no-pair-floor`); `read_official_names` reads strictly
 (QUOTE_NONE, no `errors="replace"`) and refuses a file yielding 0 official names.
 
-## The allergy-groups round (2026-11-09) — `db/067`–`db/068`, measured on `drugref_allergy`
+## The allergy-groups round (2026-11-09) — `db/067`–`db/069`, measured on `drugref_allergy`
 
 **Every figure is in the [results record](superpowers/specs/2026-11-09-drugref-allergy-groups-results.md); the
 [design](superpowers/specs/2026-11-08-drugref-allergy-groups-design.md) is immutable.** The decision record:
@@ -6039,7 +6039,7 @@ cairn-ehr's allergy slice.
 `drugref.allergy_check(prescribed, allergen)` returning `match` / `no-match` / `unplaced` with a path. Code map:
 `db/067` (`allergy_group`, `allergy_group_member`, `allergy_mesh_placement`; source `DRUGREF-ALLERGY`, rebuilt per
 source, no `class_parent` edges and no `class_membership` rows; `class_subtree` does gain the group's self-row, which is inert because every view on it joins `class_membership`, so no walk reaches a member) · `db/068` (`moiety_allergy_fold`,
-`allergy_check`) · `src/drugref/ingest/allergy_groups.py` (pure MeSH parser + allow-list loader) ·
+`allergy_check`) · `db/069` (COMMENT-only rewording of `allergy_check`) · `src/drugref/ingest/allergy_groups.py` (pure MeSH parser + allow-list loader) ·
 `src/drugref/data/allergy_groups.toml` (the allow-list, `structural-seed`, not clinically reviewed) ·
 `ingest/allergy_group_run.py` (orchestrator, the only writer) · `allergy_read.py` · `cli_allergy.py`
 (`drugref ingest allergy-groups`, `drugref allergy check`) · `tools/allergy_group_measure.py`.
@@ -6051,6 +6051,17 @@ source, no `class_parent` edges and no `class_membership` rows; `class_subtree` 
 - **The fold ignores `is_active_component`** on purpose (clemizole penicillin marks penicillin G FALSE); the
   partner of a salt therefore also matches. `moiety_active_in_composite` is NOT the fold.
 - **Allow-list entries need a reason**; the loader refuses one without. An edit is a clinical decision.
+- **Every input mistake that could EMPTY or SHRINK a group is refused, not reported** (PR #225 review): a file with
+  no `[[group]]`, any unknown key (a misspelt `exclude` re-admits the inhibitors), an exclude not strictly below
+  its root (excluding the root empties the group; one outside the tree does nothing), an SCR whose
+  `HeadingMappedTo` names a descriptor absent from desc (mixed releases; MeSH 2026 has 0), and a group that
+  bridges to no moiety. An empty group would answer `no-match` for every placed drug.
+- **`drugref allergy check` exits 0 = no-match, 4 = match, 3 = unplaced** (1/2 = error/usage), so
+  `check && dispense` stops on a match.
+- **The penicillanic-acid exclusion is a subtree:** it also removes tazobactam and piperacillin/tazobactam
+  (`D000077725`); piperacillin stays in via `D010878`. Deleting that line re-admits both.
+- **`db/068`'s "DISTINCT" comment on the `hits` CTE is wrong**: there is no DISTINCT; `UNION` (not `UNION ALL`)
+  is what de-duplicates rows reached through several `via`s. The file is applied, so it stays as written.
 - The group's ancestors (beta-Lactams, Lactams) are never groups; Sulfonamides is not listed, deliberately.
 - Membership bridges by UNII, then CAS (+3 members, +807 placed); includes resolve by UNII only.
 
@@ -6329,7 +6340,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3226 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3245 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

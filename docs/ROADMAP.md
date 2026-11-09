@@ -1363,7 +1363,7 @@ member with nothing recorded is **not confirmed** — never "safe" — and becom
   level, always marked as label evidence and never as a confirmed property. Condition class properties are still
   observed until a curator confirms them.
 
-### Allergy groups ✅ BUILT AND MEASURED (2026-11-09) — `db/067`–`db/068`, on `drugref_allergy`
+### Allergy groups ✅ BUILT AND MEASURED (2026-11-09) — `db/067`–`db/069`, on `drugref_allergy`
 [Design](superpowers/specs/2026-11-08-drugref-allergy-groups-design.md) ·
 [What it measured](superpowers/specs/2026-11-09-drugref-allergy-groups-results.md); full account: PROJECT-NOTES
 § "The allergy-groups round". **Read the numbers there, not here.**

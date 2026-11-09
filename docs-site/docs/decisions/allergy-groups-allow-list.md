@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Last reviewed:** 2026-11-09
-**Applies to:** the allergy-groups slice -- `db/067`, `db/068`, `drugref.allergy_check`
+**Applies to:** the allergy-groups slice -- `db/067`, `db/068`, `db/069`, `drugref.allergy_check`
 **Full derivation:** the [allergy-groups design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-08-drugref-allergy-groups-design.md) and its [results record](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-09-drugref-allergy-groups-results.md)
 
 ## Context
@@ -22,8 +22,10 @@ the sulfa trap -- is not an allergy group however well MeSH places it. This roun
 (`D010406`), marked `structural-seed`: not clinically reviewed, and the read says so on every same-group match (a same-drug row carries a NULL `review_status`).
 
 **2. Exclusions and includes need a reason.** `exclude` removes a descriptor's whole subtree (sulbactam,
-tazobactam, penicillanic acid, and the amoxicillin/clavulanate combination `D019980`, so a mixture key can never pull clavulanate into the group; amoxicillin itself is reached via `D000658`); `include` adds a moiety MeSH carries no bridge key for (`piperacillin anhydrous`,
-`carbenicillin indanyl sodium`). Each entry carries a `reason`; the loader refuses an entry without one. An
+tazobactam, penicillanic acid -- whose subtree also holds tazobactam and the piperacillin/tazobactam combination
+`D000077725`, while piperacillin itself stays in via `D010878` -- and the amoxicillin/clavulanate combination `D019980`, so a mixture key can never pull clavulanate into the group; amoxicillin itself is reached via `D000658`); `include` adds a moiety MeSH carries no bridge key for (`piperacillin anhydrous`,
+`carbenicillin indanyl sodium`). Each entry carries a `reason`; the loader refuses an entry without one, any unknown key, a file with no group,
+and an exclude that is not strictly below its root. An
 edit to this file is a clinical decision, so it is reviewed as one.
 
 **3. The fold covers every component.** Before matching, a prescribed or recorded moiety is folded to every

@@ -109,6 +109,22 @@ def test_placement_is_unii_primary_per_record(conn, moieties):
     assert "cas-only test moiety" not in _placed(conn)
 
 
+def test_cas_fallback_makes_a_member_when_no_unii_resolves(conn):
+    # The other half of the two-key rule: with neither amoxicillin UNII in the
+    # registry, D000658's CAS 26889-93-0 is tried, and its holder joins the group.
+    world.seed_moieties(conn, [n for n in world.MOIETIES
+                               if not n.startswith("amoxicillin")])
+    run_id = conn.execute("SELECT max(ingest_run_id) FROM drugref.ingest_run"
+                          ).fetchone()[0]
+    cas_only = ids.mint_moiety_uuid("XXXXXXXXXX")
+    claims.upsert_moiety(conn, cas_only, "cas-only test moiety", run_id)
+    claims.add_claim(conn, cas_only, "CAS", "26889-93-0", run_id)
+    conn.commit()
+    world.run_allergy_ingest(conn)
+    assert _members(conn)["cas-only test moiety"] == {"descriptor:D000658"}
+    assert "cas-only test moiety" in _placed(conn)
+
+
 def test_unresolved_include_reported(conn, moieties, tmp_path):
     toml = tmp_path / "a.toml"
     toml.write_text(
@@ -260,4 +276,63 @@ def test_empty_mesh_file_is_refused_before_any_write(conn, moieties, tmp_path, e
 
 def test_summary_reports_the_record_counts(conn, moieties):
     s = world.run_allergy_ingest(conn)
-    assert (s.desc_records, s.scr_records) == (14, 3)
+    assert (s.desc_records, s.scr_records) == (15, 3)
+    # Worklist: the root D010406 is keyless; bevonium (C000002) maps outside the
+    # group, so nothing in the group fails to bridge to the seeded registry.
+    assert (s.members_no_key, s.members_key_not_in_registry) == (1, 0)
+
+
+def test_member_key_not_in_registry_is_counted(conn):
+    # Without flucloxacillin seeded, its descriptor's keys bridge to nothing.
+    world.seed_moieties(conn, [n for n in world.MOIETIES if n != "flucloxacillin"])
+    conn.commit()
+    assert world.run_allergy_ingest(conn).members_key_not_in_registry == 1
+
+
+def _member_rows(conn):
+    return sorted(conn.execute("SELECT class_uuid, moiety_uuid, via "
+                               "FROM drugref.allergy_group_member").fetchall())
+
+
+def test_a_failure_after_the_clear_keeps_the_previous_build(conn, moieties,
+                                                            monkeypatch):
+    # The clear and the rewrite share one transaction: a crash mid-write must roll
+    # back to the last good groups, not leave them half-deleted.
+    world.run_allergy_ingest(conn)
+    before, placed = _member_rows(conn), _placed(conn)
+    real, calls = allergy_group_run._insert_member, []
+
+    def flaky(*a):
+        calls.append(1)
+        if len(calls) == 3:
+            raise RuntimeError("boom")
+        return real(*a)
+
+    monkeypatch.setattr(allergy_group_run, "_insert_member", flaky)
+    with pytest.raises(RuntimeError):
+        world.run_allergy_ingest(conn, release="2026b")
+    assert (_member_rows(conn), _placed(conn)) == (before, placed)
+
+
+def test_a_group_with_no_member_rows_is_refused(conn, moieties, tmp_path):
+    # D001561's only record in the fixture is keyless and its one SCR (bevonium) is
+    # not seeded: the group would commit EMPTY, and an empty group answers no-match
+    # for every placed drug. Refuse it, and keep the previous build.
+    world.run_allergy_ingest(conn)
+    before = _member_rows(conn)
+    toml = tmp_path / "a.toml"
+    toml.write_text(world.SHIPPED_ALLOW_LIST.read_text()
+                    + '\n[[group]]\nroot = "D001561"\nreview_status = "structural-seed"\n')
+    with pytest.raises(ValueError, match="D001561"):
+        world.run_allergy_ingest(conn, allow_list_path=toml, release="2026b")
+    assert _member_rows(conn) == before
+
+
+def test_an_empty_allow_list_keeps_the_previous_build(conn, moieties, tmp_path):
+    world.run_allergy_ingest(conn)
+    before = _member_rows(conn)
+    toml = tmp_path / "a.toml"
+    toml.write_text("")
+    with pytest.raises(ValueError):
+        world.run_allergy_ingest(conn, allow_list_path=toml, release="2026b")
+    assert _member_rows(conn) == before
