@@ -76,7 +76,7 @@ class MeshSummary:
     pa_records_without_descriptor: int
 
 
-def _resolve_moieties(keys: mesh.MemberKeys, unii_index, cas_index) -> list[uuid.UUID]:
+def resolve_moieties(keys: mesh.MemberKeys, unii_index, cas_index) -> list[uuid.UUID]:
     """Resolve a member's keys to moieties: UNII-primary, CAS-fallback (spec §6/§C).
 
     UNII is drugref's own identity key (the moiety UUID derives from it), so a UNII
@@ -192,7 +192,7 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
         if not keys.unii and not keys.cas:
             members_no_key += 1                     # structurally unjoinable (§5.3)
             continue
-        moiety_uuids = _resolve_moieties(keys, unii_index, cas_index)
+        moiety_uuids = resolve_moieties(keys, unii_index, cas_index)
         if not moiety_uuids:
             members_key_not_in_registry += 1        # gated-out moiety (§5.3)
             continue

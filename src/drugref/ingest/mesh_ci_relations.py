@@ -73,7 +73,7 @@ def _resolve_object_moiety(record: mesh_concepts.MeshRecord, unii_index,
                            cas_index) -> uuid.UUID | None:
     """Resolve a MeSH record to a moiety: UNII-primary, CAS-fallback.
 
-    The same rule mesh_run._resolve_moieties applies, reduced to a single answer
+    The same rule mesh_run.resolve_moieties applies, reduced to a single answer
     because a contraindication names ONE partner drug. UNII is drugref's own identity
     key so it wins outright; CAS is tried only when no UNII resolved at all. Keys are
     set-valued (a record may carry several), and sorted iteration keeps the ingest

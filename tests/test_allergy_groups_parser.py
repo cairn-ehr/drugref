@@ -79,3 +79,17 @@ def test_placement_covers_everything(parsed):
             "S4TF6I2330", "SE10G96M8W"} <= parsed.placement_keys.unii
     assert parsed.root_names["D010406"] == "Penicillins"
     assert parsed.desc_records == 11 and parsed.scr_records == 3
+
+
+@pytest.mark.parametrize("body, missing", [
+    ('[[group]]\nroot = "D999999"\nreview_status = "structural-seed"\n', "D999999"),
+    ("[[group]]\n" + _GOOD + 'exclude = [{ ui = "D999998", reason = "typo" }]\n',
+     "D999998"),
+])
+def test_parse_refuses_a_ui_absent_from_the_release(tmp_path, body, missing):
+    # A typo'd exclusion must not silently admit the inhibitor it meant to remove.
+    p = tmp_path / "a.toml"
+    p.write_text(body)
+    with pytest.raises(ValueError, match=missing):
+        parse(desc_path=FIX / "allergy_desc_subset.xml",
+              supp_path=FIX / "allergy_supp_subset.xml", groups=load_allow_list(p))

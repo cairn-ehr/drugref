@@ -108,7 +108,8 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
     any HeadingMappedTo descriptor (leading "*" stripped) is IN.
 
     Two passes: desc is read whole first (a root may come after its descendants
-    in UI order), then supp is streamed.
+    in UI order), then supp is streamed. Raises ValueError if any group's root or
+    excluded UI is not a descriptor in the release.
     """
     desc: dict[str, tuple[str, tuple[str, ...], MemberKeys]] = {}
     for rec in iter_records(desc_path, "DescriptorRecord"):
@@ -116,6 +117,15 @@ def parse(*, desc_path: StrPath, supp_path: StrPath,
         desc[findtext(rec, "DescriptorUI")] = (
             findtext(rec, "String"), tuple(texts(rec, "TreeNumber")),
             MemberKeys(frozenset(unii), frozenset(cas)))
+
+    # Fail loudly: a root or exclude UI the release lacks would otherwise give an
+    # empty group, or -- worse -- a typo'd exclusion that silently admits an inhibitor.
+    missing = sorted({ui for g in groups
+                      for ui in (g.root_ui, *(e.ui_or_unii for e in g.exclude))
+                      if ui not in desc})
+    if missing:
+        raise ValueError("allergy allow-list names descriptor UI(s) absent from "
+                         f"the MeSH release: {', '.join(missing)}")
 
     members: list[GroupMemberKeys] = []
     in_group: dict[str, set[str]] = {}          # root_ui -> descriptor UIs in
