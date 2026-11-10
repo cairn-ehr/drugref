@@ -1,0 +1,33 @@
+# UNII official names (UNII_Names TYPE 'of') NOT adopted as SPL moiety match keys.
+#
+# SHIPPED SEED DATA for #213. Read by
+# drugref.ingest.spl_official_names.shipped_exclusions.
+#
+# Adopting official names is what lets the drug pass see 'rifampin' and
+# 'acetaminophen' (spl_official_names' docstring has the figures). A few official
+# names are also ordinary words in a label, and each of those would put a false
+# drug into thousands of pairs. Every line is justified by a MEASURED context
+# distribution over the 27,406 distinct section-34073-7 wordings of the
+# 2026-08-22 openFDA corpus (2026-11-10). "Spans" are the matcher's, the word
+# shares a context regex's (which also counts hyphenated forms).
+#
+# Unlike the suppression file, these names were never keys before #213, so
+# leaving one out keeps the measured behaviour rather than deleting a match.
+
+# 'glucose' (dextrose's official name): 5,929 spans in 2,921 wordings. Preceded
+# by 'blood' 2,702 of 6,255; followed by monitoring / -lowering / control /
+# tests / oxidase. A lab value and a glycaemic effect, almost never the drug.
+glucose
+
+# 'retinal' (retinaldehyde): 58 spans. Followed by ganglion / degeneration /
+# function / toxicity -- the adjective, every one.
+retinal
+
+# 'pca': 46 spans, all "(PCA)" for patient-controlled administration (tramadol).
+pca
+
+# 'glycol' (ethylene glycol's official name): 20 matcher spans. The word is
+# preceded by 'propylene' 127 of 152, but 'propylene glycol' is a display name
+# and the longer match already takes those; the 20 left are 'polyethylene' 20 --
+# the tail of another substance's name, mapped onto the wrong moiety.
+glycol

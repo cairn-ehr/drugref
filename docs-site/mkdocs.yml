@@ -77,6 +77,7 @@ nav:
       - A label naming two drugs is evidence, not an assertion: decisions/evidence-is-not-an-assertion.md
       - A bounded quoted window is bundled, not the section: decisions/bundling-a-quoted-window.md
       - An allergy group is an allow-listed root, never a structural class: decisions/allergy-groups-allow-list.md
+      - A drug is matched by its US label spelling too: decisions/us-label-spellings.md
   - Principles: principles/index.md
   - Data sources & licensing: sources/index.md
   - Roadmap: roadmap/index.md

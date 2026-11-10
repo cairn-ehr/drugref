@@ -1,7 +1,7 @@
 # A label naming two drugs is evidence, not an assertion that they interact
 
 **Status:** Active
-**Last reviewed:** 2026-11-08
+**Last reviewed:** 2026-11-10
 **Applies to:** `drugref.spl_ddi_evidence`, `drugref.spl_ddi_pair`,
 `drugref.spl_entity_occurrence` and `drugref.exact_ddi_pair` (`db/051`); the class-mention objects
 `drugref.spl_advice_level`, `drugref.spl_class_occurrence`, `drugref.spl_class_statement_evidence`,
@@ -16,7 +16,7 @@ produced](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/
 
 drugref's largest interaction source is **SPL section 34073-7 — DRUG INTERACTIONS**, the section every US
 prescription label carries. Read across the 2026-08-22 openFDA export, 68,550 labels carry it, and the
-moieties they name yield **29,952 distinct drug–drug pairs, 26,598 (88.8%) of which no other source drugref
+moieties they name yield **30,624 distinct drug–drug pairs, 27,194 (88.8%) of which no other source drugref
 holds mentions at all** — four times what DrugCentral's entire interaction slice contributed.
 
 That material is prose. A label writes sentences like *"concomitant use with strong CYP3A4 inhibitors is
@@ -95,14 +95,14 @@ holds the reasoning (where a later ruling revised the design's calls, the result
 ## Consequences
 
 **What it costs.** drugref cannot answer "how severe is this interaction?" from SPL, and a naive consumer who
-treats `spl_ddi_pair` as a warning list will over-warn: the 29,952 pairs include every drug a label mentions
+treats `spl_ddi_pair` as a warning list will over-warn: the 30,624 pairs include every drug a label mentions
 in order to say it is *safe* alongside. The view's name and its published comment both say so, and the
 evidence view exists precisely so a reader can go and look at the words.
 
 **What it buys.** Everything here is checkable. An occurrence is a character range in an identified wording;
 a reader can cut the span back out and disagree. Nothing in the tier depends on a model's reading of a
 sentence, so nothing has to be re-validated when a better model arrives — and the curated overlay, which is
-where clinical judgement legitimately lives, gains 26,598 candidate pairs to rule on that it did not have.
+where clinical judgement legitimately lives, gains 27,194 candidate pairs to rule on that it did not have.
 
 **What it commits us to.** Relation extraction between two **drugs** is not forbidden forever; it is forbidden
 *in ingest*. (Class advice levels are the one measured exception above.) If

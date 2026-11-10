@@ -89,3 +89,6 @@ history is never lost — it remains in the git log and in the dated design spec
   only a reviewed MeSH root is an allergy group (the sulfa trap), why every exclusion and include carries a
   reason, why the salt/ester fold covers every component, and why `no-match` is not "safe" for
   cross-reactivity (cefalexin answers `no-match`).
+- [A drug is matched by its US label spelling too](us-label-spellings.md) — why UNII official names
+  (*rifampin*, *acetaminophen*) are SPL match keys beside the registry's INN, why the registry name wins a
+  clash, and the measured reason four official names (*glucose*, *retinal*, *pca*, *glycol*) are excluded.

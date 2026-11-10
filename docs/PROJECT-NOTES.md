@@ -5994,7 +5994,8 @@ EVERY row for the (drug, class) is one (final review); any `not_read` row makes 
   are dropped (the drug pass owns those); matches on a non-drug head word are dropped; MeSH PA `Hormones` is excluded.
 - **Registry names vs US label spellings (#213).** The registry has no "acetaminophen" (or "nicotinic acid")
   display name, so removing the class `Acetaminophen [EPC]` leaves 6,588 spans that NEITHER pass matches. A gap in
-  the shipped drug grain, outside this round.
+  the shipped drug grain, outside this round. **Fixed by the US-label-spellings round** (UNII official names are
+  drug-pass keys); see that section.
 - **A withheld level must fall through, not stop the reader (R21)** — otherwise a heading block that
   cross-references Contraindications is shadowed by a withheld sentence reading.
 - **A mask can hide the thing it masks around (R24).** `_NOT_ADVICE` ("separate administration ... is not
@@ -6073,6 +6074,58 @@ allow-list so `structural-seed` can come off; MED-RT `has_SC` ingestion.
 **Databases.** `drugref_test_allergy` is this branch's test DB (recreated by pytest). **`drugref_allergy`** = a
 `createdb -T drugref_profiles` copy, migrated to `db/069` (a COMMENT-only wording fix; `db/068` was left untouched because the ledger refuses a changed checksum), allergy groups ingested (MeSH 2026); **never patch it**.
 `drugref_profiles` was left untouched at `db/065`.
+
+## The US-label-spellings round (#213, 2026-11-10) — no migration, measured on `drugref_usnames`
+
+**What it is.** The SPL drug pass now also matches each moiety by its **UNII official names** (UNII_Names
+`TYPE = of`, FDA public domain), so US label spellings reach the registry's INN-named moieties: *rifampin* →
+rifampicin, *acetaminophen* → paracetamol, *glyburide* → glibenclamide, *albuterol* → salbutamol. Decision
+record: [a drug is matched by its US label spelling too](../docs-site/docs/decisions/us-label-spellings.md).
+Code map: `src/drugref/ingest/spl_official_names.py` (pure: `adopt`, `for_run`, `shipped_exclusions`) ·
+`src/drugref/data/spl_official_name_exclusions.txt` (4 names, each with its measurement) ·
+`spl_class_evidence.official_name_rows` / `read_official_name_rows` (UNII_Names is read ONCE per ingest, for both
+passes; `class_vocabulary_for_run` now takes the names, not the path) · `spl_run` (a 4-line hook) · the
+suppression file gains `secretin stimulation`.
+
+**Figures (A/B on one database, same corpus, 2026-11-10).** `drugref_usnames` = `createdb -T drugref_allergy`
+(`db/069`, no SPL), then two full SPL ingests: adoption OFF (SPL run 11, a monkeypatched `for_run`; reproduces
+shipped run 17 exactly) and ON (SPL run 12, the shipped code). UNII_Names 26Feb2026: 17,208 official-name rows
+for held UNIIs → **1,630 adopted**, 15,560 already the display name, 12 shadowed by another moiety's display name
+(epinephrine, limonene, pantothenic acid …), 0 claimed by two moieties, 4 excluded.
+
+| | run 11 (off) | run 12 (on) |
+|---|---|---|
+| drug × drug pairs | 29,952 | **30,624** (+672) |
+| novel pairs | 26,598 | **27,194** (+596) |
+| moiety occurrences | 1,297,944 | 1,323,992 (+26,048) |
+| self-pair evidence rows excluded | 404,764 | 414,290 |
+| class (span, class) rows | 304,682 | 304,682 (unchanged) |
+
+Partners per moiety, run 17 → run 12 (they sum to exactly 2 × 672): rifampicin 143 → 500, paracetamol 97 → 203,
+glibenclamide 43 → 86, salbutamol 28 → 57, gold sodium thiomalate 0 → 29, niacin 71 → 96; **down**: sodium −23,
+magnesium −3 (false pairs, now consumed by *sodium aurothiomalate* / *esomeprazole magnesium*). Pre-ingest span
+counts per new key (matcher, 27,406 wordings): rifampin 13,693 · acetaminophen 6,588 · glucose 5,929 (excluded) ·
+glyburide 2,440 · esomeprazole magnesium 1,160 · albuterol 1,135 · carbidopa 867 · nicotinic acid 733 · sodium
+aurothiomalate 543 · secretin 503 (suppressed) — 35,901 spans over 85 keys. `MEASURED_PAIR_FLOOR` /
+`MEASURED_NOVEL_FLOOR` restated 29,258 / 25,960 → **30,624 / 27,194**.
+
+**Traps.**
+- **The net pair gain (+672) is small against +26,048 spans, and that is expected.** A rifampin label's own subject
+  already resolved by UNII, so rifampicin's pairs from its own label existed; the gain is other labels naming it.
+- **An official name equal to a class key now matters in BOTH passes**: R19/P1 drops it from the class vocabulary
+  and the drug pass adopts it. `test_a_class_key_that_is_a_unii_official_name_is_dropped_and_counted` therefore no
+  longer asserts unchanged pairs.
+- **`spl_run.py` sits at exactly the 500-line cap** after this round's prose trims; the next hook there needs #216
+  (the split) first.
+- **The exclusion list is not a stop-list in the suppression file's sense**: those names were never keys, so
+  leaving one out keeps the old behaviour. Adding one needs a measured context distribution in the file.
+- **Filed [#226](https://github.com/cairn-ehr/drugref/issues/226)**: FDA-CYP / onchigh resolve by display name
+  (same gap, unmeasured), and `gate.py`'s 5-row `usan_inn_crosswalk.tsv` is a second home for this rule.
+- Not checked: the 12 shadowed names' clinical meaning beyond epinephrine; the ~1,550 adopted keys with zero spans
+  in this corpus (they cost nothing until a label writes them).
+
+**Databases.** `drugref_usnames` carries SPL run 12 (the shipped measurement) and the `ingest_run` row of
+superseded run 11 (adoption off); **never patch it**. `drugref_test_usnames` is this branch's test DB (recreated by pytest).
 
 ## The standing open-issue ledger
 
@@ -6156,7 +6209,8 @@ left second — § "The fda_cyp.py split" — and `ingest/fda_cyp_run.py` third 
 splits". `curation.py` left last — § "The curation.py split" — so **#177 and #89 close on that PR's merge** and
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
-**Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
+**#213** (registry names miss US label spellings) **FIXED by the US-label-spellings round** (UNII official names as
+drug-pass keys, no migration; § "The US-label-spellings round"). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
 **#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
@@ -6340,7 +6394,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3245 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3263 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

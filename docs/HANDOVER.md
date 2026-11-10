@@ -13,18 +13,24 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/allergy-groups` (from `main` after PR #219). PR #225 OPEN (to `main`). Schema now ends at
-`db/069`.** The suite total lives in PROJECT-NOTES § "How to run / test" and
-**nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/registry-us-names` (from `main` after PR #225, which is MERGED). PR open to `main` for #213. Schema
+still ends at `db/069` (this round adds no migration).** The suite total lives in PROJECT-NOTES § "How to run /
+test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, docs done): allergy groups.** A MeSH-seeded penicillin allergy group (83 moieties) behind a
-reviewed allow-list, and the SQL read `drugref.allergy_check(prescribed, allergen)` that cairn-ehr's allergy slice
-will call. Figures: [results record](superpowers/specs/2026-11-09-drugref-allergy-groups-results.md); account and
-traps: PROJECT-NOTES § "The allergy-groups round"; decision record:
-[allow-listed root](../docs-site/docs/decisions/allergy-groups-allow-list.md). Commands:
-`drugref ingest allergy-groups --release 2026 --desc ... --supp ...`, `drugref allergy check PRESCRIBED ALLERGEN`.
+**⇒ THIS ROUND (built, measured, docs done): #213, US label spellings.** The SPL drug pass also matches each moiety
+by its UNII official names (*rifampin*, *acetaminophen*, *glyburide*, *albuterol* …), with a measured 4-name exclusion
+file (`glucose`, `retinal`, `pca`, `glycol`) and a new suppression term `secretin stimulation`. Pairs 29,952 →
+**30,624**, novel 26,598 → **27,194**; floors restated. Account and traps: PROJECT-NOTES § "The US-label-spellings
+round"; decision record: [us-label-spellings](../docs-site/docs/decisions/us-label-spellings.md). Follow-up filed:
+**#226** (FDA-CYP / onchigh resolve by display name; `gate.py`'s 5-row hand crosswalk duplicates the rule); from the
+PR review: **#228** (source_checksum omits UNII_Names + SPL data files), **#229** (adoption counts never stored),
+**#230** (adoption inherits `by_unii` first-wins on a colliding UNII). An exclusion matching nothing now warns.
+**`spl_run.py` is at exactly the 500-line cap**: do #216 (the split) before adding anything there.
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
+
+**⇒ OWNER, from this round:** glance at the exclusion list and the 12 shadowed names (PROJECT-NOTES section);
+both are precision calls made on measured contexts, not clinical review.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
@@ -57,8 +63,8 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **#213 (high value)**: add acetaminophen / nicotinic acid display names to the registry; the drug pass misses
-   6,588 acetaminophen spans in the shipped drug grain. Then **#214** (class-hygiene candidates: `Electrolyte
+6. **#226** (measure FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand
+   crosswalk). Then **#214** (class-hygiene candidates: `Electrolyte
    [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
    avoid phrasing) and **#215** (store the class-pass drop counts per run).
    **#218** (latent: the negation mask can still hide "contraindicated" in glued cells such as "Do not use
@@ -72,9 +78,10 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **Open from allergy groups: #223.** **Open
-from class profiles: #203, #204. From class mentions: #213–#218, #220–#222.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
-**#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #213/#214); **#67** (salt↔base)
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#213 fixed this
+round (closes on merge); #226 filed.** **Open from allergy groups: #223.** **Open
+from class profiles: #203, #204. From class mentions: #214–#218, #220–#222.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
+**#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
 #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -84,8 +91,11 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_allergy` is this round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
-  (MeSH 2026); never patch it. Test DB this branch: `drugref_test_allergy` (recreated by pytest). `drugref_profiles` untouched at `db/065`.
+- **`drugref_usnames` is this round's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
+  (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it. Test DB this branch:
+  `drugref_test_usnames` (recreated by pytest).
+- **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
+  (MeSH 2026); never patch it. Its test DB: `drugref_test_allergy`. `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +
   `drugcentral` + `ingest spl`). **SPL run 17 is the shipped measurement**; it also carries an aborted run 9 and
   superseded runs 10-16. **Never patch it**; census: `uv run python -m tools.spl_class_census --dsn ... --openfda downloads/OPENFDA`.

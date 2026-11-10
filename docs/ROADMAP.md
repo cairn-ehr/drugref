@@ -860,8 +860,8 @@ findings the next round inherits:
   29,952 / 26,598). PROJECT-NOTES § "The SPL class-mentions round".
   **Withheld, by the owner's 90% gate:** sentence-scope `avoid` and `monitor` (they ship only from
   row / heading blocks); `no_meaningful_interaction` ships **empty** (only closed templates may read it).
-  **Next:** the owner's clinical read of the precision sample; #213 (the registry lacks acetaminophen and nicotinic
-  acid display names, so the drug pass misses those spans), #214 (further class-hygiene candidates), #215 (class-pass
+  **Next:** the owner's clinical read of the precision sample; ~~#213~~ (**done 2026-11-10**: UNII official names
+  are drug-pass keys, pairs 29,952 → 30,624; PROJECT-NOTES § "The US-label-spellings round"), #214 (further class-hygiene candidates), #215 (class-pass
   drop counts are not stored per run). Class mentions now FEED class profiles ("What labels say about this class").
 - **The end-to-end fixture could not see a wrong quote budget** until a wording where the budget BINDS was added
   — db/050's vacuous-guard finding, recurring inside the round that quotes db/050 about it.
@@ -1378,6 +1378,14 @@ allergen)` (`match` / `no-match` / `unplaced`, with the path). Unblocks cairn-eh
   needs [#223](https://github.com/cairn-ehr/drugref/issues/223) (the registry lacks MED-RT's RxCUIs for
   ampicillin, amoxicillin, nafcillin sodium and Penicillin); (4) more groups (each needs an allow-list entry).
   Deferred minors of the round: [#224](https://github.com/cairn-ehr/drugref/issues/224).
+
+### US label spellings (#213) ✅ BUILT AND MEASURED (2026-11-10) — no migration, on `drugref_usnames`
+The SPL drug pass also matches each moiety by its UNII official names (*rifampin*, *acetaminophen*, *glyburide*,
+*albuterol*), with a measured four-name exclusion list. Drug × drug pairs 29,952 → 30,624, novel 26,598 → 27,194;
+the pair floors were restated. Decision record: `docs-site/docs/decisions/us-label-spellings.md`; figures and traps:
+PROJECT-NOTES § "The US-label-spellings round". **Follow-ups**: [#226](https://github.com/cairn-ehr/drugref/issues/226) (FDA-CYP and onchigh resolve by
+display name and may have the same INN/USAN gap, unmeasured; `gate.py`'s 5-row hand crosswalk duplicates the rule);
+#216 (split `spl_run.py`, now at the cap).
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

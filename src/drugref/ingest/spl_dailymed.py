@@ -394,7 +394,7 @@ def subject_uniis(
     against zero on the openFDA arm it was compared with. That alone published
     31,618 pairs where this rule gave 29,258 in the same comparison. Both are
     figures from that one measurement, not standing yields -- the shipped ingest
-    publishes 29,952; `spl_checks.MEASURED_PAIR_FLOOR` is the only home for the
+    publishes more; `spl_checks.MEASURED_PAIR_FLOOR` is the only home for the
     number anything asserts.
     """
     if any(unii in known_uniis for unii in found.moiety_uniis):

@@ -1,7 +1,7 @@
 """Class-mention evidence for SPL labels: the vocabulary, and one row per mention.
 
 The class twin of the moiety pass. Pure except `load_class_entries` (one read-only
-query) and `read_official_names` (one file read); the writer lives in `spl_evidence`
+query) and `read_official_name_rows` (one file read); the writer lives in `spl_evidence`
 and the orchestrator owns the transaction.
 
 Everything produced here is MACHINE-READ and NOT CONFIRMED: the advice level is a
@@ -90,7 +90,7 @@ def split_shadowed_keys(
     return kept, dropped
 
 
-#: The UNII_Names columns `official_names` reads; a file without them (UNII_Records
+#: The UNII_Names columns `official_name_rows` reads; a file without them (UNII_Records
 #: sits right beside it) is refused rather than read as "no names".
 _NAMES_COLUMNS = ("Name", "TYPE", "UNII")
 #: UNII_Names' TYPE for an OFFICIAL name (USAN, INN, BAN ...). Only this type: the
@@ -98,14 +98,14 @@ _NAMES_COLUMNS = ("Name", "TYPE", "UNII")
 OFFICIAL_NAME_TYPE = "of"
 
 
-def official_names(lines: Iterable[str], held_uniis: Collection[str]) -> set[str]:
-    """Official names (TYPE 'of') of the substances whose UNII the registry holds.
+def official_name_rows(lines: Iterable[str],
+                       held_uniis: Collection[str]) -> list[tuple[str, str]]:
+    """(name, UNII) for the official names (TYPE 'of') of UNIIs the registry holds.
 
-    Why (R19/P1): 'Acetaminophen [EPC]' keyed as 'Acetaminophen' marks every
-    mention of the DRUG paracetamol, but the registry names that moiety only
-    'paracetamol', so R16(b)'s display-name check cannot see it. 'acetaminophen'
-    is the substance's US official name, which UNII_Names carries. Pure: `lines`
-    is the file's text, header first.
+    Two readers: R19/P1 below wants the names alone (`spl_run` takes the set of
+    the first column); the drug
+    pass (`spl_official_names`, #213) wants each name's UNII, to adopt it as a
+    match key for that UNII's moiety. Pure: `lines` is the file's text, header first.
     """
     # QUOTE_NONE, as ingest/unii.py: the file has no quoting convention, so a
     # leading '"' would otherwise swallow every following row into one field.
@@ -115,27 +115,28 @@ def official_names(lines: Iterable[str], held_uniis: Collection[str]) -> set[str
         raise ValueError(
             f"UNII names file lacks column(s) {missing} (has {reader.fieldnames}): "
             "is this UNII_Records rather than UNII_Names?")
-    return {row["Name"] for row in reader
-            if row["TYPE"] == OFFICIAL_NAME_TYPE and row["UNII"] in held_uniis}
+    return [(row["Name"], row["UNII"]) for row in reader
+            if row["TYPE"] == OFFICIAL_NAME_TYPE and row["UNII"] in held_uniis]
 
 
-def read_official_names(path: str | pathlib.Path,
-                        held_uniis: Collection[str]) -> set[str]:
-    """`official_names` over a UNII_Names_*.txt file (streamed, never held whole).
+def read_official_name_rows(path: str | pathlib.Path,
+                            held_uniis: Collection[str]) -> list[tuple[str, str]]:
+    """`official_name_rows` over a UNII_Names_*.txt file (streamed, never held whole).
 
-    Read strictly (as ingest/unii.py reads the same release): a decoding error
-    raises rather than becoming names that silently match nothing. A file with the
-    right columns that yields NO official name for a non-empty registry raises
-    too, because R19/P1 would then be skipped with no warning at all.
+    Read ONCE per ingest and handed to both passes. Read strictly (as
+    ingest/unii.py reads the same release): a decoding error raises rather than
+    becoming names that silently match nothing. A file with the right columns
+    that yields NO official name for a non-empty registry raises too, because
+    R19/P1 and #213 would then be skipped with no warning at all.
     """
     with open(path, encoding="utf-8", newline="") as f:
-        names = official_names(f, held_uniis)
-    if held_uniis and not names:
+        rows = official_name_rows(f, held_uniis)
+    if held_uniis and not rows:
         raise ValueError(
             f"{path}: 0 official names (TYPE {OFFICIAL_NAME_TYPE!r}) for the "
             f"{len(held_uniis):,} UNIIs the registry holds -- has the release "
             "changed its TYPE codes or UNII format?")
-    return names
+    return rows
 
 
 class ClassKeyCounts(NamedTuple):
@@ -172,8 +173,11 @@ def drop_shadowed_class_keys(
     """R16(b) then R19/P1, per KEY: a plural that is not itself a name survives.
 
     The two are counted apart because they fail differently: a moiety-name key is a
-    mention the moiety pass already owns; an official-name key is a drug the moiety
-    pass may not see at all (the registry holds no 'acetaminophen').
+    mention the moiety pass already owns; an official-name key is a drug name
+    whether or not the moiety pass adopted it (#213 drops shadowed, ambiguous and
+    excluded official names; R19/P1 still drops every one). Why: 'Acetaminophen
+    [EPC]' keyed as 'Acetaminophen' marks every mention of the DRUG paracetamol,
+    which R16(b)'s display-name check cannot see.
     """
     kept, by_moiety = split_shadowed_keys(entries, moiety_names)
     kept, by_official = split_shadowed_keys(kept, official_names)
@@ -182,18 +186,20 @@ def drop_shadowed_class_keys(
 
 def class_vocabulary_for_run(
     conn: psycopg.Connection, moiety_names: Iterable[str],
-    held_uniis: Collection[str], unii_names: str | pathlib.Path | None,
+    official: Iterable[str] | None,
 ) -> tuple[spl_match.Vocabulary, ClassKeyCounts]:
     """The class vocabulary an ingest run matches with, and what was dropped.
 
-    One call, so `spl_run` (at its size budget) stays a thin hook. `unii_names`
-    None skips P1 (the CLI requires the file; the count then says 0 and the
-    returned counts carry `official_names_skipped`, whose `str` warns).
+    One call, so `spl_run` (at its size budget) stays a thin hook. `official` is
+    the run's official names (the name column of `read_official_name_rows`);
+    None means no UNII names file, which skips P1 (the CLI requires the file;
+    the count then says 0 and the returned counts carry `official_names_skipped`,
+    whose `str` warns).
     """
-    names = read_official_names(unii_names, held_uniis) if unii_names else set()
     kept, counts = drop_shadowed_class_keys(
-        load_class_entries(conn), moiety_names=moiety_names, official_names=names)
-    skipped = not unii_names
+        load_class_entries(conn), moiety_names=moiety_names,
+        official_names=official or ())
+    skipped = official is None
     return class_vocabulary(kept), counts._replace(official_names_skipped=skipped)
 
 
