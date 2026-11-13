@@ -1397,8 +1397,8 @@ find their moieties. #230 is fixed with it: a name of a UNII two moieties claim 
 terms (public domain, already on disk), search-only, keeping every moiety a name points to (research: the #231
 comment of that date). `drugref ingest mesh-synonyms` stores 18,692 terms in `moiety_mesh_synonym`, linked by each
 preferred concept's own UNII; the view shows 10,700 new `mesh_synonym` names on 5,348 moieties, and none points at
-two moieties. All four names above now find their moiety. **Open, owner's call**: whether to filter the ~1,800
-long chemical names (correct, but noise in a picker). PROJECT-NOTES § "The moiety-names round" and § "The
+two moieties. All four names above now find their moiety. Owner (2026-11-14): the ~1,800 long chemical names stay
+unfiltered for now, and the 13 salt/base cross-matches (#67) stay. PROJECT-NOTES § "The moiety-names round" and § "The
 MeSH-synonyms round".
 
 ### Slice 6 — HTTP public API

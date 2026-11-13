@@ -6240,10 +6240,11 @@ moiety's display or official name and are hidden. Word-start match, display name
   `drugref status`'s stale-names note now covers both runs (`_stale_names_note`).
 - **13 synonyms equal ANOTHER moiety's display name**, all salt/base or isomer splits (#67): MeSH's *Codeine*
   carries the UNII the registry calls *codeine anhydrous*, while a separate moiety is displayed *codeine*. Kept
-  (search shows both); a shadow rule like the official names' would hide the right answer as often as the wrong.
+  (search shows both; **owner confirmed 2026-11-14**); a shadow rule like the official names' would hide the right
+  answer as often as the wrong.
 - **~1,800 synonyms are long chemical names** (*carbamic acid, N,N'-...* for daclatasvir); 5,691 contain a digit
   or parenthesis. They are correct synonyms but noise in a picker. MeSH tags them `NON` like ordinary names, so a
-  filter would be a heuristic: **owner's call**, not built.
+  filter would be a heuristic. **Owner, 2026-11-14: leave them for now** (no filter).
 - *norephinephrine* (sic) is FDA's own UNII official spelling of X4W3ENH1CV, so it is the display name; MeSH now
   adds *Norepinephrine*, *Noradrenaline*, *Levarterenol* to it.
 - Within one moiety, spellings differing only in case keep the first (descriptors before SCRs); punctuation
@@ -6337,7 +6338,7 @@ the ledger in `tests/test_module_size_cap.py` is deleted.
 **#213** (registry names miss US label spellings) **FIXED by the US-label-spellings round** (UNII official names as
 drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick) **FIXED for the
 UNII official names by the moiety-names round** (`db/070`) **and for the BAN/AAN names by the MeSH-synonyms round**
-(`db/071`, § "The MeSH-synonyms round"; the chemical-name filter is the owner's call), and **#230** (adoption
+(`db/071`, § "The MeSH-synonyms round"; owner: no chemical-name filter for now; closes with PR #233), and **#230** (adoption
 inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names round". Still open from #227's
 review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not stored). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with

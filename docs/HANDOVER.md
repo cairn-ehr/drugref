@@ -28,11 +28,10 @@ resolve. Account and traps: PROJECT-NOTES § "The MeSH-synonyms round".
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
 
-**⇒ OWNER, from this round:** (a) **~1,800 MeSH synonyms are long chemical names** (*carbamic acid, N,N'-...* for
-daclatasvir): correct but picker noise; MeSH tags them like ordinary names, so filtering is a heuristic. Filter
-(e.g. length or digits), or leave? Then #231 can close. (b) 13 synonyms equal another moiety's display name (salt/base
-splits, #67: MeSH *Codeine* → *codeine anhydrous*); kept per your rule. (c) Still from #232: the exclusion list
-applies to search (*glucose* does not find dextrose); from #227: glance at the exclusions and the 12 shadowed names.
+**⇒ OWNER DECIDED 2026-11-14 (this round):** the ~1,800 long chemical-name synonyms stay unfiltered for now; the 13
+synonyms equal to another moiety's display name (salt/base, #67) stay. **#231 closes with PR #233.** Still from
+#232: the exclusion list applies to search (*glucose* does not find dextrose); from #227: glance at the exclusions
+and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
@@ -80,8 +79,8 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231: official
-names (#232) and BAN/AAN names (this round) built; leave it open for owner's call (a) above.** **Open from #227: #226, #228, #229.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 closes on
+PR #233's merge** (official names #232, BAN/AAN names this round; owner's last calls made 2026-11-14). **Open from #227: #226, #228, #229.**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214–#218,
 #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
