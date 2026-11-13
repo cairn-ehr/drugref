@@ -13,28 +13,26 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/moiety-names` (from `main` after PR #227, which is MERGED). PR open to `main` for #231 (and #230).
-Schema now ends at `db/070`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
-`uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/mesh-synonyms` (from `main` after PR #232, which is MERGED). PR open to `main` for #231's BAN/AAN
+half. Schema now ends at `db/071`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, measured, docs done): #231, searchable moiety names.** `db/070` adds `moiety_official_name`
-(source `UNII`, writer `moiety_name_run`) and the view **`drugref.moiety_name`** (display names plus official
-names), which Cairn's pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety-names --unii-names F
---release TAG` (run after `ingest unii`; not a chain step) stores the 1,630 names #227 adopts: *acetaminophen*,
-*cefalexin*, *rifampin*, *glyburide*, *albuterol* now resolve. **#230 fixed with it** (`Registry.contested_uniis`).
-**Review fixes (finalcheck):** re-run the names after every `ingest unii` (`status` flags stale ones); the run
-refuses a release other than the registry's and a 0-name decision. **Still open on #231: BAN/AAN**
-(*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are UNII `cn` names only, next to impurity rows).
-Account and traps: PROJECT-NOTES § "The moiety-names round".
+**⇒ THIS ROUND (built, measured, docs done): #231 BAN/AAN names from MeSH.** `db/071` adds `moiety_mesh_synonym`
+(source `MeSH`, writer `mesh_synonym_run`) and a third `moiety_name` branch, `name_kind = 'mesh_synonym'`
+(search-only; the view hides a synonym equal to the same moiety's display or official name). `drugref ingest
+mesh-synonyms --desc F --supp F --release TAG` (after `ingest unii`; not a chain step) stores 18,692 terms; the view
+shows 10,700. **Measured as the owner asked**: linking by the preferred concept's own UNII leaves **0** names on two
+moieties (every UNII on the record: 1,179 + 775). *adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* now
+resolve. Account and traps: PROJECT-NOTES § "The MeSH-synonyms round".
 **`spl_run.py` is still at exactly the 500-line cap**: do #216 (the split) before adding anything there.
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
 
-**⇒ OWNER, from this round:** (a) the exclusion list applies to search too (your call in #231), so *glucose*
-does not find dextrose; split the list if the pick wants those back. (b) **BAN/AAN: DECIDED 2026-11-14** (#231
-comment): MeSH preferred-concept entry terms, as a search-only `name_kind` (never an SPL key), and **search names
-keep every moiety they point to** (the label rule of dropping two-moiety names stays for SPL only). First measure
-linking by each MeSH record's own UNII. (c) From #227 still: glance at the exclusions and the 12 shadowed names.
+**⇒ OWNER, from this round:** (a) **~1,800 MeSH synonyms are long chemical names** (*carbamic acid, N,N'-...* for
+daclatasvir): correct but picker noise; MeSH tags them like ordinary names, so filtering is a heuristic. Filter
+(e.g. length or digits), or leave? Then #231 can close. (b) 13 synonyms equal another moiety's display name (salt/base
+splits, #67: MeSH *Codeine* → *codeine anhydrous*); kept per your rule. (c) Still from #232: the exclusion list
+applies to search (*glucose* does not find dextrose); from #227: glance at the exclusions and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
@@ -82,8 +80,8 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 fixed
-for official names this round (BAN/AAN stays open on it, so do not auto-close it); #230 closes on merge.** **Open from #227: #226, #228, #229.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231: official
+names (#232) and BAN/AAN names (this round) built; leave it open for owner's call (a) above.** **Open from #227: #226, #228, #229.**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214–#218,
 #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
@@ -95,8 +93,9 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_names` is this round's**: `createdb -T drugref_usnames`, migrated to `db/070`, one `ingest
-  moiety-names` (1,630 names); never patch it. Test DB this branch: `drugref_test_names` (recreated by pytest).
+- **`drugref_synonyms` is this round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
+  mesh-synonyms` (18,692 stored); never patch it. Test DB this branch: `drugref_test_mesh` (recreated by pytest).
+- **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).
 - **`drugref_usnames` is #213's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
   (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it.
 - **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
