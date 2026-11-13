@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/mesh-synonyms` (from `main` after PR #232, which is MERGED). PR open to `main` for #231's BAN/AAN
-half. Schema now ends at `db/071`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+**Branch `claude/spl-split` (from `main` after PR #233, MERGED; #231 CLOSED). This round: #216 (split the three
+SPL modules at the cap, cache the reader's scope per wording) with #218. Schema ends at `db/071`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
 else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, measured, docs done): #231 BAN/AAN names from MeSH.** `db/071` adds `moiety_mesh_synonym`
