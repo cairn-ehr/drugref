@@ -1,11 +1,18 @@
 """`spl_official_names`: UNII official names as extra moiety match keys (#213).
 
-Pure: no database. The registry here is two plain mappings, exactly the shape
-`registry_read.load_registry` hands `spl_run` (`by_name`, `by_unii`).
+Pure: no database. `adopt` takes the registry as two plain mappings (`by_name`,
+`by_unii`); `for_run` takes the `registry_read.Registry` itself.
 """
+from drugref import registry_read
 from drugref.ingest import spl_official_names as on
 
 P, E, R, X = "uuid-paracetamol", "uuid-epinephrine", "uuid-racepinephrine", "uuid-x"
+
+
+def _registry(by_name, by_unii, contested=frozenset()):
+    return registry_read.Registry(by_name=by_name, by_unii=by_unii,
+                                  name_collisions=0, unii_collisions=len(contested),
+                                  contested_uniis=contested)
 
 
 def test_an_official_name_becomes_a_key_for_its_uniis_moiety():
@@ -80,15 +87,15 @@ def test_the_run_applies_the_shipped_exclusions():
     """`for_run` is the only path from the data file to `adopt`; dropping that
     link would re-admit 'glucose' (5,929 false spans) with the pair floor green."""
     names, counts = on.for_run(
-        {"dextrose": P}, [("GLUCOSE", "U1")], by_unii={"U1": P})
+        _registry({"dextrose": P}, {"U1": P}), [("GLUCOSE", "U1")])
     assert names == {"dextrose": P}
     assert counts.excluded == ["GLUCOSE"]
 
 
 def test_the_run_without_a_names_file_adopts_nothing():
-    original = {"paracetamol": P}
-    names, counts = on.for_run(original, None, by_unii={"U1": P})
-    assert names == original and names is not original
+    registry = _registry({"paracetamol": P}, {"U1": P})
+    names, counts = on.for_run(registry, None)
+    assert names == {"paracetamol": P} and names is not registry.by_name
     assert counts.skipped
 
 
@@ -135,3 +142,19 @@ def test_the_summary_line_names_the_ambiguous_and_excluded_parts_too():
     text = str(counts)
     assert "1 claimed by several moieties" in text and "1 excluded" in text
     assert "WARNING" not in text
+
+
+def test_a_name_of_a_unii_two_moieties_claim_is_ambiguous_not_first_wins():
+    """#230: `by_unii` is first-wins when two moieties claim ONE UNII, so without
+    `contested` the name would follow whichever moiety sorted first."""
+    names, counts = on.adopt(
+        {"x": X}, [("ACETAMINOPHEN", "U1")], by_unii={"U1": P}, excluded=(),
+        contested={"U1"})
+    assert names == {"x": X}
+    assert (counts.adopted, counts.ambiguous) == ([], ["ACETAMINOPHEN"])
+
+
+def test_the_run_takes_the_contested_uniis_from_the_registry():
+    names, counts = on.for_run(
+        _registry({"x": X}, {"U1": P}, frozenset({"U1"})), [("ACETAMINOPHEN", "U1")])
+    assert names == {"x": X} and counts.ambiguous == ["ACETAMINOPHEN"]

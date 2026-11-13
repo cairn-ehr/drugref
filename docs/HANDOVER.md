@@ -13,24 +13,28 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/registry-us-names` (from `main` after PR #225, which is MERGED). PR open to `main` for #213. Schema
-still ends at `db/069` (this round adds no migration).** The suite total lives in PROJECT-NOTES § "How to run /
-test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/moiety-names` (from `main` after PR #227, which is MERGED). PR open to `main` for #231 (and #230).
+Schema now ends at `db/070`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+`uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, measured, docs done): #213, US label spellings.** The SPL drug pass also matches each moiety
-by its UNII official names (*rifampin*, *acetaminophen*, *glyburide*, *albuterol* …), with a measured 4-name exclusion
-file (`glucose`, `retinal`, `pca`, `glycol`) and a new suppression term `secretin stimulation`. Pairs 29,952 →
-**30,624**, novel 26,598 → **27,194**; floors restated. Account and traps: PROJECT-NOTES § "The US-label-spellings
-round"; decision record: [us-label-spellings](../docs-site/docs/decisions/us-label-spellings.md). Follow-up filed:
-**#226** (FDA-CYP / onchigh resolve by display name; `gate.py`'s 5-row hand crosswalk duplicates the rule); from the
-PR review: **#228** (source_checksum omits UNII_Names + SPL data files), **#229** (adoption counts never stored),
-**#230** (adoption inherits `by_unii` first-wins on a colliding UNII). An exclusion matching nothing now warns.
-**`spl_run.py` is at exactly the 500-line cap**: do #216 (the split) before adding anything there.
+**⇒ THIS ROUND (built, measured, docs done): #231, searchable moiety names.** `db/070` adds `moiety_official_name`
+(source `UNII`, writer `moiety_name_run`) and the view **`drugref.moiety_name`** (display names plus official
+names), which Cairn's pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety-names --unii-names F
+--release TAG` (run after `ingest unii`; not a chain step) stores the 1,630 names #227 adopts: *acetaminophen*,
+*cefalexin*, *rifampin*, *glyburide*, *albuterol* now resolve. **#230 fixed with it** (`Registry.contested_uniis`).
+**Review fixes (finalcheck):** re-run the names after every `ingest unii` (`status` flags stale ones); the run
+refuses a release other than the registry's and a 0-name decision. **Still open on #231: BAN/AAN**
+(*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are UNII `cn` names only, next to impurity rows).
+Account and traps: PROJECT-NOTES § "The moiety-names round".
+**`spl_run.py` is still at exactly the 500-line cap**: do #216 (the split) before adding anything there.
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
 
-**⇒ OWNER, from this round:** glance at the exclusion list and the 12 shadowed names (PROJECT-NOTES section);
-both are precision calls made on measured contexts, not clinical review.
+**⇒ OWNER, from this round:** (a) the exclusion list applies to search too (your call in #231), so *glucose*
+does not find dextrose; split the list if the pick wants those back. (b) **BAN/AAN: DECIDED 2026-11-14** (#231
+comment): MeSH preferred-concept entry terms, as a search-only `name_kind` (never an SPL key), and **search names
+keep every moiety they point to** (the label rule of dropping two-moiety names stays for SPL only). First measure
+linking by each MeSH record's own UNII. (c) From #227 still: glance at the exclusions and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
@@ -43,7 +47,7 @@ clinically reviewed, and the read says so.
    case (c) come, and at what grain (R1 side-chain groups vs blanket); (c) **#223**: the registry's `RXNORM_IN`
    lacks MED-RT's RxCUIs for ampicillin / amoxicillin / nafcillin sodium / Penicillin, which blocks any MED-RT
    `has_SC` join.
-1. **Owner's clinical read of this round's precision sample** (results record, "Precision sample" and "Gates").
+1. **Owner's clinical read of the class-mentions round's precision sample** (results record, "Precision sample" and "Gates").
    Trade-offs to decide:
    - Sentence-scope avoid / monitor are withheld by EXACT agreement. Most disagreements were the machine reading
      STRONGER than the label (the safe direction). Should the gate count safe-direction disagreement, and
@@ -64,7 +68,7 @@ clinically reviewed, and the read says so.
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
 6. **#226** (measure FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand
-   crosswalk). Then **#214** (class-hygiene candidates: `Electrolyte
+   crosswalk; `moiety_name` is now a ready lookup for it). **#228** / **#229** (SPL checksum, stored adoption counts). Then **#214** (class-hygiene candidates: `Electrolyte
    [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
    avoid phrasing) and **#215** (store the class-pass drop counts per run).
    **#218** (latent: the negation mask can still hide "contraindicated" in glued cells such as "Do not use
@@ -78,10 +82,10 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#213 fixed this
-round (closes on merge); #226 filed.** **Open from allergy groups: #223.** **Open
-from class profiles: #203, #204. From class mentions: #214–#218, #220–#222.** #130 and #133 were CLOSED 2026-11-07; #149 CLOSED (PR #201). Open: **#164**,
-**#169**. Standing: **#155** and **#102** (class mentions shipped; remaining work is #214); **#67** (salt↔base)
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 fixed
+for official names this round (BAN/AAN stays open on it, so do not auto-close it); #230 closes on merge.** **Open from #227: #226, #228, #229.**
+**Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214–#218,
+#220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base)
 is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
 #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
 #17, the three rule-6 deeds (#6, #25, GSRS).
@@ -91,9 +95,10 @@ is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #1
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_usnames` is this round's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
-  (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it. Test DB this branch:
-  `drugref_test_usnames` (recreated by pytest).
+- **`drugref_names` is this round's**: `createdb -T drugref_usnames`, migrated to `db/070`, one `ingest
+  moiety-names` (1,630 names); never patch it. Test DB this branch: `drugref_test_names` (recreated by pytest).
+- **`drugref_usnames` is #213's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
+  (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it.
 - **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
   (MeSH 2026); never patch it. Its test DB: `drugref_test_allergy`. `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +

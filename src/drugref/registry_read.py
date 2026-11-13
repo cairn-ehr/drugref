@@ -158,6 +158,9 @@ class Registry:
     #: is two discards.
     name_collisions: int
     unii_collisions: int
+    #: WHICH UNIIs more than one moiety claims (the keys behind `unii_collisions`),
+    #: so a consumer can refuse rather than inherit `by_unii`'s first-wins (#230).
+    contested_uniis: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         # The annotation is documentation; with no type checker in this project
@@ -204,6 +207,7 @@ def load_registry(conn: psycopg.Connection) -> Registry:
     by_name: dict[str, str] = {}
     by_unii: dict[str, str] = {}
     name_collisions = unii_collisions = 0
+    contested: set[str] = set()
     for lookup, key, moiety_uuid in rows:
         if lookup == "display_name":
             if key in by_name:
@@ -212,8 +216,10 @@ def load_registry(conn: psycopg.Connection) -> Registry:
                 by_name[key] = moiety_uuid
         elif key in by_unii:
             unii_collisions += 1
+            contested.add(key)
         else:
             by_unii[key] = moiety_uuid
     return Registry(by_name=by_name, by_unii=by_unii,
                     name_collisions=name_collisions,
-                    unii_collisions=unii_collisions)
+                    unii_collisions=unii_collisions,
+                    contested_uniis=frozenset(contested))

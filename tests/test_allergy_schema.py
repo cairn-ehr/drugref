@@ -60,9 +60,14 @@ def test_checks_admit_new_values(conn):
 
 
 def test_checks_keep_old_values(conn):
+    # Exact, except the writer CHECK: db/070 widened it again ('moiety_name_run'),
+    # so here it is a subset; its exact pin is test_provenance's WRITERS match.
     for (table, name), old in _OLD.items():
         live = set(re.findall(r"'([^']+)'", db.constraint_definition(conn, table, name)))
-        assert live == old | {_NEW[name]}, name
+        if name == "ingest_run_writer":
+            assert old | {_NEW[name]} <= live, name
+        else:
+            assert live == old | {_NEW[name]}, name
 
 
 def test_review_status_closed(conn):

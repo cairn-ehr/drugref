@@ -17,26 +17,31 @@ THE RULES, each one tested in tests/test_spl_official_names.py:
   name stays the sole owner of its key. ('epinephrine' is an official name of
   the racemate's UNII; the registry names the L-isomer 'epinephrine'.)
 * A name two moieties claim is dropped -- ambiguity is never resolved by
-  "first wins" (`spl_match.Match.ambiguous`'s rule). LIMIT: this sees moieties
-  through `by_unii`, which is itself first-wins when two moieties claim ONE UNII
-  (`registry_read.load_registry`; reported on the run's "registry collisions"
-  line, zero on the 2026-11-10 registry). Such a name follows the UNII's winner (#230).
+  "first wins" (`spl_match.Match.ambiguous`'s rule). That includes a name of a
+  UNII two moieties claim (`Registry.contested_uniis`): `by_unii` holds only the
+  first of them, so without that set the name would follow the winner (#230).
 * A name in the shipped exclusion file is not adopted. Every line there carries
   the measurement that justified it, as the suppression file does. An entry
   that matched NO official name is listed (`unused_exclusions`) and warned: a
   typo there would otherwise quietly re-admit the name it was meant to keep out,
   and the `>=` pair floor cannot notice MORE pairs.
 
+TWO CALLERS, ONE RULE: the SPL drug pass (match keys, in memory) and
+`moiety_name_run` (#231, the persisted `moiety_official_name` table that Cairn's
+allergy pick searches). Both go through `for_run`, so the names a label is
+matched by and the names a clinician can type are the same set.
+
 PURE: the caller reads UNII_Names (`spl_class_evidence.read_official_name_rows`)
 and the registry; this module only decides.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from importlib import resources
 from typing import NamedTuple
 
 from drugref.ingest.spl_match import fold
+from drugref.registry_read import Registry
 from drugref.ingest.spl_suppress import parse_suppression_terms
 
 #: The shipped exclusion list, a package data file (same format as suppression).
@@ -87,30 +92,39 @@ def skipped() -> OfficialNameCounts:
 
 
 def for_run(
-    names: Mapping[str, str], rows: Iterable[tuple[str, str]] | None, *,
-    by_unii: Mapping[str, str],
+    registry: Registry, rows: Iterable[tuple[str, str]] | None,
 ) -> tuple[dict[str, str], OfficialNameCounts]:
-    """`adopt` with the shipped exclusions; `rows` None (no names file): nothing."""
+    """`adopt` over the registry with the shipped exclusions; `rows` None (no
+    names file): nothing. Takes the whole Registry so the three fields it
+    needs cannot come from two different snapshots."""
     if rows is None:
-        return dict(names), skipped()
-    return adopt(names, rows, by_unii=by_unii, excluded=shipped_exclusions())
+        return dict(registry.by_name), skipped()
+    return adopt(registry.by_name, rows, by_unii=registry.by_unii,
+                 excluded=shipped_exclusions(),
+                 contested=registry.contested_uniis)
 
 
 def adopt(
     names: Mapping[str, str], rows: Iterable[tuple[str, str]], *,
     by_unii: Mapping[str, str], excluded: Iterable[str],
+    contested: Collection[str] = (),
 ) -> tuple[dict[str, str], OfficialNameCounts]:
     """`names` (display_name -> moiety_uuid) plus the official names it may take.
 
     `rows` are (official name, UNII) pairs for UNIIs the registry holds; `by_unii`
-    maps those UNIIs to moieties. Returns the merged mapping (the input is not
-    modified) and what happened to every name.
+    maps those UNIIs to moieties; `contested` are UNIIs more than one moiety
+    claims, whose names count as ambiguous. Returns the merged mapping (the
+    input is not modified) and what happened to every name.
+
+    One spelling per folded key: of two rows that fold alike (e.g. a hyphenated
+    and a spaced form), the FIRST in file order is the one returned and stored.
     """
     owner_of_key = {fold(name): uuid for name, uuid in names.items()}
     excluded_by_key = {fold(term): term for term in excluded}
     # Group by folded key first, so "two moieties claim it" is seen whole rather
     # than depending on which row came first.
     claims: dict[str, tuple[str, set[str]]] = {}
+    contested_keys: set[str] = set()
     unfoldable = 0
     for name, unii in rows:
         key = fold(name)
@@ -119,6 +133,8 @@ def adopt(
             continue
         _, moieties = claims.setdefault(key, (name, set()))
         moieties.add(by_unii[unii])
+        if unii in contested:
+            contested_keys.add(key)
 
     merged = dict(names)
     adopted, shadowed, ambiguous, dropped = [], [], [], []
@@ -131,7 +147,7 @@ def adopt(
             shadowed.append(name)
         elif key in excluded_by_key:
             dropped.append(name)
-        elif len(moieties) > 1:
+        elif len(moieties) > 1 or key in contested_keys:
             ambiguous.append(name)
         else:
             merged[name] = next(iter(moieties))
