@@ -34,8 +34,8 @@ from drugref import (
     classes, composition, conditions, db, indications, interactions, local,
     spl_evidence,
 )
-from drugref.ingest import (allergy_group_run, fda_cyp_run, moiety_name_run,
-                            onchigh_run)
+from drugref.ingest import (allergy_group_run, fda_cyp_run, mesh_synonym_run,
+                            moiety_name_run, onchigh_run)
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -117,6 +117,10 @@ EXPECTED_TABLES = {
     # keeping a names rebuild from touching unii_run's rows.
     "moiety_name_run.MOIETY_NAME_TABLES": (
         moiety_name_run.MOIETY_NAME_TABLES, ("moiety_official_name",)),
+    # MeSH synonyms (db/071, #231): source 'MeSH', shared with mesh_run, so this
+    # tuple is what keeps a synonyms rebuild off its rows.
+    "mesh_synonym_run.MESH_SYNONYM_TABLES": (
+        mesh_synonym_run.MESH_SYNONYM_TABLES, ("moiety_mesh_synonym",)),
 }
 
 

@@ -1392,11 +1392,14 @@ display name and may have the same INN/USAN gap, unmeasured; `gate.py`'s 5-row h
 Cairn's allergy pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety-names` stores 1,630 names, the same
 set the SPL drug pass adopts as keys, so *acetaminophen*, *cefalexin*, *rifampin*, *glyburide* and *albuterol* now
 find their moieties. #230 is fixed with it: a name of a UNII two moieties claim is dropped as ambiguous.
-**Still open on #231**: BAN/AAN names (*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin*), which UNII carries
-only as noisy `cn` rows. **Decided 2026-11-14**: MeSH preferred-concept entry terms (public domain, already on
-disk; adds adrenaline, lignocaine, frusemide, amoxycillin), search-only, keeping every moiety a name points to.
-Research and options table: the #231 comment of that date. PROJECT-NOTES § "The
-moiety-names round".
+**BAN/AAN names ✅ BUILT AND MEASURED (2026-11-14) — `db/071`, on `drugref_synonyms`.** UNII carries *adrenaline*,
+*lignocaine*, *frusemide*, *amoxycillin* only as noisy `cn` rows, so the owner chose MeSH preferred-concept entry
+terms (public domain, already on disk), search-only, keeping every moiety a name points to (research: the #231
+comment of that date). `drugref ingest mesh-synonyms` stores 18,692 terms in `moiety_mesh_synonym`, linked by each
+preferred concept's own UNII; the view shows 10,700 new `mesh_synonym` names on 5,348 moieties, and none points at
+two moieties. All four names above now find their moiety. Owner (2026-11-14): the ~1,800 long chemical names stay
+unfiltered for now, and the 13 salt/base cross-matches (#67) stay. PROJECT-NOTES § "The moiety-names round" and §
+"The MeSH-synonyms round".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

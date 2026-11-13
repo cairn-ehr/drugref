@@ -176,21 +176,29 @@ def _unmeasured_note(rows) -> str:
 
 
 def _stale_names_note(rows) -> str:
-    """PURE: a warning when `ingest unii` finished after `ingest moiety-names`, or "".
+    """PURE: a warning when `ingest unii` finished after a searchable-names ingest,
+    or "".
 
-    The stored official names (db/070, #231) are decided against one snapshot of the
-    registry; a later UNII ingest can rename a moiety into one of them or contest a
-    UNII, and the search view then misleads Cairn's allergy pick until the names
-    are rebuilt. Silent when the names were never built.
+    The stored official names (db/070) and MeSH synonyms (db/071, both #231) are
+    linked against one snapshot of the registry; a later UNII ingest can contest a
+    UNII or move a claim (both tables), or rename a moiety into one of its official
+    names (the view re-checks synonyms live), and the search view then misleads
+    Cairn's allergy pick until they are rebuilt. Silent for a names ingest that was
+    never run.
     """
     finished = {(source, writer): finished_at
                 for source, writer, _, finished_at, *_ in rows}
-    names = finished.get(("UNII", "moiety_name_run"))
     unii = finished.get(("UNII", "unii_run"))
-    if names is None or unii is None or unii <= names:
+    stale = [command for key, command in (
+        (("UNII", "moiety_name_run"), "moiety-names"),
+        (("MeSH", "mesh_synonym_run"), "mesh-synonyms"))
+        if unii is not None and finished.get(key) is not None
+        and finished[key] < unii]
+    if not stale:
         return ""
-    return ("UNII moiety_name_run is older than unii_run: the searchable official "
-            "names describe a previous registry. Re-run `drugref ingest moiety-names`.")
+    return ("the searchable moiety names are older than unii_run and describe a "
+            "previous registry. Re-run "
+            + " and ".join(f"`drugref ingest {c}`" for c in stale) + ".")
 
 
 def print_class_grain_block(conn) -> None:

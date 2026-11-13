@@ -6176,8 +6176,8 @@ display name only → the view:
   substance and the registry only moieties, so that count is large and carries no signal once the release matches.
 - **The BAN/AAN names are NOT UNII official names.** *adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are in
   UNII_Names only as `TYPE = cn` (common name), next to impurity, salt and monograph rows (*ADRENALINE IMPURITY F
-  [EP IMPURITY]*). Admitting `cn` would need its own filtering rules and measurement. The issue defers BAN/AAN
-  to a later source, so that is still open on #231.
+  [EP IMPURITY]*). Admitting `cn` would need its own filtering rules and measurement. They come from MeSH
+  instead, search-only: § "The MeSH-synonyms round" (`db/071`).
 - **The exclusion list applies here too** (the owner's call in #231), so *glucose* does not find dextrose. Those
   four names were excluded because they are ordinary words in label prose, not because they are bad pick names.
   If the pick wants them back, the two callers need two lists.
@@ -6190,6 +6190,77 @@ display name only → the view:
 
 **Databases.** `drugref_names` carries the shipped measurement (names run on top of `drugref_usnames`' SPL run 12);
 **never patch it**. Branch test DB: `drugref_test_names`.
+
+## The MeSH-synonyms round (#231, BAN/AAN, 2026-11-14) — `db/071`, measured on `drugref_synonyms`
+
+**What it is.** The owner's decision on #231 (2026-11-14), built: MeSH entry terms as **search-only** moiety names,
+so *lignocaine*, *frusemide*, *adrenaline*, *amoxycillin* find their moieties. `db/071` adds
+**`drugref.moiety_mesh_synonym`** (moiety, name, `mesh_ui`, run), a delete-and-rebuild projection under source
+`MeSH`, writer **`mesh_synonym_run`** (CHECK and `provenance.WRITERS` widened together), and a third branch of the
+**`drugref.moiety_name`** view, `name_kind = 'mesh_synonym'`. Code map: `src/drugref/ingest/mesh_synonyms.py` (pure:
+`synonym_records`, `link`) · `src/drugref/ingest/mesh_synonym_run.py` (orchestrator) · `src/drugref/cli_names.py`
+(`drugref ingest mesh-synonyms --desc F --supp F --release TAG`; not a chain step: run it after `ingest unii`).
+
+**Which terms, and how they link.** Only the record's PREFERRED concept: MeSH puts the drug's synonyms there and
+brands and salts in other concepts (Furosemide: Frusemid, Fursemide, Frusemide; *Lasix* and *Furosemide Monosodium
+Salt* elsewhere). Its terms are linked by **that concept's own UNII**, never the record's other UNIIs (those belong
+to salts and isomers). Permuted terms (`IsPermutedTermYN="Y"`, *Trinitrate, Glyceryl*) are skipped: about half of
+all terms. No CAS fallback. A name two moieties share is **kept for both** (the owner's rule for search), and the
+shipped official-name exclusions apply (owner's call (a)).
+
+**The measurement the owner asked for first** (`drugref_names`, desc2026/supp2026). New names, compared
+case-insensitively with the view:
+
+| linking by | descriptors: new names / moieties / names on >1 moiety | SCRs: same |
+|---|---|---|
+| every UNII on the record | 4,434 / 1,946 / **1,179** | 8,134 / 4,648 / **775** |
+| the preferred concept's own UNII | 4,240 / 1,357 / **0** | 7,753 / 4,050 / **0** |
+
+So "keep every moiety" costs nothing today: no MeSH synonym points at two moieties. The two "new names" columns
+overlap (one moiety can gain a name from both a descriptor and an SCR), so they sum past the view's 10,700.
+
+**Figures (`drugref_synonyms` = `createdb -T drugref_names`, migrated to `db/071`, one synonyms ingest, 62 s).**
+18,692 stored from 8,283 linked records (337,214 records carry no UNII, 9,658 a UNII no moiety claims; excluded:
+*Retinal*). The view shows **10,700** `mesh_synonym` rows on 5,348 moieties; the other 7,992 repeat the same
+moiety's display or official name and are hidden. Word-start match, display name only → the view:
+
+| typed | display only | view (MeSH name → moiety) |
+|---|---|---|
+| adrenaline · lignocaine · frusemide · amoxycillin | 0 | **3 · 1 · 1 · 1** (epinephrine, lidocaine, furosemide, amoxicillin) |
+| noradrenaline · glyceryl trinitrate · oestradiol | 2 · 0 · 0 | **5 · 1 · 2** (norephinephrine, nitroglycerin, estradiol) |
+| thyroxine · benzhexol · acetominophen · apap | 0 | **1** each (levothyroxine, trihexyphenidyl, paracetamol ×2) |
+
+**Traps.**
+- **Search only, by construction.** Nothing on the SPL side reads `moiety_mesh_synonym` or the view; the label
+  keys are still `spl_official_names.for_run`'s. Keep it that way: these names include misspellings and
+  abbreviations (*Acetominophen*, *APAP*).
+- **The view, not the ingest, hides repeats** (a `NOT EXISTS` against the same moiety's display and official
+  names, `lower()` both sides), because display names change with every `ingest unii`. The table therefore
+  holds more rows than the view shows (18,692 vs 10,700).
+- **Re-run after every `ingest unii`**, as for the official names: the links are a snapshot of the UNII claims.
+  `drugref status`'s stale-names note now covers both runs (`_stale_names_note`).
+- **13 synonyms equal ANOTHER moiety's display name**, all salt/base or isomer splits (#67): MeSH's *Codeine*
+  carries the UNII the registry calls *codeine anhydrous*, while a separate moiety is displayed *codeine*. Kept
+  (search shows both; **owner confirmed 2026-11-14**); a shadow rule like the official names' would hide the right
+  answer as often as the wrong.
+- **~1,800 synonyms are long chemical names** (*carbamic acid, N,N'-...* for daclatasvir); 5,691 contain a digit
+  or parenthesis. They are correct synonyms but noise in a picker. MeSH tags them `NON` like ordinary names, so a
+  filter would be a heuristic. **Owner, 2026-11-14: leave them for now** (no filter).
+- *norephinephrine* (sic) is FDA's own UNII official spelling of X4W3ENH1CV, so it is the display name; MeSH now
+  adds *Norepinephrine*, *Noradrenaline*, *Levarterenol* to it.
+- Within one moiety, spellings differing only in case keep the first (descriptors before SCRs); punctuation
+  variants (*Ro 20-1724*, *Ro 20 1724*) are both kept, since Cairn searches raw text.
+- **A file holding none of its records is refused** (PR #233 review): the desc file passed as `--supp` used to
+  yield nothing, and the run committed without every supplementary synonym. `synonym_records` now raises on a file
+  with no `record_tag`, and on a record without its UI (`mesh_ui` is the provenance). A truncated `.gz`
+  (`EOFError`) and broken XML (`ParseError`) are one-line CLI errors like a missing file.
+- **`--release` is NOT checked against `mesh_run`'s**, unlike moiety-names against `unii_run` (#232): the synonyms
+  link through UNII claims, not through the MeSH PA build, so the two MeSH runs may carry different releases.
+- **The view comment in `db/071` says a synonym "may name several moieties"**: true by design (two moieties
+  claiming one UNII both get the name), measured 0 today; the live cross-moiety case is the 13 above.
+
+**Databases.** `drugref_synonyms` carries the shipped measurement; **never patch it**. Branch test DB:
+`drugref_test_mesh`.
 
 ## The standing open-issue ledger
 
@@ -6274,23 +6345,26 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **#213** (registry names miss US label spellings) **FIXED by the US-label-spellings round** (UNII official names as
-drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick) **FIXED for the
-UNII official names by the moiety-names round** (`db/070`; BAN/AAN still open on the issue), and **#230** (adoption
-inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names round". Still open from #227's
-review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not stored). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
-a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
-**#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
-**[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
-composition (one object dominates; MED-RT catch-all classes raise questions) ·
+drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick)
+**FIXED for the UNII official names by the moiety-names round** (`db/070`) **and for the BAN/AAN names by the
+MeSH-synonyms round** (`db/071`, § "The MeSH-synonyms round"; owner: no chemical-name filter for now; closes with PR
+#233), and **#230** (adoption inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names
+round". Still open from #227's review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not
+stored). **Filed by the class-profiles round (2026-11-07)** —
+**[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
+class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
+subclass-only inheritance: `class_subclass_only_property`) ·
+**[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's composition
+(one object dominates; MED-RT catch-all classes raise questions) ·
 **[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
 interaction answers never reach the prescribing-alert path — owner design call, curators hold off interaction
 questions until it is decided · **[#206](https://github.com/cairn-ehr/drugref/issues/206)** and
 **[#207](https://github.com/cairn-ehr/drugref/issues/207)** (filed by the pre-merge review) **FIXED by the
-class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by
-PR #208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a
-report-only census, no migration, CLOSED (PR #212) (§ "The class-profiles round"). Figures on the issues and in the
-results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
-GitHub 2026-11-07**, alongside #130.
+class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by PR
+#208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a report-only
+census, no migration, CLOSED (PR #212) (§ "The class-profiles round"). Figures on the issues and in the results
+record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on GitHub
+2026-11-07**, alongside #130.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -6461,7 +6535,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3287 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3316 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6962,6 +7036,9 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_synonyms` is the MeSH-synonyms round's verification database** (2026-11-14, #231): `createdb -T
+  drugref_names`, migrated to `db/071`, one `ingest mesh-synonyms` (MeSH 2026, 18,692 stored).
+  `drugref_test_mesh` was this branch's test DB. **Never patch it.**
 - **`drugref_allergy` is the allergy-groups round's verification database** (2026-11-09): `createdb -T drugref_profiles`,
   migrated to `db/069` (a COMMENT-only wording fix; `db/068` was left untouched because the ledger refuses a changed checksum), allergy groups ingested (MeSH 2026). `drugref_test_allergy` was this branch's test DB. **Never patch it.**
 - **`drugref_classmentions` is the SPL class-mentions round's verification database** (2026-11-08): built from
