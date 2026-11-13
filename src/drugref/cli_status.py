@@ -32,7 +32,7 @@ reason it covers the five above -- and it PASSES on the loaded-release SELECT be
 same exception cli.py's docstring already draws for `_handle_status`.
 """
 from drugref import (class_grain_read, curated_read, migration_guard, provenance,
-                     spl_evidence)
+                     spl_census)
 
 
 def print_loaded_release_block(conn) -> None:
@@ -390,9 +390,9 @@ def print_spl_census_block(conn) -> None:
     first: nothing is printed after it, so aborting here costs no other block.
     """
     with migration_guard.guarded(
-            conn, relations=(spl_evidence.RUN_CENSUS_TABLE,), migration="057",
+            conn, relations=(spl_census.RUN_CENSUS_TABLE,), migration="057",
             consequence="no SPL release can be compared with the one before it"):
-        rows = spl_evidence.recent_run_census(conn)
+        rows = spl_census.recent_run_census(conn)
     print()
     for line in spl_census_lines(rows):
         print(line)

@@ -138,8 +138,8 @@ def test_the_table_accepts_a_consistent_census(conn):
 
 def _census(run_id, release, records, labels, absent, blank, id_keyed):
     """A RunCensus with positional shorthand -- tests only."""
-    from drugref import spl_evidence
-    return spl_evidence.RunCensus(
+    from drugref import spl_census
+    return spl_census.RunCensus(
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
         labels_keyed_on_document_id=id_keyed)
@@ -212,13 +212,13 @@ def test_the_reader_maps_every_column_to_its_own_field(conn):
     count columns swapped; five DISTINCT values can. `recent_run_census` zips the
     SELECT onto RunCensus's fields by position, which `strict=True` checks only
     for length."""
-    from drugref import spl_evidence
+    from drugref import spl_census
     run_id = _run(conn)
-    spl_evidence.write_run_census(
+    spl_census.write_run_census(
         conn, ingest_run_id=run_id, records_read=10, labels=6,
         records_field_absent=3, records_field_blank=1,
         labels_keyed_on_document_id=2)
-    assert spl_evidence.recent_run_census(conn, limit=1) == [_census(
+    assert spl_census.recent_run_census(conn, limit=1) == [_census(
         run_id, "test", records=10, labels=6, absent=3, blank=1, id_keyed=2)]
 
 
@@ -226,14 +226,14 @@ def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):
     """Block 1 (db/054's `loaded_release`) orders by `finished_at`; ordering this
     block by run id would disagree with it whenever two ingests commit out of the
     order they opened in."""
-    from drugref import provenance, spl_evidence
+    from drugref import provenance, spl_census
     opened_first, opened_second = _run(conn), _run(conn)
     for run_id in (opened_first, opened_second):
-        spl_evidence.write_run_census(
+        spl_census.write_run_census(
             conn, ingest_run_id=run_id, records_read=1, labels=1,
             records_field_absent=0, records_field_blank=0,
             labels_keyed_on_document_id=0)
     provenance.finish_run(conn, opened_second)
     provenance.finish_run(conn, opened_first)
-    got = [c.ingest_run_id for c in spl_evidence.recent_run_census(conn)]
+    got = [c.ingest_run_id for c in spl_census.recent_run_census(conn)]
     assert got == [opened_first, opened_second]

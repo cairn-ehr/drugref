@@ -55,10 +55,11 @@ from collections.abc import Callable, Mapping, Sequence
 import psycopg
 
 from drugref import (
-    provenance, questions, registry_read, spl_class_evidence, spl_evidence)
+    provenance, questions, registry_read, spl_census, spl_class_evidence,
+    spl_evidence)
 from drugref.ingest import (
-    spl, spl_checks, spl_dailymed, spl_match, spl_official_names, spl_quote,
-    spl_release, spl_suppress, spl_subject,
+    spl, spl_checks, spl_match, spl_official_names, spl_quote, spl_release,
+    spl_rows, spl_suppress, spl_subject,
 )
 from drugref.ingest.checksum import checksum
 from drugref.ingest.spl_checks import (
@@ -112,70 +113,6 @@ def build_vocabulary(
     return spl_match.build_vocabulary(entries)
 
 
-def _subject_rows(
-    labels: Sequence[spl.LabelIdentity],
-    recovered: Mapping[str, spl_dailymed.SubjectUniis],
-    known_uniis: Mapping[str, str],
-) -> tuple[list[spl_evidence.SubjectRow], dict[str, int]]:
-    """One subject row per (label, moiety), plus one per label with no subject.
-
-    Returns the rows and the per-route label tally. The tally counts LABELS, not
-    rows: a combination product carries several subjects on one route, and
-    reporting rows here would publish the combination rate as if it were a
-    resolution rate.
-    """
-    rows: list[spl_evidence.SubjectRow] = []
-    by_route: dict[str, int] = {}
-    for label in labels:
-        subject = spl_subject.resolve_subject(
-            openfda_uniis=label.uniis,
-            dailymed=recovered.get(label.set_id),
-            known_uniis=known_uniis)
-        by_route[subject.route] = by_route.get(subject.route, 0) + 1
-        if not subject.moiety_uuids:
-            rows.append(spl_evidence.SubjectRow(
-                set_id=label.set_id, version=label.version, subject_ordinal=0,
-                moiety_uuid=None, route=subject.route))
-            continue
-        for ordinal, moiety_uuid in enumerate(subject.moiety_uuids):
-            rows.append(spl_evidence.SubjectRow(
-                set_id=label.set_id, version=label.version,
-                subject_ordinal=ordinal, moiety_uuid=moiety_uuid,
-                route=subject.route))
-    return rows, by_route
-
-
-def _evidence_for_wording(
-    text_key: str, text: str, vocab: spl_match.Vocabulary
-) -> tuple[list[spl_evidence.OccurrenceRow], list[spl_evidence.QuoteRow]]:
-    """The occurrence and quote rows one wording yields. Matched ONCE.
-
-    The two are produced together because they rest on the same match pass, and
-    running the matcher twice would be two chances for the offsets a quote is cut
-    at to differ from the offsets an occurrence records.
-    """
-    matches = spl_match.find_matches(text, vocab)
-    occurrences = spl_match.moiety_occurrences(matches)
-    occurrence_rows = [
-        spl_evidence.OccurrenceRow(
-            text_key=text_key, char_start=occurrence.char_start,
-            char_end=occurrence.char_end, moiety_uuid=occurrence.moiety_uuid,
-            match_ambiguous=occurrence.ambiguous)
-        for occurrence in occurrences]
-    # `from_window` cuts the text itself rather than taking a pre-cut string
-    # beside two offsets. The offsets and the cut then cannot disagree, and the
-    # window is checked against the length of the text it was measured on --
-    # which is the only place the raw-versus-normalised mistake is visible,
-    # because Python slicing clamps an over-long window silently.
-    quote_rows = [
-        spl_evidence.QuoteRow.from_window(
-            text_key=text_key, ordinal=ordinal, window=window, text=text)
-        for ordinal, window, _quote_text in spl_quote.quotes_for(
-            text,
-            [(o.moiety_uuid, o.char_start, o.char_end) for o in occurrences])]
-    return occurrence_rows, quote_rows
-
-
 def _write_evidence(
     conn: psycopg.Connection, corpus: spl.Corpus, vocab: spl_match.Vocabulary,
     class_vocab: spl_match.Vocabulary, *,
@@ -198,7 +135,7 @@ def _write_evidence(
         quote_rows: list[spl_evidence.QuoteRow] = []
         class_rows: list[spl_class_evidence.ClassOccurrenceRow] = []
         for text_key in chunk:
-            found, quoted = _evidence_for_wording(
+            found, quoted = spl_rows.evidence_for_wording(
                 text_key, corpus.wordings[text_key], vocab)
             if found:
                 with_moiety += 1
@@ -405,7 +342,7 @@ def ingest_spl(
             ingest_run_id=run_id, source=spl.SOURCE)
         spl_evidence.analyze_loaded_table(conn, "spl_label")
 
-        subject_rows, by_route = _subject_rows(
+        subject_rows, by_route = spl_rows.subject_rows(
             corpus.labels, scan.found, known_uniis)
         spl_evidence.write_label_subjects(
             conn, subject_rows, ingest_run_id=run_id, source=spl.SOURCE)
@@ -472,7 +409,7 @@ def ingest_spl(
         # #186: the counts #163 says must never refuse, kept per run so the next
         # release has this one to compare against (db/057). Inside the
         # transaction, so a run that rolls back leaves no census behind.
-        spl_evidence.write_run_census(
+        spl_census.write_run_census(
             conn, ingest_run_id=run_id, records_read=summary.records_read,
             labels=summary.labels,
             records_field_absent=summary.records_field_absent,

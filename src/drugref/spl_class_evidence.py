@@ -21,7 +21,7 @@ from typing import Collection, Iterable, NamedTuple, Sequence
 
 import psycopg
 
-from drugref.ingest import spl_advice, spl_match
+from drugref.ingest import spl_advice, spl_advice_scope, spl_match
 from drugref.ingest.spl_class_vocab import class_match_keys, is_matchable
 
 
@@ -267,15 +267,18 @@ def _rows_and_drops(text_key: str, text: str, vocab: spl_match.Vocabulary,
     """
     rows = []
     boundary = heads = 0
+    index = None  # #216: the wording's scope index, computed at its first mention
     for occ in spl_match.class_occurrences(spl_match.find_matches(text, vocab)):
-        if spl_advice.span_crosses_sentence_boundary(
+        if spl_advice_scope.span_crosses_sentence_boundary(
                 text, occ.char_start, occ.char_end):
             boundary += 1
             continue
         if followed_by_non_drug_head(text, occ.char_end):
             heads += 1
             continue
-        reading = spl_advice.read_advice(text, occ.char_start, occ.char_end)
+        index = index or spl_advice_scope.scope_index(text)
+        reading = spl_advice.read_advice(
+            text, occ.char_start, occ.char_end, index=index)
         rows.append(ClassOccurrenceRow(
             text_key=text_key, char_start=occ.char_start, char_end=occ.char_end,
             class_uuid=occ.class_uuid, match_ambiguous=occ.ambiguous,

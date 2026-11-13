@@ -35,6 +35,19 @@ def test_class_rows_for_wording_ambiguous_two_rows():
     assert all(r.match_ambiguous for r in rows)
 
 
+def test_216_the_scope_index_is_computed_once_per_wording(monkeypatch):
+    # #216: the reader used to rescan the whole wording for every mention.
+    from drugref.ingest import spl_advice_scope
+    calls = []
+    real = spl_advice_scope.scope_index
+    monkeypatch.setattr(spl_advice_scope, "scope_index",
+                        lambda text: calls.append(1) or real(text))
+    rows = ce.class_rows_for_wording(
+        "k", "Avoid statins. Monitor fibrates. Statins again.",
+        _vocab(("statins", CU), ("fibrates", CU2)))
+    assert len(rows) == 3 and len(calls) == 1
+
+
 def test_class_rows_empty_when_no_class():
     assert ce.class_rows_for_wording("k", "Nothing here.", _vocab(("statins", CU))) == []
 

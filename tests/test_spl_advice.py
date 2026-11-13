@@ -4,8 +4,8 @@
 Texts are synthesised (rule 6) -- never real label prose.
 """
 
-from drugref.ingest.spl_advice import (ADVICE_RULES, LEVELS, NMI_TEMPLATES, read_advice,
-                                       sentence_span)
+from drugref.ingest.spl_advice import ADVICE_RULES, LEVELS, NMI_TEMPLATES, read_advice
+from drugref.ingest.spl_advice_scope import sentence_span
 
 
 def _read(text, name):
@@ -329,7 +329,7 @@ def test_scope_contains_the_mention_on_EVERY_path_even_when_a_rule_fires():
 
 
 def test_span_crosses_sentence_boundary():
-    from drugref.ingest.spl_advice import span_crosses_sentence_boundary as crosses
+    from drugref.ingest.spl_advice_scope import span_crosses_sentence_boundary as crosses
     text = "Avoid Potassium. Salts are fine."
     assert crosses(text, 6, 22)
     assert not crosses(text, 6, 15)                      # the boundary is its end
@@ -607,3 +607,14 @@ def test_a_truncated_contraindicate_cell_reads_contraindicated():
 def test_the_negation_mask_covers_the_truncated_form():
     assert _read("Use with widgetants is not contraindicate in adults.",
                  "widgetants").level == "not_read"
+
+
+def test_218_a_strength_phrase_ending_in_the_word_after_not_is_never_masked():
+    # Glued table cells: the word after "not" ends ANOTHER strength phrase, so this
+    # is not a negated contraindication (R24's rule, applied to `_NEG_CONTRA`).
+    for t in ("Widgetants: Do not use Contraindicated.",
+              "Widgetants: Do not coadminister Contraindicated.",
+              "Widgetants: should not exceed Contraindicated."):
+        assert _read(t, "Widgetants").level == "contraindicated", t
+    # ... while a plain negation is still masked.
+    assert _read("Widgetants are not contraindicated.", "Widgetants").level == "not_read"
