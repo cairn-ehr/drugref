@@ -13,25 +13,21 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-split` (from `main` after PR #233, MERGED; #231 CLOSED). This round: #216 (split the three
-SPL modules at the cap, cache the reader's scope per wording) with #218. Schema ends at `db/071`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
-else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/spl-split` (from `main` after PR #233, MERGED; #231 CLOSED). PR open to `main` for #216 + #218.
+Schema still ends at `db/071` (no migration this round).** The suite total lives in PROJECT-NOTES § "How to run /
+test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, measured, docs done): #231 BAN/AAN names from MeSH.** `db/071` adds `moiety_mesh_synonym`
-(source `MeSH`, writer `mesh_synonym_run`) and a third `moiety_name` branch, `name_kind = 'mesh_synonym'`
-(search-only; the view hides a synonym equal to the same moiety's display or official name). `drugref ingest
-mesh-synonyms --desc F --supp F --release TAG` (after `ingest unii`; not a chain step) stores 18,692 terms; the view
-shows 10,700. **Measured as the owner asked**: linking by the preferred concept's own UNII leaves **0** names on two
-moieties (every UNII on the record: 1,179 + 775). *adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* now
-resolve. Account and traps: PROJECT-NOTES § "The MeSH-synonyms round".
-**`spl_run.py` is still at exactly the 500-line cap**: do #216 (the split) before adding anything there.
-`ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
-run**: `test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND (built, measured, docs done): #216 + #218.** Verbatim splits: `ingest/spl_advice_scope.py` (scope
+finding, out of `spl_advice.py`, 499 → 351), `ingest/spl_rows.py` (pure row builders, out of `spl_run.py`, 500 →
+436), `spl_census.py` (db/057's census, out of `spl_evidence.py`, 500 → 440). `read_advice(..., index=)` reuses
+one `scope_index` per wording: class-pass loop 237 s → 76 s on the 2026-08 corpus, readings identical. #218: a
+negation mask overlapping another strength phrase is no longer applied. PROJECT-NOTES § "The SPL split".
+**`spl_run.py` now has room: #228 / #229 / #215 are unblocked.** `ruff format` is NOT applied in this repo; match
+the hand style. **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests
+that are not real.
 
-**⇒ OWNER DECIDED 2026-11-14 (this round):** the ~1,800 long chemical-name synonyms stay unfiltered for now; the 13
-synonyms equal to another moiety's display name (salt/base, #67) stay. **#231 closes with PR #233.** Still from
-#232: the exclusion list applies to search (*glucose* does not find dextrose); from #227: glance at the exclusions
-and the 12 shadowed names.
+**⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
+from #227: glance at the exclusions and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
@@ -64,14 +60,13 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **#226** (measure FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand
-   crosswalk; `moiety_name` is now a ready lookup for it). **#228** / **#229** (SPL checksum, stored adoption counts). Then **#214** (class-hygiene candidates: `Electrolyte
-   [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an
-   avoid phrasing) and **#215** (store the class-pass drop counts per run).
-   **#218** (latent: the negation mask can still hide "contraindicated" in glued cells such as "Do not use
-   Contraindicated"; 0 occurrences today) — fix it together with **#216** (split `spl_run.py`, `spl_evidence.py`,
-   `spl_advice.py`, all at ~500 lines, and cache the reader's scope per wording). **#217**: order the label
-   class-statement worklist strongest level first.
+6. **No owner call needed, now unblocked by #216:** **#228** / **#229** (SPL checksum, stored adoption counts) and
+   **#215** (store the class-pass drop counts per run) — the last two both widen `spl_census.py` (new migration,
+   never edit db/057); do them as one round. Then **#226** (measure FDA-CYP / onchigh unresolved names a UNII
+   official name would fix; retire `gate.py`'s hand crosswalk; `moiety_name` is a ready lookup), **#214**
+   (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`,
+   "consider alternative therapy" as an avoid phrasing) and **#217** (order the label class-statement worklist
+   strongest level first).
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
@@ -79,21 +74,23 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 closes on
-PR #233's merge** (official names #232, BAN/AAN names this round; owner's last calls made 2026-11-14). **Open from
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
+(PR #233). **#216 and #218 close on this branch's PR** (§ "The SPL split"). **Open from
 #227: #226, #228, #229.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From
-class mentions: #214–#218, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is
-#214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153,
-#128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases,
-resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+class mentions: #214, #215, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
+work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148,
+#152, #153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on
+current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_synonyms` is this round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
-  mesh-synonyms` (18,692 stored); never patch it. Test DB this branch: `drugref_test_mesh` (recreated by pytest).
+- **This round touched no database** (no migration; the benchmark only READ `drugref_synonyms`). Test DB this
+  branch: `drugref_test_split` (create it with `createdb` first; pytest recreates the schema, not the database).
+- **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
+  mesh-synonyms` (18,692 stored); never patch it.
 - **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).
 - **`drugref_usnames` is #213's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
   (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it.

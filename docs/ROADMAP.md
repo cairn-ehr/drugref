@@ -1385,7 +1385,7 @@ The SPL drug pass also matches each moiety by its UNII official names (*rifampin
 the pair floors were restated. Decision record: `docs-site/docs/decisions/us-label-spellings.md`; figures and traps:
 PROJECT-NOTES § "The US-label-spellings round". **Follow-ups**: [#226](https://github.com/cairn-ehr/drugref/issues/226) (FDA-CYP and onchigh resolve by
 display name and may have the same INN/USAN gap, unmeasured; `gate.py`'s 5-row hand crosswalk duplicates the rule);
-#216 (split `spl_run.py`, now at the cap).
+#216 (split `spl_run.py`, then at the cap; **done** by the SPL split, 2026-11-14).
 
 ### Searchable moiety names (#231, #230) ✅ BUILT AND MEASURED (2026-11-14) — `db/070`, on `drugref_names`
 `drugref.moiety_name` (view: display names plus the stored UNII official names in `moiety_official_name`) is what
@@ -1400,6 +1400,12 @@ preferred concept's own UNII; the view shows 10,700 new `mesh_synonym` names on 
 two moieties. All four names above now find their moiety. Owner (2026-11-14): the ~1,800 long chemical names stay
 unfiltered for now, and the 13 salt/base cross-matches (#67) stay. PROJECT-NOTES § "The moiety-names round" and §
 "The MeSH-synonyms round".
+
+### SPL split (#216, #218) ✅ DONE (2026-11-14) — no migration
+Rule 4 for the three SPL modules at the cap: `spl_advice_scope.py`, `spl_rows.py` and `spl_census.py` split out
+(verbatim moves), so `spl_run.py` has room for #228 / #229 / #215. The advice reader's scope is computed once per
+wording (class-pass loop 237 s → 76 s on the 2026-08 corpus, readings identical), and #218's latent negation
+mask is closed. PROJECT-NOTES § "The SPL split".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
