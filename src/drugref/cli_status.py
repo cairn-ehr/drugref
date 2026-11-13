@@ -80,6 +80,9 @@ def print_loaded_release_block(conn) -> None:
     note = refusal if refusal is not None else _unmeasured_note(rows)
     if note:
         print(f"  ({note})")
+    stale = _stale_names_note(rows)
+    if stale:
+        print(f"  ({stale})")
 
 
 # The columns db/054 reads, and the db/025 subset that survives without it. Spelled
@@ -170,6 +173,24 @@ def _unmeasured_note(rows) -> str:
             "predates db/054, which backfilled no row; it may also be a run from "
             "before db/053, an older client, or a row written by hand or by a curator. "
             "Re-ingesting that source, where an ingest exists for it, records one.")
+
+
+def _stale_names_note(rows) -> str:
+    """PURE: a warning when `ingest unii` finished after `ingest moiety-names`, or "".
+
+    The stored official names (db/070, #231) are decided against one snapshot of the
+    registry; a later UNII ingest can rename a moiety into one of them or contest a
+    UNII, and the search view then misleads Cairn's allergy pick until the names
+    are rebuilt. Silent when the names were never built.
+    """
+    finished = {(source, writer): finished_at
+                for source, writer, _, finished_at, *_ in rows}
+    names = finished.get(("UNII", "moiety_name_run"))
+    unii = finished.get(("UNII", "unii_run"))
+    if names is None or unii is None or unii <= names:
+        return ""
+    return ("UNII moiety_name_run is older than unii_run: the searchable official "
+            "names describe a previous registry. Re-run `drugref ingest moiety-names`.")
 
 
 def print_class_grain_block(conn) -> None:

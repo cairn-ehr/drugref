@@ -48,9 +48,11 @@ the class pass.
   shadowed, dropped as ambiguous and excluded on every run.
 - An entry on the exclusion list is a precision judgement and needs its measurement next to it, the same rule
   as the suppression list.
-- The same names are stored for searching (`drugref.moiety_name`, 1,630 names on the 26 Feb 2026 release), so a
-  clinician who types *acetaminophen* finds paracetamol. Because the label matcher and the search share one
-  rule, the exclusions apply to search as well: *glucose* does not find dextrose.
+- The same names are stored for searching (1,630 official names in `drugref.moiety_official_name` on the 26 Feb
+  2026 release, searched through the `drugref.moiety_name` view), so a clinician who types *acetaminophen* finds
+  paracetamol. Because the label matcher and the search share one rule, the exclusions apply to search as well:
+  *glucose* does not find dextrose. The stored names are a snapshot of the registry, so they are rebuilt after
+  every UNII ingest; `drugref status` warns when they are older than it.
 - British and Australian names (*adrenaline*, *lignocaine*, *frusemide*) are not covered. UNII lists them only as
   common names, alongside impurity and salt names, so they need a separate source.
 

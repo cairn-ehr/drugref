@@ -17,13 +17,22 @@ UNII release; a release is unambiguous per (source, writer). The per-source
 clear touches only this module's table, so `ingest unii` and this run can never
 delete each other's rows.
 
+A SNAPSHOT OF THE REGISTRY. Which names are adopted depends on the display
+names and UNII claims at the moment this runs. A later `ingest unii` can rename a
+moiety into one of these names, contest a UNII, or add moieties, and nothing here
+changes until this is re-run: re-run it after every `ingest unii`. `drugref
+status` says so when `unii_run` finished after the last `moiety_name_run`.
+
 Order:
   1. read the registry and refuse an empty one (a rebuild over it would delete
      every name and report success);
-  2. read UNII_Names (refuses a UNII_Records file, or one yielding no official
-     name) and decide with `for_run` -- all before the run opens;
-  3. open the run, clear this source's names, write the adopted ones;
-  4. finish the run and commit -- or roll back and re-raise.
+  2. refuse a `--release` other than the registry's own `unii_run` release: the
+     names must describe the same UNIIs the registry was built from;
+  3. read UNII_Names (refuses a UNII_Records file, or one yielding no official
+     name) and decide with `for_run`; refuse a decision adopting nothing (again
+     a rebuild that would delete every name) -- all before the run opens;
+  4. open the run, clear this source's names, write the adopted ones;
+  5. finish the run and commit -- or roll back and re-raise.
 """
 import logging
 import pathlib
@@ -47,8 +56,9 @@ class MoietyNameSummary:
     """What one run wrote.
 
     * stored -- rows written to moiety_official_name
-    * adoption -- the adoption line (adopted / already named / shadowed /
-      ambiguous / excluded, each named), the same line `ingest spl` prints
+    * adoption -- the adoption line `ingest spl` also prints: adopted, shadowed,
+      ambiguous and excluded names listed (shadowed and ambiguous: first 12),
+      already-named and unfoldable as counts, plus any unused-exclusion WARNING
     """
     stored: int
     adoption: str
@@ -85,9 +95,19 @@ def _ingest(conn, unii_names_path, upstream_release, clock) -> MoietyNameSummary
             f"moiety-names: the registry holds {len(registry.by_name)} moiety "
             f"name(s) and {len(registry.by_unii)} live UNII claim(s); rebuilding "
             "over it would delete every stored name. Run `ingest unii` first.")
+    registry_release = _registry_release(conn)
+    if registry_release != upstream_release:
+        raise ValueError(
+            f"moiety-names: --release {upstream_release!r}, but the registry was "
+            f"built from UNII release {registry_release!r} (unii_run). Use the "
+            "UNII_Names file of the registry's own release.")
     rows = spl_class_evidence.read_official_name_rows(unii_names_path,
                                                       registry.by_unii)
     adopted, counts = spl_official_names.for_run(registry, rows)
+    if not counts.adopted:
+        raise ValueError(
+            f"moiety-names: 0 official names adopted ({counts}); rebuilding would "
+            "delete every stored name. Is this the right file and registry?")
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
@@ -102,3 +122,11 @@ def _ingest(conn, unii_names_path, upstream_release, clock) -> MoietyNameSummary
     provenance.finish_run(conn, run_id)
     conn.commit()
     return MoietyNameSummary(stored=len(counts.adopted), adoption=str(counts))
+
+
+def _registry_release(conn) -> str | None:
+    """The release the registry's last finished `ingest unii` landed, or None."""
+    row = conn.execute(
+        "SELECT upstream_release FROM drugref.loaded_release "
+        "WHERE source = %s AND writer = 'unii_run'", (SOURCE,)).fetchone()
+    return row[0] if row else None

@@ -6135,7 +6135,7 @@ could match only `substance_moiety.display_name`, so typing *acetaminophen* foun
 `UNII`, writer **`moiety_name_run`** (the writer CHECK and `provenance.WRITERS` widened together), and the view
 **`drugref.moiety_name(moiety_uuid, name, name_kind)`**. The view is every display name (`display`) plus every stored
 official name (`unii_official`); **Cairn searches the view**. The view reads display names from `substance_moiety`
-live, so a UNII re-ingest that renames a moiety cannot leave a stale copy behind.
+live, so the display half never goes stale. **The official half does** (see the first trap below).
 Code map: `src/drugref/ingest/moiety_name_run.py` (orchestrator) · `src/drugref/cli_names.py`
 (`drugref ingest moiety-names --unii-names F --release TAG`, not a chain step: run it after `ingest unii`).
 
@@ -6162,6 +6162,18 @@ display name only → the view:
 | adrenaline · lignocaine · frusemide · amoxycillin | 0 | **0** |
 
 **Traps.**
+- **The stored official names are a snapshot of the registry: re-run `ingest moiety-names` after every `ingest
+  unii`.** Which names are adopted depends on the display names and UNII claims at names-run time. A later UNII
+  ingest can rename a moiety into a stored name (one name then finds two moieties across the two halves),
+  contest a UNII, or add moieties whose names never appear. `drugref status` prints a note when `UNII/unii_run`
+  finished after `UNII/moiety_name_run`. The run also refuses (before opening) a `--release` other than the
+  registry's `unii_run` release, and a decision adopting 0 names (which would wipe the table and exit 0). The
+  db/070 table comment's "exactly the names the SPL drug pass adopts" holds only for one registry snapshot; the
+  migration is applied, so it was not reworded.
+- **Spelling variants that fold alike keep the first in file order** (`adopt`): the SPL pass compares folded keys,
+  but Cairn searches raw text, so the other variant is not stored.
+- **Official names of UNIIs the registry does not hold are dropped uncounted, by design**: UNII_Names covers every
+  substance and the registry only moieties, so that count is large and carries no signal once the release matches.
 - **The BAN/AAN names are NOT UNII official names.** *adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are in
   UNII_Names only as `TYPE = cn` (common name), next to impurity, salt and monograph rows (*ADRENALINE IMPURITY F
   [EP IMPURITY]*). Admitting `cn` would need its own filtering rules and measurement. The issue defers BAN/AAN
@@ -6449,7 +6461,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3278 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3287 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

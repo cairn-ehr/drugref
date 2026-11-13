@@ -95,7 +95,7 @@ def for_run(
     registry: Registry, rows: Iterable[tuple[str, str]] | None,
 ) -> tuple[dict[str, str], OfficialNameCounts]:
     """`adopt` over the registry with the shipped exclusions; `rows` None (no
-    names file): nothing. Takes the whole Registry so the three mappings it
+    names file): nothing. Takes the whole Registry so the three fields it
     needs cannot come from two different snapshots."""
     if rows is None:
         return dict(registry.by_name), skipped()
@@ -115,6 +115,9 @@ def adopt(
     maps those UNIIs to moieties; `contested` are UNIIs more than one moiety
     claims, whose names count as ambiguous. Returns the merged mapping (the
     input is not modified) and what happened to every name.
+
+    One spelling per folded key: of two rows that fold alike (e.g. a hyphenated
+    and a spaced form), the FIRST in file order is the one returned and stored.
     """
     owner_of_key = {fold(name): uuid for name, uuid in names.items()}
     excluded_by_key = {fold(term): term for term in excluded}

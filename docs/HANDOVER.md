@@ -22,8 +22,10 @@ Schema now ends at `db/070`.** The suite total lives in PROJECT-NOTES § "How to
 names), which Cairn's pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety-names --unii-names F
 --release TAG` (run after `ingest unii`; not a chain step) stores the 1,630 names #227 adopts: *acetaminophen*,
 *cefalexin*, *rifampin*, *glyburide*, *albuterol* now resolve. **#230 fixed with it** (`Registry.contested_uniis`).
-**Still open on #231: BAN/AAN** (*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are UNII `cn` names only,
-next to impurity rows). Account and traps: PROJECT-NOTES § "The moiety-names round".
+**Review fixes (finalcheck):** re-run the names after every `ingest unii` (`status` flags stale ones); the run
+refuses a release other than the registry's and a 0-name decision. **Still open on #231: BAN/AAN**
+(*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are UNII `cn` names only, next to impurity rows).
+Account and traps: PROJECT-NOTES § "The moiety-names round".
 **`spl_run.py` is still at exactly the 500-line cap**: do #216 (the split) before adding anything there.
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
