@@ -51,9 +51,10 @@ class SynonymLinks:
     * rows -- (moiety, name, record UI) to store, one per moiety and name
     * records_linked -- records whose UNII the registry holds
     * records_without_unii -- records whose preferred concept carries no UNII
-      (CAS-only or '0'); they can link to nothing
-    * records_unlinked -- records with a UNII no registry moiety claims (most of
-      MeSH: diseases have no UNII, and most chemicals are not drugs)
+      (most of MeSH: diseases and other non-chemicals, plus CAS-only or '0');
+      they can link to nothing
+    * records_unlinked -- records with a UNII no registry moiety claims
+      (chemicals that are not registry drugs)
     * excluded -- names left out by the shipped exclusion list
     """
     rows: tuple[tuple[uuid.UUID, str, str], ...]
@@ -74,9 +75,18 @@ def synonym_records(path: StrPath, record_tag: str) -> Iterator[SynonymRecord]:
 
     `record_tag` is "DescriptorRecord" or "SupplementalRecord". A record with no
     preferred concept (none in the 2026 release) yields nothing.
+
+    Raises ValueError, once the file is read, if it held no `record_tag` at all
+    (the wrong file: desc passed as --supp would otherwise drop every supplementary
+    synonym from a run that still succeeds), or if a record lacks its UI.
     """
     ui_tag = _UI_TAG[record_tag]
+    found = 0
     for el in iter_records(path, record_tag):
+        found += 1
+        record_ui = el.findtext(ui_tag)
+        if not record_ui:
+            raise ValueError(f"a {record_tag} in {path} has no {ui_tag}")
         for concept in el.findall("ConceptList/Concept"):
             if concept.get("PreferredConceptYN") != "Y":
                 continue
@@ -85,9 +95,10 @@ def synonym_records(path: StrPath, record_tag: str) -> Iterator[SynonymRecord]:
                 if r.text)
             terms = tuple(t.findtext("String") or "" for t in concept.findall(
                 "TermList/Term") if t.get("IsPermutedTermYN") != "Y")
-            yield SynonymRecord(record_ui=el.findtext(ui_tag) or "",
-                                uniis=frozenset(uniis),
+            yield SynonymRecord(record_ui=record_ui, uniis=frozenset(uniis),
                                 terms=tuple(t for t in terms if t))
+    if not found:
+        raise ValueError(f"no {record_tag} in {path}: is it the right MeSH file?")
 
 
 def link(records: Iterable[SynonymRecord],

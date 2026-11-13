@@ -6216,7 +6216,8 @@ case-insensitively with the view:
 | every UNII on the record | 4,434 / 1,946 / **1,179** | 8,134 / 4,648 / **775** |
 | the preferred concept's own UNII | 4,240 / 1,357 / **0** | 7,753 / 4,050 / **0** |
 
-So "keep every moiety" costs nothing today: no MeSH synonym points at two moieties.
+So "keep every moiety" costs nothing today: no MeSH synonym points at two moieties. The two "new names" columns
+overlap (one moiety can gain a name from both a descriptor and an SCR), so they sum past the view's 10,700.
 
 **Figures (`drugref_synonyms` = `createdb -T drugref_names`, migrated to `db/071`, one synonyms ingest, 62 s).**
 18,692 stored from 8,283 linked records (337,214 records carry no UNII, 9,658 a UNII no moiety claims; excluded:
@@ -6249,6 +6250,14 @@ moiety's display or official name and are hidden. Word-start match, display name
   adds *Norepinephrine*, *Noradrenaline*, *Levarterenol* to it.
 - Within one moiety, spellings differing only in case keep the first (descriptors before SCRs); punctuation
   variants (*Ro 20-1724*, *Ro 20 1724*) are both kept, since Cairn searches raw text.
+- **A file holding none of its records is refused** (PR #233 review): the desc file passed as `--supp` used to
+  yield nothing, and the run committed without every supplementary synonym. `synonym_records` now raises on a file
+  with no `record_tag`, and on a record without its UI (`mesh_ui` is the provenance). A truncated `.gz`
+  (`EOFError`) and broken XML (`ParseError`) are one-line CLI errors like a missing file.
+- **`--release` is NOT checked against `mesh_run`'s**, unlike moiety-names against `unii_run` (#232): the synonyms
+  link through UNII claims, not through the MeSH PA build, so the two MeSH runs may carry different releases.
+- **The view comment in `db/071` says a synonym "may name several moieties"**: true by design (two moieties
+  claiming one UNII both get the name), measured 0 today; the live cross-moiety case is the 13 above.
 
 **Databases.** `drugref_synonyms` carries the shipped measurement; **never patch it**. Branch test DB:
 `drugref_test_mesh`.
@@ -6336,24 +6345,26 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **#213** (registry names miss US label spellings) **FIXED by the US-label-spellings round** (UNII official names as
-drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick) **FIXED for the
-UNII official names by the moiety-names round** (`db/070`) **and for the BAN/AAN names by the MeSH-synonyms round**
-(`db/071`, § "The MeSH-synonyms round"; owner: no chemical-name filter for now; closes with PR #233), and **#230** (adoption
-inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names round". Still open from #227's
-review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not stored). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
-a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
-**#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
-**[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
-composition (one object dominates; MED-RT catch-all classes raise questions) ·
+drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick)
+**FIXED for the UNII official names by the moiety-names round** (`db/070`) **and for the BAN/AAN names by the
+MeSH-synonyms round** (`db/071`, § "The MeSH-synonyms round"; owner: no chemical-name filter for now; closes with PR
+#233), and **#230** (adoption inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names
+round". Still open from #227's review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not
+stored). **Filed by the class-profiles round (2026-11-07)** —
+**[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
+class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
+subclass-only inheritance: `class_subclass_only_property`) ·
+**[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's composition
+(one object dominates; MED-RT catch-all classes raise questions) ·
 **[#204](https://github.com/cairn-ehr/drugref/issues/204)** (filed by the final review) `curated_property_ruling`
 interaction answers never reach the prescribing-alert path — owner design call, curators hold off interaction
 questions until it is decided · **[#206](https://github.com/cairn-ehr/drugref/issues/206)** and
 **[#207](https://github.com/cairn-ehr/drugref/issues/207)** (filed by the pre-merge review) **FIXED by the
-class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by
-PR #208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a
-report-only census, no migration, CLOSED (PR #212) (§ "The class-profiles round"). Figures on the issues and in the
-results record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on
-GitHub 2026-11-07**, alongside #130.
+class-profile fixes round, CLOSED (PR #208)** (`db/064`; `questions.require_question_for`). **#210** (filed by PR
+#208's review: rows written before #207 may still miscite) **FIXED by `citation_audit.miscited`**, a report-only
+census, no migration, CLOSED (PR #212) (§ "The class-profiles round"). Figures on the issues and in the results
+record. **Stale #133** (the `fda_cyp.py` split, done by § "The fda_cyp.py split") **was CLOSED on GitHub
+2026-11-07**, alongside #130.
 
 **#6, #25, #5** licence deeds need the owner's sign-off.
 
@@ -6524,7 +6535,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3307 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3316 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

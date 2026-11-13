@@ -382,8 +382,8 @@ def test_apply_migrations_is_idempotent(conn):
         # db/070 (#231): stored UNII official names, and the search view over
         # them plus every display name.
         "moiety_official_name", "moiety_name",
-            # db/071 (#231): MeSH entry terms (BAN/AAN names), search-only.
-            "moiety_mesh_synonym",
+        # db/071 (#231): MeSH entry terms (BAN/AAN names), search-only.
+        "moiety_mesh_synonym",
     }
 
 

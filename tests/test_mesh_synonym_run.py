@@ -8,6 +8,7 @@ reads this table: label-match keys stay the strict official-name set.
 DB-gated; the ingest commits, so each test starts from a TRUNCATE.
 """
 import contextlib
+import gzip
 import re
 import uuid
 
@@ -21,13 +22,19 @@ TABLES = ("drugref.moiety_mesh_synonym, drugref.moiety_official_name, "
           "drugref.identity_claim, drugref.substance_moiety, drugref.ingest_run")
 
 
-def _record(ui, unii, *terms):
+def _record(ui, unii, *terms, tag="DescriptorRecord"):
+    """One record; `tag` SupplementalRecord makes a supp (C...) record."""
+    ui_tag = "DescriptorUI" if tag == "DescriptorRecord" else "SupplementalRecordUI"
     body = "".join(f'<Term IsPermutedTermYN="N"><String>{t}</String></Term>'
                    for t in terms)
-    return (f'<DescriptorRecord><DescriptorUI>{ui}</DescriptorUI><ConceptList>'
+    return (f'<{tag}><{ui_tag}>{ui}</{ui_tag}><ConceptList>'
             f'<Concept PreferredConceptYN="Y"><RegistryNumberList><RegistryNumber>'
             f'{unii}</RegistryNumber></RegistryNumberList><TermList>{body}</TermList>'
-            f'</Concept></ConceptList></DescriptorRecord>')
+            f'</Concept></ConceptList></{tag}>')
+
+
+def _supp(*records):
+    return "<SupplementalRecordSet>" + "".join(records) + "</SupplementalRecordSet>"
 
 
 # 'furosemide' and 'ACETAMINOPHEN' repeat a name the moiety already has (display,
@@ -36,7 +43,9 @@ DESC = ("<DescriptorRecordSet>"
         + _record("D005665", "UFURO00000", "Furosemide", "Frusemide")
         + _record("D000082", "UPARA00000", "Acetaminophen", "APAP")
         + "</DescriptorRecordSet>")
-SUPP = "<SupplementalRecordSet></SupplementalRecordSet>"
+# One supp record whose UNII no moiety claims: read (a supp file with no record is
+# refused) but linking nothing, so the desc-only figures below hold.
+SUPP = _supp(_record("C000001", "UNKNOWNUNI", "Nothing", tag="SupplementalRecord"))
 
 
 @pytest.fixture(autouse=True)
@@ -67,16 +76,21 @@ def _seed(conn) -> None:
     conn.commit()
 
 
-def _files(tmp_path, desc=DESC):
+def _files(tmp_path, desc=DESC, supp=SUPP):
     (tmp_path / "desc.xml").write_text(desc)
-    (tmp_path / "supp.xml").write_text(SUPP)
+    (tmp_path / "supp.xml").write_text(supp)
     return tmp_path / "desc.xml", tmp_path / "supp.xml"
 
 
-def _ingest(conn, tmp_path, desc=DESC, release="2026"):
-    desc_path, supp_path = _files(tmp_path, desc)
+def _ingest(conn, tmp_path, desc=DESC, release="2026", supp=SUPP):
+    desc_path, supp_path = _files(tmp_path, desc, supp)
     return mesh_synonym_run.ingest_mesh_synonyms(
         conn, desc_path=desc_path, supp_path=supp_path, upstream_release=release)
+
+
+def _runs(conn) -> int:
+    return conn.execute("SELECT count(*) FROM drugref.ingest_run WHERE writer = "
+                        "'mesh_synonym_run'").fetchone()[0]
 
 
 def _stored(conn):
@@ -153,13 +167,56 @@ def test_a_run_linking_nothing_is_refused_and_keeps_the_previous_build(conn,
         _ingest(conn, tmp_path, "<DescriptorRecordSet>"
                 + _record("D9", "UNKNOWNUNI", "Nothing") + "</DescriptorRecordSet>")
     assert len(_stored(conn)) == 4
+    assert _runs(conn) == 1  # refused before open_run: no dead run row
+
+
+def test_the_desc_file_passed_as_supp_is_refused(conn, tmp_path):
+    """The review of #233: a copy-paste --supp desc2026.xml must not commit a
+    build missing every supplementary synonym."""
+    _seed(conn)
+    _ingest(conn, tmp_path)
+    desc_path, _ = _files(tmp_path)
+    with pytest.raises(ValueError, match="no SupplementalRecord"):
+        mesh_synonym_run.ingest_mesh_synonyms(
+            conn, desc_path=desc_path, supp_path=desc_path, upstream_release="2026")
+    assert len(_stored(conn)) == 4 and _runs(conn) == 1
+
+
+def test_supplementary_records_are_read_after_the_descriptors(conn, tmp_path):
+    """A supp name is stored with its C... UI; a case variant of a descriptor
+    term keeps the descriptor's spelling and UI."""
+    _seed(conn)
+    _ingest(conn, tmp_path, supp=_supp(_record(
+        "C000009", "UFURO00000", "FRUSEMIDE", "Furosemid", tag="SupplementalRecord")))
+    furo = [row for row in _stored(conn) if row[0] == FURO]
+    assert furo == [(FURO, "Frusemide", "D005665"), (FURO, "Furosemid", "C000009"),
+                    (FURO, "Furosemide", "D005665")]
+
+
+def test_the_shipped_exclusions_apply(conn, tmp_path):
+    """'Glucose' is on the shipped exclusion list: never a search name."""
+    _seed(conn)
+    _ingest(conn, tmp_path, "<DescriptorRecordSet>" + _record(
+        "D005665", "UFURO00000", "Frusemide", "Glucose") + "</DescriptorRecordSet>")
+    assert _stored(conn) == [(FURO, "Frusemide", "D005665")]
+
+
+def test_the_view_hides_a_synonym_only_against_its_own_moiety(conn, tmp_path):
+    """A furosemide synonym equal to PARACETAMOL's display or official name is
+    kept: hiding is per moiety, and a shared name is listed for both (#231)."""
+    _seed(conn)
+    _ingest(conn, tmp_path, "<DescriptorRecordSet>" + _record(
+        "D005665", "UFURO00000", "Paracetamol", "acetaminophen")
+        + "</DescriptorRecordSet>")
+    rows = conn.execute("SELECT moiety_uuid, name FROM drugref.moiety_name "
+                        "WHERE name_kind = 'mesh_synonym' ORDER BY name").fetchall()
+    assert rows == [(FURO, "acetaminophen"), (FURO, "Paracetamol")]
 
 
 def test_an_empty_registry_is_refused_before_any_run_opens(conn, tmp_path):
     with pytest.raises(ValueError, match="registry"):
         _ingest(conn, tmp_path)
-    assert conn.execute("SELECT count(*) FROM drugref.ingest_run "
-                        "WHERE writer = 'mesh_synonym_run'").fetchone()[0] == 0
+    assert _runs(conn) == 0
 
 
 # ---- the CLI --------------------------------------------------------------------
@@ -183,9 +240,43 @@ def test_the_cli_reports_a_missing_file_in_one_line(conn, capsys):
     assert "mesh-synonyms ingest failed" in err and err.count("\n") == 1
 
 
+def test_the_cli_reports_a_truncated_download_in_one_line(conn, tmp_path, capsys):
+    """A partial desc20XX.xml.gz raises EOFError, broken XML a ParseError: both
+    are operator problems, not tracebacks."""
+    _seed(conn)
+    _, supp_path = _files(tmp_path)
+    truncated = tmp_path / "desc.xml.gz"
+    truncated.write_bytes(gzip.compress(DESC.encode())[:40])
+    broken = tmp_path / "broken.xml"
+    broken.write_text(DESC[:60])
+    for desc_path in (truncated, broken):
+        argv = ["--dsn", "x", "ingest", "mesh-synonyms", "--release", "2026",
+                "--desc", str(desc_path), "--supp", str(supp_path)]
+        assert cli.main(argv) == 1
+        err = capsys.readouterr().err
+        assert "mesh-synonyms ingest failed" in err and err.count("\n") == 1
+
+
 # ---- `drugref status` ------------------------------------------------------------
 
-def test_status_warns_when_unii_ran_after_the_synonyms():
-    rows = [("MeSH", "mesh_synonym_run", "2026", 1, 1, True),
+def _status_rows(synonyms_at, names_at=None):
+    rows = [(mesh_synonym_run.SOURCE, mesh_synonym_run.WRITER, "2026",
+             synonyms_at, synonyms_at, True),
             ("UNII", "unii_run", "r", 2, 2, True)]
-    assert "mesh-synonyms" in cli_status._stale_names_note(rows)
+    if names_at is not None:
+        rows.append(("UNII", "moiety_name_run", "r", names_at, names_at, True))
+    return rows
+
+
+def test_status_warns_when_unii_ran_after_the_synonyms():
+    assert "`drugref ingest mesh-synonyms`" in cli_status._stale_names_note(
+        _status_rows(synonyms_at=1))
+
+
+def test_status_names_both_ingests_when_both_are_stale():
+    assert ("`drugref ingest moiety-names` and `drugref ingest mesh-synonyms`"
+            in cli_status._stale_names_note(_status_rows(synonyms_at=1, names_at=1)))
+
+
+def test_status_is_silent_when_the_synonyms_are_newer():
+    assert cli_status._stale_names_note(_status_rows(synonyms_at=3)) == ""

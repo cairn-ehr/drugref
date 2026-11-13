@@ -180,10 +180,11 @@ def _stale_names_note(rows) -> str:
     or "".
 
     The stored official names (db/070) and MeSH synonyms (db/071, both #231) are
-    linked against one snapshot of the registry; a later UNII ingest can rename a
-    moiety into one of them, contest a UNII or move a claim, and the search view
-    then misleads Cairn's allergy pick until they are rebuilt. Silent for a names
-    ingest that was never run.
+    linked against one snapshot of the registry; a later UNII ingest can contest a
+    UNII or move a claim (both tables), or rename a moiety into one of its official
+    names (the view re-checks synonyms live), and the search view then misleads
+    Cairn's allergy pick until they are rebuilt. Silent for a names ingest that was
+    never run.
     """
     finished = {(source, writer): finished_at
                 for source, writer, _, finished_at, *_ in rows}

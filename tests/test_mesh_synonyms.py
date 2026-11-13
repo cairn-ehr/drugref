@@ -7,6 +7,8 @@ synonym set, and its own UNII says which moiety they name. No database here.
 """
 import uuid
 
+import pytest
+
 from drugref.ingest import mesh_synonyms
 
 # A trimmed copy of the real D005665 record (desc2026): the preferred concept with
@@ -134,3 +136,18 @@ def test_the_summary_line_says_what_was_dropped():
                                        excluded=("Glucose",))
     assert str(links) == ("1 synonyms from 1 linked records; 2 records without a "
                           "UNII, 3 with no registry moiety; excluded: ['Glucose']")
+
+
+def test_a_file_with_no_record_of_the_tag_is_refused(tmp_path):
+    """The desc file passed as --supp holds no SupplementalRecord. Yielding nothing
+    would let the run commit without every supplementary synonym (the review of
+    #233), so the reader refuses the file."""
+    with pytest.raises(ValueError, match="no SupplementalRecord"):
+        _records(tmp_path, "desc.xml", DESC, "SupplementalRecord")
+
+
+def test_a_record_without_its_ui_is_refused(tmp_path):
+    """mesh_ui is the stored provenance: never store an empty one."""
+    with pytest.raises(ValueError, match="DescriptorUI"):
+        _records(tmp_path, "desc.xml", DESC.replace(
+            "<DescriptorUI>D005665</DescriptorUI>", ""), "DescriptorRecord")

@@ -80,12 +80,12 @@ clinically reviewed, and the read says so.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 closes on
-PR #233's merge** (official names #232, BAN/AAN names this round; owner's last calls made 2026-11-14). **Open from #227: #226, #228, #229.**
-**Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214–#218,
-#220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base)
-is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132,
-#134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve
-#17, the three rule-6 deeds (#6, #25, GSRS).
+PR #233's merge** (official names #232, BAN/AAN names this round; owner's last calls made 2026-11-14). **Open from
+#227: #226, #228, #229.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From
+class mentions: #214–#218, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is
+#214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153,
+#128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases,
+resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

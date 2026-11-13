@@ -8,7 +8,8 @@ allergy pick finds them through the `drugref.moiety_name` view (db/071).
 SEARCH ONLY. The SPL drug pass never reads this table.
 
 THE SOURCE IS 'MeSH', THE WRITER 'mesh_synonym_run'. The per-source clear touches
-only this module's table, so the MeSH PA and relations ingests are unaffected.
+only this module's table, so mesh_run's PA rows, the only other 'MeSH' writer, are
+unaffected.
 
 A SNAPSHOT OF THE REGISTRY'S UNII CLAIMS, like `moiety_name_run`: re-run it after
 every `ingest unii`. `drugref status` says so when `unii_run` finished later.
@@ -17,8 +18,8 @@ Order:
   1. read the registry's UNII claims and refuse an empty registry (a rebuild over
      it would delete every synonym and report success);
   2. read desc then supp (descriptors first, so a descriptor's spelling wins) and
-     link; refuse a result with no synonyms, for the same reason -- before the run
-     opens;
+     link; refuse a file holding none of its records (the wrong file) and a result
+     with no synonyms, for the same reason -- before the run opens;
   3. open the run, clear this source's synonyms, write the new ones;
   4. finish the run and commit -- or roll back and re-raise.
 """

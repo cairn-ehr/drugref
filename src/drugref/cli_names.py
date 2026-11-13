@@ -7,6 +7,7 @@ entry terms, the BAN/AAN names; search only).
 """
 import pathlib
 import sys
+from xml.etree.ElementTree import ParseError
 
 from drugref.ingest import mesh_synonym_run, moiety_name_run
 
@@ -15,10 +16,10 @@ def _run(label: str, ingest) -> int:
     """Run one ingest and print its summary, or report a refusal in one line."""
     try:
         summary = ingest()
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        # Bad path, a file that is not UTF-8, or a refused file/registry: an
-        # operator problem, one line, exit 1. A KeyError here is a bug and keeps
-        # its traceback.
+    except (OSError, EOFError, ParseError, UnicodeDecodeError, ValueError) as exc:
+        # Bad path, a truncated .gz (EOFError), broken XML, a file that is not
+        # UTF-8, or a refused file/registry: an operator problem, one line, exit 1.
+        # A KeyError here is a bug and keeps its traceback.
         print(f"drugref: {label} ingest failed: {exc}", file=sys.stderr)
         return 1
     for field, value in vars(summary).items():

@@ -4,8 +4,7 @@
 **Last reviewed:** 2026-11-14
 **Applies to:** the SPL drug pass (`drugref.spl_entity_occurrence`, `drugref.spl_ddi_pair`) and its match
 vocabulary (`drugref.ingest.spl_official_names`, `src/drugref/data/spl_official_name_exclusions.txt`); the
-searchable names (`drugref.moiety_name`, `drugref.moiety_official_name`,
-`drugref.moiety_mesh_synonym`)
+searchable names (`drugref.moiety_name`, `drugref.moiety_official_name`, `drugref.moiety_mesh_synonym`)
 **Full derivation:** issues [#213](https://github.com/cairn-ehr/drugref/issues/213) and
 [#231](https://github.com/cairn-ehr/drugref/issues/231); PROJECT-NOTES § "The US-label-spellings round", §
 "The moiety-names round" and § "The MeSH-synonyms round"
@@ -58,8 +57,10 @@ the class pass.
   them only as common names, alongside impurity and salt names. They come from MeSH instead, as the entry terms of
   each drug's preferred concept, linked by that concept's own UNII (`drugref.moiety_mesh_synonym`, name kind
   `mesh_synonym` in the view). Those names are for search only and never match a label, because they include
-  misspellings and abbreviations (*Acetominophen*, *APAP*). A search name may point at several moieties (a salt and
-  its base); the search shows them all and the clinician chooses. The label matcher still drops such a name.
+  misspellings and abbreviations (*Acetominophen*, *APAP*). A search name may match several moieties (MeSH's
+  *Codeine* is the registry's *codeine anhydrous*, while another moiety is displayed *codeine*); the search shows
+  them all and the clinician chooses. (The label matcher, which never sees these names, still drops an official name
+  that two moieties share.)
 
 ## Related
 
