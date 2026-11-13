@@ -29,9 +29,10 @@ next to impurity rows). Account and traps: PROJECT-NOTES § "The moiety-names ro
 run**: `test_suite_count.py` then fails two tests that are not real.
 
 **⇒ OWNER, from this round:** (a) the exclusion list applies to search too (your call in #231), so *glucose*
-does not find dextrose; split the list if the pick wants those back. (b) Where should BAN/AAN names come from: a
-measured filter over UNII `cn` rows, or another source? (c) From #227 still: glance at the exclusions and the 12
-shadowed names.
+does not find dextrose; split the list if the pick wants those back. (b) **BAN/AAN: DECIDED 2026-11-14** (#231
+comment): MeSH preferred-concept entry terms, as a search-only `name_kind` (never an SPL key), and **search names
+keep every moiety they point to** (the label rule of dropping two-moiety names stays for SPL only). First measure
+linking by each MeSH record's own UNII. (c) From #227 still: glance at the exclusions and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule

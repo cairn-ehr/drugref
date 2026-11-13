@@ -1393,7 +1393,9 @@ Cairn's allergy pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety
 set the SPL drug pass adopts as keys, so *acetaminophen*, *cefalexin*, *rifampin*, *glyburide* and *albuterol* now
 find their moieties. #230 is fixed with it: a name of a UNII two moieties claim is dropped as ambiguous.
 **Still open on #231**: BAN/AAN names (*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin*), which UNII carries
-only as noisy `cn` rows, so they need a source or a measured filter of their own. PROJECT-NOTES § "The
+only as noisy `cn` rows. **Decided 2026-11-14**: MeSH preferred-concept entry terms (public domain, already on
+disk; adds adrenaline, lignocaine, frusemide, amoxycillin), search-only, keeping every moiety a name points to.
+Research and options table: the #231 comment of that date. PROJECT-NOTES § "The
 moiety-names round".
 
 ### Slice 6 — HTTP public API
