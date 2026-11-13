@@ -34,7 +34,8 @@ from drugref import (
     classes, composition, conditions, db, indications, interactions, local,
     spl_evidence,
 )
-from drugref.ingest import allergy_group_run, fda_cyp_run, onchigh_run
+from drugref.ingest import (allergy_group_run, fda_cyp_run, moiety_name_run,
+                            onchigh_run)
 from drugref.ingest.pbs import PbsItem
 
 # A local product and a bridge row on it: the real FK pair the ORDER tests need.
@@ -112,6 +113,10 @@ EXPECTED_TABLES = {
     "allergy_group_run.ALLERGY_TABLES": (
         allergy_group_run.ALLERGY_TABLES,
         ("allergy_group_member", "allergy_group", "allergy_mesh_placement")),
+    # Moiety names (db/070, #231): source 'UNII', so this tuple is the ONLY thing
+    # keeping a names rebuild from touching unii_run's rows.
+    "moiety_name_run.MOIETY_NAME_TABLES": (
+        moiety_name_run.MOIETY_NAME_TABLES, ("moiety_official_name",)),
 }
 
 

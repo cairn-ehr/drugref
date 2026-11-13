@@ -313,7 +313,7 @@ def ingest_spl(
     # UNII_Names read ONCE: the drug pass adopts its names (#213), R19/P1 drops them.
     official = (spl_class_evidence.read_official_name_rows(unii_names, known_uniis)
                 if unii_names else None)
-    adopted, adoption = spl_official_names.for_run(names, official, by_unii=known_uniis)
+    adopted, adoption = spl_official_names.for_run(registry, official)
     vocab = build_vocabulary(adopted)
     say(f"  registry: {adoption}")
     # Classes: a 2nd statement (READ COMMITTED: maybe a later snapshot; nothing

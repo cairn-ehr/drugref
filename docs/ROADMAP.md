@@ -1387,6 +1387,15 @@ PROJECT-NOTES § "The US-label-spellings round". **Follow-ups**: [#226](https://
 display name and may have the same INN/USAN gap, unmeasured; `gate.py`'s 5-row hand crosswalk duplicates the rule);
 #216 (split `spl_run.py`, now at the cap).
 
+### Searchable moiety names (#231, #230) ✅ BUILT AND MEASURED (2026-11-14) — `db/070`, on `drugref_names`
+`drugref.moiety_name` (view: display names plus the stored UNII official names in `moiety_official_name`) is what
+Cairn's allergy pick searches (cairn-ehr/cairn-ehr#1065). `drugref ingest moiety-names` stores 1,630 names, the same
+set the SPL drug pass adopts as keys, so *acetaminophen*, *cefalexin*, *rifampin*, *glyburide* and *albuterol* now
+find their moieties. #230 is fixed with it: a name of a UNII two moieties claim is dropped as ambiguous.
+**Still open on #231**: BAN/AAN names (*adrenaline*, *lignocaine*, *frusemide*, *amoxycillin*), which UNII carries
+only as noisy `cn` rows, so they need a source or a measured filter of their own. PROJECT-NOTES § "The
+moiety-names round".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

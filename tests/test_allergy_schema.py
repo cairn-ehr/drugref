@@ -60,9 +60,11 @@ def test_checks_admit_new_values(conn):
 
 
 def test_checks_keep_old_values(conn):
+    # A subset, not equality: a LATER migration may widen a CHECK again (db/070
+    # adds 'moiety_name_run'). Exact equality lives with the newest widening.
     for (table, name), old in _OLD.items():
         live = set(re.findall(r"'([^']+)'", db.constraint_definition(conn, table, name)))
-        assert live == old | {_NEW[name]}, name
+        assert old | {_NEW[name]} <= live, name
 
 
 def test_review_status_closed(conn):

@@ -6127,6 +6127,58 @@ aurothiomalate 543 · secretin 503 (suppressed) — 35,901 spans over 85 keys. `
 **Databases.** `drugref_usnames` carries SPL run 12 (the shipped measurement) and the `ingest_run` row of
 superseded run 11 (adoption off); **never patch it**. `drugref_test_usnames` is this branch's test DB (recreated by pytest).
 
+## The moiety-names round (#231, #230, 2026-11-14) — `db/070`, measured on `drugref_names`
+
+**What it is.** Cairn's allergy pick (`cairn_drug_search`, Cairn `db/076`; Cairn's side is cairn-ehr/cairn-ehr#1065)
+could match only `substance_moiety.display_name`, so typing *acetaminophen* found nothing. `db/070` adds
+**`drugref.moiety_official_name`** (moiety, UNII official name, run), a delete-and-rebuild projection under source
+`UNII`, writer **`moiety_name_run`** (the writer CHECK and `provenance.WRITERS` widened together), and the view
+**`drugref.moiety_name(moiety_uuid, name, name_kind)`**. The view is every display name (`display`) plus every stored
+official name (`unii_official`); **Cairn searches the view**. The view reads display names from `substance_moiety`
+live, so a UNII re-ingest that renames a moiety cannot leave a stale copy behind.
+Code map: `src/drugref/ingest/moiety_name_run.py` (orchestrator) · `src/drugref/cli_names.py`
+(`drugref ingest moiety-names --unii-names F --release TAG`, not a chain step: run it after `ingest unii`).
+
+**One rule, two callers.** Which names are stored is decided by `spl_official_names.for_run`, unchanged from #227.
+The stored set is therefore exactly the SPL drug pass's adopted key set: a name a clinician can pick is a name a
+label is matched by. `for_run` now takes the `registry_read.Registry` itself (not `names` + `by_unii`), so its
+mappings cannot come from two snapshots.
+
+**#230 fixed in the same change.** `Registry.contested_uniis` names the UNIIs more than one moiety claims (the keys
+behind `unii_collisions`). `adopt(contested=...)` counts a name of such a UNII as ambiguous rather than letting it
+follow `by_unii`'s first-wins winner. That applies to both callers. Zero contested UNIIs on today's registry, so
+neither the SPL figures nor this round's count move.
+
+**Figures (`drugref_names` = `createdb -T drugref_usnames`, migrated to `db/070`, one names ingest, 2026-11-14).**
+UNII_Names 26Feb2026 → **1,630 stored** (= #227's adopted count), 15,560 already the display name, 12 shadowed,
+0 ambiguous, 4 excluded; 1.5 s wall clock. `moiety_name` holds 21,068 rows. The issue's table, word-start match,
+display name only → the view:
+
+| typed | display only | view |
+|---|---|---|
+| acetaminophen / paracetamol | 0 / 1 | **1** / 1 |
+| cefalexin / cephalexin | 0 / 3 | **1** (cephalexin anhydrous) / 3 |
+| rifampin · glyburide · albuterol | 0 · 0 · 1 | **1 · 1 · 2** |
+| adrenaline · lignocaine · frusemide · amoxycillin | 0 | **0** |
+
+**Traps.**
+- **The BAN/AAN names are NOT UNII official names.** *adrenaline*, *lignocaine*, *frusemide*, *amoxycillin* are in
+  UNII_Names only as `TYPE = cn` (common name), next to impurity, salt and monograph rows (*ADRENALINE IMPURITY F
+  [EP IMPURITY]*). Admitting `cn` would need its own filtering rules and measurement. The issue defers BAN/AAN
+  to a later source, so that is still open on #231.
+- **The exclusion list applies here too** (the owner's call in #231), so *glucose* does not find dextrose. Those
+  four names were excluded because they are ordinary words in label prose, not because they are bad pick names.
+  If the pick wants them back, the two callers need two lists.
+- **`moiety_name` can still return two moieties for one display name**: display names may collide
+  (`registry_read` counts them). Only the official half is unique by construction.
+- **`spl_run.py` is still exactly 500 lines.** The `for_run(registry, official)` call is one line shorter than the
+  old one and took no new line. #216 is still the prerequisite for any new hook there.
+- `test_allergy_schema.test_checks_keep_old_values` became a subset check (`old | new <= live`). Exact equality of
+  the writer CHECK now lives in `test_moiety_name_run` (`set(WRITERS) == live`) and `test_provenance`.
+
+**Databases.** `drugref_names` carries the shipped measurement (names run on top of `drugref_usnames`' SPL run 12);
+**never patch it**. Branch test DB: `drugref_test_names`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6210,7 +6262,10 @@ splits". `curation.py` left last — § "The curation.py split" — so **#177 an
 the ledger in `tests/test_module_size_cap.py` is deleted.
 
 **#213** (registry names miss US label spellings) **FIXED by the US-label-spellings round** (UNII official names as
-drug-pass keys, no migration; § "The US-label-spellings round"). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
+drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no queryable name table for Cairn's pick) **FIXED for the
+UNII official names by the moiety-names round** (`db/070`; BAN/AAN still open on the issue), and **#230** (adoption
+inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names round". Still open from #227's
+review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not stored). **Filed by the class-profiles round (2026-11-07)** — **[#202](https://github.com/cairn-ehr/drugref/issues/202)**
 a single-class read of `class_property` computes every class — **FIXED by `db/065`, CLOSED (PR #211)**, with
 **#209** (lodged by PR #208's pre-merge review; no SQL view for subclass-only inheritance: `class_subclass_only_property`) ·
 **[#203](https://github.com/cairn-ehr/drugref/issues/203)** the `unconfirmed_class_property` worklist's
@@ -6394,7 +6449,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3263 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3278 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6892,6 +6947,9 @@ ran in CI and `ruff` was not even a project dependency.
   counterpart**: a fresh clone of `drugref_spl160fix` then `migrate`, i.e. the production upgrade path, and the
   only artefact showing `db/053` applying over rows that predate it (the CHECK validated all nine) and
   `drugref status` refusing to call their stamps a duration. Keep both.
+- **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
+  drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
+  `drugref_test_names` was this branch's test DB. **Never patch it.**
 - **`drugref_allergy` is the allergy-groups round's verification database** (2026-11-09): `createdb -T drugref_profiles`,
   migrated to `db/069` (a COMMENT-only wording fix; `db/068` was left untouched because the ledger refuses a changed checksum), allergy groups ingested (MeSH 2026). `drugref_test_allergy` was this branch's test DB. **Never patch it.**
 - **`drugref_classmentions` is the SPL class-mentions round's verification database** (2026-11-08): built from

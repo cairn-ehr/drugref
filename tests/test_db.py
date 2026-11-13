@@ -379,6 +379,9 @@ def test_apply_migrations_is_idempotent(conn):
         # db/068: the allergy fold (every composition component, NOT the
         # active-only moiety_active_in_composite) that allergy_check reads.
         "moiety_allergy_fold",
+        # db/070 (#231): stored UNII official names, and the search view over
+        # them plus every display name.
+        "moiety_official_name", "moiety_name",
     }
 
 

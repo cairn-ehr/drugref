@@ -1,11 +1,13 @@
 # A drug is matched by its US label spelling, not only its registry name
 
 **Status:** Active
-**Last reviewed:** 2026-11-10
+**Last reviewed:** 2026-11-14
 **Applies to:** the SPL drug pass (`drugref.spl_entity_occurrence`, `drugref.spl_ddi_pair`) and its match
-vocabulary (`drugref.ingest.spl_official_names`, `src/drugref/data/spl_official_name_exclusions.txt`)
-**Full derivation:** issue [#213](https://github.com/cairn-ehr/drugref/issues/213) and PROJECT-NOTES § "The
-US-label-spellings round"
+vocabulary (`drugref.ingest.spl_official_names`, `src/drugref/data/spl_official_name_exclusions.txt`); the
+searchable names (`drugref.moiety_name`, `drugref.moiety_official_name`)
+**Full derivation:** issues [#213](https://github.com/cairn-ehr/drugref/issues/213) and
+[#231](https://github.com/cairn-ehr/drugref/issues/231); PROJECT-NOTES § "The US-label-spellings round" and §
+"The moiety-names round"
 
 ## Context
 
@@ -26,7 +28,8 @@ that substance's moiety**, with four rules:
 
 - the registry's own display name always wins its key (*epinephrine* stays the L-isomer, although it is also an
   official name of the racemate);
-- a name two moieties claim is dropped. drugref never settles that kind of ambiguity by "first wins";
+- a name two moieties claim is dropped. drugref never settles that kind of ambiguity by "first wins". The same
+  goes for a name of a UNII that two moieties claim;
 - a short, reviewed exclusion list keeps out official names that are ordinary words in a label, each justified
   by a measured context distribution: *glucose* (blood glucose, glucose tests), *retinal* (the adjective), *pca*
   (patient-controlled administration), *glycol* (ethylene glycol's official name, and in a label the tail of *polyethylene glycol*);
@@ -45,6 +48,11 @@ the class pass.
   shadowed, dropped as ambiguous and excluded on every run.
 - An entry on the exclusion list is a precision judgement and needs its measurement next to it, the same rule
   as the suppression list.
+- The same names are stored for searching (`drugref.moiety_name`, 1,630 names on the 26 Feb 2026 release), so a
+  clinician who types *acetaminophen* finds paracetamol. Because the label matcher and the search share one
+  rule, the exclusions apply to search as well: *glucose* does not find dextrose.
+- British and Australian names (*adrenaline*, *lignocaine*, *frusemide*) are not covered. UNII lists them only as
+  common names, alongside impurity and salt names, so they need a separate source.
 
 ## Related
 
