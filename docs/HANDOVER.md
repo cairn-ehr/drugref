@@ -13,17 +13,17 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/worklist-strongest-first` (from `main` after PR #237, MERGED). PR open to `main` for #217.
-Schema now ends at `db/073`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
-`uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/fda-cyp-official-names` (from `main` after PR #238, MERGED). PR open to `main` for #226. Schema
+still ends at `db/073` (no migration).** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, docs done): #217.** `db/073` adds `open_question.priority_rank`, derived each
-ingest from an optional per-kind `rank_sql`; `question_worklist` sorts by it after the cheapest unchecked tier
-and the kind, so label class-statement questions on the same tier list contraindicated first. Only that kind
-ranks. No surface lists the worklist yet, and curators still hold off this kind until #204. PROJECT-NOTES §
-"The worklist priority rank". No ingest was re-run and no named database was migrated. `ruff format` is NOT
-applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
-`test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND (built, tested, measured, docs done): #226.** onchigh resolves by UNII, so it had no gap. FDA-CYP now
+also resolves by the stored UNII official names (`moiety_official_name`): unresolved 16 cells / 8 substances → 6 /
+6 (rifampin, glyburide). **Run `ingest moiety-names` before `ingest fda-cyp`**, or FDA-CYP silently falls back to
+display names. The gate's crosswalk cannot use official names (wrong direction). Measuring UNII's `[INN]` rows
+instead found **#239**: **625 moieties' `INN` claim is the USAN** (aciclovir, ciclosporin, benzatropine). PROJECT-NOTES §
+"The FDA-CYP official-names round". `ruff format` is NOT applied in this repo; match the hand style. **Do not add
+`-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -59,9 +59,11 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **No owner call needed:** **#226** (measure
-   FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand crosswalk;
-   `moiety_name` is a ready lookup), and **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
+6. **Owner design call on #239** (625 `INN` claims carry the USAN): rename to UNII's `[INN]` name, and what rule
+   for the 74 that collide with another moiety's display name and the 99 hydrate forms? A rename ripples into
+   onchigh's name check, the FDA-CYP / SPL name keys, the `moiety_official_name` snapshot and Cairn's search.
+   Likely also a PBS-bridge recall gap (Australian names follow the INN; not measured).
+   **No owner call needed:** **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
    Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an avoid phrasing).
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
@@ -71,8 +73,8 @@ clinically reviewed, and the read says so.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
-(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
-closes on this branch's PR.** **Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class
+(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217 CLOSED**
+(PR #238). **#226 closes on this branch's PR; it filed #239.** **Open from allergy groups: #223, #224.** **Open from class
 profiles: #203, #204. From class mentions: #214, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and
 **#102** (remaining work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158**
 untouched. Also #148, #152, #153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run
@@ -83,9 +85,9 @@ every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **This round ran no ingest and migrated no named database** (db/072 and db/073 have reached only test DBs).
-  Test DB this branch: `drugref_test_worklist217` (create it with `createdb` first; pytest recreates the
-  schema, not the database). Every named database below lacks db/072–073 until migrated; its pre-072 census
+- **`drugref_fdacyp226` is this round's**: `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp`;
+  never patch it. Test DB this branch: `drugref_test_fdacyp226` (create it with `createdb` first; pytest recreates
+  the schema, not the database). Every other named database lacks db/072–073 until migrated; its pre-072 census
   rows then read NULL (not measured).
 - **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
   mesh-synonyms` (18,692 stored); never patch it.

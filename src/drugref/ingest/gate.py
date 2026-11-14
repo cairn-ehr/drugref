@@ -17,6 +17,12 @@ nothing upstream. The USAN<->INN crosswalk stays name-keyed because it is a
 NAME-TO-NAME map: its whole subject matter is that two vocabularies spell the
 same drug differently, and all five shipped entries were verified to match a real
 Display Name exactly in the 26Feb2026 release.
+
+NOT CLOSED (#239): measured against UNII_Names 26Feb2026, 625 moieties have a
+single `NAME [INN]` row that differs from their display name (acyclovir /
+aciclovir, cyclosporine / ciclosporin), so their INN claim stores the USAN. The
+fix awaits an owner design call there. UNII official names (#226) cannot replace
+this map: they give US spellings, the opposite direction.
 """
 import csv
 import pathlib

@@ -6378,6 +6378,37 @@ questions of kind 20 came in an order unrelated to strength.
 re-derivation refreshes the rank); `test_question_ids.py` +1 (only kind 20 declares `rank_sql`). Test DB:
 `drugref_test_worklist217`.
 
+## The FDA-CYP official-names round (#226, 2026-11-14) — no migration, measured on `drugref_fdacyp226`, suite 3365 → 3367
+
+**What it is.** #226 asked whether the other name-resolving ingests miss US label spellings, as the SPL drug pass
+did before #213, and whether `gate.py`'s 5-row crosswalk could use UNII official names instead.
+
+- **onchigh: no gap.** `onchigh_resolve._resolve_subject` resolves a subject by its live **UNII** claim and an
+  object by MED-RT NUI. The file's name is only a review aid, checked for equality, so a spelling cannot drop
+  an entry; a mismatch raises.
+- **FDA-CYP: fixed.** It resolved by `lower(display_name)` only. `fda_cyp_run` now folds
+  `classes.moieties_by_official_name` (the stored `moiety_official_name`, i.e. `spl_official_names.for_run`'s
+  set) into the same index (`fda_cyp_disposition._fold_by_lower(*indexes)`). A moiety is listed once per key,
+  so a stale snapshot repeating a display name cannot fake an ambiguity. Ambiguity is still unresolved, as
+  before.
+- **The gate: official names cannot replace it.** The crosswalk maps the UNII PT (a US name) to the INN; official
+  names give US spellings, the opposite direction. Measuring the real replacement, UNII_Names `NAME [INN]` rows,
+  found that the crosswalk is **not closed**: **625 moieties store a USAN or hydrate-form name as their `INN`
+  claim** (acyclovir, cyclosporine, benztropine, calcipotriene). Filed **#239** for an owner design call; the
+  gate's docstring says so. The issue defines the measurement (an INN is a `Name` row ending ` [INN]`).
+
+**Figures.** `drugref_fdacyp226` = `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp`
+(`downloads/FDA/fda_cyp_2026-05-29.html`, release 2026-05-29T14:00). `unresolved_substance` **16 cells / 8
+substances → 6 / 6**; `member` 348 → 356 cells; `withheld_qualified` 33 → 35. Rifampin (7 member cells, 1 withheld)
+→ rifampicin; glyburide → glibenclamide. The remaining 6 are not name-fixable: oral contraceptives, oseltamivir
+carboxylate, peginterferon alpha-2a, R-/S-venlafaxine and S-mephenytoin (#128).
+
+**Trap.** **Run `ingest moiety-names` before `ingest fda-cyp`.** On an empty `moiety_official_name`, FDA-CYP falls
+back to display names alone, silently (today's behaviour, not a regression). FDA-CYP is not a chain step.
+
+**Tests (+2).** `test_fda_cyp_run.py`: a stored official name resolves rifampin; the fold lists a moiety once
+when two indexes name it. Test DB: `drugref_test_fdacyp226`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6467,6 +6498,9 @@ MeSH-synonyms round** (`db/071`, § "The MeSH-synonyms round"; owner: no chemica
 #233), and **#230** (adoption inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names
 round". From #227's review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not
 stored), **both FIXED by the SPL census widening** (`db/072`, § "The SPL census widening").
+**#226** (other name-resolving ingests) **FIXED by the FDA-CYP official-names round** (onchigh needs nothing; FDA-CYP
+reads the stored official names), which filed **[#239](https://github.com/cairn-ehr/drugref/issues/239)**: 625 `INN` claims carry the USAN
+(owner design call) — § "The FDA-CYP official-names round".
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6652,7 +6686,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3365 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3367 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7154,6 +7188,9 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_fdacyp226` is the FDA-CYP official-names round's verification database** (2026-11-14, #226):
+  `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp` (run 2026-05-29T14:00).
+  `drugref_test_fdacyp226` was this branch's test DB. **Never patch it.**
 - **`drugref_synonyms` is the MeSH-synonyms round's verification database** (2026-11-14, #231): `createdb -T
   drugref_names`, migrated to `db/071`, one `ingest mesh-synonyms` (MeSH 2026, 18,692 stored).
   `drugref_test_mesh` was this branch's test DB. **Never patch it.**

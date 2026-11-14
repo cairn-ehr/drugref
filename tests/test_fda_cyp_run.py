@@ -1349,3 +1349,35 @@ def test_two_printed_forms_of_one_name_raise_ONE_question_not_two(conn):
         "WHERE gap_kind = 'fda_cyp_unadjudicated' AND gap_key LIKE '%probeamide%'").fetchone()[0]
     assert minted == 1
     conn.rollback()
+
+
+@pytest.mark.usefixtures("conn")
+def test_a_stored_unii_official_name_resolves_a_US_spelling(conn):
+    """#226. FDA writes the USAN ('rifampin'); the registry names the INN
+    ('rifampicin'). The stored UNII official names (moiety_official_name, the
+    same set the SPL drug pass and Cairn's search use) bridge the two, so
+    rifampin's cells resolve instead of landing unresolved_substance.
+    """
+    run = conn.execute("SELECT min(ingest_run_id) FROM drugref.ingest_run").fetchone()[0]
+    rifampicin = ids.mint_moiety_uuid("TESTUNII_RIFAMPICIN")
+    conn.execute("INSERT INTO drugref.substance_moiety "
+                 "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, 'rifampicin', %s)",
+                 (rifampicin, run))
+    conn.execute("INSERT INTO drugref.moiety_official_name (moiety_uuid, name, ingest_run) "
+                 "VALUES (%s, 'RIFAMPIN', %s)", (rifampicin, run))
+    conn.commit()
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
+    rows = conn.execute(
+        "SELECT DISTINCT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
+        "WHERE substance = 'rifampin'").fetchall()
+    assert rows and all(m == rifampicin for _, m in rows)
+    assert "unresolved_substance" not in {d for d, _ in rows}
+
+
+def test_the_fold_lists_a_moiety_once_when_two_indexes_both_name_it():
+    """#226: a stale official-name snapshot repeating a display name must not
+    turn one moiety into a fake two-claimant ambiguity (unresolved_substance)."""
+    m, other = ids.mint_moiety_uuid("U1"), ids.mint_moiety_uuid("U2")
+    folded = fda_cyp_disposition._fold_by_lower(
+        {"rifampicin": [m]}, {"RIFAMPICIN": [m], "rifampin": [m], "x": [other]})
+    assert folded == {"rifampicin": [m], "rifampin": [m], "x": [other]}

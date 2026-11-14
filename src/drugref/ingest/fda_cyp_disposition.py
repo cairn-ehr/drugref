@@ -188,8 +188,11 @@ def class_name(system: str, pathway: str, role: str, potency: str | None) -> str
 
 
 def _fold_by_lower(
-        by_display_name: dict[str, list[uuid.UUID]]) -> dict[str, list[uuid.UUID]]:
-    """Re-key classes.moieties_by_display_name's index onto lower(display_name).
+        *indexes: dict[str, list[uuid.UUID]]) -> dict[str, list[uuid.UUID]]:
+    """Merge name indexes (display names, then official names: #226) onto lower(name).
+
+    A moiety is listed once per key even if two indexes both name it, so a stale
+    official-name snapshot repeating a display name cannot fake an ambiguity.
 
     A SEPARATE fold rather than lower-casing at the call site, so two distinct
     display names that happen to fold onto one lower-case string are correctly
@@ -204,8 +207,10 @@ def _fold_by_lower(
     without anyone having to re-derive it by hand later.
     """
     folded: dict[str, list[uuid.UUID]] = {}
-    for name, moieties in by_display_name.items():
-        folded.setdefault(name.lower(), []).extend(moieties)
+    for index in indexes:
+        for name, moieties in index.items():
+            bucket = folded.setdefault(name.lower(), [])
+            bucket.extend(m for m in moieties if m not in bucket)
     return folded
 
 

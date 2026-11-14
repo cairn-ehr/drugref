@@ -224,7 +224,8 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
         # 3. The resolution index. Read ONCE, whole -- moieties_by_display_name is
         #    bounded by the registry, not by this feed, exactly as classes.py's own
         #    docstring argues for MED-RT and MeSH.
-        fold = _fold_by_lower(classes.moieties_by_display_name(conn))
+        fold = _fold_by_lower(classes.moieties_by_display_name(conn),
+                              classes.moieties_by_official_name(conn))
 
         # 4. Clear this source's previous rows before writing this run's. TWO
         #    clears, because FDA-CYP owns two kinds of table: the edges
