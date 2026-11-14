@@ -4316,13 +4316,14 @@ and refuses on any of six grounds. **Read the figures in the results record, not
 
 ### What shipped
 
-`db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one
-deferred constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_version.py` (split from `spl_dailymed.py` 2026-11-06), `spl_release.py`,
-`spl_match.py`, `spl_suppress.py` (split from `spl_match.py` 2026-10-29), `spl_quote.py`, `spl_subject.py`,
-plus `spl_checks.py` for the guards), the writer
-`spl_evidence.py`, the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
-`ScanResult`/`scan_release`/`iter_release_labels` — was split out of `spl_dailymed.py` on 2026-08-31 under
-rule 4; `spl_dailymed.py` reads ONE label's XML and never opens a zip.)
+`db/051_spl_ddi_evidence.sql` — the source-admission **trio**, five tables, two views, one gap view and one deferred
+constraint trigger. Pure modules (`ingest/spl.py`, `spl_dailymed.py`, `spl_version.py` (split from `spl_dailymed.py`
+2026-11-06), `spl_release.py`, `spl_match.py`, `spl_suppress.py` (split from `spl_match.py` 2026-10-29),
+`spl_quote.py`, `spl_subject.py`, plus `spl_checks.py` for the guards, and `spl_rows.py` (the rows a run writes; split
+from `spl_run.py` by #216)), the writer `spl_evidence.py` (with `spl_census.py`, db/057's census, split from it by
+#216), the orchestrator `ingest/spl_run.py` and `cli_spl.py`. (`spl_release.py` — the release WALK,
+`ScanResult`/`scan_release`/`iter_release_labels` — was split out of `spl_dailymed.py` on 2026-08-31 under rule 4;
+`spl_dailymed.py` reads ONE label's XML and never opens a zip.)
 
 **⇒ TWO VIEWS AT TWO GRAINS, EACH NAMED FOR ITS OWN.** The design said "two views" and named one. `spl_ddi_pair`
 is PAIR grain — `count(*)` **is** the pair count, directly comparable with `drugcentral_ddi_pair` — and
@@ -5808,12 +5809,11 @@ refuse a run, because *the ratio moving between releases is the signal*. Until n
 - **⇒ TRAP: IT IS HISTORY, NOT A PROJECTION.** It is deliberately **not** in `spl_evidence.SPL_TABLES`.
   Adding it there would make `clear_source_spl` delete the previous run's row, leaving nothing to compare
   against. `tests/test_spl_run_census.py` pins that two runs leave two rows.
-- **The writer** is `spl_evidence.write_run_census` (keyword-only), called by `ingest_spl` after
-  `check_floors` and before `finish_run`, inside the run's transaction: a run refused by its floors never
-  writes one, and a run failing after the write (`finish_run`, the deferred quote-budget trigger at commit)
-  rolls it back. **A refused run therefore leaves no census**, so `ingest_spl` also SAYS the three counts in
-  its progress output before any floor can refuse (PR #198 review) — the only trace a refused, drifted
-  release leaves.
+- **The writer** is `spl_census.write_run_census` (in `spl_evidence` until #216's split) (keyword-only), called by
+  `ingest_spl` after `check_floors` and before `finish_run`, inside the run's transaction: a run refused by its floors
+  never writes one, and a run failing after the write (`finish_run`, the deferred quote-budget trigger at commit)
+  rolls it back. **A refused run therefore leaves no census**, so `ingest_spl` also SAYS the three counts in its
+  progress output before any floor can refuse (PR #198 review) — the only trace a refused, drifted release leaves.
 - **Reading it**: `SELECT r.upstream_release, c.* FROM drugref.spl_run_census c JOIN drugref.ingest_run r
   USING (ingest_run_id) ORDER BY ingest_run_id`, or `drugref status`'s seventh block (#199, below).
 - **#186's second option, NOT taken:** routing id-keyed labels as `unresolved` instead of
@@ -5836,12 +5836,12 @@ newest two `spl_run_census` rows, newest first, each with absolute counts and th
 - **No threshold, no banner** — #163 rules these counts never refuse, and no cut-off has been measured. The
   operator diffs the two lines. **Exit code unchanged on a migrated database; on one short of db/057, `status`
   now ends with the guard's sentence and exits 2** (it exited 0 before this block existed).
-- **Reader** `spl_evidence.recent_run_census(conn, limit=2)` → `RunCensus` (beside the writer; `RUN_CENSUS_TABLE`
-  is the one home of the table name, used by writer, reader and guard). **"Newest" = last FINISHED**
-  (`finished_at DESC NULLS LAST`), the order `loaded_release` uses, so block 7 cannot disagree with block 1.
-  **Formatter** `cli_status.spl_census_lines` is pure; `print_spl_census_block` is guarded on db/057 and RAISES
-  like the other guarded blocks (block 2, unfinished runs, has no guard) — it is last, so aborting costs no other
-  block.
+- **Reader** `spl_census.recent_run_census(conn, limit=2)` (in `spl_evidence` until #216's split) → `RunCensus`
+  (beside the writer; `RUN_CENSUS_TABLE` is the one home of the table name, used by writer, reader and guard).
+  **"Newest" = last FINISHED** (`finished_at DESC NULLS LAST`), the order `loaded_release` uses, so block 7 cannot
+  disagree with block 1. **Formatter** `cli_status.spl_census_lines` is pure; `print_spl_census_block` is guarded on
+  db/057 and RAISES like the other guarded blocks (block 2, unfinished runs, has no guard) — it is last, so aborting
+  costs no other block.
 - **Block and guard-site counts are no longer written in docstrings.** The review found "blocks 2–7" / "guarded
   seven" wrong by one (block 2 is unguarded) in four places; every such count was replaced by wording that cannot
   drift, matching migration_guard.py's existing rule.
@@ -5987,8 +5987,8 @@ EVERY row for the (drug, class) is one (final review); any `not_read` row makes 
   The first record counted rows as mentions (a unit error, run 10); the census now reports both and every
   distribution is per span. The same applies to the class-hygiene drop count (rows, not spans).
 - **Class names match across sentence boundaries (R17).** The matcher tokenises on letters and digits and ignores
-  punctuation, so "... Potassium. Salts ..." matched "Potassium Salts". The class pass drops a match whose span
-  holds a sentence boundary (`spl_advice.span_crosses_sentence_boundary`) and counts the drops.
+  punctuation, so "... Potassium. Salts ..." matched "Potassium Salts". The class pass drops a match whose span holds
+  a sentence boundary (`spl_advice_scope.span_crosses_sentence_boundary` since #216's split) and counts the drops.
 - **MED-RT APC and generic head words (R16/R19).** All APC classes are empty by construction and generic
   ("Enzyme", "Hormone"); APC is not matched. Class keys equal to a registry moiety name or a UNII official name
   are dropped (the drug pass owns those); matches on a non-drug head word are dropped; MeSH PA `Hormones` is excluded.
@@ -6014,11 +6014,12 @@ further class-hygiene candidates (the results record's "Open, for a ruling") ·
 [#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts (boundary and non-drug-head) are
 printed by the ingest but not stored per run (also: the UNII_Names file's name/checksum is not stored) ·
 [#216](https://github.com/cairn-ehr/drugref/issues/216) rule 4: `spl_run.py` / `spl_evidence.py` / `spl_advice.py`
-at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s) ·
+at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s)
+(**FIXED by the SPL split**, § "The SPL split") ·
 [#217](https://github.com/cairn-ehr/drugref/issues/217) label class-statement worklist not ordered strongest
 level first (design §6.4) · [#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can
 still hide "contraindicated" when the intervening word ends another strength phrase (0 occurrences; R24's rule
-not yet applied to it). From the final review (`/finalcheck`):
+not yet applied to it) (**FIXED by the SPL split**). From the final review (`/finalcheck`):
 [#220](https://github.com/cairn-ehr/drugref/issues/220) withheld readings are stored as `not_read`, so they never
 reach the census or a curator (owner call; tied to the gate trade-off) ·
 [#221](https://github.com/cairn-ehr/drugref/issues/221) latent: a sentence NMI ships even when the NEXT sentence
@@ -6115,8 +6116,8 @@ aurothiomalate 543 · secretin 503 (suppressed) — 35,901 spans over 85 keys. `
 - **An official name equal to a class key now matters in BOTH passes**: R19/P1 drops it from the class vocabulary
   and the drug pass adopts it. `test_a_class_key_that_is_a_unii_official_name_is_dropped_and_counted` therefore no
   longer asserts unchanged pairs.
-- **`spl_run.py` sits at exactly the 500-line cap** after this round's prose trims; the next hook there needs #216
-  (the split) first.
+- **`spl_run.py` sat at exactly the 500-line cap** after this round's prose trims (#216's split since took it to
+  436; § "The SPL split").
 - **The exclusion list is not a stop-list in the suppression file's sense**: those names were never keys, so
   leaving one out keeps the old behaviour. Adding one needs a measured context distribution in the file.
 - **Filed [#226](https://github.com/cairn-ehr/drugref/issues/226)**: FDA-CYP / onchigh resolve by display name
@@ -6183,8 +6184,8 @@ display name only → the view:
   If the pick wants them back, the two callers need two lists.
 - **`moiety_name` can still return two moieties for one display name**: display names may collide
   (`registry_read` counts them). Only the official half is unique by construction.
-- **`spl_run.py` is still exactly 500 lines.** The `for_run(registry, official)` call is one line shorter than the
-  old one and took no new line. #216 is still the prerequisite for any new hook there.
+- **`spl_run.py` was still exactly 500 lines** (the `for_run(registry, official)` call is one line shorter than the
+  old one). #216's split has since taken it to 436 (§ "The SPL split").
 - `test_allergy_schema.test_checks_keep_old_values` became a subset check (`old | new <= live`). Exact equality of
   the writer CHECK now lives in `test_moiety_name_run` (`set(WRITERS) == live`) and `test_provenance`.
 
@@ -6261,6 +6262,41 @@ moiety's display or official name and are hidden. Word-start match, display name
 
 **Databases.** `drugref_synonyms` carries the shipped measurement; **never patch it**. Branch test DB:
 `drugref_test_mesh`.
+
+## The SPL split (#216, #218, 2026-11-14) — no migration, suite 3316 → 3321
+
+**What it is.** Rule 4 for the three SPL modules that sat at the cap, so #228 / #229 / #215 have room. Every moved
+block is a verified verbatim move (`diff` against `HEAD`, renames aside):
+
+- `ingest/spl_advice.py` 499 → 351: the scope finding (`_MARKER`, `_BOUNDARY`, `_ABBREV`, `_XREF_END`, `_BULLET`,
+  `_CELL_LABEL`, the sentence/heading-block/PLR-row functions) moved to **`ingest/spl_advice_scope.py`** (173).
+  `block_from`, `row_block`, `span_from` lost their underscore there (`spl_advice` imports them); the two masks
+  `_NEG_CONTRA` / `_NOT_ADVICE` stayed with the phrase rules. `sentence_span` and
+  `span_crosses_sentence_boundary` now live in the scope module (callers repointed, no re-export).
+- `ingest/spl_run.py` 500 → 436: the pure row builders moved to **`ingest/spl_rows.py`** (76) as `subject_rows` /
+  `evidence_for_wording`. The writers (`_write_evidence`, `WORDING_CHUNK`) stayed: the orchestrator remains the
+  only writer.
+- `spl_evidence.py` 500 → 440: db/057's census (`RUN_CENSUS_TABLE`, `write_run_census`, `RunCensus`,
+  `recent_run_census`) moved to **`spl_census.py`** (71); `cli_status` and `test_spl_run_census` repointed. #215 and
+  #229 both widen the census, so it is the half that will grow.
+
+**The cache (#216).** `read_advice(..., index=)` takes `spl_advice_scope.scope_index(text)` (markers + sentence
+starts); `spl_class_evidence._rows_and_drops` computes it at a wording's first mention and reuses it. Measured on
+the 2026-08 openFDA corpus (27,406 wordings, 326,165 class mentions, class vocabulary from `drugref_synonyms`),
+the class pass's match-and-read loop went **237.4 s → 75.9 s**, readings identical. That is a loop timing on this
+machine, not a re-run ingest; no ingest was re-run (nothing the ingest stores changed). Test:
+`test_216_the_scope_index_is_computed_once_per_wording`.
+
+**#218.** A `_NEG_CONTRA` mask is skipped when its span overlaps a match of another (non-contraindicated) strength
+rule ("Do not use Contraindicated", "should not exceed Contraindicated": the "not" belongs to that phrase), R24's
+rule. Measured: `main`'s reader and this branch's agree on **all 326,165** class mentions of the 2026-08
+corpus (0 differ), so SPL run 17's figures still describe the code; the fix closes a latent path only.
+Test: `test_218_a_strength_phrase_ending_in_the_word_after_not_is_never_masked`.
+
+**Traps.**
+- `test_module_size_cap` is parametrised per module, so each new file adds a test: +3 of this round's +5.
+- A full run collided once with another session's pytest (#153's `UndefinedTable` / `DeadlockDetected` pattern,
+  failures moving between runs); a clean re-run was green. Use a per-branch test DB (`drugref_test_split` here).
 
 ## The standing open-issue ledger
 
@@ -6535,7 +6571,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3316 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3321 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -6899,10 +6935,11 @@ ran in CI and `ruff` was not even a project dependency.
   `cli_class_profile.py` (`drugref profile class|drug|rule`; pure renderers, no SQL), `curation_property.py`
   (the `curated_property_ruling` writer) and `gap_sources_class_profile.py` (gap kind 19's vocabulary)
   + the SPL class-mentions surface (`db/066`): `ingest/spl_class_vocab.py` (builds the class match vocabulary;
-  `is_matchable`, the APC exclusion and `EXCLUDED_CLASSES` live here), `ingest/spl_advice.py` (the PURE advice reader: phrase rules, scope order,
-  `WITHHELD`, `NMI_TEMPLATES`), `spl_class_evidence.py` (the class pass and its row writer inputs; also the R19
-  hygiene: shadowed/official-name key drops, effect-word and boundary drops) and
-  `tools/spl_class_census.py` (the census whose output is the results record's tables)
+  `is_matchable`, the APC exclusion and `EXCLUDED_CLASSES` live here), `ingest/spl_advice.py` (the PURE advice reader:
+  phrase rules, scope order, `WITHHELD`, `NMI_TEMPLATES`), `ingest/spl_advice_scope.py` (the PURE scope finding it
+  reads: sentences, heading blocks, PLR table rows, `scope_index`; split out by #216), `spl_class_evidence.py` (the
+  class pass and its row writer inputs; also the R19 hygiene: shadowed/official-name key drops, effect-word and
+  boundary drops) and `tools/spl_class_census.py` (the census whose output is the results record's tables)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
