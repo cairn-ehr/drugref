@@ -63,13 +63,17 @@ class EvidenceCounts(NamedTuple):
     class_spans_dropped_at_a_boundary: int
     #: Class matches dropped because the class word qualifies a non-drug head (R19/P2).
     class_spans_dropped_on_a_non_drug_head: int
+    #: Class matches dropped because 'non-' precedes them (#214; db/077).
+    class_spans_dropped_after_non: int
 
     def class_drop_fields(self) -> dict[str, int]:
-        """The two drop counts as `SplSummary` keyword arguments (same names)."""
+        """The three drop counts as `SplSummary` keyword arguments (same names)."""
         return {"class_spans_dropped_at_a_boundary":
                 self.class_spans_dropped_at_a_boundary,
                 "class_spans_dropped_on_a_non_drug_head":
-                self.class_spans_dropped_on_a_non_drug_head}
+                self.class_spans_dropped_on_a_non_drug_head,
+                "class_spans_dropped_after_non":
+                self.class_spans_dropped_after_non}
 
 
 def split_shadowed_keys(
@@ -257,6 +261,21 @@ def followed_by_non_drug_head(text: str, char_end: int) -> bool:
     return _NON_DRUG_HEAD.match(text, char_end) is not None
 
 
+#: #214: 'non-' (or 'non ') right before the class words names the COMPLEMENT group:
+#: 'non-depolarizing neuromuscular blockers' are atracurium and vecuronium, not
+#: succinylcholine. 577 run-17 spans, all of that shape (15/15 in a seeded sample).
+#: Dropped, not re-attributed: turning "non-X" into a statement about the complement
+#: group needs a parent class to subtract from, which is its own issue.
+#: The lookbehind keeps 'anon-' out; 'nonsteroidal' (one word) never ends in a space
+#: or hyphen, so it cannot match either.
+_NON_PREFIX = re.compile(r"(?<![A-Za-z])non[\s-]+\Z", re.IGNORECASE)
+
+
+def preceded_by_non(text: str, char_start: int) -> bool:
+    """True when the class span starting at `char_start` follows 'non-' / 'non '."""
+    return _NON_PREFIX.search(text, max(0, char_start - 8), char_start) is not None
+
+
 def class_rows_for_wording(text_key: str, text: str,
                            vocab: spl_match.Vocabulary) -> list[ClassOccurrenceRow]:
     """Match classes in one wording, then read the advice around each mention."""
@@ -264,15 +283,16 @@ def class_rows_for_wording(text_key: str, text: str,
 
 
 def _rows_and_drops(text_key: str, text: str, vocab: spl_match.Vocabulary,
-                    ) -> tuple[list[ClassOccurrenceRow], int, int]:
-    """Rows, then the matches dropped at a sentence boundary and on a non-drug head.
+                    ) -> tuple[list[ClassOccurrenceRow], int, int, int]:
+    """Rows, then the matches dropped at a sentence boundary, on a non-drug head,
+    and after 'non-' (#214: the complement group, not the class).
 
     A match whose span crosses a boundary is a false mention (the tokeniser ignores
     punctuation); it is dropped and COUNTED -- the design's sentence-splitter signal.
     A match on a non-drug head (R19/P2) is an adjective, not a mention: also counted.
     """
     rows = []
-    boundary = heads = 0
+    boundary = heads = nons = 0
     index = None  # #216: the wording's scope index, computed at its first mention
     for occ in spl_match.class_occurrences(spl_match.find_matches(text, vocab)):
         if spl_advice_scope.span_crosses_sentence_boundary(
@@ -281,6 +301,9 @@ def _rows_and_drops(text_key: str, text: str, vocab: spl_match.Vocabulary,
             continue
         if followed_by_non_drug_head(text, occ.char_end):
             heads += 1
+            continue
+        if preceded_by_non(text, occ.char_start):
+            nons += 1
             continue
         index = index or spl_advice_scope.scope_index(text)
         reading = spl_advice.read_advice(
@@ -292,7 +315,7 @@ def _rows_and_drops(text_key: str, text: str, vocab: spl_match.Vocabulary,
             advice_mixed=reading.mixed, advice_rule=reading.rule_id,
             advice_scope=reading.scope, scope_start=reading.scope_start,
             scope_end=reading.scope_end))
-    return rows, boundary, heads
+    return rows, boundary, heads, nons
 
 
 def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
@@ -312,24 +335,25 @@ def moiety_spans_inside_class_spans(moiety_spans: Iterable[tuple[int, int]],
 
 
 class ClassPass(NamedTuple):
-    """One wording's class pass, by NAME: three ints by position invite swaps."""
+    """One wording's class pass, by NAME: four ints by position invite swaps."""
 
     rows: list[ClassOccurrenceRow]
     moiety_spans_inside: int
     boundary_drops: int
     head_drops: int
+    non_drops: int
 
 
 def class_pass_for_wording(
     text_key: str, text: str, vocab: spl_match.Vocabulary,
     moiety_spans: Sequence[tuple[int, int]],
 ) -> ClassPass:
-    """The class rows, moiety spans inside a class span, boundary and head drops.
+    """Class rows, moiety spans inside a class span, boundary, head and 'non-' drops.
 
     Kept here so `spl_run` (at its size budget) makes ONE call per wording.
     `moiety_spans` are that wording's moiety occurrences from the moiety pass.
     """
-    rows, boundary, heads = _rows_and_drops(text_key, text, vocab)
+    rows, boundary, heads, nons = _rows_and_drops(text_key, text, vocab)
     inside = moiety_spans_inside_class_spans(
         moiety_spans, [(r.char_start, r.char_end) for r in rows])
-    return ClassPass(rows, inside, boundary, heads)
+    return ClassPass(rows, inside, boundary, heads, nons)

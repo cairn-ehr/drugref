@@ -45,28 +45,45 @@ def fda_cyp_label_orders(base: str) -> tuple[str, ...]:
 
 
 #: Individually named classes never matched, as (source, concept_type, class_name).
-#: ONE entry, each with its measured reason, so a second exclusion is a visible,
-#: reviewed edit and not a drift. 'Hormones' (MeSH PA), R19/P3: the twin of the
-#: excluded APC 'Hormone' (the same 4,486 spans came back through it on run 11); it
-#: read 4/10 as a class mention in the hand sample, the false ones physiology
-#: ('antidiuretic hormone', 'plasma hormone levels') and every true one 'thyroid
-#: hormone', a narrower thing than the 138-member class.
+#: Each entry carries its measured reason, so an addition is a visible, reviewed
+#: edit and not a drift.
+#: * 'Hormones' (MeSH PA), R19/P3: the twin of the excluded APC 'Hormone' (the same
+#:   4,486 spans came back through it on run 11); it read 4/10 as a class mention,
+#:   the false ones physiology ('antidiuretic hormone', 'plasma hormone levels') and
+#:   every true one 'thyroid hormone', a narrower thing than the 138-member class.
+#: * 'Electrolyte [EPC]', #214: an EMPTY class (its 110 run-17 statements reach no
+#:   drug) whose 2,349 spans are physiology ('electrolyte depletion', 'fluid and
+#:   electrolyte balance', 'monitor renal function and electrolytes').
+#: * 'Ophthalmic Solutions' (MeSH PA), #214: a dosage form. Its 494 run-17 spans are
+#:   product names ('timolol maleate ophthalmic solution'). Not generalised to MeSH's
+#:   D26 tree: that branch also holds 'Contraceptives, Oral, Combined', a real class.
 EXCLUDED_CLASSES: frozenset[tuple[str, str, str]] = frozenset({
     ("MeSH", "PA", "Hormones"),
+    ("MED-RT", "EPC", "Electrolyte [EPC]"),
+    ("MeSH", "PA", "Ophthalmic Solutions"),
 })
+
+#: The MED-RT PE (physiologic effect) classes still matched although the axis is not
+#: (#214). 'Antacid [PE]': its spans all carry MeSH 'Antacids' too, but 3 of its 6
+#: members (algeldrate, aluminum carbonate, aluminum hydroxide sulfate) are not
+#: MeSH members, so excluding it would cost them their antacid advice.
+KEPT_PE_CLASSES: frozenset[str] = frozenset({"Antacid [PE]"})
 
 
 def is_matchable(source: str, concept_type: str, class_name: str | None = None) -> bool:
-    """False for MED-RT's PK and APC axes, allergy groups ('AG'), and for a class
-    in `EXCLUDED_CLASSES`.
+    """False for MED-RT's PK, APC and PE axes (bar `KEPT_PE_CLASSES`), allergy
+    groups ('AG'), and for a class in `EXCLUDED_CLASSES`.
 
     FDA-CYP is also 'PK' but is matched, hence the source check. PK is excluded
     because its names are ordinary English (#155). APC is excluded for the same
     reason, measured on the 2026-08 release: all 44 APC classes are empty by
     construction (no drug is filed under them), their names are generic words
     ('Enzyme' 15,587 occurrences, 'Hormone' 4,486) and each duplicates a MeSH
-    pharmacologic-action name that IS matched. `class_name` is optional so an
-    axis-level caller can still ask about the axis alone.
+    pharmacologic-action name that IS matched. PE is excluded because its names
+    are effects ('Decreased Blood Pressure', 'Neuromuscular Blockade'): on run 17
+    its 1,888 spans not shared with another axis were all effect phrases, 149 of
+    them read contraindicated (#214). `class_name` is optional so an axis-level
+    caller can still ask about the axis alone (PE then reads False).
     """
     # Allergy groups are drugref's own structural seeds, not a vocabulary that label
     # text is written in, so label text is never matched against them.
@@ -74,6 +91,8 @@ def is_matchable(source: str, concept_type: str, class_name: str | None = None) 
         return False
     if (source, concept_type, class_name) in EXCLUDED_CLASSES:
         return False
+    if source == "MED-RT" and concept_type == "PE":
+        return class_name in KEPT_PE_CLASSES
     return not (source == "MED-RT" and concept_type in ("PK", "APC"))
 
 

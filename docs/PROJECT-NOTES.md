@@ -6031,8 +6031,9 @@ qualifies it ("Exception: contraindicated ...") ·
 [#222](https://github.com/cairn-ehr/drugref/issues/222) any live ruling suppresses a (drug, class) question even
 after the label evidence strengthens · #214 gained the `effects` head-word candidate.
 The same review FIXED in-PR: NMI no longer outvotes `not_read` in `spl_class_statement`; a measured class-row
-floor (`MEASURED_CLASS_FLOOR` = 304,682, gated by `--no-pair-floor`); `read_official_names` reads strictly
-(QUOTE_NONE, no `errors="replace"`) and refuses a file yielding 0 official names.
+floor (`MEASURED_CLASS_FLOOR` = 304,682, restated to 299,374 by #214; gated by `--no-pair-floor`);
+`read_official_names` reads strictly (QUOTE_NONE, no `errors="replace"`) and refuses a file yielding 0 official
+names.
 
 ## The allergy-groups round (2026-11-09) — `db/067`–`db/069`, measured on `drugref_allergy`
 
@@ -6513,6 +6514,49 @@ resolves 383 / 419 (348 members, 16 unresolved tuples: rifampin and glyburide jo
 **Tests (+2)** in `test_fda_cyp_resolution.py`: the refusal leaves no run row; the override ingests. Test DB:
 `drugref_test_names243`.
 
+## The class-hygiene round (#214, 2026-11-15) — `db/077`, measured on `drugref_hygiene214`, suite 3391 → 3396
+
+**Measured first, ruled by the owner, then built.** Candidates were measured on SPL run 17 (`drugref_classmentions`)
+from per-span context dumped from the openFDA corpus (scratch scripts, not committed; the DB keeps no prose). The
+owner ruled all four rules below in, with `Antacid [PE]` kept. All act in the class pass only; the drug pass and
+drug × drug pairs are untouched (30,624 / 27,194, unchanged).
+
+- **MED-RT PE axis excluded** (`spl_class_vocab.is_matchable`), bar `KEPT_PE_CLASSES = {"Antacid [PE]"}`. PE names
+  are effects. 9,441 run-17 rows: all 7,553 `Antacid [PE]` spans also carry MeSH `Antacids`; the other 1,888 were
+  effect phrases ("recovery from neuromuscular blockade", "resulted in significantly decreased blood pressure";
+  27/27 in two seeded samples), 149 of them read `contraindicated`. Antacid is kept because 3 of its 6 members
+  (algeldrate, aluminum carbonate, aluminum hydroxide sulfate) are not MeSH `Antacids` members.
+- **`Electrolyte [EPC]` and `Ophthalmic Solutions` (MeSH PA) added to `EXCLUDED_CLASSES`.** Electrolyte is EMPTY
+  (its 110 statements reached no drug); its 2,349 spans are physiology. Ophthalmic Solutions' 494 spans are product
+  names ("timolol maleate ophthalmic solution"). A MeSH D26-tree rule was measured and rejected: D26 also holds
+  `Contraceptives, Oral, Combined`.
+- **A class span after `non-` / `non ` is dropped and counted** (`spl_class_evidence.preceded_by_non`, after the
+  boundary and head checks): those words name the COMPLEMENT group ("non-depolarizing neuromuscular blockers" are
+  not succinylcholine). Wrong-class attachments, not safe-direction over-reads. **#245** tracks turning them into
+  complement-group statements (owner: important information, needs transforming).
+- **`db/077`** adds `spl_run_census.class_spans_dropped_after_non` (NULL before it); `SplSummary`, `status` and the
+  ingest line carry it. `tools/spl_class_census`'s matchable-class SQL derives the PE filter from `KEPT_PE_CLASSES`.
+- **`MEASURED_CLASS_FLOOR` restated 304,682 → 299,374** (the first full re-ingest refused on the old floor, as
+  designed: no rows lost).
+
+**Measured** (`drugref_hygiene214` = `createdb -T drugref_ambig132`, `db/077`, SPL run 19, release tag
+`hygiene214`; baseline run 12): rows 304,682 → 299,374, spans 227,990 → 222,683; statements 14,135 → 13,875
+(contraindicated 943 → 939, avoid 979 → 968, monitor 964 → 936, adjust_dose 1,742 → 1,722);
+`unconfirmed_label_class_statement` worklist 4,628 → 4,565. Drops stored: 64 at a boundary, 14,011 on a head word
+(was 14,098: some head drops were on now-excluded classes), 578 after `non-`. Predicted 5,309 fewer rows, measured
+5,308: one span an excluded key used to win now matches another class.
+
+**Not built (measured, no clean mechanical rule): #246.** A class word continuing into a differently spelled longer
+class ("bile acid sequestering agents" → `Bile Acid [EPC]`; "catecholamine-depleting drugs", 1,352 spans →
+`Catecholamine [EPC]`). Both candidate rules also dropped real "macrolide antibiotics" mentions. **`Enzyme Inducers
+[MoA]`** stays reported, not excluded: real mentions of a class with no members (38 empty classes carry statements).
+**Left on #214:** "drugs with anticholinergic effects" (R19/P2 drops it; a with/having exemption, ~1,343 spans in
+R19's estimate) and "consider alternative therapy" as an avoid phrasing. Both move figures: owner call.
+
+**Tests (+5):** PE and named exclusions (`test_spl_class_vocab.py`); `preceded_by_non` and the counted drop
+(`test_spl_class_evidence.py`); the forgotten-count and negative-CHECK parametrisations gained the new column.
+Test DB: `drugref_test_hygiene214`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6606,6 +6650,11 @@ stored), **both FIXED by the SPL census widening** (`db/072`, § "The SPL census
 reads the stored official names), which filed **[#239](https://github.com/cairn-ehr/drugref/issues/239)**: 625 `INN` claims are not the INN
 (owner design call) — § "The FDA-CYP official-names round". **#132, #135 CLOSED** (PR #242), whose review filed
 **#243** (no official names stays silent) — **FIXED by the FDA-CYP official-names guard** (§ of that name).
+**#214** (class-hygiene candidates) **ADVANCED by the class-hygiene round** (`db/077`; stays open for "drugs with
+X effects", which R19's head rule drops, and "consider alternative therapy" as an avoid phrasing), which filed
+**[#245](https://github.com/cairn-ehr/drugref/issues/245)** ("non-X" → complement-group statements; owner wants it)
+and **[#246](https://github.com/cairn-ehr/drugref/issues/246)** (a class word continuing into a differently spelled
+longer class: bile acid sequestering, catecholamine-depleting) — § "The class-hygiene round".
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6791,7 +6840,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3391 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3396 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7293,6 +7342,10 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_hygiene214` is the class-hygiene round's verification database** (2026-11-15, #214): `createdb -T
+  drugref_ambig132`, migrated to `db/077`, SPL run 19 (`hygiene214`) is the shipped measurement; it also carries
+  run 18, refused by the old class floor (an unfinished row, nothing written). `drugref_test_hygiene214` was this
+  branch's test DB. **Never patch it.**
 - **`drugref_names243` is the FDA-CYP official-names guard's verification database** (2026-11-15, #243):
   `createdb -T drugref_ambig132`, one plain `ingest fda-cyp`, then `TRUNCATE moiety_official_name`, one refused
   ingest and one `--allow-resolution-drop` ingest. **Its official names are gone, so never use it as a template.**

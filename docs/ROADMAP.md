@@ -861,7 +861,9 @@ findings the next round inherits:
   **Withheld, by the owner's 90% gate:** sentence-scope `avoid` and `monitor` (they ship only from
   row / heading blocks); `no_meaningful_interaction` ships **empty** (only closed templates may read it).
   **Next:** the owner's clinical read of the precision sample; ~~#213~~ (**done 2026-11-10**: UNII official names
-  are drug-pass keys, pairs 29,952 → 30,624; PROJECT-NOTES § "The US-label-spellings round"), #214 (further class-hygiene candidates), #215 (class-pass
+  are drug-pass keys, pairs 29,952 → 30,624; PROJECT-NOTES § "The US-label-spellings round"),
+  #214 (**advanced 2026-11-15**: PE axis, Electrolyte, Ophthalmic Solutions, `non-`; filed #245, #246; two items
+  left; PROJECT-NOTES § "The class-hygiene round"), #215 (class-pass
   drop counts are not stored per run). Class mentions now FEED class profiles ("What labels say about this class").
 - **The end-to-end fixture could not see a wrong quote budget** until a wording where the budget BINDS was added
   — db/050's vacuous-guard finding, recurring inside the round that quotes db/050 about it.
@@ -1447,6 +1449,13 @@ An FDA-CYP ingest on a registry that has display names but no UNII official name
 moiety-names`) is refused before any run row; `--allow-resolution-drop` overrides it. This catches the first ingest,
 which the #135 floor cannot. Real page: 393 → 383 of 419 resolved without official names. PROJECT-NOTES § "The FDA-CYP
 official-names guard".
+
+### SPL class hygiene (#214, first part) ✅ DONE (2026-11-15) — `db/077`
+Four owner-ruled rules in the class pass: the MED-RT PE axis is not matched (bar `Antacid [PE]`), `Electrolyte [EPC]`
+and `Ophthalmic Solutions` are named exclusions, and a class span after `non-` is dropped and counted (it names
+the complement group). Run 19: spans 227,990 → 222,683, statements 14,135 → 13,875; drug × drug pairs
+unchanged. Filed #245 (turn "non-X" into complement statements) and #246 (class words continuing into a
+differently spelled longer class). PROJECT-NOTES § "The class-hygiene round".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

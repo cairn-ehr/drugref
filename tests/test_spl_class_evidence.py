@@ -109,23 +109,23 @@ def test_moiety_spans_inside_class_spans_boundaries():
 
 def test_class_pass_for_wording_rows_and_overlap():
     text = "Avoid rifampin inducers and rifampin."
-    rows, inside, dropped, heads = ce.class_pass_for_wording(
+    rows, inside, dropped, heads, _ = ce.class_pass_for_wording(
         "k", text, _vocab(("rifampin inducers", CU)), [(6, 14), (30, 37)])
     assert [text[r.char_start:r.char_end] for r in rows] == ["rifampin inducers"]
     assert inside == 1
     assert ce.class_pass_for_wording(
-        "k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0, 0, 0)
+        "k", text, _vocab(("statins", CU)), [(6, 14)]) == ([], 0, 0, 0, 0)
 
 
 def test_a_class_match_spanning_a_sentence_boundary_is_dropped_and_counted():
     """Tokenising ignores punctuation, so 'Avoid Potassium. Salts are fine.' matches the
     class 'Potassium Salts' across a sentence end -- a false mention (R17)."""
     text = "Avoid Potassium. Salts are fine."
-    rows, inside, dropped, _ = ce.class_pass_for_wording(
+    rows, inside, dropped, _, _ = ce.class_pass_for_wording(
         "k", text, _vocab(("Potassium Salts", CU)), [])
     assert (rows, dropped) == ([], 1)
     # ... while the same words inside one sentence are kept.
-    rows, _, dropped, _ = ce.class_pass_for_wording(
+    rows, _, dropped, _, _ = ce.class_pass_for_wording(
         "k", "Avoid Potassium Salts today.", _vocab(("Potassium Salts", CU)), [])
     assert len(rows) == 1 and dropped == 0
 
@@ -178,10 +178,38 @@ def test_followed_by_non_drug_head_keeps_real_class_phrases():
 
 def test_a_class_span_on_an_effect_word_is_dropped_and_counted():
     text = "Drug X may enhance the anticoagulant effect of drug Y. Avoid anticoagulants."
-    rows, _, boundary, heads = ce.class_pass_for_wording(
+    cp = ce.class_pass_for_wording(
         "k", text, _vocab(("anticoagulant", CU), ("anticoagulants", CU)), [])
-    assert [text[r.char_start:r.char_end] for r in rows] == ["anticoagulants"]
-    assert (boundary, heads) == (0, 1)
+    assert [text[r.char_start:r.char_end] for r in cp.rows] == ["anticoagulants"]
+    assert (cp.boundary_drops, cp.head_drops, cp.non_drops) == (0, 1, 0)
+
+
+# ---- #214: a class word after 'non-' names the complement group ---------------
+
+def test_preceded_by_non():
+    """'non-depolarizing neuromuscular blockers' are atracurium and vecuronium, NOT the
+    depolarizing class (succinylcholine) the words match."""
+    f = ce.preceded_by_non
+    for text, word in (("other non-depolarizing neuromuscular blockers", "depolarizing"),
+                       ("Non-potassium-sparing diuretics", "potassium"),
+                       ("non- potassium sparing diuretics", "potassium"),
+                       ("non benzodiazepine hypnotics", "benzodiazepine"),
+                       ("non-insulin dependent", "insulin")):
+        assert f(text, text.index(word)), text
+    for text, word in (("anon-benzodiazepine", "benzodiazepine"),
+                       ("nonsteroidal anti-inflammatory drugs", "anti"),
+                       ("benzodiazepines", "benzodiazepines"),
+                       ("Avoid diuretics", "diuretics")):
+        assert not f(text, text.index(word)), text
+
+
+def test_a_class_span_after_non_is_dropped_and_counted():
+    text = "Avoid non-potassium-sparing diuretics. Avoid potassium-sparing diuretics."
+    cp = ce.class_pass_for_wording(
+        "k", text, _vocab(("potassium-sparing diuretics", CU)), [])
+    assert [(r.char_start, r.char_end) for r in cp.rows] == [
+        (text.rindex("potassium"), len(text) - 1)]
+    assert (cp.boundary_drops, cp.head_drops, cp.non_drops) == (0, 0, 1)
 
 
 # ---- R19/P1: class keys equal to a UNII official name --------------------------

@@ -157,7 +157,7 @@ def _census(run_id, release, records, labels, absent, blank, id_keyed, **db072):
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
         labels_keyed_on_document_id=id_keyed,
-        **(dict.fromkeys(CLASS_DROPS + OFFICIAL) | db072))
+        **(dict.fromkeys(CLASS_DROPS + OFFICIAL + NON_DROP) | db072))
 
 
 def test_the_census_block_says_none_when_no_SPL_run_has_landed():
@@ -253,7 +253,8 @@ def test_the_census_block_prints_db072s_counts_on_their_own_lines():
     (_, _, drops, names) = cli_status.spl_census_lines([
         spl_census.RunCensus(ingest_run_id=1, upstream_release="r", **_DISTINCT)])
     assert drops == ("    class pass dropped: at a boundary 101  on a non-drug head 102"
-                     "  shadowed by moieties 103  shadowed by official names 111")
+                     "  after non- 112  shadowed by moieties 103"
+                     "  shadowed by official names 111")
     assert names == ("    official names: adopted 104  already named 105  shadowed 106"
                      "  ambiguous 107  excluded 108  unfoldable 109"
                      "  exclusions unused 110")
@@ -265,10 +266,10 @@ def test_an_unmeasured_group_prints_NOT_MEASURED_never_zero():
     measured drops are ZERO: a measured 0 prints `0`, even beside a None."""
     from drugref import cli_status
     (_, _, drops, names, _, old_drops, old_names) = cli_status.spl_census_lines([
-        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_DROPS, 0)),
+        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_DROPS + NON_DROP, 0)),
         _census(1, "q", 1, 1, 0, 0, 0)])
     assert drops == ("    class pass dropped: at a boundary 0  on a non-drug head 0"
-                     "  shadowed by moieties 0  shadowed by official names "
+                     "  after non- 0  shadowed by moieties 0  shadowed by official names "
                      "not measured")
     assert names == "    official names: not measured"
     assert old_drops == "    class pass dropped: not measured"
@@ -280,7 +281,7 @@ def test_the_census_block_prints_every_db072_column():
     `_DB072_GROUPS` would never reach the operator; nothing else would fail."""
     from drugref import cli_status
     printed = [column for _, group in cli_status._DB072_GROUPS for column, _ in group]
-    assert sorted(printed) == sorted(CLASS_DROPS + OFFICIAL)
+    assert sorted(printed) == sorted(CLASS_DROPS + OFFICIAL + NON_DROP)
     assert set(printed) | set(spl_census.CENSUS_COLUMNS[:5]) == set(
         spl_census.CENSUS_COLUMNS)
 
@@ -315,6 +316,8 @@ OFFICIAL = ("official_names_adopted", "official_names_already_named",
             "official_names_excluded", "official_names_unfoldable",
             "official_name_exclusions_unused",
             "class_keys_shadowed_by_official_names")
+#: db/077's 'non-' drop (#214): outside db/072's group CHECKs, so its own tuple.
+NON_DROP = ("class_spans_dropped_after_non",)
 
 
 def _stored(conn, columns):
@@ -336,7 +339,7 @@ def test_the_class_drops_and_adoption_counts_are_STORED_unswapped(
     names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
                      f"RIFAMPIN INDUCERS\tof\t{sorted(base._fixture_uniis())[0]}\tX\n")
     summary = _ingest(conn, base._text_corpus(corpus), unii_names=names)
-    columns = CLASS_DROPS + OFFICIAL
+    columns = CLASS_DROPS + OFFICIAL + NON_DROP
     assert _stored(conn, columns) == [
         tuple(getattr(summary, c) for c in columns)]
     # Two of these are not zero, so the equality reaches past 0 == 0 -- but most are
@@ -353,7 +356,7 @@ def test_a_run_WITHOUT_a_names_file_stores_NULL_not_zero_for_official_names(
     measured". The class-pass drops were measured, so they are not NULL."""
     _seed_registry(conn)
     _ingest(conn, corpus)
-    ((*drops, ), ) = _stored(conn, CLASS_DROPS)
+    ((*drops, ), ) = _stored(conn, CLASS_DROPS + NON_DROP)
     assert None not in drops
     assert _stored(conn, OFFICIAL) == [(None,) * len(OFFICIAL)]
 
@@ -377,7 +380,7 @@ def _insert_072(conn, **values):
     # Every count's own floor: the group CHECKs do not see a negative.
     *(pytest.param(dict.fromkeys(group, 0) | {column: -1},
                    f"spl_run_census_{column}_check", id=f"negative-{column}")
-      for group in (CLASS_DROPS, OFFICIAL) for column in group),
+      for group in (CLASS_DROPS, OFFICIAL, NON_DROP) for column in group),
 ])
 def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constraint):
     """A group is measured whole or not at all (NULL = not measured), and every
@@ -407,7 +410,7 @@ def test_CENSUS_COLUMNS_is_every_census_column_and_every_one_a_summary_field(con
 #: A consistent census (db/057's identities hold) with every value distinct.
 _DISTINCT = dict(records_read=20, labels=12, records_field_absent=5,
                  records_field_blank=3, labels_keyed_on_document_id=7) | {
-    column: 101 + i for i, column in enumerate(CLASS_DROPS + OFFICIAL)}
+    column: 101 + i for i, column in enumerate(CLASS_DROPS + OFFICIAL + NON_DROP)}
 
 
 def test_the_writer_stores_each_count_in_its_OWN_column(conn):

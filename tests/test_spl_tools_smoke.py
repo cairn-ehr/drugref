@@ -133,6 +133,8 @@ def test_class_census_exclusion_is_derived_from_the_vocabulary():
     assert "('MeSH', 'PA', 'Hormones')" in sql and "('X', 'Y', 'O''Brien')" in sql
     matchable = next(q for title, q in cc.QUERIES if title.startswith("Classes mentioned"))
     assert cc.excluded_classes_sql(EXCLUDED_CLASSES) in matchable
+    # #214: the PE axis is excluded bar KEPT_PE_CLASSES, also derived, not copied.
+    assert "c.class_name NOT IN ('Antacid [PE]')" in matchable
 
 
 def test_spl_class_census_runs(conn):

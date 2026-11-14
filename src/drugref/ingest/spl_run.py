@@ -152,7 +152,7 @@ def _write_evidence(
     """
     keys = sorted(corpus.wordings)
     occurrences = with_moiety = quotes = quoted_chars = 0
-    class_total = with_class = inside = boundary_drops = head_drops = 0
+    class_total = with_class = inside = boundary_drops = head_drops = non_drops = 0
     for start in range(0, len(keys), WORDING_CHUNK):
         chunk = keys[start:start + WORDING_CHUNK]
         occurrence_rows: list[spl_evidence.OccurrenceRow] = []
@@ -170,6 +170,7 @@ def _write_evidence(
             inside += cp.moiety_spans_inside
             boundary_drops += cp.boundary_drops
             head_drops += cp.head_drops
+            non_drops += cp.non_drops
             class_rows.extend(cp.rows)
             occurrence_rows.extend(found)
             quote_rows.extend(quoted)
@@ -187,7 +188,8 @@ def _write_evidence(
         quoted_chars=quoted_chars, class_occurrences=class_total,
         wordings_with_a_class=with_class, moiety_spans_inside_class_spans=inside,
         class_spans_dropped_at_a_boundary=boundary_drops,
-        class_spans_dropped_on_a_non_drug_head=head_drops)
+        class_spans_dropped_on_a_non_drug_head=head_drops,
+        class_spans_dropped_after_non=non_drops)
 
 
 def ingest_spl(

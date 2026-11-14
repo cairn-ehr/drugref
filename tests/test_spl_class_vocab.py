@@ -27,8 +27,9 @@ def test_fda_cyp_label_orders_skips_substrates_and_unbanded():
     assert fda_cyp_label_orders("P-gp inhibitor") == ()
 
 
-def test_is_matchable_excludes_only_medrt_pk_and_apc():
+def test_is_matchable_excludes_only_medrt_pk_apc_and_pe():
     assert not is_matchable("MED-RT", "PK")
+    assert not is_matchable("MED-RT", "PE")
     assert not is_matchable("MED-RT", "APC")
     assert is_matchable("FDA-CYP", "PK") and is_matchable("MeSH", "PA")
     assert is_matchable("MED-RT", "EPC")
@@ -70,17 +71,32 @@ def test_class_match_keys_empty_base_yields_nothing():
     assert class_match_keys("[EPC]", "MED-RT") == ()
 
 
-def test_the_one_named_exclusion_is_mesh_hormones():
-    """R19/P3: 'Hormones' (MeSH PA) is the twin of the excluded APC 'Hormone' and read
-    4/10 as a class mention on run 11 (physiology: antidiuretic hormone, hormone
-    levels). ONE named entry, so a second exclusion is a visible, reviewed edit."""
+def test_the_named_exclusions():
+    """R19/P3: 'Hormones' (MeSH PA), the twin of the excluded APC 'Hormone' (4/10 on
+    run 11). #214: 'Electrolyte [EPC]' (empty class; physiology: 'electrolyte
+    depletion') and 'Ophthalmic Solutions' (MeSH PA; product names: 'timolol maleate
+    ophthalmic solution'). A named set, so each addition is a visible, reviewed edit."""
     from drugref.ingest.spl_class_vocab import EXCLUDED_CLASSES
-    assert EXCLUDED_CLASSES == frozenset({("MeSH", "PA", "Hormones")})
-    assert not is_matchable("MeSH", "PA", "Hormones")
-    # Only that exact class: its neighbours and namesakes on other axes still match.
+    assert EXCLUDED_CLASSES == frozenset({
+        ("MeSH", "PA", "Hormones"),
+        ("MED-RT", "EPC", "Electrolyte [EPC]"),
+        ("MeSH", "PA", "Ophthalmic Solutions")})
+    for excluded in EXCLUDED_CLASSES:
+        assert not is_matchable(*excluded)
+    # Only those exact classes: their neighbours and namesakes on other axes still match.
     assert is_matchable("MeSH", "PA", "Hormone Antagonists")
     assert is_matchable("MED-RT", "EPC", "Hormones")
     assert is_matchable("MeSH", "PA")  # the name is optional for axis-only callers
+
+
+def test_medrt_pe_is_never_matched_except_antacid():
+    """#214: PE names are physiological effects ('Decreased Blood Pressure [PE]'), so
+    a match is an effect phrase, not a drug group. 'Antacid [PE]' is kept: 3 of its 6
+    members (algeldrate, aluminum carbonate, ...) are not in MeSH 'Antacids'."""
+    assert not is_matchable("MED-RT", "PE", "Decreased Blood Pressure [PE]")
+    assert not is_matchable("MED-RT", "PE", "Neuromuscular Blockade [PE]")
+    assert not is_matchable("MED-RT", "PE")
+    assert is_matchable("MED-RT", "PE", "Antacid [PE]")
 
 
 def test_an_allergy_group_is_not_matchable():

@@ -441,6 +441,7 @@ _DB072_GROUPS = (
     ("class pass dropped", (
         ("class_spans_dropped_at_a_boundary", "at a boundary"),
         ("class_spans_dropped_on_a_non_drug_head", "on a non-drug head"),
+        ("class_spans_dropped_after_non", "after non-"),
         ("class_keys_shadowed_by_moieties", "shadowed by moieties"),
         ("class_keys_shadowed_by_official_names", "shadowed by official names"))),
     ("official names", (

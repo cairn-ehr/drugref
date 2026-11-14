@@ -1361,7 +1361,7 @@ _SUMMARY_FIELDS = dict(
     class_occurrences=5, wordings_with_a_class=2,
     moiety_spans_inside_class_spans=1,
     class_spans_dropped_at_a_boundary=0, class_spans_dropped_on_a_non_drug_head=0,
-    class_keys_shadowed_by_moieties=0,
+    class_keys_shadowed_by_moieties=0, class_spans_dropped_after_non=0,
     **dict.fromkeys(spl_checks.OFFICIAL_NAME_COUNTS))
 
 #: The official-name group as MEASURED, nothing found: overridden per test.
@@ -1374,7 +1374,8 @@ def _summary(**overrides):
 
 @pytest.mark.parametrize("field", [
     "class_spans_dropped_at_a_boundary", "class_spans_dropped_on_a_non_drug_head",
-    "class_keys_shadowed_by_moieties", *spl_checks.OFFICIAL_NAME_COUNTS])
+    "class_keys_shadowed_by_moieties", "class_spans_dropped_after_non",
+    *spl_checks.OFFICIAL_NAME_COUNTS])
 def test_a_FORGOTTEN_census_count_is_a_TypeError_not_a_stored_zero(field):
     """db/072's counts have no default: a caller that stops passing one would
     otherwise store 0 ("measured, nothing dropped") or None ("not measured")
@@ -1402,8 +1403,9 @@ def test_the_summary_reports_the_r19_class_drops():
     line an operator reads says so (a silent drop is indistinguishable from none)."""
     text = str(_summary(**_OFFICIAL_MEASURED | dict(
         class_keys_shadowed_by_official_names=2,
-        class_spans_dropped_on_a_non_drug_head=7)))
+        class_spans_dropped_on_a_non_drug_head=7, class_spans_dropped_after_non=3)))
     assert "2 class keys dropped as UNII official names" in text
+    assert "3 after 'non-'" in text  # #214
     assert "7 class rows dropped on a non-drug head word" in text
     # The figure counts (span, class) ROWS, not mentions (PROJECT-NOTES' run-10 trap).
     assert "5 class (span, class) rows over 2 wordings" in text
