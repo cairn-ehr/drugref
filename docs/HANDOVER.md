@@ -14,14 +14,14 @@
 ## ⇒ NEXT
 
 **Branch `claude/fda-cyp-floor-ambiguous` (from `main` after PR #241, MERGED). PR open to `main`; closes #132 and
-#135. Schema now ends at `db/075`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+#135. Schema now ends at `db/076`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
 else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, tested, measured, docs done): #132 + #135** (owner picked these over #214 and the owner calls).
 A name several moieties share is now `ambiguous_substance` (`db/075`, claimants in `candidate_moiety_uuids`), and its
 question no longer says "no name matches". A re-ingest whose resolved share drops below half the stored run's is
 refused before any run row (`--allow-resolution-drop` authorises it). Real page: 0 ambiguous, 55 of 55 question UUIDs
-unchanged, 6 `unresolved_substance` texts reworded. PROJECT-NOTES § "The FDA-CYP resolution round".
+unchanged, 6 texts reworded. Review: `db/076` claimant CHECK; #243 lodged. PROJECT-NOTES § "The FDA-CYP resolution round".
 **From #226:** run `ingest moiety-names` before `ingest fda-cyp`, or FDA-CYP silently falls back to display
 names (the new floor does NOT catch this: it moves only a few tuples). `ruff format` is NOT applied in this repo;
 match the hand style. **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests
@@ -74,14 +74,14 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED** (PR
-#233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
-CLOSED** (PR #238). **#226 CLOSED** (PR #240; it filed #239). **#134 CLOSED** (PR #241). **#132, #135 close on this branch's PR.**
-**Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214,
-#220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base) is
-wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124,
-#121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17, the three rule-6 deeds
-(#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
+(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
+CLOSED** (PR #238). **#226 CLOSED** (PR #240; it filed #239). **#134 CLOSED** (PR #241). **#132, #135 close on this
+branch's PR; its review lodged #243.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
+#204. From class mentions: #214, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
+work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
+#153, #128/#129, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17,
+the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

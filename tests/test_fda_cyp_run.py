@@ -1080,11 +1080,13 @@ def test_a_second_run_leaves_exactly_one_FDA_CYP_membership_edge(conn):
 def test_an_ambiguous_display_name_is_never_resolved_to_the_first_claimant(conn):
     """`single = candidates[0] if len(candidates) == 1 else None` (_classify).
 
-    Two moieties share the case-folded name 'alprazolam'. Rewriting that line
-    as `candidates[0] if candidates else None` would silently assert a
-    membership on whichever moiety the index happened to list first -- a wrong
-    membership on a REAL moiety, which is the worst shape available here.
-    Since #132 the row is ambiguous_substance, not unresolved_substance.
+    Two moieties share the case-folded name 'alprazolam'. Before #132,
+    rewriting that line as `candidates[0] if candidates else None` would
+    silently assert a membership on whichever moiety the index happened to list
+    first -- a wrong membership on a REAL moiety. Since #132 the row is
+    ambiguous_substance, and this test pins _classify's `len(candidates) > 1`
+    branch; the `single` line itself is pinned by
+    test_classify_tells_no_match_from_several_matches (test_fda_cyp_resolution.py).
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     row = conn.execute(
@@ -1231,7 +1233,8 @@ def test_an_unrecognised_disposition_is_counted_by_nothing_and_so_must_raise(
     sixth value -- which db/041's own header calls "a real, foreseeable event"
     -- would be counted into NONE of the five counters while
     `assertions_written` still included it. No counter sums to
-    assertions_written anywhere, so nothing downstream could notice.
+    assertions_written anywhere, so nothing downstream could notice. (The
+    closed set is six since db/075, hence `testonly_seventh`.)
     """
     monkeypatch.setattr(fda_cyp_run, "_classify",
                         lambda substance, candidates, markers: ("testonly_seventh", None))
@@ -1387,7 +1390,7 @@ def test_a_stored_unii_official_name_resolves_a_US_spelling(conn):
 
 def test_the_fold_lists_a_moiety_once_when_two_indexes_both_name_it():
     """#226: a stale official-name snapshot repeating a display name must not
-    turn one moiety into a fake two-claimant ambiguity (unresolved_substance)."""
+    turn one moiety into a fake two-claimant ambiguity (ambiguous_substance)."""
     m, other = ids.mint_moiety_uuid("U1"), ids.mint_moiety_uuid("U2")
     folded = fda_cyp_disposition._fold_by_lower(
         {"rifampicin": [m]}, {"RIFAMPICIN": [m], "rifampin": [m], "x": [other]})
@@ -1397,7 +1400,7 @@ def test_the_fold_lists_a_moiety_once_when_two_indexes_both_name_it():
 def test_the_fold_keeps_both_moieties_when_an_official_name_is_another_display_name():
     """#226: a stale official name equal to a DIFFERENT moiety's display name is a
     real ambiguity -- both claimants stay in the bucket (so the cell lands
-    unresolved_substance), never one silently chosen by index order."""
+    ambiguous_substance, #132), never one silently chosen by index order."""
     a, b = ids.mint_moiety_uuid("UA"), ids.mint_moiety_uuid("UB")
     folded = fda_cyp_disposition._fold_by_lower({"rifampin": [b]}, {"RIFAMPIN": [a]})
     assert folded == {"rifampin": [b, a]}

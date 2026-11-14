@@ -2937,14 +2937,13 @@ the DrugCentral evaluation recorded when it split its own 102): **9** combinatio
 entities, **3** enantiomers, **3** apparent synonyms (`rifampin`/`rifampicin`, `glyburide`/`glibenclamide`,
 `peginterferon alpha-2a`/`alfa-2a`), **1** apparent metabolite, **1** group term (`oral contraceptives`).
 
-**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared
-non-drugs — RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the
-non-drug list must be FDA's own pinned five, read from its prose, never inferred from a resolution failure.**
-Disposition order is therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen`
-→ `unresolved_substance` → `withheld_qualified` → `member` (#132 / `db/075` inserts `ambiguous_substance`
-before `unresolved_substance`), because grapefruit juice is *both* a non-drug and
-footnoted. Pinned by a test, which was mutation-tested to prove it pins the order rather than passing
-incidentally.
+**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared non-drugs —
+RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the non-drug list must
+be FDA's own pinned five, read from its prose, never inferred from a resolution failure.** Disposition order is
+therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen` → `unresolved_substance`
+→ `withheld_qualified` → `member` (#132 / `db/075` inserts `ambiguous_substance` before `unresolved_substance`),
+because grapefruit juice is *both* a non-drug and footnoted. Pinned by a test, which was mutation-tested to prove
+it pins the order rather than passing incidentally.
 
 ### The stored vocabulary has FIVE values, not nine — the standing rule at work
 
@@ -6450,7 +6449,7 @@ only four arms); a stored heading rewording keeps every withheld question_uuid, 
 golden literal set in the pre-db/074 format. The two `test_fda_cyp_run.py` joins that restated the old key format by
 hand now evaluate the registry's own `key_sql` (`_KEYED_GAP_VIEW`). Test DB: `drugref_test_heading134`.
 
-## The FDA-CYP resolution round (#132, #135, 2026-11-14) — `db/075`, measured on `drugref_ambig132`, suite 3375 → 3382
+## The FDA-CYP resolution round (#132, #135, 2026-11-14) — `db/075`–`db/076`, measured on `drugref_ambig132`, suite 3375 → 3389
 
 **#132: several claimants is `ambiguous_substance`.** Zero candidates and two or more both collapsed to
 `unresolved_substance`, whose question text says no name matches: false for the ambiguous case (#122's shape). The
@@ -6480,6 +6479,17 @@ reproduced on real data (it needs a broken registry); the tests do it by emptyin
 zero/one/several split; an ambiguous row stores its claimants and its question is honest; the unresolved text; the
 floor refuses with no run row and the stored projection untouched; the override; a first run is never blocked; the
 CLI threads the flag. Test DB: `drugref_test_floor135`.
+
+**PR #242 review (+7 tests, `db/076`).** Every refusal decided from the parse and the index now fires before
+`open_run`: the unknown-disposition guard and the member-without-moiety guard moved into step 1b with the floor,
+and the two pre-run registry reads got their own rollback-and-log (they sat outside the writer's `try`, so a
+missing table left an aborted transaction naming no feed). **`db/076`** puts db/075's claimant rule in the
+database (`candidate_moiety_uuids` is non-NULL with 2+ entries iff `ambiguous_substance`), so the question CASE
+dropped its `'Several' … '(unrecorded)'` COALESCEs, and it replaces the view comment db/075's `CREATE OR REPLACE`
+left stale. The schema test now also asserts the CHECK equals `DISPOSITIONS`. New tests pin the floor's
+arithmetic: an authorised shrink that keeps the share passes it, and a one-moiety drop does not trip it. **Not
+fixed, lodged as #243:** a registry rebuilt without `ingest moiety-names` costs about 10 of 393 resolved cells,
+far above the floor, so that documented trap is still silent.
 
 ## The standing open-issue ledger
 
@@ -6758,7 +6768,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3382 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3389 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

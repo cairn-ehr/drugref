@@ -7,10 +7,11 @@ pytest run its two autouse ones (`_registry`, `_clean`) for this module too.
 """
 import argparse
 
+import psycopg
 import pytest
 
 from drugref import classes, cli_fda_cyp, ids
-from drugref.ingest import fda_cyp_disposition, fda_cyp_run
+from drugref.ingest import fda_cyp, fda_cyp_disposition, fda_cyp_run
 from tests.test_fda_cyp_run import (  # noqa: F401  (fixtures are used by name)
     _KEYED_GAP_VIEW, FIXTURE, _clean, _registry, _wider_registry)
 
@@ -136,3 +137,110 @@ def test_the_cli_threads_the_override_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(cli_fda_cyp.fda_cyp_run, "ingest_fda_cyp", _stub)
     assert cli_fda_cyp.handle_fda_cyp(object(), args) == 0
     assert seen == {"flag": True}
+
+
+# ---------------------------------------------------------------------------
+# PR #242 review: the floor's arithmetic, and refusals that leave no run row.
+# ---------------------------------------------------------------------------
+
+def _resolves(conn, t) -> bool:
+    """Would this tuple resolve against the registry as it stands now?"""
+    fold = fda_cyp_disposition._fold_by_lower(classes.moieties_by_display_name(conn),
+                                               classes.moieties_by_official_name(conn))
+    candidates = fold.get(t.substance.lower(), [])
+    return fda_cyp_disposition._classify(t.substance, candidates,
+                                         t.footnote_markers)[1] is not None
+
+
+@pytest.mark.usefixtures("_wider_registry")
+def test_the_floor_compares_shares_so_an_authorised_shrink_passes_it(conn, monkeypatch):
+    """A genuine FDA shrink, authorised with --allow-shrink, keeps about the
+    same resolved SHARE while the resolved COUNT falls by two thirds. A floor
+    that compared counts would refuse it, and operators would learn to pass
+    both flags together -- which defeats the floor."""
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    tuples = fda_cyp.parse_table(FIXTURE.read_text(encoding="utf-8"))
+    resolved = [t for t in tuples if _resolves(conn, t)]
+    unresolved = [t for t in tuples if not _resolves(conn, t)]
+    assert len(resolved) >= 3 and len(unresolved) >= 3
+    kept = resolved[:len(resolved) // 3] + unresolved[:len(unresolved) // 3]
+    assert len(kept) < len(tuples) * fda_cyp_run.MIN_RETAINED_FRACTION
+
+    monkeypatch.setattr(fda_cyp, "parse_table", lambda page: kept)
+    # The shrink flag alone must NOT bypass the floor, nor the floor the shrink
+    # guard: this passes only because the share held.
+    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
+                                         upstream_release=RELEASE, allow_shrink=True)
+    assert summary.assertions_written == len(kept)
+
+
+@pytest.mark.usefixtures("_wider_registry")
+def test_a_partial_resolution_drop_above_the_floor_is_not_refused(conn, monkeypatch):
+    """One renamed moiety is ordinary drift, not a collapsed index."""
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    before = _resolved_count(conn)
+    real = classes.moieties_by_display_name
+    monkeypatch.setattr(classes, "moieties_by_display_name",
+                        lambda conn: {k: v for k, v in real(conn).items()
+                                      if k.lower() != "abiraterone"})
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert 0 < _resolved_count(conn) < before
+
+
+@pytest.mark.usefixtures("_wider_registry")
+def test_claimants_are_stored_only_on_ambiguous_rows(conn):
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert conn.execute(
+        "SELECT count(*) FROM drugref.fda_cyp_assertion "
+        "WHERE disposition <> 'ambiguous_substance' "
+        "  AND candidate_moiety_uuids IS NOT NULL").fetchone()[0] == 0
+
+
+def test_the_database_refuses_claimants_that_break_the_ambiguity_rule(conn):
+    """db/076: the rule held only in Python; the question text papered over a
+    break with 'Several ... (unrecorded)'. Now the row itself is refused."""
+    fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    one = [ids.mint_moiety_uuid("UA")]
+    two = one + [ids.mint_moiety_uuid("UB")]
+    for disposition, claimants in [("ambiguous_substance", None),
+                                   ("ambiguous_substance", one),
+                                   ("unresolved_substance", two)]:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(
+                "UPDATE drugref.fda_cyp_assertion SET disposition = %s, "
+                "candidate_moiety_uuids = %s, resolved_moiety_uuid = NULL "
+                "WHERE row_ordinal = (SELECT min(row_ordinal) "
+                "                     FROM drugref.fda_cyp_assertion)",
+                (disposition, claimants))
+        conn.rollback()
+
+
+def test_a_failed_index_read_rolls_back_and_names_the_feed(conn, monkeypatch, caplog):
+    """The fold reads the registry before the run opens, outside the writer's
+    try. A failure there must still roll back -- a programmatic caller must not
+    be left holding an aborted transaction -- and log which feed failed."""
+    monkeypatch.setattr(classes, "moieties_by_official_name",
+                        lambda conn: conn.execute("SELECT * FROM drugref.no_such_table"))
+    with pytest.raises(psycopg.errors.UndefinedTable):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert conn.execute("SELECT 1").fetchone() == (1,)
+    assert "FDA-CYP ingest failed" in caplog.text
+    assert _runs(conn) == 0
+
+
+def test_a_disposition_refusal_leaves_no_run_row(conn, monkeypatch):
+    """Every refusal decided from the parse and the index fires before
+    open_run, as the module docstring promises."""
+    monkeypatch.setattr(fda_cyp_run, "_classify",
+                        lambda substance, candidates, markers: ("testonly_seventh", None))
+    with pytest.raises(fda_cyp_run.FdaCypDispositionError):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert _runs(conn) == 0
+
+
+def test_a_member_without_a_moiety_is_refused_before_any_run_row(conn, monkeypatch):
+    monkeypatch.setattr(fda_cyp_run, "_classify",
+                        lambda substance, candidates, markers: ("member", None))
+    with pytest.raises(fda_cyp_run.FdaCypDispositionError, match="ordering"):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert _runs(conn) == 0

@@ -158,11 +158,11 @@ INTERACTION_GAP_SOURCES = {
     #     role and pathway are part of the fact and belong in the key (db/074:
     #     the ROLE, no longer FDA's printed column_heading).
     #   * EVERY OTHER NON-MEMBER disposition (unresolved_substance,
-    #     combination_regimen, non_drug_entity today, and whatever else the CHECK
-    #     admits later) is grained per SUBJECT (source, substance, disposition;
-    #     db/043) -- the question is about the NAME, not the cell that happened
-    #     to mention it, so the view projects column_heading, pathway, system,
-    #     role and potency as NULL for this half.
+    #     ambiguous_substance, combination_regimen, non_drug_entity today, and
+    #     whatever else the CHECK admits later) is grained per SUBJECT (source,
+    #     substance, disposition; db/043) -- the question is about the NAME, not
+    #     the cell that happened to mention it, so the view projects
+    #     column_heading, pathway, system, role and potency as NULL for this half.
     #
     # db/040 first shipped the subject half as a POSITIVE enumeration of the three
     # known values (`IN ('unresolved_substance', 'combination_regimen',
@@ -314,16 +314,17 @@ INTERACTION_GAP_SOURCES = {
             "  COALESCE(' A near name in the registry is ' || registry_near_name || "
             "  ', which is EVIDENCE for a curator, not a resolution.', '') "
             # db/075 (#132). The claimant list is evidence; drugref picks none.
-            # The COALESCEs keep a row with no recorded claimants (only a
-            # hand-written one can lack them) from NULLing the NOT NULL text.
+            # NO COALESCE on the claimants, deliberately: db/076's CHECK makes
+            # them non-NULL with 2+ entries on every ambiguous row, so a row
+            # without them is a broken invariant, and NULLing the NOT NULL text
+            # fails it loudly instead of printing "Several ... (unrecorded)".
             "WHEN 'ambiguous_substance' THEN "
             "  'Which drugref moiety, if any, is FDA''s ' || "
             "  COALESCE(substance, raw_substance) || '? ' || "
-            "  COALESCE(cardinality(candidate_moiety_uuids)::text, 'Several') || "
+            "  cardinality(candidate_moiety_uuids)::text || "
             "  ' drugref moieties share that name, so drugref resolved it to none "
             "of them: ' || "
-            "  COALESCE(array_to_string(candidate_moiety_uuids, ', '), "
-            "           '(unrecorded)') || "
+            "  array_to_string(candidate_moiety_uuids, ', ') || "
             "  '.' "
             "WHEN 'combination_regimen' THEN "
             "  'FDA reports this role for the REGIMEN ' || "

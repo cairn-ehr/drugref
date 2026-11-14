@@ -92,9 +92,9 @@ class FdaCypFootnoteError(Exception):
 
 # The closed disposition vocabulary, in ONE place on the Python side. It must
 # stay equal to the fda_cyp_assertion_disposition CHECK (db/039, widened by
-# db/075 for ambiguous_substance) -- pinned as an
-# equality (not a subset) by tests/test_fda_cyp_schema.py, so widening one
-# without the other fails rather than drifts.
+# db/075 for ambiguous_substance) -- pinned as an equality (not a subset) by
+# tests/test_fda_cyp_schema.py, so widening one without the other fails rather
+# than drifts.
 DISPOSITIONS = frozenset({
     "member", "withheld_qualified", "unresolved_substance", "ambiguous_substance",
     "combination_regimen", "non_drug_entity",
@@ -204,7 +204,7 @@ def _fold_by_lower(
     MERGED here -- both sets of claimants kept, never one dropped -- and a lookup
     against the merged bucket then naturally lands on ambiguous_substance if it
     holds more than one moiety: resolution is exact and case-insensitive, and
-    AMBIGUITY IS NEVER RESOLVED, never "pick the first", because a name resolving
+    AMBIGUITY IS NEVER RESOLVED by picking the first, because a name resolving
     to several moieties is real information (the registry grew and now genuinely
     disagrees with itself about this name) that silently picking one would erase. No
     display names collide under lower() on the registry measured for this design,
@@ -245,8 +245,8 @@ def _classify(substance: str, candidates: list[uuid.UUID],
     a name several moieties claim is real information that silently picking
     one would erase. The two used to share unresolved_substance, whose
     question text ("no moiety's name matches it") is false for the second.
-    Both are decided from the NAME alone, which is what lets questions.py's
-    gap_key omit the disposition.
+    Both are decided from the NAME alone, which is what lets the gap_key
+    (gap_sources_interactions.py) omit the disposition.
 
     The resolution and the non_drug_entity/combination_regimen check are
     independent: curcumin resolves to a real moiety AND is still

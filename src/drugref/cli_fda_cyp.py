@@ -65,8 +65,8 @@ def add_parser(sources) -> None:
                              "projection (refused by default)")
     # #135: same default-off reasoning. An empty or renamed registry makes every
     # tuple unresolved while the row count stays the same, so only a drop in
-    # the RESOLVED count shows it.
+    # the RESOLVED SHARE of tuples shows it.
     parser.add_argument("--allow-resolution-drop", action="store_true",
-                        help="authorise a run that resolves far fewer substances "
-                             "than the stored one (refused by default)")
+                        help="authorise a run that resolves a much smaller share "
+                             "of its tuples than the stored one (refused by default)")
     parser.set_defaults(handler=handle_fda_cyp)
