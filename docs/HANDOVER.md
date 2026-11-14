@@ -18,11 +18,12 @@ Schema now ends at `db/073`.** The suite total lives in PROJECT-NOTES § "How to
 `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, tested, docs done): #217.** `db/073` adds `open_question.priority_rank`, derived each
-ingest from an optional per-kind `rank_sql`; `question_worklist` sorts by it within a kind, so label
-class-statement questions list contraindicated first. Only that kind ranks. No surface lists the worklist yet,
-and curators still hold off this kind until #204. PROJECT-NOTES § "The worklist priority rank". No ingest was
-re-run and no named database was migrated. `ruff format` is NOT applied in this repo; match the hand style. **Do
-not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
+ingest from an optional per-kind `rank_sql`; `question_worklist` sorts by it after the cheapest unchecked tier
+and the kind, so label class-statement questions on the same tier list contraindicated first. Only that kind
+ranks. No surface lists the worklist yet, and curators still hold off this kind until #204. PROJECT-NOTES §
+"The worklist priority rank". No ingest was re-run and no named database was migrated. `ruff format` is NOT
+applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
+`test_suite_count.py` then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -82,9 +83,10 @@ every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **This round ran no ingest and migrated no named database** (db/072 and db/073 have reached only test DBs). Test DB this
-  branch: `drugref_test_worklist217` (create it with `createdb` first; pytest recreates the schema, not the database).
-  Every named database below lacks db/072–073 until migrated; its pre-072 census rows then read NULL (not measured).
+- **This round ran no ingest and migrated no named database** (db/072 and db/073 have reached only test DBs).
+  Test DB this branch: `drugref_test_worklist217` (create it with `createdb` first; pytest recreates the
+  schema, not the database). Every named database below lacks db/072–073 until migrated; its pre-072 census
+  rows then read NULL (not measured).
 - **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
   mesh-synonyms` (18,692 stored); never patch it.
 - **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).

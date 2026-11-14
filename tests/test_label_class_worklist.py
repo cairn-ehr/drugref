@@ -103,7 +103,9 @@ def test_worklist_orders_label_statements_strongest_level_first(conn, world):  #
     """#217 (design §6.4): a curator meets contraindicated before monitor.
 
     question_uuid is a hash, so without priority_rank the two pairs come back in an
-    order unrelated to strength. The ORDER BY is restated, as db/008 requires.
+    order unrelated to strength. The query restates the view's full ORDER BY (db/008:
+    it is not guaranteed through a wrapping query); the viewdef check below pins that
+    the view itself still sorts by the rank, after the tier and the kind.
     """
     from tests import class_profile_world as w
     r, k, a, b = world
@@ -119,8 +121,18 @@ def test_worklist_orders_label_statements_strongest_level_first(conn, world):  #
     questions.register_from_gaps(conn, r)
     rows = conn.execute(
         "SELECT gap_key, priority_rank FROM drugref.question_worklist WHERE gap_kind = %s "
-        "ORDER BY priority_rank NULLS LAST, question_uuid", (KIND,)).fetchall()
+        "ORDER BY cheapest_unchecked_rank NULLS LAST, gap_kind, priority_rank NULLS LAST, "
+        "question_uuid", (KIND,)).fetchall()
     assert rows == [(f"SPLCLASS:{a}:{k}", 1), (f"SPLCLASS:{b}:{weak}", 4)]
+    (viewdef,) = conn.execute(
+        "SELECT pg_get_viewdef('drugref.question_worklist'::regclass)").fetchone()
+    # Postgres renders the view's ORDER BY without NULLS LAST (the ASC default).
+    assert viewdef.rstrip().endswith("q.gap_kind, q.priority_rank, q.question_uuid;")
+    # A kind without rank_sql stores NULL, never a rank borrowed from another kind.
+    ranked, unranked_kind_rows = conn.execute(
+        "SELECT count(*) FILTER (WHERE priority_rank IS NOT NULL), count(*) "
+        "FROM drugref.open_question WHERE gap_kind <> %s", (KIND,)).fetchone()
+    assert ranked == 0 and unranked_kind_rows > 0
 
 
 def test_priority_rank_follows_the_reading_on_re_derivation(conn, world):  # noqa: F811

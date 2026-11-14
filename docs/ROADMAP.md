@@ -1415,8 +1415,9 @@ counts. The run's `source_checksum` now also covers the UNII_Names file and the 
 
 ### Worklist priority rank (#217) ✅ DONE (2026-11-14) — `db/073`
 `open_question.priority_rank` is derived from an optional per-kind `rank_sql`, and `question_worklist` sorts by it
-within a kind. Unconfirmed label class statements now list contraindicated first, monitor last (design §6.4). No
-surface lists the worklist yet; a GUI or CLI listing is future work, gated by #204. PROJECT-NOTES § "The worklist
+within a kind, after the cheapest unchecked tier. Unconfirmed label class statements on the same tier now list
+contraindicated first, monitor last (design §6.4). No surface lists the worklist yet; a GUI or CLI listing is
+future work, gated by #204. PROJECT-NOTES § "The worklist
 priority rank".
 
 ### Slice 6 — HTTP public API

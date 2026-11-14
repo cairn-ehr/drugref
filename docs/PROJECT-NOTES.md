@@ -6018,9 +6018,10 @@ UNII_Names file's checksum, **FIXED by #228** — the file's *name* is still not
 at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s)
 (**FIXED by the SPL split**, § "The SPL split") ·
 [#217](https://github.com/cairn-ehr/drugref/issues/217) label class-statement worklist not ordered strongest
-level first (design §6.4) (**FIXED by `db/073`**, § "The worklist priority rank") · [#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can
-still hide "contraindicated" when the intervening word ends another strength phrase (0 occurrences; R24's rule
-not yet applied to it) (**FIXED by the SPL split**). From the final review (`/finalcheck`):
+level first (design §6.4) (**FIXED by `db/073`**, § "The worklist priority rank") ·
+[#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can still hide "contraindicated"
+when the intervening word ends another strength phrase (0 occurrences; R24's rule not yet applied to it)
+(**FIXED by the SPL split**). From the final review (`/finalcheck`):
 [#220](https://github.com/cairn-ehr/drugref/issues/220) withheld readings are stored as `not_read`, so they never
 reach the census or a curator (owner call; tied to the gate trade-off) ·
 [#221](https://github.com/cairn-ehr/drugref/issues/221) latent: a sentence NMI ships even when the NEXT sentence
