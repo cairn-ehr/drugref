@@ -43,6 +43,11 @@ CLASS_PROFILE_GAP_SOURCES = {
         "view": "gap_unconfirmed_label_class_statement",
         # One question per (drug, class) pair, the same pair a ruling is keyed on.
         "key_sql": "'SPLCLASS:' || moiety_uuid || ':' || class_uuid",
+        # #217, design §6.4: strongest level first (1 = contraindicated, 4 = monitor).
+        # The view admits only strength levels, so the rank is never NULL here.
+        "rank_sql": (
+            "(SELECT strength_rank FROM drugref.spl_advice_level "
+            "WHERE level = " + _L + ".strongest_level)"),
         # Says "machine-read, not confirmed" and never that the drug is safe.
         "text_sql": (
             "'Does ' || (SELECT display_name FROM drugref.substance_moiety "

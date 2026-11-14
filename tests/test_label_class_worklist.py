@@ -97,3 +97,55 @@ def test_citation_census_accepts_label_question(conn, world):  # noqa: F811
     _label(conn, r, a, "S1")
     _rule(conn, a, k, question_uuid=_registered(conn, r, a, k)[0])
     assert citation_audit.miscited(conn) == []
+
+
+def test_worklist_orders_label_statements_strongest_level_first(conn, world):  # noqa: F811
+    """#217 (design §6.4): a curator meets contraindicated before monitor.
+
+    question_uuid is a hash, so without priority_rank the two pairs come back in an
+    order unrelated to strength. The query restates the view's full ORDER BY (db/008:
+    it is not guaranteed through a wrapping query); the viewdef check below pins that
+    the view itself still sorts by the rank, after the tier and the kind.
+    """
+    from tests import class_profile_world as w
+    r, k, a, b = world
+    k2 = "b" * 64
+    spl_evidence.write_wordings(
+        conn, [spl_evidence.WordingRow(text_key=k2, char_length=1_000, label_count=1)],
+        ingest_run_id=r, source="SPL")
+    weak = w.klass(conn, r, "Fibrates")
+    _occ(conn, r, k, level="contraindicated", rule="contraindicated.x")
+    _occ(conn, r, weak, level="monitor", rule="monitor.x", text_key=k2)
+    _label(conn, r, a, "S1")
+    _label(conn, r, b, "S2", text_key=k2)
+    questions.register_from_gaps(conn, r)
+    rows = conn.execute(
+        "SELECT gap_key, priority_rank FROM drugref.question_worklist WHERE gap_kind = %s "
+        "ORDER BY cheapest_unchecked_rank NULLS LAST, gap_kind, priority_rank NULLS LAST, "
+        "question_uuid", (KIND,)).fetchall()
+    assert rows == [(f"SPLCLASS:{a}:{k}", 1), (f"SPLCLASS:{b}:{weak}", 4)]
+    (viewdef,) = conn.execute(
+        "SELECT pg_get_viewdef('drugref.question_worklist'::regclass)").fetchone()
+    # Postgres renders the view's ORDER BY without NULLS LAST (the ASC default).
+    assert viewdef.rstrip().endswith("q.gap_kind, q.priority_rank, q.question_uuid;")
+    # A kind without rank_sql stores NULL, never a rank borrowed from another kind.
+    ranked, unranked_kind_rows = conn.execute(
+        "SELECT count(*) FILTER (WHERE priority_rank IS NOT NULL), count(*) "
+        "FROM drugref.open_question WHERE gap_kind <> %s", (KIND,)).fetchone()
+    assert ranked == 0 and unranked_kind_rows > 0
+
+
+def test_priority_rank_follows_the_reading_on_re_derivation(conn, world):  # noqa: F811
+    """The rank is derived like the text: a re-run refreshes it, never keeps a stale one."""
+    r, k, a, _b = world
+    _occ(conn, r, k, level="monitor", rule="monitor.x")
+    _label(conn, r, a, "S1")
+    rank = ("SELECT priority_rank FROM drugref.open_question WHERE gap_kind = %s "
+            "AND gap_key = %s")
+    key = f"SPLCLASS:{a}:{k}"
+    questions.register_from_gaps(conn, r)
+    assert conn.execute(rank, (KIND, key)).fetchone() == (4,)
+    conn.execute("UPDATE drugref.spl_class_occurrence SET advice_level = 'avoid', "
+                 "advice_rule = 'avoid.x' WHERE class_uuid = %s", (k,))
+    questions.register_from_gaps(conn, r)
+    assert conn.execute(rank, (KIND, key)).fetchone() == (2,)

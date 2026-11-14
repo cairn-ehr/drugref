@@ -1413,6 +1413,13 @@ stores them per run in `spl_run_census` beside #163's (NULL = not measured), and
 counts. The run's `source_checksum` now also covers the UNII_Names file and the two shipped SPL lists (#228).
 `drugref status` prints the new columns (**#235**, PR #237). PROJECT-NOTES § "The SPL census widening".
 
+### Worklist priority rank (#217) ✅ DONE (2026-11-14) — `db/073`
+`open_question.priority_rank` is derived from an optional per-kind `rank_sql`, and `question_worklist` sorts by it
+within a kind, after the cheapest unchecked tier. Unconfirmed label class statements on the same tier now list
+contraindicated first, monitor last (design §6.4). No surface lists the worklist yet; a GUI or CLI listing is
+future work, gated by #204. PROJECT-NOTES § "The worklist
+priority rank".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

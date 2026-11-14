@@ -92,11 +92,14 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
         # tools hold references to, and two implementations of one frozen rule is
         # the "two lists in two places" footgun db/006 was written to remove. One
         # implementation, in ids.mint_question_uuid, is the whole point.
+        # `rank_sql` is optional (db/073, #217): the order WITHIN this kind a curator
+        # should meet its questions. A kind without one stores NULL.
         gaps = conn.execute(
-            f"SELECT {spec['key_sql']}, {spec['text_sql']} FROM drugref.{spec['view']}"
+            f"SELECT {spec['key_sql']}, {spec['text_sql']}, "
+            f"{spec.get('rank_sql', 'NULL::integer')} FROM drugref.{spec['view']}"
         ).fetchall()
 
-        live_keys = [gap_key for gap_key, _ in gaps]
+        live_keys = [gap_key for gap_key, _, _ in gaps]
         if gaps:
             # executemany, not a Python loop of execute(): gap_unclassified_moiety
             # returns one row per moiety carrying no has_PE membership, which on a
@@ -105,17 +108,18 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO drugref.open_question "
-                    "(question_uuid, gap_kind, gap_key, "
-                    "question_text, first_derived_ingest, last_derived_ingest) "
-                    "VALUES (%s, %s, %s, %s, %s, %s) "
+                    "(question_uuid, gap_kind, gap_key, question_text, "
+                    "priority_rank, first_derived_ingest, last_derived_ingest) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s) "
                     "ON CONFLICT (question_uuid) DO UPDATE "
                     "   SET question_text       = EXCLUDED.question_text, "
+                    "       priority_rank       = EXCLUDED.priority_rank, "
                     "       last_derived_ingest = EXCLUDED.last_derived_ingest, "
                     # A reopened gap becomes current again under the same UUID.
                     "       is_current          = true",
                     [(ids.mint_question_uuid(gap_kind, gap_key), gap_kind, gap_key,
-                      question_text, ingest_run_id, ingest_run_id)
-                     for gap_key, question_text in gaps])
+                      question_text, rank, ingest_run_id, ingest_run_id)
+                     for gap_key, question_text, rank in gaps])
 
         # Whatever this kind derived last time and does not derive now has closed.
         # Drop the ones nobody has touched; keep -- and mark stale -- the rest.

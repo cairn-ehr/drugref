@@ -6018,9 +6018,10 @@ UNII_Names file's checksum, **FIXED by #228** — the file's *name* is still not
 at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s)
 (**FIXED by the SPL split**, § "The SPL split") ·
 [#217](https://github.com/cairn-ehr/drugref/issues/217) label class-statement worklist not ordered strongest
-level first (design §6.4) · [#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can
-still hide "contraindicated" when the intervening word ends another strength phrase (0 occurrences; R24's rule
-not yet applied to it) (**FIXED by the SPL split**). From the final review (`/finalcheck`):
+level first (design §6.4) (**FIXED by `db/073`**, § "The worklist priority rank") ·
+[#218](https://github.com/cairn-ehr/drugref/issues/218) latent: `_NEG_CONTRA` can still hide "contraindicated"
+when the intervening word ends another strength phrase (0 occurrences; R24's rule not yet applied to it)
+(**FIXED by the SPL split**). From the final review (`/finalcheck`):
 [#220](https://github.com/cairn-ehr/drugref/issues/220) withheld readings are stored as `not_read`, so they never
 reach the census or a curator (owner call; tied to the gate trade-off) ·
 [#221](https://github.com/cairn-ehr/drugref/issues/221) latent: a sentence NMI ships even when the NEXT sentence
@@ -6351,6 +6352,32 @@ before the census INSERT. New tests: `summary_fields()` with distinct values (bo
 16 distinct values, `CENSUS_COLUMNS` = the table's columns, a `>= 0` case for every db/072 column. db/072 gained
 column comments for its other eight columns (it had reached only the test DBs).
 
+## The worklist priority rank (#217, 2026-11-14) — `db/073`, suite 3362 → 3365
+
+**What it is.** Design §6.4 asks for the unconfirmed label class-statement worklist "ordered strongest level
+first". `question_worklist` (db/008) sorted within a gap kind by `question_uuid`, a hash, so run 17's 4,628
+questions of kind 20 came in an order unrelated to strength.
+
+- **`db/073`** adds `open_question.priority_rank` (nullable `integer`, `> 0`) and re-creates `question_worklist`
+  with the column appended and `ORDER BY cheapest_unchecked_rank NULLS LAST, gap_kind, priority_rank NULLS
+  LAST, question_uuid`. **The rank orders questions within one kind, never across kinds** (its meaning is the
+  kind's own); NULL means the kind declares none.
+- **It is derived, like `question_text`.** A gap spec may carry an optional `rank_sql`;
+  `register_from_gaps` selects it beside `key_sql`/`text_sql` (`NULL::integer` when absent) and refreshes it on
+  every upsert. Only `unconfirmed_label_class_statement` sets one: `spl_advice_level.strength_rank` of the
+  row's `strongest_level` (1 = contraindicated … 4 = monitor; the view admits only strength levels, so never
+  NULL). **Why on the table and not in the view:** the view would have to parse `gap_key` back into a moiety and
+  a class, spelling the frozen key format a second time in SQL, and re-run the `spl_class_statement` aggregate
+  on every worklist read.
+- **Not done here.** No listing surface reads the worklist yet (the reviewer GUI queue covers only
+  interaction/condition kinds, and no CLI lists questions), so a consumer must restate the ORDER BY, as db/008
+  already requires. Curators still should not work this kind until #204 is decided. No ingest was re-run and no
+  named database migrated: existing rows read NULL until their next ingest re-derives the register.
+
+**Tests (+3).** `test_label_class_worklist.py` +2 (contraindicated listed before monitor with ranks 1 and 4; a
+re-derivation refreshes the rank); `test_question_ids.py` +1 (only kind 20 declares `rank_sql`). Test DB:
+`drugref_test_worklist217`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6625,7 +6652,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3362 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3365 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
