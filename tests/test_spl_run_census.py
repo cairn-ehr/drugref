@@ -261,17 +261,28 @@ def test_the_census_block_prints_db072s_counts_on_their_own_lines():
 
 def test_an_unmeasured_group_prints_NOT_MEASURED_never_zero():
     """A run without a UNII_Names file measured the class pass but not the
-    official names (nor R19/P1's drop); a pre-db/072 row measured neither."""
+    official names (nor R19/P1's drop); a pre-db/072 row measured neither. The
+    measured drops are ZERO: a measured 0 prints `0`, even beside a None."""
     from drugref import cli_status
-    measured_drops = dict(zip(CLASS_DROPS, (4, 5, 6)))
     (_, _, drops, names, _, old_drops, old_names) = cli_status.spl_census_lines([
-        _census(2, "r", 1, 1, 0, 0, 0, **measured_drops),
+        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_DROPS, 0)),
         _census(1, "q", 1, 1, 0, 0, 0)])
-    assert drops.endswith("shadowed by moieties 6  shadowed by official names "
-                          "not measured")
+    assert drops == ("    class pass dropped: at a boundary 0  on a non-drug head 0"
+                     "  shadowed by moieties 0  shadowed by official names "
+                     "not measured")
     assert names == "    official names: not measured"
     assert old_drops == "    class pass dropped: not measured"
     assert old_names == "    official names: not measured"
+
+
+def test_the_census_block_prints_every_db072_column():
+    """A column added to CENSUS_COLUMNS (and so stored and read) but not to
+    `_DB072_GROUPS` would never reach the operator; nothing else would fail."""
+    from drugref import cli_status
+    printed = [column for _, group in cli_status._DB072_GROUPS for column, _ in group]
+    assert sorted(printed) == sorted(CLASS_DROPS + OFFICIAL)
+    assert set(printed) | set(spl_census.CENSUS_COLUMNS[:5]) == set(
+        spl_census.CENSUS_COLUMNS)
 
 
 def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):

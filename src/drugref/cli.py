@@ -352,7 +352,7 @@ def _handle_status(conn, args) -> int:
     # unlike a raised guard. `status` REPORTS; it is not a health check with a contract
     # on its exit code, and three of these blocks would already have claims on it.
     cli_status.print_unrankable_severity_block(conn)
-    # THE SEVENTH (db/057, issue 199): no fault, a comparison -- see its docstring.
+    # THE SEVENTH (db/057, issue 199; guard db/072, #235): no fault, a comparison.
     cli_status.print_spl_census_block(conn)
     return 0
 

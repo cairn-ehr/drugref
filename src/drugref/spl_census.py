@@ -56,8 +56,10 @@ class RunCensus:
     """One `spl_run_census` row, every `CENSUS_COLUMNS` count, plus the release it
     censused (issue 199's reader, widened by #235).
 
-    db/072's counts are `int | None`: None is NOT MEASURED (every pre-db/072 row,
-    and the official-name group of a run without a UNII_Names file), never 0.
+    db/072's counts are `int | None`: None is NOT MEASURED, never 0 -- every
+    pre-db/072 row, and for a run without a UNII_Names file the seven official-name
+    counts plus `class_keys_shadowed_by_official_names` (db/072's CHECK groups those
+    eight, though it is filed and printed with the class-pass drops).
     """
     ingest_run_id: int
     upstream_release: str

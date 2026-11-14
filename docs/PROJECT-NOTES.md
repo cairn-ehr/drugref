@@ -6324,16 +6324,16 @@ and the run's `source_checksum` covers every input that can move the pairs.
   on the same corpora; that is intended, and no code in `src/` compares checksums across runs (the
   `loaded_release` view publishes them, and `tools/pregnancy_lactation_spike.py` reads one).
 
-**#235 (FIXED, next round, suite 3358 → 3361).** `drugref status`'s census block (#199) prints db/072's counts on
+**#235 (FIXED, PR #237, suite 3358 → 3362).** `drugref status`'s census block (#199) prints db/072's counts on
 two more lines per run (`class pass dropped: ...`, `official names: ...`), absolute only; None prints `not
 measured`, and a group with nothing measured prints that once. `RunCensus` now carries every `CENSUS_COLUMNS`
 field (db/072's as `int | None`), and `recent_run_census` builds its SELECT list and the field names from that
 one tuple, so RunCensus's field order is free. **The block's guard now names db/072**, not db/057: on a
 db/057–071 database the reader fails one column short, and a guard naming db/057 (recorded applied) would have
 said "NOT a missing migration". So a pre-072 database's status now stops at this block with "run `drugref
-migrate`" instead of printing db/057's five. Tests +3 (pre-072 row reads back None; the two print lines with
-distinct values; `not measured` per count and per group); the reader-mapping test now uses all 16 distinct
-values. Test DB: `drugref_test_status235`. No ingest was re-run: no stored figure moved, and the 2026-08 figures
+migrate`" instead of printing db/057's five. Tests +4 (pre-072 row reads back None; the two print lines with
+distinct values; `not measured` per count and per group, beside measured zeros; every db/072 column printed);
+the reader-mapping test now uses all 16 distinct values. Test DB: `drugref_test_status235`. No ingest was re-run: no stored figure moved, and the 2026-08 figures
 for these counts are still the printed ones in SPL run 17's record.
 
 **Tests (+10).** `test_spl_run_census.py` +9 (end-to-end store unswapped, NULL without a names file, four CHECK
@@ -6625,7 +6625,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3361 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3362 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

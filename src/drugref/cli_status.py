@@ -385,7 +385,7 @@ def print_spl_census_block(conn) -> None:
     drift in front of the operator who just ran the ingest.
 
     NO THRESHOLD AND NO BANNER, deliberately: #163 rules these counts never refuse, and
-    a banner needs a cut-off nobody has measured. The operator diffs the two lines.
+    a banner needs a cut-off nobody has measured. The operator compares the two runs.
 
     LAST, AND IT RAISES like the other guarded blocks rather than degrading like the
     first: nothing is printed after it, so aborting here costs no other block.
