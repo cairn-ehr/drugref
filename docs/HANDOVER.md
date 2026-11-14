@@ -13,18 +13,19 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/spl-split` (from `main` after PR #233, MERGED; #231 CLOSED). PR open to `main` for #216 + #218.
-Schema still ends at `db/071` (no migration this round).** The suite total lives in PROJECT-NOTES § "How to run /
-test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/spl-census-wide` (from `main` after PR #234, MERGED). PR open to `main` for #215 + #228 + #229.
+Schema now ends at `db/072`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+`uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, measured, docs done): #216 + #218.** Verbatim splits: `ingest/spl_advice_scope.py` (scope
-finding, out of `spl_advice.py`, 499 → 351), `ingest/spl_rows.py` (pure row builders, out of `spl_run.py`, 500 →
-436), `spl_census.py` (db/057's census, out of `spl_evidence.py`, 500 → 440). `read_advice(..., index=)` reuses
-one `scope_index` per wording: class-pass loop 237 s → 76 s on the 2026-08 corpus, readings identical. #218: a
-negation mask overlapping another strength phrase is no longer applied. PROJECT-NOTES § "The SPL split".
-**`spl_run.py` now has room: #228 / #229 / #215 are unblocked.** `ruff format` is NOT applied in this repo; match
-the hand style. **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests
-that are not real.
+**⇒ THIS ROUND (built, tested, docs done): #215 + #228 + #229.** `db/072` adds the four class-pass drop counts and
+the seven official-name adoption counts to `spl_run_census` (NULL = not measured: every pre-072 row; with no
+UNII_Names file, the seven plus R19/P1's drop, i.e. the CHECK groups are 3 + 8). `spl_census.CENSUS_COLUMNS` =
+`SplSummary` field names; `write_run_census(..., summary=)` inserts by name, passing None through unchanged.
+`source_checksum` now covers UNII_Names and the two shipped SPL lists (`spl_run.checksummed_inputs`), so every
+new SPL run hashes differently from older ones on the same corpora (intended). **No ingest was re-run.** Filed
+**#235**: `drugref status` does not print the new columns. PROJECT-NOTES § "The SPL census widening".
+`ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
+run**: `test_suite_count.py` then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -60,13 +61,11 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **No owner call needed, now unblocked by #216:** **#228** / **#229** (SPL checksum, stored adoption counts) and
-   **#215** (store the class-pass drop counts per run) — the last two both widen `spl_census.py` (new migration,
-   never edit db/057); do them as one round. Then **#226** (measure FDA-CYP / onchigh unresolved names a UNII
-   official name would fix; retire `gate.py`'s hand crosswalk; `moiety_name` is a ready lookup), **#214**
-   (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic Solutions`, the effect classes, `Bile Acid [EPC]`,
-   "consider alternative therapy" as an avoid phrasing) and **#217** (order the label class-statement worklist
-   strongest level first).
+6. **No owner call needed:** **#235** (print db/072's columns in `drugref status`; small), then **#226** (measure
+   FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand crosswalk;
+   `moiety_name` is a ready lookup), **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
+   Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an avoid phrasing) and
+   **#217** (order the label class-statement worklist strongest level first).
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
@@ -74,21 +73,22 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
-(PR #233). **#216 and #218 close on this branch's PR** (§ "The SPL split"). **Open from
-#227: #226, #228, #229.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From
-class mentions: #214, #215, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
-work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148,
-#152, #153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on
-current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED** (PR
+#233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 close on this branch's PR** (§ "The SPL census widening"); it
+files **#235**. **Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
+#204. From class mentions: #214, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
+work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
+#153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
+releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **This round touched no database** (no migration; the benchmark only READ `drugref_synonyms`). Test DB this
-  branch: `drugref_test_split` (create it with `createdb` first; pytest recreates the schema, not the database).
+- **This round ran no ingest and migrated no named database** (db/072 reached only the test DB). Test DB this
+  branch: `drugref_test_census` (create it with `createdb` first; pytest recreates the schema, not the database).
+  Every named database below lacks db/072 until migrated; its pre-072 census rows then read NULL (not measured).
 - **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
   mesh-synonyms` (18,692 stored); never patch it.
 - **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).

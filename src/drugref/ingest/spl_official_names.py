@@ -55,7 +55,7 @@ def shipped_exclusions() -> tuple[str, ...]:
 
 
 class OfficialNameCounts(NamedTuple):
-    """What became of each official name, by NAME, for the run's progress line."""
+    """What became of each official name, by NAME: progress line and SplSummary."""
 
     adopted: list[str]
     #: Names folding onto the substance's own display name (a count: ~15,000).
@@ -69,6 +69,17 @@ class OfficialNameCounts(NamedTuple):
     unfoldable: int = 0
     #: Exclusion entries no official name folded onto (a typo, or a renamed name).
     unused_exclusions: tuple[str, ...] = ()
+
+    def summary_fields(self) -> dict[str, int | None]:
+        """The counts as `SplSummary` keyword arguments (#229): all None if skipped."""
+        counts = {"official_names_adopted": len(self.adopted),
+                  "official_names_already_named": self.already_named,
+                  "official_names_shadowed": len(self.shadowed),
+                  "official_names_ambiguous": len(self.ambiguous),
+                  "official_names_excluded": len(self.excluded),
+                  "official_names_unfoldable": self.unfoldable,
+                  "official_name_exclusions_unused": len(self.unused_exclusions)}
+        return dict.fromkeys(counts) if self.skipped else counts
 
     def __str__(self) -> str:
         if self.skipped:

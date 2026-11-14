@@ -9,14 +9,23 @@ only an INFO log line, so there was never an earlier figure to compare with.
 the run, not cleared by the per-source rebuild) the previous release's row is
 still there when the next one lands.
 
-The end-to-end "the counts arrive unswapped" check lives beside the summary's
-own in `tests/test_spl_run.py`; this module pins the history property, the
-table's own floor, and (issue #199) the reader and `drugref status`'s block.
+The end-to-end "the counts arrive unswapped" check for db/057's five lives beside
+the summary's own in `tests/test_spl_run.py`; this module pins the history
+property, the table's own floor, and (issue #199) the reader and `drugref
+status`'s block.
+
+db/072 (#215, #229) widened the row with the class-pass drops and the official-name
+counts; their CHECKs, the writer's column-by-column mapping and their end-to-end
+store check live here, as do #228's tests of the run's widened `source_checksum`.
 """
+import dataclasses
+import types
+
 import psycopg
 import pytest
 
-from drugref.ingest import spl_run
+from drugref import spl_census
+from drugref.ingest import spl_checks, spl_run
 from tests import test_spl_run as base
 
 # The orchestrator fixtures, reused rather than copied: binding a fixture to a
@@ -136,9 +145,13 @@ def test_the_table_accepts_a_consistent_census(conn):
 # The reader (issue #199): `drugref status` prints the latest two rows
 # --------------------------------------------------------------------------
 
+def _counts(**db057):
+    """A stand-in summary for the writer: db/057's five counts, db/072's unmeasured."""
+    return types.SimpleNamespace(**(dict.fromkeys(spl_census.CENSUS_COLUMNS) | db057))
+
+
 def _census(run_id, release, records, labels, absent, blank, id_keyed):
     """A RunCensus with positional shorthand -- tests only."""
-    from drugref import spl_census
     return spl_census.RunCensus(
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
@@ -212,12 +225,10 @@ def test_the_reader_maps_every_column_to_its_own_field(conn):
     count columns swapped; five DISTINCT values can. `recent_run_census` zips the
     SELECT onto RunCensus's fields by position, which `strict=True` checks only
     for length."""
-    from drugref import spl_census
     run_id = _run(conn)
-    spl_census.write_run_census(
-        conn, ingest_run_id=run_id, records_read=10, labels=6,
-        records_field_absent=3, records_field_blank=1,
-        labels_keyed_on_document_id=2)
+    spl_census.write_run_census(conn, ingest_run_id=run_id, summary=_counts(
+        records_read=10, labels=6, records_field_absent=3, records_field_blank=1,
+        labels_keyed_on_document_id=2))
     assert spl_census.recent_run_census(conn, limit=1) == [_census(
         run_id, "test", records=10, labels=6, absent=3, blank=1, id_keyed=2)]
 
@@ -229,11 +240,172 @@ def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):
     from drugref import provenance, spl_census
     opened_first, opened_second = _run(conn), _run(conn)
     for run_id in (opened_first, opened_second):
-        spl_census.write_run_census(
-            conn, ingest_run_id=run_id, records_read=1, labels=1,
-            records_field_absent=0, records_field_blank=0,
-            labels_keyed_on_document_id=0)
+        spl_census.write_run_census(conn, ingest_run_id=run_id, summary=_counts(
+            records_read=1, labels=1, records_field_absent=0, records_field_blank=0,
+            labels_keyed_on_document_id=0))
     provenance.finish_run(conn, opened_second)
     provenance.finish_run(conn, opened_first)
     got = [c.ingest_run_id for c in spl_census.recent_run_census(conn)]
     assert got == [opened_first, opened_second]
+
+
+# --------------------------------------------------------------------------
+# db/072 (#215, #229): the class-pass drops and the official-name adoption
+# counts, stored beside #163's -- printed-only figures cannot be compared
+# --------------------------------------------------------------------------
+
+#: The db/072 columns, named as on SplSummary (the writer relies on that).
+CLASS_DROPS = ("class_spans_dropped_at_a_boundary",
+               "class_spans_dropped_on_a_non_drug_head",
+               "class_keys_shadowed_by_moieties")
+OFFICIAL = ("official_names_adopted", "official_names_already_named",
+            "official_names_shadowed", "official_names_ambiguous",
+            "official_names_excluded", "official_names_unfoldable",
+            "official_name_exclusions_unused",
+            "class_keys_shadowed_by_official_names")
+
+
+def _stored(conn, columns):
+    return conn.execute(
+        f"SELECT {', '.join(columns)} FROM drugref.spl_run_census c "
+        "  JOIN drugref.ingest_run r USING (ingest_run_id) "
+        " WHERE r.source = 'SPL'").fetchall()
+
+
+@pytest.mark.usefixtures("_clean")
+def test_the_class_drops_and_adoption_counts_are_STORED_unswapped(
+        conn, corpus, tmp_path):
+    """#215/#229 end to end: R19/P1's fixture (one class key that is also a UNII
+    official name, so it is dropped from the class pass AND adopted by the drug
+    pass), and the census row carries the summary's own figures."""
+    _seed_registry(conn)
+    base._seed_class(conn)
+    names = tmp_path / "UNII_Names.txt"
+    names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
+                     f"RIFAMPIN INDUCERS\tof\t{sorted(base._fixture_uniis())[0]}\tX\n")
+    summary = _ingest(conn, base._text_corpus(corpus), unii_names=names)
+    columns = CLASS_DROPS + OFFICIAL
+    assert _stored(conn, columns) == [
+        tuple(getattr(summary, c) for c in columns)]
+    # Two of these are not zero, so the equality reaches past 0 == 0 -- but most are
+    # 0 here: the writer test below pins every column with a distinct value.
+    assert summary.official_names_adopted == 1
+    assert summary.class_keys_shadowed_by_official_names == 1
+
+
+@pytest.mark.usefixtures("_clean")
+def test_a_run_WITHOUT_a_names_file_stores_NULL_not_zero_for_official_names(
+        conn, corpus):
+    """No UNII_Names file means #213 and R19/P1 never ran. A 0 would read as
+    "measured, none adopted" in the next release's comparison; NULL says "not
+    measured". The class-pass drops were measured, so they are not NULL."""
+    _seed_registry(conn)
+    _ingest(conn, corpus)
+    ((*drops, ), ) = _stored(conn, CLASS_DROPS)
+    assert None not in drops
+    assert _stored(conn, OFFICIAL) == [(None,) * len(OFFICIAL)]
+
+
+def _insert_072(conn, **values):
+    run_id = _run(conn)
+    cols = ", ".join(values)
+    conn.execute(
+        "INSERT INTO drugref.spl_run_census (ingest_run_id, records_read, "
+        " labels, records_field_absent, records_field_blank, "
+        f" labels_keyed_on_document_id, {cols}) VALUES (%s, 1, 1, 0, 0, 0, "
+        f"{', '.join(['%s'] * len(values))})", (run_id, *values.values()))
+
+
+@pytest.mark.parametrize("values, constraint", [
+    pytest.param(dict.fromkeys(CLASS_DROPS[:2], 0),
+                 "spl_run_census_class_drops_together", id="class-drop-half-null"),
+    pytest.param(dict.fromkeys(OFFICIAL[:7], 0),
+                 "spl_run_census_official_names_together",
+                 id="official-names-half-null"),
+    # Every count's own floor: the group CHECKs do not see a negative.
+    *(pytest.param(dict.fromkeys(group, 0) | {column: -1},
+                   f"spl_run_census_{column}_check", id=f"negative-{column}")
+      for group in (CLASS_DROPS, OFFICIAL) for column in group),
+])
+def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constraint):
+    """A group is measured whole or not at all (NULL = not measured), and every
+    count has its own floor (#187's lesson)."""
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
+        _insert_072(conn, **values)
+    assert refused.value.diag.constraint_name == constraint
+
+
+def test_db072_accepts_a_measured_census_and_one_without_official_names(conn):
+    _insert_072(conn, **dict.fromkeys(CLASS_DROPS + OFFICIAL, 0))
+    _insert_072(conn, **dict.fromkeys(CLASS_DROPS, 0))
+
+
+def test_CENSUS_COLUMNS_is_every_census_column_and_every_one_a_summary_field(conn):
+    """A column a later migration adds but the writer's list misses would stay
+    NULL, which reads as "not measured": silent. And a name SplSummary lacks would
+    fail only at the census write, after the whole scan."""
+    table = {name for (name,) in conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        " WHERE table_schema = 'drugref' AND table_name = 'spl_run_census'")}
+    assert set(spl_census.CENSUS_COLUMNS) == table - {"ingest_run_id"}
+    assert set(spl_census.CENSUS_COLUMNS) <= {
+        f.name for f in dataclasses.fields(spl_checks.SplSummary)}
+
+
+#: A consistent census (db/057's identities hold) with every value distinct.
+_DISTINCT = dict(records_read=20, labels=12, records_field_absent=5,
+                 records_field_blank=3, labels_keyed_on_document_id=7) | {
+    column: 101 + i for i, column in enumerate(CLASS_DROPS + OFFICIAL)}
+
+
+def test_the_writer_stores_each_count_in_its_OWN_column(conn):
+    """Sixteen same-typed counts: distinct values, so a column filled from its
+    neighbour's field fails here even where the end-to-end fixture holds zeros."""
+    spl_census.write_run_census(conn, ingest_run_id=_run(conn),
+                                summary=types.SimpleNamespace(**_DISTINCT))
+    assert _stored(conn, spl_census.CENSUS_COLUMNS) == [
+        tuple(_DISTINCT[c] for c in spl_census.CENSUS_COLUMNS)]
+
+
+def test_the_writer_does_not_paper_over_HALF_an_official_name_group(conn):
+    """A measured R19/P1 count beside an unmeasured adoption group is a caller's
+    bug; the writer passes it through so db/072's CHECK refuses it, rather than
+    nulling the measured value to make the row look consistent."""
+    half = _DISTINCT | dict.fromkeys(OFFICIAL[:7])
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
+        spl_census.write_run_census(conn, ingest_run_id=_run(conn),
+                                    summary=types.SimpleNamespace(**half))
+    assert (refused.value.diag.constraint_name
+            == "spl_run_census_official_names_together")
+
+
+# --------------------------------------------------------------------------
+# #228: the run's checksum covers every input that can move the pairs
+# --------------------------------------------------------------------------
+
+def test_the_checksum_covers_UNII_Names_and_both_shipped_data_files(tmp_path):
+    """Since #213 the published pairs also depend on the UNII_Names release and
+    on two shipped lists; a checksum over the corpora alone lets two runs with
+    one checksum publish different pairs."""
+    names = tmp_path / "UNII_Names.txt"
+    got = [p.name for p in spl_run.checksummed_inputs(
+        [tmp_path / "drug-label-1.json.zip"], [tmp_path / "dm_part1.zip"], names)]
+    assert got == ["UNII_Names.txt", "dm_part1.zip", "drug-label-1.json.zip",
+                   "spl_suppression_terms.txt", "spl_official_name_exclusions.txt"]
+    without = [p.name for p in spl_run.checksummed_inputs([], [], None)]
+    assert "UNII_Names.txt" not in without
+
+
+@pytest.mark.usefixtures("_clean")
+def test_two_UNII_Names_releases_give_two_checksums(conn, corpus, tmp_path):
+    _seed_registry(conn)
+    digests = []
+    for text in ("A", "B"):
+        names = tmp_path / f"UNII_Names_{text}.txt"
+        names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
+                         f"{text}\tof\t{sorted(base._fixture_uniis())[0]}\tX\n")
+        _ingest(conn, corpus, unii_names=names)
+        digests += conn.execute(
+            "SELECT source_checksum FROM drugref.ingest_run WHERE source = 'SPL' "
+            "ORDER BY ingest_run_id DESC LIMIT 1").fetchone()
+    assert digests[0] != digests[1]

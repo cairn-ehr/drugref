@@ -1,5 +1,8 @@
 # src/drugref/spl_census.py
-"""db/057's `spl_run_census`: each SPL run's issue-163 counts, kept as HISTORY.
+"""db/057's `spl_run_census`: each SPL run's census counts, kept as HISTORY.
+
+Issue 163's counts (db/057), plus the class-pass drops (#215) and official-name
+adoption counts (#229) that db/072 added.
 
 Split out of `spl_evidence` (#216, rule 4). The writer is called only by
 `spl_run.ingest_spl`, inside its transaction; the reader feeds `drugref status`.
@@ -15,30 +18,43 @@ import psycopg
 RUN_CENSUS_TABLE = "drugref.spl_run_census"
 
 
-def write_run_census(
-    conn: psycopg.Connection, *, ingest_run_id: int, records_read: int,
-    labels: int, records_field_absent: int, records_field_blank: int,
-    labels_keyed_on_document_id: int,
-) -> None:
-    """Store one run's issue-163 counts in db/057's `spl_run_census` (issue 186).
+#: Every census column after `ingest_run_id`, NAMED AS ON `SplSummary`: the writer
+#: reads each one off the summary by this name, so no column can be filled from a
+#: neighbouring field (16 same-typed counts by position would invite exactly that).
+#: db/057's five, then db/072's class-pass drops (#215) and official names (#229).
+CENSUS_COLUMNS = (
+    "records_read", "labels", "records_field_absent", "records_field_blank",
+    "labels_keyed_on_document_id",
+    "class_spans_dropped_at_a_boundary", "class_spans_dropped_on_a_non_drug_head",
+    "class_keys_shadowed_by_moieties", "class_keys_shadowed_by_official_names",
+    "official_names_adopted", "official_names_already_named",
+    "official_names_shadowed", "official_names_ambiguous", "official_names_excluded",
+    "official_names_unfoldable", "official_name_exclusions_unused",
+)
+
+
+def write_run_census(conn: psycopg.Connection, *, ingest_run_id: int,
+                     summary: object) -> None:
+    """Store one run's counts in `spl_run_census` (db/057, widened by db/072).
 
     HISTORY, not projection: the table is NOT in `SPL_TABLES`, so the next run's
     `clear_source_spl` leaves this row standing for that run to be compared with.
-    Keyword-only for the module's usual reason -- five same-typed counts, and
-    swapping absent with blank would store cleanly. The table's CHECKs refuse an
-    impossible census; the caller's transaction decides whether it lands at all.
+    `summary` is the run's `SplSummary` (any object with the `CENSUS_COLUMNS`
+    attributes). The table's CHECKs refuse an impossible census; the caller's
+    transaction decides whether it lands at all.
     """
+    # Passed through as given, None included: a half-measured group is the
+    # caller's bug, and db/072's CHECK refuses it rather than this papering over it.
+    values = {column: getattr(summary, column) for column in CENSUS_COLUMNS}
     conn.execute(
-        f"INSERT INTO {RUN_CENSUS_TABLE} (ingest_run_id, records_read, labels, "
-        " records_field_absent, records_field_blank, labels_keyed_on_document_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s)",
-        (ingest_run_id, records_read, labels, records_field_absent,
-         records_field_blank, labels_keyed_on_document_id))
+        f"INSERT INTO {RUN_CENSUS_TABLE} (ingest_run_id, {', '.join(values)}) "
+        f"VALUES (%s{', %s' * len(values)})", (ingest_run_id, *values.values()))
 
 
 @dataclass(frozen=True, kw_only=True)
 class RunCensus:
-    """One `spl_run_census` row plus the release it censused (issue 199's reader)."""
+    """db/057's five counts from one `spl_run_census` row, plus the release it
+    censused (issue 199's reader). db/072's columns are not read yet (#235)."""
     ingest_run_id: int
     upstream_release: str
     records_read: int

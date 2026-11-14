@@ -158,3 +158,19 @@ def test_the_run_takes_the_contested_uniis_from_the_registry():
     names, counts = on.for_run(
         _registry({"x": X}, {"U1": P}, frozenset({"U1"})), [("ACETAMINOPHEN", "U1")])
     assert names == {"x": X} and counts.ambiguous == ["ACETAMINOPHEN"]
+
+
+def test_the_summary_fields_map_each_count_to_its_OWN_census_column():
+    """#229: seven counts mapped by hand, three of them lengths of same-typed lists.
+    Distinct values, so swapping any two keys fails here -- the end-to-end census
+    test cannot catch that, because most of these are 0 in its fixture."""
+    counts = on.OfficialNameCounts(
+        adopted=["a"], already_named=2, shadowed=["s"] * 3, ambiguous=["m"] * 4,
+        excluded=["e"] * 5, unfoldable=6, unused_exclusions=("u",) * 7)
+    assert counts.summary_fields() == {
+        "official_names_adopted": 1, "official_names_already_named": 2,
+        "official_names_shadowed": 3, "official_names_ambiguous": 4,
+        "official_names_excluded": 5, "official_names_unfoldable": 6,
+        "official_name_exclusions_unused": 7}
+    skipped = on.OfficialNameCounts([], 0, [], [], [], skipped=True).summary_fields()
+    assert skipped == dict.fromkeys(counts.summary_fields())

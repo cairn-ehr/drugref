@@ -59,9 +59,10 @@ class EvidenceCounts(NamedTuple):
     wordings_with_a_class: int
     moiety_spans_inside_class_spans: int
     #: Class matches dropped because the span held a sentence boundary (R17).
-    class_spans_dropped_at_a_boundary: int = 0
+    #: No default (nor below): db/072 stores it, so a forgotten one must not be 0.
+    class_spans_dropped_at_a_boundary: int
     #: Class matches dropped because the class word qualifies a non-drug head (R19/P2).
-    class_spans_dropped_on_a_non_drug_head: int = 0
+    class_spans_dropped_on_a_non_drug_head: int
 
     def class_drop_fields(self) -> dict[str, int]:
         """The two drop counts as `SplSummary` keyword arguments (same names)."""
@@ -149,11 +150,16 @@ class ClassKeyCounts(NamedTuple):
     #: in `__str__` because the ingest's progress line is the only place it shows.
     official_names_skipped: bool = False
 
-    def summary_fields(self) -> dict[str, int]:
-        """The two drop counts as `SplSummary` keyword arguments (same names)."""
+    def summary_fields(self) -> dict[str, int | None]:
+        """The two drop counts as `SplSummary` keyword arguments (same names).
+
+        The official-name one is None when R19/P1 was skipped: "not measured",
+        stored NULL by db/072 -- a 0 would read as "measured, nothing dropped".
+        """
         return {"class_keys_shadowed_by_moieties": len(self.shadowed_by_moieties),
                 "class_keys_shadowed_by_official_names":
-                len(self.shadowed_by_official_names)}
+                None if self.official_names_skipped
+                else len(self.shadowed_by_official_names)}
 
     def __str__(self) -> str:
         return (f"{self.kept:,} class match keys "

@@ -1347,30 +1347,81 @@ def test_the_measured_floors_are_OPTIONAL_and_the_structural_ones_are_not():
                             pair_floor=None, novel_floor=None)
 
 
+#: A consistent summary of a run given NO UNII_Names file: the official-name
+#: group (#229 + R19/P1) is all None, i.e. not measured.
+_SUMMARY_FIELDS = dict(
+    records_read=100, labels=10, wordings=4,
+    records_field_absent=80, records_field_blank=10,
+    labels_keyed_on_document_id=0,
+    labels_by_route={"openfda_unii": 6, "unresolved": 4},
+    dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
+    dailymed_reported_skips="",
+    occurrences=40, wordings_with_a_moiety=3, quotes=12, quoted_chars=900,
+    quotable_chars=1000, self_pairs=2, pairs=15, novel_pairs=14,
+    class_occurrences=5, wordings_with_a_class=2,
+    moiety_spans_inside_class_spans=1,
+    class_spans_dropped_at_a_boundary=0, class_spans_dropped_on_a_non_drug_head=0,
+    class_keys_shadowed_by_moieties=0,
+    **dict.fromkeys(spl_checks.OFFICIAL_NAME_COUNTS))
+
+#: The official-name group as MEASURED, nothing found: overridden per test.
+_OFFICIAL_MEASURED = dict.fromkeys(spl_checks.OFFICIAL_NAME_COUNTS, 0)
+
+
 def _summary(**overrides):
-    fields = dict(
-        records_read=100, labels=10, wordings=4,
-        records_field_absent=80, records_field_blank=10,
-        labels_keyed_on_document_id=0,
-        labels_by_route={"openfda_unii": 6, "unresolved": 4},
-        dailymed_targets=4, dailymed_documents_read=50, dailymed_found=3,
-        dailymed_reported_skips="",
-        occurrences=40, wordings_with_a_moiety=3, quotes=12, quoted_chars=900,
-        quotable_chars=1000, self_pairs=2, pairs=15, novel_pairs=14,
-        class_occurrences=5, wordings_with_a_class=2,
-        moiety_spans_inside_class_spans=1)
-    return spl_checks.SplSummary(**(fields | overrides))
+    return spl_checks.SplSummary(**(_SUMMARY_FIELDS | overrides))
+
+
+@pytest.mark.parametrize("field", [
+    "class_spans_dropped_at_a_boundary", "class_spans_dropped_on_a_non_drug_head",
+    "class_keys_shadowed_by_moieties", *spl_checks.OFFICIAL_NAME_COUNTS])
+def test_a_FORGOTTEN_census_count_is_a_TypeError_not_a_stored_zero(field):
+    """db/072's counts have no default: a caller that stops passing one would
+    otherwise store 0 ("measured, nothing dropped") or None ("not measured")
+    for a run that measured it, and nothing downstream could tell."""
+    fields = dict(_SUMMARY_FIELDS)
+    del fields[field]
+    with pytest.raises(TypeError, match=field):
+        spl_checks.SplSummary(**fields)
+
+
+@pytest.mark.parametrize("overrides", [
+    pytest.param({"official_names_adopted": 3}, id="one-measured"),
+    pytest.param(_OFFICIAL_MEASURED | {"class_keys_shadowed_by_official_names": None},
+                 id="one-unmeasured"),
+])
+def test_the_summary_refuses_HALF_an_official_name_group(overrides):
+    """db/072's `num_nulls ... IN (0, 8)`, checked when the summary is built rather
+    than at the census INSERT, which comes after the whole scan and load."""
+    with pytest.raises(ValueError, match="official-name counts"):
+        _summary(**overrides)
 
 
 def test_the_summary_reports_the_r19_class_drops():
     """R19: official-name keys and effect-word spans are dropped and COUNTED, and the
     line an operator reads says so (a silent drop is indistinguishable from none)."""
-    text = str(_summary(class_keys_shadowed_by_official_names=2,
-                        class_spans_dropped_on_a_non_drug_head=7))
+    text = str(_summary(**_OFFICIAL_MEASURED | dict(
+        class_keys_shadowed_by_official_names=2,
+        class_spans_dropped_on_a_non_drug_head=7)))
     assert "2 class keys dropped as UNII official names" in text
     assert "7 class rows dropped on a non-drug head word" in text
     # The figure counts (span, class) ROWS, not mentions (PROJECT-NOTES' run-10 trap).
     assert "5 class (span, class) rows over 2 wordings" in text
+
+
+def test_the_summary_line_carries_the_official_name_counts_or_says_unchecked():
+    """#229: the line `ingest_spl` logs says what was adopted even with no
+    progress callback -- or that no official names were checked at all."""
+    unchecked = str(_summary())
+    assert "no UNII official names checked" in unchecked
+    # ...and the class pass does not claim a measured 0 beside it (R19/P1 never ran).
+    assert "dropped as UNII official names" not in unchecked
+    assert "class keys not checked against UNII official names" in unchecked
+    text = str(_summary(**_OFFICIAL_MEASURED | dict(
+        official_names_adopted=3, official_names_shadowed=2,
+        official_names_ambiguous=1, official_names_excluded=4)))
+    assert ("3 UNII official names adopted as moiety keys (2 shadowed, "
+            "1 ambiguous, 4 excluded)") in text
 
 
 @pytest.mark.parametrize("overrides,match", [
