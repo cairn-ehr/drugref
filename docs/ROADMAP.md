@@ -1427,12 +1427,12 @@ official names (wrong direction); measuring UNII's `[INN]` rows instead found **
 the INN** (416 USAN spellings, the rest hydrate forms or radionuclide notation) — **#239**, owner design call.
 PROJECT-NOTES § "The FDA-CYP official-names round".
 
-### FDA-CYP pinned column headings (#134, first half) ✅ DONE (2026-11-14) — no migration
+### FDA-CYP pinned column headings and role-keyed questions (#134) ✅ DONE (2026-11-14) — `db/074`
 The ten role-column headings are pinned beside `ROLE_COLUMNS` (`fda_cyp_cell.ROLE_COLUMN_HEADINGS`), and the parser
-raises if one is missing, so an FDA rewording or reordering stops the ingest instead of silently re-minting question
-UUIDs or mislabelling roles. **Still open on #134 (owner):** should the gap key use the column's role tuple instead of
-FDA's printed heading, so question identity survives a deliberate rewording? PROJECT-NOTES § "The FDA-CYP
-pinned-headings round".
+raises if one is missing, so an FDA rewording or reordering stops the ingest instead of mislabelling roles. The
+withheld-cell question key now carries a frozen per-role label (`ROLE_QUESTION_KEYS`), not FDA's printed heading, so
+question identity survives an accepted rewording. The labels equal the 2026-05-29 headings, so no existing
+question_uuid changed (measured: 55 of 55 identical). PROJECT-NOTES § "The FDA-CYP pinned-headings round".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

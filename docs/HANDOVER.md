@@ -13,14 +13,15 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/fda-cyp-pin-headings` (from `main` after PR #240, MERGED). PR open to `main` for #134 (first half).
-Schema still ends at `db/073` (no migration).** The suite total lives in PROJECT-NOTES § "How to run / test" and
-**nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/fda-cyp-pin-headings` (from `main` after PR #240, MERGED). PR #241 open to `main`; closes #134.
+Schema now ends at `db/074`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+`uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, docs done): #134, first half.** The ten FDA-CYP role-column headings are pinned in
-`fda_cyp_cell.ROLE_COLUMN_HEADINGS`; a reworded or reordered column now raises instead of silently re-minting
-question UUIDs. The real 2026-05-29 page still parses to 419 tuples. **Still open on #134 (owner):** should the gap key
-use the role tuple instead of the printed heading? PROJECT-NOTES § "The FDA-CYP pinned-headings round".
+**⇒ THIS ROUND (built, tested, measured, docs done): #134.** The ten FDA-CYP role-column headings are pinned
+(`fda_cyp_cell.ROLE_COLUMN_HEADINGS`); a reworded or reordered column now raises. Per the owner's call, withheld-cell
+question keys now carry a frozen per-role label (`ROLE_QUESTION_KEYS`, **never edit it**) instead of FDA's heading;
+`db/074` regroups the gap view on the role. The labels equal the 2026-05-29 headings: 55 of 55 questions keep their
+UUIDs on `drugref_role134`. PROJECT-NOTES § "The FDA-CYP pinned-headings round".
 **Last round (#226):** run `ingest moiety-names` before `ingest fda-cyp`, or FDA-CYP silently falls back to display
 names. `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full
 run**: `test_suite_count.py` then fails two tests that are not real.
@@ -59,8 +60,7 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **Owner design call on #134's second half**: key FDA-CYP gap questions on the role tuple, not FDA's printed heading?
-   **Owner design call on #239** (625 `INN` claims are not the INN): rename to UNII's `[INN]` name, and what rule
+6. **Owner design call on #239** (625 `INN` claims are not the INN): rename to UNII's `[INN]` name, and what rule
    for the 74 that collide with another moiety's display name and the 99 hydrate forms? A rename ripples into
    onchigh's name check, the FDA-CYP / SPL name keys, the `moiety_official_name` snapshot and Cairn's search.
    Likely also a PBS-bridge recall gap (Australian names follow the INN; not measured).
@@ -75,7 +75,7 @@ clinically reviewed, and the read says so.
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED** (PR
 #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
-CLOSED** (PR #238). **#226 CLOSED** (PR #240; it filed #239). **#134 half-done on this branch** (owner call remains).
+CLOSED** (PR #238). **#226 CLOSED** (PR #240; it filed #239). **#134 closes on this branch's PR (#241).**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #214,
 #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214); **#67** (salt↔base) is
 wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #132, #135, #124,
@@ -87,10 +87,12 @@ wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
+- **`drugref_role134` is this round's**: `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest
+  fda-cyp`; never patch it.
 - **`drugref_fdacyp226` is #226's**: `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp`; never
   patch it. Its test DB: `drugref_test_fdacyp226`. **This branch's test DB: `drugref_test_heading134`** (create it
   with `createdb` first; pytest recreates the schema, not the database). Every other named database lacks
-  db/072–073 until migrated; its pre-072 census rows then read NULL (not measured).
+  db/072–074 until migrated; its pre-072 census rows then read NULL (not measured).
 - **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
   mesh-synonyms` (18,692 stored); never patch it.
 - **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).

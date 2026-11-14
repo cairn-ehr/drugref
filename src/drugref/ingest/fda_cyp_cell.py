@@ -62,6 +62,27 @@ ROLE_COLUMN_HEADINGS: dict[int, str] = {
     10: "TRNSP SUB",
 }
 
+# The label a withheld cell's question KEY carries for its role -- FROZEN, never
+# edited, unlike ROLE_COLUMN_HEADINGS above (issue 134's second half, db/074).
+# question_uuid = uuid5(gap_kind, gap_key) is immortal, so the key must not move
+# when FDA rewords a heading; it keys on the ROLE (system, role, potency), and
+# FDA's printed heading is curator evidence only. The labels ARE the 2026-05-29
+# headings because that is what every gap_key minted before db/074 carries: no
+# existing question_uuid changes. Today the two dicts read alike; after an FDA
+# rewording only ROLE_COLUMN_HEADINGS changes. A NEW role would add an entry here.
+ROLE_QUESTION_KEYS: dict[tuple[str, str, str | None], str] = {
+    ("CYP", "inhibitor", "strong"): "CYP Strg INH",
+    ("CYP", "inhibitor", "moderate"): "CYP Mod INH",
+    ("CYP", "inhibitor", "weak"): "CYP WK INH",
+    ("CYP", "inducer", "strong"): "CYP Strg IND",
+    ("CYP", "inducer", "moderate"): "CYP Mod IND",
+    ("CYP", "inducer", "weak"): "CYP WK IND",
+    ("CYP", "substrate", "sensitive"): "CYP SENS SUB",
+    ("CYP", "substrate", "moderate sensitive"): "CYP Mod SENS SUB",
+    ("transporter", "inhibitor", None): "TRNSP INH",
+    ("transporter", "substrate", None): "TRNSP SUB",
+}
+
 
 class FdaCypParseError(Exception):
     """The source did not have the shape this parser asserts.

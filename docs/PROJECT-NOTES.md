@@ -6410,28 +6410,37 @@ back to display names alone, silently (today's behaviour, not a regression). FDA
 **Tests (+2).** `test_fda_cyp_run.py`: a stored official name resolves rifampin; the fold lists a moiety once
 when two indexes name it. Test DB: `drugref_test_fdacyp226`.
 
-## The FDA-CYP pinned-headings round (#134, first half, 2026-11-14) — no migration, suite 3368 → 3371
+## The FDA-CYP pinned-headings round (#134, 2026-11-14) — `db/074`, measured on `drugref_role134`, suite 3368 → 3374
 
-**What it is.** `fda_cyp._column_headings` checked only how many headings there were. The heading text keys
-`fda_cyp_assertion`'s primary key and, through the gap view, every withheld question's immortal `question_uuid`, so
-an FDA rewording would silently retire and re-mint them. `ROLE_COLUMNS` maps positions, so a column reorder was
-caught by nothing. The test `test_two_swapped_role_headings_raise` showed that before the fix.
+**What it is.** `fda_cyp._column_headings` checked only how many headings there were. The heading text keyed every
+withheld question's immortal `question_uuid` (through the gap view's middle key segment), so an FDA rewording would
+silently retire and re-mint them. `ROLE_COLUMNS` maps positions, so a column reorder was caught by nothing. The tests
+`test_two_swapped_role_headings_raise` and `test_a_reworded_heading_keeps_every_question_uuid` showed both before the
+fix.
 
-**Fix.** `fda_cyp_cell.ROLE_COLUMN_HEADINGS` pins the ten role headings as read from the 2026-05-29 release, beside
-`ROLE_COLUMNS`. `_column_headings` raises `FdaCypParseError` on any mismatch and names the column. The substance
-column (index 0) is not pinned because its heading keys nothing. **A legitimate FDA rewording is now a deliberate
-edit of that dict, followed by re-measuring the question registry.** The old docstring argument ("restating the
-headings would be a second copy") is gone: the pin is deliberate, as with `PATHWAYS`.
+**Half 1: the pin.** `fda_cyp_cell.ROLE_COLUMN_HEADINGS` pins the ten role headings as read from the 2026-05-29
+release, beside `ROLE_COLUMNS`. `_column_headings` raises `FdaCypParseError` on any mismatch and names the column.
+The substance column (index 0) is not pinned because its heading keys nothing. **A legitimate FDA rewording is now a
+deliberate edit of that dict.**
 
-**Checked.** `downloads/FDA/fda_cyp_2026-05-29.html` still parses to 419 tuples. No ingest was re-run because the
-output for an unchanged page is unchanged.
+**Half 2: the key (owner decision: "question IDs should be functionally immutable").** The withheld-cell gap_key's
+middle segment is now a **frozen label per role** (`fda_cyp_cell.ROLE_QUESTION_KEYS`, keyed by `(system, role,
+potency)`), not FDA's printed heading. **The labels are byte-identical to the 2026-05-29 headings, so no existing
+question_uuid changed.** A plain `CYP:inhibitor:strong` key would have re-minted all 35 withheld questions once. The
+two dicts read alike today; after an FDA rewording only `ROLE_COLUMN_HEADINGS` changes. **Never edit
+`ROLE_QUESTION_KEYS`**: `tests/test_fda_cyp_question_keys.py` holds a golden copy. `gap_sources_interactions`
+generates the key's SQL `CASE` from the dict (one home), with no ELSE, so an unmapped role leaves `gap_key` NULL and
+the ingest aborts. **`db/074`** regroups the view's withheld half on the role tuple (db/043's rule: group on what
+the key carries), makes `column_heading` evidence via `max()`, and appends `system`, `role` and `potency`.
+`column_heading` still appears in the question TEXT.
 
-**Still open on #134 (owner):** should the gap key use the column index or role tuple instead of FDA's printed
-heading? That would let question identity survive a deliberate rewording; today a rewording still re-mints the
-questions, but only when someone edits the pin.
+**Measured.** `drugref_role134` = `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest fda-cyp`
+(`downloads/FDA/fda_cyp_2026-05-29.html`): **all 55 current `fda_cyp_unadjudicated` questions are identical (gap_key
+and question_uuid)** before and after; 35 are withheld cells. Parse still yields 419 tuples.
 
-**Tests (+3).** `test_fda_cyp_parser.py`: the pin covers exactly the role columns; a reworded heading raises; two
-swapped headings raise. Test DB: `drugref_test_heading134`.
+**Tests (+6).** `test_fda_cyp_parser.py` +3: the pin covers exactly the role columns; a reworded heading raises; two
+swapped headings raise. `test_fda_cyp_question_keys.py` +3 (new): the labels are frozen; every role has one; a
+stored heading rewording keeps every withheld question_uuid. Test DB: `drugref_test_heading134`.
 
 ## The standing open-issue ledger
 
@@ -6710,7 +6719,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3371 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3374 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
