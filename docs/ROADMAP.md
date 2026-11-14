@@ -1411,7 +1411,7 @@ mask is closed. PROJECT-NOTES § "The SPL split".
 The class-pass drop counts (#215) and the UNII official-name adoption counts (#229) were only printed; `db/072`
 stores them per run in `spl_run_census` beside #163's (NULL = not measured), and `SplSummary` carries the adoption
 counts. The run's `source_checksum` now also covers the UNII_Names file and the two shipped SPL lists (#228).
-Follow-up **#235**: `drugref status` does not print the new columns yet. PROJECT-NOTES § "The SPL census widening".
+`drugref status` prints the new columns (**#235**, PR #237). PROJECT-NOTES § "The SPL census widening".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

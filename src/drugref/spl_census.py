@@ -9,7 +9,7 @@ Split out of `spl_evidence` (#216, rule 4). The writer is called only by
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 import psycopg
 
@@ -53,15 +53,35 @@ def write_run_census(conn: psycopg.Connection, *, ingest_run_id: int,
 
 @dataclass(frozen=True, kw_only=True)
 class RunCensus:
-    """db/057's five counts from one `spl_run_census` row, plus the release it
-    censused (issue 199's reader). db/072's columns are not read yet (#235)."""
+    """One `spl_run_census` row, every `CENSUS_COLUMNS` count, plus the release it
+    censused (issue 199's reader, widened by #235).
+
+    db/072's counts are `int | None`: None is NOT MEASURED, never 0 -- every
+    pre-db/072 row, and for a run without a UNII_Names file the seven official-name
+    counts plus `class_keys_shadowed_by_official_names` (db/072's CHECK groups those
+    eight, though it is filed and printed with the class-pass drops).
+    """
     ingest_run_id: int
     upstream_release: str
+    # db/057's five, NOT NULL in the table.
     records_read: int
     labels: int
     records_field_absent: int
     records_field_blank: int
     labels_keyed_on_document_id: int
+    # db/072's class-pass drops (#215).
+    class_spans_dropped_at_a_boundary: int | None
+    class_spans_dropped_on_a_non_drug_head: int | None
+    class_keys_shadowed_by_moieties: int | None
+    class_keys_shadowed_by_official_names: int | None
+    # db/072's official-name adoption counts (#229).
+    official_names_adopted: int | None
+    official_names_already_named: int | None
+    official_names_shadowed: int | None
+    official_names_ambiguous: int | None
+    official_names_excluded: int | None
+    official_names_unfoldable: int | None
+    official_name_exclusions_unused: int | None
 
 
 def recent_run_census(conn: psycopg.Connection, *, limit: int = 2) -> list[RunCensus]:
@@ -73,15 +93,13 @@ def recent_run_census(conn: psycopg.Connection, *, limit: int = 2) -> list[RunCe
     `finish_run`, so its rows all have a `finished_at`; a hand-written INSERT need
     not, and `NULLS LAST` puts such a row after every finished one rather than first.
     """
-    # Column order is RunCensus's field order, so each row zips onto its field names.
-    # `strict=True` catches a wrong COUNT only; two swapped int columns would zip
-    # cleanly, which is what test_the_reader_maps_every_column_to_its_own_field pins.
+    # The SELECT list and the field names come from ONE tuple, so each value lands
+    # on the field named like its column; RunCensus's own field order is free.
+    names = ("ingest_run_id", "upstream_release", *CENSUS_COLUMNS)
     rows = conn.execute(
-        "SELECT c.ingest_run_id, r.upstream_release, c.records_read, c.labels, "
-        "       c.records_field_absent, c.records_field_blank, "
-        "       c.labels_keyed_on_document_id "
+        "SELECT c.ingest_run_id, r.upstream_release, "
+        f"{', '.join(f'c.{column}' for column in CENSUS_COLUMNS)} "
         f" FROM {RUN_CENSUS_TABLE} c JOIN drugref.ingest_run r USING (ingest_run_id) "
         " ORDER BY r.finished_at DESC NULLS LAST, c.ingest_run_id DESC LIMIT %s",
         (limit,)).fetchall()
-    names = [f.name for f in fields(RunCensus)]
     return [RunCensus(**dict(zip(names, row, strict=True))) for row in rows]

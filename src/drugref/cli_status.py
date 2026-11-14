@@ -374,7 +374,8 @@ def print_unrankable_severity_block(conn) -> None:
 
 
 def print_spl_census_block(conn) -> None:
-    """THE SEVENTH BLOCK (db/057, issue 199): the last two SPL runs' issue-163 counts.
+    """THE SEVENTH BLOCK (db/057, issue 199): the last two SPL runs' census counts --
+    issue 163's, then db/072's class-pass drops and official names (#235).
 
     WHY IT EXISTS. Those counts never refuse a run -- "the ratio moving between
     releases is the signal" -- and db/057 stored them per run, but nothing read the
@@ -384,13 +385,17 @@ def print_spl_census_block(conn) -> None:
     drift in front of the operator who just ran the ingest.
 
     NO THRESHOLD AND NO BANNER, deliberately: #163 rules these counts never refuse, and
-    a banner needs a cut-off nobody has measured. The operator diffs the two lines.
+    a banner needs a cut-off nobody has measured. The operator compares the two runs.
 
     LAST, AND IT RAISES like the other guarded blocks rather than degrading like the
     first: nothing is printed after it, so aborting here costs no other block.
+
+    THE GUARD NAMES db/072, not db/057: the reader selects db/072's columns, so a
+    db/057-071 database fails one column short, and a guard naming db/057 (applied)
+    would tell its operator this is "NOT a missing migration".
     """
     with migration_guard.guarded(
-            conn, relations=(spl_census.RUN_CENSUS_TABLE,), migration="057",
+            conn, relations=(spl_census.RUN_CENSUS_TABLE,), migration="072",
             consequence="no SPL release can be compared with the one before it"):
         rows = spl_census.recent_run_census(conn)
     print()
@@ -406,6 +411,10 @@ def spl_census_lines(rows) -> list[str]:
     records: one denominator lets the three shares be read against each other, and the
     absolute count beside each one shows when `labels` itself moved. A run that read
     nothing prints `n/a`, not a crash.
+
+    db/072's counts (#235) follow on two lines per run, absolute only (they have no
+    shared denominator). None prints `not measured`, never 0; a group with nothing
+    measured prints that once instead of per count.
     """
     if not rows:
         return ["spl run census: none"]
@@ -421,4 +430,34 @@ def spl_census_lines(rows) -> list[str]:
             f"labels {c.labels:,}  no field {share(c.records_field_absent, n)}  "
             f"blank {share(c.records_field_blank, n)}  "
             f"id-keyed {share(c.labels_keyed_on_document_id, n)}")
+        for label, group in _DB072_GROUPS:
+            lines.append(_group_line(label, [(name, getattr(c, column))
+                                             for column, name in group]))
     return lines
+
+
+#: db/072's counts as printed (#235): (line label, ((RunCensus field, name), ...)).
+_DB072_GROUPS = (
+    ("class pass dropped", (
+        ("class_spans_dropped_at_a_boundary", "at a boundary"),
+        ("class_spans_dropped_on_a_non_drug_head", "on a non-drug head"),
+        ("class_keys_shadowed_by_moieties", "shadowed by moieties"),
+        ("class_keys_shadowed_by_official_names", "shadowed by official names"))),
+    ("official names", (
+        ("official_names_adopted", "adopted"),
+        ("official_names_already_named", "already named"),
+        ("official_names_shadowed", "shadowed"),
+        ("official_names_ambiguous", "ambiguous"),
+        ("official_names_excluded", "excluded"),
+        ("official_names_unfoldable", "unfoldable"),
+        ("official_name_exclusions_unused", "exclusions unused"))),
+)
+
+
+def _group_line(label: str, counts: list[tuple[str, int | None]]) -> str:
+    """PURE: one indented line of named counts; None reads `not measured`."""
+    if all(value is None for _, value in counts):
+        return f"    {label}: not measured"
+    return f"    {label}: " + "  ".join(
+        f"{name} {'not measured' if value is None else f'{value:,}'}"
+        for name, value in counts)

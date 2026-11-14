@@ -150,12 +150,14 @@ def _counts(**db057):
     return types.SimpleNamespace(**(dict.fromkeys(spl_census.CENSUS_COLUMNS) | db057))
 
 
-def _census(run_id, release, records, labels, absent, blank, id_keyed):
-    """A RunCensus with positional shorthand -- tests only."""
+def _census(run_id, release, records, labels, absent, blank, id_keyed, **db072):
+    """A RunCensus with positional shorthand -- tests only. db/072's counts are
+    unmeasured (None) unless given by name."""
     return spl_census.RunCensus(
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
-        labels_keyed_on_document_id=id_keyed)
+        labels_keyed_on_document_id=id_keyed,
+        **(dict.fromkeys(CLASS_DROPS + OFFICIAL) | db072))
 
 
 def test_the_census_block_says_none_when_no_SPL_run_has_landed():
@@ -174,20 +176,21 @@ def test_the_census_block_prints_counts_AND_ratios_latest_first():
         _census(9, "2026-08", 1000, 900, 80, 20, 5),
     ])
     assert lines[0].startswith("spl run census")
-    newest, previous = lines[1], lines[2]
+    # Three lines per run: #163's counts, then db/072's two groups (#235).
+    newest, previous = lines[1], lines[4]
     assert "run 12" in newest and "2026-09" in newest
     assert "id-keyed 50 (5.00%)" in newest
     assert "no field 80 (8.00%)" in newest and "blank 20 (2.00%)" in newest
     assert "records 1,000  labels 900" in newest
     assert "id-keyed 5 (0.50%)" in previous
-    assert len(lines) == 3
+    assert len(lines) == 7
 
 
 def test_a_census_of_ZERO_records_prints_no_ratio_rather_than_crashing():
     """A run that read nothing has no denominator; dividing by it would kill
     `drugref status` on its last block."""
     from drugref import cli_status
-    (_, line) = cli_status.spl_census_lines([_census(1, "r", 0, 0, 0, 0, 0)])
+    (_, line, *_) = cli_status.spl_census_lines([_census(1, "r", 0, 0, 0, 0, 0)])
     assert "id-keyed 0 (n/a)" in line
 
 
@@ -206,31 +209,80 @@ def test_the_status_block_reads_the_two_latest_runs_from_the_database(
     assert f"id-keyed {runs[-1].labels_keyed_on_document_id} (" in out
 
 
-def test_a_database_without_db057_gets_the_guards_sentence_not_a_traceback(conn):
+def test_a_database_without_db072_gets_the_guards_sentence_not_a_traceback(conn):
     """Every deployment between pulling this code and `drugref migrate` lacks
-    the table. Renamed inside the rolled-back fixture transaction -- the
-    rename-inside-the-rollback device tests/test_ingest_run_duration.py uses for
-    db/054's site, with the same limit stated there."""
+    the table or (#235) db/072's columns, so the guard names db/072: naming db/057
+    would tell a db/057-071 database "NOT a missing migration". Renamed inside the
+    rolled-back fixture transaction -- the rename-inside-the-rollback device
+    tests/test_ingest_run_duration.py uses for db/054's site, with the same limit
+    stated there."""
     from drugref import cli_status
     conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
     # The probe's rollback undoes the rename, so this lands in the "NOT a missing
     # migration" branch: what it pins is THIS site's migration and consequence.
-    with pytest.raises(RuntimeError, match=r"(?i)db/057[\s\S]*no SPL release can "
+    with pytest.raises(RuntimeError, match=r"(?i)db/072[\s\S]*no SPL release can "
                        r"be compared[\s\S]*spl_run_census"):
         cli_status.print_spl_census_block(conn)
 
 
 def test_the_reader_maps_every_column_to_its_own_field(conn):
     """The corpus's census is 8/8/0/0/0, so an end-to-end check cannot see two
-    count columns swapped; five DISTINCT values can. `recent_run_census` zips the
-    SELECT onto RunCensus's fields by position, which `strict=True` checks only
-    for length."""
+    count columns swapped; sixteen DISTINCT values can (#235 added db/072's)."""
+    run_id = _run(conn)
+    spl_census.write_run_census(conn, ingest_run_id=run_id,
+                                summary=types.SimpleNamespace(**_DISTINCT))
+    assert spl_census.recent_run_census(conn, limit=1) == [spl_census.RunCensus(
+        ingest_run_id=run_id, upstream_release="test", **_DISTINCT)]
+
+
+def test_a_pre_db072_row_reads_back_as_NOT_MEASURED(conn):
+    """Every row written before db/072 has NULL there; the reader must hand that
+    back as None, never 0 ("measured, none dropped")."""
     run_id = _run(conn)
     spl_census.write_run_census(conn, ingest_run_id=run_id, summary=_counts(
-        records_read=10, labels=6, records_field_absent=3, records_field_blank=1,
-        labels_keyed_on_document_id=2))
-    assert spl_census.recent_run_census(conn, limit=1) == [_census(
-        run_id, "test", records=10, labels=6, absent=3, blank=1, id_keyed=2)]
+        records_read=1, labels=1, records_field_absent=0, records_field_blank=0,
+        labels_keyed_on_document_id=0))
+    (got,) = spl_census.recent_run_census(conn, limit=1)
+    assert got == _census(run_id, "test", 1, 1, 0, 0, 0)
+
+
+def test_the_census_block_prints_db072s_counts_on_their_own_lines():
+    """#235: the class-pass drops and the official-name counts, by name, so the
+    operator sees them drift between two runs as #163's already do."""
+    from drugref import cli_status
+    (_, _, drops, names) = cli_status.spl_census_lines([
+        spl_census.RunCensus(ingest_run_id=1, upstream_release="r", **_DISTINCT)])
+    assert drops == ("    class pass dropped: at a boundary 101  on a non-drug head 102"
+                     "  shadowed by moieties 103  shadowed by official names 111")
+    assert names == ("    official names: adopted 104  already named 105  shadowed 106"
+                     "  ambiguous 107  excluded 108  unfoldable 109"
+                     "  exclusions unused 110")
+
+
+def test_an_unmeasured_group_prints_NOT_MEASURED_never_zero():
+    """A run without a UNII_Names file measured the class pass but not the
+    official names (nor R19/P1's drop); a pre-db/072 row measured neither. The
+    measured drops are ZERO: a measured 0 prints `0`, even beside a None."""
+    from drugref import cli_status
+    (_, _, drops, names, _, old_drops, old_names) = cli_status.spl_census_lines([
+        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_DROPS, 0)),
+        _census(1, "q", 1, 1, 0, 0, 0)])
+    assert drops == ("    class pass dropped: at a boundary 0  on a non-drug head 0"
+                     "  shadowed by moieties 0  shadowed by official names "
+                     "not measured")
+    assert names == "    official names: not measured"
+    assert old_drops == "    class pass dropped: not measured"
+    assert old_names == "    official names: not measured"
+
+
+def test_the_census_block_prints_every_db072_column():
+    """A column added to CENSUS_COLUMNS (and so stored and read) but not to
+    `_DB072_GROUPS` would never reach the operator; nothing else would fail."""
+    from drugref import cli_status
+    printed = [column for _, group in cli_status._DB072_GROUPS for column, _ in group]
+    assert sorted(printed) == sorted(CLASS_DROPS + OFFICIAL)
+    assert set(printed) | set(spl_census.CENSUS_COLUMNS[:5]) == set(
+        spl_census.CENSUS_COLUMNS)
 
 
 def test_newest_means_last_FINISHED_as_the_loaded_release_block_reads_it(conn):
