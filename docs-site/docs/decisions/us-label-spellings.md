@@ -45,7 +45,9 @@ the class pass.
   pairs go away, because *sodium aurothiomalate* and *esomeprazole magnesium* now take the whole span. The
   ingest's pair and novel floors were raised to those figures.
 - A new official name can arrive with any UNII release, so the ingest prints how many names it adopted,
-  shadowed, dropped as ambiguous and excluded on every run.
+  shadowed, dropped as ambiguous and excluded on every run, and stores those counts with the run's census
+  (`spl_run_census`, `db/072`) so one release can be compared with the next. The run's checksum covers the
+  UNII names file and the exclusion list, so a changed list shows up as a different input.
 - An entry on the exclusion list is a precision judgement and needs its measurement next to it, the same rule
   as the suppression list.
 - The same names are stored for searching (1,630 official names in `drugref.moiety_official_name` on the 26 Feb

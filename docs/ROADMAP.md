@@ -1407,6 +1407,12 @@ Rule 4 for the three SPL modules at the cap: `spl_advice_scope.py`, `spl_rows.py
 wording (class-pass loop 237 s → 76 s on the 2026-08 corpus, readings identical), and #218's latent negation
 mask is closed. PROJECT-NOTES § "The SPL split".
 
+### SPL census widening (#215, #228, #229) ✅ DONE (2026-11-14) — `db/072`
+The class-pass drop counts (#215) and the UNII official-name adoption counts (#229) were only printed; `db/072`
+stores them per run in `spl_run_census` beside #163's (NULL = not measured), and `SplSummary` carries the adoption
+counts. The run's `source_checksum` now also covers the UNII_Names file and the two shipped SPL lists (#228).
+Follow-up **#235**: `drugref status` does not print the new columns yet. PROJECT-NOTES § "The SPL census widening".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

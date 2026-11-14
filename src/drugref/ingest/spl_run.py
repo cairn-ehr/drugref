@@ -51,6 +51,7 @@ from __future__ import annotations
 import logging
 import pathlib
 from collections.abc import Callable, Mapping, Sequence
+from importlib import resources
 
 import psycopg
 
@@ -67,7 +68,7 @@ from drugref.ingest.spl_checks import (
 )
 
 __all__ = ["MEASURED_CLASS_FLOOR", "MEASURED_NOVEL_FLOOR", "MEASURED_PAIR_FLOOR",
-           "SplSummary", "build_vocabulary", "ingest_spl"]
+           "SplSummary", "build_vocabulary", "checksummed_inputs", "ingest_spl"]
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +112,27 @@ def build_vocabulary(
                                        key=display_name, display=display_name,
                                        moiety_uuid=moiety_uuid))
     return spl_match.build_vocabulary(entries)
+
+
+def checksummed_inputs(
+    partitions: Sequence[pathlib.Path], parts: Sequence[pathlib.Path],
+    unii_names: str | pathlib.Path | None,
+) -> list[pathlib.Path | resources.abc.Traversable]:
+    """Every file whose bytes can move this run's pairs, in `checksum` order (#228).
+
+    What a run consumed is the TUPLE of files, so its `source_checksum` must change
+    if any one of them does: both corpora, the UNII_Names release (adopted as match
+    keys since #213, and R19/P1's class-key drops), and the two SHIPPED lists the
+    run always reads (suppression terms, official-name exclusions). Without the
+    last three, two runs with one checksum could publish different pairs. Files
+    sorted by name, so the same releases hash the same however the CLI globbed
+    them; the two data files last, in a fixed order.
+    """
+    files = [*partitions, *parts, *([pathlib.Path(unii_names)] if unii_names else [])]
+    data = resources.files("drugref.data")
+    return [*sorted(files, key=lambda p: p.name),
+            data / spl_suppress.SUPPRESSION_DATA,
+            data / spl_official_names.EXCLUSIONS_DATA]
 
 
 def _write_evidence(
@@ -298,13 +320,9 @@ def ingest_spl(
     if reported:
         say(f"  {reported}")
 
-    # ONE digest over BOTH corpora, through the shared helper -- not a second
-    # hashing idiom of this module's own. `checksum` already streams over several
-    # files as one digest and says why that is the right unit: what a run consumed
-    # is the TUPLE of files, so its provenance has to change if either corpus
-    # does. Sorted by name, so the same two releases always hash the same however
-    # the CLI happened to glob them.
-    digest = checksum(*sorted([*partitions, *parts], key=lambda p: p.name))
+    # ONE digest over every input, through the shared helper (see
+    # `checksummed_inputs` for what counts as an input and why).
+    digest = checksum(*checksummed_inputs(partitions, parts, unii_names))
 
     try:
         run_id = provenance.open_run(conn, source=spl.SOURCE,
@@ -401,20 +419,17 @@ def ingest_spl(
             wordings_with_a_class=counts.wordings_with_a_class,
             moiety_spans_inside_class_spans=(
                 counts.moiety_spans_inside_class_spans),
-            **counts.class_drop_fields(), **class_keys.summary_fields())
+            **counts.class_drop_fields(), **class_keys.summary_fields(),
+            **adoption.summary_fields())
 
         spl_checks.check_floors(
             summary, pair_floor=pair_floor, novel_floor=novel_floor,
             class_floor=class_floor)
-        # #186: the counts #163 says must never refuse, kept per run so the next
-        # release has this one to compare against (db/057). Inside the
+        # #186: the counts that must never refuse (#163's, then #215's class
+        # drops and #229's adoption counts), kept per run so the next release
+        # has this one to compare against (db/057, db/072). Inside the
         # transaction, so a run that rolls back leaves no census behind.
-        spl_census.write_run_census(
-            conn, ingest_run_id=run_id, records_read=summary.records_read,
-            labels=summary.labels,
-            records_field_absent=summary.records_field_absent,
-            records_field_blank=summary.records_field_blank,
-            labels_keyed_on_document_id=summary.labels_keyed_on_document_id)
+        spl_census.write_run_census(conn, ingest_run_id=run_id, summary=summary)
 
         # This run now feeds a gap kind (unconfirmed_label_class_statement), so it
         # registers questions. Like fda_cyp_run it re-derives EVERY kind and stamps

@@ -118,6 +118,16 @@ class SplSummary:
     #: effect', P2).
     class_keys_shadowed_by_official_names: int = 0
     class_spans_dropped_on_a_non_drug_head: int = 0
+    #: #229: what became of the UNII official names the drug pass may adopt as
+    #: moiety keys (#213; `spl_official_names.OfficialNameCounts`). None, not 0,
+    #: when no UNII_Names file was given: nothing was checked, so nothing measured.
+    official_names_adopted: int | None = None
+    official_names_already_named: int | None = None
+    official_names_shadowed: int | None = None
+    official_names_ambiguous: int | None = None
+    official_names_excluded: int | None = None
+    official_names_unfoldable: int | None = None
+    official_name_exclusions_unused: int | None = None
 
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
@@ -212,6 +222,12 @@ class SplSummary:
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
             f"{self.self_pairs:,} self-pair evidence rows excluded"
+            + ("; no UNII official names checked" if self.official_names_adopted
+               is None else
+               f"; {self.official_names_adopted:,} UNII official names adopted "
+               f"as moiety keys ({self.official_names_shadowed:,} shadowed, "
+               f"{self.official_names_ambiguous:,} ambiguous, "
+               f"{self.official_names_excluded:,} excluded)")
             # Only when there IS something to say: a clause printed on every run
             # reading "none" is one nobody reads.
             + (f"; DailyMed {self.dailymed_reported_skips}"

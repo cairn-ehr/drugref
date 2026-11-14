@@ -1373,6 +1373,16 @@ def test_the_summary_reports_the_r19_class_drops():
     assert "5 class (span, class) rows over 2 wordings" in text
 
 
+def test_the_summary_line_carries_the_official_name_counts_or_says_unchecked():
+    """#229: the line `ingest_spl` logs says what was adopted even with no
+    progress callback -- or that no official names were checked at all."""
+    assert "no UNII official names checked" in str(_summary())
+    text = str(_summary(official_names_adopted=3, official_names_shadowed=2,
+                        official_names_ambiguous=1, official_names_excluded=4))
+    assert ("3 UNII official names adopted as moiety keys (2 shadowed, "
+            "1 ambiguous, 4 excluded)") in text
+
+
 @pytest.mark.parametrize("overrides,match", [
     ({"wordings_with_a_class": 5, "class_occurrences": 9}, "name a class but only 4"),
     ({"wordings_with_a_class": 3, "class_occurrences": 2},
