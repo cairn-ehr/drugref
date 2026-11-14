@@ -882,17 +882,18 @@ def test_a_matching_release_passes_validation_and_the_ingest_proceeds(
         '<meta property="article:modified_time" content="Fri, 05/29/2026 - 14:00" />',
         encoding="utf-8")
     args = argparse.Namespace(page=page, release="2026-05-29T14:00",
-                          allow_shrink=False)
+                              allow_shrink=False, allow_resolution_drop=False)
 
     calls = []
 
     def _stub_ingest(conn, *, page_path, upstream_release=None,
-                     allow_shrink=False):
+                     allow_shrink=False, allow_resolution_drop=False):
         calls.append((page_path, upstream_release))
         return fda_cyp_run.FdaCypSummary(
             upstream_release="2026-05-29T14:00", classes_in_release=0, classes_added=0,
             memberships_written=0, assertions_written=0, withheld_qualified=0,
-            unresolved_substances=0, combination_regimens=0,
+            unresolved_substances=0, ambiguous_substances=0,
+            combination_regimens=0,
             non_drug_entities=0, questions_registered=0)
 
     monkeypatch.setattr(cli_fda_cyp.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
@@ -912,17 +913,19 @@ def test_an_omitted_release_also_proceeds_straight_to_the_orchestrator(
     entirely rather than comparing None against anything.
     """
     page = tmp_path / "fake_fda_cyp.html"
-    args = argparse.Namespace(page=page, release=None, allow_shrink=False)
+    args = argparse.Namespace(page=page, release=None, allow_shrink=False,
+                              allow_resolution_drop=False)
 
     calls = []
 
     def _stub_ingest(conn, *, page_path, upstream_release=None,
-                     allow_shrink=False):
+                     allow_shrink=False, allow_resolution_drop=False):
         calls.append((page_path, upstream_release))
         return fda_cyp_run.FdaCypSummary(
             upstream_release="2026-05-29T14:00", classes_in_release=0, classes_added=0,
             memberships_written=0, assertions_written=0, withheld_qualified=0,
-            unresolved_substances=0, combination_regimens=0,
+            unresolved_substances=0, ambiguous_substances=0,
+            combination_regimens=0,
             non_drug_entities=0, questions_registered=0)
 
     monkeypatch.setattr(cli_fda_cyp.fda_cyp_run, "ingest_fda_cyp", _stub_ingest)
@@ -1074,19 +1077,20 @@ def test_a_second_run_leaves_exactly_one_FDA_CYP_membership_edge(conn):
 
 
 @pytest.mark.usefixtures("conn", "_wider_registry")
-def test_an_ambiguous_display_name_stays_unresolved_rather_than_picking_the_first(conn):
-    """`single = candidates[0] if len(candidates) == 1 else None`.
+def test_an_ambiguous_display_name_is_never_resolved_to_the_first_claimant(conn):
+    """`single = candidates[0] if len(candidates) == 1 else None` (_classify).
 
     Two moieties share the case-folded name 'alprazolam'. Rewriting that line
     as `candidates[0] if candidates else None` would silently assert a
     membership on whichever moiety the index happened to list first -- a wrong
     membership on a REAL moiety, which is the worst shape available here.
+    Since #132 the row is ambiguous_substance, not unresolved_substance.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     row = conn.execute(
         "SELECT disposition, resolved_moiety_uuid FROM drugref.fda_cyp_assertion "
         "WHERE lower(raw_substance) = 'alprazolam' LIMIT 1").fetchone()
-    assert row[0] == "unresolved_substance"
+    assert row[0] == "ambiguous_substance"
     assert row[1] is None
 
 
@@ -1188,11 +1192,14 @@ def test_a_first_ingest_is_never_blocked_by_the_shrink_guard(conn, tmp_path):
 @pytest.mark.usefixtures("conn")
 def test_a_deliberate_shrink_can_be_authorised_explicitly(conn, tmp_path):
     """FDA genuinely shrinking the table is a real event; it just must be a
-    DECISION rather than a silent default."""
+    DECISION rather than a silent default.
+
+    The two kept rows resolve nothing (only bupropion and cenobamate are
+    seeded), so the resolution floor (#135) also needs authorising here."""
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=_truncated_page(tmp_path, 2),
                                          upstream_release="2026-05-29T14:01",
-                                         allow_shrink=True)
+                                         allow_shrink=True, allow_resolution_drop=True)
     assert summary.assertions_written > 0
 
 
@@ -1227,8 +1234,8 @@ def test_an_unrecognised_disposition_is_counted_by_nothing_and_so_must_raise(
     assertions_written anywhere, so nothing downstream could notice.
     """
     monkeypatch.setattr(fda_cyp_run, "_classify",
-                        lambda substance, single, markers: ("testonly_sixth", None))
-    with pytest.raises(fda_cyp_run.FdaCypDispositionError, match="testonly_sixth"):
+                        lambda substance, candidates, markers: ("testonly_seventh", None))
+    with pytest.raises(fda_cyp_run.FdaCypDispositionError, match="testonly_seventh"):
         fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE,
                                    upstream_release="2026-05-29T14:00")
     conn.rollback()

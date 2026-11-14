@@ -4,12 +4,13 @@
 WHY ITS OWN MODULE, when every other ingest source is a STEPS entry that
 cli.py's generic `_handle_ingest` drives: fda-cyp is the one hand-built
 exception, because its release is OPTIONAL (the page states its own stamp) and
-because it carries a refusal no other source has (--allow-shrink). That is
-three arguments and a handler of its own, and cli.py sits at CLAUDE.md rule 4's
-~500-line cap -- which the rule says to answer by refactoring, not by shaving
-the comments that explain the surface. cli_curate, cli_policy, cli_status and
-the rest are the established shape for exactly this, so this file follows them
-rather than inventing a second convention.
+because it carries two refusals no other source has (--allow-shrink,
+--allow-resolution-drop). That is four arguments and a handler of its own, and
+cli.py sits at CLAUDE.md rule 4's ~500-line cap -- which the rule says to answer
+by refactoring, not by shaving the comments that explain the surface.
+cli_curate, cli_policy, cli_status and the rest are the established shape for
+exactly this, so this file follows them rather than inventing a second
+convention.
 
 Unlike cli_chain, this module DOES import from drugref: cli_chain is pinned
 import-free by test_cli_chain_imports_nothing_from_drugref because it is the
@@ -24,19 +25,22 @@ from drugref.ingest import fda_cyp, fda_cyp_run
 
 
 def handle_fda_cyp(conn, args) -> int:
-    """`drugref ingest fda-cyp --page <path> [--release <tag>] [--allow-shrink]`.
+    """`drugref ingest fda-cyp --page <path> [--release <tag>] [--allow-shrink]
+    [--allow-resolution-drop]`.
 
     --release is optional because the page states its own (fda_cyp.parse_release);
     cli_chain.check_fda_cyp_release refuses one that disagrees with it.
 
-    --allow-shrink is threaded through, never re-implemented here: the count it
-    guards is what is already STORED, which only the writer can see.
+    --allow-shrink and --allow-resolution-drop are threaded through, never
+    re-implemented here: the counts they guard are compared with what is already
+    STORED, which only the writer can see.
     """
     if args.release is not None:
         page_text = args.page.read_text(encoding="utf-8")
         check_fda_cyp_release(args.page, args.release, fda_cyp.parse_release(page_text))
     summary = fda_cyp_run.ingest_fda_cyp(
-        conn, page_path=args.page, allow_shrink=args.allow_shrink)
+        conn, page_path=args.page, allow_shrink=args.allow_shrink,
+        allow_resolution_drop=args.allow_resolution_drop)
     print(f"fda-cyp: {summary}")
     return 0
 
@@ -59,4 +63,10 @@ def add_parser(sources) -> None:
     parser.add_argument("--allow-shrink", action="store_true",
                         help="authorise a page far shorter than the stored "
                              "projection (refused by default)")
+    # #135: same default-off reasoning. An empty or renamed registry makes every
+    # tuple unresolved while the row count stays the same, so only a drop in
+    # the RESOLVED count shows it.
+    parser.add_argument("--allow-resolution-drop", action="store_true",
+                        help="authorise a run that resolves far fewer substances "
+                             "than the stored one (refused by default)")
     parser.set_defaults(handler=handle_fda_cyp)

@@ -89,8 +89,9 @@ def test_disposition_is_a_closed_set_of_exactly_five_values(conn):
     live = db.constraint_definition(conn, "fda_cyp_assertion", "fda_cyp_assertion_disposition")
     values = set(re.findall(r"'([^']+)'", live))
     assert values == {"member", "withheld_qualified", "unresolved_substance",
-                      "combination_regimen", "non_drug_entity"}, (
-        f"the disposition CHECK must be exactly these five values -- got {values!r}")
+                      "ambiguous_substance", "combination_regimen",
+                      "non_drug_entity"}, (
+        f"the disposition CHECK must be exactly these six values -- got {values!r}")
     for inferred in ("enantiomer", "synonym", "metabolite", "group_term"):
         assert inferred not in live, (
             f"{inferred!r} is a cause drugref would be INFERRING from a name, which is "

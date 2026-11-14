@@ -1434,6 +1434,13 @@ withheld-cell question key now carries a frozen per-role label (`ROLE_QUESTION_K
 question identity survives an accepted rewording. The labels equal the 2026-05-29 headings, so no existing
 question_uuid changed (measured: 55 of 55 identical). PROJECT-NOTES § "The FDA-CYP pinned-headings round".
 
+### FDA-CYP ambiguous names and the resolution floor (#132, #135) ✅ DONE (2026-11-14) — `db/075`
+A name two or more moieties share is now `ambiguous_substance`, stored with its claimants
+(`candidate_moiety_uuids`), and its question says so instead of "no name matches" (question_uuid unchanged). A
+re-ingest whose resolved share falls below half the stored run's share is refused before any run row exists, unless
+`--allow-resolution-drop` is passed. Real page: 0 ambiguous names, 55 of 55 questions keep their UUIDs. PROJECT-NOTES §
+"The FDA-CYP resolution round".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

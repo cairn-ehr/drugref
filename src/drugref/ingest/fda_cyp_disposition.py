@@ -8,7 +8,7 @@ outside the orchestrator without breaking the "orchestrators are the only
 writers" invariant:
 
 * _classify and the vocabulary it reads (NON_DRUG_ENTITIES, the combination
-  word, DISPOSITIONS): which of the five dispositions a tuple lands in;
+  word, DISPOSITIONS): which of the six dispositions a tuple lands in;
 * _footnote_text and UNDEFINED_MARKERS: FDA's own footnote prose for a
   qualified cell, read from THIS page's parse_footnotes result;
 * source_code and class_name: the key a class_uuid is minted from, and the
@@ -91,11 +91,12 @@ class FdaCypFootnoteError(Exception):
 
 
 # The closed disposition vocabulary, in ONE place on the Python side. It must
-# stay equal to db/039's fda_cyp_assertion_disposition CHECK -- pinned as an
+# stay equal to the fda_cyp_assertion_disposition CHECK (db/039, widened by
+# db/075 for ambiguous_substance) -- pinned as an
 # equality (not a subset) by tests/test_fda_cyp_schema.py, so widening one
 # without the other fails rather than drifts.
 DISPOSITIONS = frozenset({
-    "member", "withheld_qualified", "unresolved_substance",
+    "member", "withheld_qualified", "unresolved_substance", "ambiguous_substance",
     "combination_regimen", "non_drug_entity",
 })
 
@@ -196,15 +197,15 @@ def _fold_by_lower(
     ambiguity. DIFFERENT moieties on one key are all kept: a fresh snapshot
     cannot produce that (spl_official_names.for_run drops a name shadowed by
     another moiety's display name under spl_match.fold, stricter than lower()),
-    but a stale one can, and it then lands on unresolved_substance.
+    but a stale one can, and it then lands on ambiguous_substance (#132).
 
     A SEPARATE fold rather than lower-casing at the call site, so two distinct names
     (from either index) that happen to fold onto one lower-case string are correctly
     MERGED here -- both sets of claimants kept, never one dropped -- and a lookup
-    against the merged bucket then naturally lands on unresolved_substance if it
+    against the merged bucket then naturally lands on ambiguous_substance if it
     holds more than one moiety: resolution is exact and case-insensitive, and
-    AMBIGUITY IS UNRESOLVED, never "pick the first", because a name resolving to
-    several moieties is real information (the registry grew and now genuinely
+    AMBIGUITY IS NEVER RESOLVED, never "pick the first", because a name resolving
+    to several moieties is real information (the registry grew and now genuinely
     disagrees with itself about this name) that silently picking one would erase. No
     display names collide under lower() on the registry measured for this design,
     but the registry grows, and this is what keeps that true without anyone having
@@ -218,11 +219,11 @@ def _fold_by_lower(
     return folded
 
 
-def _classify(substance: str, single: uuid.UUID | None,
-             footnote_markers: str | None) -> tuple[str, uuid.UUID | None]:
+def _classify(substance: str, candidates: list[uuid.UUID],
+              footnote_markers: str | None) -> tuple[str, uuid.UUID | None]:
     """One tuple's disposition and resolved moiety, in this FIXED order:
-    non_drug_entity -> combination_regimen -> unresolved_substance ->
-    withheld_qualified -> member.
+    non_drug_entity -> combination_regimen -> ambiguous_substance ->
+    unresolved_substance -> withheld_qualified -> member.
 
     The order exists BECAUSE the categories overlap, not despite it:
     grapefruit juice is both one of FDA's own pinned five non-drugs (the
@@ -238,22 +239,32 @@ def _classify(substance: str, single: uuid.UUID | None,
     regardless of what else is true of the row (pinned directly by
     test_grapefruit_juice_is_non_drug_entity_even_though_it_is_footnoted).
 
-    `single` is the ALREADY-RESOLVED moiety (or None), computed once by the
-    caller from the case-folded index -- so this function only decides WHERE
-    that resolution result lands, never how it was computed. The resolution
-    itself and the non_drug_entity/combination_regimen check are independent:
-    curcumin resolves to a real moiety AND is still non_drug_entity (the
-    design spec's own "trap worth stating because it inverts the obvious
-    assumption" -- non-drug and unresolvable are independent properties), so
-    `single` is threaded through unchanged for that branch. combination_regimen
-    forces None regardless of what `single` says -- FDA reports the role for
-    the REGIMEN, and assigning it to any one component (even an accidental
-    exact-name match) is an inference FDA did not make.
+    `candidates` is every moiety the case-folded index (_fold_by_lower) lists
+    for this name. EXACTLY ONE is a resolution; NONE is unresolved_substance;
+    TWO OR MORE is ambiguous_substance (#132), never "pick the first", because
+    a name several moieties claim is real information that silently picking
+    one would erase. The two used to share unresolved_substance, whose
+    question text ("no moiety's name matches it") is false for the second.
+    Both are decided from the NAME alone, which is what lets questions.py's
+    gap_key omit the disposition.
+
+    The resolution and the non_drug_entity/combination_regimen check are
+    independent: curcumin resolves to a real moiety AND is still
+    non_drug_entity (the design spec's own "trap worth stating because it
+    inverts the obvious assumption" -- non-drug and unresolvable are
+    independent properties), so its one candidate is threaded through
+    unchanged for that branch. combination_regimen forces None regardless --
+    FDA reports the role for the REGIMEN, and assigning it to any one
+    component (even an accidental exact-name match) is an inference FDA did
+    not make.
     """
+    single = candidates[0] if len(candidates) == 1 else None
     if _is_non_drug_entity(substance):
         return "non_drug_entity", single
     if _COMBINATION_WORD.search(substance):
         return "combination_regimen", None
+    if len(candidates) > 1:
+        return "ambiguous_substance", None
     if single is None:
         return "unresolved_substance", None
     if footnote_markers:
