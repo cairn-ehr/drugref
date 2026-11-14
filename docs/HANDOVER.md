@@ -13,16 +13,16 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/status-census-wide` (from `main` after PR #236, MERGED). PR open to `main` for #235. Schema
-still ends at `db/072`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
+**Branch `claude/worklist-strongest-first` (from `main` after PR #237, MERGED). PR open to `main` for #217.
+Schema now ends at `db/073`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**;
 `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, docs done): #235.** `drugref status`'s census block prints db/072's class-pass drops
-and official-name counts on two lines per run (`not measured` for NULL, never 0). **Its guard now names db/072**,
-so a database at db/057–071 stops at that block with "run `drugref migrate`" rather than printing the old five.
-PROJECT-NOTES § "The SPL census widening", the #235 paragraph. No ingest was re-run and no named database was
-migrated. `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a
-full run**: `test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND (built, tested, docs done): #217.** `db/073` adds `open_question.priority_rank`, derived each
+ingest from an optional per-kind `rank_sql`; `question_worklist` sorts by it within a kind, so label
+class-statement questions list contraindicated first. Only that kind ranks. No surface lists the worklist yet,
+and curators still hold off this kind until #204. PROJECT-NOTES § "The worklist priority rank". No ingest was
+re-run and no named database was migrated. `ruff format` is NOT applied in this repo; match the hand style. **Do
+not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -60,9 +60,8 @@ clinically reviewed, and the read says so.
    about the same pair (today the guard says no; from #207)?
 6. **No owner call needed:** **#226** (measure
    FDA-CYP / onchigh unresolved names a UNII official name would fix; retire `gate.py`'s hand crosswalk;
-   `moiety_name` is a ready lookup), **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
-   Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an avoid phrasing) and
-   **#217** (order the label class-statement worklist strongest level first).
+   `moiety_name` is a ready lookup), and **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
+   Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an avoid phrasing).
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
@@ -70,22 +69,22 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED** (PR
-#233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 closes on this branch's PR.**
-**Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class
-mentions: #214, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining work is #214);
-**#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129,
-#132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17,
-the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
+(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
+closes on this branch's PR.** **Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class
+profiles: #203, #204. From class mentions: #214, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and
+**#102** (remaining work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158**
+untouched. Also #148, #152, #153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run
+every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **This round ran no ingest and migrated no named database** (db/072 has reached only test DBs). Test DB this
-  branch: `drugref_test_status235` (create it with `createdb` first; pytest recreates the schema, not the database).
-  Every named database below lacks db/072 until migrated; its pre-072 census rows then read NULL (not measured).
+- **This round ran no ingest and migrated no named database** (db/072 and db/073 have reached only test DBs). Test DB this
+  branch: `drugref_test_worklist217` (create it with `createdb` first; pytest recreates the schema, not the database).
+  Every named database below lacks db/072–073 until migrated; its pre-072 census rows then read NULL (not measured).
 - **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
   mesh-synonyms` (18,692 stored); never patch it.
 - **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).

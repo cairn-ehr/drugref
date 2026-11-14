@@ -97,3 +97,43 @@ def test_citation_census_accepts_label_question(conn, world):  # noqa: F811
     _label(conn, r, a, "S1")
     _rule(conn, a, k, question_uuid=_registered(conn, r, a, k)[0])
     assert citation_audit.miscited(conn) == []
+
+
+def test_worklist_orders_label_statements_strongest_level_first(conn, world):  # noqa: F811
+    """#217 (design §6.4): a curator meets contraindicated before monitor.
+
+    question_uuid is a hash, so without priority_rank the two pairs come back in an
+    order unrelated to strength. The ORDER BY is restated, as db/008 requires.
+    """
+    from tests import class_profile_world as w
+    r, k, a, b = world
+    k2 = "b" * 64
+    spl_evidence.write_wordings(
+        conn, [spl_evidence.WordingRow(text_key=k2, char_length=1_000, label_count=1)],
+        ingest_run_id=r, source="SPL")
+    weak = w.klass(conn, r, "Fibrates")
+    _occ(conn, r, k, level="contraindicated", rule="contraindicated.x")
+    _occ(conn, r, weak, level="monitor", rule="monitor.x", text_key=k2)
+    _label(conn, r, a, "S1")
+    _label(conn, r, b, "S2", text_key=k2)
+    questions.register_from_gaps(conn, r)
+    rows = conn.execute(
+        "SELECT gap_key, priority_rank FROM drugref.question_worklist WHERE gap_kind = %s "
+        "ORDER BY priority_rank NULLS LAST, question_uuid", (KIND,)).fetchall()
+    assert rows == [(f"SPLCLASS:{a}:{k}", 1), (f"SPLCLASS:{b}:{weak}", 4)]
+
+
+def test_priority_rank_follows_the_reading_on_re_derivation(conn, world):  # noqa: F811
+    """The rank is derived like the text: a re-run refreshes it, never keeps a stale one."""
+    r, k, a, _b = world
+    _occ(conn, r, k, level="monitor", rule="monitor.x")
+    _label(conn, r, a, "S1")
+    rank = ("SELECT priority_rank FROM drugref.open_question WHERE gap_kind = %s "
+            "AND gap_key = %s")
+    key = f"SPLCLASS:{a}:{k}"
+    questions.register_from_gaps(conn, r)
+    assert conn.execute(rank, (KIND, key)).fetchone() == (4,)
+    conn.execute("UPDATE drugref.spl_class_occurrence SET advice_level = 'avoid', "
+                 "advice_rule = 'avoid.x' WHERE class_uuid = %s", (k,))
+    questions.register_from_gaps(conn, r)
+    assert conn.execute(rank, (KIND, key)).fetchone() == (2,)

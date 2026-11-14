@@ -216,3 +216,14 @@ def test_the_gap_registry_is_the_vocabulary_modules_merged_with_nothing_dropped(
         "uncurated_class_interaction_rule", "fda_cyp_unadjudicated",
         "unresolved_ddi_endpoint", "unconfirmed_class_property",
         "unconfirmed_label_class_statement"]
+
+
+def test_only_the_label_class_kind_carries_a_priority_rank():
+    """#217: `rank_sql` is optional; a kind without one stores priority_rank NULL.
+
+    Pinned so a new ranked kind is a deliberate choice: the rank orders questions
+    WITHIN one kind only (db/073), so it must mean something for that kind.
+    """
+    from drugref import questions
+    assert [k for k, s in questions._GAP_SOURCES.items() if "rank_sql" in s] == [
+        "unconfirmed_label_class_statement"]
