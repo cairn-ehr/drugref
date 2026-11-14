@@ -18,9 +18,11 @@ WHAT THIS MODULE REFUSES TO DO, and it is most of the design:
   substrate columns would manufacture ~800 pairs no source asserts.
 * It promotes NO footnoted cell to membership. Two of FDA's footnotes NEGATE the
   row they sit on, and deciding which do is a clinical reading of prose.
-* It bridges NO name. Six recognisable categories sit in the resolution residue
-  and every one of them is a different job -- see the standing rule in
-  PROJECT-NOTES, and issue 128 for the enantiomers specifically.
+* It invents NO name bridge. Beyond display names it resolves only through the
+  stored UNII official names (#226: rifampin -> rifampicin, the same set the SPL
+  pass and Cairn's search use). The rest of the resolution residue is a
+  different job per category -- see the standing rule in PROJECT-NOTES, and
+  issue 128 for the enantiomers specifically.
 """
 import dataclasses
 import logging
@@ -134,7 +136,9 @@ class FdaCypSummary:
     questions.register_from_gaps's return value -- wired into questions.py's
     _GAP_SOURCES in the same round as this module, so it is the live count of
     currently-open fda_cyp_unadjudicated questions on every run, not a
-    placeholder. Measured on the pinned page: 55 gap rows (33
+    placeholder. Measured on the pinned page WITHOUT moiety_official_name (with it,
+    rifampin and glyburide resolve: PROJECT-NOTES § "The FDA-CYP official-names
+    round"): 55 gap rows (33
     withheld_qualified + 9 combination_regimen + 8 unresolved_substance + 5
     non_drug_entity). THOSE ARE GAP-ROW COUNTS, NOT THE SIBLING FIELDS ABOVE:
     the subject-grain dispositions collapse many tuples onto one row, so
@@ -221,9 +225,11 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                                  clock=clock)
 
     try:
-        # 3. The resolution index. Read ONCE, whole -- moieties_by_display_name is
-        #    bounded by the registry, not by this feed, exactly as classes.py's own
-        #    docstring argues for MED-RT and MeSH.
+        # 3. The resolution index: display names plus the stored UNII official
+        #    names (#226). Read ONCE, whole -- both are bounded by the registry,
+        #    not by this feed, exactly as classes.py's own docstring argues for
+        #    MED-RT and MeSH. The official names are EMPTY unless
+        #    `ingest moiety-names` ran first.
         fold = _fold_by_lower(classes.moieties_by_display_name(conn),
                               classes.moieties_by_official_name(conn))
 

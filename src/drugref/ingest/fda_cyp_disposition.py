@@ -191,20 +191,24 @@ def _fold_by_lower(
         *indexes: dict[str, list[uuid.UUID]]) -> dict[str, list[uuid.UUID]]:
     """Merge name indexes (display names, then official names: #226) onto lower(name).
 
-    A moiety is listed once per key even if two indexes both name it, so a stale
-    official-name snapshot repeating a display name cannot fake an ambiguity.
+    The SAME moiety is listed once per key even if two indexes both name it, so a
+    stale official-name snapshot repeating its display name cannot fake an
+    ambiguity. DIFFERENT moieties on one key are all kept: a fresh snapshot
+    cannot produce that (spl_official_names.for_run drops a name shadowed by
+    another moiety's display name under spl_match.fold, stricter than lower()),
+    but a stale one can, and it then lands on unresolved_substance.
 
-    A SEPARATE fold rather than lower-casing at the call site, so two distinct
-    display names that happen to fold onto one lower-case string are correctly
-    MERGED here -- both sets of claimants kept, never one dropped -- and a
-    lookup against the merged bucket then naturally lands on unresolved_substance
-    if it holds more than one moiety: resolution is exact and case-insensitive,
-    and AMBIGUITY IS UNRESOLVED, never "pick the first", because a name
-    resolving to several moieties is real information (the registry grew and
-    now genuinely disagrees with itself about this name) that silently picking
-    one would erase. Nothing collides under lower() on the registry measured
-    for this design, but the registry grows, and this is what keeps that true
-    without anyone having to re-derive it by hand later.
+    A SEPARATE fold rather than lower-casing at the call site, so two distinct names
+    (from either index) that happen to fold onto one lower-case string are correctly
+    MERGED here -- both sets of claimants kept, never one dropped -- and a lookup
+    against the merged bucket then naturally lands on unresolved_substance if it
+    holds more than one moiety: resolution is exact and case-insensitive, and
+    AMBIGUITY IS UNRESOLVED, never "pick the first", because a name resolving to
+    several moieties is real information (the registry grew and now genuinely
+    disagrees with itself about this name) that silently picking one would erase. No
+    display names collide under lower() on the registry measured for this design,
+    but the registry grows, and this is what keeps that true without anyone having
+    to re-derive it by hand later.
     """
     folded: dict[str, list[uuid.UUID]] = {}
     for index in indexes:

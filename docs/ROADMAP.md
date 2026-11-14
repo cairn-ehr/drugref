@@ -1421,10 +1421,11 @@ future work, gated by #204. PROJECT-NOTES § "The worklist
 priority rank".
 
 ### FDA-CYP official names (#226) ✅ DONE (2026-11-14) — no migration, on `drugref_fdacyp226`
-FDA-CYP now resolves by display name **or** stored UNII official name, so *rifampin* and *glyburide* resolve
-(unresolved 16 cells / 8 substances → 6 / 6). onchigh resolves by UNII and needed nothing. The gate's USAN→INN
-crosswalk cannot use official names (wrong direction); measuring UNII's `[INN]` rows instead found **625 moieties
-whose `INN` claim is the USAN** — **#239**, owner design call. PROJECT-NOTES § "The FDA-CYP official-names round".
+FDA-CYP now resolves by display name **or** stored UNII official name, so *rifampin* and *glyburide* resolve (unresolved
+16 cells / 8 substances → 6 / 6). onchigh resolves by UNII and needed nothing. The gate's USAN→INN crosswalk cannot use
+official names (wrong direction); measuring UNII's `[INN]` rows instead found **625 moieties whose `INN` claim is not
+the INN** (416 USAN spellings, the rest hydrate forms or radionuclide notation) — **#239**, owner design call.
+PROJECT-NOTES § "The FDA-CYP official-names round".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

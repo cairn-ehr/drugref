@@ -1351,7 +1351,6 @@ def test_two_printed_forms_of_one_name_raise_ONE_question_not_two(conn):
     conn.rollback()
 
 
-@pytest.mark.usefixtures("conn")
 def test_a_stored_unii_official_name_resolves_a_US_spelling(conn):
     """#226. FDA writes the USAN ('rifampin'); the registry names the INN
     ('rifampicin'). The stored UNII official names (moiety_official_name, the
@@ -1381,3 +1380,12 @@ def test_the_fold_lists_a_moiety_once_when_two_indexes_both_name_it():
     folded = fda_cyp_disposition._fold_by_lower(
         {"rifampicin": [m]}, {"RIFAMPICIN": [m], "rifampin": [m], "x": [other]})
     assert folded == {"rifampicin": [m], "rifampin": [m], "x": [other]}
+
+
+def test_the_fold_keeps_both_moieties_when_an_official_name_is_another_display_name():
+    """#226: a stale official name equal to a DIFFERENT moiety's display name is a
+    real ambiguity -- both claimants stay in the bucket (so the cell lands
+    unresolved_substance), never one silently chosen by index order."""
+    a, b = ids.mint_moiety_uuid("UA"), ids.mint_moiety_uuid("UB")
+    folded = fda_cyp_disposition._fold_by_lower({"rifampin": [b]}, {"RIFAMPIN": [a]})
+    assert folded == {"rifampin": [b, a]}

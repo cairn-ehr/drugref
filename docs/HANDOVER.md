@@ -18,12 +18,13 @@ still ends at `db/073` (no migration).** The suite total lives in PROJECT-NOTES 
 else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, tested, measured, docs done): #226.** onchigh resolves by UNII, so it had no gap. FDA-CYP now
-also resolves by the stored UNII official names (`moiety_official_name`): unresolved 16 cells / 8 substances → 6 /
-6 (rifampin, glyburide). **Run `ingest moiety-names` before `ingest fda-cyp`**, or FDA-CYP silently falls back to
-display names. The gate's crosswalk cannot use official names (wrong direction). Measuring UNII's `[INN]` rows
-instead found **#239**: **625 moieties' `INN` claim is the USAN** (aciclovir, ciclosporin, benzatropine). PROJECT-NOTES §
-"The FDA-CYP official-names round". `ruff format` is NOT applied in this repo; match the hand style. **Do not add
-`-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests that are not real.
+also resolves by the stored UNII official names (`moiety_official_name`): unresolved 16 cells / 8 substances → 6 / 6;
+rifampin and glyburide now resolve. **Run `ingest moiety-names` before `ingest fda-cyp`**, or FDA-CYP silently falls
+back to display names. The gate's crosswalk cannot use official names (wrong direction). Measuring UNII's `[INN]` rows
+instead found **#239**: **625 moieties' `INN` claim is not the INN** (416 USAN spellings, e.g. acyclovir→aciclovir; the
+rest hydrate forms or radionuclide notation). PROJECT-NOTES § "The FDA-CYP official-names round". `ruff format` is NOT
+applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py`
+then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -59,7 +60,7 @@ clinically reviewed, and the read says so.
 5. **Owner questions**: should an ASSERTED property passing down to a subclass honour a `class_expansion_policy`
    deny (today not: db/060, db/065)? May a `curated_interaction` cite the gap-19 `interacts_with class` question
    about the same pair (today the guard says no; from #207)?
-6. **Owner design call on #239** (625 `INN` claims carry the USAN): rename to UNII's `[INN]` name, and what rule
+6. **Owner design call on #239** (625 `INN` claims are not the INN): rename to UNII's `[INN]` name, and what rule
    for the 74 that collide with another moiety's display name and the 99 hydrate forms? A rename ripples into
    onchigh's name check, the FDA-CYP / SPL name keys, the `moiety_official_name` snapshot and Cairn's search.
    Likely also a PBS-bridge recall gap (Australian names follow the INN; not measured).
