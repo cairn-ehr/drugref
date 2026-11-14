@@ -139,14 +139,14 @@ INTERACTION_GAP_SOURCES = {
             "Grading it `applies = false` is a real answer and retires this "
             "question.'"),
     },
-    # Slice 5c.2g. Four dispositions reach this view TODAY and they are four
-    # different questions -- since db/041 made the subject half a NEGATIVE
-    # predicate, every non-member disposition reaches it, which is the point:
-    # a future sixth arrives here and trips the CASE's missing ELSE loudly
-    # rather than being silently filtered out. So the text branches on
-    # `disposition` with a CASE rather than
-    # asserting one reason for all of them -- issue 122's lesson: a message may not
-    # state a cause it has not confirmed.
+    # Slice 5c.2g. Five dispositions reach this view TODAY (db/075 added
+    # ambiguous_substance) and they are five different questions -- since db/041
+    # made the subject half a NEGATIVE predicate, every non-member disposition
+    # reaches it, which is the point: a future seventh arrives here and trips
+    # the CASE's missing ELSE loudly rather than being silently filtered out. So
+    # the text branches on `disposition` with a CASE rather than asserting one
+    # reason for all of them -- issue 122's lesson: a message may not state a
+    # cause it has not confirmed.
     #
     # TWO GRAINS, ONE gap_kind, because db/040 corrected db/039's view into a UNION
     # ALL of two correctly-grained halves (db/040's own header has the full measured
@@ -158,11 +158,11 @@ INTERACTION_GAP_SOURCES = {
     #     role and pathway are part of the fact and belong in the key (db/074:
     #     the ROLE, no longer FDA's printed column_heading).
     #   * EVERY OTHER NON-MEMBER disposition (unresolved_substance,
-    #     combination_regimen, non_drug_entity today, and whatever else the CHECK
-    #     admits later) is grained per SUBJECT (source, substance, disposition;
-    #     db/043) -- the question is about the NAME, not the cell that happened
-    #     to mention it, so the view projects column_heading, pathway, system,
-    #     role and potency as NULL for this half.
+    #     ambiguous_substance, combination_regimen, non_drug_entity today, and
+    #     whatever else the CHECK admits later) is grained per SUBJECT (source,
+    #     substance, disposition; db/043) -- the question is about the NAME, not
+    #     the cell that happened to mention it, so the view projects
+    #     column_heading, pathway, system, role and potency as NULL for this half.
     #
     # db/040 first shipped the subject half as a POSITIVE enumeration of the three
     # known values (`IN ('unresolved_substance', 'combination_regimen',
@@ -269,8 +269,8 @@ INTERACTION_GAP_SOURCES = {
     # unresolved_ci_object's namespace, which genuinely varies row to row.
     #
     # THE CASE HAS NO ELSE, on unresolved_ci_object's precedent in gap_sources_registry:
-    # open_question.question_text is NOT NULL, so a fifth live disposition value
-    # (a `member` leak, or a future sixth CHECK value) aborts the ingest loudly
+    # open_question.question_text is NOT NULL, so an unmapped live disposition value
+    # (a `member` leak, or a future seventh CHECK value) aborts the ingest loudly
     # instead of a curator reading "one of five substances that are not drugs"
     # about a row that is nothing of the kind -- the exact false-premise failure
     # the CASE branching exists to avoid. An earlier draft of this entry used
@@ -310,9 +310,22 @@ INTERACTION_GAP_SOURCES = {
             "WHEN 'unresolved_substance' THEN "
             "  'Which drugref moiety, if any, is FDA''s ' || "
             "  COALESCE(substance, raw_substance) || '? "
-            "No moiety''s display name matches it.' || "
+            "No moiety''s display name or UNII official name matches it.' || "
             "  COALESCE(' A near name in the registry is ' || registry_near_name || "
             "  ', which is EVIDENCE for a curator, not a resolution.', '') "
+            # db/075 (#132). The claimant list is evidence; drugref picks none.
+            # NO COALESCE on the claimants, deliberately: db/076's CHECK makes
+            # them non-NULL with 2+ entries on every ambiguous row, so a row
+            # without them is a broken invariant, and NULLing the NOT NULL text
+            # fails it loudly instead of printing "Several ... (unrecorded)".
+            "WHEN 'ambiguous_substance' THEN "
+            "  'Which drugref moiety, if any, is FDA''s ' || "
+            "  COALESCE(substance, raw_substance) || '? ' || "
+            "  cardinality(candidate_moiety_uuids)::text || "
+            "  ' drugref moieties share that name, so drugref resolved it to none "
+            "of them: ' || "
+            "  array_to_string(candidate_moiety_uuids, ', ') || "
+            "  '.' "
             "WHEN 'combination_regimen' THEN "
             "  'FDA reports this role for the REGIMEN ' || "
             "  COALESCE(substance, raw_substance) || '. "

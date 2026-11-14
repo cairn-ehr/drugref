@@ -14,6 +14,7 @@ import psycopg
 import pytest
 
 from drugref import db, ids, provenance
+from drugref.ingest import fda_cyp_disposition
 
 
 def test_fda_cyp_is_a_canonical_source_spelling():
@@ -74,23 +75,27 @@ def test_the_assertion_projection_and_gap_view_exist(conn):
 
 
 @pytest.mark.usefixtures("conn")
-def test_disposition_is_a_closed_set_of_exactly_five_values(conn):
-    """Five, not nine -- spec section 7.1. Only combination_regimen and
-    non_drug_entity name a CATEGORY, because only those two are asserted by FDA
-    rather than inferred by drugref from a string prefix.
+def test_disposition_is_a_closed_set_of_exactly_six_values(conn):
+    """Six, not nine -- spec section 7.1, plus db/075's ambiguous_substance.
+    Only combination_regimen and non_drug_entity name a CATEGORY, because only
+    those two are asserted by FDA rather than inferred by drugref from a string
+    prefix; ambiguous_substance is OBSERVED (two or more claimants), not
+    inferred, so it meets the same rule.
 
-    THE COUNT ITSELF IS ASSERTED, not just presence of the five named values.
-    The PREVIOUS version of this test checked the five ARE present and four
-    named "inferred" categories are ABSENT, but nothing stopped a SIXTH,
-    unnamed value also being present -- which would still satisfy every
-    assertion here despite the set no longer being exactly five. The function
-    name promises "exactly five"; only a count check can honour it.
+    THE SET ITSELF IS ASSERTED, not just presence of the named values: an
+    earlier version checked presence and the ABSENCE of four "inferred"
+    categories, which an extra, unnamed value still satisfied. The function
+    name promises "exactly six"; only an equality can honour it. It is ALSO
+    asserted equal to fda_cyp_disposition.DISPOSITIONS, so widening the CHECK
+    or the Python set without the other fails rather than drifts.
     """
     live = db.constraint_definition(conn, "fda_cyp_assertion", "fda_cyp_assertion_disposition")
     values = set(re.findall(r"'([^']+)'", live))
     assert values == {"member", "withheld_qualified", "unresolved_substance",
-                      "combination_regimen", "non_drug_entity"}, (
-        f"the disposition CHECK must be exactly these five values -- got {values!r}")
+                      "ambiguous_substance", "combination_regimen",
+                      "non_drug_entity"}, (
+        f"the disposition CHECK must be exactly these six values -- got {values!r}")
+    assert values == fda_cyp_disposition.DISPOSITIONS
     for inferred in ("enantiomer", "synonym", "metabolite", "group_term"):
         assert inferred not in live, (
             f"{inferred!r} is a cause drugref would be INFERRING from a name, which is "

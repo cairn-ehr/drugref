@@ -5,11 +5,14 @@ The ONLY writer of drugref's FDA-CYP rows, per the architecture invariant:
 parsers are pure, orchestrators own the transaction.
 
 ORDER MATTERS, as for every other feed here:
-  1. parse and checksum BEFORE opening the run, so a crash during the parse
-     leaves no half-written run row;
-  2. clear this source's old rows, so a re-ingest REPLACES rather than accumulates;
-  3. write classes, then memberships, then the assertion projection;
-  4. rebuild the question register, finish, commit.
+  1. parse, checksum, resolve and classify BEFORE opening the run, so a crash
+     or a refusal (the shrink guard, the resolution floor, the disposition
+     guards) leaves no half-written run row;
+  2. open the run;
+  3. clear this source's old rows, so a re-ingest REPLACES rather than accumulates,
+     then write classes, memberships and the assertion projection;
+  4. rebuild the question register;
+  5. finish, commit.
 
 WHAT THIS MODULE REFUSES TO DO, and it is most of the design:
 
@@ -89,6 +92,24 @@ class FdaCypShrinkError(RuntimeError):
     """
 
 
+class FdaCypResolutionError(RuntimeError):
+    """This page resolves a much smaller share of its tuples than the stored run (#135).
+
+    The shrink guard's sibling, and operator-facing for the same reason (a
+    RuntimeError, so cli.main prints one line and exits 2). The row count is
+    unchanged; what collapsed is the NAME INDEX -- a registry rebuilt without
+    its display-name seed, a display-name convention that changed -- so nearly
+    every tuple would land unresolved, the old edges would be cleared, and the
+    run would report success. The message names --allow-resolution-drop.
+
+    It trips only BELOW HALF the stored share, so it catches a collapse, not
+    a partial loss: a registry rebuilt without `ingest moiety-names` (empty
+    UNII official names) costs about 10 of 393 resolved cells and passes.
+    That narrower trap is issue #243. It never fires on a first ingest:
+    with nothing stored there is no baseline and nothing to destroy.
+    """
+
+
 class FdaCypDispositionError(Exception):
     """_classify returned a disposition this orchestrator cannot count.
 
@@ -112,7 +133,8 @@ class FdaCypSummary:
 
     EVERY FIELD IS NAMED FOR WHAT IT ACTUALLY COUNTS. `assertions_written` is
     every tuple parsed; `memberships_written` is the subset promoted, and the two
-    differ by exactly the withheld and unresolved populations. A summary line the
+    differ by every non-member disposition and by edges deduplicated on (moiety,
+    class) -- see below. A summary line the
     CLI prints is the number a reader quotes later, so a name that overstates its
     scope is a wrong number with a plausible source.
 
@@ -126,8 +148,9 @@ class FdaCypSummary:
 
     `memberships_written` is MEASURED, never derived from the others. NOT
     because the disposition categories overlap -- they cannot, since _classify
-    returns exactly one disposition per tuple, so the five counters are
-    disjoint by construction. The real reason is classes.add_membership's
+    returns exactly one disposition per tuple, so the five per-tuple
+    disposition counters are disjoint by construction (member is measured as
+    edges, not tuples). The real reason is classes.add_membership's
     ON CONFLICT DO NOTHING: two tuples resolving to the same (moiety, class)
     pair write one edge and increment this once, so no arithmetic over the
     other counts reconstructs it.
@@ -152,6 +175,8 @@ class FdaCypSummary:
     assertions_written: int
     withheld_qualified: int
     unresolved_substances: int
+    # #132: a name two or more moieties claim, counted per tuple like the above.
+    ambiguous_substances: int
     combination_regimens: int
     non_drug_entities: int
     questions_registered: int
@@ -160,7 +185,8 @@ class FdaCypSummary:
 
 def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                    upstream_release: str | None = None,
-                   allow_shrink: bool = False) -> FdaCypSummary:
+                   allow_shrink: bool = False,
+                   allow_resolution_drop: bool = False) -> FdaCypSummary:
     """Ingest one FDA-CYP page: parse, resolve, clear, write, rebuild questions.
 
     `upstream_release`, if given, OVERRIDES fda_cyp.parse_release -- the escape
@@ -177,6 +203,10 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     delete-and-rebuild, so an unguarded run replaces 419 tuples with 5 and
     reports success. FDA genuinely shrinking its table is a real event -- it
     just has to be a decision someone made, not one nobody saw.
+
+    `allow_resolution_drop` is the same kind of authorisation for the
+    resolution floor (#135): a run whose resolved share of tuples is below
+    MIN_RETAINED_FRACTION of the stored run's share.
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # 1. PARSE FIRST, before any run row exists, so a crash here -- an unknown
@@ -205,10 +235,24 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     #     It cannot live in the parser: 245 is a property of one release, not
     #     of the table's shape, and the harm is done by REPLACING a stored
     #     projection, which only the writer can see.
-    stored = conn.execute(
-        "SELECT count(*) FROM drugref.fda_cyp_assertion a "
-        "JOIN drugref.ingest_run r ON r.ingest_run_id = a.ingest_run "
-        "WHERE r.source = %s", (SOURCE,)).fetchone()[0]
+    #     The second figure, the stored RESOLVED count, is step 1b's baseline.
+    #     THE TWO REGISTRY READS (this one and step 1b's index) sit outside the
+    #     writer's try below, so they get its rollback-and-log of their own: a
+    #     missing table or a dropped connection must not leave a programmatic
+    #     caller holding an aborted transaction with an error naming no feed.
+    try:
+        stored, stored_resolved = conn.execute(
+            "SELECT count(*), count(a.resolved_moiety_uuid) "
+            "FROM drugref.fda_cyp_assertion a "
+            "JOIN drugref.ingest_run r ON r.ingest_run_id = a.ingest_run "
+            "WHERE r.source = %s", (SOURCE,)).fetchone()
+        fold = _fold_by_lower(classes.moieties_by_display_name(conn),
+                              classes.moieties_by_official_name(conn))
+    except psycopg.Error:
+        conn.rollback()
+        log.exception("FDA-CYP ingest failed reading the registry for release "
+                      "%s (%s); rolled back", upstream_release, page_path)
+        raise
     if stored and not allow_shrink and len(tuples) < stored * MIN_RETAINED_FRACTION:
         raise FdaCypShrinkError(
             f"refusing to replace {stored} stored FDA-CYP assertion rows with "
@@ -218,6 +262,70 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "this count is the only signal. Re-fetch the page, or pass "
             "--allow-shrink if FDA really did shrink the table.")
 
+    # 1b. RESOLVE AND CLASSIFY EVERY TUPLE NOW, still before the run opens, so
+    #     the resolution floor (#135) can refuse with no run row to explain.
+    #     The index is display names plus the stored UNII official names
+    #     (#226), read ONCE, whole -- both are bounded by the registry, not by
+    #     this feed, exactly as classes.py's own docstring argues for MED-RT
+    #     and MeSH. The official names are EMPTY unless `ingest moiety-names`
+    #     ran first. Resolution is exact and case-insensitive; _classify
+    #     decides what zero, one or several candidates mean. (`fold` is read in
+    #     step 1a's try, for its rollback.)
+    #
+    #     BOTH DISPOSITION GUARDS ARE CHECKED HERE, before the INSERT and before
+    #     the run opens: this module refuses to write rather than writing
+    #     something it cannot account for. db/039's CHECK (widened by db/075)
+    #     would also catch an unknown value, but only AFTER the row is built and
+    #     only while the CHECK and DISPOSITIONS stay in step -- and db/041's
+    #     header calls widening it "a real, foreseeable event". A value the CHECK
+    #     admits but nothing counts would bank an uncounted row: no counter sums
+    #     to assertions_written anywhere, so the summary would silently stop
+    #     adding up. This is db/041's negative-predicate lesson applied to the
+    #     Python beside it.
+    decided = []
+    for t in tuples:
+        candidates = fold.get(t.substance.lower(), [])
+        disposition, resolved_moiety = _classify(t.substance, candidates,
+                                                 t.footnote_markers)
+        if disposition not in DISPOSITIONS:
+            raise FdaCypDispositionError(
+                f"row {t.row_ordinal} ({t.raw_substance!r}) has disposition "
+                f"{disposition!r}, which this orchestrator counts into no "
+                f"summary field. The closed set is {sorted(DISPOSITIONS)}. "
+                "Widening it means widening DISPOSITIONS, the counts, the CHECK "
+                "(db/039, db/075) and gap_sources_interactions.py's CASE together.")
+        # EVERY path with no single candidate returns a non-member disposition,
+        # so a "member" without a moiety is unreachable. Checked rather than
+        # assumed: a future edit that breaks it should fail here, legibly,
+        # instead of sending a NULL moiety_uuid into add_membership's SQL.
+        # `raise`, not `assert` -- python -O strips asserts.
+        if disposition == "member" and resolved_moiety is None:
+            raise FdaCypDispositionError(
+                f"row {t.row_ordinal} ({t.raw_substance!r}) classified "
+                "'member' with no resolved moiety -- _classify's ordering "
+                "invariant is broken.")
+        decided.append((t, candidates, disposition, resolved_moiety))
+
+    #     The floor compares the RESOLVED SHARE with the stored run's, like the
+    #     shrink guard compares against what is stored, so it is
+    #     self-calibrating and a first run (nothing resolved yet) is never
+    #     blocked. A share, not a count, so it stays independent of the row
+    #     count the shrink guard already watches: FDA dropping a third of its
+    #     rows leaves the share about where it was. It counts tuples with a
+    #     resolved moiety, which is exactly what resolved_moiety_uuid stores.
+    resolved_now = sum(1 for *_, moiety in decided if moiety is not None)
+    if (stored_resolved and not allow_resolution_drop
+            and resolved_now * stored
+            < stored_resolved * len(tuples) * MIN_RETAINED_FRACTION):
+        raise FdaCypResolutionError(
+            f"refusing to replace {stored_resolved} of {stored} resolved FDA-CYP "
+            f"tuples with {resolved_now} of {len(tuples)} from {page_path}: the "
+            f"name index resolved less than {MIN_RETAINED_FRACTION:.0%} of the "
+            "share the stored run did. That is the shape of an empty or changed "
+            "registry (no UNII seed, a renamed display-name convention), not of "
+            "an FDA revision. Check the registry, or pass --allow-resolution-drop "
+            "if the drop is real.")
+
     # 2. Open the run. COMMITS in its own transaction (provenance.open_run) --
     #    everything from here is the work, and it rolls back together on failure.
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
@@ -225,15 +333,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                                  clock=clock)
 
     try:
-        # 3. The resolution index: display names plus the stored UNII official
-        #    names (#226). Read ONCE, whole -- both are bounded by the registry,
-        #    not by this feed, exactly as classes.py's own docstring argues for
-        #    MED-RT and MeSH. The official names are EMPTY unless
-        #    `ingest moiety-names` ran first.
-        fold = _fold_by_lower(classes.moieties_by_display_name(conn),
-                              classes.moieties_by_official_name(conn))
-
-        # 4. Clear this source's previous rows before writing this run's. TWO
+        # 3. Clear this source's previous rows before writing this run's. TWO
         #    clears, because FDA-CYP owns two kinds of table: the edges
         #    (class_membership; class_parent, though this slice writes none) via
         #    classes.clear_source_edges, and the assertion projection via
@@ -254,10 +354,11 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
         memberships_written = 0
         withheld_qualified = 0
         unresolved_substances = 0
+        ambiguous_substances = 0
         combination_regimens = 0
         non_drug_entities = 0
 
-        for t in tuples:
+        for t, candidates, disposition, resolved_moiety in decided:
             key = (t.system, t.pathway, t.role, t.potency)
             class_uuid = class_cache.get(key)
             if class_uuid is None:
@@ -279,34 +380,6 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                 if is_new:
                     classes_added += 1
 
-            # Resolution is exact and case-insensitive. `single` is None
-            # for zero matches AND for more than one -- ambiguity is unresolved,
-            # never "pick the first", because a name resolving to several moieties
-            # is real information (the registry grew and now genuinely disagrees
-            # with itself about this name) that silently picking one would erase.
-            candidates = fold.get(t.substance.lower(), [])
-            single = candidates[0] if len(candidates) == 1 else None
-
-            disposition, resolved_moiety = _classify(
-                t.substance, single, t.footnote_markers)
-            # CHECKED BEFORE THE INSERT, not after: this module's contract is that
-            # it refuses to write rather than writing something it cannot account
-            # for. Today db/039's CHECK would also catch an unknown value, but it
-            # catches it AFTER the row is built and only while the vocabulary
-            # stays five wide -- and db/041's header calls widening it "a real,
-            # foreseeable event". The moment the CHECK is widened, the counting
-            # chain below would bank an uncounted row: no counter sums to
-            # assertions_written anywhere, so the summary would silently stop
-            # adding up. This is db/041's negative-predicate lesson applied to the
-            # Python beside it.
-            if disposition not in DISPOSITIONS:
-                raise FdaCypDispositionError(
-                    f"row {t.row_ordinal} ({t.raw_substance!r}) has disposition "
-                    f"{disposition!r}, which this orchestrator counts into no "
-                    f"summary field. The closed set is {sorted(DISPOSITIONS)}. "
-                    "Widening it means widening the counts, db/039's CHECK and "
-                    "gap_sources_interactions.py's CASE together.")
-
             # registry_near_name is left NULL throughout this slice. Section 7.1
             # describes it as curator evidence from "a stated, mechanical prefix
             # rule", but no such rule is part of this task's interface, and
@@ -321,9 +394,10 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                 " resolved_moiety_uuid, column_heading, raw_cell, system, "
                 " pathway, role, potency, class_uuid, footnote_markers, "
                 " footnote_text, registry_near_name, disposition, "
-                " substance, row_footnote_markers, cell_footnote_markers) "
+                " substance, row_footnote_markers, cell_footnote_markers, "
+                " candidate_moiety_uuids) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-                "        %s, %s, %s, %s, %s, %s)",
+                "        %s, %s, %s, %s, %s, %s, %s)",
                 (run_id, SOURCE, t.row_ordinal, t.raw_substance, resolved_moiety,
                  t.column_heading, t.raw_cell, t.system, t.pathway, t.role, t.potency,
                  class_uuid, t.footnote_markers,
@@ -334,22 +408,12 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                  # stored -- see db/042's header for why this column ships
                  # nullable rather than backfilled by a second, SQL-side
                  # reimplementation of split_footnotes.
-                 t.substance, t.row_footnote_markers, t.cell_footnote_markers))
+                 t.substance, t.row_footnote_markers, t.cell_footnote_markers,
+                 # db/075: the claimants, for an ambiguous name only.
+                 candidates if disposition == "ambiguous_substance" else None))
 
             if disposition == "member":
-                # EVERY path on which `single` is None returns a non-member
-                # disposition before this one is reached, so a "member" without a
-                # moiety is unreachable. Checked rather than assumed: a future edit
-                # that breaks it should fail here, legibly, instead of sending a
-                # NULL moiety_uuid into add_membership's SQL to fail there with a
-                # less obvious error. `raise`, not `assert` -- python -O strips
-                # asserts, and a guard that disappears under a flag is exactly the
-                # less-obvious failure this one exists to prevent.
-                if resolved_moiety is None:
-                    raise FdaCypDispositionError(
-                        f"row {t.row_ordinal} ({t.raw_substance!r}) classified "
-                        "'member' with no resolved moiety -- _classify's ordering "
-                        "invariant is broken.")
+                # resolved_moiety is non-None here: step 1b refused otherwise.
                 if classes.add_membership(conn, resolved_moiety, class_uuid,
                                           RELATIONSHIP, run_id):
                     memberships_written += 1
@@ -357,16 +421,18 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
                 withheld_qualified += 1
             elif disposition == "unresolved_substance":
                 unresolved_substances += 1
+            elif disposition == "ambiguous_substance":
+                ambiguous_substances += 1
             elif disposition == "combination_regimen":
                 combination_regimens += 1
             else:
-                # Reachable only for 'non_drug_entity': the DISPOSITIONS guard
-                # above has already rejected anything outside the closed set, so
-                # this arm needs no condition and cannot silently swallow a sixth
+                # Reachable only for 'non_drug_entity': step 1b's DISPOSITIONS
+                # guard has already rejected anything outside the closed set, so
+                # this arm needs no condition and cannot silently swallow a seventh
                 # value the way a bare `elif` chain with no else did.
                 non_drug_entities += 1
 
-        # 5. Rebuild the question register. Called unconditionally, like every other
+        # 4. Rebuild the question register. Called unconditionally, like every other
         #    orchestrator here: register_from_gaps refreshes EVERY currently-open
         #    gap kind's last_derived_ingest, not only the ones this ingest touches
         #    (gsrs_run's own test_gsrs_run.py docstring records the same point for
@@ -376,7 +442,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
         #    not, to keep every other source's open questions current.
         register_counts = questions.register_from_gaps(conn, run_id)
 
-        # 6. Finish and commit. finish_run does NOT commit on its own (see its
+        # 5. Finish and commit. finish_run does NOT commit on its own (see its
         #    docstring on why symmetry with open_run would be a bug), so this run's
         #    "finished" stamp and everything it wrote land in one atomic commit.
         provenance.finish_run(conn, run_id)
@@ -403,6 +469,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
         assertions_written=len(tuples),
         withheld_qualified=withheld_qualified,
         unresolved_substances=unresolved_substances,
+        ambiguous_substances=ambiguous_substances,
         combination_regimens=combination_regimens,
         non_drug_entities=non_drug_entities,
         # Subscript, not .get(..., 0): register_from_gaps always sets this key,
