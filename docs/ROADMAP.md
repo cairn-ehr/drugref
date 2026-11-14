@@ -1429,7 +1429,7 @@ PROJECT-NOTES § "The FDA-CYP official-names round".
 
 ### FDA-CYP pinned column headings and role-keyed questions (#134) ✅ DONE (2026-11-14) — `db/074`
 The ten role-column headings are pinned beside `ROLE_COLUMNS` (`fda_cyp_cell.ROLE_COLUMN_HEADINGS`), and the parser
-raises if one is missing, so an FDA rewording or reordering stops the ingest instead of mislabelling roles. The
+raises if one is reworded or out of place, so an FDA rewording or a heading/position mismatch stops the ingest. The
 withheld-cell question key now carries a frozen per-role label (`ROLE_QUESTION_KEYS`), not FDA's printed heading, so
 question identity survives an accepted rewording. The labels equal the 2026-05-29 headings, so no existing
 question_uuid changed (measured: 55 of 55 identical). PROJECT-NOTES § "The FDA-CYP pinned-headings round".

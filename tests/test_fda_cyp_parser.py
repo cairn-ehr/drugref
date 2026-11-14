@@ -78,19 +78,19 @@ def test_every_role_column_has_exactly_one_pinned_heading():
 
 
 def test_a_reworded_role_heading_raises(fixture_html):
-    """Issue 134: column_heading keys the immortal question UUIDs, so FDA
-    rewording one ('CYP Mod INH' -> 'CYP Moderate Inhibitor') would silently
-    retire and re-mint every withheld question. It must stop the ingest
-    instead, so a rewording is a deliberate, re-measured bump."""
+    """Issue 134: FDA rewording a heading ('CYP Mod INH' -> 'CYP Moderate
+    Inhibitor') must stop the ingest, so accepting a rewording is a deliberate
+    edit to ROLE_COLUMN_HEADINGS rather than something that slips through."""
     broken = fixture_html.replace(">CYP Mod INH</th>", ">CYP Moderate Inhibitor</th>", 1)
     with pytest.raises(fda_cyp.FdaCypParseError, match="CYP Moderate Inhibitor"):
         fda_cyp.parse_table(broken)
 
 
 def test_two_swapped_role_headings_raise(fixture_html):
-    """Issue 134's second hole: ROLE_COLUMNS maps POSITIONS to meanings, so a
-    reordering of FDA's columns would otherwise write 'sensitive' where
-    'moderate sensitive' belongs, with nothing noticing."""
+    """Issue 134's second hole: ROLE_COLUMNS maps POSITIONS to meanings. A real
+    reorder (cells moving with their headings) is already caught by parse_cell's
+    role/potency cross-check; this heading-only swap of the two closest columns
+    is what that check cannot see, so the pin must catch it."""
     broken = (fixture_html
               .replace(">CYP SENS SUB</th>", ">@@SWAP@@</th>", 1)
               .replace(">CYP Mod SENS SUB</th>", ">CYP SENS SUB</th>", 1)

@@ -10,7 +10,7 @@ new ones. The key now carries a frozen per-role label instead
 """
 import pathlib
 
-from drugref import questions
+from drugref import gap_sources_interactions, questions
 from drugref.ingest import fda_cyp_cell, fda_cyp_run
 # Reused, not copied: the ingest COMMITS, so these autouse fixtures seed the two
 # moieties a withheld cell needs (bupropion, cenobamate) and clean up after.
@@ -45,6 +45,29 @@ def test_every_role_column_has_a_question_key():
     assert set(fda_cyp_cell.ROLE_QUESTION_KEYS) == set(fda_cyp_cell.ROLE_COLUMNS.values())
 
 
+# Every withheld-cell gap_key the fixture mints, byte for byte. NEVER EDIT to make
+# a failure pass: a change here means question UUIDs changed.
+_GOLDEN_WITHHELD_KEYS = {
+    "FDACYP:bupropion|CYP Strg INH|2D6",
+    "FDACYP:bupropion|CYP SENS SUB|2B6",
+    "FDACYP:cenobamate|CYP Mod INH|2C19",
+    "FDACYP:cenobamate|CYP Mod IND|3A",
+}
+
+
+def test_every_role_key_branch_runs_in_postgres(conn):
+    """The CASE built from ROLE_QUESTION_KEYS, run over all ten role tuples plus
+    the subject half's all-NULL row. The fixture's withheld cells reach only four
+    arms; this reaches the other six, including the transporter arms' `IS NULL`."""
+    tuples = [*_FROZEN, (None, None, None)]
+    values = ", ".join(["(%s::text, %s::text, %s::text)"] * len(tuples))
+    rows = conn.execute(
+        f"SELECT system, role, potency, {gap_sources_interactions._fda_cyp_role_key_sql()} "
+        f"FROM (VALUES {values}) AS v(system, role, potency)",
+        [part for t in tuples for part in t]).fetchall()
+    assert {(s, r, p): key for s, r, p, key in rows} == {**_FROZEN, (None, None, None): ""}
+
+
 def _withheld_questions(conn) -> set[tuple[str, object]]:
     return set(conn.execute(
         "SELECT gap_key, question_uuid FROM drugref.open_question "
@@ -57,7 +80,9 @@ def test_a_reworded_heading_keeps_every_question_uuid(conn):
     column_heading changes, the role does not, so no question may change."""
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     before = _withheld_questions(conn)
-    assert before, "the fixture must still produce withheld-cell questions"
+    # Exact keys, not just "same as before": this pins the gap_key BYTES to the
+    # format minted before db/074, which before==after alone cannot see.
+    assert {key for key, _ in before} == _GOLDEN_WITHHELD_KEYS
     run_id = conn.execute(
         "SELECT max(ingest_run_id) FROM drugref.ingest_run WHERE source = 'FDA-CYP'"
     ).fetchone()[0]

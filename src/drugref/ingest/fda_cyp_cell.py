@@ -41,14 +41,14 @@ ROLE_COLUMNS: dict[int, tuple[str, str, str | None]] = {
 
 # FDA's printed heading for each role column, as read from the 2026-05-29
 # release. PINNED, and checked against the page by fda_cyp._column_headings
-# (issue 134), for two reasons:
-#  * the heading text keys fda_cyp_assertion's primary key and, through the gap
-#    view, every withheld question's immortal question_uuid -- an unpinned
-#    rewording would silently retire and re-mint them all;
-#  * ROLE_COLUMNS above maps POSITIONS to meanings, so pinning the words beside
-#    the positions is what catches FDA reordering its columns.
-# A legitimate FDA rewording is therefore a deliberate edit here, with the
-# question registry re-measured -- the posture PATHWAYS takes for pathways.
+# (issue 134), because ROLE_COLUMNS above maps POSITIONS to meanings: pinning the
+# words beside the positions catches a heading/position mismatch that
+# parse_cell's per-cell role/potency cross-check cannot see (a heading-only swap,
+# or a column whose cells are all empty). The heading text also keys
+# fda_cyp_assertion's primary key and is quoted as curator evidence, but it no
+# longer keys any question_uuid: since db/074 that is ROLE_QUESTION_KEYS below.
+# A legitimate FDA rewording is therefore a deliberate edit HERE ONLY -- never to
+# ROLE_QUESTION_KEYS -- the posture PATHWAYS takes for pathways.
 ROLE_COLUMN_HEADINGS: dict[int, str] = {
     1:  "CYP Strg INH",
     2:  "CYP Mod INH",

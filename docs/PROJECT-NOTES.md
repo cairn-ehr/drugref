@@ -6410,11 +6410,13 @@ back to display names alone, silently (today's behaviour, not a regression). FDA
 **Tests (+2).** `test_fda_cyp_run.py`: a stored official name resolves rifampin; the fold lists a moiety once
 when two indexes name it. Test DB: `drugref_test_fdacyp226`.
 
-## The FDA-CYP pinned-headings round (#134, 2026-11-14) — `db/074`, measured on `drugref_role134`, suite 3368 → 3374
+## The FDA-CYP pinned-headings round (#134, 2026-11-14) — `db/074`, measured on `drugref_role134`, suite 3368 → 3375
 
 **What it is.** `fda_cyp._column_headings` checked only how many headings there were. The heading text keyed every
 withheld question's immortal `question_uuid` (through the gap view's middle key segment), so an FDA rewording would
-silently retire and re-mint them. `ROLE_COLUMNS` maps positions, so a column reorder was caught by nothing. The tests
+silently retire and re-mint them. `ROLE_COLUMNS` maps positions; a real reorder (cells moving with their headings)
+was already caught by `parse_cell`'s per-cell role/potency cross-check (PR #241 review: all 90 position pairs raise
+on the fixture), but a heading-only swap or a column whose cells are all empty was caught by nothing. The tests
 `test_two_swapped_role_headings_raise` and `test_a_reworded_heading_keeps_every_question_uuid` showed both before the
 fix.
 
@@ -6430,17 +6432,20 @@ question_uuid changed.** A plain `CYP:inhibitor:strong` key would have re-minted
 two dicts read alike today; after an FDA rewording only `ROLE_COLUMN_HEADINGS` changes. **Never edit
 `ROLE_QUESTION_KEYS`**: `tests/test_fda_cyp_question_keys.py` holds a golden copy. `gap_sources_interactions`
 generates the key's SQL `CASE` from the dict (one home), with no ELSE, so an unmapped role leaves `gap_key` NULL and
-the ingest aborts. **`db/074`** regroups the view's withheld half on the role tuple (db/043's rule: group on what
-the key carries), makes `column_heading` evidence via `max()`, and appends `system`, `role` and `potency`.
-`column_heading` still appears in the question TEXT.
+the ingest aborts (in `ids.mint_question_uuid`, before any INSERT). **`db/074`** regroups the view's withheld half
+on the role tuple (db/043's rule: group on what the key carries), makes `column_heading` evidence via `max()`, and
+appends `system`, `role` and `potency`. `column_heading` still appears in the question TEXT.
 
 **Measured.** `drugref_role134` = `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest fda-cyp`
 (`downloads/FDA/fda_cyp_2026-05-29.html`): **all 55 current `fda_cyp_unadjudicated` questions are identical (gap_key
 and question_uuid)** before and after; 35 are withheld cells. Parse still yields 419 tuples.
 
-**Tests (+6).** `test_fda_cyp_parser.py` +3: the pin covers exactly the role columns; a reworded heading raises; two
-swapped headings raise. `test_fda_cyp_question_keys.py` +3 (new): the labels are frozen; every role has one; a
-stored heading rewording keeps every withheld question_uuid. Test DB: `drugref_test_heading134`.
+**Tests (+7).** `test_fda_cyp_parser.py` +3: the pin covers exactly the role columns; a reworded heading raises; two
+swapped headings raise. `test_fda_cyp_question_keys.py` +4 (new): the labels are frozen; every role has one; the
+generated `CASE` runs in Postgres over all ten role tuples plus the subject half's all-NULL row (the fixture reaches
+only four arms); a stored heading rewording keeps every withheld question_uuid, and the four fixture gap_keys equal a
+golden literal set in the pre-db/074 format. The two `test_fda_cyp_run.py` joins that restated the old key format by
+hand now evaluate the registry's own `key_sql` (`_KEYED_GAP_VIEW`). Test DB: `drugref_test_heading134`.
 
 ## The standing open-issue ledger
 
@@ -6719,7 +6724,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3374 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3375 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7221,6 +7226,9 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_role134` is the FDA-CYP pinned-headings round's verification database** (2026-11-14, #134):
+  `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest fda-cyp` (run 2026-05-29T14:00).
+  `drugref_test_heading134` was this branch's test DB. **Never patch it.**
 - **`drugref_fdacyp226` is the FDA-CYP official-names round's verification database** (2026-11-14, #226):
   `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp` (run 2026-05-29T14:00).
   `drugref_test_fdacyp226` was this branch's test DB. **Never patch it.**

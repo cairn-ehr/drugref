@@ -22,6 +22,14 @@ from drugref.ingest import fda_cyp_disposition, fda_cyp_run
 # marked `livepage`, and CI deselects it rather than skipping it.
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "fda_cyp_table.html"
 
+# The gap view with each row's gap_key computed by the registry's OWN key_sql,
+# so tests join open_question on it instead of restating the frozen format (a
+# second copy drifted once already: issue 134 / db/074 moved the role segment).
+_KEYED_GAP_VIEW = (
+    "(SELECT g.*, "
+    + questions._GAP_SOURCES["fda_cyp_unadjudicated"]["key_sql"]
+    + " AS gap_key FROM drugref.gap_fda_cyp_unadjudicated g) g")
+
 
 @pytest.fixture(autouse=True)
 def _registry(conn):
@@ -528,20 +536,18 @@ def test_the_question_text_states_the_actual_reason(conn):
     this disposition's row" -- a branch silently emitting another branch's text
     (the CASE matching the wrong WHEN, or two branches accidentally sharing a
     string) would still pass every `any(...)` here. Joining question_text back to
-    the gap view's own `disposition` column (via the same gap_key format
-    gap_sources_interactions.py's key_sql builds -- pinned directly, on
-    test_the_subject_grain_collapses_repeated_cells_for_one_substance's own
-    precedent of matching against `gap_key LIKE 'FDACYP:...'`) makes the
-    assertion fail if a phrase shows up under the wrong disposition's own rows.
+    the gap view's own `disposition` column (via _KEYED_GAP_VIEW, which
+    evaluates the registry's own key_sql rather than restating the format)
+    makes the assertion fail if a phrase shows up under the wrong
+    disposition's own rows.
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     rows = conn.execute(
         "SELECT g.disposition, q.question_text "
-        "FROM drugref.gap_fda_cyp_unadjudicated g "
+        "FROM " + _KEYED_GAP_VIEW + " "
         "JOIN drugref.open_question q "
         "  ON q.gap_kind = 'fda_cyp_unadjudicated' "
-        " AND q.gap_key = 'FDACYP:' || g.substance || '|' || "
-        "     COALESCE(g.column_heading, '') || '|' || COALESCE(g.pathway, '')"
+        " AND q.gap_key = g.gap_key"
     ).fetchall()
     texts_by_disposition: dict[str, list[str]] = {}
     for disposition, text in rows:
@@ -611,11 +617,10 @@ def test_the_withheld_text_only_asserts_cell_attachment_when_the_marker_is_cell_
     """
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release="2026-05-29T14:00")
     rows = dict(conn.execute(
-        "SELECT column_heading, question_text FROM drugref.gap_fda_cyp_unadjudicated g "
+        "SELECT column_heading, question_text FROM " + _KEYED_GAP_VIEW + " "
         "JOIN drugref.open_question q "
         "  ON q.gap_kind = 'fda_cyp_unadjudicated' "
-        " AND q.gap_key = 'FDACYP:' || g.substance || '|' || "
-        "     COALESCE(g.column_heading, '') || '|' || COALESCE(g.pathway, '') "
+        " AND q.gap_key = g.gap_key "
         "WHERE g.substance = 'cenobamate'").fetchall())
     assert set(rows) == {"CYP Mod INH", "CYP Mod IND"}
 

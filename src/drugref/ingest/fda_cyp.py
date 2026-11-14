@@ -233,11 +233,12 @@ def _column_headings(page: str) -> list[str]:
       lookup would then raise a bare IndexError on a real column instead of the
       documented FdaCypParseError.
     * CONTENT (issue 134): each role column's heading must equal its pinned
-      fda_cyp_cell.ROLE_COLUMN_HEADINGS entry. The heading text keys immortal
-      question UUIDs and the pin is what ties FDA's columns to ROLE_COLUMNS'
-      positions, so a rewording or a reordering stops the ingest rather than
-      silently re-minting questions or mislabelling roles. The substance column
-      (index 0) is not pinned: its heading keys nothing.
+      fda_cyp_cell.ROLE_COLUMN_HEADINGS entry. The pin ties FDA's headings to
+      ROLE_COLUMNS' positions, so a rewording or a heading/position mismatch
+      stops the ingest for a deliberate decision. (Question UUIDs do NOT depend
+      on the heading since db/074 -- they key on ROLE_QUESTION_KEYS -- so
+      accepting a rewording re-mints nothing.) The substance column (index 0)
+      is not pinned: its heading keys nothing.
     """
     header = _data_table_rows(page)[0]
     headings = [_clean(cell) for cell in _CELL.findall(header)]
@@ -249,9 +250,10 @@ def _column_headings(page: str) -> list[str]:
         if headings[index] != pinned:
             raise FdaCypParseError(
                 f"column {index} is headed {headings[index]!r}, expected "
-                f"{pinned!r}. FDA reworded or reordered its columns; the heading "
-                f"keys question UUIDs, so update ROLE_COLUMN_HEADINGS (and "
-                f"ROLE_COLUMNS if the order moved) deliberately and re-measure.")
+                f"{pinned!r}. FDA reworded or reordered its columns: if only the "
+                f"wording changed, update fda_cyp_cell.ROLE_COLUMN_HEADINGS; if "
+                f"the order moved, update ROLE_COLUMNS too. Never edit "
+                f"ROLE_QUESTION_KEYS -- it is what keeps question UUIDs stable.")
     return headings
 
 

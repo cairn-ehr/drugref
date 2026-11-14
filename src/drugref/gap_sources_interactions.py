@@ -14,8 +14,10 @@ def _fda_cyp_role_key_sql() -> str:
     Built from fda_cyp_cell.ROLE_QUESTION_KEYS so the frozen labels live in one
     place. The subject-grain half of the view has no role (system IS NULL) and
     gets '' -- exactly what COALESCE(column_heading, '') gave it before. A role
-    missing from the dict has NO ELSE: the key goes NULL and open_question's NOT
-    NULL gap_key aborts the ingest loudly instead of minting a wrong question.
+    missing from the dict has NO ELSE: the key goes NULL and
+    ids.mint_question_uuid raises on it, aborting the ingest loudly instead of
+    minting a wrong question (test_every_role_column_has_a_question_key keeps
+    that from being reachable).
     """
     arms = " ".join(
         f"WHEN system = '{system}' AND role = '{role}' AND "
@@ -157,10 +159,10 @@ INTERACTION_GAP_SOURCES = {
     #     the ROLE, no longer FDA's printed column_heading).
     #   * EVERY OTHER NON-MEMBER disposition (unresolved_substance,
     #     combination_regimen, non_drug_entity today, and whatever else the CHECK
-    #     admits later) is grained per SUBJECT (source, raw_substance,
-    #     disposition) -- the question is about the NAME, not the cell that
-    #     happened to mention it, so the view projects column_heading and pathway
-    #     as NULL for this half.
+    #     admits later) is grained per SUBJECT (source, substance, disposition;
+    #     db/043) -- the question is about the NAME, not the cell that happened
+    #     to mention it, so the view projects column_heading, pathway, system,
+    #     role and potency as NULL for this half.
     #
     # db/040 first shipped the subject half as a POSITIVE enumeration of the three
     # known values (`IN ('unresolved_substance', 'combination_regimen',
@@ -194,9 +196,10 @@ INTERACTION_GAP_SOURCES = {
     # narrates a question.
     #
     # key_sql below ALSO maps a missing cell (role, pathway) to '' before
-    # concatenating, unchanged from db/040/041: for withheld_qualified those two
-    # are never NULL, so every one of its gap_keys -- and therefore its
-    # question_uuids -- stays BYTE-IDENTICAL to what db/041 minted; only the
+    # concatenating -- the same result db/040/041's COALESCE gave, though the
+    # role segment now goes through the CASE on system: for withheld_qualified
+    # those two are never NULL, so every one of its gap_keys -- and therefore
+    # its question_uuids -- stays BYTE-IDENTICAL to what db/041 minted; only the
     # subject-grain dispositions' keys change (and, within them, only the ones
     # whose raw_substance actually carried a footnote marker or differed from
     # its clean form).
