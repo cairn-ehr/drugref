@@ -5,6 +5,27 @@ The second half of `questions._GAP_SOURCES` -- see `gap_sources_registry.py`, th
 first half, for what these dicts are and why they live outside questions.py
 (issue 177). EVERY gap_key FORMAT HERE IS FROZEN.
 """
+from drugref.ingest.fda_cyp_cell import ROLE_QUESTION_KEYS
+
+
+def _fda_cyp_role_key_sql() -> str:
+    """SQL for the role segment of an FDA-CYP gap_key (issue 134, db/074).
+
+    Built from fda_cyp_cell.ROLE_QUESTION_KEYS so the frozen labels live in one
+    place. The subject-grain half of the view has no role (system IS NULL) and
+    gets '' -- exactly what COALESCE(column_heading, '') gave it before. A role
+    missing from the dict has NO ELSE: the key goes NULL and
+    ids.mint_question_uuid raises on it, aborting the ingest loudly instead of
+    minting a wrong question (test_every_role_column_has_a_question_key keeps
+    that from being reachable).
+    """
+    arms = " ".join(
+        f"WHEN system = '{system}' AND role = '{role}' AND "
+        + ("potency IS NULL" if potency is None else f"potency = '{potency}'")
+        + f" THEN '{label}'"
+        for (system, role, potency), label in ROLE_QUESTION_KEYS.items())
+    return f"CASE WHEN system IS NULL THEN '' ELSE CASE {arms} END END"
+
 
 INTERACTION_GAP_SOURCES = {
     # Slice 5c.1. The two kinds whose answer is a CURATED ROW rather than a lookup --
@@ -132,15 +153,16 @@ INTERACTION_GAP_SOURCES = {
     # argument: 71 gap rows minted for 55 facts under db/039's single grouping,
     # issue 41's rule in its FINER direction -- "grouping finer mints two questions
     # for one fact"):
-    #   * withheld_qualified is grained per CELL (source, raw_substance,
-    #     column_heading, pathway) -- each footnoted cell is its own adjudication,
-    #     so column_heading/pathway are part of the fact and belong in the key.
+    #   * withheld_qualified is grained per CELL (source, substance, role tuple,
+    #     pathway) -- each footnoted cell is its own adjudication, so the cell's
+    #     role and pathway are part of the fact and belong in the key (db/074:
+    #     the ROLE, no longer FDA's printed column_heading).
     #   * EVERY OTHER NON-MEMBER disposition (unresolved_substance,
     #     combination_regimen, non_drug_entity today, and whatever else the CHECK
-    #     admits later) is grained per SUBJECT (source, raw_substance,
-    #     disposition) -- the question is about the NAME, not the cell that
-    #     happened to mention it, so the view projects column_heading and pathway
-    #     as NULL for this half.
+    #     admits later) is grained per SUBJECT (source, substance, disposition;
+    #     db/043) -- the question is about the NAME, not the cell that happened
+    #     to mention it, so the view projects column_heading, pathway, system,
+    #     role and potency as NULL for this half.
     #
     # db/040 first shipped the subject half as a POSITIVE enumeration of the three
     # known values (`IN ('unresolved_substance', 'combination_regimen',
@@ -173,10 +195,11 @@ INTERACTION_GAP_SOURCES = {
     # kept available for evidence; it is simply no longer what identifies or
     # narrates a question.
     #
-    # key_sql below ALSO COALESCEs column_heading/pathway to '' before
-    # concatenating, unchanged from db/040/041: for withheld_qualified those two
-    # are never NULL, so every one of its gap_keys -- and therefore its
-    # question_uuids -- stays BYTE-IDENTICAL to what db/041 minted; only the
+    # key_sql below ALSO maps a missing cell (role, pathway) to '' before
+    # concatenating -- the same result db/040/041's COALESCE gave, though the
+    # role segment now goes through the CASE on system: for withheld_qualified
+    # those two are never NULL, so every one of its gap_keys -- and therefore
+    # its question_uuids -- stays BYTE-IDENTICAL to what db/041 minted; only the
     # subject-grain dispositions' keys change (and, within them, only the ones
     # whose raw_substance actually carried a footnote marker or differed from
     # its clean form).
@@ -253,10 +276,17 @@ INTERACTION_GAP_SOURCES = {
     # the CASE branching exists to avoid. An earlier draft of this entry used
     # ELSE for non_drug_entity, which is precisely the defect gap_sources_registry's
     # unresolved_ci_object comment warns against, restated for a second gap kind.
+    #
+    # ⇒ db/074 (issue 134): THE KEY CARRIES THE ROLE, NOT FDA'S PRINTED HEADING.
+    # The middle segment used to be column_heading, so an FDA rewording re-minted
+    # every withheld question. It is now the frozen label for the cell's (system,
+    # role, potency) -- byte-identical to the 2026-05-29 heading, so no existing
+    # question_uuid changed. column_heading stays in the TEXT, as evidence.
     "fda_cyp_unadjudicated": {
         "view": "gap_fda_cyp_unadjudicated",
         "key_sql": ("'FDACYP:' || COALESCE(substance, raw_substance) || '|' || "
-                    "COALESCE(column_heading, '') || '|' || COALESCE(pathway, '')"),
+                    + _fda_cyp_role_key_sql()
+                    + " || '|' || COALESCE(pathway, '')"),
         "text_sql": (
             "CASE disposition "
             "WHEN 'withheld_qualified' THEN "

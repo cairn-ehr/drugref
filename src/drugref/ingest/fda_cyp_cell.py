@@ -3,8 +3,9 @@
 
 Split out of fda_cyp.py (issue 177) along the seam between the module's two
 vocabularies. fda_cyp.py keeps the PAGE: where the table is, how many cells a
-row carries, the column headings, the release stamp and the footnote prose.
-This module keeps the CELL: what each role column means (ROLE_COLUMNS), the
+row carries, reading (and checking) the column headings, the release stamp and
+the footnote prose. This module keeps the CELL: what each role column means
+(ROLE_COLUMNS) and what FDA heads it (ROLE_COLUMN_HEADINGS, issue 134), the
 closed pathway vocabulary, the role/potency phrases, how footnote markers are
 split off, and parse_cell, which turns one cell into its (pathway, markers)
 pairs. fda_cyp.parse_table is the only production caller.
@@ -36,6 +37,50 @@ ROLE_COLUMNS: dict[int, tuple[str, str, str | None]] = {
     8:  ("CYP", "substrate", "moderate sensitive"),
     9:  ("transporter", "inhibitor", None),
     10: ("transporter", "substrate", None),
+}
+
+# FDA's printed heading for each role column, as read from the 2026-05-29
+# release. PINNED, and checked against the page by fda_cyp._column_headings
+# (issue 134), because ROLE_COLUMNS above maps POSITIONS to meanings: pinning the
+# words beside the positions catches a heading/position mismatch that
+# parse_cell's per-cell role/potency cross-check cannot see (a heading-only swap,
+# or a column whose cells are all empty). The heading text also keys
+# fda_cyp_assertion's primary key and is quoted as curator evidence, but it no
+# longer keys any question_uuid: since db/074 that is ROLE_QUESTION_KEYS below.
+# A legitimate FDA rewording is therefore a deliberate edit HERE ONLY -- never to
+# ROLE_QUESTION_KEYS -- the posture PATHWAYS takes for pathways.
+ROLE_COLUMN_HEADINGS: dict[int, str] = {
+    1:  "CYP Strg INH",
+    2:  "CYP Mod INH",
+    3:  "CYP WK INH",
+    4:  "CYP Strg IND",
+    5:  "CYP Mod IND",
+    6:  "CYP WK IND",
+    7:  "CYP SENS SUB",
+    8:  "CYP Mod SENS SUB",
+    9:  "TRNSP INH",
+    10: "TRNSP SUB",
+}
+
+# The label a withheld cell's question KEY carries for its role -- FROZEN, never
+# edited, unlike ROLE_COLUMN_HEADINGS above (issue 134's second half, db/074).
+# question_uuid = uuid5(gap_kind, gap_key) is immortal, so the key must not move
+# when FDA rewords a heading; it keys on the ROLE (system, role, potency), and
+# FDA's printed heading is curator evidence only. The labels ARE the 2026-05-29
+# headings because that is what every gap_key minted before db/074 carries: no
+# existing question_uuid changes. Today the two dicts read alike; after an FDA
+# rewording only ROLE_COLUMN_HEADINGS changes. A NEW role would add an entry here.
+ROLE_QUESTION_KEYS: dict[tuple[str, str, str | None], str] = {
+    ("CYP", "inhibitor", "strong"): "CYP Strg INH",
+    ("CYP", "inhibitor", "moderate"): "CYP Mod INH",
+    ("CYP", "inhibitor", "weak"): "CYP WK INH",
+    ("CYP", "inducer", "strong"): "CYP Strg IND",
+    ("CYP", "inducer", "moderate"): "CYP Mod IND",
+    ("CYP", "inducer", "weak"): "CYP WK IND",
+    ("CYP", "substrate", "sensitive"): "CYP SENS SUB",
+    ("CYP", "substrate", "moderate sensitive"): "CYP Mod SENS SUB",
+    ("transporter", "inhibitor", None): "TRNSP INH",
+    ("transporter", "substrate", None): "TRNSP SUB",
 }
 
 
