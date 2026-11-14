@@ -51,7 +51,9 @@ worth keeping does not belong in the file whose history is deliberately disposab
     term, combination, non-drug — and only the last two are stored, because only those two are asserted by
     the SOURCE. Labelling `R-venlafaxine` an "enantiomer of a held racemate" is a chemical relationship
     inferred **from a string prefix**, which is #122's manufactured-cause defect wearing a different hat.
-    The other four collapse to one honest `unresolved_substance`.
+    The other four collapse to one honest `unresolved_substance`. (`ambiguous_substance`, added by #132 /
+    `db/075`, is not a fifth inferred category: "several moieties carry this exact name" is observed in
+    drugref's own registry, not suspected.)
   - **A near-name candidate is EVIDENCE, never coverage, and no count may be quoted against it.** The
     DrugCentral evaluation already paid for this one: its prefix heuristic "matched" `glycerol` to
     `glycerol 1,3-dimethacrylate`, a different substance, and its own note says *"treat it as the shape of
@@ -2935,13 +2937,13 @@ the DrugCentral evaluation recorded when it split its own 102): **9** combinatio
 entities, **3** enantiomers, **3** apparent synonyms (`rifampin`/`rifampicin`, `glyburide`/`glibenclamide`,
 `peginterferon alpha-2a`/`alfa-2a`), **1** apparent metabolite, **1** group term (`oral contraceptives`).
 
-**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared
-non-drugs — RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the
-non-drug list must be FDA's own pinned five, read from its prose, never inferred from a resolution failure.**
-Disposition order is therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen`
-→ `unresolved_substance` → `withheld_qualified` → `member`, because grapefruit juice is *both* a non-drug and
-footnoted. Pinned by a test, which was mutation-tested to prove it pins the order rather than passing
-incidentally.
+**⇒ A TRAP THAT INVERTS THE OBVIOUS ASSUMPTION: `curcumin` and `diosmin` — two of FDA's five declared non-drugs —
+RESOLVE as ordinary moieties.** Non-drug and unresolvable are independent properties, so **the non-drug list must
+be FDA's own pinned five, read from its prose, never inferred from a resolution failure.** Disposition order is
+therefore stated rather than left to fall out: `non_drug_entity` → `combination_regimen` → `unresolved_substance`
+→ `withheld_qualified` → `member` (#132 / `db/075` inserts `ambiguous_substance` before `unresolved_substance`),
+because grapefruit juice is *both* a non-drug and footnoted. Pinned by a test, which was mutation-tested to prove
+it pins the order rather than passing incidentally.
 
 ### The stored vocabulary has FIVE values, not nine — the standing rule at work
 
@@ -6447,6 +6449,48 @@ only four arms); a stored heading rewording keeps every withheld question_uuid, 
 golden literal set in the pre-db/074 format. The two `test_fda_cyp_run.py` joins that restated the old key format by
 hand now evaluate the registry's own `key_sql` (`_KEYED_GAP_VIEW`). Test DB: `drugref_test_heading134`.
 
+## The FDA-CYP resolution round (#132, #135, 2026-11-14) — `db/075`–`db/076`, measured on `drugref_ambig132`, suite 3375 → 3389
+
+**#132: several claimants is `ambiguous_substance`.** Zero candidates and two or more both collapsed to
+`unresolved_substance`, whose question text says no name matches: false for the ambiguous case (#122's shape). The
+sixth disposition is decided in `fda_cyp_disposition._classify`, which now takes the candidate list rather than a
+pre-collapsed `single`. Order: `non_drug_entity` → `combination_regimen` → `ambiguous_substance` →
+`unresolved_substance` → `withheld_qualified` → `member`. **`db/075`** widens the CHECK, adds
+`fda_cyp_assertion.candidate_moiety_uuids` (the claimants, set only for this disposition) and appends it to the gap
+view; the question says how many moieties share the name and lists their UUIDs. **The question_uuid does not move:**
+the gap_key omits the disposition, and both are decided from the name alone. While here, the `unresolved_substance`
+text now says "display name or UNII official name" (#226 made resolution read both).
+
+**#135: the resolution floor.** Classification moved ahead of `provenance.open_run` (step 1b), so a refusal leaves
+no run row, like the shrink guard. `FdaCypResolutionError` (a RuntimeError: one line, exit 2) fires when this run's
+**resolved share** of tuples is under `MIN_RETAINED_FRACTION` (half) of the stored run's share; "resolved" is exactly
+what `resolved_moiety_uuid` stores. A share, not a count, so a genuine FDA shrink does not trip it; the shrink guard
+already watches the row count. A first run (nothing resolved) is never blocked. `--allow-resolution-drop`
+authorises it. **Consequence:** the 2-row truncated page in `test_a_deliberate_shrink_can_be_authorised_explicitly`
+resolves nothing, so that test now passes both flags.
+
+**Measured.** `drugref_ambig132` = `createdb -T drugref_role134`, migrated to `db/075`, one `ingest fda-cyp`
+(release 2026-05-29T14:00): **0 ambiguous names on the real page** (as the issue predicted); all 55 current questions
+keep gap_key and question_uuid; exactly 6 texts changed (the `unresolved_substance` ones). Resolved share 393 / 419
+(356 members + 35 withheld + 2 resolving non-drugs), so the floor trips below about 47%. The collapse itself was not
+reproduced on real data (it needs a broken registry); the tests do it by emptying the display-name index.
+
+**Tests (+7)**, in the new `tests/test_fda_cyp_resolution.py` (`test_fda_cyp_run.py` is 1,400 lines): `_classify`'s
+zero/one/several split; an ambiguous row stores its claimants and its question is honest; the unresolved text; the
+floor refuses with no run row and the stored projection untouched; the override; a first run is never blocked; the
+CLI threads the flag. Test DB: `drugref_test_floor135`.
+
+**PR #242 review (+7 tests, `db/076`).** Every refusal decided from the parse and the index now fires before
+`open_run`: the unknown-disposition guard and the member-without-moiety guard moved into step 1b with the floor,
+and the two pre-run registry reads got their own rollback-and-log (they sat outside the writer's `try`, so a
+missing table left an aborted transaction naming no feed). **`db/076`** puts db/075's claimant rule in the
+database (`candidate_moiety_uuids` is non-NULL with 2+ entries iff `ambiguous_substance`), so the question CASE
+dropped its `'Several' … '(unrecorded)'` COALESCEs, and it replaces the view comment db/075's `CREATE OR REPLACE`
+left stale. The schema test now also asserts the CHECK equals `DISPOSITIONS`. New tests pin the floor's
+arithmetic: an authorised shrink that keeps the share passes it, and a one-moiety drop does not trip it. **Not
+fixed, lodged as #243:** a registry rebuilt without `ingest moiety-names` costs about 10 of 393 resolved cells,
+far above the floor, so that documented trap is still silent.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6724,7 +6768,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3375 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3389 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7226,6 +7270,9 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_ambig132` is the FDA-CYP resolution round's verification database** (2026-11-14, #132, #135):
+  `createdb -T drugref_role134`, migrated to `db/075`, one `ingest fda-cyp` (run 2026-05-29T14:00).
+  `drugref_test_floor135` was this branch's test DB. **Never patch it.**
 - **`drugref_role134` is the FDA-CYP pinned-headings round's verification database** (2026-11-14, #134):
   `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest fda-cyp` (run 2026-05-29T14:00).
   `drugref_test_heading134` was this branch's test DB. **Never patch it.**
