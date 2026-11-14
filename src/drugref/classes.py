@@ -207,6 +207,24 @@ def moieties_by_display_name(conn: psycopg.Connection) -> dict[str, list[uuid.UU
     return index
 
 
+def moieties_by_official_name(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
+    """{UNII official name -> moieties}, from the stored moiety_official_name (#226).
+
+    The companion to moieties_by_display_name for a feed that writes US spellings:
+    FDA's CYP table says 'rifampin' where the registry says 'rifampicin'. The
+    stored names are `spl_official_names.for_run`'s set, so a name shadowed by
+    another moiety's display name or claimed by two moieties is already absent.
+    EMPTY until `drugref ingest moiety-names` has run, and a snapshot of the
+    registry at that run (PROJECT-NOTES § "The moiety-names round").
+    """
+    index: dict[str, list[uuid.UUID]] = {}
+    for name, moiety_uuid in conn.execute(
+            "SELECT name, moiety_uuid FROM drugref.moiety_official_name "
+            "ORDER BY name, moiety_uuid").fetchall():
+        index.setdefault(name, []).append(moiety_uuid)
+    return index
+
+
 def moieties_by_rxcui(conn: psycopg.Connection) -> dict[str, list[uuid.UUID]]:
     """The RxCUI -> moieties index MED-RT membership joins on.
 

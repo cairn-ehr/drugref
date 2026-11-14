@@ -1384,7 +1384,7 @@ The SPL drug pass also matches each moiety by its UNII official names (*rifampin
 *albuterol*), with a measured four-name exclusion list. Drug × drug pairs 29,952 → 30,624, novel 26,598 → 27,194;
 the pair floors were restated. Decision record: `docs-site/docs/decisions/us-label-spellings.md`; figures and traps:
 PROJECT-NOTES § "The US-label-spellings round". **Follow-ups**: [#226](https://github.com/cairn-ehr/drugref/issues/226) (FDA-CYP and onchigh resolve by
-display name and may have the same INN/USAN gap, unmeasured; `gate.py`'s 5-row hand crosswalk duplicates the rule);
+display name and may have the same INN/USAN gap; **done** 2026-11-14, below);
 #216 (split `spl_run.py`, then at the cap; **done** by the SPL split, 2026-11-14).
 
 ### Searchable moiety names (#231, #230) ✅ BUILT AND MEASURED (2026-11-14) — `db/070`, on `drugref_names`
@@ -1419,6 +1419,13 @@ within a kind, after the cheapest unchecked tier. Unconfirmed label class statem
 contraindicated first, monitor last (design §6.4). No surface lists the worklist yet; a GUI or CLI listing is
 future work, gated by #204. PROJECT-NOTES § "The worklist
 priority rank".
+
+### FDA-CYP official names (#226) ✅ DONE (2026-11-14) — no migration, on `drugref_fdacyp226`
+FDA-CYP now resolves by display name **or** stored UNII official name, so *rifampin* and *glyburide* resolve (unresolved
+16 cells / 8 substances → 6 / 6). onchigh resolves by UNII and needed nothing. The gate's USAN→INN crosswalk cannot use
+official names (wrong direction); measuring UNII's `[INN]` rows instead found **625 moieties whose `INN` claim is not
+the INN** (416 USAN spellings, the rest hydrate forms or radionuclide notation) — **#239**, owner design call.
+PROJECT-NOTES § "The FDA-CYP official-names round".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

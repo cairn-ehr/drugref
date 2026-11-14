@@ -6,8 +6,8 @@ signal) OR its UNII is on the small, closed legacy allow-list of pre-INN drugs
 (magnesium sulfate, ...). Everything else (excipients, foods) is excluded.
 
 INN display name: for harmonized drugs the UNII preferred term IS the INN once
-case-folded; for the closed historical USAN<->INN divergences
-(acetaminophen -> paracetamol) the hand-curated crosswalk overrides. This is
+case-folded; for the hand-curated historical USAN<->INN divergences
+(acetaminophen -> paracetamol; not a closed list: #239) the crosswalk overrides. This is
 why slice 1 needs no WHO INN bulk-list: the gate signal comes from UNII, and
 the display name from (UNII's Display Name, overridden by the crosswalk).
 
@@ -17,6 +17,13 @@ nothing upstream. The USAN<->INN crosswalk stays name-keyed because it is a
 NAME-TO-NAME map: its whole subject matter is that two vocabularies spell the
 same drug differently, and all five shipped entries were verified to match a real
 Display Name exactly in the 26Feb2026 release.
+
+NOT CLOSED (#239): measured against UNII_Names 26Feb2026, 625 moieties have a
+single `NAME [INN]` row that differs from their display name (acyclovir /
+aciclovir, cyclosporine / ciclosporin), so their INN claim does not carry the INN
+(416 are USAN spellings; the rest are hydrate forms or radionuclide notation).
+The fix awaits an owner design call there. UNII official names (#226) cannot replace
+this map: they give US spellings, the opposite direction.
 """
 import csv
 import pathlib
