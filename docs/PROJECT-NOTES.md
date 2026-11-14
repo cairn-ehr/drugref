@@ -6407,7 +6407,8 @@ substances → 6 / 6**; `member` 348 → 356 cells; `withheld_qualified` 33 → 
 carboxylate, peginterferon alpha-2a, R-/S-venlafaxine and S-mephenytoin (#128).
 
 **Trap.** **Run `ingest moiety-names` before `ingest fda-cyp`.** On an empty `moiety_official_name`, FDA-CYP falls
-back to display names alone, silently (today's behaviour, not a regression). FDA-CYP is not a chain step.
+back to display names alone. That was silent until #243; it is now refused unless `--allow-resolution-drop` is
+passed (§ "The FDA-CYP official-names guard"). FDA-CYP is not a chain step.
 
 **Tests (+2).** `test_fda_cyp_run.py`: a stored official name resolves rifampin; the fold lists a moiety once
 when two indexes name it. Test DB: `drugref_test_fdacyp226`.
@@ -6490,6 +6491,27 @@ left stale. The schema test now also asserts the CHECK equals `DISPOSITIONS`. Ne
 arithmetic: an authorised shrink that keeps the share passes it, and a one-moiety drop does not trip it. **Not
 fixed, lodged as #243:** a registry rebuilt without `ingest moiety-names` costs about 10 of 393 resolved cells,
 far above the floor, so that documented trap is still silent.
+
+## The FDA-CYP official-names guard (#243, 2026-11-15) — no migration, measured on `drugref_names243`, suite 3389 → 3391
+
+**The trap was a FIRST ingest, not a re-ingest.** Only `ingest moiety-names` ever clears `moiety_official_name`, so
+"a registry rebuilt without `ingest moiety-names`" means a fresh database, and on a fresh database the #135 floor
+has no stored run to compare with. So the guard is absolute: `ingest_fda_cyp` step 1a' raises
+`FdaCypResolutionError` (one line, exit 2) when the display-name index is non-empty and the official-name index is
+empty, before any run row. `--allow-resolution-drop` overrides it (same family: "this run resolves less than it
+should"). An empty display index is left to the floor: then nothing resolves at all. The issue's options 2 and 3
+(report the count; compare official-name-only resolutions) were not built: the refusal makes them moot.
+
+**Test registries opt in by being complete.** `tests/test_fda_cyp_run.py::_registry` now also seeds one official
+name (`AMFEBUTAMONE` for bupropion: differs from the display name, absent from the fixture page), so no test needs
+the override.
+
+**Measured.** `drugref_names243` = `createdb -T drugref_ambig132`: a plain re-ingest passes (393 / 419 resolved,
+356 members); after `TRUNCATE moiety_official_name` the ingest exits 2 with no run row; with the override it
+resolves 383 / 419 (348 members, 16 unresolved tuples: rifampin and glyburide join the six known residue names).
+
+**Tests (+2)** in `test_fda_cyp_resolution.py`: the refusal leaves no run row; the override ingests. Test DB:
+`drugref_test_names243`.
 
 ## The standing open-issue ledger
 
@@ -6582,7 +6604,8 @@ round". From #227's review: **#228** (source_checksum omits UNII_Names) and **#2
 stored), **both FIXED by the SPL census widening** (`db/072`, § "The SPL census widening").
 **#226** (other name-resolving ingests) **FIXED by the FDA-CYP official-names round** (onchigh needs nothing; FDA-CYP
 reads the stored official names), which filed **[#239](https://github.com/cairn-ehr/drugref/issues/239)**: 625 `INN` claims are not the INN
-(owner design call) — § "The FDA-CYP official-names round".
+(owner design call) — § "The FDA-CYP official-names round". **#132, #135 CLOSED** (PR #242), whose review filed
+**#243** (no official names stays silent) — **FIXED by the FDA-CYP official-names guard** (§ of that name).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6768,7 +6791,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3389 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3391 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7270,6 +7293,10 @@ ran in CI and `ruff` was not even a project dependency.
 - **`drugref_names` is the moiety-names round's verification database** (2026-11-14, #231): `createdb -T
   drugref_usnames`, migrated to `db/070`, one `ingest moiety-names` (UNII_Names 26Feb2026, 1,630 names).
   `drugref_test_names` was this branch's test DB. **Never patch it.**
+- **`drugref_names243` is the FDA-CYP official-names guard's verification database** (2026-11-15, #243):
+  `createdb -T drugref_ambig132`, one plain `ingest fda-cyp`, then `TRUNCATE moiety_official_name`, one refused
+  ingest and one `--allow-resolution-drop` ingest. **Its official names are gone, so never use it as a template.**
+  `drugref_test_names243` was this branch's test DB.
 - **`drugref_ambig132` is the FDA-CYP resolution round's verification database** (2026-11-14, #132, #135):
   `createdb -T drugref_role134`, migrated to `db/075`, one `ingest fda-cyp` (run 2026-05-29T14:00).
   `drugref_test_floor135` was this branch's test DB. **Never patch it.**

@@ -244,3 +244,27 @@ def test_a_member_without_a_moiety_is_refused_before_any_run_row(conn, monkeypat
     with pytest.raises(fda_cyp_run.FdaCypDispositionError, match="ordering"):
         fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
     assert _runs(conn) == 0
+
+
+# ---------------------------------------------------------------------------
+# #243: a registry with no UNII official names is refused, first ingest too.
+# ---------------------------------------------------------------------------
+
+def test_a_registry_without_official_names_is_refused_before_any_run_row(conn, monkeypatch):
+    """The issue's trap: a database built without `ingest moiety-names` has an
+    EMPTY moiety_official_name, so rifampin and glyburide silently land
+    unresolved (~10 of 393 cells). That is a FIRST ingest on a fresh database,
+    where the #135 floor has no stored run to compare with -- so this check
+    is absolute, not relative."""
+    monkeypatch.setattr(classes, "moieties_by_official_name", lambda conn: {})
+    with pytest.raises(fda_cyp_run.FdaCypResolutionError,
+                       match="ingest moiety-names.*--allow-resolution-drop"):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert _runs(conn) == 0
+
+
+def test_a_registry_without_official_names_can_be_authorised(conn, monkeypatch):
+    monkeypatch.setattr(classes, "moieties_by_official_name", lambda conn: {})
+    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE,
+                                         allow_resolution_drop=True)
+    assert summary.assertions_written > 0

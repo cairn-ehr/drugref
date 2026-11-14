@@ -1439,8 +1439,14 @@ A name two or more moieties share is now `ambiguous_substance`, stored with its 
 (`candidate_moiety_uuids`), and its question says so instead of "no name matches" (question_uuid unchanged). A
 re-ingest whose resolved share falls below half the stored run's share is refused before any run row exists, unless
 `--allow-resolution-drop` is passed. Real page: 0 ambiguous names, 55 of 55 questions keep their UUIDs. `db/076`
-enforces the claimant rule in the database. Open follow-up: #243 (a skipped `ingest moiety-names` stays above the
-floor). PROJECT-NOTES § "The FDA-CYP resolution round".
+enforces the claimant rule in the database. Follow-up #243 is done (next entry). PROJECT-NOTES § "The FDA-CYP
+resolution round".
+
+### FDA-CYP official-names guard (#243) ✅ DONE (2026-11-15) — no migration
+An FDA-CYP ingest on a registry that has display names but no UNII official names (a database built without `ingest
+moiety-names`) is refused before any run row; `--allow-resolution-drop` overrides it. This catches the first ingest,
+which the #135 floor cannot. Real page: 393 → 383 of 419 resolved without official names. PROJECT-NOTES § "The FDA-CYP
+official-names guard".
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

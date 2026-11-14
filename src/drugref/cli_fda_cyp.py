@@ -68,5 +68,6 @@ def add_parser(sources) -> None:
     # the RESOLVED SHARE of tuples shows it.
     parser.add_argument("--allow-resolution-drop", action="store_true",
                         help="authorise a run that resolves a much smaller share "
-                             "of its tuples than the stored one (refused by default)")
+                             "of its tuples than the stored one, or a registry with "
+                             "no UNII official names (both refused by default)")
     parser.set_defaults(handler=handle_fda_cyp)

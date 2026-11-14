@@ -103,10 +103,13 @@ class FdaCypResolutionError(RuntimeError):
     run would report success. The message names --allow-resolution-drop.
 
     It trips only BELOW HALF the stored share, so it catches a collapse, not
-    a partial loss: a registry rebuilt without `ingest moiety-names` (empty
-    UNII official names) costs about 10 of 393 resolved cells and passes.
-    That narrower trap is issue #243. It never fires on a first ingest:
-    with nothing stored there is no baseline and nothing to destroy.
+    a partial loss. It never fires on a first ingest: with nothing stored
+    there is no baseline and nothing to destroy.
+
+    Also raised, with its own message and the same override, for a registry
+    that has display names but NO UNII official names (#243): a database built
+    without `ingest moiety-names` loses about 10 of 393 resolved cells, too few
+    for the floor and on a first ingest out of its reach anyway.
     """
 
 
@@ -246,8 +249,9 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "FROM drugref.fda_cyp_assertion a "
             "JOIN drugref.ingest_run r ON r.ingest_run_id = a.ingest_run "
             "WHERE r.source = %s", (SOURCE,)).fetchone()
-        fold = _fold_by_lower(classes.moieties_by_display_name(conn),
-                              classes.moieties_by_official_name(conn))
+        display = classes.moieties_by_display_name(conn)
+        official = classes.moieties_by_official_name(conn)
+        fold = _fold_by_lower(display, official)
     except psycopg.Error:
         conn.rollback()
         log.exception("FDA-CYP ingest failed reading the registry for release "
@@ -261,14 +265,27 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "fetch parses green -- every surviving row is well-formed -- so "
             "this count is the only signal. Re-fetch the page, or pass "
             "--allow-shrink if FDA really did shrink the table.")
+    # 1a'. REFUSE A REGISTRY WITH NO UNII OFFICIAL NAMES (#243). Absolute, not
+    #      relative to a stored run: only `ingest moiety-names` ever clears
+    #      moiety_official_name, so an empty one means a database built without
+    #      it -- a FIRST ingest, where step 1b's floor has no baseline. The cost
+    #      is small (rifampin, glyburide: ~10 of 393 cells) and silent, which is
+    #      why it is refused rather than logged. An empty DISPLAY index is left
+    #      to step 1b: then nothing resolves at all, and there is nothing to bridge.
+    if display and not official and not allow_resolution_drop:
+        raise FdaCypResolutionError(
+            "refusing to ingest FDA-CYP: the registry has display names but no "
+            "UNII official names, so US spellings (rifampin, glyburide) would "
+            "land unresolved. Run `drugref ingest moiety-names` first, or pass "
+            "--allow-resolution-drop to ingest on display names alone.")
 
     # 1b. RESOLVE AND CLASSIFY EVERY TUPLE NOW, still before the run opens, so
     #     the resolution floor (#135) can refuse with no run row to explain.
     #     The index is display names plus the stored UNII official names
     #     (#226), read ONCE, whole -- both are bounded by the registry, not by
     #     this feed, exactly as classes.py's own docstring argues for MED-RT
-    #     and MeSH. The official names are EMPTY unless `ingest moiety-names`
-    #     ran first. Resolution is exact and case-insensitive; _classify
+    #     and MeSH. (An empty official half was refused in step 1a'.)
+    #     Resolution is exact and case-insensitive; _classify
     #     decides what zero, one or several candidates mean. (`fold` is read in
     #     step 1a's try, for its rollback.)
     #

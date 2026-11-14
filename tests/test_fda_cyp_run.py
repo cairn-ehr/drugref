@@ -73,6 +73,14 @@ def _registry(conn):
             "INSERT INTO drugref.substance_moiety "
             "(moiety_uuid, display_name, first_seen_ingest) VALUES (%s, %s, %s)",
             (moiety_uuid, name, seed_run))
+    # #243: the ingest refuses a registry with display names but no UNII
+    # official names. A real one always has some, so this one does too. The
+    # name (bupropion's former INN) differs from its display name, as
+    # moiety_official_name requires, and appears nowhere in the fixture page.
+    conn.execute(
+        "INSERT INTO drugref.moiety_official_name (moiety_uuid, name, ingest_run) "
+        "VALUES (%s, 'AMFEBUTAMONE', %s)",
+        (ids.mint_moiety_uuid("TESTUNII_BUPROPION"), seed_run))
     conn.commit()
 
 
