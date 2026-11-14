@@ -6410,6 +6410,29 @@ back to display names alone, silently (today's behaviour, not a regression). FDA
 **Tests (+2).** `test_fda_cyp_run.py`: a stored official name resolves rifampin; the fold lists a moiety once
 when two indexes name it. Test DB: `drugref_test_fdacyp226`.
 
+## The FDA-CYP pinned-headings round (#134, first half, 2026-11-14) — no migration, suite 3368 → 3371
+
+**What it is.** `fda_cyp._column_headings` checked only how many headings there were. The heading text keys
+`fda_cyp_assertion`'s primary key and, through the gap view, every withheld question's immortal `question_uuid`, so
+an FDA rewording would silently retire and re-mint them. `ROLE_COLUMNS` maps positions, so a column reorder was
+caught by nothing. The test `test_two_swapped_role_headings_raise` showed that before the fix.
+
+**Fix.** `fda_cyp_cell.ROLE_COLUMN_HEADINGS` pins the ten role headings as read from the 2026-05-29 release, beside
+`ROLE_COLUMNS`. `_column_headings` raises `FdaCypParseError` on any mismatch and names the column. The substance
+column (index 0) is not pinned because its heading keys nothing. **A legitimate FDA rewording is now a deliberate
+edit of that dict, followed by re-measuring the question registry.** The old docstring argument ("restating the
+headings would be a second copy") is gone: the pin is deliberate, as with `PATHWAYS`.
+
+**Checked.** `downloads/FDA/fda_cyp_2026-05-29.html` still parses to 419 tuples. No ingest was re-run because the
+output for an unchanged page is unchanged.
+
+**Still open on #134 (owner):** should the gap key use the column index or role tuple instead of FDA's printed
+heading? That would let question identity survive a deliberate rewording; today a rewording still re-mints the
+questions, but only when someone edits the pin.
+
+**Tests (+3).** `test_fda_cyp_parser.py`: the pin covers exactly the role columns; a reworded heading raises; two
+swapped headings raise. Test DB: `drugref_test_heading134`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6687,7 +6710,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3368 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3371 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

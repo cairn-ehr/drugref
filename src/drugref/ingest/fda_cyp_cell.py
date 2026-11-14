@@ -3,8 +3,9 @@
 
 Split out of fda_cyp.py (issue 177) along the seam between the module's two
 vocabularies. fda_cyp.py keeps the PAGE: where the table is, how many cells a
-row carries, the column headings, the release stamp and the footnote prose.
-This module keeps the CELL: what each role column means (ROLE_COLUMNS), the
+row carries, reading (and checking) the column headings, the release stamp and
+the footnote prose. This module keeps the CELL: what each role column means
+(ROLE_COLUMNS) and what FDA heads it (ROLE_COLUMN_HEADINGS, issue 134), the
 closed pathway vocabulary, the role/potency phrases, how footnote markers are
 split off, and parse_cell, which turns one cell into its (pathway, markers)
 pairs. fda_cyp.parse_table is the only production caller.
@@ -36,6 +37,29 @@ ROLE_COLUMNS: dict[int, tuple[str, str, str | None]] = {
     8:  ("CYP", "substrate", "moderate sensitive"),
     9:  ("transporter", "inhibitor", None),
     10: ("transporter", "substrate", None),
+}
+
+# FDA's printed heading for each role column, as read from the 2026-05-29
+# release. PINNED, and checked against the page by fda_cyp._column_headings
+# (issue 134), for two reasons:
+#  * the heading text keys fda_cyp_assertion's primary key and, through the gap
+#    view, every withheld question's immortal question_uuid -- an unpinned
+#    rewording would silently retire and re-mint them all;
+#  * ROLE_COLUMNS above maps POSITIONS to meanings, so pinning the words beside
+#    the positions is what catches FDA reordering its columns.
+# A legitimate FDA rewording is therefore a deliberate edit here, with the
+# question registry re-measured -- the posture PATHWAYS takes for pathways.
+ROLE_COLUMN_HEADINGS: dict[int, str] = {
+    1:  "CYP Strg INH",
+    2:  "CYP Mod INH",
+    3:  "CYP WK INH",
+    4:  "CYP Strg IND",
+    5:  "CYP Mod IND",
+    6:  "CYP WK IND",
+    7:  "CYP SENS SUB",
+    8:  "CYP Mod SENS SUB",
+    9:  "TRNSP INH",
+    10: "TRNSP SUB",
 }
 
 

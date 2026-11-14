@@ -40,6 +40,7 @@ import html
 import re
 
 from drugref.ingest.fda_cyp_cell import (
+    ROLE_COLUMN_HEADINGS,
     ROLE_COLUMNS,
     FdaCypParseError,
     parse_cell,
@@ -222,17 +223,21 @@ def parse_table(page: str) -> list[CypTuple]:
 
 
 def _column_headings(page: str) -> list[str]:
-    """FDA's own column headings, read from the header row rather than restated.
+    """FDA's own column headings, read from the header row and checked.
 
-    Restating them here would be a second copy of a vocabulary the page already
-    publishes -- the 'written down twice' hazard this project keeps paying for.
+    ASSERTED, not assumed, in two ways:
 
-    ASSERTED, not assumed: extract_rows checks every DATA row's cell count but
-    deliberately skips rows[0] -- the header -- so a header that lost a column
-    would otherwise sail through unchecked, and parse_table's `headings[index]`
-    lookup would then raise a bare IndexError on a real column instead of the
-    documented FdaCypParseError. This is the header-row half of the same
-    integrity gate extract_rows already applies to every data row.
+    * SHAPE: extract_rows checks every DATA row's cell count but deliberately
+      skips rows[0] -- the header -- so a header that lost a column would
+      otherwise sail through unchecked, and parse_table's `headings[index]`
+      lookup would then raise a bare IndexError on a real column instead of the
+      documented FdaCypParseError.
+    * CONTENT (issue 134): each role column's heading must equal its pinned
+      fda_cyp_cell.ROLE_COLUMN_HEADINGS entry. The heading text keys immortal
+      question UUIDs and the pin is what ties FDA's columns to ROLE_COLUMNS'
+      positions, so a rewording or a reordering stops the ingest rather than
+      silently re-minting questions or mislabelling roles. The substance column
+      (index 0) is not pinned: its heading keys nothing.
     """
     header = _data_table_rows(page)[0]
     headings = [_clean(cell) for cell in _CELL.findall(header)]
@@ -240,6 +245,13 @@ def _column_headings(page: str) -> list[str]:
         raise FdaCypParseError(
             f"the header row has {len(headings)} cells, expected "
             f"{EXPECTED_COLUMNS}. The table's shape changed.")
+    for index, pinned in ROLE_COLUMN_HEADINGS.items():
+        if headings[index] != pinned:
+            raise FdaCypParseError(
+                f"column {index} is headed {headings[index]!r}, expected "
+                f"{pinned!r}. FDA reworded or reordered its columns; the heading "
+                f"keys question UUIDs, so update ROLE_COLUMN_HEADINGS (and "
+                f"ROLE_COLUMNS if the order moved) deliberately and re-measure.")
     return headings
 
 
