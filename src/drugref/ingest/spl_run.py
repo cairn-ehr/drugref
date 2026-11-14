@@ -118,13 +118,15 @@ def checksummed_inputs(
     partitions: Sequence[pathlib.Path], parts: Sequence[pathlib.Path],
     unii_names: str | pathlib.Path | None,
 ) -> list[pathlib.Path | resources.abc.Traversable]:
-    """Every file whose bytes can move this run's pairs, in `checksum` order (#228).
+    """Every FILE whose bytes can move this run's pairs, in `checksum` order (#228).
 
     What a run consumed is the TUPLE of files, so its `source_checksum` must change
     if any one of them does: both corpora, the UNII_Names release (adopted as match
     keys since #213, and R19/P1's class-key drops), and the two SHIPPED lists the
     run always reads (suppression terms, official-name exclusions). Without the
-    last three, two runs with one checksum could publish different pairs. Files
+    last three, two runs with one checksum could publish different pairs from the
+    same registry. (The registry and class rows read from the database move them
+    too; those are other runs' provenance, not files this one hashes.) Files
     sorted by name, so the same releases hash the same however the CLI globbed
     them; the two data files last, in a fixed order.
     """

@@ -24,8 +24,10 @@
 -- `class_keys_shadowed_by_official_names` -- is NULL while the class drops are not.
 -- A 0 there would read as "measured, nothing adopted" in the next comparison.
 --
--- ⇒ EACH GROUP IS MEASURED WHOLE OR NOT AT ALL (`num_nulls`), so a hand-written
--- INSERT cannot store half a group; and every count has its own `>= 0` (#187).
+-- ⇒ EACH GROUP IS MEASURED WHOLE OR NOT AT ALL (`num_nulls`), so no INSERT can
+-- store half a group; and every count has its own `>= 0` (#187). The CHECK groups
+-- are NOT the two bullets above: R19/P1's drop runs only with a UNII_Names file,
+-- so it sits with the seven official-name counts (3 + 8 columns).
 -- The column names equal SplSummary's field names: `spl_census.write_run_census`
 -- inserts by that one list, so a column cannot be filled from a neighbour's field.
 
@@ -67,6 +69,12 @@ COMMENT ON COLUMN drugref.spl_run_census.class_spans_dropped_at_a_boundary IS
     'Class (span, class) rows dropped because the span held a sentence boundary '
     '(R17): a jump reads as the sentence splitter failing on a new release. NULL: '
     'run predates db/072.';
+COMMENT ON COLUMN drugref.spl_run_census.class_spans_dropped_on_a_non_drug_head IS
+    'Class (span, class) rows dropped because the class word qualifies a non-drug '
+    'head word, e.g. "anticoagulant effect" (R19/P2). NULL: run predates db/072.';
+COMMENT ON COLUMN drugref.spl_run_census.class_keys_shadowed_by_moieties IS
+    'Class match keys dropped because they equal a moiety display name (R16). '
+    'NULL: run predates db/072.';
 COMMENT ON COLUMN drugref.spl_run_census.class_keys_shadowed_by_official_names IS
     'Class match keys dropped because they equal a UNII official name (R19/P1). '
     'NULL: no UNII_Names file was given (not checked), or the run predates db/072.';
@@ -74,3 +82,23 @@ COMMENT ON COLUMN drugref.spl_run_census.official_names_adopted IS
     'UNII official names adopted as drug-pass moiety match keys (#213). NULL: no '
     'UNII_Names file was given (nothing adopted, not checked), or the run predates '
     'db/072.';
+-- The other six official-name counts share official_names_adopted's NULL meaning.
+-- Units differ: `unfoldable` counts UNII_Names ROWS; the rest count folded names.
+COMMENT ON COLUMN drugref.spl_run_census.official_names_already_named IS
+    'UNII official names folding onto their own substance''s display name (#213). '
+    'NULL as for official_names_adopted.';
+COMMENT ON COLUMN drugref.spl_run_census.official_names_shadowed IS
+    'UNII official names not adopted because they fold onto ANOTHER moiety''s name '
+    '(#213). NULL as for official_names_adopted.';
+COMMENT ON COLUMN drugref.spl_run_census.official_names_ambiguous IS
+    'UNII official names not adopted because several moieties claim them (#213, '
+    '#230). NULL as for official_names_adopted.';
+COMMENT ON COLUMN drugref.spl_run_census.official_names_excluded IS
+    'UNII official names not adopted because the shipped exclusion list names them '
+    '(#213). NULL as for official_names_adopted.';
+COMMENT ON COLUMN drugref.spl_run_census.official_names_unfoldable IS
+    'UNII_Names ROWS (not folded names) whose name folds to no tokens, so never a '
+    'key. NULL as for official_names_adopted.';
+COMMENT ON COLUMN drugref.spl_run_census.official_name_exclusions_unused IS
+    'Shipped exclusion entries no official name folded onto (a typo, or a renamed '
+    'name). NULL as for official_names_adopted.';

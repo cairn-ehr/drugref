@@ -9,16 +9,23 @@ only an INFO log line, so there was never an earlier figure to compare with.
 the run, not cleared by the per-source rebuild) the previous release's row is
 still there when the next one lands.
 
-The end-to-end "the counts arrive unswapped" check lives beside the summary's
-own in `tests/test_spl_run.py`; this module pins the history property, the
-table's own floor, and (issue #199) the reader and `drugref status`'s block.
+The end-to-end "the counts arrive unswapped" check for db/057's five lives beside
+the summary's own in `tests/test_spl_run.py`; this module pins the history
+property, the table's own floor, and (issue #199) the reader and `drugref
+status`'s block.
+
+db/072 (#215, #229) widened the row with the class-pass drops and the official-name
+counts; their CHECKs, the writer's column-by-column mapping and their end-to-end
+store check live here, as do #228's tests of the run's widened `source_checksum`.
 """
+import dataclasses
 import types
 
 import psycopg
 import pytest
 
-from drugref.ingest import spl_run
+from drugref import spl_census
+from drugref.ingest import spl_checks, spl_run
 from tests import test_spl_run as base
 
 # The orchestrator fixtures, reused rather than copied: binding a fixture to a
@@ -140,13 +147,11 @@ def test_the_table_accepts_a_consistent_census(conn):
 
 def _counts(**db057):
     """A stand-in summary for the writer: db/057's five counts, db/072's unmeasured."""
-    from drugref import spl_census
     return types.SimpleNamespace(**(dict.fromkeys(spl_census.CENSUS_COLUMNS) | db057))
 
 
 def _census(run_id, release, records, labels, absent, blank, id_keyed):
     """A RunCensus with positional shorthand -- tests only."""
-    from drugref import spl_census
     return spl_census.RunCensus(
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
@@ -220,7 +225,6 @@ def test_the_reader_maps_every_column_to_its_own_field(conn):
     count columns swapped; five DISTINCT values can. `recent_run_census` zips the
     SELECT onto RunCensus's fields by position, which `strict=True` checks only
     for length."""
-    from drugref import spl_census
     run_id = _run(conn)
     spl_census.write_run_census(conn, ingest_run_id=run_id, summary=_counts(
         records_read=10, labels=6, records_field_absent=3, records_field_blank=1,
@@ -283,7 +287,8 @@ def test_the_class_drops_and_adoption_counts_are_STORED_unswapped(
     columns = CLASS_DROPS + OFFICIAL
     assert _stored(conn, columns) == [
         tuple(getattr(summary, c) for c in columns)]
-    # Not all zero, so the equality above is not vacuous.
+    # Two of these are not zero, so the equality reaches past 0 == 0 -- but most are
+    # 0 here: the writer test below pins every column with a distinct value.
     assert summary.official_names_adopted == 1
     assert summary.class_keys_shadowed_by_official_names == 1
 
@@ -317,13 +322,10 @@ def _insert_072(conn, **values):
     pytest.param(dict.fromkeys(OFFICIAL[:7], 0),
                  "spl_run_census_official_names_together",
                  id="official-names-half-null"),
-    pytest.param(dict(dict.fromkeys(CLASS_DROPS, 0),
-                      class_spans_dropped_at_a_boundary=-1),
-                 "spl_run_census_class_spans_dropped_at_a_boundary_check",
-                 id="negative-class-drop"),
-    pytest.param(dict(dict.fromkeys(OFFICIAL, 0), official_names_adopted=-1),
-                 "spl_run_census_official_names_adopted_check",
-                 id="negative-adopted"),
+    # Every count's own floor: the group CHECKs do not see a negative.
+    *(pytest.param(dict.fromkeys(group, 0) | {column: -1},
+                   f"spl_run_census_{column}_check", id=f"negative-{column}")
+      for group in (CLASS_DROPS, OFFICIAL) for column in group),
 ])
 def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constraint):
     """A group is measured whole or not at all (NULL = not measured), and every
@@ -336,6 +338,45 @@ def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constrai
 def test_db072_accepts_a_measured_census_and_one_without_official_names(conn):
     _insert_072(conn, **dict.fromkeys(CLASS_DROPS + OFFICIAL, 0))
     _insert_072(conn, **dict.fromkeys(CLASS_DROPS, 0))
+
+
+def test_CENSUS_COLUMNS_is_every_census_column_and_every_one_a_summary_field(conn):
+    """A column a later migration adds but the writer's list misses would stay
+    NULL, which reads as "not measured": silent. And a name SplSummary lacks would
+    fail only at the census write, after the whole scan."""
+    table = {name for (name,) in conn.execute(
+        "SELECT column_name FROM information_schema.columns "
+        " WHERE table_schema = 'drugref' AND table_name = 'spl_run_census'")}
+    assert set(spl_census.CENSUS_COLUMNS) == table - {"ingest_run_id"}
+    assert set(spl_census.CENSUS_COLUMNS) <= {
+        f.name for f in dataclasses.fields(spl_checks.SplSummary)}
+
+
+#: A consistent census (db/057's identities hold) with every value distinct.
+_DISTINCT = dict(records_read=20, labels=12, records_field_absent=5,
+                 records_field_blank=3, labels_keyed_on_document_id=7) | {
+    column: 101 + i for i, column in enumerate(CLASS_DROPS + OFFICIAL)}
+
+
+def test_the_writer_stores_each_count_in_its_OWN_column(conn):
+    """Sixteen same-typed counts: distinct values, so a column filled from its
+    neighbour's field fails here even where the end-to-end fixture holds zeros."""
+    spl_census.write_run_census(conn, ingest_run_id=_run(conn),
+                                summary=types.SimpleNamespace(**_DISTINCT))
+    assert _stored(conn, spl_census.CENSUS_COLUMNS) == [
+        tuple(_DISTINCT[c] for c in spl_census.CENSUS_COLUMNS)]
+
+
+def test_the_writer_does_not_paper_over_HALF_an_official_name_group(conn):
+    """A measured R19/P1 count beside an unmeasured adoption group is a caller's
+    bug; the writer passes it through so db/072's CHECK refuses it, rather than
+    nulling the measured value to make the row look consistent."""
+    half = _DISTINCT | dict.fromkeys(OFFICIAL[:7])
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
+        spl_census.write_run_census(conn, ingest_run_id=_run(conn),
+                                    summary=types.SimpleNamespace(**half))
+    assert (refused.value.diag.constraint_name
+            == "spl_run_census_official_names_together")
 
 
 # --------------------------------------------------------------------------

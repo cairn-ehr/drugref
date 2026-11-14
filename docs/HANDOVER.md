@@ -18,8 +18,9 @@ Schema now ends at `db/072`.** The suite total lives in PROJECT-NOTES § "How to
 `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, tested, docs done): #215 + #228 + #229.** `db/072` adds the four class-pass drop counts and
-the seven official-name adoption counts to `spl_run_census` (NULL = not measured: pre-072 rows, or no UNII_Names
-file). `spl_census.CENSUS_COLUMNS` = `SplSummary` field names; `write_run_census(..., summary=)` inserts by name.
+the seven official-name adoption counts to `spl_run_census` (NULL = not measured: every pre-072 row; with no
+UNII_Names file, the seven plus R19/P1's drop, i.e. the CHECK groups are 3 + 8). `spl_census.CENSUS_COLUMNS` =
+`SplSummary` field names; `write_run_census(..., summary=)` inserts by name, passing None through unchanged.
 `source_checksum` now covers UNII_Names and the two shipped SPL lists (`spl_run.checksummed_inputs`), so every
 new SPL run hashes differently from older ones on the same corpora (intended). **No ingest was re-run.** Filed
 **#235**: `drugref status` does not print the new columns. PROJECT-NOTES § "The SPL census widening".
@@ -72,13 +73,13 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
-(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 close on this branch's PR**
-(§ "The SPL census widening"); it files **#235**. **Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From
-class mentions: #214, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
-work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148,
-#152, #153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on
-current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED** (PR
+#233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 close on this branch's PR** (§ "The SPL census widening"); it
+files **#235**. **Open from #227: #226.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
+#204. From class mentions: #214, #217, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
+work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
+#153, #128/#129, #132, #134, #135, #124, #121/#123, #104, #94. Before production: re-run every parser on current
+releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

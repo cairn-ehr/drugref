@@ -48,6 +48,15 @@ MEASURED_NOVEL_FLOOR = 27_194
 #: self-consistent, and `register_from_gaps` would close every SPLCLASS: question.
 MEASURED_CLASS_FLOOR = 304_682
 
+#: The summary fields that are measured only when a UNII_Names file was given
+#: (#213's adoption and R19/P1): all None or none None, as db/072's
+#: `spl_run_census_official_names_together` CHECK has it.
+OFFICIAL_NAME_COUNTS = (
+    "official_names_adopted", "official_names_already_named",
+    "official_names_shadowed", "official_names_ambiguous", "official_names_excluded",
+    "official_names_unfoldable", "official_name_exclusions_unused",
+    "class_keys_shadowed_by_official_names")
+
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class SplSummary:
@@ -108,26 +117,28 @@ class SplSummary:
     #: combined vocabulary) are excluded, so this is not directly comparable with
     #: the design round's 11,169 consumed moiety spans.
     moiety_spans_inside_class_spans: int
+    #: ⇒ NO DEFAULTS BELOW (db/072 stores each one): a caller that forgot one
+    #: would otherwise store 0 or None for a count the run DID measure.
     #: Class (span, class) rows dropped because the span held a sentence boundary
     #: -- the design 7 "sentence-splitter failure" signal (R17) -- and class match
     #: keys dropped because they equal a moiety display name (R16).
-    class_spans_dropped_at_a_boundary: int = 0
-    class_keys_shadowed_by_moieties: int = 0
-    #: R19: class keys equal to a UNII official name (a drug, P1), and class
-    #: (span, class) rows whose word qualifies a non-drug head ('anticoagulant
-    #: effect', P2).
-    class_keys_shadowed_by_official_names: int = 0
-    class_spans_dropped_on_a_non_drug_head: int = 0
+    class_spans_dropped_at_a_boundary: int
+    class_keys_shadowed_by_moieties: int
+    #: R19: class keys equal to a UNII official name (a drug, P1; None when no
+    #: UNII_Names file was given, so P1 never ran), and class (span, class) rows
+    #: whose word qualifies a non-drug head ('anticoagulant effect', P2).
+    class_keys_shadowed_by_official_names: int | None
+    class_spans_dropped_on_a_non_drug_head: int
     #: #229: what became of the UNII official names the drug pass may adopt as
     #: moiety keys (#213; `spl_official_names.OfficialNameCounts`). None, not 0,
     #: when no UNII_Names file was given: nothing was checked, so nothing measured.
-    official_names_adopted: int | None = None
-    official_names_already_named: int | None = None
-    official_names_shadowed: int | None = None
-    official_names_ambiguous: int | None = None
-    official_names_excluded: int | None = None
-    official_names_unfoldable: int | None = None
-    official_name_exclusions_unused: int | None = None
+    official_names_adopted: int | None
+    official_names_already_named: int | None
+    official_names_shadowed: int | None
+    official_names_ambiguous: int | None
+    official_names_excluded: int | None
+    official_names_unfoldable: int | None
+    official_name_exclusions_unused: int | None
 
     def __post_init__(self) -> None:
         # `frozen=True` freezes the REFERENCE, not a caller's dict: copy into a
@@ -136,6 +147,13 @@ class SplSummary:
                            MappingProxyType(dict(self.labels_by_route)))
         # Before any sum: a -1 and a +1 would otherwise cancel (#187).
         refuse_negative_counts(self)
+        # Here, not only at the census INSERT that comes after the whole scan.
+        unmeasured = [f for f in OFFICIAL_NAME_COUNTS if getattr(self, f) is None]
+        if unmeasured and len(unmeasured) != len(OFFICIAL_NAME_COUNTS):
+            raise ValueError(
+                f"the official-name counts are half measured ({unmeasured} are "
+                "None): a UNII_Names file was given or it was not, so all of "
+                f"{OFFICIAL_NAME_COUNTS} are None or none is (db/072)")
         if self.labels_keyed_on_document_id > self.labels:
             raise ValueError(
                 f"labels_keyed_on_document_id = {self.labels_keyed_on_document_id} "
@@ -217,8 +235,11 @@ class SplSummary:
             f"{self.class_spans_dropped_on_a_non_drug_head:,} class rows dropped "
             f"on a non-drug head word, {self.class_keys_shadowed_by_moieties:,} "
             f"class keys dropped as moiety names, "
-            f"{self.class_keys_shadowed_by_official_names:,} class keys dropped "
-            f"as UNII official names); {self.quotes:,} quoted "
+            + ("class keys not checked against UNII official names"
+               if self.class_keys_shadowed_by_official_names is None else
+               f"{self.class_keys_shadowed_by_official_names:,} class keys "
+               "dropped as UNII official names")
+            + f"); {self.quotes:,} quoted "
             f"windows using {self.quoted_chars:,} of {self.quotable_chars:,} "
             f"budgeted characters ({self.quoted_share:.1%}); "
             f"{self.self_pairs:,} self-pair evidence rows excluded"

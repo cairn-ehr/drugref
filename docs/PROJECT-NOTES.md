@@ -6012,8 +6012,8 @@ EVERY row for the (drug, class) is one (final review); any `not_read` row makes 
 names (high value: 6,588 acetaminophen spans missed by the drug pass) · [#214](https://github.com/cairn-ehr/drugref/issues/214)
 further class-hygiene candidates (the results record's "Open, for a ruling") ·
 [#215](https://github.com/cairn-ehr/drugref/issues/215) class-pass drop counts (boundary and non-drug-head) are
-printed by the ingest but not stored per run (also: the UNII_Names file's name/checksum is not stored)
-(**FIXED by `db/072`**, § "The SPL census widening") ·
+printed by the ingest but not stored per run (**FIXED by `db/072`**, § "The SPL census widening"; its aside, the
+UNII_Names file's checksum, **FIXED by #228** — the file's *name* is still not stored) ·
 [#216](https://github.com/cairn-ehr/drugref/issues/216) rule 4: `spl_run.py` / `spl_evidence.py` / `spl_advice.py`
 at ~500 lines — split before the next change, and cache `read_advice`'s scope per wording (ingest ~245 s → ~304 s)
 (**FIXED by the SPL split**, § "The SPL split") ·
@@ -6299,7 +6299,7 @@ Test: `test_218_a_strength_phrase_ending_in_the_word_after_not_is_never_masked`.
 - A full run collided once with another session's pytest (#153's `UndefinedTable` / `DeadlockDetected` pattern,
   failures moving between runs); a clean re-run was green. Use a per-branch test DB (`drugref_test_split` here).
 
-## The SPL census widening (#215, #228, #229, 2026-11-14) — `db/072`, suite 3321 → 3331
+## The SPL census widening (#215, #228, #229, 2026-11-14) — `db/072`, suite 3321 → 3358
 
 **What it is.** Two groups of SPL counts that were only ever printed are now stored per run in `spl_run_census`,
 and the run's `source_checksum` covers every input that can move the pairs.
@@ -6309,8 +6309,10 @@ and the run's `source_checksum` covers every input that can move the pairs.
   `class_keys_shadowed_by_moieties`, `class_keys_shadowed_by_official_names`) and #229's seven
   `official_names_*` adoption counts (`OfficialNameCounts`). **NULL means "not measured"**: every row from
   before db/072, and the official-name group (with `class_keys_shadowed_by_official_names`) of a run given no
-  UNII_Names file. Two `num_nulls` CHECKs (`spl_run_census_class_drops_together`,
-  `spl_run_census_official_names_together`) keep each group whole; each column has its own `>= 0`.
+  UNII_Names file. Two `num_nulls` CHECKs keep each group whole, and **the CHECK groups are 3 + 8, not 4 + 7**:
+  `spl_run_census_class_drops_together` covers the three drops that always run, and
+  `spl_run_census_official_names_together` the seven adoption counts plus R19/P1's drop, which runs only with a
+  UNII_Names file. Each column has its own `>= 0`.
 - **Column names equal `SplSummary` field names.** `spl_census.CENSUS_COLUMNS` is the one list;
   `write_run_census(conn, ingest_run_id=, summary=)` reads each column off the summary by that name, so 16
   same-typed counts cannot be swapped by position. `SplSummary` gained the seven `official_names_*` fields
@@ -6319,7 +6321,8 @@ and the run's `source_checksum` covers every input that can move the pairs.
 - **#228.** `spl_run.checksummed_inputs` lists what the digest covers: both corpora and the UNII_Names file
   (sorted by name, as before), then the two shipped lists `spl_suppression_terms.txt` and
   `spl_official_name_exclusions.txt`. Every SPL run from now on hashes differently from the runs before it, even
-  on the same corpora; that is intended, and no code compares checksums across runs.
+  on the same corpora; that is intended, and no code in `src/` compares checksums across runs (the
+  `loaded_release` view publishes them, and `tools/pregnancy_lactation_spike.py` reads one).
 
 **Not done (#235).** `drugref status`'s census block (#199) still prints db/057's five counts only; the new columns are
 read with SQL for now (`SELECT c.* FROM drugref.spl_run_census c ...`). No ingest was re-run: no stored figure
@@ -6328,6 +6331,17 @@ moved, and the 2026-08 figures for these counts are still the printed ones in SP
 **Tests (+10).** `test_spl_run_census.py` +9 (end-to-end store unswapped, NULL without a names file, four CHECK
 cases, the accepting case, checksum inputs, two UNII_Names releases → two checksums); `test_spl_run.py` +1 (the
 summary line's official-name clause). Test DB this round: `drugref_test_census`.
+
+**Pre-merge review (PR #236), +27.** NULL is now decided where each count is MADE, not patched in the
+writer: `ClassKeyCounts.summary_fields()` returns None for R19/P1's drop when no UNII_Names file was given, so the returned
+`SplSummary` and its log line agree with the stored row (the line used to print "0 class keys dropped as UNII
+official names ... no UNII official names checked"). `write_run_census` passes values through unchanged, so
+db/072's group CHECK, not a silent override, refuses a half-measured row. The 11 db/072 fields of `SplSummary`
+(and `EvidenceCounts`' two drops) have **no defaults**, so a forgotten count is a `TypeError`, not a stored 0;
+`SplSummary.__post_init__` refuses a half-measured official-name group (`spl_checks.OFFICIAL_NAME_COUNTS`)
+before the census INSERT. New tests: `summary_fields()` with distinct values (both classes), the writer storing
+16 distinct values, `CENSUS_COLUMNS` = the table's columns, a `>= 0` case for every db/072 column. db/072 gained
+column comments for its other eight columns (it had reached only the test DBs).
 
 ## The standing open-issue ledger
 
@@ -6416,8 +6430,9 @@ drug-pass keys, no migration; § "The US-label-spellings round"). **#231** (no q
 **FIXED for the UNII official names by the moiety-names round** (`db/070`) **and for the BAN/AAN names by the
 MeSH-synonyms round** (`db/071`, § "The MeSH-synonyms round"; owner: no chemical-name filter for now; closes with PR
 #233), and **#230** (adoption inherited first-wins on a contested UNII) **FIXED with it** — § "The moiety-names
-round". From #227's review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not stored), **both
-FIXED by the SPL census widening** (`db/072`, § "The SPL census widening"). **Filed by the class-profiles round (2026-11-07)** —
+round". From #227's review: **#228** (source_checksum omits UNII_Names) and **#229** (adoption counts not
+stored), **both FIXED by the SPL census widening** (`db/072`, § "The SPL census widening").
+**Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
 subclass-only inheritance: `class_subclass_only_property`) ·
@@ -6602,7 +6617,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3331 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3358 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

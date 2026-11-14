@@ -43,11 +43,9 @@ def write_run_census(conn: psycopg.Connection, *, ingest_run_id: int,
     attributes). The table's CHECKs refuse an impossible census; the caller's
     transaction decides whether it lands at all.
     """
+    # Passed through as given, None included: a half-measured group is the
+    # caller's bug, and db/072's CHECK refuses it rather than this papering over it.
     values = {column: getattr(summary, column) for column in CENSUS_COLUMNS}
-    # No UNII_Names file: R19/P1 never ran, so SplSummary's 0 for this one means
-    # "not checked" -- stored as NULL beside the other official-name counts (db/072).
-    if values["official_names_adopted"] is None:
-        values["class_keys_shadowed_by_official_names"] = None
     conn.execute(
         f"INSERT INTO {RUN_CENSUS_TABLE} (ingest_run_id, {', '.join(values)}) "
         f"VALUES (%s{', %s' * len(values)})", (ingest_run_id, *values.values()))
@@ -55,7 +53,8 @@ def write_run_census(conn: psycopg.Connection, *, ingest_run_id: int,
 
 @dataclass(frozen=True, kw_only=True)
 class RunCensus:
-    """One `spl_run_census` row plus the release it censused (issue 199's reader)."""
+    """db/057's five counts from one `spl_run_census` row, plus the release it
+    censused (issue 199's reader). db/072's columns are not read yet (#235)."""
     ingest_run_id: int
     upstream_release: str
     records_read: int

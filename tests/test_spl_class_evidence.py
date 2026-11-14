@@ -259,3 +259,15 @@ def test_class_vocabulary_without_unii_names_warns_that_p1_was_skipped():
     _, keys = ce.class_vocabulary_for_run(_NoClasses(), [], None)
     assert "WARNING" in str(keys) and "unii" in str(keys).lower()
     assert ce.ClassKeyCounts(0, [], []).official_names_skipped is False
+
+
+def test_the_class_key_counts_say_NONE_not_zero_when_p1_was_skipped():
+    """No UNII_Names file: R19/P1 never ran, so its count is "not measured" (None,
+    stored NULL by db/072), not "measured, nothing dropped". The moiety-name drop
+    (R16) always runs, so it stays a number."""
+    measured = ce.ClassKeyCounts(5, ["a"], ["b", "c"]).summary_fields()
+    assert measured == {"class_keys_shadowed_by_moieties": 1,
+                        "class_keys_shadowed_by_official_names": 2}
+    skipped = ce.ClassKeyCounts(5, ["a"], [], official_names_skipped=True)
+    assert skipped.summary_fields() == {"class_keys_shadowed_by_moieties": 1,
+                                        "class_keys_shadowed_by_official_names": None}
