@@ -9,6 +9,7 @@ No DB, no I/O.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from drugref.ingest.spl_match import (  # noqa: F401  (re-exported)
     FORM_LABEL_ORDER, FORM_NUMBER, FORM_STORED, MATCH_FORMS, fold)
@@ -68,6 +69,24 @@ EXCLUDED_CLASSES: frozenset[tuple[str, str, str]] = frozenset({
 #: members (algeldrate, aluminum carbonate, aluminum hydroxide sulfate) are not
 #: MeSH members, so excluding it would cost them their antacid advice.
 KEPT_PE_CLASSES: frozenset[str] = frozenset({"Antacid [PE]"})
+
+
+def unused_exclusions(rows: Iterable[tuple[str, str, str]]) -> tuple[str, ...]:
+    """The class names in `EXCLUDED_CLASSES` and `KEPT_PE_CLASSES` that no
+    `(source, concept_type, class_name)` row carries, sorted (#248).
+
+    Both sets are keyed by exact name, so a release that renames one of these
+    classes leaves its entry matching nothing, silently: a renamed 'Electrolyte
+    [EPC]' brings back its false spans, a renamed 'Antacid [PE]' loses antacid
+    advice for its non-MeSH members. The class floor cannot see a change that
+    small, and an increase never trips it. The run counts and warns instead.
+
+    A 0 means every name is CARRIED, not that every class is live: class rows are
+    never deleted, so a concept a release retires and re-mints under a new id and
+    name keeps its old-named row, and this stays silent while the new name matches.
+    """
+    named = EXCLUDED_CLASSES | {("MED-RT", "PE", name) for name in KEPT_PE_CLASSES}
+    return tuple(sorted(entry[2] for entry in named - set(rows)))
 
 
 def is_matchable(source: str, concept_type: str, class_name: str | None = None) -> bool:

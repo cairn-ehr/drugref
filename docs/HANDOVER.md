@@ -13,18 +13,17 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/fda-cyp-official-names-guard` (from `main` after PR #242, MERGED). PR open to `main`; closes #243,
-advances #214 (stays open). Schema now ends at `db/077`.** The suite total lives in PROJECT-NOTES § "How to run /
-test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/class-exclusions-unused` (from `main` after PR #247, MERGED). PR open to `main`; closes #248 and
+#249. Schema now ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, measured, docs done), two parts:**
-- **#243:** an FDA-CYP ingest on a registry with no UNII official names (an empty one too) is refused before any
-  run row (`--allow-resolution-drop` overrides, with a logged warning). Out of #135's floor's reach. Real page:
-  393 → 383 of 419 resolved without them. PROJECT-NOTES § "The FDA-CYP official-names guard".
-- **#214 (owner-ruled):** the class pass no longer matches the MED-RT PE axis (bar `Antacid [PE]`), `Electrolyte
-  [EPC]` or `Ophthalmic Solutions`, and drops (and counts, `db/077`) a class span after `non-`. SPL run 19 on
-  `drugref_hygiene214`: statements 14,135 → 13,875; drug × drug pairs unchanged. `MEASURED_CLASS_FLOOR` restated to
-  299,374. Filed **#245** and **#246**. PROJECT-NOTES § "The class-hygiene round".
+**⇒ THIS ROUND (built, tested, checked on real data, docs done):** both are PR #247 review follow-ups, and no figure
+moves. **#248:** the SPL ingest counts named class exclusions (`EXCLUDED_CLASSES`, `KEPT_PE_CLASSES`) that match no
+class row, warns on its registry line, and stores `class_exclusions_unused` in the census and `status`. **#249:**
+`db/078`'s `spl_run_census_class_group_whole` keeps the five class-pass counts whole. It is `NOT VALID` because
+the history it would reject is correct: run 19 on `drugref_excl248`. **Never VALIDATE it.** PROJECT-NOTES § "The
+class-exclusion census". Not run: a real SPL ingest storing the new count (today's value is 0, read off the
+registry).
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
 `test_suite_count.py` then fails two tests that are not real.
 
@@ -78,8 +77,8 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#132, #135
-CLOSED** (PR #242). **#243 closes on this PR; #214 advanced (open), filed #245, #246; review: #248, #249.** **Open from
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243
+CLOSED** (PR #247). **#248, #249 close on this PR.** **#214 open; filed #245, #246.** **Open from
 allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
 names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
 sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
@@ -90,10 +89,11 @@ production: re-run every parser on current releases, resolve #17, the three rule
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_hygiene214` is this round's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
+- **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
+  patch it. **This branch's test DB: `drugref_test_excl248`.**
+- **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
-  **This branch's test DB: `drugref_test_hygiene214`.**
 - **`drugref_ambig132` is #132/#135's** (`db/075`; carries SPL run 12, run 19's baseline): never patch.
 - **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
   run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;

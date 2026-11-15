@@ -26,6 +26,7 @@ import pytest
 
 from drugref import spl_census
 from drugref.ingest import spl_checks, spl_run
+from drugref.ingest.spl_class_vocab import unused_exclusions
 from tests import test_spl_run as base
 
 # The orchestrator fixtures, reused rather than copied: binding a fixture to a
@@ -157,7 +158,7 @@ def _census(run_id, release, records, labels, absent, blank, id_keyed, **db072):
         ingest_run_id=run_id, upstream_release=release, records_read=records,
         labels=labels, records_field_absent=absent, records_field_blank=blank,
         labels_keyed_on_document_id=id_keyed,
-        **(dict.fromkeys(CLASS_DROPS + OFFICIAL + NON_DROP) | db072))
+        **(dict.fromkeys(CLASS_GROUP + OFFICIAL) | db072))
 
 
 def test_the_census_block_says_none_when_no_SPL_run_has_landed():
@@ -209,10 +210,10 @@ def test_the_status_block_reads_the_two_latest_runs_from_the_database(
     assert f"id-keyed {runs[-1].labels_keyed_on_document_id} (" in out
 
 
-def test_a_database_without_db077_gets_the_guards_sentence_not_a_traceback(conn):
+def test_a_database_without_db078_gets_the_guards_sentence_not_a_traceback(conn):
     """Every deployment between pulling this code and `drugref migrate` lacks
-    the table or db/077's column (#214, after #235's db/072 ones), so the guard
-    names db/077: naming db/072 would tell a db/072-076 database "NOT a missing
+    the table or db/078's column (#248, after #214's db/077 one), so the guard
+    names db/078: naming db/077 would tell a db/077 database "NOT a missing
     migration". Renamed inside the
     rolled-back fixture transaction -- the rename-inside-the-rollback device
     tests/test_ingest_run_duration.py uses for db/054's site, with the same limit
@@ -221,7 +222,7 @@ def test_a_database_without_db077_gets_the_guards_sentence_not_a_traceback(conn)
     conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
     # The probe's rollback undoes the rename, so this lands in the "NOT a missing
     # migration" branch: what it pins is THIS site's migration and consequence.
-    with pytest.raises(RuntimeError, match=r"(?i)db/077[\s\S]*no SPL release can "
+    with pytest.raises(RuntimeError, match=r"(?i)db/078[\s\S]*no SPL release can "
                        r"be compared[\s\S]*spl_run_census"):
         cli_status.print_spl_census_block(conn)
 
@@ -254,11 +255,11 @@ def test_the_census_block_prints_db072s_counts_on_their_own_lines():
     (_, _, drops, names) = cli_status.spl_census_lines([
         spl_census.RunCensus(ingest_run_id=1, upstream_release="r", **_DISTINCT)])
     assert drops == ("    class pass dropped: at a boundary 101  on a non-drug head 102"
-                     "  after non- 112  shadowed by moieties 103"
-                     "  shadowed by official names 111")
-    assert names == ("    official names: adopted 104  already named 105  shadowed 106"
-                     "  ambiguous 107  excluded 108  unfoldable 109"
-                     "  exclusions unused 110")
+                     "  after non- 104  shadowed by moieties 103"
+                     "  shadowed by official names 113  exclusions unused 105")
+    assert names == ("    official names: adopted 106  already named 107  shadowed 108"
+                     "  ambiguous 109  excluded 110  unfoldable 111"
+                     "  exclusions unused 112")
 
 
 def test_an_unmeasured_group_prints_NOT_MEASURED_never_zero():
@@ -267,11 +268,11 @@ def test_an_unmeasured_group_prints_NOT_MEASURED_never_zero():
     measured drops are ZERO: a measured 0 prints `0`, even beside a None."""
     from drugref import cli_status
     (_, _, drops, names, _, old_drops, old_names) = cli_status.spl_census_lines([
-        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_DROPS + NON_DROP, 0)),
+        _census(2, "r", 1, 1, 0, 0, 0, **dict.fromkeys(CLASS_GROUP, 0)),
         _census(1, "q", 1, 1, 0, 0, 0)])
     assert drops == ("    class pass dropped: at a boundary 0  on a non-drug head 0"
                      "  after non- 0  shadowed by moieties 0  shadowed by official names "
-                     "not measured")
+                     "not measured  exclusions unused 0")
     assert names == "    official names: not measured"
     assert old_drops == "    class pass dropped: not measured"
     assert old_names == "    official names: not measured"
@@ -282,7 +283,7 @@ def test_the_census_block_prints_every_db072_column():
     `_DB072_GROUPS` would never reach the operator; nothing else would fail."""
     from drugref import cli_status
     printed = [column for _, group in cli_status._DB072_GROUPS for column, _ in group]
-    assert sorted(printed) == sorted(CLASS_DROPS + OFFICIAL + NON_DROP)
+    assert sorted(printed) == sorted(CLASS_GROUP + OFFICIAL)
     assert set(printed) | set(spl_census.CENSUS_COLUMNS[:5]) == set(
         spl_census.CENSUS_COLUMNS)
 
@@ -317,8 +318,13 @@ OFFICIAL = ("official_names_adopted", "official_names_already_named",
             "official_names_excluded", "official_names_unfoldable",
             "official_name_exclusions_unused",
             "class_keys_shadowed_by_official_names")
-#: db/077's 'non-' drop (#214): outside db/072's group CHECKs, so its own tuple.
+#: db/077's 'non-' drop (#214): outside db/072's group CHECKs, so its own tuple
+#: (db/078's group CHECK covers it: `CLASS_GROUP`).
 NON_DROP = ("class_spans_dropped_after_non",)
+#: db/078's unused class exclusions (#248).
+CLASS_EXCLUSIONS = ("class_exclusions_unused",)
+#: db/078's (#249) whole class-pass group: db/072's three, db/077's and db/078's.
+CLASS_GROUP = CLASS_DROPS + NON_DROP + CLASS_EXCLUSIONS
 
 
 def _stored(conn, columns):
@@ -340,13 +346,15 @@ def test_the_class_drops_and_adoption_counts_are_STORED_unswapped(
     names.write_text("Name\tTYPE\tUNII\tDisplay Name\n"
                      f"RIFAMPIN INDUCERS\tof\t{sorted(base._fixture_uniis())[0]}\tX\n")
     summary = _ingest(conn, base._text_corpus(corpus), unii_names=names)
-    columns = CLASS_DROPS + OFFICIAL + NON_DROP
+    columns = CLASS_GROUP + OFFICIAL
     assert _stored(conn, columns) == [
         tuple(getattr(summary, c) for c in columns)]
-    # Two of these are not zero, so the equality reaches past 0 == 0 -- but most are
+    # Three of these are not zero, so the equality reaches past 0 == 0 -- but most are
     # 0 here: the writer test below pins every column with a distinct value.
     assert summary.official_names_adopted == 1
     assert summary.class_keys_shadowed_by_official_names == 1
+    # #248: the fixture seeds none of the named exclusions' classes, so all are unused.
+    assert summary.class_exclusions_unused == len(unused_exclusions([]))
 
 
 @pytest.mark.usefixtures("_clean")
@@ -357,7 +365,7 @@ def test_a_run_WITHOUT_a_names_file_stores_NULL_not_zero_for_official_names(
     measured". The class-pass drops were measured, so they are not NULL."""
     _seed_registry(conn)
     _ingest(conn, corpus)
-    ((*drops, ), ) = _stored(conn, CLASS_DROPS + NON_DROP)
+    ((*drops, ), ) = _stored(conn, CLASS_GROUP)
     assert None not in drops
     assert _stored(conn, OFFICIAL) == [(None,) * len(OFFICIAL)]
 
@@ -378,10 +386,16 @@ def _insert_072(conn, **values):
     pytest.param(dict.fromkeys(OFFICIAL[:7], 0),
                  "spl_run_census_official_names_together",
                  id="official-names-half-null"),
+    # #249: db/072's three measured beside db/077's or db/078's column unmeasured.
+    *(pytest.param(dict.fromkeys(CLASS_GROUP, 0) | {column: None},
+                   "spl_run_census_class_group_whole", id=f"{column}-null")
+      for column in NON_DROP + CLASS_EXCLUSIONS),
+    pytest.param(dict.fromkeys(NON_DROP + CLASS_EXCLUSIONS, 0),
+                 "spl_run_census_class_group_whole", id="db072-drops-null"),
     # Every count's own floor: the group CHECKs do not see a negative.
     *(pytest.param(dict.fromkeys(group, 0) | {column: -1},
                    f"spl_run_census_{column}_check", id=f"negative-{column}")
-      for group in (CLASS_DROPS, OFFICIAL, NON_DROP) for column in group),
+      for group in (CLASS_GROUP, OFFICIAL) for column in group),
 ])
 def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constraint):
     """A group is measured whole or not at all (NULL = not measured), and every
@@ -392,8 +406,34 @@ def test_db072_refuses_a_half_measured_or_negative_census(conn, values, constrai
 
 
 def test_db072_accepts_a_measured_census_and_one_without_official_names(conn):
-    _insert_072(conn, **dict.fromkeys(CLASS_DROPS + OFFICIAL, 0))
-    _insert_072(conn, **dict.fromkeys(CLASS_DROPS, 0))
+    _insert_072(conn, **dict.fromkeys(CLASS_GROUP + OFFICIAL, 0))
+    _insert_072(conn, **dict.fromkeys(CLASS_GROUP, 0))
+
+
+@pytest.mark.parametrize("measured", [
+    pytest.param(CLASS_DROPS, id="db072-to-db076-row"),
+    pytest.param(CLASS_DROPS + NON_DROP, id="db077-row")])
+def test_db078_leaves_the_db072_to_db077_rows_on_disk_standing(conn, measured):
+    """#249's carve-out: a row written after db/072 but before db/078 has db/072's
+    drops measured and db/078's column NULL (db/077's too, if before db/077), which
+    db/078's CHECK now refuses. It is created NOT VALID, so rows already on disk
+    stand (each is an honest "not measured") while every new INSERT is checked.
+    Validating the constraint here is what a mistaken `VALIDATE CONSTRAINT` would
+    do: it must fail on that row, proving the rows exist that NOT VALID was chosen
+    for. The constraint is re-added from its own live definition, so it cannot
+    drift from db/078."""
+    (validated, definition) = conn.execute(
+        "SELECT convalidated, pg_get_constraintdef(oid) FROM pg_constraint "
+        " WHERE conname = 'spl_run_census_class_group_whole'").fetchone()
+    assert validated is False
+    conn.execute("ALTER TABLE drugref.spl_run_census "
+                 " DROP CONSTRAINT spl_run_census_class_group_whole")
+    _insert_072(conn, **dict.fromkeys(measured, 0))  # a row from before db/078
+    conn.execute("ALTER TABLE drugref.spl_run_census ADD CONSTRAINT "
+                 f" spl_run_census_class_group_whole {definition}")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("ALTER TABLE drugref.spl_run_census "
+                     " VALIDATE CONSTRAINT spl_run_census_class_group_whole")
 
 
 def test_CENSUS_COLUMNS_is_every_census_column_and_every_one_a_summary_field(conn):
@@ -411,11 +451,11 @@ def test_CENSUS_COLUMNS_is_every_census_column_and_every_one_a_summary_field(con
 #: A consistent census (db/057's identities hold) with every value distinct.
 _DISTINCT = dict(records_read=20, labels=12, records_field_absent=5,
                  records_field_blank=3, labels_keyed_on_document_id=7) | {
-    column: 101 + i for i, column in enumerate(CLASS_DROPS + OFFICIAL + NON_DROP)}
+    column: 101 + i for i, column in enumerate(CLASS_GROUP + OFFICIAL)}
 
 
 def test_the_writer_stores_each_count_in_its_OWN_column(conn):
-    """Sixteen same-typed counts: distinct values, so a column filled from its
+    """Many same-typed counts: distinct values, so a column filled from its
     neighbour's field fails here even where the end-to-end fixture holds zeros."""
     spl_census.write_run_census(conn, ingest_run_id=_run(conn),
                                 summary=types.SimpleNamespace(**_DISTINCT))

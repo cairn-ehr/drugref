@@ -516,6 +516,9 @@ def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
     # only place a refused, drifted release shows the counts that explain it.
     assert any("3 absent, 2 blank, 1 keyed on document id" in line
                for line in said), said
+    # #248: likewise the unused-class-exclusion WARNING (this fixture seeds none of
+    # those classes), said in the registry line before any floor can refuse.
+    assert any("class exclusion(s) matching no class" in line for line in said), said
 
 
 @pytest.mark.usefixtures("_clean")
@@ -1362,6 +1365,7 @@ _SUMMARY_FIELDS = dict(
     moiety_spans_inside_class_spans=1,
     class_spans_dropped_at_a_boundary=0, class_spans_dropped_on_a_non_drug_head=0,
     class_keys_shadowed_by_moieties=0, class_spans_dropped_after_non=0,
+    class_exclusions_unused=0,
     **dict.fromkeys(spl_checks.OFFICIAL_NAME_COUNTS))
 
 #: The official-name group as MEASURED, nothing found: overridden per test.
@@ -1375,7 +1379,7 @@ def _summary(**overrides):
 @pytest.mark.parametrize("field", [
     "class_spans_dropped_at_a_boundary", "class_spans_dropped_on_a_non_drug_head",
     "class_keys_shadowed_by_moieties", "class_spans_dropped_after_non",
-    *spl_checks.OFFICIAL_NAME_COUNTS])
+    "class_exclusions_unused", *spl_checks.OFFICIAL_NAME_COUNTS])
 def test_a_FORGOTTEN_census_count_is_a_TypeError_not_a_stored_zero(field):
     """db/072's counts have no default: a caller that stops passing one would
     otherwise store 0 ("measured, nothing dropped") or None ("not measured")

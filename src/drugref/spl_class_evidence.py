@@ -22,7 +22,8 @@ from typing import Collection, Iterable, NamedTuple, Sequence
 import psycopg
 
 from drugref.ingest import spl_advice, spl_advice_scope, spl_match
-from drugref.ingest.spl_class_vocab import class_match_keys, is_matchable
+from drugref.ingest.spl_class_vocab import (
+    class_match_keys, is_matchable, unused_exclusions)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -153,9 +154,11 @@ class ClassKeyCounts(NamedTuple):
     #: True when no UNII names file was given, so R19/P1 never ran: said out loud
     #: in `__str__` because the ingest's progress line is the only place it shows.
     official_names_skipped: bool = False
+    #: Named class exclusions no class row carries (#248; `unused_exclusions`).
+    exclusions_unused: tuple[str, ...] = ()
 
     def summary_fields(self) -> dict[str, int | None]:
-        """The two drop counts as `SplSummary` keyword arguments (same names).
+        """The three counts as `SplSummary` keyword arguments (same names).
 
         The official-name one is None when R19/P1 was skipped: "not measured",
         stored NULL by db/072 -- a 0 would read as "measured, nothing dropped".
@@ -163,7 +166,8 @@ class ClassKeyCounts(NamedTuple):
         return {"class_keys_shadowed_by_moieties": len(self.shadowed_by_moieties),
                 "class_keys_shadowed_by_official_names":
                 None if self.official_names_skipped
-                else len(self.shadowed_by_official_names)}
+                else len(self.shadowed_by_official_names),
+                "class_exclusions_unused": len(self.exclusions_unused)}
 
     def __str__(self) -> str:
         return (f"{self.kept:,} class match keys "
@@ -173,7 +177,11 @@ class ClassKeyCounts(NamedTuple):
                 f"{sorted(self.shadowed_by_official_names)[:12]})"
                 + (" -- WARNING: no UNII names file (--unii-names), so class keys "
                    "equal to a UNII official name were NOT dropped (R19/P1 skipped)"
-                   if self.official_names_skipped else ""))
+                   if self.official_names_skipped else "")
+                + (f" -- WARNING: class exclusion(s) matching no class -- renamed, "
+                   f"mistyped, or its source (MED-RT/MeSH) not ingested (#248): "
+                   f"{list(self.exclusions_unused)}"
+                   if self.exclusions_unused else ""))
 
 
 def drop_shadowed_class_keys(
@@ -210,7 +218,10 @@ def class_vocabulary_for_run(
         load_class_entries(conn), moiety_names=moiety_names,
         official_names=official or ())
     skipped = official is None
-    return class_vocabulary(kept), counts._replace(official_names_skipped=skipped)
+    unused = unused_exclusions(conn.execute(
+        "SELECT source, concept_type, class_name FROM drugref.substance_class"))
+    return class_vocabulary(kept), counts._replace(
+        official_names_skipped=skipped, exclusions_unused=unused)
 
 
 def load_class_entries(conn: psycopg.Connection) -> list[spl_match.Entry]:

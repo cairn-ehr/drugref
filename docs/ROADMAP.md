@@ -1457,6 +1457,12 @@ the complement group). Run 19: spans 227,990 → 222,683, statements 14,135 → 
 unchanged. Filed #245 (turn "non-X" into complement statements) and #246 (class words continuing into a
 differently spelled longer class). PROJECT-NOTES § "The class-hygiene round".
 
+### Class-exclusion census (#248, #249) ✅ DONE (2026-11-15) — `db/078`
+The SPL ingest counts named class exclusions that match no class row, warns about them, and stores the count in
+the census. A rename upstream can no longer silently re-admit false spans or drop antacid advice. A
+`NOT VALID` CHECK keeps the class-pass census group whole for every new run and leaves the historical rows
+standing. PROJECT-NOTES § "The class-exclusion census".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
