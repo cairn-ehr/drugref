@@ -1,5 +1,5 @@
 # tests/test_spl_run_census_groups.py
-"""db/072, db/077, db/078 (#215, #229, #214, #248, #249): the spl_run_census group CHECKs.
+"""db/072, db/077, db/078 (#215, #229, #214, #248, #249): census group and floor CHECKs.
 
 A group of census counts is measured whole or not at all (NULL = not measured),
 and every count has its own floor. db/078's whole-class-group CHECK is NOT VALID

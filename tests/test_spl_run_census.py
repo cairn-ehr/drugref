@@ -16,8 +16,8 @@ status`'s block.
 
 db/072 (#215, #229) widened the row with the class-pass drops and the official-name
 counts; the writer's column-by-column mapping and their end-to-end store check live
-here, as do #228's tests of the run's widened `source_checksum`. Their group CHECKs
-(db/072, db/077, db/078) live in `tests/test_spl_run_census_groups.py` (#251).
+here, as do #228's tests of the run's widened `source_checksum`. Their group and
+floor CHECKs live in `tests/test_spl_run_census_groups.py` (#251).
 """
 import dataclasses
 import types

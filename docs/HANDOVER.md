@@ -76,8 +76,8 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243
-CLOSED** (PR #247). **#248, #249 CLOSED** (PR #250). **#251 closes on this PR.** **#214 open; filed #245, #246.** **Open from
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243 CLOSED**
+(PR #247). **#248, #249 CLOSED** (PR #250). **#251 closes on this PR.** **#214 open; filed #245, #246.** **Open from
 allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
 names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
 sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
