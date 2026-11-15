@@ -1,23 +1,29 @@
 """`drugref interactions` must say when a curated grade has fallen out of its list (#121).
 
-THE DEFECT. `curated_ddi_pair`'s moiety-grain half reaches a curated grade only through an
-INNER JOIN to `ddi_candidate_pair`, a delete-and-rebuild projection over
-`class_contraindication`. A re-ingest that drops the candidate row leaves the grade alive
-in `curated_interaction` and gone from the read, so the command printed `no curated
-grade` for a pair drugref had judged contraindicated. `curated_target_unresolved`
-already detected that state, but only `drugref status` read it: the operator was told,
-the person being under-warned was not.
+THE DEFECT. Each half of `curated_ddi_pair` reaches a curated grade only through an
+INNER JOIN to a rebuildable candidate: the moiety grain through `ddi_candidate_pair` (a
+view over `class_contraindication`), the class grain through
+`class_pair_contraindication` (db/038). A re-ingest that drops the candidate row leaves
+the grade alive in the curated table and gone from the read, so the command printed
+`no curated grade` for a pair drugref had judged contraindicated.
+`curated_target_unresolved` already detected that state, but only `drugref status` read
+it: the operator was told, the person being under-warned was not.
 
-ONLY THE MOIETY GRAIN. The class-grain half of the view expands class membership
-directly and never joins `class_pair_contraindication`, so a class-grain orphan still
-renders; and `curated_condition` rulings are not interaction grades. Hence the filter
-below keeps `curated_interaction` rows only. DB-gated except the pure-filter tests.
+BOTH INTERACTION GRAINS, NOT THE CONDITION ARM: a `curated_condition` ruling is not an
+interaction grade. A class-grain orphan is bannered for EVERY drug asked, because its
+member expansion is not readable outside the view (#255). DB-gated except the
+pure-filter test.
 """
 import uuid
 
-from drugref import curation
-from tests.test_cli_interactions import _a_graded_pair, _args
-from drugref import cli_interactions
+import psycopg
+import pytest
+
+from drugref import cli_interactions, curation
+from tests.test_class_subject_read_path import _a_graded_class_rule
+from tests.test_cli_interactions import (_KNOWN_TO_THE_STUB, _RaisingConn,
+                                         _a_graded_pair, _args)
+from tests.test_curated_overlay import _a_class
 
 
 def _orphan(target_table="curated_interaction", subject_moiety=None, subject_class=None):
@@ -33,9 +39,10 @@ def _orphan(target_table="curated_interaction", subject_moiety=None, subject_cla
 # ============================================================================
 
 
-def test_the_filter_keeps_moiety_grain_orphans_of_the_asked_subjects_only():
-    """Subject match, moiety grain only. A condition ruling about the same drug is not
-    an interaction grade, and a class-grain orphan still renders through membership."""
+def test_the_filter_keeps_interaction_orphans_that_may_concern_the_asked_subjects():
+    """Moiety grain matched on subject; class grain kept for any subject set, because
+    it vanishes from the read too (db/038's INNER JOIN) and its members cannot be
+    resolved here; a condition ruling about the same drug is not an interaction grade."""
     x, y, z = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     mine = _orphan(subject_moiety=x)
     theirs = _orphan(subject_moiety=y)
@@ -45,23 +52,26 @@ def test_the_filter_keeps_moiety_grain_orphans_of_the_asked_subjects_only():
                           subject_class=uuid.uuid4())
 
     orphans = [mine, theirs, other, condition, class_grain]
-    assert curation.orphaned_interaction_grades(orphans, {x}) == [mine]
-    assert curation.orphaned_interaction_grades(orphans, {x, y}) == [mine, theirs]
-    assert curation.orphaned_interaction_grades(orphans, set()) == []
+    assert curation.orphaned_interaction_grades(orphans, {x}) == [mine, class_grain]
+    assert curation.orphaned_interaction_grades(orphans, {x, y}) == [
+        mine, theirs, class_grain]
+    assert curation.orphaned_interaction_grades(orphans, set()) == [class_grain]
 
 
 # ============================================================================
-# 2. the command banners it
+# 2. the command banners it, and exits EXIT_INCOMPLETE
 # ============================================================================
 
 
 def _orphaned_pair(conn, ingest_run_id):
-    """A graded pair whose candidate a re-ingest then dropped: the #121 sequence."""
+    """A graded pair whose candidate a re-ingest then dropped: the #121 sequence.
+    Only THIS subject's candidates go, so other rows in a test stay healthy."""
     subject, partner = _a_graded_pair(
         conn, ingest_run_id, subject_code="N0000012100", object_code="N0000012101",
         severity="contraindicated", subject_unii="TESTUNI121", partner_unii="TESTUNI122",
         subject_name="the orphaned subject", partner_name="the orphaned partner")
-    conn.execute("DELETE FROM drugref.class_contraindication")
+    conn.execute("DELETE FROM drugref.class_contraindication "
+                 "WHERE subject_moiety_uuid = %s", (subject,))
     return subject, partner
 
 
@@ -69,10 +79,12 @@ def test_the_one_drug_form_says_its_list_is_incomplete(conn, ingest_run_id, caps
     """THE HEADLINE: `no curated grade` must not stand alone for a judged drug."""
     subject, _ = _orphaned_pair(conn, ingest_run_id)
 
-    assert cli_interactions._handle_interactions(conn, _args(subject)) == 0
+    assert cli_interactions._handle_interactions(
+        conn, _args(subject)) == cli_interactions.EXIT_INCOMPLETE
     out = capsys.readouterr().out
     assert "INCOMPLETE" in out
     assert "curated_target_unresolved" in out
+    assert f"{subject} -> class" in out
     assert "CI_MoA" in out
 
 
@@ -83,10 +95,54 @@ def test_the_pair_form_does_not_claim_an_absent_rule(conn, ingest_run_id, capsys
     subject, partner = _orphaned_pair(conn, ingest_run_id)
 
     for a, b in ((subject, partner), (partner, subject)):
-        assert cli_interactions._handle_interactions(conn, _args(a, b)) == 0
+        assert cli_interactions._handle_interactions(
+            conn, _args(a, b)) == cli_interactions.EXIT_INCOMPLETE
         out = capsys.readouterr().out
         assert "INCOMPLETE" in out
         assert "ABSENT RULE" not in out
+
+
+def test_a_live_grade_does_not_hide_an_orphan_beside_it(conn, ingest_run_id, capsys):
+    """THE FOUND-AND-ORPHANED CASE: a visible "major" must not read as the whole
+    answer while a contraindicated grade of the same drug has dropped out. Pins that
+    the banner is not tucked inside the `if not found` branch, in both forms."""
+    subject, partner = _a_graded_pair(
+        conn, ingest_run_id, subject_code="N0000012104", object_code="N0000012105",
+        severity="major", subject_unii="TESTUNI125", partner_unii="TESTUNI126",
+        subject_name="a subject graded twice", partner_name="its visible partner")
+    lost_class = _a_class(conn, ingest_run_id, code="N0000012106", name="a lost class")
+    curation.record_interaction_judgement(
+        conn, subject, lost_class, "CI_MoA", True, severity="contraindicated",
+        evidence_grade="established", reviewed_by="a curator",
+        reviewed_against="2026.07.06")  # no candidate row: orphaned from the start
+
+    for args in (_args(subject), _args(subject, partner)):
+        assert cli_interactions._handle_interactions(
+            conn, args) == cli_interactions.EXIT_INCOMPLETE
+        out = capsys.readouterr().out
+        assert "major" in out
+        assert "INCOMPLETE" in out
+
+
+def test_a_class_grain_orphan_is_bannered_too(conn, ingest_run_id, capsys):
+    """db/038's class half INNER JOINs `class_pair_contraindication`, so a class rule
+    whose candidate a re-ingest dropped vanishes for every member pair. The banner
+    must say so, and the pair form must not call the pair an ABSENT RULE."""
+    subject_class, _o, (s,), (o,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000012107", object_code="N0000012108",
+        subject_members=[("TESTUNI127", "a class-rule subject")],
+        object_members=[("TESTUNI128", "a class-rule partner")],
+        severity="contraindicated", evidence_grade="established",
+        reviewed_by="a curator", reviewed_against="2026.07.06")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (subject_class,))
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(s, o)) == cli_interactions.EXIT_INCOMPLETE
+    out = capsys.readouterr().out
+    assert "INCOMPLETE" in out
+    assert f"members of class {subject_class}" in out
+    assert "ABSENT RULE" not in out
 
 
 def test_no_banner_when_nothing_is_orphaned(conn, ingest_run_id, capsys):
@@ -98,3 +154,36 @@ def test_no_banner_when_nothing_is_orphaned(conn, ingest_run_id, capsys):
 
     assert cli_interactions._handle_interactions(conn, _args(subject, partner)) == 0
     assert "INCOMPLETE" not in capsys.readouterr().out
+
+
+def test_another_drugs_moiety_orphan_does_not_banner(conn, ingest_run_id, capsys):
+    """The call site narrows by subject, not only the pure filter: an orphan of an
+    unrelated drug leaves a healthy pair's answer complete."""
+    _orphaned_pair(conn, ingest_run_id)
+    subject, partner = _a_graded_pair(
+        conn, ingest_run_id, subject_code="N0000012109", object_code="N0000012110",
+        severity="major", subject_unii="TESTUNI129", partner_unii="TESTUNI130",
+        subject_name="an unrelated subject", partner_name="an unrelated partner")
+
+    assert cli_interactions._handle_interactions(conn, _args(subject, partner)) == 0
+    assert "INCOMPLETE" not in capsys.readouterr().out
+
+
+class _UnresolvedViewMissing(_RaisingConn):
+    """The grade read succeeds; only `curated_target_unresolved` is gone."""
+
+    def execute(self, sql, params=None):
+        self._last = sql
+        if "curated_target_unresolved" in sql:
+            raise self._exc
+        return self
+
+
+def test_a_missing_unresolved_view_names_its_migration():
+    """The orphan read has its own guard: a dropped db/035 view names the migration
+    rather than tracebacking at the clinician."""
+    with pytest.raises(RuntimeError) as raised:
+        cli_interactions._handle_interactions(
+            _UnresolvedViewMissing(psycopg.errors.UndefinedTable("gone")),
+            _args(_KNOWN_TO_THE_STUB))
+    assert "035" in str(raised.value)

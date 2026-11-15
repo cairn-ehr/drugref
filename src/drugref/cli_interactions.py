@@ -110,19 +110,31 @@ def _grades_for(conn, subject: uuid.UUID):
         return curated_read.effective_grades_for(conn, subject)
 
 
+# AN ANSWER KNOWN TO BE INCOMPLETE gets its own exit code, for #82's reason: a banner
+# alone is human-only, and a script reading 0 would take the list as complete. Not 2,
+# which means "nothing was asked".
+EXIT_INCOMPLETE = 3
+
+
 def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
-    """Banner any curated grade of `subjects` that the list above cannot show (#121).
+    """Banner any curated ruling that may concern `subjects` and that the list above
+    cannot show (#121).
 
     THE DETECTOR ALREADY EXISTED; ITS READER WAS THE WRONG PERSON. A re-ingest that
-    drops a candidate leaves the grade in `curated_interaction` and out of
+    drops a candidate leaves the ruling in the curated table and out of
     `curated_ddi_pair`, so the list reads `no curated grade` for a pair drugref has
     judged -- possibly contraindicated. `drugref status` told the operator; this tells
-    the person being under-warned. Returns whether it printed, so the pair form can
-    withhold its "ABSENT RULE" sentence, which an orphan makes false.
+    the person being under-warned. Returns whether it printed, so the caller can
+    withhold the pair form's "ABSENT RULE" sentence (which an orphan makes false) and
+    exit EXIT_INCOMPLETE.
 
-    SUBJECT-LEVEL, NOT PAIR-LEVEL, in the pair form too: an orphan names a CLASS, and
-    whether the partner is in it would take a membership read. Saying "may be missing"
-    for every orphan of either drug over-warns, which is this tool's safe direction.
+    SUBJECT-LEVEL, NOT PAIR-LEVEL, in the pair form too: a moiety orphan names a CLASS,
+    and whether the partner is in it would take a membership read. A class-grain orphan
+    is shown for every drug (see `curation.orphaned_interaction_grades`). Both
+    over-warn, which is this tool's safe direction.
+
+    "RULING", NOT "GRADE": the view also carries `applies = false` rulings, which the
+    list never shows. "Any grade among them is missing" is true of both.
     """
     with migration_guard.guarded(
             conn, relations=(curation.UNRESOLVED_VIEW,), migration="035",
@@ -132,11 +144,15 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     if not orphans:
         return False
     asked = "these drugs" if len(subjects) > 1 else "this drug"
-    print(f"** INCOMPLETE: drugref holds {len(orphans)} curated grade(s) for {asked} "
-          "whose candidate pair is no longer projected (curated_target_unresolved), so "
-          "they are MISSING from the list above. Run `drugref status` **")
+    print(f"** INCOMPLETE: drugref holds {len(orphans)} curated ruling(s) that may "
+          f"concern {asked} whose candidate pair is no longer projected "
+          "(curated_target_unresolved), so any grade among them is MISSING from the "
+          "list above. Run `drugref status` **")
     for o in orphans:
-        print(f"   {o.subject_moiety} -> class {o.object_uuid} [{o.relationship}] "
+        subject = (f"members of class {o.subject_class}"
+                   if o.target_table == "curated_class_interaction"
+                   else str(o.subject_moiety))
+        print(f"   {subject} -> class {o.object_uuid} [{o.relationship}] "
               f"reviewed by {o.reviewed_by} against {o.reviewed_against}")
     return True
 
@@ -233,11 +249,11 @@ def _handle_interactions(conn, args) -> int:
         # its partial answer being read as a complete one.
         _print_grades(_grades_for(conn, args.moiety),
                       f"grades with {args.moiety} as subject")
-        _report_orphans(conn, {args.moiety})
+        incomplete = _report_orphans(conn, {args.moiety})
         print("note: rules are DIRECTIONAL (db/006) -- this lists only rules drugref "
               "states with this moiety as the SUBJECT. Ask about a specific pair to "
               "search both directions.")
-        return 0
+        return EXIT_INCOMPLETE if incomplete else 0
 
     if args.moiety == args.against:
         # A DRUG AGAINST ITSELF IS A USER ERROR, AND MUST NOT RENDER AS A DATA ANSWER.
@@ -262,7 +278,7 @@ def _handle_interactions(conn, args) -> int:
         found += len(grades)
         _print_grades(grades, f"{subject} -> {partner}")
     if _report_orphans(conn, {args.moiety, args.against}):
-        return 0
+        return EXIT_INCOMPLETE
     if not found:
         # NOT "no interaction", AND NOT "safe". drugref has not asserted anything about
         # this pair; saying so plainly is the only honest rendering, and a command that

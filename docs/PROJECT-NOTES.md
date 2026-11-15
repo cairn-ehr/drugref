@@ -6704,16 +6704,20 @@ modules' 48 tests and the suite total unchanged).
 each other's schema) **FIXED** by the per-session test database: `conftest._migrated` creates, migrates and drops
 `<dbname>_pid<pid>_<token>` per session (§ "How to run / test"; +6 tests, 3406 → 3412).
 **The agent-debt round (2026-11-15, no migration)** —
-**[#121](https://github.com/cairn-ehr/drugref/issues/121)** **FIXED**: a moiety-grain grade whose candidate a
-re-ingest dropped vanished from `curated_ddi_pair` (an INNER JOIN to `ddi_candidate_pair`), and `drugref
-interactions` read "no curated grade", in the pair form even "an ABSENT RULE". The pure filter
-`curation.orphaned_interaction_grades` keeps the `curated_interaction` orphans of the asked subjects only. The
-class-grain half reads membership directly, so its orphans still render. The command banners `INCOMPLETE` and
-withholds the absent-rule sentence. It is subject-level rather than pair-level, which over-warns: the safe
-direction. **[#123](https://github.com/cairn-ehr/drugref/issues/123)** **CLOSED** by a catalogue test (option 2,
-above). **[#224](https://github.com/cairn-ehr/drugref/issues/224)**: the rule-4 checked no-match (cephalexin /
-perindopril vs an amoxicillin allergen) is now tested; the issue's comment and docstring items were already done.
-+8 tests, 3412 → 3420.
+**[#121](https://github.com/cairn-ehr/drugref/issues/121)** **FIXED**: a grade whose candidate a re-ingest dropped
+vanished from `curated_ddi_pair` (each half INNER JOINs its candidate: `ddi_candidate_pair` for the moiety grain,
+`class_pair_contraindication` for the class grain), and `drugref interactions` read "no curated grade", in the
+pair form even "an ABSENT RULE". The pure filter `curation.orphaned_interaction_grades` keeps the
+`curated_interaction` orphans of the asked subjects and **every** live `curated_class_interaction` orphan (its
+member expansion is CTE-only inside the view; narrowing is [#255](https://github.com/cairn-ehr/drugref/issues/255)).
+The command banners `INCOMPLETE`, withholds the absent-rule sentence and exits **3**
+(`cli_interactions.EXIT_INCOMPLETE`). Subject-level and class-wide, so it over-warns: the safe direction. The
+banner says "ruling(s)", because the view also carries `applies = false` rows the list never shows.
+**[#123](https://github.com/cairn-ehr/drugref/issues/123)** **CLOSED** by a catalogue test (option 2, above),
+transitive through views and column-precise. **[#224](https://github.com/cairn-ehr/drugref/issues/224)**: the
+rule-4 checked no-match (cephalexin / perindopril vs an amoxicillin allergen) is now tested; the issue's comment
+and docstring items were already done.
++13 tests, 3412 → 3425.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6899,7 +6903,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3420 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3425 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

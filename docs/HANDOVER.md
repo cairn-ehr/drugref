@@ -18,10 +18,10 @@ closes #121 and #123, part of #224. Schema still ends at `db/078`.** The suite t
 "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (no migration; owner chose agent-only debt):** **#121:** `drugref interactions` banners
-`INCOMPLETE` when a live moiety-grain grade of the asked drug(s) is orphaned, and the pair form then withholds "an
-ABSENT RULE"; any consumer showing `effective_grades_for` to a person must also ask
-`curation.orphaned_interaction_grades`. **#123:** a catalogue test fails if a view ranking `severity_rank` reads an
-FK table the unrankable sweep skips. **#224:** rule-4 no-match tested; its other minors stay open. +8 tests.
+`INCOMPLETE` (exit 3) when a live grade that may concern the asked drug(s) is orphaned (class-grain: every drug,
+until #255); the pair form then withholds "an ABSENT RULE"; a consumer showing `effective_grades_for` to a person
+must also ask `curation.orphaned_interaction_grades`. **#123:** a catalogue test fails if a view ranking
+`severity_rank` reads (through any views) an FK column the sweep skips. **#224:** rule-4 no-match tested. +13 tests.
 `ruff format` is NOT applied here; match the hand style. **Do not add `-p no:cacheprovider` to a full run**
 (`test_suite_count.py` then fails two tests that are not real). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.**
 
