@@ -9,6 +9,8 @@ cleanup (see tests/test_ingest_run.py's autouse truncate fixture)."""
 import os
 import pytest
 import psycopg
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from drugref import db
 from tests.suite_count import COLLECTED_TESTS
 
@@ -96,6 +98,12 @@ def pytest_collection_finish(session):
 
 @pytest.fixture(scope="session")
 def _dsn():
+    """The CONFIGURED DSN -- NOT the database the suite runs in (issue 153).
+
+    Tests that need a DSN for the migrated database (a CLI, a tool, a second
+    connection) want `_migrated`; this one only reaches the database used to run
+    CREATE/DROP DATABASE for the session copy.
+    """
     # Skipping locally is a convenience; skipping in CI is a trap. Over half
     # the suite is DB-gated -- every schema, trigger, floor, writer and
     # orchestrator test -- and pytest exits 0 on a run that skipped all of
@@ -116,14 +124,61 @@ def _dsn():
     return detail
 
 
+#: PostgreSQL's identifier limit (NAMEDATALEN - 1). Longer names are TRUNCATED silently,
+#: which would merge two sessions' databases if the pid suffix were the part cut off.
+_MAX_IDENTIFIER_BYTES = 63
+
+
+def session_dsn(dsn, pid):
+    """PURE: (database name, DSN) for THIS pytest session's private database (issue 153).
+
+    The name is the configured database's name plus `_pid<pid>`, so each process gets
+    its own and a leftover one says where it came from. Every other connection
+    parameter is kept. A DSN with no dbname (libpq then defaults to the user name)
+    uses `drugref_test` as the base.
+    """
+    suffix = f"_pid{pid}"
+    base = conninfo_to_dict(dsn).get("dbname") or "drugref_test"
+    # Cut the BASE, never the suffix: the suffix is what keeps two sessions apart.
+    base = base.encode()[:_MAX_IDENTIFIER_BYTES - len(suffix)].decode(errors="ignore")
+    name = base + suffix
+    return name, make_conninfo(dsn, dbname=name)
+
+
+def _drop_database(admin_dsn, name):
+    """Drop a session database. FORCE ends any connection a failed test left open."""
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)")
+                      .format(sql.Identifier(name)))
+
+
 @pytest.fixture(scope="session")
 def _migrated(_dsn):
-    """Drop and recreate the drugref schema once, then apply migrations."""
-    with psycopg.connect(_dsn) as conn:
-        conn.execute("DROP SCHEMA IF EXISTS drugref CASCADE")
-        conn.commit()
-        db.apply_migrations(conn)
-    return _dsn
+    """A fresh database for THIS session, fully migrated; returns its DSN.
+
+    ⇒ WHY NOT THE CONFIGURED DATABASE (issue 153). This fixture used to run
+    `DROP SCHEMA drugref CASCADE` on the DRUGREF_TEST_DSN database itself, so two
+    pytest sessions at once -- two terminals, parallel review agents -- dropped the
+    schema under each other and failed with UndefinedTable / DeadlockDetected errors
+    that looked like real bugs in whatever was being reviewed. Now each session
+    CREATEs its own database beside the configured one (see `session_dsn`) and drops
+    it at teardown; the configured database is only the place we connect to in order
+    to run CREATE/DROP DATABASE, and its contents are never touched.
+
+    The DSN's role therefore needs CREATEDB (the `postgres` superuser in both the
+    documented local DSN and CI has it). The leading DROP clears a database left by a
+    killed session whose pid has been reused.
+    """
+    name, migrated_dsn = session_dsn(_dsn, os.getpid())
+    _drop_database(_dsn, name)
+    with psycopg.connect(_dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    try:
+        with psycopg.connect(migrated_dsn) as conn:
+            db.apply_migrations(conn)
+        yield migrated_dsn
+    finally:
+        _drop_database(_dsn, name)
 
 
 @pytest.fixture
