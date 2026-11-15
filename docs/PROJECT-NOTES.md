@@ -6585,7 +6585,8 @@ run:** a real SPL ingest storing the count. The end-to-end census test stores it
 
 **Tests (+9):** `unused_exclusions` (`test_spl_class_vocab.py`); the run's count and WARNING
 (`test_spl_class_evidence.py`); db/078's group CHECK (each half-measured shape), the new column's floor, and the
-`NOT VALID` carve-out for both pre-db/078 row shapes, db/072-076's and db/077's (`test_spl_run_census.py`); the
+`NOT VALID` carve-out for both pre-db/078 row shapes, db/072-076's and db/077's (`test_spl_run_census.py`; since
+#251 in `test_spl_run_census_groups.py`); the
 forgotten-count parametrisation and the WARNING reaching `progress` (`test_spl_run.py`). Test DB:
 `drugref_test_excl248`. PR #250's review corrected db/078's header (it named the wrong era of rows) before merge;
 the three local databases holding db/078 had its ledger checksum re-recorded, as no other database ever applied it.
@@ -6691,7 +6692,9 @@ longer class: bile acid sequestering, catecholamine-depleting) — § "The class
 filed **[#248](https://github.com/cairn-ehr/drugref/issues/248)** (name-keyed class exclusions go stale silently on
 a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK),
 **both FIXED by the class-exclusion census** (`db/078`, § of that name). PR #250's review filed
-**[#251](https://github.com/cairn-ehr/drugref/issues/251)** (split `tests/test_spl_run_census.py`, 507 lines).
+**[#251](https://github.com/cairn-ehr/drugref/issues/251)** (split `tests/test_spl_run_census.py`, 507 lines),
+**FIXED**: the group-CHECK tests moved verbatim to `tests/test_spl_run_census_groups.py` (441 + 80 lines, the two
+modules' 48 tests and the suite total unchanged).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
