@@ -43,10 +43,13 @@ from drugref.ingest.counts import refuse_negative_counts
 #: does any other drop on this corpus (re-measure, never lower it to pass).
 MEASURED_PAIR_FLOOR = 30_624
 MEASURED_NOVEL_FLOOR = 27_194
-#: Class (span, class) rows SPL run 17 wrote on the 2026-08-22 corpus (227,990
-#: distinct spans). A floor like the two above: an empty class pass is
-#: self-consistent, and `register_from_gaps` would close every SPLCLASS: question.
-MEASURED_CLASS_FLOOR = 304_682
+#: Class (span, class) rows on the 2026-08-22 corpus. A floor like the two above:
+#: an empty class pass is self-consistent, and `register_from_gaps` would close
+#: every SPLCLASS: question. RESTATED by #214 (2026-11-15) from SPL run 17's
+#: 304,682 to the shipped ingest's own output once the MED-RT PE axis, Electrolyte
+#: [EPC], Ophthalmic Solutions and 'non-' spans are dropped (predicted 5,309 fewer
+#: rows, measured 5,308). No headroom, as above: re-measure, never lower to pass.
+MEASURED_CLASS_FLOOR = 299_374
 
 #: The summary fields that are measured only when a UNII_Names file was given
 #: (#213's adoption and R19/P1): all None or none None, as db/072's
@@ -129,6 +132,8 @@ class SplSummary:
     #: whose word qualifies a non-drug head ('anticoagulant effect', P2).
     class_keys_shadowed_by_official_names: int | None
     class_spans_dropped_on_a_non_drug_head: int
+    #: #214: class (span, class) rows after 'non-' (the complement group).
+    class_spans_dropped_after_non: int
     #: #229: what became of the UNII official names the drug pass may adopt as
     #: moiety keys (#213; `spl_official_names.OfficialNameCounts`). None, not 0,
     #: when no UNII_Names file was given: nothing was checked, so nothing measured.
@@ -233,7 +238,8 @@ class SplSummary:
             f"inside a class span; {self.class_spans_dropped_at_a_boundary:,} class "
             f"rows dropped at a sentence boundary, "
             f"{self.class_spans_dropped_on_a_non_drug_head:,} class rows dropped "
-            f"on a non-drug head word, {self.class_keys_shadowed_by_moieties:,} "
+            f"on a non-drug head word, {self.class_spans_dropped_after_non:,} "
+            f"after 'non-', {self.class_keys_shadowed_by_moieties:,} "
             f"class keys dropped as moiety names, "
             + ("class keys not checked against UNII official names"
                if self.class_keys_shadowed_by_official_names is None else

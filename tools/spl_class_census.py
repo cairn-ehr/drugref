@@ -47,7 +47,7 @@ from decimal import Decimal
 import psycopg
 
 from drugref import db, server_messages
-from drugref.ingest.spl_class_vocab import EXCLUDED_CLASSES
+from drugref.ingest.spl_class_vocab import EXCLUDED_CLASSES, KEPT_PE_CLASSES
 
 #: "cytochrome P450 3A4 (CYP3A4)" -- the long-form spelling a label may use for an
 #: enzyme the class vocabulary only knows as "CYP3A4 ...". A role word after it is
@@ -102,15 +102,18 @@ _SPANS = _OCC + """, spans AS (
     FROM occ ORDER BY text_key, char_start, char_end)
 """
 
+def _lit(v: str) -> str:
+    """A module constant as an SQL literal, `'` doubled all the same."""
+    return "'" + v.replace("'", "''") + "'"
+
+
 def excluded_classes_sql(excluded: Iterable[tuple[str, str, str]]) -> str:
     """SQL conditions excluding each named (source, concept_type, class_name), built
     from `spl_class_vocab.EXCLUDED_CLASSES` so the census cannot drift from the class
     pass. The values are module constants, quoted by doubling `'` all the same."""
-    def lit(v: str) -> str:
-        return "'" + v.replace("'", "''") + "'"
     return "".join(
         "\n        AND (c.source, c.concept_type, c.class_name) <> ("
-        + ", ".join(map(lit, t)) + ")" for t in sorted(excluded))
+        + ", ".join(map(_lit, t)) + ")" for t in sorted(excluded))
 
 
 #: (title, SQL). Each SQL starts with `_OCC` when it reads occurrences.
@@ -134,7 +137,7 @@ QUERIES: tuple[tuple[str, str], ...] = (
                FROM occ GROUP BY axis, pop, text_key, label_count) p
       GROUP BY axis, pop ORDER BY axis, pop"""),
     # The PK/APC filter below must change with spl_class_vocab.is_matchable; the
-    # named exclusions are derived from EXCLUDED_CLASSES.
+    # named exclusions and the kept PE classes (#214) are derived from its constants.
     ("Classes mentioned at least once vs classes matchable, per axis",
      """
      SELECT c.source || ' ' || c.concept_type AS axis,
@@ -147,7 +150,10 @@ QUERIES: tuple[tuple[str, str], ...] = (
                  WHERE o.class_uuid = c.class_uuid AND o.ingest_run = %(run)s))
               AS mentioned
        FROM drugref.substance_class c
-      WHERE NOT (c.source = 'MED-RT' AND c.concept_type IN ('PK', 'APC'))"""
+      WHERE NOT (c.source = 'MED-RT' AND c.concept_type IN ('PK', 'APC'))
+        AND NOT (c.source = 'MED-RT' AND c.concept_type = 'PE'
+                 AND c.class_name NOT IN ("""
+     + ", ".join(map(_lit, sorted(KEPT_PE_CLASSES))) + "))"
      + excluded_classes_sql(EXCLUDED_CLASSES) + """
       GROUP BY 1, 2 ORDER BY 1, 2"""),
     ("Distinct statements (labelling drug x class; label-derived, not per wording) "

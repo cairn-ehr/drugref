@@ -13,19 +13,20 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/fda-cyp-floor-ambiguous` (from `main` after PR #241, MERGED). PR open to `main`; closes #132 and
-#135. Schema now ends at `db/076`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
-else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/fda-cyp-official-names-guard` (from `main` after PR #242, MERGED). PR open to `main`; closes #243,
+advances #214 (stays open). Schema now ends at `db/077`.** The suite total lives in PROJECT-NOTES § "How to run /
+test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, measured, docs done): #132 + #135** (owner picked these over #214 and the owner calls).
-A name several moieties share is now `ambiguous_substance` (`db/075`, claimants in `candidate_moiety_uuids`), and its
-question no longer says "no name matches". A re-ingest whose resolved share drops below half the stored run's is
-refused before any run row (`--allow-resolution-drop` authorises it). Real page: 0 ambiguous, 55 of 55 question UUIDs
-unchanged, 6 texts reworded. Review: `db/076` claimant CHECK; #243 lodged. PROJECT-NOTES § "The FDA-CYP resolution round".
-**From #226:** run `ingest moiety-names` before `ingest fda-cyp`, or FDA-CYP silently falls back to display
-names (the new floor does NOT catch this: it moves only a few tuples). `ruff format` is NOT applied in this repo;
-match the hand style. **Do not add `-p no:cacheprovider` to a full run**: `test_suite_count.py` then fails two tests
-that are not real.
+**⇒ THIS ROUND (built, tested, measured, docs done), two parts:**
+- **#243:** an FDA-CYP ingest on a registry with no UNII official names (an empty one too) is refused before any
+  run row (`--allow-resolution-drop` overrides, with a logged warning). Out of #135's floor's reach. Real page:
+  393 → 383 of 419 resolved without them. PROJECT-NOTES § "The FDA-CYP official-names guard".
+- **#214 (owner-ruled):** the class pass no longer matches the MED-RT PE axis (bar `Antacid [PE]`), `Electrolyte
+  [EPC]` or `Ophthalmic Solutions`, and drops (and counts, `db/077`) a class span after `non-`. SPL run 19 on
+  `drugref_hygiene214`: statements 14,135 → 13,875; drug × drug pairs unchanged. `MEASURED_CLASS_FLOOR` restated to
+  299,374. Filed **#245** and **#246**. PROJECT-NOTES § "The class-hygiene round".
+`ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
+`test_suite_count.py` then fails two tests that are not real.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
@@ -65,8 +66,11 @@ clinically reviewed, and the read says so.
    for the 74 that collide with another moiety's display name and the 99 hydrate forms? A rename ripples into
    onchigh's name check, the FDA-CYP / SPL name keys, the `moiety_official_name` snapshot and Cairn's search.
    Likely also a PBS-bridge recall gap (Australian names follow the INN; not measured).
-   **No owner call needed:** **#214** (class-hygiene candidates: `Electrolyte [EPC]`, `Ophthalmic
-   Solutions`, the effect classes, `Bile Acid [EPC]`, "consider alternative therapy" as an avoid phrasing).
+   **Owner design calls from #214:** **#245** (turn the dropped "non-X" spans into statements about the complement
+   group: which parent class to subtract from) and **#246** (a class word continuing into a differently spelled
+   longer class, e.g. "catecholamine-depleting drugs" on `Catecholamine [EPC]`: no mechanical rule found).
+   Both likely need hand evaluation. **#214 stays open** for "drugs with X effects" (dropped by R19's head rule; a
+   with/having exemption) and "consider alternative therapy" as an avoid phrasing: both move figures, owner call.
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
@@ -74,33 +78,28 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#231 CLOSED**
-(PR #233); **#216, #218 CLOSED** (PR #234). **#215, #228, #229 CLOSED** (PR #236). **#235 CLOSED** (PR #237). **#217
-CLOSED** (PR #238). **#226 CLOSED** (PR #240; it filed #239). **#134 CLOSED** (PR #241). **#132, #135 close on this
-branch's PR; its review lodged #243.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203,
-#204. From class mentions: #214, #220–#222.** Open: **#164**, **#169**. Standing: **#155** and **#102** (remaining
-work is #214); **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
-#153, #128/#129, #124, #121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17,
-the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#132, #135
+CLOSED** (PR #242). **#243 closes on this PR; #214 advanced (open), filed #245, #246; review: #248, #249.** **Open from
+allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
+names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
+sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
+production: re-run every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
   tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
   at once: concurrent runs drop the schema under each other and the failures look real.**
-- **`drugref_ambig132` is this round's**: `createdb -T drugref_role134`, migrated to `db/075`, one `ingest
-  fda-cyp`; never patch it. **This branch's test DB: `drugref_test_floor135`.**
-- **`drugref_role134` is #134's**: `createdb -T drugref_fdacyp226`, migrated to `db/074`, one `ingest fda-cyp`;
-  never patch it.
-- **`drugref_fdacyp226` is #226's**: `createdb -T drugref_names`, migrated to `db/073`, one `ingest fda-cyp`; never
-  patch it. Its test DB: `drugref_test_fdacyp226`. Create a test DB with `createdb` first (pytest recreates the
-  schema, not the database). Every other named database lacks db/072–075 until migrated; its pre-072 census
-  rows then read NULL (not measured).
-- **`drugref_synonyms` is #231's BAN/AAN round's**: `createdb -T drugref_names`, migrated to `db/071`, one `ingest
-  mesh-synonyms` (18,692 stored); never patch it.
-- **`drugref_names` is #232's**: `createdb -T drugref_usnames`, `db/070`, one `ingest moiety-names` (1,630 names).
-- **`drugref_usnames` is #213's** — `createdb -T drugref_allergy` (`db/069`), then two full SPL ingests: run 11
-  (adoption off, reproduces run 17) and **run 12 (the shipped measurement)**; never patch it.
+- **`drugref_hygiene214` is this round's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
+  is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
+  it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
+  **This branch's test DB: `drugref_test_hygiene214`.**
+- **`drugref_ambig132` is #132/#135's** (`db/075`; carries SPL run 12, run 19's baseline): never patch.
+- **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
+  run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;
+  `drugref_synonyms` (#231) branches from `drugref_names`. Details: PROJECT-NOTES § "How to run / test". Create a
+  test DB with `createdb` first (pytest recreates the schema, not the database). Other named databases lack
+  db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).
 - **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
   (MeSH 2026); never patch it. Its test DB: `drugref_test_allergy`. `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +

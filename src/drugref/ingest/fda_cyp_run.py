@@ -60,13 +60,10 @@ WRITER = "fda_cyp_run"
 CONCEPT_TYPE = "PK"
 RELATIONSHIP = "has_PK"
 
-# The projection this source owns, cleared per-source on every re-ingest. Named
-# as a tuple (rather than a bare string) to match db.clear_source_tables's
-# signature and the sibling constants in classes.py (CLASS_EDGE_TABLES,
-# UNMATCHED_INGREDIENT_TABLES) and onchigh_run.py (UNRESOLVED_ENDPOINT_TABLES)
-# -- the latter being the orchestrator-level precedent db/039's own header
-# already cites as this projection's shape. gsrs_run.py, named here before, has
-# no such constant and never calls clear_source_tables at all.
+# The projection this source owns, cleared per-source on every re-ingest. A
+# tuple to match db.clear_source_tables's signature and the sibling constants in
+# classes.py (CLASS_EDGE_TABLES) and onchigh_run.py (UNRESOLVED_ENDPOINT_TABLES,
+# the precedent db/039's own header cites as this projection's shape).
 FDA_CYP_TABLES = ("fda_cyp_assertion",)
 
 log = logging.getLogger(__name__)
@@ -103,10 +100,13 @@ class FdaCypResolutionError(RuntimeError):
     run would report success. The message names --allow-resolution-drop.
 
     It trips only BELOW HALF the stored share, so it catches a collapse, not
-    a partial loss: a registry rebuilt without `ingest moiety-names` (empty
-    UNII official names) costs about 10 of 393 resolved cells and passes.
-    That narrower trap is issue #243. It never fires on a first ingest:
-    with nothing stored there is no baseline and nothing to destroy.
+    a partial loss. It never fires on a first ingest: with nothing stored
+    there is no baseline and nothing to destroy.
+
+    Also raised, with its own message and the same override, for a registry
+    with NO UNII official names (#243), empty registries included: one built
+    without `ingest moiety-names` loses about 10 of 393 resolved cells, too few
+    for the floor and on a first ingest out of its reach anyway.
     """
 
 
@@ -204,9 +204,10 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     reports success. FDA genuinely shrinking its table is a real event -- it
     just has to be a decision someone made, not one nobody saw.
 
-    `allow_resolution_drop` is the same kind of authorisation for the
-    resolution floor (#135): a run whose resolved share of tuples is below
-    MIN_RETAINED_FRACTION of the stored run's share.
+    `allow_resolution_drop` is the same kind of authorisation for two
+    resolution refusals: the floor (#135), a resolved share of tuples below
+    MIN_RETAINED_FRACTION of the stored run's, and a registry with no UNII
+    official names (#243). Either waiver is logged as a warning.
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     # 1. PARSE FIRST, before any run row exists, so a crash here -- an unknown
@@ -227,11 +228,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     #     exactly as step 1's own comment requires. Compared against what is
     #     already STORED rather than against a pinned 245, for two reasons: no
     #     constant has to be bumped when FDA grows its table, and a FIRST
-    #     ingest (stored == 0) is never blocked -- correctly, since it destroys
-    #     nothing.
-    #
-    #     This is the guard fda_cyp.py's module docstring used to CLAIM ("the
-    #     row and cell COUNTS are asserted") while only the cell count existed.
+    #     ingest (stored == 0) is never blocked, since it destroys nothing.
     #     It cannot live in the parser: 245 is a property of one release, not
     #     of the table's shape, and the harm is done by REPLACING a stored
     #     projection, which only the writer can see.
@@ -246,8 +243,9 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "FROM drugref.fda_cyp_assertion a "
             "JOIN drugref.ingest_run r ON r.ingest_run_id = a.ingest_run "
             "WHERE r.source = %s", (SOURCE,)).fetchone()
-        fold = _fold_by_lower(classes.moieties_by_display_name(conn),
-                              classes.moieties_by_official_name(conn))
+        display = classes.moieties_by_display_name(conn)
+        official = classes.moieties_by_official_name(conn)
+        fold = _fold_by_lower(display, official)
     except psycopg.Error:
         conn.rollback()
         log.exception("FDA-CYP ingest failed reading the registry for release "
@@ -261,14 +259,31 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
             "fetch parses green -- every surviving row is well-formed -- so "
             "this count is the only signal. Re-fetch the page, or pass "
             "--allow-shrink if FDA really did shrink the table.")
+    # 1a'. REFUSE A REGISTRY WITH NO UNII OFFICIAL NAMES (#243). Absolute, not
+    #      relative to a stored run: only `ingest moiety-names` writes
+    #      moiety_official_name, and step 1b's floor cannot see it missing on a
+    #      first ingest, nor on a re-ingest whose baseline lacked it too. Small
+    #      (~10 of 393 cells) and silent, so refused, not logged. An EMPTY
+    #      registry (no `ingest unii`, wrong DSN) is refused here as well.
+    if not official:
+        what = ("display names but no UNII official names, so US spellings "
+                "(rifampin, glyburide) would land unresolved" if display else
+                "no moieties at all, so every tuple would land unresolved")
+        if not allow_resolution_drop:
+            raise FdaCypResolutionError(
+                f"refusing to ingest FDA-CYP: the registry has {what}. Run "
+                "`drugref ingest unii` and `drugref ingest moiety-names` first, or "
+                "pass --allow-resolution-drop to ingest on display names alone.")
+        log.warning("FDA-CYP: --allow-resolution-drop waived the #243 refusal: "
+                    "the registry has no UNII official names (%s)", what)
 
     # 1b. RESOLVE AND CLASSIFY EVERY TUPLE NOW, still before the run opens, so
     #     the resolution floor (#135) can refuse with no run row to explain.
     #     The index is display names plus the stored UNII official names
     #     (#226), read ONCE, whole -- both are bounded by the registry, not by
     #     this feed, exactly as classes.py's own docstring argues for MED-RT
-    #     and MeSH. The official names are EMPTY unless `ingest moiety-names`
-    #     ran first. Resolution is exact and case-insensitive; _classify
+    #     and MeSH. (An empty official half was refused in step 1a' unless
+    #     authorised.) Resolution is exact and case-insensitive; _classify
     #     decides what zero, one or several candidates mean. (`fold` is read in
     #     step 1a's try, for its rollback.)
     #
@@ -314,9 +329,13 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     #     rows leaves the share about where it was. It counts tuples with a
     #     resolved moiety, which is exactly what resolved_moiety_uuid stores.
     resolved_now = sum(1 for *_, moiety in decided if moiety is not None)
-    if (stored_resolved and not allow_resolution_drop
-            and resolved_now * stored
-            < stored_resolved * len(tuples) * MIN_RETAINED_FRACTION):
+    floor_breached = bool(stored_resolved) and (
+        resolved_now * stored < stored_resolved * len(tuples) * MIN_RETAINED_FRACTION)
+    if floor_breached and allow_resolution_drop:
+        log.warning("FDA-CYP: --allow-resolution-drop waived the #135 resolution "
+                    "floor: %d of %d tuples resolved, against %d of %d stored",
+                    resolved_now, len(tuples), stored_resolved, stored)
+    elif floor_breached:
         raise FdaCypResolutionError(
             f"refusing to replace {stored_resolved} of {stored} resolved FDA-CYP "
             f"tuples with {resolved_now} of {len(tuples)} from {page_path}: the "

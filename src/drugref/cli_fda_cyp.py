@@ -65,8 +65,10 @@ def add_parser(sources) -> None:
                              "projection (refused by default)")
     # #135: same default-off reasoning. An empty or renamed registry makes every
     # tuple unresolved while the row count stays the same, so only a drop in
-    # the RESOLVED SHARE of tuples shows it.
+    # the RESOLVED SHARE of tuples shows it. #243: the same flag waives the
+    # no-UNII-official-names refusal; either waiver is logged.
     parser.add_argument("--allow-resolution-drop", action="store_true",
                         help="authorise a run that resolves a much smaller share "
-                             "of its tuples than the stored one (refused by default)")
+                             "of its tuples than the stored one, or a registry with "
+                             "no UNII official names (both refused by default)")
     parser.set_defaults(handler=handle_fda_cyp)
