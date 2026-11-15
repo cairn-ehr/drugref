@@ -1465,8 +1465,8 @@ standing. PROJECT-NOTES § "The class-exclusion census". Its group-CHECK tests w
 afterwards (#251), with the test count unchanged.
 
 ### Per-session test database (#153) ✅ DONE (2026-11-15) — no migration
-Each pytest session now creates its own `<dbname>_pid<pid>` database beside the one `DRUGREF_TEST_DSN` names,
-migrates it, and drops it at teardown. Before this, the suite dropped the shared schema, so two sessions at once
+Each pytest session now creates its own `<dbname>_pid<pid>_<token>` database beside the one `DRUGREF_TEST_DSN`
+names, migrates it, and drops it at teardown. Before this, the suite dropped the shared schema, so two sessions at once
 (parallel review agents, two terminals) failed in ways that looked like real bugs. Two full runs at once are now
 green. PROJECT-NOTES § "How to run / test".
 

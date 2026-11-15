@@ -38,8 +38,12 @@ uv run pytest
 uv run ruff check .
 ```
 
-Some PostgreSQL-backed tests recreate their target database. Never point the test suite
-at a database holding reviewer accounts, signing keys or work you intend to keep.
+The PostgreSQL-backed tests do not run in the database `DRUGREF_TEST_DSN` names. Each
+pytest session creates its own `<dbname>_pid<pid>_<token>` database beside it, migrates
+that, and drops it at teardown, so two sessions at once are safe. The DSN's role
+therefore needs the `CREATEDB` privilege; without it every database-backed test errors
+on `CREATE DATABASE`. Still keep the test DSN separate from any database holding
+reviewer accounts, signing keys or work you intend to keep.
 
 ### The role that runs an ingest
 

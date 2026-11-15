@@ -18,12 +18,12 @@ closes #153. Schema still ends at `db/078`.** The suite total lives in PROJECT-N
 and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (tests only, no migration, no figure moves):** **#153:** `conftest._migrated` no longer drops
-the schema on the `DRUGREF_TEST_DSN` database. Each session creates `<dbname>_pid<pid>` beside it, migrates
-it, and drops it at teardown. **Two full runs at once on one DSN: both green (3411 each), no leftover
-database.** A test needing the migrated database's DSN takes `_migrated`, not `_dsn`. +5 tests. **From PR #250's
-round:** `db/078`'s `spl_run_census_class_group_whole` is `NOT VALID` on purpose. **Never VALIDATE it**
-(PROJECT-NOTES § "The class-exclusion census"). Still not run: a real SPL ingest storing
-`class_exclusions_unused` (today's value is 0, read off the registry).
+the schema on the `DRUGREF_TEST_DSN` database. Each session creates `<dbname>_pid<pid>_<token>` beside it,
+migrates it, and drops it at teardown; the random token keeps apart two containers whose pids collide. **Two full
+runs at once on one DSN: both green (3412 each), no leftover database.** A test needing the migrated database's DSN
+takes `_migrated`, not `_dsn`. +6 tests. **From PR #250's round:** `db/078`'s `spl_run_census_class_group_whole`
+is `NOT VALID` on purpose. **Never VALIDATE it** (PROJECT-NOTES § "The class-exclusion census"). Still not run: a
+real SPL ingest storing `class_exclusions_unused` (today's value is 0, read off the registry).
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
 `test_suite_count.py` then fails two tests that are not real.
 
@@ -88,8 +88,8 @@ deeds (#6, #25, GSRS).
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
-  tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy, `<dbname>_pid<pid>`
-  (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
+  tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
+  `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
   patch it. This branch tested against `drugref_test`.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
@@ -99,8 +99,8 @@ deeds (#6, #25, GSRS).
 - **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
   run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;
   `drugref_synonyms` (#231) branches from `drugref_names`. Details: PROJECT-NOTES § "How to run / test". Create a
-  test DB with `createdb` first (pytest connects there and creates its session copy beside it). Other named databases lack
-  db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).
+  test DB with `createdb` first (pytest connects there and creates its session copy beside it). Other named
+  databases lack db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).
 - **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
   (MeSH 2026); never patch it. Its test DB: `drugref_test_allergy`. `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +

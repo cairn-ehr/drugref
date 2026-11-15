@@ -7,6 +7,7 @@ conn.commit() itself (e.g. an orchestrator that commits per run) escapes the
 rollback, so a test module exercising such code needs its own explicit
 cleanup (see tests/test_ingest_run.py's autouse truncate fixture)."""
 import os
+import uuid
 import pytest
 import psycopg
 from psycopg import sql
@@ -101,8 +102,8 @@ def _dsn():
     """The CONFIGURED DSN -- NOT the database the suite runs in (issue 153).
 
     Tests that need a DSN for the migrated database (a CLI, a tool, a second
-    connection) want `_migrated`; this one only reaches the database used to run
-    CREATE/DROP DATABASE for the session copy.
+    connection) want `_migrated`. This one is where `_migrated` runs CREATE/DROP
+    DATABASE for the session copy, and what test_db.py's connect smoke test reaches.
     """
     # Skipping locally is a convenience; skipping in CI is a trap. Over half
     # the suite is DB-gated -- every schema, trigger, floor, writer and
@@ -129,15 +130,16 @@ def _dsn():
 _MAX_IDENTIFIER_BYTES = 63
 
 
-def session_dsn(dsn, pid):
+def session_dsn(dsn, pid, token):
     """PURE: (database name, DSN) for THIS pytest session's private database (issue 153).
 
-    The name is the configured database's name plus `_pid<pid>`, so each process gets
-    its own and a leftover one says where it came from. Every other connection
-    parameter is kept. A DSN with no dbname (libpq then defaults to the user name)
-    uses `drugref_test` as the base.
+    The name is the configured database's name plus `_pid<pid>_<token>`. The pid says
+    which process a leftover one came from; the random token keeps two sessions apart
+    when the pid alone cannot (two containers sharing one server are both pid 7).
+    Every other connection parameter is kept. A DSN with no dbname (libpq then
+    defaults to the user name) uses `drugref_test` as the base.
     """
-    suffix = f"_pid{pid}"
+    suffix = f"_pid{pid}_{token}"
     base = conninfo_to_dict(dsn).get("dbname") or "drugref_test"
     # Cut the BASE, never the suffix: the suffix is what keeps two sessions apart.
     base = base.encode()[:_MAX_IDENTIFIER_BYTES - len(suffix)].decode(errors="ignore")
@@ -166,11 +168,10 @@ def _migrated(_dsn):
     to run CREATE/DROP DATABASE, and its contents are never touched.
 
     The DSN's role therefore needs CREATEDB (the `postgres` superuser in both the
-    documented local DSN and CI has it). The leading DROP clears a database left by a
-    killed session whose pid has been reused.
+    documented local DSN and CI has it). A session killed before teardown leaves its
+    database behind; `DROP DATABASE` it by hand.
     """
-    name, migrated_dsn = session_dsn(_dsn, os.getpid())
-    _drop_database(_dsn, name)
+    name, migrated_dsn = session_dsn(_dsn, os.getpid(), uuid.uuid4().hex[:8])
     with psycopg.connect(_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     try:

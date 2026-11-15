@@ -66,36 +66,43 @@ def test_an_empty_dsn_counts_as_missing(empty):
 def test_the_session_database_is_named_after_the_dsns_and_the_process():
     """The name says where it came from (the configured database) and which session
     owns it (the pid), so a leftover one is recognisable in `\\l`."""
-    name, dsn = session_dsn(DSN, pid=4242)
-    assert name == "drugref_test_pid4242"
+    name, dsn = session_dsn(DSN, pid=4242, token="ab12cd34")
+    assert name == "drugref_test_pid4242_ab12cd34"
     assert conninfo_to_dict(dsn) == conninfo_to_dict(DSN) | {"dbname": name}
 
 
 def test_two_sessions_never_share_a_database():
     """THE BUG. Two processes must get two databases, or the race is back."""
-    assert session_dsn(DSN, pid=1)[0] != session_dsn(DSN, pid=2)[0]
+    assert session_dsn(DSN, pid=1, token="t")[0] != session_dsn(DSN, pid=2, token="t")[0]
+
+
+def test_two_sessions_with_the_same_pid_still_get_two_databases():
+    """Two containers sharing one server can both be pid 7. The pid alone would give
+    them one database, so the random token is what keeps them apart."""
+    assert session_dsn(DSN, pid=7, token="aaaa")[0] != session_dsn(DSN, pid=7, token="bbbb")[0]
 
 
 def test_a_long_database_name_is_cut_to_postgres_identifier_limit():
     """PostgreSQL silently truncates identifiers past 63 bytes, so two long names that
-    differ only in the pid suffix would collapse into ONE database. The suffix must
+    differ only in the suffix would collapse into ONE database. The suffix must
     survive the cut, so the base is what gets shortened."""
     long_dsn = "dbname=" + "x" * 80 + " user=postgres"
-    name, _ = session_dsn(long_dsn, pid=99999)
+    name, _ = session_dsn(long_dsn, pid=99999, token="ab12cd34")
     assert len(name.encode()) <= 63
-    assert name.endswith("_pid99999")
+    assert name.endswith("_pid99999_ab12cd34")
 
 
 def test_a_dsn_without_a_dbname_still_gets_a_session_database():
     """libpq defaults the database to the user name; the session copy needs a base
     name of its own rather than a KeyError."""
-    name, _ = session_dsn("host=localhost user=postgres", pid=7)
-    assert name == "drugref_test_pid7"
+    name, _ = session_dsn("host=localhost user=postgres", pid=7, token="t")
+    assert name == "drugref_test_pid7_t"
 
 
-def test_the_suite_runs_in_its_own_database_not_the_configured_one(conn, _dsn):
-    """End to end: the database `conn` is in is NOT the one DRUGREF_TEST_DSN names.
-    If this fails, every session is back on one shared schema."""
+def test_the_suite_runs_in_its_own_database_not_the_configured_one(conn, _dsn, _migrated):
+    """End to end: the database `conn` is in is NOT the one DRUGREF_TEST_DSN names,
+    and it is this process's. If this fails, every session is back on one shared schema."""
     (current,) = conn.execute("SELECT current_database()").fetchone()
     assert current != conninfo_to_dict(_dsn).get("dbname")
-    assert current == session_dsn(_dsn, pid=os.getpid())[0]
+    assert current == conninfo_to_dict(_migrated)["dbname"]
+    assert f"_pid{os.getpid()}_" in current
