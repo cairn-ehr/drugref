@@ -449,3 +449,21 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
                 # columns. Same flake this ORDER BY was widened once before to prevent.
                 "ORDER BY target_table, subject_moiety, object_uuid, "
                 "relationship, subject_class").fetchall()]
+
+
+def orphaned_interaction_grades(orphans: list[UnresolvedTarget],
+                                subjects: set[uuid.UUID]) -> list[UnresolvedTarget]:
+    """The orphans that make a moiety's curated interaction list INCOMPLETE (#121).
+
+    PURE: it filters what `unresolved_targets` already read, so a consumer asks the view
+    once and this function decides which rows concern the drugs in front of the user.
+
+    MOIETY GRAIN ONLY, and the narrowing is what keeps the banner true. Only
+    `curated_ddi_pair`'s moiety-grain half reaches a grade through the rebuildable
+    candidate (an INNER JOIN to `ddi_candidate_pair`), so only a `curated_interaction`
+    orphan vanishes from the read. The class-grain half expands class membership
+    directly and still renders its grade; a `curated_condition` ruling is not an
+    interaction grade at all. Filtering on `target_table`, as `UnresolvedTarget` asks.
+    """
+    return [o for o in orphans
+            if o.target_table == "curated_interaction" and o.subject_moiety in subjects]

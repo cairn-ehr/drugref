@@ -2274,13 +2274,16 @@ does not apply the precedent by analogy.
 ungraded drug — **the one with a harm direction**; needs a registry-existence reader and `curated_read.py` is
 scoped to the overlay, `classes.py` declares itself a writer, so placement is the open question ·
 [#121](https://github.com/cairn-ehr/drugref/issues/121) an orphaned curated grade reads as "no curated grade"
-(pre-existing; `curated_target_unresolved` already detects it *for the operator*) ·
+(pre-existing; `curated_target_unresolved` already detects it *for the operator*) — **FIXED (2026-11-15)**:
+`drugref interactions` now banners `INCOMPLETE` from `curation.orphaned_interaction_grades` ·
 [#122](https://github.com/cairn-ehr/drugref/issues/122) all four `UndefinedTable` guards assert one cause as
 fact, and `cli.main` prints only the outer message so `__cause__` reaches nobody — worst case is
 self-referential, since a lost `severity_kind` is one of the faults this very view reports ·
 [#123](https://github.com/cairn-ehr/drugref/issues/123) the detector sweeps 2 of the 5 tables carrying a
 `severity_kind` FK; the status line is now labelled `(DDI grain)` so a bounded check stops reading as an
-all-clear.
+all-clear. **CLOSED (2026-11-15) by option 2**: `tests/test_unrankable_severity_reach.py` fails if any view
+ranking `severity_rank` reads an FK table the sweep skips (there are SIX FK tables, not five:
+`ddi_source_severity` is exempt in that test, with its reason stated).
 
 ### Re-verified after the edits
 
@@ -6700,6 +6703,17 @@ modules' 48 tests and the suite total unchanged).
 **[#153](https://github.com/cairn-ehr/drugref/issues/153)** (two concurrent pytest sessions on one database wipe
 each other's schema) **FIXED** by the per-session test database: `conftest._migrated` creates, migrates and drops
 `<dbname>_pid<pid>_<token>` per session (§ "How to run / test"; +6 tests, 3406 → 3412).
+**The agent-debt round (2026-11-15, no migration)** —
+**[#121](https://github.com/cairn-ehr/drugref/issues/121)** **FIXED**: a moiety-grain grade whose candidate a
+re-ingest dropped vanished from `curated_ddi_pair` (an INNER JOIN to `ddi_candidate_pair`), and `drugref
+interactions` read "no curated grade", in the pair form even "an ABSENT RULE". The pure filter
+`curation.orphaned_interaction_grades` keeps the `curated_interaction` orphans of the asked subjects only. The
+class-grain half reads membership directly, so its orphans still render. The command banners `INCOMPLETE` and
+withholds the absent-rule sentence. It is subject-level rather than pair-level, which over-warns: the safe
+direction. **[#123](https://github.com/cairn-ehr/drugref/issues/123)** **CLOSED** by a catalogue test (option 2,
+above). **[#224](https://github.com/cairn-ehr/drugref/issues/224)**: the rule-4 checked no-match (cephalexin /
+perindopril vs an amoxicillin allergen) is now tested; the issue's comment and docstring items were already done.
++8 tests, 3412 → 3420.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6885,7 +6899,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3412 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3420 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
