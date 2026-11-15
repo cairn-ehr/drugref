@@ -18,12 +18,12 @@
 and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (`db/079`, agent-only):** **#255:** a class-grain orphan banners only when an asked drug is among
-its subject OR partner members (or when it reaches nobody). `db/079` lifts the member expansion into
-`class_rule_member` (read by `curated_ddi_pair`, rows unchanged) and seeds `ci_class_pair_subtree` from
-`curated_class_interaction` too, without which an orphan expands to nobody. +5 tests. **Filed #256** (a grade
-also vanishes when a member leaves the class or a deny cuts it; nothing reports that). `ruff format` is NOT
-applied here; match the hand style. **Do not add `-p no:cacheprovider` to a full run** (`test_suite_count.py`
-then fails two tests that are not real). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.**
+its subject OR partner members, or when either side reaches nobody (no `db/079` → every class orphan bannered).
+`db/079` lifts the member expansion into `class_rule_member` (read by `curated_ddi_pair`, rows unchanged) and seeds
+`ci_class_pair_subtree` from `curated_class_interaction` too, without which an orphan expands to nobody. +11 tests.
+**Filed #256** (a grade also vanishes when a member leaves the class or a deny cuts it) and **#258** (a drug
+that alone left a class is not bannered). `ruff format` is NOT applied here; match the hand style. **Never
+VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run** (two suite-count tests fail).
 
 **⇒ NEW: #244** (brand → composition: *Augmentin* finds nothing, so its amoxicillin is never allergy-checked).
 Owner design pass; SPL (public domain, on disk) has brand names + ingredient UNIIs, not Australian-only brands.
@@ -79,7 +79,7 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#121,
-#123 CLOSED** (PR #254); **#255 closes on this PR; new: #256.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
+#123 CLOSED** (PR #254); **#255 closes on this PR; new: #256, #258.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.**
 FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted
 by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #104, #94. Before

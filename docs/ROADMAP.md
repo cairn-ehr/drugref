@@ -1478,7 +1478,7 @@ PROJECT-NOTES § "The standing open-issue ledger".
 ### Class-orphan narrowing (#255) ✅ DONE (2026-11-16) — `db/079`
 `drugref interactions` bannered a class-grain orphan for every drug. `db/079` moves the class rule's member
 expansion into a view (`class_rule_member`) and seeds the class walk from the curated overlay too, so the banner
-now fires only for drugs the rule concerns (or for everyone, when it reaches nobody). PROJECT-NOTES § "The standing
+now fires only for drugs the rule concerns (or for everyone, when either side reaches nobody). PROJECT-NOTES § "The standing
 open-issue ledger".
 
 ### Slice 6 — HTTP public API

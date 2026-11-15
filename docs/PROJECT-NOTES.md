@@ -6728,12 +6728,16 @@ one CTE. **Lifting alone would not have worked**: `ci_class_pair_subtree` took i
 `curated_class_interaction`'s two classes: still one walk, no root added on a healthy database, and the two
 detectors reading the walk (`class_pair_rule_reach`, `gap_unreviewed_expansion_root`) are driven by
 `class_pair_contraindication` and gain no rows. `class_grain_read.class_rules_reaching(conn, moieties)` returns the
-live rules whose subject OR partner members meet the asked drugs, **plus any rule reaching nobody** (its concern is
-unknowable, so it keeps #121's safe direction). It runs only when a class orphan exists; its own guard names
-`db/079`. Mutation-checked: dropping the overlay seed turns two tests red. Not done, **filed
+live rules whose subject OR partner members meet the asked drugs, **plus any rule with EITHER side reaching nobody**
+(that side's concern is unknowable, so it keeps #121's safe direction; per side because the likeliest orphan is one
+class retired upstream, which drops the candidate and that class's members together). It runs only when a class
+orphan exists; **without `db/079` the command keeps every class orphan** (the pre-#255 banner, exit 3) and says why
+on stderr, rather than aborting after the list has printed. Filed by the pre-merge review:
+**[#258](https://github.com/cairn-ehr/drugref/issues/258)**, membership is read as it is now, so a drug that alone
+left a class that keeps other members is not bannered (needs membership history). Mutation-checked: dropping the overlay seed turns two tests red. Not done, **filed
 [#256](https://github.com/cairn-ehr/drugref/issues/256)** (the issue's last paragraph): a grade also drops out
 when the candidate survives but a partner leaves the class or an expansion-policy deny cuts it;
-`curated_target_unresolved` does not see that. +5 tests, 3425 → 3430.
+`curated_target_unresolved` does not see that. +11 tests, 3425 → 3436.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6919,7 +6923,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3430 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3436 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

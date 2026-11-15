@@ -471,9 +471,9 @@ def orphaned_interaction_grades(orphans: list[UnresolvedTarget],
     A MOIETY-GRAIN ORPHAN is matched on its subject. A CLASS-GRAIN ORPHAN is matched on
     its natural key against `class_rules_reaching` -- the caller's
     `class_grain_read.class_rules_reaching(conn, subjects)`, which expands each rule's
-    members (db/079, #255) and also returns a rule reaching nobody, whose concern is
-    unknowable. Required, not defaulted: an empty default would silently drop every
-    class orphan, the under-warning direction.
+    members (db/079, #255) and also returns a rule with a side reaching nobody, whose
+    concern is unknowable. Required, not defaulted: an empty default would silently
+    drop every class orphan, the under-warning direction.
     """
     return [o for o in orphans
             if (o.target_table == "curated_class_interaction"

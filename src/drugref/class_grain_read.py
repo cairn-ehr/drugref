@@ -180,9 +180,16 @@ def class_rules_reaching(conn: psycopg.Connection,
     """The live class rules that MAY CONCERN `moieties`, by natural key (#255).
 
     A rule concerns a drug when the drug is among its subject OR partner members in
-    `class_rule_member` (db/079). A rule that reaches NOBODY is returned too: its
-    members are unknowable from here, so whom it concerned cannot be ruled out, and
-    `drugref interactions` keeps #121's safe direction for it.
+    `class_rule_member` (db/079). A rule with EITHER SIDE reaching nobody is returned
+    too: that side's members are unknowable from here, so whom it concerned cannot be
+    ruled out, and `drugref interactions` keeps #121's safe direction for it. Per side,
+    not per rule, because the likeliest orphan is a class retired upstream: the same
+    re-ingest drops the candidate AND that one class's memberships, leaving the other
+    side populated and the retired side's former members otherwise unbannered.
+
+    shortcut: membership is read as it is NOW, not as it was when the ruling was made,
+    so a drug that alone left a class which keeps other members is not bannered; fixing
+    that needs historical membership (#258).
 
     Asked only when `drugref interactions` has a class-grain orphan in hand (expected
     never), so its cost is not on the ordinary read. Raises UndefinedTable uncaught
@@ -198,6 +205,11 @@ def class_rules_reaching(conn: psycopg.Connection,
         "                AND m.moiety_uuid = ANY(%s)) "
         f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
         "                  WHERE m.curated_class_interaction_id "
-        "                        = cci.curated_class_interaction_id))",
+        "                        = cci.curated_class_interaction_id "
+        "                    AND m.side = 'subject') "
+        f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
+        "                  WHERE m.curated_class_interaction_id "
+        "                        = cci.curated_class_interaction_id "
+        "                    AND m.side = 'partner'))",
         (list(moieties),)).fetchall()
     return {tuple(r) for r in rows}
