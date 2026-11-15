@@ -164,3 +164,12 @@ def test_fold_view_shape(conn, m):
         "WHERE moiety_uuid = %s", (m["clemizole penicillin"],)).fetchall())
     assert rows == {(m["clemizole penicillin"],), (m["penicillin g"],),
                     (m["clemizole"],)}
+
+
+@pytest.mark.parametrize("prescribed", ["cephalexin", "perindopril"])
+def test_moiety_allergen_with_placed_prescribed_outside_its_group(conn, m, prescribed):
+    # Rule 4's checked no-match (#224): both sides placed, the allergen's group does
+    # not hold the prescribed drug. Cephalexin is the case-(c) gap (no cross-reactivity
+    # rule yet), so this pins today's answer, not a claim that it is safe.
+    a = allergy_read.check(conn, m[prescribed], m["amoxicillin"])
+    assert (a.outcome, a.reason, a.matches) == ("no-match", None, ())

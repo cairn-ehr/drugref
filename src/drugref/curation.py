@@ -449,3 +449,31 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
                 # columns. Same flake this ORDER BY was widened once before to prevent.
                 "ORDER BY target_table, subject_moiety, object_uuid, "
                 "relationship, subject_class").fetchall()]
+
+
+def orphaned_interaction_grades(orphans: list[UnresolvedTarget],
+                                subjects: set[uuid.UUID]) -> list[UnresolvedTarget]:
+    """The orphans that may make a moiety's curated interaction list INCOMPLETE (#121).
+
+    PURE: it filters what `unresolved_targets` already read, so a consumer asks the
+    view once and this function decides which rows may concern the drugs in front of
+    the user.
+
+    BOTH INTERACTION GRAINS VANISH, so both are kept. Each half of `curated_ddi_pair`
+    INNER JOINs its rebuildable candidate: the moiety grain through
+    `ddi_candidate_pair`, the class grain through `class_pair_contraindication`
+    (db/038). An orphan of either is a grade the read silently drops. A
+    `curated_condition` ruling is not an interaction grade, so it is the one arm left
+    out. Filtering on `target_table`, as `UnresolvedTarget` asks.
+
+    A MOIETY-GRAIN ORPHAN is matched on its subject. A CLASS-GRAIN ORPHAN is kept
+    whatever `subjects` holds: its drugs are the expanded members of two classes, and
+    that expansion lives in CTEs inside `curated_ddi_pair`, not in anything this reader
+    can ask. Keeping it over-warns, which is this tool's safe direction.
+    shortcut: class-grain orphans are not narrowed to the asked drugs; upgrade when the
+    member expansion is a view of its own (#255).
+    """
+    return [o for o in orphans
+            if o.target_table == "curated_class_interaction"
+            or (o.target_table == "curated_interaction"
+                and o.subject_moiety in subjects)]

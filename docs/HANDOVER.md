@@ -13,27 +13,28 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/per-session-test-db` (from `main` after PR #252, MERGED: #251 CLOSED). PR open to `main`;
-closes #153. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test"
-and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/agent-debt-round` (from `main` after PR #253, MERGED: #153 CLOSED). PR open to `main`;
+closes #121 and #123, part of #224. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES §
+"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (tests only, no migration, no figure moves):** **#153:** `conftest._migrated` no longer drops
-the schema on the `DRUGREF_TEST_DSN` database. Each session creates `<dbname>_pid<pid>_<token>` beside it,
-migrates it, and drops it at teardown; the random token keeps apart two containers whose pids collide. **Two full
-runs at once on one DSN: both green (3412 each), no leftover database.** A test needing the migrated database's DSN
-takes `_migrated`, not `_dsn`. +6 tests. **From PR #250's round:** `db/078`'s `spl_run_census_class_group_whole`
-is `NOT VALID` on purpose. **Never VALIDATE it** (PROJECT-NOTES § "The class-exclusion census"). Still not run: a
-real SPL ingest storing `class_exclusions_unused` (today's value is 0, read off the registry).
-`ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
-`test_suite_count.py` then fails two tests that are not real.
+**⇒ THIS ROUND (no migration; owner chose agent-only debt):** **#121:** `drugref interactions` banners
+`INCOMPLETE` (exit 3) when a live grade that may concern the asked drug(s) is orphaned (class-grain: every drug,
+until #255); the pair form then withholds "an ABSENT RULE"; a consumer showing `effective_grades_for` to a person
+must also ask `curation.orphaned_interaction_grades`. **#123:** a catalogue test fails if a view ranking
+`severity_rank` reads (through any views) an FK column the sweep skips. **#224:** rule-4 no-match tested. +13 tests.
+`ruff format` is NOT applied here; match the hand style. **Do not add `-p no:cacheprovider` to a full run**
+(`test_suite_count.py` then fails two tests that are not real). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.**
+
+**⇒ NEW: #244** (brand → composition: *Augmentin* finds nothing, so its amoxicillin is never allergy-checked).
+Owner design pass; SPL (public domain, on disk) has brand names + ingredient UNIIs, not Australian-only brands.
 
 **⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
 from #227: glance at the exclusions and the 12 shadowed names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
-cross-reactivity (cephalosporins, or any other beta-lactam, e.g. carbapenems). Case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule
-exists yet). `unplaced` means "not checked" (30% of prescribable moieties). The group is `structural-seed`, not
-clinically reviewed, and the read says so.
+cross-reactivity: case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule yet,
+for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieties). The group is
+`structural-seed`, not clinically reviewed, and the read says so.
 
 ## ⇒ DO THIS NEXT
 
@@ -77,13 +78,12 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243 CLOSED**
-(PR #247). **#248, #249 CLOSED** (PR #250). **#251 CLOSED** (PR #252). **#153 closes on this PR.** **#214 open;
-filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class
-mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67**
-(salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124,
-#121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17, the three rule-6
-deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#153 CLOSED**
+(PR #253). **#121, #123 close on this PR; #224 partly done.** **New: #244.** **#214 open; filed #245, #246.**
+**Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.**
+FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted
+by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #104, #94. Before
+production: re-run every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

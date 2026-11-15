@@ -1470,6 +1470,11 @@ names, migrates it, and drops it at teardown. Before this, the suite dropped the
 (parallel review agents, two terminals) failed in ways that looked like real bugs. Two full runs at once are now
 green. PROJECT-NOTES § "How to run / test".
 
+### Agent-debt round (#121, #123, part of #224) ✅ DONE (2026-11-15) — no migration
+`drugref interactions` now says when a curated grade is missing from its list. Before this, a re-ingest that dropped
+the candidate made a judged pair read "no curated grade". A catalogue test now holds #123's severity-sweep boundary.
+PROJECT-NOTES § "The standing open-issue ledger".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.
