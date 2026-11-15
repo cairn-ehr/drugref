@@ -6559,6 +6559,35 @@ R19's estimate) and "consider alternative therapy" as an avoid phrasing. Both mo
 (`test_spl_class_evidence.py`); the forgotten-count and negative-CHECK parametrisations gained the new column.
 Test DB: `drugref_test_hygiene214`.
 
+## The class-exclusion census (#248, #249, 2026-11-15) — `db/078`, checked on `drugref_excl248`, suite 3397 → 3405
+
+**Both are PR #247 review follow-ups. No figure moves.**
+
+- **#248:** `EXCLUDED_CLASSES` and `KEPT_PE_CLASSES` are keyed by exact class name. If a release renames one of those
+  classes, its entry matches nothing and nothing says so. `spl_class_vocab.unused_exclusions` (pure) names the
+  entries that no `substance_class` row carries. `class_vocabulary_for_run` stores the result on
+  `ClassKeyCounts.exclusions_unused`, the ingest's registry line prints a WARNING when it is non-empty, and
+  `SplSummary.class_exclusions_unused` (no default) carries it into the census and `drugref status`. This is the
+  twin of `official_name_exclusions_unused`. It counts and warns but does not refuse: a small test fixture
+  carries none of the four classes, so a refusal would fire on almost every test ingest.
+- **#249:** `db/078` adds the column and **`spl_run_census_class_group_whole`**, a `num_nulls(...) IN (0, 5)` over
+  db/072's three class drops, db/077's `non-` drop and the new column. **It is `NOT VALID` on purpose.** The rows
+  on disk are honest "not measured" history and would fail it: on `drugref_excl248`, run 19 (boundary 64,
+  `non-` 578, written before `db/078`) fails `VALIDATE`. Every INSERT from `db/078` on is checked. **Never `VALIDATE
+  CONSTRAINT` it.** db/043 refused `NOT VALID` for a different case (wrong rows tolerated). The name sorts after
+  db/072's `class_drops_together`, and Postgres evaluates CHECKs by name, so the tests that name the refusing
+  constraint still name db/072's.
+- **The `status` guard now names `db/078`** (it names the newest migration the census reader selects).
+
+**Checked** (`drugref_excl248` = `createdb -T drugref_hygiene214`, migrated to `db/078`; no ingest): the migration
+applies over runs 11, 12 and 19, and `unused_exclusions` on the live registry is `()`, so today's count is 0. **Not
+run:** a real SPL ingest storing the count. The end-to-end census test stores it from a fixture.
+
+**Tests (+8):** `unused_exclusions` (`test_spl_class_vocab.py`); the run's count and WARNING
+(`test_spl_class_evidence.py`); db/078's group CHECK (each half-measured shape), the new column's floor, and the
+`NOT VALID` carve-out (`test_spl_run_census.py`); the forgotten-count parametrisation (`test_spl_run.py`). Test DB:
+`drugref_test_excl248`.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6658,7 +6687,7 @@ X effects", which R19's head rule drops, and "consider alternative therapy" as a
 and **[#246](https://github.com/cairn-ehr/drugref/issues/246)** (a class word continuing into a differently spelled
 longer class: bile acid sequestering, catecholamine-depleting) — § "The class-hygiene round". PR #247's review
 filed **[#248](https://github.com/cairn-ehr/drugref/issues/248)** (name-keyed class exclusions go stale silently on
-a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK).
+a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK), **both FIXED by the class-exclusion census** (`db/078`, § of that name).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6844,7 +6873,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3397 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3405 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7354,6 +7383,9 @@ ran in CI and `ruff` was not even a project dependency.
   `createdb -T drugref_ambig132`, one plain `ingest fda-cyp`, then `TRUNCATE moiety_official_name`, one refused
   ingest and one `--allow-resolution-drop` ingest. **Its official names are gone, so never use it as a template.**
   `drugref_test_names243` was this branch's test DB.
+- **`drugref_excl248` is the class-exclusion census's check database** (2026-11-15, #248/#249): `createdb -T
+  drugref_hygiene214`, migrated to `db/078`, no ingest. It shows `db/078`'s `NOT VALID` CHECK standing over run 19,
+  which `VALIDATE` rejects. `drugref_test_excl248` was this branch's test DB. **Never patch it.**
 - **`drugref_ambig132` is the FDA-CYP resolution round's verification database** (2026-11-14, #132, #135):
   `createdb -T drugref_role134`, migrated to `db/075`, one `ingest fda-cyp` (run 2026-05-29T14:00).
   `drugref_test_floor135` was this branch's test DB. **Never patch it.**

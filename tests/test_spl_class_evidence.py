@@ -300,7 +300,23 @@ def test_the_class_key_counts_say_NONE_not_zero_when_p1_was_skipped():
     (R16) always runs, so it stays a number."""
     measured = ce.ClassKeyCounts(5, ["a"], ["b", "c"]).summary_fields()
     assert measured == {"class_keys_shadowed_by_moieties": 1,
-                        "class_keys_shadowed_by_official_names": 2}
+                        "class_keys_shadowed_by_official_names": 2,
+                        "class_exclusions_unused": 0}
     skipped = ce.ClassKeyCounts(5, ["a"], [], official_names_skipped=True)
     assert skipped.summary_fields() == {"class_keys_shadowed_by_moieties": 1,
-                                        "class_keys_shadowed_by_official_names": None}
+                                        "class_keys_shadowed_by_official_names": None,
+                                        "class_exclusions_unused": 0}
+
+
+def test_the_run_counts_and_WARNS_on_class_exclusions_matching_no_class(conn):
+    """#248: a class exclusion whose class is not in the registry (renamed by a
+    release, or a typo) is counted for the census and named in the progress line,
+    as `official_name_exclusions_unused` does for the official-name exclusions.
+    Here only 'Hormones' exists, so the other three named entries are unused."""
+    w.klass(conn, _run(conn), "Hormones", source="MeSH", concept_type="PA")
+    _, keys = ce.class_vocabulary_for_run(conn, [], [])
+    assert keys.exclusions_unused == (
+        "Antacid [PE]", "Electrolyte [EPC]", "Ophthalmic Solutions")
+    assert keys.summary_fields()["class_exclusions_unused"] == 3
+    assert "WARNING" in str(keys) and "'Electrolyte [EPC]'" in str(keys)
+    assert "WARNING" not in str(ce.ClassKeyCounts(0, [], []))

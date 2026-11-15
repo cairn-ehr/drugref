@@ -22,7 +22,7 @@ RUN_CENSUS_TABLE = "drugref.spl_run_census"
 #: reads each one off the summary by this name, so no column can be filled from a
 #: neighbouring field (17 same-typed counts by position would invite exactly that).
 #: db/057's five, then db/072's class-pass drops (#215) and official names (#229),
-#: then db/077's 'non-' drop (#214).
+#: then db/077's 'non-' drop (#214) and db/078's unused class exclusions (#248).
 CENSUS_COLUMNS = (
     "records_read", "labels", "records_field_absent", "records_field_blank",
     "labels_keyed_on_document_id",
@@ -31,7 +31,7 @@ CENSUS_COLUMNS = (
     "official_names_adopted", "official_names_already_named",
     "official_names_shadowed", "official_names_ambiguous", "official_names_excluded",
     "official_names_unfoldable", "official_name_exclusions_unused",
-    "class_spans_dropped_after_non",
+    "class_spans_dropped_after_non", "class_exclusions_unused",
 )
 
 
@@ -86,6 +86,8 @@ class RunCensus:
     official_name_exclusions_unused: int | None
     # db/077's 'non-' drop (#214); None on every earlier run.
     class_spans_dropped_after_non: int | None
+    # db/078's unused class exclusions (#248); None on every earlier run.
+    class_exclusions_unused: int | None
 
 
 def recent_run_census(conn: psycopg.Connection, *, limit: int = 2) -> list[RunCensus]:

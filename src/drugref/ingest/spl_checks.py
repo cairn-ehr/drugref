@@ -134,6 +134,8 @@ class SplSummary:
     class_spans_dropped_on_a_non_drug_head: int
     #: #214: class (span, class) rows after 'non-' (the complement group).
     class_spans_dropped_after_non: int
+    #: #248: named class exclusions matching no class row (a renamed class).
+    class_exclusions_unused: int
     #: #229: what became of the UNII official names the drug pass may adopt as
     #: moiety keys (#213; `spl_official_names.OfficialNameCounts`). None, not 0,
     #: when no UNII_Names file was given: nothing was checked, so nothing measured.

@@ -390,13 +390,13 @@ def print_spl_census_block(conn) -> None:
     LAST, AND IT RAISES like the other guarded blocks rather than degrading like the
     first: nothing is printed after it, so aborting here costs no other block.
 
-    THE GUARD NAMES THE NEWEST MIGRATION THE READER SELECTS, db/077 (#214), not
-    db/057 or db/072: a db/072-076 database fails one column short, and a guard
+    THE GUARD NAMES THE NEWEST MIGRATION THE READER SELECTS, db/078 (#248), not
+    db/057 or db/072: a db/072-077 database fails one column short, and a guard
     naming an applied migration would tell its operator this is "NOT a missing
     migration". Bump it whenever CENSUS_COLUMNS gains a column.
     """
     with migration_guard.guarded(
-            conn, relations=(spl_census.RUN_CENSUS_TABLE,), migration="077",
+            conn, relations=(spl_census.RUN_CENSUS_TABLE,), migration="078",
             consequence="no SPL release can be compared with the one before it"):
         rows = spl_census.recent_run_census(conn)
     print()
@@ -444,7 +444,8 @@ _DB072_GROUPS = (
         ("class_spans_dropped_on_a_non_drug_head", "on a non-drug head"),
         ("class_spans_dropped_after_non", "after non-"),
         ("class_keys_shadowed_by_moieties", "shadowed by moieties"),
-        ("class_keys_shadowed_by_official_names", "shadowed by official names"))),
+        ("class_keys_shadowed_by_official_names", "shadowed by official names"),
+        ("class_exclusions_unused", "exclusions unused"))),
     ("official names", (
         ("official_names_adopted", "adopted"),
         ("official_names_already_named", "already named"),

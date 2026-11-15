@@ -2,7 +2,8 @@
 from drugref.ingest import spl_match
 from drugref.ingest.spl_class_vocab import (
     FORM_LABEL_ORDER, FORM_NUMBER, FORM_STORED, class_match_keys,
-    fda_cyp_label_orders, is_matchable, number_variants, strip_axis_tag)
+    fda_cyp_label_orders, is_matchable, number_variants, strip_axis_tag,
+    unused_exclusions)
 
 
 def test_strip_axis_tag():
@@ -103,3 +104,17 @@ def test_an_allergy_group_is_not_matchable():
     # 'AG' classes are drugref's own structural seeds, not a vocabulary labels write.
     assert not is_matchable("DRUGREF-ALLERGY", "AG")
     assert not is_matchable("DRUGREF-ALLERGY", "AG", "Penicillins (allergy group)")
+
+
+def test_unused_exclusions_names_every_named_entry_no_class_row_carries():
+    """#248: `EXCLUDED_CLASSES` and `KEPT_PE_CLASSES` are keyed by exact name, so a
+    renamed class makes its entry match nothing and no signal fires: a renamed
+    'Electrolyte [EPC]' brings its ~2,349 false spans back, a renamed 'Antacid [PE]'
+    drops antacid advice for algeldrate and two more. A row on another axis or
+    source is not the entry (the namesake check `is_matchable` makes too)."""
+    rows = [("MeSH", "PA", "Hormones"), ("MED-RT", "EPC", "Electrolyte [EPC]"),
+            ("MED-RT", "PE", "Antacid [PE]"), ("MED-RT", "EPC", "Ophthalmic Solutions")]
+    assert unused_exclusions(rows) == ("Ophthalmic Solutions",)
+    assert unused_exclusions(rows + [("MeSH", "PA", "Ophthalmic Solutions")]) == ()
+    assert unused_exclusions([]) == (
+        "Antacid [PE]", "Electrolyte [EPC]", "Hormones", "Ophthalmic Solutions")
