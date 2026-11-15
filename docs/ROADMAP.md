@@ -1475,6 +1475,12 @@ green. PROJECT-NOTES § "How to run / test".
 the candidate made a judged pair read "no curated grade". A catalogue test now holds #123's severity-sweep boundary.
 PROJECT-NOTES § "The standing open-issue ledger".
 
+### Class-orphan narrowing (#255) ✅ DONE (2026-11-16) — `db/079`
+`drugref interactions` bannered a class-grain orphan for every drug. `db/079` moves the class rule's member
+expansion into a view (`class_rule_member`) and seeds the class walk from the curated overlay too, so the banner
+now fires only for drugs the rule concerns (or for everyone, when it reaches nobody). PROJECT-NOTES § "The standing
+open-issue ledger".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

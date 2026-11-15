@@ -384,6 +384,10 @@ def test_apply_migrations_is_idempotent(conn):
         "moiety_official_name", "moiety_name",
         # db/071 (#231): MeSH entry terms (BAN/AAN names), search-only.
         "moiety_mesh_synonym",
+        # db/079 (#255): the class grain's member expansion, lifted out of
+        # curated_ddi_pair's CTEs so `drugref interactions` can ask which drugs a
+        # class-grain orphan concerns.
+        "class_rule_member",
     }
 
 
@@ -796,7 +800,8 @@ def test_every_guarded_call_site_names_a_migration_that_exists(conn):
                "038": "curated_unrankable_severity (cli_status.py) AND "
                       "curated_ddi_pair_effective (cli_interactions.py)",
                "001": "substance_moiety (cli_interactions.py)",
-               "054": "loaded_release.duration_measured (cli_status.py)"}
+               "054": "loaded_release.duration_measured (cli_status.py)",
+               "079": "class_rule_member (cli_interactions.py)"}
     shipped = {path.name.split("_")[0] for path in db.migration_dir().glob("*.sql")}
     for number, site in sorted(numbers.items()):
         assert number in shipped, f"{site} guards db/{number}, which is not in db/"

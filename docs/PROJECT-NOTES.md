@@ -6708,16 +6708,32 @@ each other's schema) **FIXED** by the per-session test database: `conftest._migr
 vanished from `curated_ddi_pair` (each half INNER JOINs its candidate: `ddi_candidate_pair` for the moiety grain,
 `class_pair_contraindication` for the class grain), and `drugref interactions` read "no curated grade", in the
 pair form even "an ABSENT RULE". The pure filter `curation.orphaned_interaction_grades` keeps the
-`curated_interaction` orphans of the asked subjects and **every** live `curated_class_interaction` orphan (its
-member expansion is CTE-only inside the view; narrowing is [#255](https://github.com/cairn-ehr/drugref/issues/255)).
+`curated_interaction` orphans of the asked subjects and, since #255 (below), the `curated_class_interaction`
+orphans whose members include an asked drug.
 The command banners `INCOMPLETE`, withholds the absent-rule sentence and exits **3**
-(`cli_interactions.EXIT_INCOMPLETE`). Subject-level and class-wide, so it over-warns: the safe direction. The
+(`cli_interactions.EXIT_INCOMPLETE`). Subject-level, so it over-warns: the safe direction. The
 banner says "ruling(s)", because the view also carries `applies = false` rows the list never shows.
 **[#123](https://github.com/cairn-ehr/drugref/issues/123)** **CLOSED** by a catalogue test (option 2, above),
 transitive through views and column-precise. **[#224](https://github.com/cairn-ehr/drugref/issues/224)**: the
 rule-4 checked no-match (cephalexin / perindopril vs an amoxicillin allergen) is now tested; the issue's comment
 and docstring items were already done.
 +13 tests, 3412 → 3425.
+**The class-orphan narrowing (2026-11-16, `db/079`)** —
+**[#255](https://github.com/cairn-ehr/drugref/issues/255)** **FIXED**: a class-grain orphan was bannered for
+every drug, because its member expansion lived only as CTEs inside `curated_ddi_pair`. `db/079` lifts them into
+**`class_rule_member`** (one row per live rule × side × moiety; `side` = `subject`|`partner`; includes
+`applies = false` rules, which `curated_ddi_pair` still filters itself) and `curated_ddi_pair` reads it through
+one CTE. **Lifting alone would not have worked**: `ci_class_pair_subtree` took its roots only from
+`class_pair_contraindication`, so an orphan (its row there gone) expanded to nobody. `db/079` also seeds it from
+`curated_class_interaction`'s two classes: still one walk, no root added on a healthy database, and the two
+detectors reading the walk (`class_pair_rule_reach`, `gap_unreviewed_expansion_root`) are driven by
+`class_pair_contraindication` and gain no rows. `class_grain_read.class_rules_reaching(conn, moieties)` returns the
+live rules whose subject OR partner members meet the asked drugs, **plus any rule reaching nobody** (its concern is
+unknowable, so it keeps #121's safe direction). It runs only when a class orphan exists; its own guard names
+`db/079`. Mutation-checked: dropping the overlay seed turns two tests red. Not done, **filed
+[#256](https://github.com/cairn-ehr/drugref/issues/256)** (the issue's last paragraph): a grade also drops out
+when the candidate survives but a partner leaves the class or an expansion-policy deny cuts it;
+`curated_target_unresolved` does not see that. +5 tests, 3425 → 3430.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6903,7 +6919,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3425 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3430 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

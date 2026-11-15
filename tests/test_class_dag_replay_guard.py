@@ -77,21 +77,30 @@ def test_ci_class_subtree_is_seeded_from_contraindications_alone(conn):
 
 
 def test_the_class_grain_walks_its_own_separately_estimated_view(conn):
-    """`ci_class_pair_subtree` exists, is seeded from the class x class tier, and is what
-    `curated_ddi_pair` actually reads.
+    """`ci_class_pair_subtree` exists, is seeded from the class grain's own tables, and is
+    what the class grain's member expansion actually reads.
 
-    THE NEGATIVE HALF IS THE POINT and it is not over-determined. `curated_ddi_pair` still
-    reaches `ci_class_subtree` transitively through `ddi_candidate_pair` in its moiety-grain
-    half -- that is correct and unchanged -- but a DIRECT reference can only come from
-    `class_dag`, the one line db/034 moved. The positive assertion beside it is what stops
-    the negative passing vacuously: if the view were dropped, renamed, or its rule rebuilt
-    empty, `_reads` would return the empty set and `not in` alone would still be satisfied.
+    THE SEED NAMES BOTH CLASS-GRAIN TABLES SINCE db/079 (#255): the candidate tier AND the
+    curated overlay. A curated rule whose candidate a re-ingest dropped must still expand,
+    or `drugref interactions` could not tell which drugs its missing grade concerns. Still
+    NOT `class_contraindication` -- the moiety grain's root, whose absence here is the
+    db/034 separation.
+
+    `class_rule_member` (db/079) is the one direct reader inside the read path: it holds
+    the member expansion `curated_ddi_pair` used to keep as CTEs, so the view reads the
+    walk through it. THE NEGATIVE HALF IS THE POINT: `curated_ddi_pair` still reaches
+    `ci_class_subtree` transitively through `ddi_candidate_pair` in its moiety-grain half
+    -- correct and unchanged -- but a DIRECT reference would be a merged walk. The
+    positive assertions stop the negatives passing vacuously: a dropped or emptied view
+    makes `_reads` return the empty set, and `not in` alone would still be satisfied.
     """
     assert _reads(conn, "ci_class_pair_subtree") == {
-        "class_pair_contraindication", "class_parent"}
+        "class_pair_contraindication", "curated_class_interaction", "class_parent"}
+    assert "ci_class_pair_subtree" in _reads(conn, "class_rule_member")
     reads = _reads(conn, "curated_ddi_pair")
-    assert "ci_class_pair_subtree" in reads
+    assert "class_rule_member" in reads
     assert "ci_class_subtree" not in reads
+    assert "ci_class_pair_subtree" not in reads
 
 
 def test_class_pair_rule_reach_walks_the_class_grains_view_too(conn):

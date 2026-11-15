@@ -44,7 +44,8 @@ evidence of absence, and the overlay is small and deliberately so.
 """
 import uuid
 
-from drugref import curated_read, curation, migration_guard, registry_read
+from drugref import (class_grain_read, curated_read, curation, migration_guard,
+                     registry_read)
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -130,8 +131,13 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
 
     SUBJECT-LEVEL, NOT PAIR-LEVEL, in the pair form too: a moiety orphan names a CLASS,
     and whether the partner is in it would take a membership read. A class-grain orphan
-    is shown for every drug (see `curation.orphaned_interaction_grades`). Both
-    over-warn, which is this tool's safe direction.
+    is shown when an asked drug is among its subject OR partner members, or when it
+    reaches nobody (see `curation.orphaned_interaction_grades`). Both over-warn, which
+    is this tool's safe direction.
+
+    TWO GUARDED READS, NOT ONE: each guarded block holds exactly one call
+    (`migration_guard.guarded`), and the member read is a different migration
+    (db/079). It runs only when a class-grain orphan exists, which is expected never.
 
     "RULING", NOT "GRADE": the view also carries `applies = false` rulings, which the
     list never shows. "Any grade among them is missing" is true of both.
@@ -139,8 +145,15 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     with migration_guard.guarded(
             conn, relations=(curation.UNRESOLVED_VIEW,), migration="035",
             consequence="drugref cannot tell whether a curated grade is missing here"):
-        orphans = curation.orphaned_interaction_grades(
-            curation.unresolved_targets(conn), subjects)
+        unresolved = curation.unresolved_targets(conn)
+    reaching = set()
+    if any(o.target_table == "curated_class_interaction" for o in unresolved):
+        with migration_guard.guarded(
+                conn, relations=(class_grain_read.RULE_MEMBER_VIEW,), migration="079",
+                consequence="drugref cannot tell which drugs a missing class-rule "
+                            "grade concerns"):
+            reaching = class_grain_read.class_rules_reaching(conn, subjects)
+    orphans = curation.orphaned_interaction_grades(unresolved, subjects, reaching)
     if not orphans:
         return False
     asked = "these drugs" if len(subjects) > 1 else "this drug"

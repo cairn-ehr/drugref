@@ -185,7 +185,8 @@ def effective_grades_for(conn: psycopg.Connection,
     EMPTY IS ALSO NOT "UNGRADED" WHEN A GRADE IS ORPHANED (#121): a re-ingest that drops
     the candidate removes a live grade of either grain from this view. A consumer
     showing this list to a person must also ask `curation.orphaned_interaction_grades`
-    and say the list is incomplete, as `cli_interactions` does.
+    (fed by `class_grain_read.class_rules_reaching` for the class grain, #255) and say
+    the list is incomplete, as `cli_interactions` does.
     """
     return [GradedPair(**dict(zip(_COLUMNS, row, strict=True))) for row in
             conn.execute(_EFFECTIVE_FOR_SUBJECT, (subject_moiety,)).fetchall()]
