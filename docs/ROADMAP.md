@@ -1461,7 +1461,8 @@ differently spelled longer class). PROJECT-NOTES § "The class-hygiene round".
 The SPL ingest counts named class exclusions that match no class row, warns about them, and stores the count in
 the census. A rename upstream can no longer silently re-admit false spans or drop antacid advice. A
 `NOT VALID` CHECK keeps the class-pass census group whole for every new run and leaves the historical rows
-standing. PROJECT-NOTES § "The class-exclusion census".
+standing. PROJECT-NOTES § "The class-exclusion census". Its group-CHECK tests were split into their own module
+afterwards (#251), with the test count unchanged.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

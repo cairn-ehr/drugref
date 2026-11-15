@@ -13,17 +13,16 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-exclusions-unused` (from `main` after PR #247, MERGED). PR open to `main`; closes #248 and
-#249. Schema now ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
-else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/split-spl-run-census-tests` (from `main` after PR #250, MERGED: #248/#249 CLOSED). PR open to
+`main`; closes #251. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test"
+and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (built, tested, checked on real data, docs done):** both are PR #247 review follow-ups, and no figure
-moves. **#248:** the SPL ingest counts named class exclusions (`EXCLUDED_CLASSES`, `KEPT_PE_CLASSES`) that match no
-class row, warns on its registry line, and stores `class_exclusions_unused` in the census and `status`. **#249:**
-`db/078`'s `spl_run_census_class_group_whole` keeps the five class-pass counts whole. It is `NOT VALID` because
-the history it would reject is correct: run 19 on `drugref_excl248`. **Never VALIDATE it.** PROJECT-NOTES § "The
-class-exclusion census". Not run: a real SPL ingest storing the new count (today's value is 0, read off the
-registry).
+**⇒ THIS ROUND (tests only, no figure moves):** **#251:** `tests/test_spl_run_census.py`'s db/072/077/078
+group-CHECK tests moved verbatim to `tests/test_spl_run_census_groups.py`, which imports the shared constants
+and `_run` from the original. 48 tests before and after; full suite green. **From PR #250's round:** `db/078`'s
+`spl_run_census_class_group_whole` is `NOT VALID` on purpose. **Never VALIDATE it** (PROJECT-NOTES § "The
+class-exclusion census"). Still not run: a real SPL ingest storing `class_exclusions_unused` (today's value is 0,
+read off the registry).
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
 `test_suite_count.py` then fails two tests that are not real.
 
@@ -77,8 +76,8 @@ clinically reviewed, and the read says so.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243
-CLOSED** (PR #247). **#248, #249 close on this PR.** **#214 open; filed #245, #246.** **Open from
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243 CLOSED**
+(PR #247). **#248, #249 CLOSED** (PR #250). **#251 closes on this PR.** **#214 open; filed #245, #246.** **Open from
 allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
 names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
 sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
