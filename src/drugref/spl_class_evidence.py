@@ -216,8 +216,9 @@ def class_vocabulary_for_run(
 def load_class_entries(conn: psycopg.Connection) -> list[spl_match.Entry]:
     """One class entry per derived match key, for every class labels may name.
 
-    MED-RT's PK and APC axes, and the named `EXCLUDED_CLASSES`, are skipped
-    (`is_matchable`); FDA-CYP, also 'PK', is kept.
+    MED-RT's PK, APC and PE axes (bar `KEPT_PE_CLASSES`), allergy groups and
+    the named `EXCLUDED_CLASSES` are skipped (`is_matchable`); FDA-CYP, also
+    'PK', is kept.
     `display` is the stored `class_name`, so the vocabulary says what it matched.
     """
     entries = []
@@ -267,8 +268,10 @@ def followed_by_non_drug_head(text: str, char_end: int) -> bool:
 #: Dropped, not re-attributed: turning "non-X" into a statement about the complement
 #: group needs a parent class to subtract from, which is its own issue.
 #: The lookbehind keeps 'anon-' out; 'nonsteroidal' (one word) never ends in a space
-#: or hyphen, so it cannot match either.
-_NON_PREFIX = re.compile(r"(?<![A-Za-z])non[\s-]+\Z", re.IGNORECASE)
+#: or hyphen, so it cannot match either. Typeset dashes (U+2010-2015, minus U+2212,
+#: soft hyphen U+00AD) count as hyphens: the tokeniser splits on them just the same.
+_NON_PREFIX = re.compile(r"(?<![A-Za-z])non[\s\-\u2010-\u2015\u2212\u00ad]+\Z",
+                         re.IGNORECASE)
 
 
 def preceded_by_non(text: str, char_start: int) -> bool:

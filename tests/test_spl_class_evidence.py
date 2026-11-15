@@ -196,6 +196,11 @@ def test_preceded_by_non():
                        ("non benzodiazepine hypnotics", "benzodiazepine"),
                        ("non-insulin dependent", "insulin")):
         assert f(text, text.index(word)), text
+    # The tokeniser splits on every non-alphanumeric, so typeset dashes reach the
+    # class words too: hyphen, non-breaking hyphen, en and em dash, minus, soft hyphen.
+    for dash in ("\u2010", "\u2011", "\u2013", "\u2014", "\u2212", "\u00ad"):
+        text = f"non{dash}depolarizing neuromuscular blockers"
+        assert f(text, text.index("depolarizing")), repr(dash)
     for text, word in (("anon-benzodiazepine", "benzodiazepine"),
                        ("nonsteroidal anti-inflammatory drugs", "anti"),
                        ("benzodiazepines", "benzodiazepines"),

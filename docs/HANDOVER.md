@@ -18,8 +18,8 @@ advances #214 (stays open). Schema now ends at `db/077`.** The suite total lives
 test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (built, tested, measured, docs done), two parts:**
-- **#243:** an FDA-CYP ingest on a registry with display names but no UNII official names is refused before any run
-  row (`--allow-resolution-drop` overrides). The trap was a FIRST ingest, out of #135's floor's reach. Real page:
+- **#243:** an FDA-CYP ingest on a registry with no UNII official names (an empty one too) is refused before any
+  run row (`--allow-resolution-drop` overrides, with a logged warning). Out of #135's floor's reach. Real page:
   393 → 383 of 419 resolved without them. PROJECT-NOTES § "The FDA-CYP official-names guard".
 - **#214 (owner-ruled):** the class pass no longer matches the MED-RT PE axis (bar `Antacid [PE]`), `Electrolyte
   [EPC]` or `Ophthalmic Solutions`, and drops (and counts, `db/077`) a class span after `non-`. SPL run 19 on
@@ -79,7 +79,7 @@ clinically reviewed, and the read says so.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#132, #135
-CLOSED** (PR #242). **#243 closes on this branch's PR; #214 advanced (stays open), filed #245, #246.** **Open from
+CLOSED** (PR #242). **#243 closes on this PR; #214 advanced (open), filed #245, #246; review: #248, #249.** **Open from
 allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
 names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
 sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
@@ -94,7 +94,7 @@ production: re-run every parser on current releases, resolve #17, the three rule
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
   **This branch's test DB: `drugref_test_hygiene214`.**
-- **`drugref_ambig132` is #132/#135's** (`db/076` after review; carries SPL run 12, run 19's baseline): never patch.
+- **`drugref_ambig132` is #132/#135's** (`db/075`; carries SPL run 12, run 19's baseline): never patch.
 - **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
   run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;
   `drugref_synonyms` (#231) branches from `drugref_names`. Details: PROJECT-NOTES § "How to run / test". Create a

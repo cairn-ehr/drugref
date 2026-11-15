@@ -107,13 +107,15 @@ def test_a_collapsed_resolution_index_is_refused_before_any_run_row(conn, monkey
 
 
 @pytest.mark.usefixtures("_wider_registry")
-def test_the_resolution_drop_can_be_authorised(conn, monkeypatch):
+def test_the_resolution_drop_can_be_authorised(conn, monkeypatch, caplog):
     fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
     monkeypatch.setattr(classes, "moieties_by_display_name", lambda conn: {})
-    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE,
-                                         allow_resolution_drop=True)
+    with caplog.at_level("WARNING", logger=fda_cyp_run.log.name):
+        summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE,
+                                             allow_resolution_drop=True)
     assert summary.memberships_written == 0
     assert _resolved_count(conn) == 0
+    assert "resolution floor" in caplog.text  # the waiver leaves a trace
 
 
 def test_a_first_ingest_that_resolves_nothing_is_never_blocked(conn, monkeypatch):
@@ -263,8 +265,21 @@ def test_a_registry_without_official_names_is_refused_before_any_run_row(conn, m
     assert _runs(conn) == 0
 
 
-def test_a_registry_without_official_names_can_be_authorised(conn, monkeypatch):
+def test_an_empty_registry_is_refused_on_a_first_ingest_too(conn, monkeypatch):
+    """No display names either (no `ingest unii`, or the wrong DSN): every tuple
+    would land unresolved, and the #135 floor has no stored run to catch it."""
     monkeypatch.setattr(classes, "moieties_by_official_name", lambda conn: {})
-    summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE,
-                                         allow_resolution_drop=True)
+    monkeypatch.setattr(classes, "moieties_by_display_name", lambda conn: {})
+    with pytest.raises(fda_cyp_run.FdaCypResolutionError, match="ingest unii"):
+        fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE)
+    assert _runs(conn) == 0
+
+
+def test_a_registry_without_official_names_can_be_authorised(conn, monkeypatch, caplog):
+    """Authorised, but not silently: the waiver is logged, naming what it waived."""
+    monkeypatch.setattr(classes, "moieties_by_official_name", lambda conn: {})
+    with caplog.at_level("WARNING", logger=fda_cyp_run.log.name):
+        summary = fda_cyp_run.ingest_fda_cyp(conn, page_path=FIXTURE, upstream_release=RELEASE,
+                                             allow_resolution_drop=True)
     assert summary.assertions_written > 0
+    assert "no UNII official names" in caplog.text

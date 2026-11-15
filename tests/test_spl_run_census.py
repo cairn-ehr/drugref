@@ -209,10 +209,11 @@ def test_the_status_block_reads_the_two_latest_runs_from_the_database(
     assert f"id-keyed {runs[-1].labels_keyed_on_document_id} (" in out
 
 
-def test_a_database_without_db072_gets_the_guards_sentence_not_a_traceback(conn):
+def test_a_database_without_db077_gets_the_guards_sentence_not_a_traceback(conn):
     """Every deployment between pulling this code and `drugref migrate` lacks
-    the table or (#235) db/072's columns, so the guard names db/072: naming db/057
-    would tell a db/057-071 database "NOT a missing migration". Renamed inside the
+    the table or db/077's column (#214, after #235's db/072 ones), so the guard
+    names db/077: naming db/072 would tell a db/072-076 database "NOT a missing
+    migration". Renamed inside the
     rolled-back fixture transaction -- the rename-inside-the-rollback device
     tests/test_ingest_run_duration.py uses for db/054's site, with the same limit
     stated there."""
@@ -220,7 +221,7 @@ def test_a_database_without_db072_gets_the_guards_sentence_not_a_traceback(conn)
     conn.execute("ALTER TABLE drugref.spl_run_census RENAME TO before_db057")
     # The probe's rollback undoes the rename, so this lands in the "NOT a missing
     # migration" branch: what it pins is THIS site's migration and consequence.
-    with pytest.raises(RuntimeError, match=r"(?i)db/072[\s\S]*no SPL release can "
+    with pytest.raises(RuntimeError, match=r"(?i)db/077[\s\S]*no SPL release can "
                        r"be compared[\s\S]*spl_run_census"):
         cli_status.print_spl_census_block(conn)
 

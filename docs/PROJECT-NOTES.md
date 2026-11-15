@@ -6495,13 +6495,15 @@ far above the floor, so that documented trap is still silent.
 
 ## The FDA-CYP official-names guard (#243, 2026-11-15) — no migration, measured on `drugref_names243`, suite 3389 → 3391
 
-**The trap was a FIRST ingest, not a re-ingest.** Only `ingest moiety-names` ever clears `moiety_official_name`, so
-"a registry rebuilt without `ingest moiety-names`" means a fresh database, and on a fresh database the #135 floor
-has no stored run to compare with. So the guard is absolute: `ingest_fda_cyp` step 1a' raises
-`FdaCypResolutionError` (one line, exit 2) when the display-name index is non-empty and the official-name index is
-empty, before any run row. `--allow-resolution-drop` overrides it (same family: "this run resolves less than it
-should"). An empty display index is left to the floor: then nothing resolves at all. The issue's options 2 and 3
-(report the count; compare official-name-only resolutions) were not built: the refusal makes them moot.
+**The trap was a FIRST ingest, not a re-ingest.** Only `ingest moiety-names` writes `moiety_official_name`, so
+"a registry rebuilt without `ingest moiety-names`" means a fresh database (or a re-ingest whose stored baseline
+lacked it too), and there the #135 floor has no baseline that could show the loss. So the guard is absolute:
+`ingest_fda_cyp` step 1a' raises `FdaCypResolutionError` (one line, exit 2) when the official-name index is empty,
+before any run row. That includes an EMPTY registry (no `ingest unii`, wrong DSN): the floor cannot catch that on
+a first ingest either (PR #247 review), so the message names `ingest unii` as well as `ingest moiety-names`.
+`--allow-resolution-drop` overrides it (same family: "this run resolves less than it should"), and either waiver,
+#243's or #135's, is now logged as a warning naming what it waived. The issue's options 2 and 3 (report the count;
+compare official-name-only resolutions) were not built: the refusal makes them moot.
 
 **Test registries opt in by being complete.** `tests/test_fda_cyp_run.py::_registry` now also seeds one official
 name (`AMFEBUTAMONE` for bupropion: differs from the display name, absent from the fixture page), so no test needs
@@ -6654,7 +6656,9 @@ reads the stored official names), which filed **[#239](https://github.com/cairn-
 X effects", which R19's head rule drops, and "consider alternative therapy" as an avoid phrasing), which filed
 **[#245](https://github.com/cairn-ehr/drugref/issues/245)** ("non-X" → complement-group statements; owner wants it)
 and **[#246](https://github.com/cairn-ehr/drugref/issues/246)** (a class word continuing into a differently spelled
-longer class: bile acid sequestering, catecholamine-depleting) — § "The class-hygiene round".
+longer class: bile acid sequestering, catecholamine-depleting) — § "The class-hygiene round". PR #247's review
+filed **[#248](https://github.com/cairn-ehr/drugref/issues/248)** (name-keyed class exclusions go stale silently on
+a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6840,7 +6844,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3396 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3397 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
