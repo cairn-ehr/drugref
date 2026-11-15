@@ -12,9 +12,12 @@ That is precisely the shape of issues 74, 66 and 76 -- a check that exists and n
 fires -- one level up, in the fixture that decides whether any of the other checks run
 at all. Hence a test per branch, DB-free, driving the pure predicate directly.
 """
-import pytest
+import os
 
-from tests.conftest import dsn_verdict
+import pytest
+from psycopg.conninfo import conninfo_to_dict
+
+from tests.conftest import dsn_verdict, session_dsn
 
 DSN = "host=localhost port=5532 dbname=drugref_test user=postgres"
 
@@ -50,3 +53,56 @@ def test_an_empty_dsn_counts_as_missing(empty):
     suite being unexercised."""
     assert dsn_verdict(empty, in_ci=True)[0] == "fail"
     assert dsn_verdict(empty, in_ci=False)[0] == "skip"
+
+
+# --- issue 153: one database per pytest session ------------------------------------
+#
+# conftest used to DROP SCHEMA drugref on the shared DRUGREF_TEST_DSN database at the
+# start of every session, so two sessions at once (two terminals, parallel review
+# agents) wiped each other's schema mid-run and produced failures that looked real.
+# Each session now creates, migrates and drops ITS OWN database, named by session_dsn.
+
+
+def test_the_session_database_is_named_after_the_dsns_and_the_process():
+    """The name says where it came from (the configured database) and which session
+    owns it (the pid), so a leftover one is recognisable in `\\l`."""
+    name, dsn = session_dsn(DSN, pid=4242, token="ab12cd34")
+    assert name == "drugref_test_pid4242_ab12cd34"
+    assert conninfo_to_dict(dsn) == conninfo_to_dict(DSN) | {"dbname": name}
+
+
+def test_two_sessions_never_share_a_database():
+    """THE BUG. Two processes must get two databases, or the race is back."""
+    assert session_dsn(DSN, pid=1, token="t")[0] != session_dsn(DSN, pid=2, token="t")[0]
+
+
+def test_two_sessions_with_the_same_pid_still_get_two_databases():
+    """Two containers sharing one server can both be pid 7. The pid alone would give
+    them one database, so the random token is what keeps them apart."""
+    assert session_dsn(DSN, pid=7, token="aaaa")[0] != session_dsn(DSN, pid=7, token="bbbb")[0]
+
+
+def test_a_long_database_name_is_cut_to_postgres_identifier_limit():
+    """PostgreSQL silently truncates identifiers past 63 bytes, so two long names that
+    differ only in the suffix would collapse into ONE database. The suffix must
+    survive the cut, so the base is what gets shortened."""
+    long_dsn = "dbname=" + "x" * 80 + " user=postgres"
+    name, _ = session_dsn(long_dsn, pid=99999, token="ab12cd34")
+    assert len(name.encode()) <= 63
+    assert name.endswith("_pid99999_ab12cd34")
+
+
+def test_a_dsn_without_a_dbname_still_gets_a_session_database():
+    """libpq defaults the database to the user name; the session copy needs a base
+    name of its own rather than a KeyError."""
+    name, _ = session_dsn("host=localhost user=postgres", pid=7, token="t")
+    assert name == "drugref_test_pid7_t"
+
+
+def test_the_suite_runs_in_its_own_database_not_the_configured_one(conn, _dsn, _migrated):
+    """End to end: the database `conn` is in is NOT the one DRUGREF_TEST_DSN names,
+    and it is this process's. If this fails, every session is back on one shared schema."""
+    (current,) = conn.execute("SELECT current_database()").fetchone()
+    assert current != conninfo_to_dict(_dsn).get("dbname")
+    assert current == conninfo_to_dict(_migrated)["dbname"]
+    assert f"_pid{os.getpid()}_" in current

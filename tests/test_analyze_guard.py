@@ -41,8 +41,8 @@ found by the review of the branch that fixed it.
 
 The probe role and the probe table are created INSIDE the test transaction and
 die with it: `CREATE ROLE` and `SET ROLE` are both transactional. The role name
-carries the backend pid because a role is cluster-global while the schema is not,
-and issue 153 already records what two concurrent sessions do to one database.
+carries the backend pid because a role is cluster-global while each session's
+database is not (issue 153), so two concurrent sessions would otherwise share it.
 """
 import logging
 

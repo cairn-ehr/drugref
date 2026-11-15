@@ -25,7 +25,7 @@ def test_has_sc_penicillin_rxcuis_streams_only_the_penicillins_rows(tmp_path):
     assert tool.has_sc_penicillin_rxcuis(p) == [("111", "x")]
 
 
-def test_tool_prints_its_sections(conn, _dsn, tmp_path, capsys):
+def test_tool_prints_its_sections(conn, _migrated, tmp_path, capsys):
     conn.execute(
         "TRUNCATE drugref.allergy_group_member, drugref.allergy_group, "
         "drugref.allergy_mesh_placement, drugref.substance_composition, "
@@ -40,7 +40,7 @@ def test_tool_prints_its_sections(conn, _dsn, tmp_path, capsys):
     p.write_text(MEDRT)
     # The session DSN, NOT conn.info.dsn: psycopg omits the password from that, so
     # the tool's own connection fails wherever the server wants one (CI does).
-    assert tool.main(["--dsn", _dsn, "--medrt", str(p)]) == 0
+    assert tool.main(["--dsn", _migrated, "--medrt", str(p)]) == 0
     out = capsys.readouterr().out
     for header in ("== members", "== placed", "== -cillin moieties not in the group", "== MED-RT has_SC"):
         assert header in out

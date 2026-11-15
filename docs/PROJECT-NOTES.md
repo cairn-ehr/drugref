@@ -814,7 +814,7 @@ load-bearing clause and one latent count defect. Suite 940 → 943.**
 version must be rebuilt.** `db.apply_migrations` refuses a file whose checksum changed after it was applied
 (`RuntimeError: migration ... changed after it was applied`) — so `drugref_5c1` and any dev database carrying
 the previous `db/029` need `DROP SCHEMA drugref CASCADE` and a re-apply. The test suite is unaffected: its
-`_migrated` fixture drops the schema and re-applies every session, which is also why all three defects above
+`_migrated` fixture migrates a fresh database every session (#153), which is also why all three defects above
 were reachable by test at all.
 
 **POST-MERGE RE-MEASUREMENT (2026-08-08, `drugref_5c1m`) — because every figure above was measured on a schema
@@ -3178,9 +3178,10 @@ the last successful page visible. A failure immediately after authentication ret
 retries the workspace directly rather than sending the reviewer back through startup. All decision, annotation and signing
 controls remain disabled.
 
-**`drugref_test` is destructive test infrastructure, not a GUI database.** The PostgreSQL-backed pytest suite recreates its
-schema and therefore removes reviewer accounts, credentials and sessions stored there. Run `reviewer-service` against a
-separate migrated database with the desired queue content; the local persistent GUI database is `drugref_reviewer_dev`.
+**`drugref_test` is test infrastructure, not a GUI database.** Since #153 the pytest suite runs in a per-session
+copy beside it and leaves its contents alone, but it is still the DSN every test session connects to. Run
+`reviewer-service` against a separate migrated database with the desired queue content; the local persistent GUI
+database is `drugref_reviewer_dev`.
 
 **Verification:** full PostgreSQL-backed Python suite **1,779 passed**; domain **6 passed**; service **5 passed + 1 populated-
 database integration passed explicitly**; Tauri **1 passed**; `ruff`; Rust formatting; `npm run check` with 0 diagnostics;
@@ -3437,7 +3438,7 @@ over 13,570,317 lines** (counted during the pass, not quoted from a terminal) an
 **~14 s**.
 
 ```bash
-# ~132 s: a registry to join against. The DSN must NOT be drugref_test (pytest recreates it).
+# ~132 s: a registry to join against. The DSN must NOT be drugref_test (the test DSN's database).
 uv run drugref --dsn "$DSN" migrate && uv run drugref --dsn "$DSN" ingest chain --downloads downloads \
     --unii-release 26Feb2026 --medrt-release 2026.07.06 --mesh-release 2026 \
     --mesh-relations-release 2026.07.06 --gsrs-release 2026-02-26
@@ -4002,7 +4003,8 @@ before it treats the branch as one.
 - **[#153](https://github.com/cairn-ehr/drugref/issues/153) — two concurrent pytest sessions on one database
   wipe each other's schema.** `conftest.py` runs `DROP SCHEMA ... CASCADE` in a session-scoped fixture.
   Pre-existing; the failure mode is worse than a crash because it is *plausible* — it invents evidence against
-  whatever branch is under review.
+  whatever branch is under review. **FIXED 2026-11-15** (branch `claude/per-session-test-db`): each session now
+  migrates its own `<dbname>_pid<pid>_<token>` database and drops it at teardown (§ "How to run / test").
 
 ## The 5c.3 SPL measurement round (2026-08-24) — no migration, no ingest
 
@@ -6695,6 +6697,9 @@ a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/0
 **[#251](https://github.com/cairn-ehr/drugref/issues/251)** (split `tests/test_spl_run_census.py`, 507 lines),
 **FIXED**: the group-CHECK tests moved verbatim to `tests/test_spl_run_census_groups.py` (442 + 80 lines, the two
 modules' 48 tests and the suite total unchanged).
+**[#153](https://github.com/cairn-ehr/drugref/issues/153)** (two concurrent pytest sessions on one database wipe
+each other's schema) **FIXED** by the per-session test database: `conftest._migrated` creates, migrates and drops
+`<dbname>_pid<pid>_<token>` per session (§ "How to run / test"; +6 tests, 3406 → 3412).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6880,7 +6885,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3406 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3412 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7139,6 +7144,14 @@ git config core.hooksPath .githooks
 # none of the schema, floor, views or orchestrators -- so always run WITH it before
 # claiming green, and never with -k or --deselect: a skip is not a pass, and a
 # deselected failure is not a pass either.
+# ⇒ THE SUITE DOES NOT RUN IN THE DATABASE THIS DSN NAMES (issue 153). Each session
+# CREATEs `<dbname>_pid<pid>_<token>` beside it, migrates that, and drops it at
+# teardown, so concurrent sessions on one DSN no longer drop each other's schema (two
+# full runs at once: 3412 + 3412 green, 2026-11-15) and the named database's contents
+# are never touched. The token is random: two containers sharing one server can share a
+# pid. The DSN's role needs CREATEDB; a session killed before teardown leaves its
+# database behind for a hand `DROP DATABASE`. A test wanting the migrated database's DSN
+# takes the `_migrated` fixture; `_dsn` is the configured one.
 DRUGREF_TEST_DSN='host=localhost port=5532 dbname=drugref_test user=postgres' uv run pytest
 
 # `ruff check .` is now the RIGHT command (issue 66). It used to walk downloads/ and

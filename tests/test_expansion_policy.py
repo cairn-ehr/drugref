@@ -186,7 +186,7 @@ def test_a_second_apply_does_not_stomp_a_locally_revised_decision(_migrated, con
 
     THE TWO COMMITTED ROWS OUTLIVE THE conn FIXTURE, which is the whole reason the
     restore exists rather than being left to rollback. Nothing leaks between runs --
-    conftest's session-scoped _migrated drops the schema and re-applies the chain, so
+    conftest's session-scoped _migrated migrates a fresh database per session, so
     every session starts from the pristine seed -- but WITHIN a session these rows are
     visible to every test that runs after this one. That is why the restore is in a
     `finally` and not merely at the end of the happy path: leaving Vasoconstriction

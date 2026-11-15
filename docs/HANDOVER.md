@@ -13,16 +13,17 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/split-spl-run-census-tests` (from `main` after PR #250, MERGED: #248/#249 CLOSED). PR open to
-`main`; closes #251. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test"
+**Branch `claude/per-session-test-db` (from `main` after PR #252, MERGED: #251 CLOSED). PR open to `main`;
+closes #153. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES § "How to run / test"
 and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (tests only, no figure moves):** **#251:** `tests/test_spl_run_census.py`'s db/072/077/078
-group-CHECK tests moved verbatim to `tests/test_spl_run_census_groups.py`, which imports the shared constants
-and `_run` from the original. 48 tests before and after; full suite green. **From PR #250's round:** `db/078`'s
-`spl_run_census_class_group_whole` is `NOT VALID` on purpose. **Never VALIDATE it** (PROJECT-NOTES § "The
-class-exclusion census"). Still not run: a real SPL ingest storing `class_exclusions_unused` (today's value is 0,
-read off the registry).
+**⇒ THIS ROUND (tests only, no migration, no figure moves):** **#153:** `conftest._migrated` no longer drops
+the schema on the `DRUGREF_TEST_DSN` database. Each session creates `<dbname>_pid<pid>_<token>` beside it,
+migrates it, and drops it at teardown; the random token keeps apart two containers whose pids collide. **Two full
+runs at once on one DSN: both green (3412 each), no leftover database.** A test needing the migrated database's DSN
+takes `_migrated`, not `_dsn`. +6 tests. **From PR #250's round:** `db/078`'s `spl_run_census_class_group_whole`
+is `NOT VALID` on purpose. **Never VALIDATE it** (PROJECT-NOTES § "The class-exclusion census"). Still not run: a
+real SPL ingest storing `class_exclusions_unused` (today's value is 0, read off the registry).
 `ruff format` is NOT applied in this repo; match the hand style. **Do not add `-p no:cacheprovider` to a full run**:
 `test_suite_count.py` then fails two tests that are not real.
 
@@ -77,19 +78,20 @@ clinically reviewed, and the read says so.
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#243 CLOSED**
-(PR #247). **#248, #249 CLOSED** (PR #250). **#251 closes on this PR.** **#214 open; filed #245, #246.** **Open from
-allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP
-names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three
-sources and blocks a grain; **#158** untouched. Also #148, #152, #153, #128/#129, #124, #121/#123, #104, #94. Before
-production: re-run every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+(PR #247). **#248, #249 CLOSED** (PR #250). **#251 CLOSED** (PR #252). **#153 closes on this PR.** **#214 open;
+filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class
+mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67**
+(salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124,
+#121/#123, #104, #94. Before production: re-run every parser on current releases, resolve #17, the three rule-6
+deeds (#6, #25, GSRS).
 
 ## Current DSN
 
 - Test-only DSN: `host=localhost port=5532 dbname=drugref_test user=postgres`. Set `DRUGREF_TEST_DSN` for DB
-  tests; never for reviewer accounts or GUI data — pytest recreates it. **See #153 before running two sessions
-  at once: concurrent runs drop the schema under each other and the failures look real.**
+  tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
+  `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it. **This branch's test DB: `drugref_test_excl248`.**
+  patch it. This branch tested against `drugref_test`.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
@@ -97,8 +99,8 @@ production: re-run every parser on current releases, resolve #17, the three rule
 - **The FDA-CYP / names chain** (each `createdb -T` the previous; never patch any): `drugref_usnames` (#213, SPL
   run 12 shipped) → `drugref_names` (#232) → `drugref_fdacyp226` → `drugref_role134` → `drugref_ambig132`;
   `drugref_synonyms` (#231) branches from `drugref_names`. Details: PROJECT-NOTES § "How to run / test". Create a
-  test DB with `createdb` first (pytest recreates the schema, not the database). Other named databases lack
-  db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).
+  test DB with `createdb` first (pytest connects there and creates its session copy beside it). Other named
+  databases lack db/072–077 until migrated; their pre-072 census rows then read NULL (not measured).
 - **`drugref_allergy` is the allergy round's** — `createdb -T drugref_profiles`, migrated to `db/069`, allergy groups ingested
   (MeSH 2026); never patch it. Its test DB: `drugref_test_allergy`. `drugref_profiles` untouched at `db/065`.
 - **`drugref_classmentions` is the previous round's** — built from nothing at `db/066` (chain + `onchigh` + `fda-cyp` +
@@ -110,7 +112,7 @@ production: re-run every parser on current releases, resolve #17, the three rule
 - **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
   **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
   beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and
-  REFUSES to migrate — rebuild it from nothing if needed.** `drugref_test` is recreated by pytest (green here).
+  REFUSES to migrate — rebuild it from nothing if needed.**
 - **`drugref_notice174` is the SPL/role-split one** — chain + SPL as owner, then the same SPL ingest under role
   `drugref_app` (no ownership) twice, the second with `MAINTAIN`. **It still carries `drugref_app` and its
   GRANTs**, so it is the one database where the role split can be re-run (that round's record §1);
