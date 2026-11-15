@@ -26,6 +26,7 @@ import pytest
 
 from drugref import spl_census
 from drugref.ingest import spl_checks, spl_run
+from drugref.ingest.spl_class_vocab import unused_exclusions
 from tests import test_spl_run as base
 
 # The orchestrator fixtures, reused rather than copied: binding a fixture to a
@@ -212,7 +213,7 @@ def test_the_status_block_reads_the_two_latest_runs_from_the_database(
 def test_a_database_without_db078_gets_the_guards_sentence_not_a_traceback(conn):
     """Every deployment between pulling this code and `drugref migrate` lacks
     the table or db/078's column (#248, after #214's db/077 one), so the guard
-    names db/078: naming db/077 would tell a db/072-077 database "NOT a missing
+    names db/078: naming db/077 would tell a db/077 database "NOT a missing
     migration". Renamed inside the
     rolled-back fixture transaction -- the rename-inside-the-rollback device
     tests/test_ingest_run_duration.py uses for db/054's site, with the same limit
@@ -317,7 +318,8 @@ OFFICIAL = ("official_names_adopted", "official_names_already_named",
             "official_names_excluded", "official_names_unfoldable",
             "official_name_exclusions_unused",
             "class_keys_shadowed_by_official_names")
-#: db/077's 'non-' drop (#214): outside db/072's group CHECKs, so its own tuple.
+#: db/077's 'non-' drop (#214): outside db/072's group CHECKs, so its own tuple
+#: (db/078's group CHECK covers it: `CLASS_GROUP`).
 NON_DROP = ("class_spans_dropped_after_non",)
 #: db/078's unused class exclusions (#248).
 CLASS_EXCLUSIONS = ("class_exclusions_unused",)
@@ -347,10 +349,12 @@ def test_the_class_drops_and_adoption_counts_are_STORED_unswapped(
     columns = CLASS_GROUP + OFFICIAL
     assert _stored(conn, columns) == [
         tuple(getattr(summary, c) for c in columns)]
-    # Two of these are not zero, so the equality reaches past 0 == 0 -- but most are
+    # Three of these are not zero, so the equality reaches past 0 == 0 -- but most are
     # 0 here: the writer test below pins every column with a distinct value.
     assert summary.official_names_adopted == 1
     assert summary.class_keys_shadowed_by_official_names == 1
+    # #248: the fixture seeds none of the named exclusions' classes, so all are unused.
+    assert summary.class_exclusions_unused == len(unused_exclusions([]))
 
 
 @pytest.mark.usefixtures("_clean")
@@ -406,26 +410,27 @@ def test_db072_accepts_a_measured_census_and_one_without_official_names(conn):
     _insert_072(conn, **dict.fromkeys(CLASS_GROUP, 0))
 
 
-def test_db078_leaves_the_pre_db077_rows_on_disk_standing(conn):
-    """#249's carve-out: a row written before db/077 has db/072's drops measured and
-    db/077's column NULL, which db/078's CHECK now refuses. It is created NOT VALID,
-    so rows already on disk stand (each is an honest "not measured") while every
-    new INSERT is checked. Validating the constraint here is what a mistaken
-    `VALIDATE CONSTRAINT` would do: it must fail on that row, proving the rows
-    exist that NOT VALID was chosen for."""
-    (validated,) = conn.execute(
-        "SELECT convalidated FROM pg_constraint "
+@pytest.mark.parametrize("measured", [
+    pytest.param(CLASS_DROPS, id="db072-to-db076-row"),
+    pytest.param(CLASS_DROPS + NON_DROP, id="db077-row")])
+def test_db078_leaves_the_db072_to_db077_rows_on_disk_standing(conn, measured):
+    """#249's carve-out: a row written after db/072 but before db/078 has db/072's
+    drops measured and db/078's column NULL (db/077's too, if before db/077), which
+    db/078's CHECK now refuses. It is created NOT VALID, so rows already on disk
+    stand (each is an honest "not measured") while every new INSERT is checked.
+    Validating the constraint here is what a mistaken `VALIDATE CONSTRAINT` would
+    do: it must fail on that row, proving the rows exist that NOT VALID was chosen
+    for. The constraint is re-added from its own live definition, so it cannot
+    drift from db/078."""
+    (validated, definition) = conn.execute(
+        "SELECT convalidated, pg_get_constraintdef(oid) FROM pg_constraint "
         " WHERE conname = 'spl_run_census_class_group_whole'").fetchone()
     assert validated is False
     conn.execute("ALTER TABLE drugref.spl_run_census "
                  " DROP CONSTRAINT spl_run_census_class_group_whole")
-    _insert_072(conn, **dict.fromkeys(CLASS_DROPS, 0))  # a pre-db/077 row
+    _insert_072(conn, **dict.fromkeys(measured, 0))  # a row from before db/078
     conn.execute("ALTER TABLE drugref.spl_run_census ADD CONSTRAINT "
-                 " spl_run_census_class_group_whole CHECK (num_nulls("
-                 " class_spans_dropped_at_a_boundary, "
-                 " class_spans_dropped_on_a_non_drug_head, "
-                 " class_keys_shadowed_by_moieties, class_spans_dropped_after_non, "
-                 " class_exclusions_unused) IN (0, 5)) NOT VALID")
+                 f" spl_run_census_class_group_whole {definition}")
     with pytest.raises(psycopg.errors.CheckViolation):
         conn.execute("ALTER TABLE drugref.spl_run_census "
                      " VALIDATE CONSTRAINT spl_run_census_class_group_whole")
@@ -450,7 +455,7 @@ _DISTINCT = dict(records_read=20, labels=12, records_field_absent=5,
 
 
 def test_the_writer_stores_each_count_in_its_OWN_column(conn):
-    """Sixteen same-typed counts: distinct values, so a column filled from its
+    """Many same-typed counts: distinct values, so a column filled from its
     neighbour's field fails here even where the end-to-end fixture holds zeros."""
     spl_census.write_run_census(conn, ingest_run_id=_run(conn),
                                 summary=types.SimpleNamespace(**_DISTINCT))

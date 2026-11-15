@@ -16,13 +16,15 @@
 -- official-name group: it needs a UNII_Names file, these do not).
 --
 -- ⇒ NOT VALID, DELIBERATELY (db/043 refused it, for a different table). Every row
--- written before db/077 has db/072's drops measured and these two NULL: an honest
--- "not measured", which this CHECK would refuse. NOT VALID leaves those rows
--- standing and checks every INSERT from here on, so this gate still fires on each
--- run; db/043's objection was a constraint tolerating rows that were WRONG. Never
--- `VALIDATE CONSTRAINT` this one: the history it would reject is correct. The
--- name sorts after `spl_run_census_class_drops_together`, and Postgres checks
--- CHECKs by name, so a half-measured db/072 group still reports db/072's name.
+-- written between db/072 and this migration has db/072's drops measured and this
+-- migration's column NULL (db/077's too, if written before db/077): an honest
+-- "not measured", which this CHECK would refuse. (Rows from before db/072 have
+-- all five NULL and pass.) NOT VALID leaves those rows standing and checks every
+-- INSERT from here on, so this gate still fires on each run; db/043's objection
+-- was a constraint tolerating rows that were WRONG. Never `VALIDATE CONSTRAINT`
+-- this one: the history it would reject is correct. The name sorts after
+-- `spl_run_census_class_drops_together`, and Postgres checks CHECKs by name, so a
+-- half-measured db/072 group still reports db/072's name.
 
 ALTER TABLE drugref.spl_run_census
     ADD COLUMN class_exclusions_unused bigint

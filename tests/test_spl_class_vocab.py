@@ -116,5 +116,7 @@ def test_unused_exclusions_names_every_named_entry_no_class_row_carries():
             ("MED-RT", "PE", "Antacid [PE]"), ("MED-RT", "EPC", "Ophthalmic Solutions")]
     assert unused_exclusions(rows) == ("Ophthalmic Solutions",)
     assert unused_exclusions(rows + [("MeSH", "PA", "Ophthalmic Solutions")]) == ()
+    # The kept PE class is matched on MED-RT's PE axis only, as `is_matchable` does.
+    assert "Antacid [PE]" in unused_exclusions([("MED-RT", "EPC", "Antacid [PE]")])
     assert unused_exclusions([]) == (
         "Antacid [PE]", "Electrolyte [EPC]", "Hormones", "Ophthalmic Solutions")

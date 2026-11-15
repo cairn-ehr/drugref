@@ -20,7 +20,7 @@ RUN_CENSUS_TABLE = "drugref.spl_run_census"
 
 #: Every census column after `ingest_run_id`, NAMED AS ON `SplSummary`: the writer
 #: reads each one off the summary by this name, so no column can be filled from a
-#: neighbouring field (17 same-typed counts by position would invite exactly that).
+#: neighbouring field (many same-typed counts by position would invite exactly that).
 #: db/057's five, then db/072's class-pass drops (#215) and official names (#229),
 #: then db/077's 'non-' drop (#214) and db/078's unused class exclusions (#248).
 CENSUS_COLUMNS = (

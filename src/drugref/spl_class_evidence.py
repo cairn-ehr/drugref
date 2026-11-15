@@ -178,8 +178,9 @@ class ClassKeyCounts(NamedTuple):
                 + (" -- WARNING: no UNII names file (--unii-names), so class keys "
                    "equal to a UNII official name were NOT dropped (R19/P1 skipped)"
                    if self.official_names_skipped else "")
-                + (f" -- WARNING: class exclusion(s) matching no class, renamed or "
-                   f"mistyped (#248): {list(self.exclusions_unused)}"
+                + (f" -- WARNING: class exclusion(s) matching no class -- renamed, "
+                   f"mistyped, or its source (MED-RT/MeSH) not ingested (#248): "
+                   f"{list(self.exclusions_unused)}"
                    if self.exclusions_unused else ""))
 
 

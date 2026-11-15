@@ -391,7 +391,7 @@ def print_spl_census_block(conn) -> None:
     first: nothing is printed after it, so aborting here costs no other block.
 
     THE GUARD NAMES THE NEWEST MIGRATION THE READER SELECTS, db/078 (#248), not
-    db/057 or db/072: a db/072-077 database fails one column short, and a guard
+    db/057 or db/072: a db/072-077 database fails a column or two short, and a guard
     naming an applied migration would tell its operator this is "NOT a missing
     migration". Bump it whenever CENSUS_COLUMNS gains a column.
     """

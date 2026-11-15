@@ -516,6 +516,9 @@ def test_the_ABSENT_BLANK_and_ID_KEYED_counts_reach_the_summary_unswapped(
     # only place a refused, drifted release shows the counts that explain it.
     assert any("3 absent, 2 blank, 1 keyed on document id" in line
                for line in said), said
+    # #248: likewise the unused-class-exclusion WARNING (this fixture seeds none of
+    # those classes), said in the registry line before any floor can refuse.
+    assert any("class exclusion(s) matching no class" in line for line in said), said
 
 
 @pytest.mark.usefixtures("_clean")

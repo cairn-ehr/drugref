@@ -6559,7 +6559,7 @@ R19's estimate) and "consider alternative therapy" as an avoid phrasing. Both mo
 (`test_spl_class_evidence.py`); the forgotten-count and negative-CHECK parametrisations gained the new column.
 Test DB: `drugref_test_hygiene214`.
 
-## The class-exclusion census (#248, #249, 2026-11-15) — `db/078`, checked on `drugref_excl248`, suite 3397 → 3405
+## The class-exclusion census (#248, #249, 2026-11-15) — `db/078`, checked on `drugref_excl248`, suite 3397 → 3406
 
 **Both are PR #247 review follow-ups. No figure moves.**
 
@@ -6583,10 +6583,12 @@ Test DB: `drugref_test_hygiene214`.
 applies over runs 11, 12 and 19, and `unused_exclusions` on the live registry is `()`, so today's count is 0. **Not
 run:** a real SPL ingest storing the count. The end-to-end census test stores it from a fixture.
 
-**Tests (+8):** `unused_exclusions` (`test_spl_class_vocab.py`); the run's count and WARNING
+**Tests (+9):** `unused_exclusions` (`test_spl_class_vocab.py`); the run's count and WARNING
 (`test_spl_class_evidence.py`); db/078's group CHECK (each half-measured shape), the new column's floor, and the
-`NOT VALID` carve-out (`test_spl_run_census.py`); the forgotten-count parametrisation (`test_spl_run.py`). Test DB:
-`drugref_test_excl248`.
+`NOT VALID` carve-out for both pre-db/078 row shapes, db/072-076's and db/077's (`test_spl_run_census.py`); the
+forgotten-count parametrisation and the WARNING reaching `progress` (`test_spl_run.py`). Test DB:
+`drugref_test_excl248`. PR #250's review corrected db/078's header (it named the wrong era of rows) before merge;
+the three local databases holding db/078 had its ledger checksum re-recorded, as no other database ever applied it.
 
 ## The standing open-issue ledger
 
@@ -6687,7 +6689,9 @@ X effects", which R19's head rule drops, and "consider alternative therapy" as a
 and **[#246](https://github.com/cairn-ehr/drugref/issues/246)** (a class word continuing into a differently spelled
 longer class: bile acid sequestering, catecholamine-depleting) — § "The class-hygiene round". PR #247's review
 filed **[#248](https://github.com/cairn-ehr/drugref/issues/248)** (name-keyed class exclusions go stale silently on
-a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK), **both FIXED by the class-exclusion census** (`db/078`, § of that name).
+a rename) and **[#249](https://github.com/cairn-ehr/drugref/issues/249)** (`db/077`'s column has no group CHECK),
+**both FIXED by the class-exclusion census** (`db/078`, § of that name). PR #250's review filed
+**[#251](https://github.com/cairn-ehr/drugref/issues/251)** (split `tests/test_spl_run_census.py`, 507 lines).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -6873,7 +6877,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3405 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3406 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
