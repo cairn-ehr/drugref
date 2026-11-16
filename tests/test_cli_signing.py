@@ -810,6 +810,21 @@ def test_publish_and_verify_release_round_trip(
     assert wconn.commit_count == 1
 
 
+def test_publish_cli_exits_1_and_names_the_missing_run(
+        wconn, conn, a_key_file, tmp_path, monkeypatch, capsys):
+    """An archive root is set but a finished run was never archived: refuse (#258)."""
+    monkeypatch.setenv("DRUGREF_ARCHIVE", str(tmp_path / "arch"))
+    conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, "
+        "writer, finished_at) VALUES ('UNII', 'v', 'cs-unarchived', 'unii_run', now() + interval '1 second')")
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.11.16-refused", "--published-by", "op",
+        "--key", str(a_key_file["path"])]) == 1
+    assert "cs-unarchived" in capsys.readouterr().err
+    assert conn.execute("SELECT 1 FROM drugref.release_manifest WHERE release_tag = "
+                        "'2026.11.16-refused'").fetchone() is None
+
+
 def test_publish_refuses_a_blank_release_tag_before_any_write(
         wconn, conn, a_key_file, capsys):
     """release_manifest.release_tag is NOT NULL with no non-blank CHECK and is

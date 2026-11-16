@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 import psycopg
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from drugref import keys, release_verification, releases, signatures, signing
+from drugref import (archive, keys, release_archive, release_verification,
+                     signatures, signing)
 from drugref.cli_signing import _BlankArgumentError, _reject_blank, _write
 
 # THE ONE TARGET KIND NEITHER `sign` NOR `verify --target-kind` CAN SERVE. It is a real
@@ -337,10 +338,20 @@ def _handle_publish(conn, args) -> int:
     # all values THIS process computes and can never genuinely fail; the one
     # constraint a real operator mistake can trip is release_tag's UNIQUE --
     # reusing a tag a previous publish already claimed.
-    manifest_id = _write(
-        conn, releases.publish, psycopg.errors.UniqueViolation,
-        release_tag=args.release_tag, published_by=args.published_by,
-        private_key=private_key, key_fingerprint=fingerprint)
+    root = archive.archive_root()
+    if root is None:
+        print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
+              "is NOT reconstructable")
+    try:
+        manifest_id = _write(
+            conn, release_archive.publish_archived, psycopg.errors.UniqueViolation,
+            root=root, release_tag=args.release_tag, published_by=args.published_by,
+            private_key=private_key, key_fingerprint=fingerprint)
+    except release_archive.ArchiveIncomplete as exc:
+        for problem in exc.problems:
+            print(f"drugref: {problem.source_checksum}: {problem.what}",
+                  file=sys.stderr)
+        return 1
     if manifest_id is None:
         return 2
     print(f"published manifest_id={manifest_id} release_tag={args.release_tag}")
