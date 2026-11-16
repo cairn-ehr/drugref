@@ -26,7 +26,7 @@ import psycopg
 
 from drugref import classes, local, provenance
 from drugref.ingest import pbs
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         # was rewritten by collapsing it. The reason to collapse it anyway is the
         # reason checksum.py exists: four copies of a rule were three chances to fix
         # it in three places, and this one had already drifted to a different API.
-        source_checksum = checksum(path)
+        source_checksum = archived_checksum(path)
     try:
         run_id = provenance.open_run(conn, source=SOURCE,
                                      upstream_release=upstream_release,

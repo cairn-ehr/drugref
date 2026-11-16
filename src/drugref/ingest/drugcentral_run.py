@@ -42,7 +42,7 @@ import psycopg
 
 from drugref import interactions, provenance, questions
 from drugref.ingest import drugcentral
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 from drugref.ingest.counts import refuse_negative_counts
 from drugref.ingest.drugcentral_resolve import (
     Registry, build_endpoint_index, first_wins, fold_key, fold_name,
@@ -224,7 +224,7 @@ def ingest_drugcentral(conn: psycopg.Connection, *,
             "replace it have to commit together or not at all.")
 
     dump_path = pathlib.Path(dump_path)
-    digest = checksum(dump_path)
+    digest = archived_checksum(dump_path)
 
     with gzip.open(dump_path, "rt", encoding="utf-8") as handle:
         tables = drugcentral.read_tables(handle)

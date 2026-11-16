@@ -42,7 +42,7 @@ import psycopg
 
 from drugref import db, provenance, registry_read, spl_class_evidence
 from drugref.ingest import spl_official_names
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 SOURCE = "UNII"
 WRITER = "moiety_name_run"
@@ -111,7 +111,7 @@ def _ingest(conn, unii_names_path, upstream_release, clock) -> MoietyNameSummary
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(unii_names_path), writer=WRITER, clock=clock)
+        source_checksum=archived_checksum(unii_names_path), writer=WRITER, clock=clock)
     db.clear_source_tables(conn, MOIETY_NAME_TABLES, SOURCE)
     # `adopted` is display names plus the adopted official names; only the
     # latter are stored (the view reads display names from substance_moiety).

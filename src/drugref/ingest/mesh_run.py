@@ -33,7 +33,7 @@ from drugref import classes as class_writer
 from drugref import provenance, questions
 from drugref.classes import ClassConcept
 from drugref.ingest import mesh
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 SOURCE = "MeSH"
 RELATIONSHIP = "has_PA"
@@ -145,7 +145,7 @@ def _ingest_mesh(conn: psycopg.Connection, pa_path, desc_path, supp_path,
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(pa_path, desc_path, supp_path), writer=WRITER,
+        source_checksum=archived_checksum(pa_path, desc_path, supp_path), writer=WRITER,
         clock=clock)
 
     # 1. Classes. A PA class hands upsert_class the same source-neutral shape a

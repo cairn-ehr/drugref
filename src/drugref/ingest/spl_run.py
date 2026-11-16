@@ -62,7 +62,7 @@ from drugref.ingest import (
     spl, spl_checks, spl_match, spl_official_names, spl_quote, spl_release,
     spl_rows, spl_suppress, spl_subject,
 )
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 from drugref.ingest.spl_checks import (
     MEASURED_CLASS_FLOOR, MEASURED_NOVEL_FLOOR, MEASURED_PAIR_FLOOR, SplSummary,
 )
@@ -326,7 +326,7 @@ def ingest_spl(
 
     # ONE digest over every input, through the shared helper (see
     # `checksummed_inputs` for what counts as an input and why).
-    digest = checksum(*checksummed_inputs(partitions, parts, unii_names))
+    digest = archived_checksum(*checksummed_inputs(partitions, parts, unii_names))
 
     try:
         run_id = provenance.open_run(conn, source=spl.SOURCE,

@@ -89,19 +89,28 @@ def run_record_path(root: pathlib.Path, source_checksum: str) -> pathlib.Path:
     return root / "runs" / f"{source_checksum}.json"
 
 
-def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path) -> None:
+def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
+               expected_sha256: str) -> None:
     """Copy `item` to `dest` unless present, via `<dest>.tmp` + `os.replace`.
 
     The rename is atomic, so a crash leaves at worst a stray .tmp and never a
-    half-written file under the final (content-addressed) name.
+    half-written file under the final (content-addressed) name. The copy hashes
+    what it writes: an input that changed since `file_digests` read it would
+    otherwise land wrong bytes under a sha-named blob that is never repaired.
     """
-    if dest.exists():
+    if dest.is_file():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".tmp")
+    written = hashlib.sha256()
     with item.open("rb") as src, open(tmp, "wb") as out:
         for chunk in iter(lambda: src.read(CHUNK_BYTES), b""):
+            written.update(chunk)
             out.write(chunk)
+    if written.hexdigest() != expected_sha256:
+        tmp.unlink()
+        raise ValueError(f"{item.name} changed while being archived "
+                         f"(expected sha256 {expected_sha256})")
     os.replace(tmp, dest)
 
 
@@ -113,7 +122,7 @@ def store_run(root: pathlib.Path, *inputs: Input) -> str:
     """
     digest, files = file_digests(*inputs)
     for item, rec in zip(map(_as_traversable, inputs), files):
-        _copy_blob(item, blob_path(root, rec.sha256))
+        _copy_blob(item, blob_path(root, rec.sha256), rec.sha256)
     record = {"source_checksum": digest,
               "files": [{"name": f.name, "size": f.size, "sha256": f.sha256}
                         for f in files]}

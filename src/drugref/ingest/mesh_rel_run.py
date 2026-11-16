@@ -85,7 +85,7 @@ from drugref import classes as class_writer
 from drugref import conditions as condition_writer
 from drugref import indications, interactions, provenance, questions
 from drugref.ingest import medrt, mesh_ci_relations, mesh_concepts, mesh_ind_relations
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 # The four tallies this run returns. They live in their own module (pure data, no
 # behaviour) because this one had reached exactly the ~500-line ceiling CLAUDE.md rule 4
 # sets, so the next line added here would have broken the rule silently. IMPORTED INTO
@@ -251,7 +251,8 @@ def _ingest(conn, medrt_path, desc_path, supp_path, upstream_release,
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(medrt_path, desc_path, supp_path), writer=WRITER,
+        source_checksum=archived_checksum(medrt_path, desc_path, supp_path),
+        writer=WRITER,
         clock=clock)
 
     # 1. Resolve every referenced MeSH code, then take the descendant closure of the

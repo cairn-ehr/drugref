@@ -32,7 +32,7 @@ import psycopg
 
 from drugref import classes, db, provenance
 from drugref.ingest import mesh_synonyms, spl_official_names
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 SOURCE = "MeSH"
 WRITER = "mesh_synonym_run"
@@ -92,7 +92,8 @@ def _ingest(conn, desc_path, supp_path, upstream_release,
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(desc_path, supp_path), writer=WRITER, clock=clock)
+        source_checksum=archived_checksum(desc_path, supp_path),
+        writer=WRITER, clock=clock)
     db.clear_source_tables(conn, MESH_SYNONYM_TABLES, SOURCE)
     with conn.cursor() as cur:
         cur.executemany("INSERT INTO drugref.moiety_mesh_synonym "

@@ -23,7 +23,7 @@ import psycopg
 
 from drugref import composition, provenance, questions
 from drugref.ingest import gsrs
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 from drugref.ingest.gsrs import StrPath
 
 SOURCE = "GSRS"
@@ -102,7 +102,7 @@ def ingest_gsrs(conn: psycopg.Connection, *, dump_path: StrPath,
             if key not in edges or edges[key] is None:
                 edges[key] = activity
 
-    source_checksum = checksum(dump_path)
+    source_checksum = archived_checksum(dump_path)
 
     # 2. Open the run. This COMMITS in its own transaction (provenance.open_run),
     #    so everything after it is the work and rolls back together on failure.

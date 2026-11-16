@@ -22,7 +22,7 @@ import psycopg
 from drugref import classes as class_writer
 from drugref import interactions, provenance, questions
 from drugref.ingest import medrt
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 SOURCE = "MED-RT"
 # WHICH orchestrator this is, as distinct from SOURCE, the authority it reads
@@ -121,7 +121,8 @@ def _ingest_medrt(conn: psycopg.Connection, medrt_path, upstream_release: str,
     parsed = medrt.parse(medrt_path)
 
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(medrt_path), writer=WRITER,
+                                 source_checksum=archived_checksum(medrt_path),
+                                 writer=WRITER,
                                  clock=clock)
 
     # 1. Classes. Their UUIDs are derived, so this both registers new classes and
