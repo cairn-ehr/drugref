@@ -10,6 +10,7 @@ from datetime import datetime
 import psycopg
 
 RELEASE_VIEW = "drugref.current_release"
+UNKNOWN_LINE = "drugref release: unknown (database predates db/081)"
 
 
 @dataclass(frozen=True)
@@ -41,9 +42,20 @@ def release_line(cr: CurrentRelease | None) -> str:
         return ("drugref release: none published "
                 "(answers are not tied to a reconstructable release)")
     if cr.git_commit is None:
-        return "drugref release: unknown (database predates db/081)"
+        return UNKNOWN_LINE
     if cr.drifted:
         reasons = ", ".join(cr.drift_reasons)
         return (f"drugref release: {cr.release_tag} (DRIFTED since publication: "
                 f"{reasons}) — answers may differ from that release")
     return f"drugref release: {cr.release_tag}"
+
+
+def release_header(conn: psycopg.Connection) -> str:
+    """`release_line` for a live connection; never raises on a pre-db/081 database.
+
+    The header is printed by commands that must still answer on an under-migrated
+    database, so a missing view yields the "unknown" copy rather than an abort (#258).
+    """
+    if conn.execute("SELECT to_regclass(%s)", (RELEASE_VIEW,)).fetchone()[0] is None:
+        return UNKNOWN_LINE
+    return release_line(current_release(conn))

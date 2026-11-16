@@ -12,7 +12,7 @@ import pytest
 import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
-from drugref import archive, db
+from drugref import archive, db, release_state
 from tests.suite_count import COLLECTED_TESTS
 
 
@@ -20,6 +20,19 @@ from tests.suite_count import COLLECTED_TESTS
 def _no_ambient_archive(monkeypatch):
     """A developer's DRUGREF_ARCHIVE must never make the suite write to a real archive."""
     monkeypatch.delenv(archive.ENV_VAR, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _stub_connections_get_a_stub_header(monkeypatch):
+    """Hand-rolled stub connections cannot answer the release-header probe (#258).
+
+    Real connections keep the real header; the many tests that drive a command with
+    a scripted stub get a fixed line, so they keep testing what they were written for.
+    """
+    real = release_state.release_header
+    monkeypatch.setattr(release_state, "release_header", lambda conn: (
+        real(conn) if isinstance(conn, psycopg.Connection)
+        else "drugref release: stub"))
 
 
 def dsn_verdict(dsn, in_ci):

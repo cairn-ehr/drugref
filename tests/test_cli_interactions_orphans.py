@@ -430,6 +430,8 @@ def test_a_drug_that_alone_left_the_class_is_still_bannered(
 
 
 def test_a_superseded_versions_reach_still_counts(conn, ingest_run_id, capsys):
+    """Premise: the ruling was corrected AFTER X left the class, so only the first
+    version's recorded reach holds X; the banner must still match X by natural key."""
     x = _left_the_class_orphan(conn, ingest_run_id, 2, correct=True)
     assert cli_interactions._handle_interactions(
         conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
@@ -448,4 +450,9 @@ def test_without_db080_every_class_orphan_is_shown(conn, ingest_run_id, capsys):
         conn, _args(s, o)) == cli_interactions.EXIT_INCOMPLETE
     captured = capsys.readouterr()
     assert "INCOMPLETE" in captured.out
-    assert "080" in captured.err
+    assert "080" in captured.err and "079" not in captured.err
+    # "Every" orphan: a drug unrelated to the orphan's classes sees it too.
+    stranger = _a_moiety(conn, ingest_run_id, "TESTUN2583C", "stranger")
+    assert cli_interactions._handle_interactions(
+        conn, _args(stranger)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out

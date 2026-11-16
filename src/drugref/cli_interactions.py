@@ -46,7 +46,7 @@ import sys
 import uuid
 
 from drugref import (class_grain_read, class_ruling_reach, curated_read, curation,
-                     migration_guard, registry_read)
+                     migration_guard, registry_read, release_state)
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -143,8 +143,7 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     expected never. WITHOUT db/079 OR db/080 IT FALLS BACK RATHER THAN ABORTS: the
     list has already printed, so raising would exit 2 with no banner at all (moiety
     orphans included). Keeping every class orphan is the pre-#255 behaviour -- noisy,
-    never silent -- and stderr
-    says why.
+    never silent -- and stderr says why.
 
     "RULING", NOT "GRADE": the view also carries `applies = false` rulings, which the
     list never shows. "Any grade among them is missing" is true of both.
@@ -160,7 +159,10 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     if class_orphans and any(
             conn.execute("SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None
             for rel in needed):
-        print(f"note: {' or '.join(needed)} (db/079 or db/080) is missing, so "
+        absent = [f"{rel} ({db})" for rel, db in zip(needed, ("db/079", "db/080"))
+                  if conn.execute("SELECT to_regclass(%s)",
+                                  (rel,)).fetchone()[0] is None]
+        print(f"note: {' and '.join(absent)} is missing, so "
               "every class-rule orphan is shown, not only those concerning the drugs "
               "asked. Run `drugref status`.", file=sys.stderr)
         reaching = {(o.subject_class, o.object_uuid, o.relationship)
@@ -266,6 +268,9 @@ def _handle_interactions(conn, args) -> int:
     # dict.fromkeys RATHER THAN set(): the report lists the offending identifiers, and a
     # set would reorder them, so `X --with Y` could name Y first. It also collapses the
     # duplicate in the self-pair case, so the same uuid is not reported twice.
+    # THE RELEASE HEADER COMES FIRST, whatever follows (#258): a grade read out of
+    # context is the failure the decision audit exists to prevent.
+    print(release_state.release_header(conn))
     asked = list(dict.fromkeys(
         u for u in (args.moiety, args.against) if u is not None))
     known = _known_moieties(conn, asked)

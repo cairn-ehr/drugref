@@ -143,16 +143,23 @@ def _check(root: pathlib.Path, checksums: Iterable[str],
         if not record.is_file():
             problems.append(ArchiveProblem(cs, "no run record"))
             continue
-        for f in json.loads(record.read_text(encoding="utf-8"))["files"]:
-            blob = blob_path(root, f["sha256"])
+        try:
+            files = json.loads(record.read_text(encoding="utf-8"))["files"]
+            files = [(f["sha256"], f["size"]) for f in files]
+        except (ValueError, KeyError, TypeError):
+            # A hand-damaged record is exactly what the audit command reports (#258).
+            problems.append(ArchiveProblem(cs, "malformed run record"))
+            continue
+        for sha, size in files:
+            blob = blob_path(root, sha)
             if not blob.is_file():
-                problems.append(ArchiveProblem(cs, f"missing blob {f['sha256']}"))
+                problems.append(ArchiveProblem(cs, f"missing blob {sha}"))
             elif rehash:
-                if file_digests(blob)[0] != f["sha256"]:
-                    problems.append(ArchiveProblem(cs, f"corrupt blob {f['sha256']}"))
-            elif blob.stat().st_size != f["size"]:
+                if file_digests(blob)[0] != sha:
+                    problems.append(ArchiveProblem(cs, f"corrupt blob {sha}"))
+            elif blob.stat().st_size != size:
                 # Cheap truncation check for publish: a stat, no re-hash.
-                problems.append(ArchiveProblem(cs, f"truncated blob {f['sha256']}"))
+                problems.append(ArchiveProblem(cs, f"truncated blob {sha}"))
     return problems
 
 

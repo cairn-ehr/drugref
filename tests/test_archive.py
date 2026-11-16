@@ -80,3 +80,14 @@ def test_archive_root_is_none_when_unset(monkeypatch, tmp_path):
     assert archive.archive_root() is None
     monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))
     assert archive.archive_root() == tmp_path
+
+
+def test_a_malformed_run_record_is_a_problem_not_a_crash(tmp_path):
+    """`drugref audit archive` exists to report a hand-damaged archive (#258)."""
+    root = tmp_path / "arch"
+    (root / "runs").mkdir(parents=True)
+    archive.run_record_path(root, "bad-json").write_text("{not json")
+    archive.run_record_path(root, "no-files").write_text('{"source_checksum": "x"}')
+    problems = archive.verify_runs(root, ["bad-json", "no-files"])
+    assert [(p.source_checksum, p.what) for p in problems] == [
+        ("bad-json", "malformed run record"), ("no-files", "malformed run record")]

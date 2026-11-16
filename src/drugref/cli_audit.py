@@ -4,9 +4,10 @@
 versus now, and which data loads preceded the review. The SQL lives in
 `class_ruling_reach`; this module only prints, per the rule in cli.py's docstring.
 """
+import json
 import sys
 
-from drugref import class_ruling_reach
+from drugref import archive, class_ruling_reach, release_state
 
 
 def _handle_class_ruling(conn, args) -> int:
@@ -39,11 +40,54 @@ def _handle_class_ruling(conn, args) -> int:
     return 0
 
 
+def _handle_archive(conn, args) -> int:
+    """Verify (re-hash) every archived input of a release; exit 0 / 1 / 2 (#258).
+
+    0 = complete, 1 = problems found (each printed), 2 = nothing to check: the
+    archive env var is unset, no release is named or published, or its record is
+    missing. Default release is the one the database currently answers from.
+    """
+    root = archive.archive_root()
+    if root is None:
+        print(f"drugref: {archive.ENV_VAR} is not set", file=sys.stderr)
+        return 2
+    tag = args.release
+    if tag is None:
+        # An absent view (pre-db/081) is "nothing published", not a crash.
+        has_view = conn.execute("SELECT to_regclass(%s)",
+                                (release_state.RELEASE_VIEW,)).fetchone()[0]
+        current = release_state.current_release(conn) if has_view else None
+        if current is None:
+            print("drugref: no release is published; name one with --release",
+                  file=sys.stderr)
+            return 2
+        tag = current.release_tag
+    record = root / "releases" / f"{tag}.json"
+    if not record.is_file():
+        print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
+        return 2
+    checksums = [r["source_checksum"]
+                 for r in json.loads(record.read_text(encoding="utf-8"))["runs"]]
+    problems = archive.verify_runs(root, checksums)
+    for p in problems:
+        print(f"{p.source_checksum}: {p.what}")
+    if problems:
+        return 1
+    blobs = {f["sha256"] for cs in checksums for f in json.loads(
+        archive.run_record_path(root, cs).read_text(encoding="utf-8"))["files"]}
+    print(f"archive complete for {tag}: {len(checksums)} runs, "
+          f"{len(blobs)} blobs verified")
+    return 0
+
+
 def register(commands) -> None:
-    """Add the `audit` group (a later task adds `audit archive` beside class-ruling)."""
+    """Add the `audit` group: `class-ruling` and `archive`."""
     audit = commands.add_parser(
         "audit", help="reconstruct what was known at decision time")
     sub = audit.add_subparsers(dest="audit_command", required=True)
     cr = sub.add_parser("class-ruling", help="reach of one class ruling, then vs now")
     cr.add_argument("ruling_id", type=int)
     cr.set_defaults(handler=_handle_class_ruling)
+    ar = sub.add_parser("archive", help="verify a release's archived input files")
+    ar.add_argument("--release", help="release tag (default: the current release)")
+    ar.set_defaults(handler=_handle_archive)
