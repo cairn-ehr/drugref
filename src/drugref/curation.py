@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import overlay, questions
+from drugref import class_ruling_reach, overlay, questions
 
 
 # ---- Which question each writer's row may cite (#207, #210) -------------------
@@ -275,6 +275,7 @@ def record_class_interaction_judgement(
         conn, "curated_class_interaction", "curated_class_interaction_id", new_id,
         ("subject_class_uuid", "object_class_uuid", "relationship"),
         (subject_class_uuid, object_class_uuid, relationship))
+    class_ruling_reach.snapshot_reach(conn, new_id)  # what it reached today (#258)
     return new_id
 
 
