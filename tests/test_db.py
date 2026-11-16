@@ -210,6 +210,7 @@ def test_apply_migrations_is_idempotent(conn):
         # keyed on the natural key rather than the database-local target_id).
         "signing_key_status_kind", "signature_target_kind", "signing_key",
         "assertion_signature", "release_manifest", "release_manifest_entry",
+        "release_build", "current_release",
         # Slice 5c.4, db/030 section 7: the read path. curated_signature_status is
         # REGISTRY-LEVEL ONLY (Postgres cannot check an Ed25519 signature) and
         # LEFT-joined into curated_ddi_pair/curated_condition_ruling below, on pain

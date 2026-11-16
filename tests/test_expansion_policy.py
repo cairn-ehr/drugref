@@ -495,5 +495,8 @@ def test_only_the_current_view_reads_the_policy_table_directly(conn):
     interactions.py, this needs a grep-shaped sibling over src/ rather than a wider
     catalogue query -- the catalogue simply does not know.
     """
+    # current_release (db/081, #258) is the one deliberate second reader: it reads only
+    # `reviewed_at`, never `decision`, and must see WITHDRAWN rows (current excludes them)
+    # because a withdrawal is a policy change a release can drift by.
     assert {r[0] for r in conn.execute(_READERS_OF_THE_BASE_TABLE).fetchall()} == {
-        "class_expansion_policy_current"}
+        "class_expansion_policy_current", "current_release"}
