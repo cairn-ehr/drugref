@@ -41,14 +41,27 @@ class ArchiveIncomplete(Exception):
         super().__init__("; ".join(f"{p.source_checksum}: {p.what}" for p in problems))
 
 
+def _git(*argv: str) -> str:
+    """stdout of one `git` call in this package's checkout; raises on any failure."""
+    return subprocess.run(
+        ["git", *argv], cwd=pathlib.Path(__file__).parent,
+        capture_output=True, text=True, timeout=10, check=True).stdout
+
+
 def git_commit() -> str:
-    """HEAD of the repo this package lives in, or "unknown" on any failure."""
+    """HEAD of the repo this package lives in: `<sha>`, `<sha>-dirty`, or "unknown".
+
+    `-dirty` when `git status --porcelain` prints anything: the code that built
+    the release then differs from the commit, so the sha alone would mislead an
+    audit (#258, spec 7). Any failure (not a checkout, no git, timeout) is
+    "unknown"; the publish CLI warns on both.
+    """
     try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=pathlib.Path(__file__).parent,
-            capture_output=True, text=True, timeout=10, check=True)
-        return out.stdout.strip() or "unknown"
-    except Exception:  # not a checkout, no git, timeout: provenance is best-effort
+        sha = _git("rev-parse", "HEAD").strip()
+        if not sha:
+            return "unknown"
+        return f"{sha}-dirty" if _git("status", "--porcelain").strip() else sha
+    except Exception:  # provenance is best-effort; the CLI says when it failed
         return "unknown"
 
 

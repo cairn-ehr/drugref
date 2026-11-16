@@ -101,11 +101,35 @@ def test_release_record_lists_every_run_not_only_loaded(conn):
 def test_git_commit_is_40_hex_or_unknown_and_falls_back(monkeypatch):
     import re
     import subprocess
-    assert re.fullmatch(r"[0-9a-f]{40}|unknown", release_archive.git_commit())
+    assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?|unknown", release_archive.git_commit())
 
     def boom(*a, **k):
         raise OSError("no git")
     monkeypatch.setattr(subprocess, "run", boom)
+    assert release_archive.git_commit() == "unknown"
+
+
+def fake_git(monkeypatch, status="", status_fails=False):
+    """Stand in for `git`: HEAD is 'a'*40; `status --porcelain` prints `status`."""
+    import subprocess
+
+    def run(argv, **kw):
+        assert isinstance(argv, list) and kw["cwd"] and kw["timeout"]
+        if argv[1:] == ["rev-parse", "HEAD"]:
+            return subprocess.CompletedProcess(argv, 0, "a" * 40 + "\n", "")
+        assert argv[1:] == ["status", "--porcelain"]
+        if status_fails:
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        return subprocess.CompletedProcess(argv, 0, status, "")
+    monkeypatch.setattr(subprocess, "run", run)
+
+
+def test_git_commit_marks_a_dirty_tree(monkeypatch):
+    fake_git(monkeypatch)
+    assert release_archive.git_commit() == "a" * 40
+    fake_git(monkeypatch, status=" M src/drugref/archive.py\n")
+    assert release_archive.git_commit() == "a" * 40 + "-dirty"
+    fake_git(monkeypatch, status_fails=True)
     assert release_archive.git_commit() == "unknown"
 
 

@@ -69,6 +69,7 @@ below is the test that could not have caught the bug this fixes without it.
 """
 import argparse
 import datetime as dt
+import subprocess
 
 import pytest
 
@@ -831,6 +832,24 @@ def test_publish_cli_notes_when_no_archive_is_configured(wconn, a_key_file, caps
         "--key", str(a_key_file["path"])]) == 0
     assert ("note: DRUGREF_ARCHIVE is not set, so release 2026.11.16-noarch "
             "is NOT reconstructable") in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("git", ["dirty", "no-git"])
+def test_publish_cli_notes_an_unknown_code_version(
+        wconn, a_key_file, monkeypatch, capsys, git):
+    """Spec 7: a non-git checkout (or uncommitted edits) must WARN, not pass silently."""
+    from tests.test_release_archive import fake_git
+    if git == "dirty":
+        fake_git(monkeypatch, status="?? stray.py\n")
+    else:
+        def no_git(*a, **k):
+            raise FileNotFoundError("git")
+        monkeypatch.setattr(subprocess, "run", no_git)
+    tag = f"2026.11.16-{git}"
+    assert _run(wconn, ["publish", "--release-tag", tag, "--published-by", "op",
+                        "--key", str(a_key_file["path"])]) == 0
+    assert (f"note: drugref code version unknown, so release {tag} is NOT fully "
+            "reconstructable") in capsys.readouterr().out
 
 
 def test_publish_refuses_a_blank_release_tag_before_any_write(

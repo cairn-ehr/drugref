@@ -354,6 +354,13 @@ def _handle_publish(conn, args) -> int:
     if root is None:
         print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
               "is NOT reconstructable")
+    # The commit publish RECORDED (spec 7): without a clean one, nobody can say
+    # which code turned the archived inputs into this release.
+    commit = conn.execute("SELECT git_commit FROM drugref.release_build "
+                          "WHERE release_tag = %s", (args.release_tag,)).fetchone()[0]
+    if commit == "unknown" or commit.endswith("-dirty"):
+        print(f"note: drugref code version unknown, so release {args.release_tag} "
+              "is NOT fully reconstructable")
     print(f"published manifest_id={manifest_id} release_tag={args.release_tag}")
     print(f"fingerprint={fingerprint}")
     return 0
