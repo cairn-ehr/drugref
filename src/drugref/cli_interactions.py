@@ -156,13 +156,13 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     class_orphans = [o for o in unresolved
                      if o.target_table == "curated_class_interaction"]
     needed = (class_grain_read.RULE_MEMBER_VIEW, class_ruling_reach.REACH_TABLE)
-    if class_orphans and any(
-            conn.execute("SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None
-            for rel in needed):
-        absent = [f"{rel} ({db})" for rel, db in zip(needed, ("db/079", "db/080"))
-                  if conn.execute("SELECT to_regclass(%s)",
-                                  (rel,)).fetchone()[0] is None]
-        print(f"note: {' and '.join(absent)} is missing, so "
+    # Probed once, and only when a class orphan makes the answer matter.
+    absent = [f"{rel} ({db})" for rel, db in zip(needed, ("db/079", "db/080"))
+              if class_orphans and conn.execute(
+                  "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None]
+    if absent:
+        verb = "are" if len(absent) > 1 else "is"
+        print(f"note: {' and '.join(absent)} {verb} missing, so "
               "every class-rule orphan is shown, not only those concerning the drugs "
               "asked. Run `drugref status`.", file=sys.stderr)
         reaching = {(o.subject_class, o.object_uuid, o.relationship)
@@ -265,12 +265,12 @@ def _handle_interactions(conn, args) -> int:
     which is what #82 objects to elsewhere; a script piping this command gets a
     machine-readable signal instead.
     """
-    # dict.fromkeys RATHER THAN set(): the report lists the offending identifiers, and a
-    # set would reorder them, so `X --with Y` could name Y first. It also collapses the
-    # duplicate in the self-pair case, so the same uuid is not reported twice.
     # THE RELEASE HEADER COMES FIRST, whatever follows (#258): a grade read out of
     # context is the failure the decision audit exists to prevent.
     print(release_state.release_header(conn))
+    # dict.fromkeys RATHER THAN set(): the report lists the offending identifiers, and a
+    # set would reorder them, so `X --with Y` could name Y first. It also collapses the
+    # duplicate in the self-pair case, so the same uuid is not reported twice.
     asked = list(dict.fromkeys(
         u for u in (args.moiety, args.against) if u is not None))
     known = _known_moieties(conn, asked)

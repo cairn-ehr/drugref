@@ -42,11 +42,14 @@ def test_interactions_prints_the_header_first(conn, a_moiety, capsys, state):
 
 
 @pytest.mark.parametrize("state", list(EXPECTED))
-def test_status_prints_the_header_first(conn, capsys, state):
+def test_status_prints_the_header_first(conn, capsys, monkeypatch, state):
     _make_state(conn, state)
     args = cli.build_parser().parse_args(["status"])
-    cli._handle_status(conn, args)
+    rc = cli._handle_status(conn, args)
     assert _first_line(capsys) == EXPECTED[state]
+    # Same state, header replaced by a constant: the exit code must not move.
+    monkeypatch.setattr(release_state, "release_header", lambda conn: "stub")
+    assert cli._handle_status(conn, args) == rc
 
 
 def test_the_header_for_a_missing_view_never_aborts(conn):

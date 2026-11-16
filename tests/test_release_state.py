@@ -1,6 +1,7 @@
 # tests/test_release_state.py
 """current_release view + release_line header copy (#258, db/081)."""
 
+from drugref import release_state
 from drugref.release_state import CurrentRelease, current_release, release_line
 
 TAG = "r1"
@@ -14,7 +15,7 @@ def test_release_line_all_four_copies():
         " — answers may differ from that release")
     assert release_line(None) == (
         "drugref release: none published (answers are not tied to a reconstructable release)")
-    assert release_line(CurrentRelease(TAG, None, None, ("x",))) == (
+    assert release_state.UNKNOWN_LINE == (
         "drugref release: unknown (database predates db/081)")
 
 
@@ -101,4 +102,15 @@ def test_manifest_without_build_row_says_so(conn):
     cr = current_release(conn)
     assert cr.git_commit is None
     assert cr.drift_reasons == ("no build record (published before db/081)",)
-    assert release_line(cr) == "drugref release: unknown (database predates db/081)"
+    # Controller ruling (#258): the view exists, so this is DRIFT, not "predates db/081".
+    assert release_line(cr) == (
+        "drugref release: r1 (DRIFTED since publication: no build record "
+        "(published before db/081)) — answers may differ from that release")
+
+
+def test_current_release_or_absent_distinguishes_all_three(conn):
+    assert release_state.current_release_or_absent(conn) is None
+    _publish(conn)
+    assert release_state.current_release_or_absent(conn).release_tag == TAG
+    conn.execute("DROP VIEW drugref.current_release")
+    assert release_state.current_release_or_absent(conn) is release_state.VIEW_ABSENT

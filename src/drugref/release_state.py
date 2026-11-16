@@ -15,7 +15,8 @@ UNKNOWN_LINE = "drugref release: unknown (database predates db/081)"
 
 @dataclass(frozen=True)
 class CurrentRelease:
-    """`git_commit` is None when the release has no release_build row (pre-db/081)."""
+    """`git_commit` is None when the release has no release_build row (published
+    before db/081); the view then carries the drift reason that says so."""
     release_tag: str
     published_at: datetime
     git_commit: str | None
@@ -36,13 +37,38 @@ def current_release(conn: psycopg.Connection) -> CurrentRelease | None:
     return CurrentRelease(row[0], row[1], row[2], tuple(row[3]))
 
 
+class _ViewAbsent:
+    """Type of `VIEW_ABSENT`; a class so the sentinel reads well in a repr."""
+
+    def __repr__(self) -> str:
+        return "VIEW_ABSENT"
+
+
+#: The database predates db/081: there is no view to ask, so no answer at all.
+VIEW_ABSENT = _ViewAbsent()
+
+
+def current_release_or_absent(
+        conn: psycopg.Connection) -> CurrentRelease | None | _ViewAbsent:
+    """`current_release`, or `VIEW_ABSENT` when db/081 is not applied.
+
+    ONE home for the `to_regclass` probe: the header and `audit archive` both need
+    to tell "nothing published" from "this database cannot say" (#258).
+    """
+    if conn.execute("SELECT to_regclass(%s)", (RELEASE_VIEW,)).fetchone()[0] is None:
+        return VIEW_ABSENT
+    return current_release(conn)
+
+
 def release_line(cr: CurrentRelease | None) -> str:
-    """The one-line header; pure. Exact copy is fixed by #258's design."""
+    """The one-line header; pure. Exact copy is fixed by #258's design.
+
+    A release with no build row is DRIFTED (its first reason says why), not
+    "unknown": the view exists, so the database is not the one predating db/081.
+    """
     if cr is None:
         return ("drugref release: none published "
                 "(answers are not tied to a reconstructable release)")
-    if cr.git_commit is None:
-        return UNKNOWN_LINE
     if cr.drifted:
         reasons = ", ".join(cr.drift_reasons)
         return (f"drugref release: {cr.release_tag} (DRIFTED since publication: "
@@ -56,6 +82,5 @@ def release_header(conn: psycopg.Connection) -> str:
     The header is printed by commands that must still answer on an under-migrated
     database, so a missing view yields the "unknown" copy rather than an abort (#258).
     """
-    if conn.execute("SELECT to_regclass(%s)", (RELEASE_VIEW,)).fetchone()[0] is None:
-        return UNKNOWN_LINE
-    return release_line(current_release(conn))
+    cr = current_release_or_absent(conn)
+    return UNKNOWN_LINE if cr is VIEW_ABSENT else release_line(cr)

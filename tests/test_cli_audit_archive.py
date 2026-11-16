@@ -1,6 +1,8 @@
 """`drugref audit archive` verifies a release's archived inputs (#258). DB-gated."""
 import json
 
+import pytest
+
 from drugref import archive, cli
 from tests.test_release_state import _old_run, _publish
 
@@ -25,6 +27,7 @@ def _archived_release(tmp_path, monkeypatch, bodies=("x", "y")):
     record.write_text(json.dumps(
         {"release_tag": TAG, "git_commit": "abc", "ledger_head": "h",
          "runs": [{"source_checksum": s} for s in sums]}))
+    (root / "releases" / f"{TAG}.curated.json").write_text("{}")
     monkeypatch.setenv(archive.ENV_VAR, str(root))
     return root, sums
 
@@ -65,3 +68,46 @@ def test_a_missing_release_record_exits_2(conn, tmp_path, monkeypatch, capsys):
 def test_no_release_published_and_none_named_exits_2(conn, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))
     assert _run_cli(conn) == 2
+
+
+@pytest.mark.parametrize("body", [None, "{not json"])
+def test_a_missing_or_unparseable_curated_export_exits_1(
+        conn, tmp_path, monkeypatch, capsys, body):
+    """The export is the only copy of the curated inputs if the DB is lost (spec 6.2)."""
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    export = root / "releases" / f"{TAG}.curated.json"
+    if body is None:
+        export.unlink()
+    else:
+        export.write_text(body)
+    assert _run_cli(conn, "--release", TAG) == 1
+    out = capsys.readouterr().out
+    assert str(export) in out and "archive complete" not in out
+
+
+@pytest.mark.parametrize("body", [
+    "{not json", '{"release_tag": "r1"}', '{"runs": 5}',
+    '{"runs": [{"source_checksum": "../../etc/passwd"}]}'])
+def test_a_malformed_release_record_exits_2(conn, tmp_path, monkeypatch, capsys, body):
+    """Exit 1 means "problems found in the archive"; a record drugref cannot read at
+    all must not look like that, nor like a crash."""
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    record = root / "releases" / f"{TAG}.json"
+    record.write_text(body)
+    assert _run_cli(conn, "--release", TAG) == 2
+    assert f"malformed release record {record}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])
+def test_a_path_like_release_tag_exits_2(conn, tmp_path, monkeypatch, capsys, tag):
+    monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))
+    assert _run_cli(conn, "--release", tag) == 2
+    assert "path separator" in capsys.readouterr().err
+
+
+def test_a_database_predating_db081_says_so(conn, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))
+    conn.execute("DROP VIEW drugref.current_release")
+    assert _run_cli(conn) == 2
+    err = capsys.readouterr().err
+    assert "predates db/081" in err and "no release is published" not in err

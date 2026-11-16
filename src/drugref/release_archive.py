@@ -89,16 +89,17 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
     finished run is not fully archived. Returns the manifest id.
     """
     tag = publish_kwargs["release_tag"]
-    if "/" in tag or "\\" in tag or ".." in tag:
-        raise ArchiveIncomplete([archive.ArchiveProblem(
-            tag, "release tag must not contain a path separator or '..'")])
+    try:
+        archive.check_release_tag(tag)
+    except ValueError as exc:
+        raise ArchiveIncomplete([archive.ArchiveProblem(tag, str(exc))]) from exc
     runs = finished_runs(conn)
     if root is not None:
-        for name in (f"{tag}.json", f"{tag}.curated.json"):
-            if (root / "releases" / name).exists():
+        for path in (archive.release_record_path(root, tag),
+                     archive.curated_export_path(root, tag)):
+            if path.exists():
                 raise ArchiveIncomplete([archive.ArchiveProblem(
-                    tag, f"archive file already exists, never overwritten: "
-                         f"{root / 'releases' / name}")])
+                    tag, f"archive file already exists, never overwritten: {path}")])
         problems = archive.missing_runs(root, {r["source_checksum"] for r in runs})
         if problems:
             raise ArchiveIncomplete(problems)
@@ -112,8 +113,8 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
         " VALUES (%s, %s, %s, %s)",
         (tag, commit, head, [r["ingest_run_id"] for r in runs]))
     if root is not None:
-        _write_json(root / "releases" / f"{tag}.json",
+        _write_json(archive.release_record_path(root, tag),
                     {"release_tag": tag, "git_commit": commit,
                      "ledger_head": head, "runs": runs})
-        _write_json(root / "releases" / f"{tag}.curated.json", curated_export(conn))
+        _write_json(archive.curated_export_path(root, tag), curated_export(conn))
     return manifest_id

@@ -21,7 +21,8 @@ import uuid
 import psycopg
 import pytest
 
-from drugref import class_grain_read, classes, cli_interactions, curation
+from drugref import (class_grain_read, class_ruling_reach, classes,
+                     cli_interactions, curation)
 from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
                                                  _file_member)
 from tests.test_cli_interactions import (_KNOWN_TO_THE_STUB, _RaisingConn,
@@ -399,6 +400,28 @@ def test_a_missing_class_rule_member_view_banners_every_class_orphan(
     captured = capsys.readouterr()
     assert "INCOMPLETE" in captured.out
     assert "079" in captured.err
+
+
+class _BothMissing(_MemberViewMissing):
+    """db/079's view AND db/080's reach table are gone."""
+
+    def fetchone(self):
+        if "to_regclass" in self._last and {
+                class_grain_read.RULE_MEMBER_VIEW,
+                class_ruling_reach.REACH_TABLE} & set(self._params or ()):
+            return (None,)
+        return super().fetchone()
+
+
+def test_both_missing_relations_are_named_in_one_sentence(monkeypatch, capsys):
+    monkeypatch.setattr(curation, "unresolved_targets", lambda conn: [_orphan(
+        target_table="curated_class_interaction", subject_class=uuid.uuid4())])
+    assert cli_interactions._handle_interactions(
+        _BothMissing(psycopg.errors.UndefinedTable("gone")),
+        _args(_KNOWN_TO_THE_STUB)) == cli_interactions.EXIT_INCOMPLETE
+    assert (f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079) and "
+            f"{class_ruling_reach.REACH_TABLE} (db/080) are missing, so every "
+            "class-rule orphan is shown") in capsys.readouterr().err
 
 
 def _left_the_class_orphan(conn, ingest_run_id, n, correct=False):

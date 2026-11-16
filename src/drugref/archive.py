@@ -8,6 +8,8 @@ LAYOUT (fixed; other modules rely on it)::
 
     <root>/blobs/sha256/<first 2 hex>/<64 hex>   one file per distinct content
     <root>/runs/<source_checksum>.json           which blobs a run read, in order
+    <root>/releases/<release_tag>.json           a release's runs + code version
+    <root>/releases/<release_tag>.curated.json   a release's curated rows
 
 Blobs are keyed by their own SHA-256, so two runs sharing a file store it once.
 A run is keyed by the combined digest `ingest.checksum.checksum` already puts in
@@ -20,6 +22,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
@@ -79,14 +82,52 @@ def file_digests(*inputs: Input) -> tuple[str, list[ArchivedFile]]:
     return combined.hexdigest(), files
 
 
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def require_sha256(value) -> str:
+    """Return `value` if it is 64 lowercase hex, else raise ValueError.
+
+    WHY: checksums come back out of JSON records and database rows, and become
+    file names. A hand-edited "../../x" must be reported, never followed (#258).
+    """
+    if not isinstance(value, str) or not _SHA256.fullmatch(value):
+        raise ValueError(f"not a lowercase 64-hex sha256: {value!r}")
+    return value
+
+
 def blob_path(root: pathlib.Path, sha256: str) -> pathlib.Path:
     """Where the blob with this content hash lives (sharded by 2 hex chars)."""
+    require_sha256(sha256)
     return root / "blobs" / "sha256" / sha256[:2] / sha256
 
 
 def run_record_path(root: pathlib.Path, source_checksum: str) -> pathlib.Path:
     """Where the run record for this combined digest lives."""
+    require_sha256(source_checksum)
     return root / "runs" / f"{source_checksum}.json"
+
+
+def check_release_tag(tag: str) -> None:
+    """Raise ValueError if `tag` could name a file outside `<root>/releases/`.
+
+    ONE home for the rule: `publish` (which writes these files) and
+    `audit archive --release` (which reads them) must agree on it (#258).
+    """
+    if "/" in tag or "\\" in tag or ".." in tag:
+        raise ValueError("release tag must not contain a path separator or '..'")
+
+
+def release_record_path(root: pathlib.Path, tag: str) -> pathlib.Path:
+    """`<root>/releases/<tag>.json`: the release's runs and code version."""
+    check_release_tag(tag)
+    return root / "releases" / f"{tag}.json"
+
+
+def curated_export_path(root: pathlib.Path, tag: str) -> pathlib.Path:
+    """`<root>/releases/<tag>.curated.json`: every curated row at publication."""
+    check_release_tag(tag)
+    return root / "releases" / f"{tag}.curated.json"
 
 
 def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
@@ -135,21 +176,29 @@ def store_run(root: pathlib.Path, *inputs: Input) -> str:
     return digest
 
 
-def _check(root: pathlib.Path, checksums: Iterable[str],
-           rehash: bool) -> list[ArchiveProblem]:
+def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
+           seen: set[str] | None) -> list[ArchiveProblem]:
     problems: list[ArchiveProblem] = []
     for cs in checksums:
-        record = run_record_path(root, cs)
+        try:
+            record = run_record_path(root, cs)
+        except ValueError:
+            problems.append(ArchiveProblem(cs, "not a sha256 checksum"))
+            continue
         if not record.is_file():
             problems.append(ArchiveProblem(cs, "no run record"))
             continue
         try:
             files = json.loads(record.read_text(encoding="utf-8"))["files"]
-            files = [(f["sha256"], f["size"]) for f in files]
+            files = [(require_sha256(f["sha256"]), f["size"]) for f in files]
+            if not all(isinstance(size, int) for _, size in files):
+                raise TypeError("size is not an integer")
         except (ValueError, KeyError, TypeError):
             # A hand-damaged record is exactly what the audit command reports (#258).
             problems.append(ArchiveProblem(cs, "malformed run record"))
             continue
+        if seen is not None:
+            seen.update(sha for sha, _ in files)
         for sha, size in files:
             blob = blob_path(root, sha)
             if not blob.is_file():
@@ -166,10 +215,14 @@ def _check(root: pathlib.Path, checksums: Iterable[str],
 def missing_runs(root: pathlib.Path,
                  checksums: Iterable[str]) -> list[ArchiveProblem]:
     """Missing records/blobs and wrong-size blobs; cheap (stat, no re-hash)."""
-    return _check(root, checksums, rehash=False)
+    return _check(root, checksums, rehash=False, seen=None)
 
 
-def verify_runs(root: pathlib.Path,
-                checksums: Iterable[str]) -> list[ArchiveProblem]:
-    """As `missing_runs`, plus re-hash every blob. The audit command uses it."""
-    return _check(root, checksums, rehash=True)
+def verify_runs(root: pathlib.Path, checksums: Iterable[str], *,
+                seen: set[str] | None = None) -> list[ArchiveProblem]:
+    """As `missing_runs`, plus re-hash every blob. The audit command uses it.
+
+    `seen`, when given, is filled with every blob sha the readable run records
+    name, so the caller can count them without parsing the records again.
+    """
+    return _check(root, checksums, rehash=True, seen=seen)

@@ -2,6 +2,8 @@
 import json
 from importlib import resources
 
+import pytest
+
 from drugref import archive
 from drugref.ingest.checksum import checksum
 
@@ -86,8 +88,40 @@ def test_a_malformed_run_record_is_a_problem_not_a_crash(tmp_path):
     """`drugref audit archive` exists to report a hand-damaged archive (#258)."""
     root = tmp_path / "arch"
     (root / "runs").mkdir(parents=True)
-    archive.run_record_path(root, "bad-json").write_text("{not json")
-    archive.run_record_path(root, "no-files").write_text('{"source_checksum": "x"}')
-    problems = archive.verify_runs(root, ["bad-json", "no-files"])
+    bad, nofiles, badsha = "a" * 64, "b" * 64, "c" * 64
+    archive.run_record_path(root, bad).write_text("{not json")
+    archive.run_record_path(root, nofiles).write_text('{"source_checksum": "x"}')
+    # A sha that is not 64 lowercase hex must never become part of a path.
+    archive.run_record_path(root, badsha).write_text(
+        '{"files": [{"name": "f", "size": 1, "sha256": "../../escape"}]}')
+    problems = archive.verify_runs(root, [bad, nofiles, badsha])
     assert [(p.source_checksum, p.what) for p in problems] == [
-        ("bad-json", "malformed run record"), ("no-files", "malformed run record")]
+        (bad, "malformed run record"), (nofiles, "malformed run record"),
+        (badsha, "malformed run record")]
+
+
+def test_a_non_sha256_checksum_is_a_problem_and_builds_no_path(tmp_path):
+    assert archive.missing_runs(tmp_path, ["../x", "F" * 64]) == [
+        archive.ArchiveProblem("../x", "not a sha256 checksum"),
+        archive.ArchiveProblem("F" * 64, "not a sha256 checksum")]
+    with pytest.raises(ValueError):
+        archive.blob_path(tmp_path, "../x")
+
+
+def test_verify_collects_the_blobs_it_checked(tmp_path):
+    a, b = _files(tmp_path, 2)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a, b)
+    seen: set[str] = set()
+    assert archive.verify_runs(root, [digest], seen=seen) == []
+    assert seen == {f.sha256 for f in archive.file_digests(a, b)[1]}
+
+
+@pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b", ".."])
+def test_a_path_like_release_tag_is_rejected(tmp_path, tag):
+    with pytest.raises(ValueError, match="path separator"):
+        archive.check_release_tag(tag)
+    with pytest.raises(ValueError):
+        archive.release_record_path(tmp_path, tag)
+    assert archive.curated_export_path(tmp_path, "r1") == (
+        tmp_path / "releases" / "r1.curated.json")

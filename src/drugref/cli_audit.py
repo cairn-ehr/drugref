@@ -44,8 +44,11 @@ def _handle_archive(conn, args) -> int:
     """Verify (re-hash) every archived input of a release; exit 0 / 1 / 2 (#258).
 
     0 = complete, 1 = problems found (each printed), 2 = nothing to check: the
-    archive env var is unset, no release is named or published, or its record is
-    missing. Default release is the one the database currently answers from.
+    archive env var is unset, the tag is path-like, no release is named or
+    published (or the database predates db/081), or the release record is
+    missing or unreadable. Default release is the one the database answers from.
+    A missing or unparseable curated export is a PROBLEM (exit 1), not "nothing
+    to check": it is the only copy of the curated inputs if the DB is lost.
     """
     root = archive.archive_root()
     if root is None:
@@ -53,31 +56,53 @@ def _handle_archive(conn, args) -> int:
         return 2
     tag = args.release
     if tag is None:
-        # An absent view (pre-db/081) is "nothing published", not a crash.
-        has_view = conn.execute("SELECT to_regclass(%s)",
-                                (release_state.RELEASE_VIEW,)).fetchone()[0]
-        current = release_state.current_release(conn) if has_view else None
+        current = release_state.current_release_or_absent(conn)
+        if current is release_state.VIEW_ABSENT:
+            print("drugref: the database predates db/081, so it cannot say which "
+                  "release it answers from; name one with --release", file=sys.stderr)
+            return 2
         if current is None:
             print("drugref: no release is published; name one with --release",
                   file=sys.stderr)
             return 2
         tag = current.release_tag
-    record = root / "releases" / f"{tag}.json"
+    try:
+        record = archive.release_record_path(root, tag)
+    except ValueError as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
     if not record.is_file():
         print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
         return 2
-    checksums = [r["source_checksum"]
-                 for r in json.loads(record.read_text(encoding="utf-8"))["runs"]]
-    problems = archive.verify_runs(root, checksums)
+    try:
+        checksums = [archive.require_sha256(r["source_checksum"]) for r in
+                     json.loads(record.read_text(encoding="utf-8"))["runs"]]
+    except (ValueError, KeyError, TypeError):
+        print(f"drugref: malformed release record {record}", file=sys.stderr)
+        return 2
+    blobs: set[str] = set()
+    problems = archive.verify_runs(root, checksums, seen=blobs)
+    problems += _curated_export_problems(root, tag)
     for p in problems:
         print(f"{p.source_checksum}: {p.what}")
     if problems:
         return 1
-    blobs = {f["sha256"] for cs in checksums for f in json.loads(
-        archive.run_record_path(root, cs).read_text(encoding="utf-8"))["files"]}
     print(f"archive complete for {tag}: {len(checksums)} runs, "
           f"{len(blobs)} blobs verified")
     return 0
+
+
+def _curated_export_problems(root, tag) -> list[archive.ArchiveProblem]:
+    """[] when `<tag>.curated.json` exists and parses as a JSON object."""
+    path = archive.curated_export_path(root, tag)
+    if not path.is_file():
+        return [archive.ArchiveProblem(tag, f"missing curated export {path}")]
+    try:
+        if isinstance(json.loads(path.read_text(encoding="utf-8")), dict):
+            return []
+    except (OSError, ValueError):
+        pass
+    return [archive.ArchiveProblem(tag, f"malformed curated export {path}")]
 
 
 def register(commands) -> None:
