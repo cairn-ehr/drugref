@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/decision-audit`: the #258 round is DONE and committed; the PR to `main` closing #258 is opened
-by the controller (link it on #258). Schema ends at `db/081`.** No agent round queued after it: the owner picks
+**On branch `claude/decision-audit`: the #258 round is DONE and committed; a PR to `main` closes #258
+(see `gh pr list --head claude/decision-audit`). Schema ends at `db/081`.** No agent round queued after it: the owner picks
 (see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run
 pytest` fails if the line and the collected suite disagree.
 
