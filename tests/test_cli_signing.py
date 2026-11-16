@@ -825,6 +825,14 @@ def test_publish_cli_exits_1_and_names_the_missing_run(
                         "'2026.11.16-refused'").fetchone() is None
 
 
+def test_publish_cli_notes_when_no_archive_is_configured(wconn, a_key_file, capsys):
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.11.16-noarch", "--published-by", "op",
+        "--key", str(a_key_file["path"])]) == 0
+    assert ("note: DRUGREF_ARCHIVE is not set, so release 2026.11.16-noarch "
+            "is NOT reconstructable") in capsys.readouterr().out
+
+
 def test_publish_refuses_a_blank_release_tag_before_any_write(
         wconn, conn, a_key_file, capsys):
     """release_manifest.release_tag is NOT NULL with no non-blank CHECK and is

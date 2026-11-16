@@ -60,8 +60,12 @@ def finished_runs(conn) -> list[dict]:
         "finished_at FROM drugref.ingest_run WHERE finished_at IS NOT NULL "
         "ORDER BY ingest_run_id")
     names = [c.name for c in cur.description]
-    return [{**dict(zip(names, row)), "finished_at": row[-1].isoformat()}
-            for row in cur.fetchall()]
+    out = []
+    for row in cur.fetchall():
+        rec = dict(zip(names, row))
+        rec["finished_at"] = rec["finished_at"].isoformat()
+        out.append(rec)
+    return out
 
 
 def curated_export(conn) -> dict[str, list[dict]]:
@@ -84,13 +88,21 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
     Raises `ArchiveIncomplete` BEFORE writing anything when `root` is set and a
     finished run is not fully archived. Returns the manifest id.
     """
+    tag = publish_kwargs["release_tag"]
+    if "/" in tag or "\\" in tag or ".." in tag:
+        raise ArchiveIncomplete([archive.ArchiveProblem(
+            tag, "release tag must not contain a path separator or '..'")])
     runs = finished_runs(conn)
     if root is not None:
+        for name in (f"{tag}.json", f"{tag}.curated.json"):
+            if (root / "releases" / name).exists():
+                raise ArchiveIncomplete([archive.ArchiveProblem(
+                    tag, f"archive file already exists, never overwritten: "
+                         f"{root / 'releases' / name}")])
         problems = archive.missing_runs(root, {r["source_checksum"] for r in runs})
         if problems:
             raise ArchiveIncomplete(problems)
     manifest_id = releases.publish(conn, **publish_kwargs)
-    tag = publish_kwargs["release_tag"]
     head = conn.execute(
         "SELECT max(filename) FROM drugref.schema_migration").fetchone()[0]
     commit = git_commit()

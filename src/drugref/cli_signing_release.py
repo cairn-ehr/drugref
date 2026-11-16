@@ -339,9 +339,6 @@ def _handle_publish(conn, args) -> int:
     # constraint a real operator mistake can trip is release_tag's UNIQUE --
     # reusing a tag a previous publish already claimed.
     root = archive.archive_root()
-    if root is None:
-        print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
-              "is NOT reconstructable")
     try:
         manifest_id = _write(
             conn, release_archive.publish_archived, psycopg.errors.UniqueViolation,
@@ -354,6 +351,9 @@ def _handle_publish(conn, args) -> int:
         return 1
     if manifest_id is None:
         return 2
+    if root is None:
+        print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
+              "is NOT reconstructable")
     print(f"published manifest_id={manifest_id} release_tag={args.release_tag}")
     print(f"fingerprint={fingerprint}")
     return 0

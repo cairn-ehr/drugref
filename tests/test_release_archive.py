@@ -98,8 +98,57 @@ def test_release_record_lists_every_run_not_only_loaded(conn):
                            for r in release_archive.finished_runs(conn)]
 
 
-def test_git_commit_is_a_string():
-    assert release_archive.git_commit()
+def test_git_commit_is_40_hex_or_unknown_and_falls_back(monkeypatch):
+    import re
+    import subprocess
+    assert re.fullmatch(r"[0-9a-f]{40}|unknown", release_archive.git_commit())
+
+    def boom(*a, **k):
+        raise OSError("no git")
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert release_archive.git_commit() == "unknown"
+
+
+def _refused(conn, key, root, tag=TAG):
+    with pytest.raises(release_archive.ArchiveIncomplete) as exc:
+        release_archive.publish_archived(
+            conn, root=root, release_tag=tag, published_by="op", **key)
+    assert conn.execute("SELECT 1 FROM drugref.release_manifest "
+                        "WHERE release_tag = %s", (tag,)).fetchone() is None
+    return exc.value
+
+
+def test_publish_refuses_when_a_blob_is_unlinked(conn, key, tmp_path):
+    root = tmp_path / "arch"
+    cs = _archive_run(root, tmp_path, "in.txt", "hello")
+    _run(conn, checksum=cs)
+    for f in (root / "blobs").rglob("*"):
+        if f.is_file():
+            f.unlink()
+    assert "missing blob" in _refused(conn, key, root).problems[0].what
+
+
+def test_publish_refuses_when_a_blob_is_truncated(conn, key, tmp_path):
+    root = tmp_path / "arch"
+    cs = _archive_run(root, tmp_path, "in.txt", "hello world")
+    _run(conn, checksum=cs)
+    for f in (root / "blobs").rglob("*"):
+        if f.is_file():
+            f.write_bytes(b"h")
+    assert "truncated blob" in _refused(conn, key, root).problems[0].what
+
+
+def test_publish_never_overwrites_an_existing_release_file(conn, key, tmp_path):
+    root = tmp_path / "arch"
+    (root / "releases").mkdir(parents=True)
+    (root / "releases" / f"{TAG}.json").write_text("{}")
+    assert "never overwritten" in _refused(conn, key, root).problems[0].what
+    assert (root / "releases" / f"{TAG}.json").read_text() == "{}"
+
+
+@pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])
+def test_publish_rejects_a_path_like_release_tag(conn, key, tmp_path, tag):
+    assert "path separator" in _refused(conn, key, tmp_path / "arch", tag).problems[0].what
 
 
 def test_current_release_view_reads_every_curated_table(conn):

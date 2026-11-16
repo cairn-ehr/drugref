@@ -65,6 +65,11 @@ def test_verify_names_a_truncated_blob(tmp_path):
     digest = archive.store_run(root, a)
     _, files = archive.file_digests(a)
     archive.blob_path(root, files[0].sha256).write_bytes(b"x")
+    # same-size corruption is invisible without a re-hash; size mismatch is not
+    blob = archive.blob_path(root, files[0].sha256)
+    assert archive.missing_runs(root, [digest]) == [
+        archive.ArchiveProblem(digest, f"truncated blob {files[0].sha256}")]
+    blob.write_bytes(b"y" * files[0].size)
     assert archive.missing_runs(root, [digest]) == []  # no re-hash
     assert archive.verify_runs(root, [digest]) == [
         archive.ArchiveProblem(digest, f"corrupt blob {files[0].sha256}")]

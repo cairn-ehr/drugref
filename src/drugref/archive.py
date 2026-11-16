@@ -147,14 +147,18 @@ def _check(root: pathlib.Path, checksums: Iterable[str],
             blob = blob_path(root, f["sha256"])
             if not blob.is_file():
                 problems.append(ArchiveProblem(cs, f"missing blob {f['sha256']}"))
-            elif rehash and file_digests(blob)[0] != f["sha256"]:
-                problems.append(ArchiveProblem(cs, f"corrupt blob {f['sha256']}"))
+            elif rehash:
+                if file_digests(blob)[0] != f["sha256"]:
+                    problems.append(ArchiveProblem(cs, f"corrupt blob {f['sha256']}"))
+            elif blob.stat().st_size != f["size"]:
+                # Cheap truncation check for publish: a stat, no re-hash.
+                problems.append(ArchiveProblem(cs, f"truncated blob {f['sha256']}"))
     return problems
 
 
 def missing_runs(root: pathlib.Path,
                  checksums: Iterable[str]) -> list[ArchiveProblem]:
-    """Records and blobs that do not exist; cheap (no re-hash). Publish uses it."""
+    """Missing records/blobs and wrong-size blobs; cheap (stat, no re-hash)."""
     return _check(root, checksums, rehash=False)
 
 

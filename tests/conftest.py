@@ -12,8 +12,14 @@ import pytest
 import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
-from drugref import db
+from drugref import archive, db
 from tests.suite_count import COLLECTED_TESTS
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_archive(monkeypatch):
+    """A developer's DRUGREF_ARCHIVE must never make the suite write to a real archive."""
+    monkeypatch.delenv(archive.ENV_VAR, raising=False)
 
 
 def dsn_verdict(dsn, in_ci):
