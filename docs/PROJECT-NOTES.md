@@ -363,6 +363,13 @@ contraindication, so a key-management event must not be able to withdraw advice.
 raises no objection", **not** "the mathematics was checked" — Postgres cannot verify Ed25519, only `drugref
 verify` can. Full account and the traps: § "Slice 5c.4" below.
 
+**Decision audit — what was known when a decision was made** (`db/080`–`db/081`, #258). A clinical decision is
+anchored on a **release tag**: `current_release` names the release the database answers from and whether it has
+drifted, and `drugref interactions` / `status` print that line first. With `DRUGREF_ARCHIVE` set, every ingest
+archives its input files and publish writes a release record and a curated export, so a release can be rebuilt
+(the replay tool is #259). Each class ruling keeps the drugs it reached when written, and the orphan banner reads
+it. Full account and the traps: § "The decision audit" below.
+
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection with
 **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser), `local.py`
 (single writer), `ingest/pbs_run.py` (orchestrator), bridging PBS products to the global spine **by name alone** — the only
@@ -6596,6 +6603,78 @@ run:** a real SPL ingest storing the count. The end-to-end census test stores it
 era of rows) before merge; the three local databases holding db/078 had its ledger checksum re-recorded, as no other
 database ever applied it.
 
+## The decision audit (#258, 2026-11-16) — `db/080`–`db/081`, tested on `drugref_test` only, suite 3436 → 3535
+
+**Owner ruling (2026-11-16, on #258): drugref must be able to show what information was available when a decision
+was made.** Spec: [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (and its dated
+review amendments at the end); plan: `docs/superpowers/plans/2026-11-16-drugref-decision-audit.md`; living record:
+`docs-site/docs/decisions/release-tag-as-the-audit-anchor.md`. The anchor is a **release tag**, not a migration id
+(two nodes at one migration can hold different data). Chosen: an upstream-file archive (A) plus a per-ruling reach
+snapshot (C); in-database membership history (B) was set aside, with diff-based tracking as the owner's fallback if
+disk becomes a problem (**#260**).
+
+**What shipped.**
+
+- **`db/080` `curated_class_interaction_reach`** (insert-only, `forbid_any_rewrite`): one row per class ruling ×
+  side × drug, `captured` = `at_ruling` | `backfill_db080`. `class_ruling_reach.snapshot_reach` writes it beside the
+  ruling (called from `record_class_interaction_judgement`); a correction snapshots again under its own id and the
+  superseded version keeps its rows. The orphan banner (`class_grain_read.class_rules_reaching`) now returns a rule
+  when an asked drug is in its reach now **or was when ruled** (any version of the same natural key), so #258's
+  under-warning is closed and the `shortcut:` comment is gone.
+- **`db/081` `release_build`** (insert-only sidecar to the immutable `release_manifest`: `git_commit`,
+  `ledger_head`, `run_ids`) and the view **`current_release`** (one row or none: the latest release plus its drift
+  reasons — `re-ingested`, `re-curated`, `expansion policy changed`, `newer migration`, or `no build record
+  (published before db/081)`). A source the release did not carry (a node's PBS run) is local data, not drift.
+- **`archive.py`** — the content-addressed archive under **`DRUGREF_ARCHIVE`** (`blobs/sha256/<aa>/<hex>`,
+  `runs/<source_checksum>.json`, `releases/<tag>.json`, `releases/<tag>.curated.json`). Every ingest orchestrator
+  calls it through `ingest/checksum.archived_checksum`; unset means no archive I/O at all.
+- **`release_archive.py`** — `publish_archived` wraps `releases.publish` (untouched): writes the `release_build`
+  row and, with the archive set, the release record and the curated export (every curated row, superseded
+  included, every `class_expansion_policy` row and every reach row).
+- **`release_state.py`** — `current_release`, `release_line`, `release_header`. **`drugref interactions` and
+  `drugref status` print the release line FIRST** (`drugref release: <tag>` / `... (DRIFTED since publication:
+  ...)` / `none published` / `unknown (database predates db/081)`); it never changes an exit code.
+- **`cli_audit.py`** — **`drugref audit class-ruling <id>`** (per side: reach then vs now, added / removed, the
+  ingest runs loaded at `reviewed_at`; exit 2 for an unknown id) and **`drugref audit archive [--release TAG]`**
+  (re-hashes every blob a release needs and checks the curated export; 0 complete, 1 problems, 2 nothing to check).
+- **`drugref release publish`** refuses (exit 1, naming each problem) when the archive is set and any finished run's
+  record or blob is missing or the wrong size, when a release file for the tag already exists, or when the tag is
+  path-like; it **warns** when the archive is unset ("NOT reconstructable") and when the recorded code version is
+  `unknown` or `-dirty`.
+
+**Traps.**
+
+- **A `backfill_db080` reach row is membership AT MIGRATION TIME, not at ruling time.** A ruling recorded before
+  `db/080` got its snapshot from `class_rule_member` as it stood when the migration ran, so a drug that had already
+  left its class before `db/080` is still not bannered for it. No such rulings exist on any known database today;
+  `drugref audit class-ruling` prints a note on a backfilled side.
+- **`DRUGREF_ARCHIVE` unset → releases are NOT reconstructable**, and publish says so. **It must be an absolute
+  path** (`archive_root` raises `ValueError` on a relative one; today that surfaces as a traceback, parked).
+- **A release record lists EVERY finished `ingest_run`**, not only `loaded_release` (the registry accumulates across
+  runs), **so publish refuses on any run ingested before the archive was set.** No backfill exists (a run's
+  combined checksum cannot be turned back into a file list). Production must be built from nothing with the archive
+  set; today's named databases can only publish unarchived (with the warning).
+- **Archive files are created `0600`** (`tempfile.mkstemp` in `archive.atomic_write`), so a second account cannot
+  read them, and `drugref audit archive` lets the resulting `OSError` escape as a traceback: **#261**.
+- **Publish's never-overwrite check is check-then-`os.replace`**: two same-tag publishes can race (the DB UNIQUE
+  still rejects the second transaction): **#262**.
+- **A wrong-size blob is repaired on re-ingest** by hash-verified bytes of its own name (spec amendment); a
+  same-size blob with wrong content is not, but `drugref audit archive` reports it.
+- **PBS:** on a database that ingested PBS with the archive set, the archive holds the encumbered PBS file and the
+  release record lists the PBS run. Fine while node-local; decide before archives are shared: **#263** (under #25).
+  `ingest_pbs` with a caller-supplied `source_checksum` now raises when the archive is set (the CLI never passes one).
+- `tests/conftest.py` clears `DRUGREF_ARCHIVE` for every test (autouse), so a test can never write a real archive.
+
+**Filed:** **#259** (release replay: rebuild a release into a fresh database from the archive — the spec's
+non-goal), **#260** (diff-based membership tracking if archive disk grows), **#261**, **#262**, **#263**. **#256**
+got a comment: `drugref audit class-ruling` now lists added / removed members, the data its report needs.
+
+**Tests (+99):** `test_class_ruling_reach.py`, `test_class_ruling_audit.py`, `test_archive.py`,
+`test_archive_orchestrators.py`, `test_release_state.py`, `test_release_archive.py`, `test_release_header.py`,
+`test_cli_audit_archive.py`, plus additions to `test_cli_interactions_orphans.py`, `test_cli_signing.py`,
+`test_pbs_run.py`, `test_expansion_policy.py` and `test_db.py`. **Not run:** an archived ingest of the real
+releases, or a publish on a named database; no named database carries `db/080`–`db/081` yet.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -6738,6 +6817,18 @@ left a class that keeps other members is not bannered (needs membership history)
 [#256](https://github.com/cairn-ehr/drugref/issues/256)** (the issue's last paragraph): a grade also drops out
 when the candidate survives but a partner leaves the class or an expansion-policy deny cuts it;
 `curated_target_unresolved` does not see that. +11 tests, 3425 → 3436.
+**The decision audit (2026-11-16, `db/080`–`db/081`)** —
+**[#258](https://github.com/cairn-ehr/drugref/issues/258)** **FIXED** (close on merge): each class ruling records
+which drugs it reached when written, and the orphan banner reads that record, so a drug that alone left a class is
+bannered again; releases name their build and drift, and with `DRUGREF_ARCHIVE` set every input file is archived
+(§ "The decision audit"). Filed: **[#259](https://github.com/cairn-ehr/drugref/issues/259)** (release replay
+from the archive, the spec's non-goal) · **[#260](https://github.com/cairn-ehr/drugref/issues/260)** (diff-based
+membership tracking if archive disk grows, the owner's fallback) ·
+**[#261](https://github.com/cairn-ehr/drugref/issues/261)** (archive files created `0600`; `drugref audit
+archive` lets an `OSError` escape) · **[#262](https://github.com/cairn-ehr/drugref/issues/262)** (publish's
+never-overwrite check can race) · **[#263](https://github.com/cairn-ehr/drugref/issues/263)** (an archive on a
+PBS-ingesting database holds the encumbered file; under #25). **#256** got a comment: `drugref audit class-ruling`
+now lists added / removed members. +99 tests, 3436 → 3535.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7275,7 +7366,10 @@ ran in CI and `ruff` was not even a project dependency.
   `class_asserted_property`) · **`063`–`065`** class-profile fixes (one orientation per pair; the eligible
   denominator; one-class reads pushable) · **`066` SPL class mentions** (`spl_advice_level`,
   `spl_class_occurrence`, `spl_class_statement_evidence`, `spl_class_statement`,
-  `gap_unconfirmed_label_class_statement`; `class_profile_read` joins it). **Read the LATEST file that touches an object for its
+  `gap_unconfirmed_label_class_statement`; `class_profile_read` joins it) · **`080`–`081` the decision
+  audit** (#258: `080` `curated_class_interaction_reach`, insert-only, `captured` = `at_ruling` | `backfill_db080`;
+  `081` `release_build`, the insert-only sidecar to `release_manifest`, and the `current_release` drift view).
+  **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
   `gap_unmatched_ingredient` by 018's, and 018's by 026's; 029's `curated_ddi_pair` by 030's, 033's, 034's and now
@@ -7300,6 +7394,10 @@ ran in CI and `ruff` was not even a project dependency.
   reads: sentences, heading blocks, PLR table rows, `scope_index`; split out by #216), `spl_class_evidence.py` (the
   class pass and its row writer inputs; also the R19 hygiene: shadowed/official-name key drops, effect-word and
   boundary drops) and `tools/spl_class_census.py` (the census whose output is the results record's tables)
+  + the decision-audit surface (`db/080`–`db/081`, #258): `class_ruling_reach.py` (the reach snapshot writer and
+  `audit_ruling`), `archive.py` (the `DRUGREF_ARCHIVE` content-addressed store and its verifier),
+  `release_archive.py` (`publish_archived`: build row, release record, curated export), `release_state.py` (the
+  `current_release` read and the release header line) and `cli_audit.py` (`drugref audit class-ruling|archive`)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so
@@ -7470,6 +7568,21 @@ ran in CI and `ruff` was not even a project dependency.
   `curated_property_ruling` is empty there. Commands, timings and every figure: [the results
   record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md); re-run the cost figures with
   `tools/class_profile_census.sql`.
+- **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
+  **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
+  beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and
+  REFUSES to migrate — rebuild it from nothing if needed.**
+- **`drugref_notice174` is the SPL/role-split one** — chain + SPL as owner, then the same SPL ingest under role
+  `drugref_app` (no ownership) twice, the second with `MAINTAIN`. **It still carries `drugref_app` and its
+  GRANTs**, so it is the one database where the role split can be re-run (that round's record §1);
+  **`options='-c role=…'` in a DSN runs an ingest AS another role** with no authentication story.
+  `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
+  (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
+  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
+  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`: none has the `spl_run_census` table, so `status` exits 2 on
+  each until migrated (and there is no backfill: those counts were never stored).
+  **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
+  it (`apply_migrations` is checksum-immutable).
 - **Upstream feed files are NOT committed** (`downloads/` is gitignored):
   - **MED-RT** — [NCI EVS](https://evs.nci.nih.gov/ftp1/MED-RT/) (`Core_MEDRT_*_XML.zip`); regenerate the fixture with
     `make_medrt_subset.py <xml> > tests/fixtures/medrt_subset.xml` (keep the endpoint redaction — a test enforces it).

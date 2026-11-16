@@ -191,3 +191,20 @@ This also gives #256 its data.
 - Test strategy (TDD): fixtures with a temp archive root; DB-gated tests for the reach table, banner and drift.
 - Docs: PROJECT-NOTES (state, schema map), ROADMAP, a docs-site *Design decisions* record for "release tag as
   the audit anchor".
+
+## Amendments (2026-11-16, review)
+
+Recorded after the round's final review; the shipped code follows these, not the text above where they differ.
+
+1. **Blob repair (§6.2).** A blob whose size is wrong is replaced on re-ingest by hash-verified bytes of its own
+   name. "Files are never deleted or overwritten" applies to release files and to correct blobs. A same-size blob
+   with wrong content is not repaired automatically; `drugref audit archive` reports it.
+2. **No build record (§6.1).** A release in `release_manifest` without a `release_build` row (published before
+   `db/081`) reports DRIFTED with the reason `no build record (published before db/081)`, not "unknown". "Unknown"
+   is kept for a database that predates `db/081` and has no `current_release` view.
+3. **Command name (§6.2).** `drugref archive verify [--release TAG]` shipped as `drugref audit archive [--release
+   TAG]`, beside `drugref audit class-ruling <id>`. It also checks the curated export.
+4. **Code-version warning (§6.2, §7).** Publish warns, besides an unset archive, when the git commit it recorded
+   is `unknown` or ends in `-dirty`: the release is then not fully reconstructable.
+5. **Migration numbers (§6.1).** `release_build` and `current_release` landed in `db/081`; `db/080` holds only
+   `curated_class_interaction_reach`.

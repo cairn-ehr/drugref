@@ -13,17 +13,23 @@
 
 ## ⇒ NEXT
 
-**On `main` after PR #257 (MERGED: #255 CLOSED). Schema ends at `db/079`. No agent round queued: the next
-one is picked by the owner (see "DO THIS NEXT").** The suite total lives in PROJECT-NOTES § "How to run / test"
-and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**On branch `claude/decision-audit`: the #258 round is DONE and committed; the PR to `main` closing #258 is opened
+by the controller (link it on #258). Schema ends at `db/081`.** No agent round queued after it: the owner picks
+(see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run
+pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (`db/079`, agent-only):** **#255:** a class-grain orphan banners only when an asked drug is among
-its subject OR partner members, or when either side reaches nobody (no `db/079` → every class orphan bannered).
-`db/079` lifts the member expansion into `class_rule_member` (read by `curated_ddi_pair`, rows unchanged) and seeds
-`ci_class_pair_subtree` from `curated_class_interaction` too, without which an orphan expands to nobody. +11 tests.
-**Filed #256** (a grade also vanishes when a member leaves the class or a deny cuts it) and **#258** (a drug
-that alone left a class is not bannered). `ruff format` is NOT applied here; match the hand style. **Never
-VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run** (two suite-count tests fail).
+**⇒ THIS ROUND (`db/080`–`db/081`, #258, decision audit):** a class ruling records the drugs it reached when
+written (`curated_class_interaction_reach`), and the orphan banner reads it; `release_build` + the
+`current_release` view name the release a database answers from and its drift, printed as the first line of
+`drugref interactions` / `status`; **`DRUGREF_ARCHIVE`** (absolute path; unset = no archive I/O, and publish warns
+the release is NOT reconstructable) archives every ingest's input files; `drugref audit class-ruling <id>` and
+`drugref audit archive [--release TAG]`. **Publish refuses on any run ingested before the archive was set**, so
+production must be built from nothing with it set. **No named database carries `db/080`–`db/081` yet** (tested on
+`drugref_test` only). Traps: PROJECT-NOTES § "The decision audit". `ruff format` is NOT applied here; match the
+hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run.**
+
+**⇒ NEW, owner (#263, under #25):** an archive on a PBS-ingesting database holds the encumbered PBS file and its
+release record lists the PBS run. Fine node-local; decide before archives are shared.
 
 **⇒ NEW: #244** (brand → composition: *Augmentin* finds nothing, so its amoxicillin is never allergy-checked).
 Owner design pass; SPL (public domain, on disk) has brand names + ingredient UNIIs, not Australian-only brands.
@@ -74,16 +80,18 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
-   that has not happened.
+   that has not happened. Agent-sized, from #258: **#261**, **#262** (small archive fixes); **#259** (replay).
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#121,
-#123 CLOSED** (PR #254); **#255 CLOSED** (PR #257); **new: #256, #258.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
-**Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.**
-FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted
-by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #104, #94. Before
-production: re-run every parser on current releases, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#258
+FIXED by this branch (close on merge); filed #259–#263** (replay, diff fallback, archive 0600 + traceback, publish
+race, PBS in the archive); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
+**#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
+From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
+**#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
+#128/#129, #124, #104, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE`
+set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
@@ -91,7 +99,7 @@ production: re-run every parser on current releases, resolve #17, the three rule
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it. This branch (`db/079`) tested against `drugref_test` only; no named database carries `db/079` yet.
+  patch it. No named database carries `db/079`–`db/081` yet: both rounds were tested against `drugref_test` only.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.
@@ -109,21 +117,9 @@ production: re-run every parser on current releases, resolve #17, the three rule
 - **`drugref_profiles` is the class-profiles round's** — built from nothing at `db/061` (chain + `onchigh` +
   `fda-cyp` + `drugcentral`, no SPL), migrated to `db/065`, `curated_property_ruling` empty. **Its builds and figures are in the
   [results record](superpowers/specs/2026-11-07-drugref-class-profiles-results.md)**; re-measure #203 there (#202's figures: its §6 `db/065` addendum).
-- **`drugref176` is the watershed round's (#176)** — from nothing, migrated to `db/054`, a real `ingest unii` and a hand-built
-  **old-client** row (the issue's `pg_sleep(2)`, recorded as 666 µs): the `0.0s` → `unmeasured` correction
-  beside a measured row. **db/054 was edited in #181's review, so `drugref176` carries the OLD checksum and
-  REFUSES to migrate — rebuild it from nothing if needed.**
-- **`drugref_notice174` is the SPL/role-split one** — chain + SPL as owner, then the same SPL ingest under role
-  `drugref_app` (no ownership) twice, the second with `MAINTAIN`. **It still carries `drugref_app` and its
-  GRANTs**, so it is the one database where the role split can be re-run (that round's record §1);
-  **`options='-c role=…'` in a DSN runs an ingest AS another role** with no authentication story.
-  `drugref_dur159`/`drugref_dur159mixed` are #159's, `drugref_spl160fix` (2 min 09 s) + `drugref_spl160`
-  (12 min 51 s) show #160's 630 s, `drugref_spl051`/`drugref_spl` are #159's and the pre-`db/051` base,
-  `drugref_dc049`/`drugref_dc101` DrugCentral's. **All of them predate `db/054` (and `db/055`/`db/056`, which add only triggers), so every runtime they show now
-  reads `unmeasured` until re-ingested — intended, not a regression.** They also predate `db/057`: none has the `spl_run_census` table, so `status` exits 2 on
-  each until migrated (and there is no backfill: those counts were never stored).
-  **Never patch one — rebuild under a new name**; editing an APPLIED migration breaks every database carrying
-  it (`apply_migrations` is checksum-immutable).
+- **The older verification databases** (`drugref176`, `drugref_notice174`, `drugref_dur159*`, `drugref_spl*`,
+  `drugref_dc049`/`drugref_dc101`) and their caveats moved verbatim to PROJECT-NOTES § "How to run / test". All
+  predate `db/054`; `drugref176` REFUSES to migrate. **Never patch one — rebuild under a new name.**
 - Corpora: `downloads/OPENFDA/` (14 partitions, 2026-08-22), `downloads/DAILYMED/` (6 Human Rx parts,
   2026-08-21, 17.6 GB). **`downloads/` is gitignored, so every SHA-256 is in the mining record §2** — verify
   against that table, not a manifest that vanishes with the bytes.
