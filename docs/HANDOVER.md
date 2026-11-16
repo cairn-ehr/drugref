@@ -13,17 +13,17 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/agent-debt-round` (from `main` after PR #253, MERGED: #153 CLOSED). PR open to `main`;
-closes #121 and #123, part of #224. Schema still ends at `db/078`.** The suite total lives in PROJECT-NOTES §
-"How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**Branch `claude/class-orphan-narrowing` (from `main` after PR #254, MERGED: #121/#123 CLOSED). PR open to
+`main`; closes #255. Schema now ends at `db/079`.** The suite total lives in PROJECT-NOTES § "How to run / test"
+and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (no migration; owner chose agent-only debt):** **#121:** `drugref interactions` banners
-`INCOMPLETE` (exit 3) when a live grade that may concern the asked drug(s) is orphaned (class-grain: every drug,
-until #255); the pair form then withholds "an ABSENT RULE"; a consumer showing `effective_grades_for` to a person
-must also ask `curation.orphaned_interaction_grades`. **#123:** a catalogue test fails if a view ranking
-`severity_rank` reads (through any views) an FK column the sweep skips. **#224:** rule-4 no-match tested. +13 tests.
-`ruff format` is NOT applied here; match the hand style. **Do not add `-p no:cacheprovider` to a full run**
-(`test_suite_count.py` then fails two tests that are not real). **Never VALIDATE `db/078`'s `NOT VALID` CHECK.**
+**⇒ THIS ROUND (`db/079`, agent-only):** **#255:** a class-grain orphan banners only when an asked drug is among
+its subject OR partner members, or when either side reaches nobody (no `db/079` → every class orphan bannered).
+`db/079` lifts the member expansion into `class_rule_member` (read by `curated_ddi_pair`, rows unchanged) and seeds
+`ci_class_pair_subtree` from `curated_class_interaction` too, without which an orphan expands to nobody. +11 tests.
+**Filed #256** (a grade also vanishes when a member leaves the class or a deny cuts it) and **#258** (a drug
+that alone left a class is not bannered). `ruff format` is NOT applied here; match the hand style. **Never
+VALIDATE `db/078`'s `NOT VALID` CHECK.** **No `-p no:cacheprovider` on a full run** (two suite-count tests fail).
 
 **⇒ NEW: #244** (brand → composition: *Augmentin* finds nothing, so its amoxicillin is never allergy-checked).
 Owner design pass; SPL (public domain, on disk) has brand names + ingredient UNIIs, not Australian-only brands.
@@ -78,8 +78,8 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#153 CLOSED**
-(PR #253). **#121, #123 close on this PR; #224 partly done.** **New: #244.** **#214 open; filed #245, #246.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#121,
+#123 CLOSED** (PR #254); **#255 closes on this PR; new: #256, #258.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.**
 FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted
 by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #104, #94. Before
@@ -91,7 +91,7 @@ production: re-run every parser on current releases, resolve #17, the three rule
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it. This branch tested against `drugref_test`.
+  patch it. This branch (`db/079`) tested against `drugref_test` only; no named database carries `db/079` yet.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

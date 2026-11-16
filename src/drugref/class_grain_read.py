@@ -11,7 +11,12 @@ for the same reason.
 
 THE LAYERING RULE IS UNCHANGED BY THE MOVE: this module owns the read, `cli_status.py`
 owns the operator's voice, and no SQL against a curated table lives in a cli_* handler.
+
+A SECOND READ SINCE db/079 (#255): `class_rules_reaching`, which `drugref interactions`
+asks to narrow a class-grain orphan's banner to the drugs it concerns. Here rather than
+in `curation.py` because it is a class-grain read and that file sits near the size cap.
 """
+import uuid
 from dataclasses import dataclass
 
 import psycopg
@@ -160,3 +165,51 @@ def class_grain_counts(conn: psycopg.Connection) -> ClassGrainCounts:
         f"SELECT count(*) FROM {GRAIN_DISAGREEMENT_VIEW}").fetchone()[0]
     return ClassGrainCounts(rules_total=rules_total, ungraded=ungraded, dead=dead,
                             disagreements=disagreements)
+
+
+RULE_MEMBER_VIEW = "drugref.class_rule_member"
+
+#: A live class rule's natural key: (subject_class, object_class, relationship). The
+#: same three columns `curation.UnresolvedTarget` carries for a class-grain orphan
+#: (`subject_class`, `object_uuid`, `relationship`), so the two can be matched.
+ClassRuleKey = tuple[uuid.UUID, uuid.UUID, str]
+
+
+def class_rules_reaching(conn: psycopg.Connection,
+                         moieties: set[uuid.UUID]) -> set[ClassRuleKey]:
+    """The live class rules that MAY CONCERN `moieties`, by natural key (#255).
+
+    A rule concerns a drug when the drug is among its subject OR partner members in
+    `class_rule_member` (db/079). A rule with EITHER SIDE reaching nobody is returned
+    too: that side's members are unknowable from here, so whom it concerned cannot be
+    ruled out, and `drugref interactions` keeps #121's safe direction for it. Per side,
+    not per rule, because the likeliest orphan is a class retired upstream: the same
+    re-ingest drops the candidate AND that one class's memberships, leaving the other
+    side populated and the retired side's former members otherwise unbannered.
+
+    shortcut: membership is read as it is NOW, not as it was when the ruling was made,
+    so a drug that alone left a class which keeps other members is not bannered; fixing
+    that needs historical membership (#258).
+
+    Asked only when `drugref interactions` has a class-grain orphan in hand (expected
+    never), so its cost is not on the ordinary read. Raises UndefinedTable uncaught
+    on a database predating db/079; the caller's guard turns that into a sentence.
+    """
+    rows = conn.execute(
+        "SELECT cci.subject_class_uuid, cci.object_class_uuid, cci.relationship "
+        "FROM drugref.curated_class_interaction cci "
+        "WHERE cci.superseded_by IS NULL "
+        f"AND (EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
+        "              WHERE m.curated_class_interaction_id "
+        "                    = cci.curated_class_interaction_id "
+        "                AND m.moiety_uuid = ANY(%s)) "
+        f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
+        "                  WHERE m.curated_class_interaction_id "
+        "                        = cci.curated_class_interaction_id "
+        "                    AND m.side = 'subject') "
+        f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
+        "                  WHERE m.curated_class_interaction_id "
+        "                        = cci.curated_class_interaction_id "
+        "                    AND m.side = 'partner'))",
+        (list(moieties),)).fetchall()
+    return {tuple(r) for r in rows}

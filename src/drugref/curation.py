@@ -452,7 +452,9 @@ def unresolved_targets(conn: psycopg.Connection) -> list[UnresolvedTarget]:
 
 
 def orphaned_interaction_grades(orphans: list[UnresolvedTarget],
-                                subjects: set[uuid.UUID]) -> list[UnresolvedTarget]:
+                                subjects: set[uuid.UUID],
+                                class_rules_reaching: set[tuple],
+                                ) -> list[UnresolvedTarget]:
     """The orphans that may make a moiety's curated interaction list INCOMPLETE (#121).
 
     PURE: it filters what `unresolved_targets` already read, so a consumer asks the
@@ -466,14 +468,16 @@ def orphaned_interaction_grades(orphans: list[UnresolvedTarget],
     `curated_condition` ruling is not an interaction grade, so it is the one arm left
     out. Filtering on `target_table`, as `UnresolvedTarget` asks.
 
-    A MOIETY-GRAIN ORPHAN is matched on its subject. A CLASS-GRAIN ORPHAN is kept
-    whatever `subjects` holds: its drugs are the expanded members of two classes, and
-    that expansion lives in CTEs inside `curated_ddi_pair`, not in anything this reader
-    can ask. Keeping it over-warns, which is this tool's safe direction.
-    shortcut: class-grain orphans are not narrowed to the asked drugs; upgrade when the
-    member expansion is a view of its own (#255).
+    A MOIETY-GRAIN ORPHAN is matched on its subject. A CLASS-GRAIN ORPHAN is matched on
+    its natural key against `class_rules_reaching` -- the caller's
+    `class_grain_read.class_rules_reaching(conn, subjects)`, which expands each rule's
+    members (db/079, #255) and also returns a rule with a side reaching nobody, whose
+    concern is unknowable. Required, not defaulted: an empty default would silently
+    drop every class orphan, the under-warning direction.
     """
     return [o for o in orphans
-            if o.target_table == "curated_class_interaction"
+            if (o.target_table == "curated_class_interaction"
+                and (o.subject_class, o.object_uuid, o.relationship)
+                in class_rules_reaching)
             or (o.target_table == "curated_interaction"
                 and o.subject_moiety in subjects)]
