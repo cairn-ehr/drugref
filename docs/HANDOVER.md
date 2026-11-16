@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/class-orphan-narrowing` (from `main` after PR #254, MERGED: #121/#123 CLOSED). PR open to
-`main`; closes #255. Schema now ends at `db/079`.** The suite total lives in PROJECT-NOTES § "How to run / test"
+**On `main` after PR #257 (MERGED: #255 CLOSED). Schema ends at `db/079`. No agent round queued: the next
+one is picked by the owner (see "DO THIS NEXT").** The suite total lives in PROJECT-NOTES § "How to run / test"
 and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (`db/079`, agent-only):** **#255:** a class-grain orphan banners only when an asked drug is among
@@ -79,7 +79,7 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#121,
-#123 CLOSED** (PR #254); **#255 closes on this PR; new: #256, #258.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
+#123 CLOSED** (PR #254); **#255 CLOSED** (PR #257); **new: #256, #258.** #224 partly done. **New: #244.** **#214 open; filed #245, #246.**
 **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.**
 FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted
 by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #104, #94. Before
