@@ -189,8 +189,9 @@ def class_rules_reaching(conn: psycopg.Connection,
     re-ingest drops the candidate AND that one class's memberships, leaving the other
     side populated and the retired side's former members otherwise unbannered.
 
-    A rule also concerns a drug it REACHED WHEN RULED (db/080): any version of the
-    rule's natural key, superseded ones included, whose reach snapshot holds the drug.
+    A rule also concerns a drug it REACHED WHEN RULED (db/080; for a ruling older than
+    db/080, membership at migration time): any version of the rule's natural key,
+    superseded ones included, whose reach snapshot holds the drug.
     That covers a drug that has since left a class which keeps other members.
 
     Asked only when `drugref interactions` has a class-grain orphan in hand (expected

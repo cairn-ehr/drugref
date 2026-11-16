@@ -337,7 +337,8 @@ def _handle_publish(conn, args) -> int:
     # release_manifest_row_count/_digest_length/_upstream_releases_array are
     # all values THIS process computes and can never genuinely fail; the one
     # constraint a real operator mistake can trip is release_tag's UNIQUE --
-    # reusing a tag a previous publish already claimed.
+    # reusing a tag a previous publish already claimed. `publish_archived` also
+    # refuses up front (ArchiveIncomplete, exit 1) before writing anything.
     root = archive.archive_root()
     try:
         manifest_id = _write(
@@ -354,13 +355,16 @@ def _handle_publish(conn, args) -> int:
     if root is None:
         print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
               "is NOT reconstructable")
-    # The commit publish RECORDED (spec 7): without a clean one, nobody can say
-    # which code turned the archived inputs into this release.
+    # The commit publish RECORDED (decision-audit spec §7): without a clean one,
+    # nobody can say which code turned the archived inputs into this release.
     commit = conn.execute("SELECT git_commit FROM drugref.release_build "
                           "WHERE release_tag = %s", (args.release_tag,)).fetchone()[0]
-    if commit == "unknown" or commit.endswith("-dirty"):
+    if commit == "unknown":
         print(f"note: drugref code version unknown, so release {args.release_tag} "
               "is NOT fully reconstructable")
+    elif commit.endswith("-dirty"):
+        print(f"note: drugref code had uncommitted changes ({commit}), so release "
+              f"{args.release_tag} is NOT fully reconstructable")
     print(f"published manifest_id={manifest_id} release_tag={args.release_tag}")
     print(f"fingerprint={fingerprint}")
     return 0

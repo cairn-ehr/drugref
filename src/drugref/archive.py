@@ -40,14 +40,16 @@ def archive_root() -> pathlib.Path | None:
     """The archive directory from the environment, or None when unset/empty.
 
     MUST BE ABSOLUTE: a relative value would resolve against whatever directory
-    the command ran in, scattering one archive over several (#258).
+    the command ran in, scattering one archive over several (#258). RuntimeError
+    so `cli.main` prints it as one line with exit 2 (operator error), which `cli.main`
+    also checks before any command runs.
     """
     value = os.environ.get(ENV_VAR)
     if not value:
         return None
     root = pathlib.Path(value)
     if not root.is_absolute():
-        raise ValueError(f"{ENV_VAR} must be an absolute path, got {value!r}")
+        raise RuntimeError(f"{ENV_VAR} must be an absolute path, got {value!r}")
     return root
 
 
@@ -143,8 +145,9 @@ def curated_export_path(root: pathlib.Path, tag: str) -> pathlib.Path:
 def atomic_write(dest: pathlib.Path, fill) -> None:
     """Write `dest` through a UNIQUE temp file in its directory, then `os.replace`.
 
-    `fill(fh)` writes the bytes to a binary file handle. The rename is atomic, so a
-    crash never leaves a half-written file under the final name. The temp name is
+    `fill(fh)` writes the bytes to a binary file handle. The data is fsynced before
+    the atomic rename and the directory after it, so neither a crash nor power loss
+    leaves a half-written file under the final name. The temp name is
     unique (`tempfile.mkstemp`), so two ingests archiving the same MeSH file at
     once cannot clobber each other's temp. If `fill` raises, the temp is removed.
     """
@@ -153,10 +156,19 @@ def atomic_write(dest: pathlib.Path, fill) -> None:
     try:
         with os.fdopen(fd, "wb") as out:
             fill(out)
+            # Durable before it is visible: without fsync, power loss after the
+            # rename can leave an empty file under the final name.
+            out.flush()
+            os.fsync(out.fileno())
         os.replace(tmp, dest)
     except BaseException:
         pathlib.Path(tmp).unlink(missing_ok=True)
         raise
+    dir_fd = os.open(dest.parent, os.O_RDONLY)   # make the rename itself durable
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
@@ -214,32 +226,49 @@ def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
             problems.append(ArchiveProblem(cs, "no run record"))
             continue
         try:
-            files = json.loads(record.read_text(encoding="utf-8"))["files"]
-            files = [(require_sha256(f["sha256"]), f["size"]) for f in files]
+            body = json.loads(record.read_text(encoding="utf-8"))
+            files = [(require_sha256(f["sha256"]), f["size"]) for f in body["files"]]
             if not all(isinstance(size, int) for _, size in files):
                 raise TypeError("size is not an integer")
+            # A record that lists no files, or claims another run's checksum, can
+            # never rebuild this run, however intact its blobs are.
+            if not files or body["source_checksum"] != cs:
+                raise ValueError("record does not describe this run")
         except (ValueError, KeyError, TypeError):
             # A hand-damaged record is exactly what the audit command reports (#258).
             problems.append(ArchiveProblem(cs, "malformed run record"))
             continue
         if seen is not None:
             seen.update(sha for sha, _ in files)
-        for sha, size in files:
-            blob = blob_path(root, sha)
-            if not blob.is_file():
-                problems.append(ArchiveProblem(cs, f"missing blob {sha}"))
-            elif rehash:
-                if file_digests(blob)[0] != sha:
-                    problems.append(ArchiveProblem(cs, f"corrupt blob {sha}"))
-            elif blob.stat().st_size != size:
-                # Cheap truncation check for publish: a stat, no re-hash.
-                problems.append(ArchiveProblem(cs, f"truncated blob {sha}"))
+        blobs = [blob_path(root, sha) for sha, _ in files]
+        missing = [sha for (sha, _), blob in zip(files, blobs) if not blob.is_file()]
+        problems += [ArchiveProblem(cs, f"missing blob {sha}") for sha in missing]
+        if missing:
+            continue
+        if not rehash:
+            # Cheap check for publish: a stat, no re-hash.
+            problems += [ArchiveProblem(cs, f"wrong-size blob {sha}")
+                         for (sha, size), blob in zip(files, blobs)
+                         if blob.stat().st_size != size]
+            continue
+        # ONE read pass gives each blob's own sha AND the combined digest, which
+        # must equal the run's checksum (catches a record listing files out of order).
+        combined, read = file_digests(*blobs)
+        corrupt = [sha for (sha, _), got in zip(files, read) if got.sha256 != sha]
+        # Re-ingest skips a blob already at the right size, so it cannot repair one.
+        problems += [ArchiveProblem(cs, f"corrupt blob {sha} (delete it, then "
+                                        "re-ingest the run to restore it)")
+                     for sha in corrupt]
+        if not corrupt and combined != cs:
+            problems.append(ArchiveProblem(
+                cs, "blobs do not reproduce the run's source_checksum"))
     return problems
 
 
 def missing_runs(root: pathlib.Path,
                  checksums: Iterable[str]) -> list[ArchiveProblem]:
-    """Missing records/blobs and wrong-size blobs; cheap (stat, no re-hash)."""
+    """Missing/malformed records, non-sha checksums, missing and wrong-size blobs;
+    cheap (stat, no re-hash)."""
     return _check(root, checksums, rehash=False, seen=None)
 
 

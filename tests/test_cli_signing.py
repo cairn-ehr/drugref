@@ -834,22 +834,30 @@ def test_publish_cli_notes_when_no_archive_is_configured(wconn, a_key_file, caps
             "is NOT reconstructable") in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("git", ["dirty", "no-git"])
+@pytest.mark.parametrize("git", ["dirty", "no-git", "clean"])
 def test_publish_cli_notes_an_unknown_code_version(
         wconn, a_key_file, monkeypatch, capsys, git):
-    """Spec 7: a non-git checkout (or uncommitted edits) must WARN, not pass silently."""
+    """Spec 7: a non-git checkout (or uncommitted edits) must WARN, not pass silently;
+    a clean commit must not."""
     from tests.test_release_archive import fake_git
-    if git == "dirty":
-        fake_git(monkeypatch, status="?? stray.py\n")
-    else:
+    if git == "no-git":
         def no_git(*a, **k):
             raise FileNotFoundError("git")
         monkeypatch.setattr(subprocess, "run", no_git)
+    else:
+        fake_git(monkeypatch, status="?? stray.py\n" if git == "dirty" else "")
     tag = f"2026.11.16-{git}"
     assert _run(wconn, ["publish", "--release-tag", tag, "--published-by", "op",
                         "--key", str(a_key_file["path"])]) == 0
-    assert (f"note: drugref code version unknown, so release {tag} is NOT fully "
-            "reconstructable") in capsys.readouterr().out
+    out = capsys.readouterr().out
+    if git == "dirty":
+        assert (f"note: drugref code had uncommitted changes ({'a' * 40}-dirty), so "
+                f"release {tag} is NOT fully reconstructable") in out
+    elif git == "no-git":
+        assert (f"note: drugref code version unknown, so release {tag} is NOT fully "
+                "reconstructable") in out
+    else:
+        assert "NOT fully reconstructable" not in out
 
 
 def test_publish_refuses_a_blank_release_tag_before_any_write(

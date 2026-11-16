@@ -83,6 +83,20 @@ def test_a_new_ruling_is_drift(conn, a_moiety, ingest_run_id):
     assert current_release(conn).drift_reasons == ("re-curated",)
 
 
+def test_a_new_class_ruling_is_drift(conn, ingest_run_id):
+    """The probe on curated_class_interaction, the table this round is about, is
+    checked on its own: a typo in its column would otherwise pass unnoticed."""
+    from tests.test_curated_overlay import _a_class
+    _publish(conn)
+    conn.execute(
+        "INSERT INTO drugref.curated_class_interaction (subject_class_uuid, "
+        "object_class_uuid, relationship, applies, severity, evidence_grade, source, "
+        f"reviewed_by, reviewed_against, reviewed_at) VALUES (%s, %s, 'CI_MoA', true, "
+        f"'major', 'established', 'DRUGREF', 't', 'x', {LATER})",
+        (_a_class(conn, ingest_run_id), _a_class(conn, ingest_run_id)))
+    assert current_release(conn).drift_reasons == ("re-curated",)
+
+
 def test_a_policy_row_is_drift(conn):
     _publish(conn)
     conn.execute(

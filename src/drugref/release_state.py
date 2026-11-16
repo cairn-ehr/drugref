@@ -61,7 +61,8 @@ def current_release_or_absent(
 
 
 def release_line(cr: CurrentRelease | None) -> str:
-    """The one-line header; pure. Exact copy is fixed by #258's design.
+    """The one-line header; pure. Copy follows #258's design §6.1, with the drift
+    reasons inserted.
 
     A release with no build row is DRIFTED (its first reason says why), not
     "unknown": the view exists, so the database is not the one predating db/081.

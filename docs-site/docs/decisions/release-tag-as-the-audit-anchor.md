@@ -31,9 +31,9 @@ line is the signal.
 
 **2. Reconstruction is by archived upstream files (A), plus a reach snapshot per class ruling (C).** With
 `DRUGREF_ARCHIVE` set, every ingest keeps its input files, content-addressed by SHA-256 so a file shared by two
-runs is stored once, and `drugref release publish` writes a release record (every finished ingest run, the git
+runs is stored once, and `drugref publish` writes a release record (every finished ingest run, the git
 commit, the migration ledger head) and a curated export. Publish refuses when any run's files are missing, and
-warns when the archive is unset or the code version is unknown. This costs nothing on reads or ingests; its price
+warns when the archive is unset or the code version is unknown or has uncommitted changes (`-dirty`). This costs nothing on reads or ingests; its price
 is disk. Separately, each class ruling records the drugs it reached when written, because the orphan warning has to
 work *live* and cannot rebuild an old release on demand.
 
@@ -42,8 +42,9 @@ are rare enough that a slow rebuild is acceptable, and it would add work to ever
 
 **3. Nodes restore a published dump.** A Cairn node gets its drugref data by restoring a database dump drugref
 publishes, so the release record arrives with it and the node holds exactly the published bytes. "Drifted" then
-means the node changed something after the restore. A node's own local feeds (such as the PBS tier) are not
-drift: drift counts only sources the release itself carried.
+means the node changed something after the restore. Drift counts only sources the release itself carried, so a
+node's own local feeds (such as the PBS tier) are not drift *when the publishing database never ingested them*;
+where it did, a node's own re-ingest of that source reads as `re-ingested` (#265).
 
 **4. The fallback is diff-based tracking, if disk becomes the problem.** The owner's stated fallback, should the
 archive's disk use grow too large, is to record membership changes per re-ingest instead of keeping every old

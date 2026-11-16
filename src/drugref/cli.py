@@ -58,7 +58,7 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_allergy, cli_audit, cli_class_profile, cli_curate,
+from drugref import (archive, cli_allergy, cli_audit, cli_class_profile, cli_curate,
                      cli_drugcentral, cli_fda_cyp, cli_interactions, cli_names,
                      cli_policy, cli_signing, cli_spl, cli_status, curation, db,
                      interactions, migration_guard, server_messages, signatures)
@@ -472,6 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     server_messages.configure_logging(args.log_level)
     try:
+        # Validate DRUGREF_ARCHIVE up front: an ingest only reads it after its parse.
+        archive.archive_root()
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
     except (RuntimeError, ChainError, interactions.NoLiveDecisionError) as exc:

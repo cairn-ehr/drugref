@@ -6603,7 +6603,7 @@ run:** a real SPL ingest storing the count. The end-to-end census test stores it
 era of rows) before merge; the three local databases holding db/078 had its ledger checksum re-recorded, as no other
 database ever applied it.
 
-## The decision audit (#258, 2026-11-16) — `db/080`–`db/081`, tested on `drugref_test` only, suite 3436 → 3535
+## The decision audit (#258, 2026-11-16) — `db/080`–`db/081`, tested on `drugref_test` only, suite 3436 → 3548
 
 **Owner ruling (2026-11-16, on #258): drugref must be able to show what information was available when a decision
 was made.** Spec: [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (and its dated
@@ -6624,7 +6624,8 @@ disk becomes a problem (**#260**).
 - **`db/081` `release_build`** (insert-only sidecar to the immutable `release_manifest`: `git_commit`,
   `ledger_head`, `run_ids`) and the view **`current_release`** (one row or none: the latest release plus its drift
   reasons — `re-ingested`, `re-curated`, `expansion policy changed`, `newer migration`, or `no build record
-  (published before db/081)`). A source the release did not carry (a node's PBS run) is local data, not drift.
+  (published before db/081)`). A source the release did not carry (a node's PBS run, when the publishing database
+  never ingested PBS) is local data, not drift; a source it did carry reads `re-ingested`, PBS included (#265).
 - **`archive.py`** — the content-addressed archive under **`DRUGREF_ARCHIVE`** (`blobs/sha256/<aa>/<hex>`,
   `runs/<source_checksum>.json`, `releases/<tag>.json`, `releases/<tag>.curated.json`). Every ingest orchestrator
   calls it through `ingest/checksum.archived_checksum`; unset means no archive I/O at all.
@@ -6637,7 +6638,7 @@ disk becomes a problem (**#260**).
 - **`cli_audit.py`** — **`drugref audit class-ruling <id>`** (per side: reach then vs now, added / removed, the
   ingest runs loaded at `reviewed_at`; exit 2 for an unknown id) and **`drugref audit archive [--release TAG]`**
   (re-hashes every blob a release needs and checks the curated export; 0 complete, 1 problems, 2 nothing to check).
-- **`drugref release publish`** refuses (exit 1, naming each problem) when the archive is set and any finished run's
+- **`drugref publish`** refuses (exit 1, naming each problem) when the archive is set and any finished run's
   record or blob is missing or the wrong size, when a release file for the tag already exists, or when the tag is
   path-like; it **warns** when the archive is unset ("NOT reconstructable") and when the recorded code version is
   `unknown` or `-dirty`.
@@ -6828,7 +6829,10 @@ membership tracking if archive disk grows, the owner's fallback) ·
 archive` lets an `OSError` escape) · **[#262](https://github.com/cairn-ehr/drugref/issues/262)** (publish's
 never-overwrite check can race) · **[#263](https://github.com/cairn-ehr/drugref/issues/263)** (an archive on a
 PBS-ingesting database holds the encumbered file; under #25). **#256** got a comment: `drugref audit class-ruling`
-now lists added / removed members. +99 tests, 3436 → 3535.
+now lists added / removed members. +99 tests, 3436 → 3535; the #264 final review added 13 more (3548) and
+filed **[#265](https://github.com/cairn-ehr/drugref/issues/265)** (drift ignores sources the release never carried;
+the db/081 view comment names `drugref signing`) and **[#266](https://github.com/cairn-ehr/drugref/issues/266)**
+(`captured: none` conflates an empty snapshot with none).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7014,7 +7018,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3535 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3548 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

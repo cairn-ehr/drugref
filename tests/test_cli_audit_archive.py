@@ -1,4 +1,5 @@
 """`drugref audit archive` verifies a release's archived inputs (#258). DB-gated."""
+import contextlib
 import json
 
 import pytest
@@ -39,6 +40,18 @@ def test_a_complete_archive_exits_0(conn, tmp_path, monkeypatch, capsys):
         f"archive complete for {TAG}: 2 runs, 2 blobs verified")
 
 
+def test_a_tag_this_database_never_published_gets_a_note(
+        conn, tmp_path, monkeypatch, capsys):
+    """Files alone do not prove a publish: they may be debris of one that never
+    committed. Still checked (the DB may be the thing that was lost), but flagged."""
+    _archived_release(tmp_path, monkeypatch)
+    assert _run_cli(conn, "--release", TAG) == 0
+    assert f"{TAG} has no release_build row in this database" in capsys.readouterr().err
+    _publish(conn, [_old_run(conn, "UNII")])
+    assert _run_cli(conn, "--release", TAG) == 0
+    assert "release_build" not in capsys.readouterr().err
+
+
 def test_the_default_release_is_the_current_one(conn, tmp_path, monkeypatch, capsys):
     _archived_release(tmp_path, monkeypatch)
     _publish(conn, [_old_run(conn, "UNII")])
@@ -52,6 +65,19 @@ def test_a_deleted_blob_exits_1_and_names_its_sha(conn, tmp_path, monkeypatch, c
     archive.blob_path(root, sha).unlink()
     assert _run_cli(conn, "--release", TAG) == 1
     assert sha in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", [
+    ["audit", "archive", "--release", TAG],
+    # A file that does not exist: refused at startup, before the ingest opens it,
+    # rather than after a parse that can take minutes for MeSH.
+    ["ingest", "gsrs", "--release", "x", "--dump", "/nonexistent/dump.gsrs"]])
+def test_a_relative_archive_env_exits_2_through_main(conn, monkeypatch, capsys, command):
+    """A config typo is operator error (2), never "the archive has problems" (1)."""
+    monkeypatch.setattr(cli.db, "connect", lambda dsn: contextlib.nullcontext(conn))
+    monkeypatch.setenv(archive.ENV_VAR, "relative/arch")
+    assert cli.main(["--dsn", "x", *command]) == 2
+    assert archive.ENV_VAR in capsys.readouterr().err
 
 
 def test_unset_env_exits_2(conn, capsys):

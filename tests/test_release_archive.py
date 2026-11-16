@@ -110,14 +110,19 @@ def test_git_commit_is_40_hex_or_unknown_and_falls_back(monkeypatch):
     assert release_archive.git_commit() == "unknown"
 
 
-def fake_git(monkeypatch, status="", status_fails=False):
-    """Stand in for `git`: HEAD is 'a'*40; `status --porcelain` prints `status`."""
+def fake_git(monkeypatch, status="", status_fails=False, foreign_repo=False):
+    """Stand in for `git`: HEAD is 'a'*40; `status --porcelain` prints `status`;
+    `foreign_repo`: `ls-files` says this package's file is not tracked there."""
     import subprocess
 
     def run(argv, **kw):
         assert isinstance(argv, list) and kw["cwd"] and kw["timeout"]
         if argv[1:] == ["rev-parse", "HEAD"]:
             return subprocess.CompletedProcess(argv, 0, "a" * 40 + "\n", "")
+        if argv[1:3] == ["ls-files", "--error-unmatch"]:
+            if foreign_repo:
+                raise subprocess.CalledProcessError(1, argv)
+            return subprocess.CompletedProcess(argv, 0, argv[3] + "\n", "")
         assert argv[1:] == ["status", "--porcelain"]
         if status_fails:
             raise subprocess.TimeoutExpired(argv, kw["timeout"])
@@ -132,6 +137,14 @@ def test_git_commit_marks_a_dirty_tree(monkeypatch):
     assert release_archive.git_commit() == "a" * 40 + "-dirty"
     fake_git(monkeypatch, status_fails=True)
     assert release_archive.git_commit() == "unknown"
+
+
+def test_git_commit_is_unknown_inside_a_foreign_repo(monkeypatch, caplog):
+    """A non-editable install in a venv inside ANOTHER checkout: git walks up and finds
+    that repo, whose HEAD is not drugref's code version."""
+    fake_git(monkeypatch, foreign_repo=True)
+    assert release_archive.git_commit() == "unknown"
+    assert "git provenance unavailable" in caplog.text
 
 
 def _refused(conn, key, root, tag=TAG):
@@ -160,15 +173,49 @@ def test_publish_refuses_when_a_blob_is_truncated(conn, key, tmp_path):
     for f in (root / "blobs").rglob("*"):
         if f.is_file():
             f.write_bytes(b"h")
-    assert "truncated blob" in _refused(conn, key, root).problems[0].what
+    assert "wrong-size blob" in _refused(conn, key, root).problems[0].what
 
 
 def test_publish_never_overwrites_an_existing_release_file(conn, key, tmp_path):
     root = tmp_path / "arch"
     (root / "releases").mkdir(parents=True)
     (root / "releases" / f"{TAG}.json").write_text("{}")
-    assert "never overwritten" in _refused(conn, key, root).problems[0].what
+    assert str(root / "releases" / f"{TAG}.json") in _refused(
+        conn, key, root).problems[0].what
     assert (root / "releases" / f"{TAG}.json").read_text() == "{}"
+
+
+def test_a_release_file_left_by_an_uncommitted_publish_says_so(conn, key, tmp_path):
+    """The tag is in no release_manifest row, so the file is debris from a publish whose
+    commit failed; the refusal says how to free the tag (drugref never deletes it)."""
+    root = tmp_path / "arch"
+    (root / "releases").mkdir(parents=True)
+    (root / "releases" / f"{TAG}.curated.json").write_text("{}")
+    what = _refused(conn, key, root).problems[0].what
+    assert "did not commit" in what and "by hand" in what
+
+
+def test_an_unarchived_run_is_named_with_the_fix(conn, key, tmp_path):
+    run_id = _run(conn, source="MeSH", checksum="never-archived")
+    what = _refused(conn, key, tmp_path / "arch").problems[0].what
+    assert f"run {run_id} (MeSH/unii_run, release v)" in what
+    assert "re-ingest" in what and archive.ENV_VAR in what
+
+
+def test_a_fresh_publish_reads_as_not_drifted_until_a_re_ingest(conn, key):
+    """End to end: publish's own build row, not a hand-made one, starts clean."""
+    from drugref import release_state
+    conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum,"
+        " writer, started_at, finished_at) VALUES ('UNII', 'v', 'cs-old', 'unii_run',"
+        " now() - interval '2 hours', now() - interval '1 hour')")
+    _publish(conn, key, None)
+    assert release_state.current_release(conn).drift_reasons == ()
+    conn.execute(                                      # finishes after the publish
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum,"
+        " writer, finished_at) VALUES ('UNII', 'v2', 'cs-new', 'unii_run',"
+        " now() + interval '1 day')")
+    assert release_state.current_release(conn).drift_reasons == ("re-ingested",)
 
 
 @pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])

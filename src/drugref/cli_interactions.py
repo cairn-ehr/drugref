@@ -135,7 +135,8 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     is shown when an asked drug is among its subject OR partner members, or when
     either side reaches nobody (see `class_grain_read.class_rules_reaching`). Both lean
     towards over-warning, this tool's safe direction. A drug that has since left a
-    class is still caught, via the reach recorded when the rule was made (#258).
+    class is still caught, via the reach recorded when the rule was made (or, for a
+    ruling older than db/080, at migration time) (#258).
 
     TWO GUARDED READS, NOT ONE: each guarded block holds exactly one call
     (`migration_guard.guarded`), and the member read is a different migration
@@ -168,8 +169,10 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
         reaching = {(o.subject_class, o.object_uuid, o.relationship)
                     for o in class_orphans}
     elif class_orphans:
+        # ONE three-digit prefix (the ledger rejects anything else); 080 recorded
+        # implies 079 is too, since migrations apply in order.
         with migration_guard.guarded(
-                conn, relations=needed, migration="079 or 080",
+                conn, relations=needed, migration="080",
                 consequence="drugref cannot tell which drugs a missing class-rule "
                             "grade concerns"):
             reaching = class_grain_read.class_rules_reaching(conn, subjects)

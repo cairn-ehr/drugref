@@ -70,11 +70,35 @@ def test_verify_names_a_truncated_blob(tmp_path):
     # same-size corruption is invisible without a re-hash; size mismatch is not
     blob = archive.blob_path(root, files[0].sha256)
     assert archive.missing_runs(root, [digest]) == [
-        archive.ArchiveProblem(digest, f"truncated blob {files[0].sha256}")]
+        archive.ArchiveProblem(digest, f"wrong-size blob {files[0].sha256}")]
     blob.write_bytes(b"y" * files[0].size)
     assert archive.missing_runs(root, [digest]) == []  # no re-hash
-    assert archive.verify_runs(root, [digest]) == [
-        archive.ArchiveProblem(digest, f"corrupt blob {files[0].sha256}")]
+    problems = archive.verify_runs(root, [digest])
+    assert [p.what.split(" (")[0] for p in problems] == [
+        f"corrupt blob {files[0].sha256}"]
+    # Re-ingest skips a right-size blob, so the operator must be told to delete it.
+    assert "delete" in problems[0].what and "re-ingest" in problems[0].what
+
+
+def test_a_record_must_reproduce_its_runs_checksum(tmp_path):
+    """Each blob can be intact while the RECORD lies: no files, files out of order, or
+    a source_checksum that is not its own name. The audit must still say so."""
+    a, b = _files(tmp_path, 2)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a, b)
+    path = archive.run_record_path(root, digest)
+    good = json.loads(path.read_text())
+
+    path.write_text(json.dumps({**good, "files": []}))
+    assert archive.missing_runs(root, [digest]) == [
+        archive.ArchiveProblem(digest, "malformed run record")]
+    path.write_text(json.dumps({**good, "source_checksum": "d" * 64}))
+    assert archive.missing_runs(root, [digest]) == [
+        archive.ArchiveProblem(digest, "malformed run record")]
+    path.write_text(json.dumps({**good, "files": good["files"][::-1]}))
+    assert archive.missing_runs(root, [digest]) == []      # cheap check: sizes only
+    assert archive.verify_runs(root, [digest]) == [archive.ArchiveProblem(
+        digest, "blobs do not reproduce the run's source_checksum")]
 
 
 def test_archive_root_is_none_when_unset(monkeypatch, tmp_path):
@@ -128,9 +152,14 @@ def test_a_path_like_release_tag_is_rejected(tmp_path, tag):
 
 
 def test_a_relative_archive_root_is_rejected(monkeypatch):
-    """A relative path would land the archive wherever the command happened to run."""
+    """A relative path would land the archive wherever the command happened to run.
+
+    RuntimeError, not ValueError: `cli.main` renders RuntimeError as one line and exit
+    2 (operator error); a ValueError escaped as a traceback with exit 1, which
+    `audit archive` and `publish` both use to mean "the archive has problems".
+    """
     monkeypatch.setenv(archive.ENV_VAR, "relative/arch")
-    with pytest.raises(ValueError, match=archive.ENV_VAR):
+    with pytest.raises(RuntimeError, match=archive.ENV_VAR):
         archive.archive_root()
 
 

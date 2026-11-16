@@ -3,6 +3,9 @@
 `class-ruling <id>` prints which drugs a class ruling reached when the curator ruled
 versus now, and which data loads preceded the review. The SQL lives in
 `class_ruling_reach`; this module only prints, per the rule in cli.py's docstring.
+
+`archive [--release TAG]` re-hashes a release's archived inputs (#258); the checks
+live in `archive`, and this module reads the release record and curated export.
 """
 import json
 import sys
@@ -46,7 +49,10 @@ def _handle_archive(conn, args) -> int:
     0 = complete, 1 = problems found (each printed), 2 = nothing to check: the
     archive env var is unset, the tag is path-like, no release is named or
     published (or the database predates db/081), or the release record is
-    missing or unreadable. Default release is the one the database answers from.
+    missing or malformed (an OSError while reading still escapes: #261). Default
+    release is the one the database answers from. A tag this database has no
+    `release_build` row for is still checked -- the database may be what was lost
+    -- but gets a note: its files may be debris of a publish that never committed.
     A missing or unparseable curated export is a PROBLEM (exit 1), not "nothing
     to check": it is the only copy of the curated inputs if the DB is lost.
     """
@@ -74,6 +80,9 @@ def _handle_archive(conn, args) -> int:
     if not record.is_file():
         print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
         return 2
+    if args.release is not None and not _built_here(conn, tag):
+        print(f"note: {tag} has no release_build row in this database (published "
+              "elsewhere, or a publish that did not commit)", file=sys.stderr)
     try:
         checksums = [archive.require_sha256(r["source_checksum"]) for r in
                      json.loads(record.read_text(encoding="utf-8"))["runs"]]
@@ -92,6 +101,15 @@ def _handle_archive(conn, args) -> int:
     return 0
 
 
+def _built_here(conn, tag: str) -> bool:
+    """True when this database recorded publishing `tag` (or predates db/081)."""
+    probe = conn.execute("SELECT to_regclass('drugref.release_build')").fetchone()
+    if probe[0] is None:
+        return True        # cannot tell; the predates-db/081 path says so elsewhere
+    return conn.execute("SELECT 1 FROM drugref.release_build WHERE release_tag = %s",
+                        (tag,)).fetchone() is not None
+
+
 def _curated_export_problems(root, tag) -> list[archive.ArchiveProblem]:
     """[] when `<tag>.curated.json` exists and parses as a JSON object."""
     path = archive.curated_export_path(root, tag)
@@ -100,7 +118,9 @@ def _curated_export_problems(root, tag) -> list[archive.ArchiveProblem]:
     try:
         if isinstance(json.loads(path.read_text(encoding="utf-8")), dict):
             return []
-    except (OSError, ValueError):
+    except OSError as exc:      # e.g. permissions: unreadable is not corrupt
+        return [archive.ArchiveProblem(tag, f"unreadable curated export {path}: {exc}")]
+    except ValueError:
         pass
     return [archive.ArchiveProblem(tag, f"malformed curated export {path}")]
 
