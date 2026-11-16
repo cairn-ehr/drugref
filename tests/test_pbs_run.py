@@ -439,3 +439,13 @@ def test_rebuild_drops_a_delisted_item(conn, seeded_registry, tmp_path):
     pbs_run.ingest_pbs(conn, smaller, "2026-08-01", "b")
     assert conn.execute(
         "SELECT count(*) FROM drugref.local_product").fetchone()[0] == 2 < full
+
+
+def test_a_caller_checksum_is_refused_when_the_archive_is_set(conn, tmp_path, monkeypatch):
+    """With the archive on, a caller-supplied checksum would archive nothing and a
+    later publish would refuse on an unexplained run (#258): refuse it up front."""
+    monkeypatch.setenv("DRUGREF_ARCHIVE", str(tmp_path))
+    with pytest.raises(ValueError, match="DRUGREF_ARCHIVE"):
+        pbs_run.ingest_pbs(conn, FIXTURE, "2026-11", source_checksum="a" * 64)
+    assert conn.execute("SELECT 1 FROM drugref.ingest_run WHERE source = 'PBS'"
+                        ).fetchone() is None

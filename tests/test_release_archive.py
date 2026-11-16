@@ -60,7 +60,8 @@ def test_publish_writes_record_export_and_build_row(conn, key, tmp_path, a_grade
     assert run_id in [r["ingest_run_id"] for r in record["runs"]]
     export = json.loads(
         (root / "releases" / f"{TAG}.curated.json").read_text(encoding="utf-8"))
-    assert set(export) == {*releases._CURATED_KINDS, "class_expansion_policy"}
+    assert set(export) == {*releases._CURATED_KINDS, "class_expansion_policy",
+                           "curated_class_interaction_reach"}
     assert any(r["reviewed_by"] == "é curator" for r in export["curated_interaction"])
     build = conn.execute("SELECT git_commit, ledger_head, run_ids FROM "
                          "drugref.release_build WHERE release_tag = %s", (TAG,)).fetchone()
@@ -180,3 +181,24 @@ def test_current_release_view_reads_every_curated_table(conn):
         "SELECT table_name FROM information_schema.view_table_usage "
         "WHERE view_name = 'current_release'")}
     assert set(releases._CURATED_KINDS) <= read
+
+
+def test_release_files_are_written_through_a_unique_temp(conn, key, tmp_path, monkeypatch):
+    """A crash mid-write must never leave a half file under the final name."""
+    import tempfile
+    names = []
+    real = tempfile.mkstemp
+
+    def spy(*args, **kw):
+        fd, name = real(*args, **kw)
+        names.append(name)
+        return fd, name
+    monkeypatch.setattr(tempfile, "mkstemp", spy)
+    _publish(conn, key, tmp_path / "arch")
+    assert len([n for n in names if "/releases/" in n]) == 2
+    assert sorted(p.name for p in (tmp_path / "arch" / "releases").iterdir()) == [
+        f"{TAG}.curated.json", f"{TAG}.json"]
+
+
+def test_curated_export_covers_the_reach_table():
+    assert "curated_class_interaction_reach" in release_archive._EXPORT_TABLES

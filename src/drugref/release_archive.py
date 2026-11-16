@@ -8,7 +8,8 @@ as they were. This module wraps `releases.publish` (untouched) and adds:
   `current_release` view needs to detect drift (db/081);
 - when `DRUGREF_ARCHIVE` is set, `releases/<tag>.json` (every finished ingest
   run, NOT only the ones feeding the live registry) and
-  `releases/<tag>.curated.json` (every curated row, superseded included).
+  `releases/<tag>.curated.json` (every curated row, superseded included, and
+  every class-ruling reach row).
 
 It never commits: the CLI owns the transaction. The files are written before
 that commit; if the commit then fails they name a tag absent from the database,
@@ -28,6 +29,9 @@ _EXPORT_TABLES = {
     "curated_class_interaction": "curated_class_interaction_id",
     "curated_property_ruling": "curated_property_ruling_id",
     "class_expansion_policy": "policy_id",
+    # Audit data no upstream file can rebuild: who a class ruling reached (db/080).
+    "curated_class_interaction_reach":
+        "curated_class_interaction_id, side, moiety_uuid",
 }
 assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 
@@ -82,8 +86,8 @@ def finished_runs(conn) -> list[dict]:
 
 
 def curated_export(conn) -> dict[str, list[dict]]:
-    """All rows of the curated tables plus the expansion policy, superseded
-    ones included, ordered by primary key."""
+    """All rows of the curated tables, the expansion policy and the class-ruling
+    reach snapshots, superseded ones included, ordered by primary key."""
     return {
         table: [r[0] for r in conn.execute(
             f"SELECT to_jsonb(t) FROM drugref.{table} t ORDER BY {pk}")]
@@ -91,8 +95,9 @@ def curated_export(conn) -> dict[str, list[dict]]:
 
 
 def _write_json(path: Path, obj) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Atomic (temp + rename), so a crash never leaves a half record to audit."""
+    body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
+    archive.atomic_write(path, lambda fh: fh.write(body))
 
 
 def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:

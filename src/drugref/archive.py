@@ -23,6 +23,7 @@ import json
 import os
 import pathlib
 import re
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
@@ -36,9 +37,18 @@ Input = str | pathlib.Path | resources.abc.Traversable
 
 
 def archive_root() -> pathlib.Path | None:
-    """The archive directory from the environment, or None when unset/empty."""
+    """The archive directory from the environment, or None when unset/empty.
+
+    MUST BE ABSOLUTE: a relative value would resolve against whatever directory
+    the command ran in, scattering one archive over several (#258).
+    """
     value = os.environ.get(ENV_VAR)
-    return pathlib.Path(value) if value else None
+    if not value:
+        return None
+    root = pathlib.Path(value)
+    if not root.is_absolute():
+        raise ValueError(f"{ENV_VAR} must be an absolute path, got {value!r}")
+    return root
 
 
 @dataclass(frozen=True)
@@ -130,49 +140,64 @@ def curated_export_path(root: pathlib.Path, tag: str) -> pathlib.Path:
     return root / "releases" / f"{tag}.curated.json"
 
 
-def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
-               expected_sha256: str) -> None:
-    """Copy `item` to `dest` unless present, via `<dest>.tmp` + `os.replace`.
+def atomic_write(dest: pathlib.Path, fill) -> None:
+    """Write `dest` through a UNIQUE temp file in its directory, then `os.replace`.
 
-    The rename is atomic, so a crash leaves at worst a stray .tmp and never a
-    half-written file under the final (content-addressed) name. The copy hashes
-    what it writes: an input that changed since `file_digests` read it would
-    otherwise land wrong bytes under a sha-named blob that is never repaired.
+    `fill(fh)` writes the bytes to a binary file handle. The rename is atomic, so a
+    crash never leaves a half-written file under the final name. The temp name is
+    unique (`tempfile.mkstemp`), so two ingests archiving the same MeSH file at
+    once cannot clobber each other's temp. If `fill` raises, the temp is removed.
     """
-    if dest.is_file():
-        return
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + ".tmp")
-    written = hashlib.sha256()
-    with item.open("rb") as src, open(tmp, "wb") as out:
-        for chunk in iter(lambda: src.read(CHUNK_BYTES), b""):
-            written.update(chunk)
-            out.write(chunk)
-    if written.hexdigest() != expected_sha256:
-        tmp.unlink()
-        raise ValueError(f"{item.name} changed while being archived "
-                         f"(expected sha256 {expected_sha256})")
-    os.replace(tmp, dest)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            fill(out)
+        os.replace(tmp, dest)
+    except BaseException:
+        pathlib.Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
+               expected: ArchivedFile) -> None:
+    """Copy `item` to `dest` unless a blob of the right size is already there.
+
+    A blob of the WRONG size is not the content its name claims (a truncated
+    copy, a hand edit), so it is replaced through the same verified path rather
+    than skipped forever. The copy hashes what it writes: an input that changed
+    since `file_digests` read it would otherwise land wrong bytes under a
+    sha-named blob.
+    """
+    if dest.is_file() and dest.stat().st_size == expected.size:
+        return
+
+    def fill(out):
+        written = hashlib.sha256()
+        with item.open("rb") as src:
+            for chunk in iter(lambda: src.read(CHUNK_BYTES), b""):
+                written.update(chunk)
+                out.write(chunk)
+        if written.hexdigest() != expected.sha256:
+            raise ValueError(f"{item.name} changed while being archived "
+                             f"(expected sha256 {expected.sha256})")
+    atomic_write(dest, fill)
 
 
 def store_run(root: pathlib.Path, *inputs: Input) -> str:
     """Archive a run's inputs and its record; return the combined digest.
 
-    Idempotent: blobs already present are not rewritten, and the record is
-    rewritten with identical content.
+    Idempotent: blobs already present (at the right size) are not rewritten, and
+    the record is rewritten with identical content.
     """
     digest, files = file_digests(*inputs)
     for item, rec in zip(map(_as_traversable, inputs), files):
-        _copy_blob(item, blob_path(root, rec.sha256), rec.sha256)
+        _copy_blob(item, blob_path(root, rec.sha256), rec)
     record = {"source_checksum": digest,
               "files": [{"name": f.name, "size": f.size, "sha256": f.sha256}
                         for f in files]}
-    path = run_record_path(root, digest)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    os.replace(tmp, path)
+    body = json.dumps(record, ensure_ascii=False, indent=2).encode("utf-8")
+    atomic_write(run_record_path(root, digest), lambda fh: fh.write(body))
     return digest
 
 

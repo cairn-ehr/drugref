@@ -125,3 +125,49 @@ def test_a_path_like_release_tag_is_rejected(tmp_path, tag):
         archive.release_record_path(tmp_path, tag)
     assert archive.curated_export_path(tmp_path, "r1") == (
         tmp_path / "releases" / "r1.curated.json")
+
+
+def test_a_relative_archive_root_is_rejected(monkeypatch):
+    """A relative path would land the archive wherever the command happened to run."""
+    monkeypatch.setenv(archive.ENV_VAR, "relative/arch")
+    with pytest.raises(ValueError, match=archive.ENV_VAR):
+        archive.archive_root()
+
+
+def test_re_storing_repairs_a_wrong_size_blob(tmp_path):
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a)
+    blob = archive.blob_path(root, archive.file_digests(a)[1][0].sha256)
+    blob.write_bytes(b"x")
+    archive.store_run(root, a)
+    assert blob.read_bytes() == a.read_bytes()
+    assert archive.verify_runs(root, [digest]) == []
+
+
+def test_a_changed_input_leaves_no_temp_file_and_no_blob(tmp_path, monkeypatch):
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    real = archive.file_digests
+    monkeypatch.setattr(archive, "file_digests", lambda *i: (
+        real(*i)[0], [archive.ArchivedFile(a.name, a.stat().st_size, "0" * 64)]))
+    with pytest.raises(ValueError, match="changed while being archived"):
+        archive.store_run(root, a)
+    assert [p for p in root.rglob("*") if p.is_file()] == []
+
+
+def test_temp_files_are_unique_per_write(tmp_path, monkeypatch):
+    """Two ingests sharing an input (MeSH descriptors) must not share a temp name."""
+    import tempfile
+    (a,) = _files(tmp_path, 1)
+    names = []
+    real = tempfile.mkstemp
+
+    def spy(*args, **kw):
+        fd, name = real(*args, **kw)
+        names.append(name)
+        return fd, name
+    monkeypatch.setattr(tempfile, "mkstemp", spy)
+    archive.store_run(tmp_path / "arch", a)
+    archive.store_run(tmp_path / "arch2", a)
+    assert len(names) == 4 and len(set(names)) == 4

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import classes, local, provenance
+from drugref import archive, classes, local, provenance
 from drugref.ingest import pbs
 from drugref.ingest.checksum import archived_checksum
 
@@ -138,6 +138,11 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     path = pathlib.Path(items_csv_path)
+    if source_checksum is not None and archive.archive_root() is not None:
+        # A supplied checksum skips the archiving read, so the run would have no
+        # record and a later publish would refuse on it, unexplained (#258).
+        raise ValueError(f"{archive.ENV_VAR} is set: let ingest_pbs compute "
+                         "source_checksum so the input is archived")
     if source_checksum is None:
         # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
         # module still hashing its own input -- `hashlib.file_digest(fh, "sha256")`,
