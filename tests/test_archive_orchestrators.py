@@ -44,10 +44,11 @@ def test_copy_blob_refuses_bytes_that_do_not_match_the_expected_hash(tmp_path):
     src.write_bytes(b"changed between passes")
     dest = tmp_path / "blobs" / "ab" / "abc"
     try:
-        archive._copy_blob(src, dest, "0" * 64)
+        archive._copy_blob(src, dest, archive.ArchivedFile(
+            "in.bin", src.stat().st_size, "0" * 64))
     except ValueError as e:
         assert "in.bin" in str(e)
     else:
         raise AssertionError("expected ValueError")
     assert not dest.exists()
-    assert not dest.with_name(dest.name + ".tmp").exists()
+    assert list(dest.parent.iterdir()) == []  # the unique temp is gone too

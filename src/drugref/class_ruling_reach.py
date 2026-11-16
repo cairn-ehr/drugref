@@ -68,7 +68,8 @@ class RulingAudit:
     loaded_runs: tuple[tuple[str, str, int, str], ...]
 
 
-def audit_ruling(conn: psycopg.Connection, curated_class_interaction_id: int):
+def audit_ruling(conn: psycopg.Connection,
+                 curated_class_interaction_id: int) -> RulingAudit | None:
     """Reach then vs now for one ruling, or None if the id does not exist.
 
     `now` comes from class_rule_member, which covers LIVE rulings only, so a
