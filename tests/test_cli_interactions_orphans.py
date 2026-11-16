@@ -399,3 +399,53 @@ def test_a_missing_class_rule_member_view_banners_every_class_orphan(
     captured = capsys.readouterr()
     assert "INCOMPLETE" in captured.out
     assert "079" in captured.err
+
+
+def _left_the_class_orphan(conn, ingest_run_id, n, correct=False):
+    """Rule A x B graded while X is in A beside Z; then X alone leaves A (and, with
+    `correct`, the ruling is re-recorded AFTER X left, so only the FIRST version's
+    reach holds X); then the candidate is dropped. Returns X (#258)."""
+    sc, oc, (x, _z), _o = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code=f"N00000258{n}0",
+        object_code=f"N00000258{n}1",
+        subject_members=[(f"TESTUN258{n}A", "leaver"), (f"TESTUN258{n}B", "stayer")],
+        object_members=[(f"TESTUN258{n}C", "partner")], severity="contraindicated")
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+    if correct:
+        curation.record_class_interaction_judgement(
+            conn, sc, oc, "CI_MoA", True, severity="major",
+            evidence_grade="established", reviewed_by="test", reviewed_against="2026")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (sc,))
+    return x
+
+
+def test_a_drug_that_alone_left_the_class_is_still_bannered(
+        conn, ingest_run_id, capsys):
+    """#258's exact case: X left A, A keeps Z, so live membership no longer names X."""
+    x = _left_the_class_orphan(conn, ingest_run_id, 1)
+    assert cli_interactions._handle_interactions(
+        conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_a_superseded_versions_reach_still_counts(conn, ingest_run_id, capsys):
+    x = _left_the_class_orphan(conn, ingest_run_id, 2, correct=True)
+    assert cli_interactions._handle_interactions(
+        conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_without_db080_every_class_orphan_is_shown(conn, ingest_run_id, capsys):
+    sc, _o, (s,), (o,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025830", object_code="N0000025831",
+        subject_members=[("TESTUN2583A", "subject")],
+        object_members=[("TESTUN2583B", "partner")], severity="contraindicated")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (sc,))
+    conn.execute("DROP TABLE drugref.curated_class_interaction_reach")
+    assert cli_interactions._handle_interactions(
+        conn, _args(s, o)) == cli_interactions.EXIT_INCOMPLETE
+    captured = capsys.readouterr()
+    assert "INCOMPLETE" in captured.out
+    assert "080" in captured.err

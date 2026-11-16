@@ -45,8 +45,8 @@ evidence of absence, and the overlay is small and deliberately so.
 import sys
 import uuid
 
-from drugref import (class_grain_read, curated_read, curation, migration_guard,
-                     registry_read)
+from drugref import (class_grain_read, class_ruling_reach, curated_read, curation,
+                     migration_guard, registry_read)
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -134,15 +134,16 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     and whether the partner is in it would take a membership read. A class-grain orphan
     is shown when an asked drug is among its subject OR partner members, or when
     either side reaches nobody (see `class_grain_read.class_rules_reaching`). Both lean
-    towards over-warning, this tool's safe direction; the one known under-warn (a drug
-    that alone left a class) needs membership history, #258.
+    towards over-warning, this tool's safe direction. A drug that has since left a
+    class is still caught, via the reach recorded when the rule was made (#258).
 
     TWO GUARDED READS, NOT ONE: each guarded block holds exactly one call
     (`migration_guard.guarded`), and the member read is a different migration
-    (db/079). It runs only when a class-grain orphan exists, which is expected never.
-    WITHOUT db/079 IT FALLS BACK RATHER THAN ABORTS: the list has already printed, so
-    raising would exit 2 with no banner at all (moiety orphans included). Keeping
-    every class orphan is the pre-#255 behaviour -- noisy, never silent -- and stderr
+    (db/079, db/080). It runs only when a class-grain orphan exists, which is
+    expected never. WITHOUT db/079 OR db/080 IT FALLS BACK RATHER THAN ABORTS: the
+    list has already printed, so raising would exit 2 with no banner at all (moiety
+    orphans included). Keeping every class orphan is the pre-#255 behaviour -- noisy,
+    never silent -- and stderr
     says why.
 
     "RULING", NOT "GRADE": the view also carries `applies = false` rulings, which the
@@ -155,17 +156,18 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     reaching = set()
     class_orphans = [o for o in unresolved
                      if o.target_table == "curated_class_interaction"]
-    if class_orphans and conn.execute(
-            "SELECT to_regclass(%s)",
-            (class_grain_read.RULE_MEMBER_VIEW,)).fetchone()[0] is None:
-        print(f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079) is missing, so "
+    needed = (class_grain_read.RULE_MEMBER_VIEW, class_ruling_reach.REACH_TABLE)
+    if class_orphans and any(
+            conn.execute("SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None
+            for rel in needed):
+        print(f"note: {' or '.join(needed)} (db/079 or db/080) is missing, so "
               "every class-rule orphan is shown, not only those concerning the drugs "
               "asked. Run `drugref status`.", file=sys.stderr)
         reaching = {(o.subject_class, o.object_uuid, o.relationship)
                     for o in class_orphans}
     elif class_orphans:
         with migration_guard.guarded(
-                conn, relations=(class_grain_read.RULE_MEMBER_VIEW,), migration="079",
+                conn, relations=needed, migration="079 or 080",
                 consequence="drugref cannot tell which drugs a missing class-rule "
                             "grade concerns"):
             reaching = class_grain_read.class_rules_reaching(conn, subjects)

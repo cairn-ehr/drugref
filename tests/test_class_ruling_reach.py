@@ -36,6 +36,8 @@ def test_a_ruling_snapshots_its_reach(conn, ingest_run_id):
 def test_reach_survives_a_member_leaving(conn, ingest_run_id):
     rid, _sc, _oc, x, y = _ruled(conn, ingest_run_id)
     conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+    assert not conn.execute(
+        "SELECT 1 FROM drugref.class_rule_member WHERE moiety_uuid = %s", (x,)).fetchall()
     assert (rid, "subject", x, "at_ruling") in _reach(conn, rid)
 
 
