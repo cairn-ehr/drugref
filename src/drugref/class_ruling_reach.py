@@ -14,14 +14,22 @@ from datetime import datetime
 import psycopg
 
 REACH_TABLE = "drugref.curated_class_interaction_reach"
+# One row per snapshotted ruling (db/082): tells "reached no one" from "never recorded".
+SNAPSHOT_TABLE = "drugref.curated_class_interaction_snapshot"
 
 
 def snapshot_reach(conn: psycopg.Connection, curated_class_interaction_id: int) -> int:
     """Copy the live ruling's current reach into REACH_TABLE; return rows written.
 
-    Call it after the ruling is live (append-then-point done), or the view does not
-    yet list it. Does not commit: the caller owns the transaction.
+    Also marks the ruling in SNAPSHOT_TABLE, so a side that reached no one (zero
+    rows) still reads as "snapshot taken" (#266). Call it after the ruling is live
+    (append-then-point done), or the view does not yet list it. Does not commit:
+    the caller owns the transaction.
     """
+    conn.execute(
+        f"INSERT INTO {SNAPSHOT_TABLE} (curated_class_interaction_id, captured) "
+        "VALUES (%s, 'at_ruling') ON CONFLICT DO NOTHING",
+        (curated_class_interaction_id,))
     return conn.execute(
         f"INSERT INTO {REACH_TABLE} "
         "(curated_class_interaction_id, side, moiety_uuid, captured) "
@@ -36,7 +44,10 @@ class SideReach:
 
     `captured` is 'at_ruling' (a true ruling-time snapshot), 'backfill_db080' (the
     snapshot was reconstructed by the migration, so `then` is NOT ruling-time; wins
-    if any row is backfill), or 'none' (no snapshot rows for this side).
+    if any row is backfill), or 'none' (no snapshot on record: never taken, or the
+    class was empty before db/082 could mark it -- see db/082). A side with no
+    rows takes the ruling's SNAPSHOT_TABLE marker, so `captured` != 'none' with an
+    empty `then` means "snapshot taken, reached no one" (#266).
     """
     side: str
     then: frozenset[uuid.UUID]
@@ -94,11 +105,16 @@ def audit_ruling(conn: psycopg.Connection,
             "SELECT side, moiety_uuid FROM drugref.class_rule_member "
             "WHERE curated_class_interaction_id = %s", (curated_class_interaction_id,)):
         now[side].add(m)
+    marker = conn.execute(
+        f"SELECT captured FROM {SNAPSHOT_TABLE} "
+        "WHERE curated_class_interaction_id = %s",
+        (curated_class_interaction_id,)).fetchone()
 
     def cap(side: str) -> str:
         c = captured[side]
-        return ("none" if not c else "backfill_db080" if "backfill_db080" in c
-                else "at_ruling")
+        if not c:       # no rows: either reached no one, or never snapshotted
+            return marker[0] if marker else "none"
+        return "backfill_db080" if "backfill_db080" in c else "at_ruling"
 
     sides = tuple(SideReach(s, frozenset(then[s]), frozenset(now[s]), cap(s))
                   for s in ("subject", "partner"))

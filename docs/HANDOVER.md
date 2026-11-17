@@ -13,21 +13,21 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/archive-fixes`: #261 and #262 are FIXED and committed; a PR to `main` closes both (see
-`gh pr list --head claude/archive-fixes`). #264 (the #258 decision audit) is MERGED. Schema still ends at
-`db/081` (no migration this round).** No agent round queued after it: the owner picks (see "DO THIS NEXT"). The
-suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line
-and the collected suite disagree.
+**On branch `claude/audit-fixes-266-268`: #266 and #268 are FIXED and committed; a PR to `main` closes both (see
+`gh pr list --head claude/audit-fixes-266-268`). PR #267 (#261, #262) is MERGED. Schema now ends at `db/082`.** No
+agent round queued after it: the owner picks (see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How
+to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (#261, #262, archive fixes):** archive files get the umask's mode, not mkstemp's `0600`; `audit
-archive` turns an `OSError` into one line, exit 2 (a found problem still wins: runs are checked one by one);
-release files are written no-clobber (`os.link`) with publish's DB rows in a SAVEPOINT. **Finding:** on ONE
-database the race could not clobber (UNIQUE serializes it); the exposure is two databases sharing an archive.
-Traps (incl. the #267 review's): PROJECT-NOTES § "The decision audit".
+**⇒ THIS ROUND (#268, #266):** `archive._check` no longer asks `is_file()` (`archive.stat_or_none`: only ENOENT /
+ENOTDIR is "missing"), so an unreadable run is "could not check" on Python 3.12 AND 3.14, and publish refuses an
+unreadable archive in one line. **`db/082` `curated_class_interaction_snapshot`** marks every snapshotted class
+ruling (owner's pick over a timestamp rule: it survives a #259 replay), so `audit class-ruling` tells "reached no
+one" from "never recorded". Traps (incl. testing on 3.14 without clobbering `.venv`): PROJECT-NOTES § "The decision
+audit".
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/080`–`db/081` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/080`–`db/082` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
@@ -83,14 +83,14 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
-   that has not happened. Agent-sized, from #258: **#259** (replay);
-   **#265** (drift scope: needs a node-local source list, owner input) and **#266** (`captured: none`).
+   that has not happened. Agent-sized, from #258: **#259** (replay; large, test with a fixture archive, and
+   load the `db/082` markers too); **#265** (drift scope: needs a node-local source list, owner input).
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#261,
-#262 FIXED by this branch (close on merge).** #258 closed (PR #264); **open from it: #259, #260, #263, #265, #266, #268** (replay, diff fallback, PBS in
-the archive, drift scope, empty-snapshot ambiguity, is_file by Python version); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#266,
+#268 FIXED by this branch (close on merge);** #261, #262 closed (PR #267). #258 closed (PR #264); **open from it:
+#259, #260, #263, #265** (replay, diff fallback, PBS in the archive, drift scope); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
 **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
@@ -103,7 +103,7 @@ set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it. No named database carries `db/079`–`db/081` yet: both rounds were tested against `drugref_test` only.
+  patch it. No named database carries `db/079`–`db/082` yet: both rounds were tested against `drugref_test` only.
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

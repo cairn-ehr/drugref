@@ -1,5 +1,6 @@
 """publish writes the release record, curated export and build row (#258). DB-gated."""
 import json
+import os
 
 import pytest
 
@@ -61,7 +62,8 @@ def test_publish_writes_record_export_and_build_row(conn, key, tmp_path, a_grade
     export = json.loads(
         (root / "releases" / f"{TAG}.curated.json").read_text(encoding="utf-8"))
     assert set(export) == {*releases._CURATED_KINDS, "class_expansion_policy",
-                           "curated_class_interaction_reach"}
+                           "curated_class_interaction_reach",
+                           "curated_class_interaction_snapshot"}
     assert any(r["reviewed_by"] == "é curator" for r in export["curated_interaction"])
     build = conn.execute("SELECT git_commit, ledger_head, run_ids FROM "
                          "drugref.release_build WHERE release_tag = %s", (TAG,)).fetchone()
@@ -295,5 +297,42 @@ def test_release_files_are_written_through_a_unique_temp(conn, key, tmp_path, mo
         f"{TAG}.curated.json", f"{TAG}.json"]
 
 
-def test_curated_export_covers_the_reach_table():
-    assert "curated_class_interaction_reach" in release_archive._EXPORT_TABLES
+def test_curated_export_covers_the_reach_and_snapshot_tables():
+    """Audit data no upstream file can rebuild: without the db/082 marker a replayed
+    empty snapshot would read "never recorded" (#266)."""
+    assert {"curated_class_interaction_reach",
+            "curated_class_interaction_snapshot"} <= set(release_archive._EXPORT_TABLES)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches a 0600 dir anyway")
+@pytest.mark.parametrize("where", ["runs", "releases"])
+def test_an_unsearchable_archive_dir_refuses_publish_as_unreadable(
+        conn, key, tmp_path, where):
+    """One refusal line, the same on every Python (#268): never a traceback (3.12),
+    never "re-ingest this run" for bytes that are there (3.14), and for `releases/`
+    never a traceback from the write after `exists()` said False (3.14)."""
+    root = tmp_path / "arch"
+    _run(conn, checksum=_archive_run(root, tmp_path, "in.txt", "hello"))
+    target = root / where
+    target.mkdir(exist_ok=True)
+    target.chmod(0o600)
+    try:
+        what = _refused(conn, key, root).problems[0].what
+    finally:
+        target.chmod(0o755)
+    assert "cannot read the archive" in what and "Permission denied" in what
+    assert "re-ingest" not in what
+
+
+def test_an_unreadable_archive_without_a_filename_names_the_archive(
+        conn, key, tmp_path, monkeypatch):
+    """A read error on an already-open file has no filename (e.g. EIO): the refusal
+    names the archive root, not "None", and gives permission advice only for EACCES."""
+    root = tmp_path / "arch"
+    _run(conn, checksum=_archive_run(root, tmp_path, "in.txt", "hello"))
+
+    def eio(*_args, **_kwargs):
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(archive, "missing_runs", eio)
+    what = _refused(conn, key, root).problems[0].what
+    assert what == f"cannot read the archive: {root}: Input/output error"

@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Last reviewed:** 2026-11-16
-**Applies to:** the decision audit -- `db/080`, `db/081`, `drugref.current_release`, `DRUGREF_ARCHIVE`, `drugref audit`
+**Applies to:** the decision audit -- `db/080`, `db/081`, `db/082`, `drugref.current_release`, `DRUGREF_ARCHIVE`, `drugref audit`
 **Full derivation:** the [decision-audit design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (with its dated review amendments)
 
 ## Context
@@ -61,6 +61,10 @@ file (issue #260). Not built now.
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
 - `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now, which is also the data for
   reporting a grade that silently dropped (issue #256).
+- A snapshot that reached no one is recorded as such (`db/082`, one marker row per snapshotted ruling, carried in
+  the curated export), so the audit tells "reached no one" from "never recorded" (issue #266).
+- An archive file that is there but unreadable is reported as "could not check", never as "missing": "missing"
+  tells the operator to re-ingest bytes that exist (issue #268).
 - On a node that ingested PBS, the archive holds the encumbered PBS file. That is fine while the archive stays on
   the node; it must be decided before archives are shared (issue #263, under #25).
 - Cairn stores the tag on its own records; drugref only exposes it.

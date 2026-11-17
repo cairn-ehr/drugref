@@ -30,6 +30,10 @@ def _handle_class_ruling(conn, args) -> int:
                   "NOT recorded at ruling time")
         if s.captured == "none":
             print("  note: no ruling-time snapshot for this side")
+        elif not s.then:    # db/082's marker: taken, and empty (#266)
+            when = ("when db/080 rebuilt it" if s.captured == "backfill_db080"
+                    else "then")
+            print(f"  note: snapshot taken: this side reached no one {when}")
         for label, ids in (("added", s.added), ("removed", s.removed)):
             print(f"  {label}: {len(ids)}")
             for u in sorted(ids, key=str):
@@ -83,7 +87,7 @@ def _handle_archive(conn, args) -> int:
     # Read, never `is_file()` first: on an unsearchable directory it raises on
     # Python 3.12 but returns False on 3.14, so "missing" would depend on the version.
     try:
-        body = record.read_text(encoding="utf-8")
+        body = record.read_bytes()     # decoded below: bad bytes are "malformed"
     except FileNotFoundError:
         print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
         return 2
@@ -92,7 +96,7 @@ def _handle_archive(conn, args) -> int:
         return 2
     try:
         checksums = [archive.require_sha256(r["source_checksum"])
-                     for r in json.loads(body)["runs"]]
+                     for r in json.loads(body.decode("utf-8"))["runs"]]
     except (ValueError, KeyError, TypeError):
         print(f"drugref: malformed release record {record}", file=sys.stderr)
         return 2
@@ -148,11 +152,11 @@ def _curated_export_problems(tag, path) -> list[archive.ArchiveProblem]:
     "could not check", like any other unreadable archive file.
     """
     try:
-        body = path.read_text(encoding="utf-8")     # not is_file(): see the record read
+        body = path.read_bytes()     # not is_file(): see the record read
     except FileNotFoundError:
         return [archive.ArchiveProblem(tag, f"missing curated export {path}")]
     try:
-        if isinstance(json.loads(body), dict):
+        if isinstance(json.loads(body.decode("utf-8")), dict):
             return []
     except ValueError:
         pass

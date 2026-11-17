@@ -363,7 +363,7 @@ contraindication, so a key-management event must not be able to withdraw advice.
 raises no objection", **not** "the mathematics was checked" — Postgres cannot verify Ed25519, only `drugref
 verify` can. Full account and the traps: § "Slice 5c.4" below.
 
-**Decision audit — what was known when a decision was made** (`db/080`–`db/081`, #258). A clinical decision is
+**Decision audit — what was known when a decision was made** (`db/080`–`db/082`, #258). A clinical decision is
 anchored on a **release tag**: `current_release` names the release the database answers from and whether it has
 drifted, and `drugref interactions` / `status` print that line first. With `DRUGREF_ARCHIVE` set, every ingest
 archives its input files and publish writes a release record and a curated export, so a release can be rebuilt
@@ -6603,7 +6603,7 @@ run:** a real SPL ingest storing the count. The end-to-end census test stores it
 era of rows) before merge; the three local databases holding db/078 had its ledger checksum re-recorded, as no other
 database ever applied it.
 
-## The decision audit (#258, 2026-11-16) — `db/080`–`db/081`, tested on `drugref_test` only, suite 3436 → 3548
+## The decision audit (#258, 2026-11-16) — `db/080`–`db/082`, tested on `drugref_test` only, suite 3436 → 3548 (#258; db/082 in #269)
 
 **Owner ruling (2026-11-16, on #258): drugref must be able to show what information was available when a decision
 was made.** Spec: [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (and its dated
@@ -6621,6 +6621,15 @@ disk becomes a problem (**#260**).
   superseded version keeps its rows. The orphan banner (`class_grain_read.class_rules_reaching`) now returns a rule
   when an asked drug is in its reach now **or was when ruled** (any version of the same natural key), so #258's
   under-warning is closed and the `shortcut:` comment is gone.
+- **`db/082` `curated_class_interaction_snapshot`** (#266, 2026-11-17; insert-only): one row per SNAPSHOTTED
+  ruling, written by `snapshot_reach` beside the reach rows. A side with no reach rows takes the marker's
+  `captured`, so `drugref audit class-ruling` prints "snapshot taken: this side reached no one then" ("… when
+  db/080 rebuilt it" for a backfilled ruling) instead of the old `captured: none`; `none` now means "never
+  snapshotted" (superseded before db/080, or written by raw SQL), bar the gap below. The migration backfills a marker for every ruling with reach rows (backfill wins on a mixed ruling).
+  **Gap, by design:** a ruling whose class was empty, whether live when db/080's backfill ran or written between
+  db/080 and db/082, gets no marker and reads "never recorded"; no named database carries db/080, so none exists. The marker is in the curated export, so a
+  replay (#259) keeps it, which a timestamp rule (`reviewed_at` vs db/080's `applied_at`) would not: replayed rulings
+  keep their old `reviewed_at`. Owner chose the marker over the timestamp rule.
 - **`db/081` `release_build`** (insert-only sidecar to the immutable `release_manifest`: `git_commit`,
   `ledger_head`, `run_ids`) and the view **`current_release`** (one row or none: the latest release plus its drift
   reasons — `re-ingested`, `re-curated`, `expansion policy changed`, `newer migration`, or `no build record
@@ -6631,7 +6640,7 @@ disk becomes a problem (**#260**).
   calls it through `ingest/checksum.archived_checksum`; unset means no archive I/O at all.
 - **`release_archive.py`** — `publish_archived` wraps `releases.publish` (untouched): writes the `release_build`
   row and, with the archive set, the release record and the curated export (every curated row, superseded
-  included, every `class_expansion_policy` row and every reach row).
+  included, every `class_expansion_policy` row, every reach row and every `db/082` snapshot marker).
 - **`release_state.py`** — `current_release`, `release_line`, `release_header`. **`drugref interactions` and
   `drugref status` print the release line FIRST** (`drugref release: <tag>` / `... (DRIFTED since publication:
   ...)` / `none published` / `unknown (database predates db/081)`); it never changes an exit code.
@@ -6657,9 +6666,17 @@ disk becomes a problem (**#260**).
   set; today's named databases can only publish unarchived (with the warning).
 - **Archive files get the umask's mode** (`atomic_write` `fchmod`s mkstemp's `0600` away before writing), so a second
   account can read them; `drugref audit archive` turns any `OSError` into `drugref: <path>: <reason>`, **exit 2**
-  ("could not check", not "problems found"). **#261, fixed 2026-11-17.** Never ask `is_file()` first: for an
-  unsearchable directory it raises on Python 3.12 (local) but returns False on 3.14 (CI), so read and map
-  `FileNotFoundError` to "missing". Runs are verified one
+  ("could not check", not "problems found"). **#261, fixed 2026-11-17.** Never ask `is_file()` / `exists()` first:
+  for an unsearchable directory they raise on Python 3.12 (local) but return False on 3.14 (CI), so read and map
+  `FileNotFoundError` to "missing", or use **`archive.stat_or_none`** (None only for ENOENT / ENOTDIR; every other
+  `OSError` propagates). **#268, fixed 2026-11-17:** `archive._check` (shared by publish and the audit) now does
+  exactly that, so an unreadable run reads "could not check" on both versions, and **publish refuses an unreadable
+  archive** with one `ArchiveIncomplete` line (`cannot read the archive: <path>: <reason>`, exit 1) instead of a
+  traceback (3.12) or a "re-ingest" refusal for bytes that are there (3.14). A directory where a record or blob
+  should be still reads "missing". **Test on 3.14 too**: `UV_PROJECT_ENVIRONMENT=<scratch venv> uv run --python
+  3.14 pytest ...` in ONE command (a bare `uv run --python 3.14` rebuilds the project's own `.venv` on 3.14).
+  Not handled: a `releases/` dir that is searchable but not writable still fails publish's write with a traceback
+  (after the SAVEPOINT rolled back). Runs are verified one
   at a time, so an unreadable file skips only its own run and a problem found elsewhere still wins (exit 1); an
   unreadable curated export is exit 2 like any other unreadable file.
 - **Release files are written no-clobber** (`atomic_write(..., overwrite=False)` ends in `os.link`, which needs a
@@ -6680,14 +6697,15 @@ disk becomes a problem (**#260**).
 - `tests/conftest.py` clears `DRUGREF_ARCHIVE` for every test (autouse), so a test can never write a real archive.
 
 **Filed:** **#259** (release replay: rebuild a release into a fresh database from the archive — the spec's
-non-goal), **#260** (diff-based membership tracking if archive disk grows), **#261**, **#262**, **#263**. **#256**
+non-goal), **#260** (diff-based membership tracking if archive disk grows), **#261**, **#262**, **#263**,
+**#265**, **#266** (fixed by `db/082`), **#268** (fixed). **#256**
 got a comment: `drugref audit class-ruling` now lists added / removed members, the data its report needs.
 
 **Tests (+99):** `test_class_ruling_reach.py`, `test_class_ruling_audit.py`, `test_archive.py`,
 `test_archive_orchestrators.py`, `test_release_state.py`, `test_release_archive.py`, `test_release_header.py`,
 `test_cli_audit_archive.py`, plus additions to `test_cli_interactions_orphans.py`, `test_cli_signing.py`,
 `test_pbs_run.py`, `test_expansion_policy.py` and `test_db.py`. **Not run:** an archived ingest of the real
-releases, or a publish on a named database; no named database carries `db/080`–`db/081` yet.
+releases, or a publish on a named database; no named database carries `db/080`–`db/082` yet.
 
 ## The standing open-issue ledger
 
@@ -6850,6 +6868,10 @@ the db/081 view comment names `drugref signing`) and **[#266](https://github.com
 and **#262** (publish's never-overwrite check could race) **FIXED** (§ "The decision audit"). +4 tests, 3548 → 3552;
 the #267 final review added 5 more (3557) and filed **[#268](https://github.com/cairn-ehr/drugref/issues/268)**
 (`archive._check` reads "missing" vs "unreadable" differently on Python 3.12 and 3.14).
+**Audit fixes (2026-11-17, `db/082`)** — **#268** (`archive._check` asked `is_file()`, so an unreadable run read
+"missing" on 3.14; publish now refuses an unreadable archive in one line) and **#266** (`captured: none` for an
+empty snapshot; `db/082`'s marker row, the owner's pick over a timestamp rule) **FIXED** (§ "The decision audit").
++13 tests, 3557 → 3570; the #269 final review added 6 more (3576).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7035,7 +7057,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3557 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3576 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7389,7 +7411,8 @@ ran in CI and `ruff` was not even a project dependency.
   `spl_class_occurrence`, `spl_class_statement_evidence`, `spl_class_statement`,
   `gap_unconfirmed_label_class_statement`; `class_profile_read` joins it) · **`080`–`081` the decision
   audit** (#258: `080` `curated_class_interaction_reach`, insert-only, `captured` = `at_ruling` | `backfill_db080`;
-  `081` `release_build`, the insert-only sidecar to `release_manifest`, and the `current_release` drift view).
+  `081` `release_build`, the insert-only sidecar to `release_manifest`, and the `current_release` drift view;
+  `082` `curated_class_interaction_snapshot`, one insert-only marker per snapshotted ruling, #266).
   **Read the LATEST file that touches an object for its
   actual shape** — 004's relationship CHECK is replaced by 006's FK, 006's `ddi_candidate_pair` by 010's then 012's then
   027's, 016's `gap_unresolved_ci_object` by 017's, 008's/012's `gap_unpopulated_contraindication` and 008's
@@ -7415,7 +7438,7 @@ ran in CI and `ruff` was not even a project dependency.
   reads: sentences, heading blocks, PLR table rows, `scope_index`; split out by #216), `spl_class_evidence.py` (the
   class pass and its row writer inputs; also the R19 hygiene: shadowed/official-name key drops, effect-word and
   boundary drops) and `tools/spl_class_census.py` (the census whose output is the results record's tables)
-  + the decision-audit surface (`db/080`–`db/081`, #258): `class_ruling_reach.py` (the reach snapshot writer and
+  + the decision-audit surface (`db/080`–`db/082`, #258): `class_ruling_reach.py` (the reach snapshot writer and
   `audit_ruling`), `archive.py` (the `DRUGREF_ARCHIVE` content-addressed store and its verifier),
   `release_archive.py` (`publish_archived`: build row, release record, curated export), `release_state.py` (the
   `current_release` read and the release header line) and `cli_audit.py` (`drugref audit class-ruling|archive`)
