@@ -139,6 +139,52 @@ def test_an_unreadable_blob_exits_2_with_one_line(conn, tmp_path, monkeypatch, c
     assert capsys.readouterr().err.splitlines()[-1] == f"drugref: {blob}: Permission denied"
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_problems_found_win_over_an_unreadable_blob(conn, tmp_path, monkeypatch, capsys):
+    """One unreadable run must not hide a missing blob found in another (exit 1)."""
+    root, sums = _archived_release(tmp_path, monkeypatch)
+    shas = [json.loads(archive.run_record_path(root, s).read_text())["files"][0]["sha256"]
+            for s in sums]
+    archive.blob_path(root, shas[0]).unlink()
+    blob = archive.blob_path(root, shas[1])
+    blob.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 1
+    finally:
+        blob.chmod(0o644)
+    out, err = capsys.readouterr()
+    assert f"missing blob {shas[0]}" in out
+    assert f"drugref: {blob}: Permission denied" in err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches a 0600 dir anyway")
+def test_an_unsearchable_releases_dir_exits_2_with_one_line(
+        conn, tmp_path, monkeypatch, capsys):
+    """`Path.is_file()` raises EACCES on 3.12, so the existence check must be guarded too."""
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    releases = root / "releases"
+    releases.chmod(0o600)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        releases.chmod(0o755)
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        f"drugref: {releases / f'{TAG}.json'}: Permission denied")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_an_unreadable_curated_export_exits_2_like_any_unreadable_file(
+        conn, tmp_path, monkeypatch, capsys):
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    export = root / "releases" / f"{TAG}.curated.json"
+    export.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        export.chmod(0o644)
+    assert capsys.readouterr().err.splitlines()[-1] == f"drugref: {export}: Permission denied"
+
+
 @pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])
 def test_a_path_like_release_tag_exits_2(conn, tmp_path, monkeypatch, capsys, tag):
     monkeypatch.setenv(archive.ENV_VAR, str(tmp_path))

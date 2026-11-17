@@ -23,6 +23,8 @@ and the collected suite disagree.
 audit archive` turns an `OSError` into one line, exit 2; release files are written no-clobber (`os.link`), and
 publish's DB rows sit in a SAVEPOINT so a late refusal undoes them. **Finding:** on ONE database the #262 race
 could not clobber (the UNIQUE INSERT serializes it); the real exposure was two databases sharing an archive root.
+The #267 final review: the audit now guards `is_file()` (raises EACCES on 3.12) and checks run by run, so a
+found problem beats an unreadable file; publish removes its own record if the curated export then fails.
 Traps: PROJECT-NOTES § "The decision audit".
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT

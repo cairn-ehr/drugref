@@ -6657,15 +6657,20 @@ disk becomes a problem (**#260**).
   set; today's named databases can only publish unarchived (with the warning).
 - **Archive files get the umask's mode** (`atomic_write` `fchmod`s mkstemp's `0600` away before writing), so a second
   account can read them; `drugref audit archive` turns any `OSError` into `drugref: <path>: <reason>`, **exit 2**
-  ("could not check", not "problems found"). **#261, fixed 2026-11-17.**
+  ("could not check", not "problems found"). **#261, fixed 2026-11-17.** Guard the `is_file()` too: on Python
+  3.12 it raises `PermissionError` for an unsearchable directory, it does not return False. Runs are verified one
+  at a time, so an unreadable file skips only its own run and a problem found elsewhere still wins (exit 1); an
+  unreadable curated export is exit 2 like any other unreadable file.
 - **Release files are written no-clobber** (`atomic_write(..., overwrite=False)` ends in `os.link`, which needs a
   filesystem with hard links: FAT / some SMB mounts make publish fail loudly). The exists-check stays as the
   friendly early refusal; the link is the guard. On the same database the race was already serialized (the second
   publish's `release_manifest` INSERT waits on the first's uncommitted UNIQUE row, then fails before writing a
   file); the real exposure was **two databases sharing one archive root**, or a failed commit after the files were
   written. **Publish's DB writes run in a SAVEPOINT**, so a late refusal undoes them: `ArchiveIncomplete` escapes
-  `_write` without a rollback and `with db.connect` would otherwise COMMIT. **#262, fixed 2026-11-17.** A late
-  refusal on the curated export leaves this publish's release record as debris (the debris message covers it).
+  `_write` without a rollback and `with db.connect` would otherwise COMMIT. **#262, fixed 2026-11-17.** If the
+  curated export fails after the release record was linked, publish removes that record (its own, just created),
+  so no record outlives its rolled-back rows. A file with no `release_manifest` row may be ANOTHER database's real
+  release, so the refusal no longer presents removal as the fix.
 - **A wrong-size blob is repaired on re-ingest** by hash-verified bytes of its own name (spec amendment); a
   same-size blob with wrong content is not, but `drugref audit archive` reports it.
 - **PBS:** on a database that ingested PBS with the archive set, the archive holds the encumbered PBS file and the
@@ -6841,7 +6846,8 @@ filed **[#265](https://github.com/cairn-ehr/drugref/issues/265)** (drift ignores
 the db/081 view comment names `drugref signing`) and **[#266](https://github.com/cairn-ehr/drugref/issues/266)**
 (`captured: none` conflates an empty snapshot with none).
 **Archive fixes (2026-11-17, no migration)** — **#261** (archive files `0600`; `audit archive` traceback on `OSError`)
-and **#262** (publish's never-overwrite check could race) **FIXED** (§ "The decision audit"). +4 tests, 3548 → 3552.
+and **#262** (publish's never-overwrite check could race) **FIXED** (§ "The decision audit"). +4 tests, 3548 → 3552;
+the #267 final review added 5 more (3557).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7027,7 +7033,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3552 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3557 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

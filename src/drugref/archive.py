@@ -169,8 +169,8 @@ def atomic_write(dest: pathlib.Path, fill, *, overwrite: bool = True) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
-        os.fchmod(fd, _umask_file_mode())   # before any byte, so 0600 is never final
-        with os.fdopen(fd, "wb") as out:
+        with os.fdopen(fd, "wb") as out:   # owns fd now: closed even if fchmod fails
+            os.fchmod(out.fileno(), _umask_file_mode())   # before any byte
             fill(out)
             # Durable before it is visible: without fsync, power loss after the
             # rename can leave an empty file under the final name.

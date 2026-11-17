@@ -213,6 +213,34 @@ def test_a_release_file_left_by_an_uncommitted_publish_says_so(conn, key, tmp_pa
     (root / "releases" / f"{TAG}.curated.json").write_text("{}")
     what = _refused(conn, key, root).problems[0].what
     assert "did not commit" in what and "by hand" in what
+    # Or it is a real release from a second database sharing this archive (#262):
+    # the refusal must not present removal as the obvious fix.
+    assert "another database" in what
+
+
+def test_a_failed_curated_export_removes_this_publishs_record(
+        conn, key, tmp_path, monkeypatch):
+    """The record is linked first; if the export then fails, the rows roll back, so
+    the record would be an orphan describing a release that never existed."""
+    root = tmp_path / "arch"
+
+    def boom(conn):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(release_archive, "curated_export", boom)
+    with pytest.raises(RuntimeError, match="disk full"):
+        _publish(conn, key, root)
+    assert not archive.release_record_path(root, TAG).exists()
+    assert conn.execute("SELECT 1 FROM drugref.release_build WHERE release_tag = %s",
+                        (TAG,)).fetchone() is None
+
+
+def test_a_file_where_the_releases_dir_should_be_is_not_masked(conn, key, tmp_path):
+    """mkdir's FileExistsError carries no filename2: re-raise it, never `Path(None)`."""
+    root = tmp_path / "arch"
+    root.mkdir()
+    (root / "releases").write_text("stray")
+    with pytest.raises(FileExistsError):
+        _publish(conn, key, root)
 
 
 def test_an_unarchived_run_is_named_with_the_fix(conn, key, tmp_path):

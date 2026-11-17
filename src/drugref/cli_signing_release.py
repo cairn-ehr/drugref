@@ -338,7 +338,9 @@ def _handle_publish(conn, args) -> int:
     # all values THIS process computes and can never genuinely fail; the one
     # constraint a real operator mistake can trip is release_tag's UNIQUE --
     # reusing a tag a previous publish already claimed. `publish_archived` also
-    # refuses up front (ArchiveIncomplete, exit 1) before writing anything.
+    # refuses (ArchiveIncomplete, exit 1): up front before writing anything, or,
+    # for a release file another publish wrote meanwhile, from the no-clobber
+    # write itself after rolling back its own rows.
     root = archive.archive_root()
     try:
         manifest_id = _write(
