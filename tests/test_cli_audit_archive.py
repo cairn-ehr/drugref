@@ -1,6 +1,7 @@
 """`drugref audit archive` verifies a release's archived inputs (#258). DB-gated."""
 import contextlib
 import json
+import os
 
 import pytest
 
@@ -122,6 +123,67 @@ def test_a_malformed_release_record_exits_2(conn, tmp_path, monkeypatch, capsys,
     record.write_text(body)
     assert _run_cli(conn, "--release", TAG) == 2
     assert f"malformed release record {record}" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_an_unreadable_blob_exits_2_with_one_line(conn, tmp_path, monkeypatch, capsys):
+    """Could not check is not "problems found" (1), and never a traceback (#261)."""
+    root, sums = _archived_release(tmp_path, monkeypatch)
+    sha = json.loads(archive.run_record_path(root, sums[0]).read_text())["files"][0]["sha256"]
+    blob = archive.blob_path(root, sha)
+    blob.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        blob.chmod(0o644)
+    assert capsys.readouterr().err.splitlines()[-1] == f"drugref: {blob}: Permission denied"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_problems_found_win_over_an_unreadable_blob(conn, tmp_path, monkeypatch, capsys):
+    """One unreadable run must not hide a missing blob found in another (exit 1)."""
+    root, sums = _archived_release(tmp_path, monkeypatch)
+    shas = [json.loads(archive.run_record_path(root, s).read_text())["files"][0]["sha256"]
+            for s in sums]
+    archive.blob_path(root, shas[0]).unlink()
+    blob = archive.blob_path(root, shas[1])
+    blob.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 1
+    finally:
+        blob.chmod(0o644)
+    out, err = capsys.readouterr()
+    assert f"missing blob {shas[0]}" in out
+    assert f"drugref: {blob}: Permission denied" in err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches a 0600 dir anyway")
+def test_an_unsearchable_releases_dir_exits_2_with_one_line(
+        conn, tmp_path, monkeypatch, capsys):
+    """Unreadable, not missing, on every Python: `is_file()` raises here on 3.12 and
+    returns False on 3.14, so the handler must not ask it."""
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    releases = root / "releases"
+    releases.chmod(0o600)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        releases.chmod(0o755)
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        f"drugref: {releases / f'{TAG}.json'}: Permission denied")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_an_unreadable_curated_export_exits_2_like_any_unreadable_file(
+        conn, tmp_path, monkeypatch, capsys):
+    root, _ = _archived_release(tmp_path, monkeypatch)
+    export = root / "releases" / f"{TAG}.curated.json"
+    export.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        export.chmod(0o644)
+    assert capsys.readouterr().err.splitlines()[-1] == f"drugref: {export}: Permission denied"
 
 
 @pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])

@@ -1491,10 +1491,10 @@ records the drugs it reached when written (`db/080`), so the orphan banner warns
 `drugref audit class-ruling <id>` shows reach then vs now. PROJECT-NOTES § "The decision audit"; spec
 [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md); docs-site *Design decisions*,
 "Release tag as the decision-audit anchor". **Open follow-ups:** #259 (rebuild a release into a fresh database from
-the archive), #260 (diff-based membership tracking, only if archive disk use grows), #261 (archive files created
-`0600`; `audit archive` traceback on `OSError`), #262 (same-tag publish race), #263 (PBS in an archive, under #25:
+the archive), #260 (diff-based membership tracking, only if archive disk use grows), #263 (PBS in an archive, under #25:
 decide before archives are shared), #265 (drift ignores sources the release never carried), #266 (`captured: none`
-conflates an empty snapshot with none). Production must be built from nothing with the archive set.
+conflates an empty snapshot with none). #261 and #262 fixed 2026-11-17. Production must be built from nothing with
+the archive set.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

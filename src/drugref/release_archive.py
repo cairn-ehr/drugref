@@ -104,9 +104,10 @@ def curated_export(conn) -> dict[str, list[dict]]:
 
 
 def _write_json(path: Path, obj) -> None:
-    """Atomic (temp + rename), so a crash never leaves a half record to audit."""
+    """Atomic (temp + link), so a crash never leaves a half record to audit, and
+    never-overwrite: raises `FileExistsError` if `path` appeared meanwhile (#262)."""
     body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
-    archive.atomic_write(path, lambda fh: fh.write(body))
+    archive.atomic_write(path, lambda fh: fh.write(body), overwrite=False)
 
 
 def _existing_file_problem(conn, tag: str, path: Path) -> str:
@@ -115,9 +116,11 @@ def _existing_file_problem(conn, tag: str, path: Path) -> str:
                              "WHERE release_tag = %s", (tag,)).fetchone()
     if published:
         return f"archive file already exists, never overwritten: {path}"
-    return (f"archive file {path} was left by a publish that did not commit (no "
-            f"release_manifest row for {tag}); inspect it and remove it by hand to "
-            "reuse this tag -- drugref never deletes archive files")
+    return (f"archive file {path} has no release_manifest row for {tag} in this "
+            "database: another database sharing this archive may have published "
+            "the tag, or a publish here did not commit; only in the second case, "
+            "after inspecting it, remove it by hand to reuse this tag -- drugref "
+            "never deletes archive files")
 
 
 def _name_runs(problem: archive.ArchiveProblem, runs: list[dict]):
@@ -136,7 +139,11 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
 
     Raises `ArchiveIncomplete` BEFORE writing anything when the tag is path-like
     (with or without `root`), or when `root` is set and a release file for the
-    tag already exists or a finished run is not fully archived. Returns the
+    tag already exists or a finished run is not fully archived. A release file
+    that appears after that check (a racing publish) raises the same refusal
+    from the write itself, and this publish's database rows are rolled back.
+    If the curated export then fails, the release record this call just wrote
+    is removed, so no record outlives its rolled-back rows. Returns the
     manifest id.
     """
     tag = publish_kwargs["release_tag"]
@@ -154,18 +161,38 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
         problems = archive.missing_runs(root, {r["source_checksum"] for r in runs})
         if problems:
             raise ArchiveIncomplete([_name_runs(p, runs) for p in problems])
-    manifest_id = releases.publish(conn, **publish_kwargs)
-    head = conn.execute(
-        "SELECT max(filename) FROM drugref.schema_migration").fetchone()[0]
-    commit = git_commit()
-    conn.execute(
-        "INSERT INTO drugref.release_build "
-        "(release_tag, git_commit, ledger_head, run_ids)"
-        " VALUES (%s, %s, %s, %s)",
-        (tag, commit, head, [r["ingest_run_id"] for r in runs]))
-    if root is not None:
-        _write_json(archive.release_record_path(root, tag),
-                    {"release_tag": tag, "git_commit": commit,
-                     "ledger_head": head, "runs": runs})
-        _write_json(archive.curated_export_path(root, tag), curated_export(conn))
+    # The exists-check above gives the friendly early refusal; the no-clobber write
+    # below is the real guard, for a file that appears in between (#262: e.g. a
+    # second database publishing the same tag into a shared archive). The
+    # SAVEPOINT makes that late refusal undo this publish's rows: the CLI's
+    # `with db.connect` would otherwise COMMIT them on its way out.
+    try:
+        with conn.transaction():
+            manifest_id = releases.publish(conn, **publish_kwargs)
+            head = conn.execute(
+                "SELECT max(filename) FROM drugref.schema_migration").fetchone()[0]
+            commit = git_commit()
+            conn.execute(
+                "INSERT INTO drugref.release_build "
+                "(release_tag, git_commit, ledger_head, run_ids)"
+                " VALUES (%s, %s, %s, %s)",
+                (tag, commit, head, [r["ingest_run_id"] for r in runs]))
+            if root is not None:
+                record = archive.release_record_path(root, tag)
+                _write_json(record, {"release_tag": tag, "git_commit": commit,
+                                     "ledger_head": head, "runs": runs})
+                try:
+                    _write_json(archive.curated_export_path(root, tag),
+                                curated_export(conn))
+                except BaseException:
+                    # Ours: the no-clobber link just created it, nobody can have
+                    # replaced it. Left, it would describe rows rolled back below.
+                    record.unlink()
+                    raise
+    except FileExistsError as exc:
+        if exc.filename2 is None:       # not os.link's (e.g. mkdir): not a taken file
+            raise
+        taken = Path(exc.filename2)     # os.link(tmp, dest): filename2 is dest
+        raise ArchiveIncomplete([archive.ArchiveProblem(
+            tag, _existing_file_problem(conn, tag, taken))]) from exc
     return manifest_id

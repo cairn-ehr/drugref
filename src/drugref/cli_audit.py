@@ -48,9 +48,12 @@ def _handle_archive(conn, args) -> int:
 
     0 = complete, 1 = problems found (each printed), 2 = nothing to check: the
     archive env var is unset, the tag is path-like, no release is named or
-    published (or the database predates db/081), or the release record is
-    missing or malformed (an OSError while reading still escapes: #261). Default
-    release is the one the database answers from. A tag this database has no
+    published (or the database predates db/081), the release record is
+    missing or malformed, or a file could not be read (an `OSError`, e.g.
+    permissions: "could not check", not "problems found"; #261). An unreadable
+    file skips only its own run; the rest are still checked, and any problem
+    found there wins (exit 1). Default release is the one the database answers
+    from. A tag this database has no
     `release_build` row for is still checked -- the database may be what was lost
     -- but gets a note: its files may be debris of a publish that never committed.
     A missing or unparseable curated export is a PROBLEM (exit 1), not "nothing
@@ -77,25 +80,48 @@ def _handle_archive(conn, args) -> int:
     except ValueError as exc:
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
-    if not record.is_file():
+    # Read, never `is_file()` first: on an unsearchable directory it raises on
+    # Python 3.12 but returns False on 3.14, so "missing" would depend on the version.
+    try:
+        body = record.read_text(encoding="utf-8")
+    except FileNotFoundError:
         print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
+        return 2
+    except OSError as exc:      # unreadable is "could not check", not a traceback
+        print(_unreadable(exc, record), file=sys.stderr)
+        return 2
+    try:
+        checksums = [archive.require_sha256(r["source_checksum"])
+                     for r in json.loads(body)["runs"]]
+    except (ValueError, KeyError, TypeError):
+        print(f"drugref: malformed release record {record}", file=sys.stderr)
         return 2
     if args.release is not None and not _built_here(conn, tag):
         print(f"note: {tag} has no release_build row in this database (published "
               "elsewhere, or a publish that did not commit)", file=sys.stderr)
-    try:
-        checksums = [archive.require_sha256(r["source_checksum"]) for r in
-                     json.loads(record.read_text(encoding="utf-8"))["runs"]]
-    except (ValueError, KeyError, TypeError):
-        print(f"drugref: malformed release record {record}", file=sys.stderr)
-        return 2
     blobs: set[str] = set()
-    problems = archive.verify_runs(root, checksums, seen=blobs)
-    problems += _curated_export_problems(root, tag)
+    problems: list[archive.ArchiveProblem] = []
+    unreadable: list[str] = []
+    # One run at a time, so an unreadable file skips only its own run and never
+    # hides a problem already found in another.
+    for cs in checksums:
+        try:
+            problems += archive.verify_runs(root, [cs], seen=blobs)
+        except OSError as exc:
+            unreadable.append(_unreadable(exc, f"run {cs}"))
+    export = archive.curated_export_path(root, tag)
+    try:
+        problems += _curated_export_problems(tag, export)
+    except OSError as exc:
+        unreadable.append(_unreadable(exc, export))
     for p in problems:
         print(f"{p.source_checksum}: {p.what}")
+    for line in unreadable:
+        print(line, file=sys.stderr)
     if problems:
         return 1
+    if unreadable:
+        return 2
     print(f"archive complete for {tag}: {len(checksums)} runs, "
           f"{len(blobs)} blobs verified")
     return 0
@@ -110,16 +136,24 @@ def _built_here(conn, tag: str) -> bool:
                         (tag,)).fetchone() is not None
 
 
-def _curated_export_problems(root, tag) -> list[archive.ArchiveProblem]:
-    """[] when `<tag>.curated.json` exists and parses as a JSON object."""
-    path = archive.curated_export_path(root, tag)
-    if not path.is_file():
+def _unreadable(exc: OSError, what) -> str:
+    """`drugref: <path>: <reason>`; a read error on an open file has no filename."""
+    return f"drugref: {exc.filename or what}: {exc.strerror or exc}"
+
+
+def _curated_export_problems(tag, path) -> list[archive.ArchiveProblem]:
+    """[] when the curated export at `path` exists and parses as a JSON object.
+
+    An `OSError` (unreadable, not corrupt) propagates: the caller reports it as
+    "could not check", like any other unreadable archive file.
+    """
+    try:
+        body = path.read_text(encoding="utf-8")     # not is_file(): see the record read
+    except FileNotFoundError:
         return [archive.ArchiveProblem(tag, f"missing curated export {path}")]
     try:
-        if isinstance(json.loads(path.read_text(encoding="utf-8")), dict):
+        if isinstance(json.loads(body), dict):
             return []
-    except OSError as exc:      # e.g. permissions: unreadable is not corrupt
-        return [archive.ArchiveProblem(tag, f"unreadable curated export {path}: {exc}")]
     except ValueError:
         pass
     return [archive.ArchiveProblem(tag, f"malformed curated export {path}")]
