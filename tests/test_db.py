@@ -239,6 +239,8 @@ def test_apply_migrations_is_idempotent(conn):
         "class_pair_contraindication", "curated_class_interaction",
         # db/080 (#258): what each class ruling reached when it was made.
         "curated_class_interaction_reach",
+        # db/082 (#266): which rulings were snapshotted, even when they reached no one.
+        "curated_class_interaction_snapshot",
         # db/058, class profiles
         "curated_property_ruling",
         # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.

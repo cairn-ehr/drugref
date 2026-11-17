@@ -78,3 +78,54 @@ def test_db080_backfills_live_rulings_as_backfill(conn, ingest_run_id):
     conn.execute(span)
     assert _reach(conn, rid) == {(rid, "subject", x, "backfill_db080"),
                                  (rid, "partner", y, "backfill_db080")}
+
+
+# ---- db/082: the snapshot marker (#266) ---------------------------------------------
+
+def _marker(conn, rid):
+    return conn.execute(
+        "SELECT captured FROM drugref.curated_class_interaction_snapshot "
+        "WHERE curated_class_interaction_id = %s", (rid,)).fetchone()
+
+
+def test_a_ruling_records_that_its_snapshot_was_taken(conn, ingest_run_id):
+    """The marker is what lets an empty side read "reached no one", not "never
+    recorded": the reach table alone has no row to say so (#266)."""
+    rid, *_ = _ruled(conn, ingest_run_id)
+    assert _marker(conn, rid) == ("at_ruling",)
+
+
+@pytest.mark.parametrize("sql", [
+    "UPDATE drugref.curated_class_interaction_snapshot SET captured = 'backfill_db080'",
+    "DELETE FROM drugref.curated_class_interaction_snapshot"])
+def test_the_marker_is_insert_only(conn, ingest_run_id, sql):
+    _ruled(conn, ingest_run_id)
+    with pytest.raises(psycopg.errors.RaiseException, match="insert-only"):
+        conn.execute(sql)
+
+
+def test_db082_backfills_a_marker_for_every_ruling_with_reach_rows(conn, ingest_run_id):
+    """Rulings snapshotted before db/082 get the marker their rows imply; backfill
+    wins on a mixed ruling, as it does per side in `audit_ruling`."""
+    _, sc, oc, x, y = _ruled(conn, ingest_run_id)
+    rids = []
+    for rows in ([("subject", x, "at_ruling")],
+                 [("subject", x, "at_ruling"), ("partner", y, "backfill_db080")]):
+        rid = conn.execute(
+            "INSERT INTO drugref.curated_class_interaction "
+            "(subject_class_uuid, object_class_uuid, relationship, applies, severity, "
+            " evidence_grade, source, reviewed_by, reviewed_against, superseded_by) "
+            "VALUES (%s, %s, 'CI_MoA', true, 'major', 'established', 'DRUGREF', 't', "
+            "'t', (SELECT min(curated_class_interaction_id) "
+            "      FROM drugref.curated_class_interaction)) "
+            "RETURNING curated_class_interaction_id", (sc, oc)).fetchone()[0]
+        for row in rows:
+            conn.execute(
+                "INSERT INTO drugref.curated_class_interaction_reach "
+                "(curated_class_interaction_id, side, moiety_uuid, captured) "
+                "VALUES (%s, %s, %s, %s)", (rid, *row))
+        rids.append(rid)
+    sql = (db.migration_dir() / "082_class_ruling_snapshot.sql").read_text()
+    span = re.search(r"-- backfill:begin\n(.*?)-- backfill:end", sql, re.S).group(1)
+    conn.execute(span)
+    assert [_marker(conn, r) for r in rids] == [("at_ruling",), ("backfill_db080",)]

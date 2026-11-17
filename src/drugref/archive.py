@@ -23,6 +23,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -142,6 +143,27 @@ def curated_export_path(root: pathlib.Path, tag: str) -> pathlib.Path:
     return root / "releases" / f"{tag}.curated.json"
 
 
+def stat_or_none(path: pathlib.Path) -> os.stat_result | None:
+    """`path.stat()`, or None when nothing is at `path` (#268).
+
+    WHY NOT `is_file()` / `exists()`: for a path under a directory this process
+    cannot search (EACCES) they RAISE on Python 3.12 but return False on 3.14, so
+    "missing" would depend on the interpreter -- and "missing" tells the operator
+    to re-ingest bytes that are actually there. Here only "nothing at that path"
+    (ENOENT, or a parent that is a file: ENOTDIR) is None; every other OSError
+    (permissions, I/O) propagates on every version, as "could not check".
+    """
+    try:
+        return path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+
+
+def _is_blob(st: os.stat_result | None) -> bool:
+    """A blob is present only as a regular file (a directory there is not one)."""
+    return st is not None and stat.S_ISREG(st.st_mode)
+
+
 def _umask_file_mode() -> int:
     """The mode a plain `open(path, "w")` would give a new file under this umask."""
     umask = os.umask(0)    # reading the umask means setting it; restore at once
@@ -203,7 +225,8 @@ def _copy_blob(item: resources.abc.Traversable, dest: pathlib.Path,
     since `file_digests` read it would otherwise land wrong bytes under a
     sha-named blob.
     """
-    if dest.is_file() and dest.stat().st_size == expected.size:
+    st = stat_or_none(dest)
+    if _is_blob(st) and st.st_size == expected.size:
         return
 
     def fill(out):
@@ -244,11 +267,15 @@ def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
         except ValueError:
             problems.append(ArchiveProblem(cs, "not a sha256 checksum"))
             continue
-        if not record.is_file():
+        # Read, never `is_file()` first (see `stat_or_none`): only "nothing there"
+        # is a missing record; any other OSError propagates as "could not check".
+        try:
+            text = record.read_text(encoding="utf-8")
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
             problems.append(ArchiveProblem(cs, "no run record"))
             continue
         try:
-            body = json.loads(record.read_text(encoding="utf-8"))
+            body = json.loads(text)
             files = [(require_sha256(f["sha256"]), f["size"]) for f in body["files"]]
             if not all(isinstance(size, int) for _, size in files):
                 raise TypeError("size is not an integer")
@@ -263,15 +290,16 @@ def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
         if seen is not None:
             seen.update(sha for sha, _ in files)
         blobs = [blob_path(root, sha) for sha, _ in files]
-        missing = [sha for (sha, _), blob in zip(files, blobs) if not blob.is_file()]
+        stats = [stat_or_none(blob) for blob in blobs]
+        missing = [sha for (sha, _), st in zip(files, stats) if not _is_blob(st)]
         problems += [ArchiveProblem(cs, f"missing blob {sha}") for sha in missing]
         if missing:
             continue
         if not rehash:
             # Cheap check for publish: a stat, no re-hash.
             problems += [ArchiveProblem(cs, f"wrong-size blob {sha}")
-                         for (sha, size), blob in zip(files, blobs)
-                         if blob.stat().st_size != size]
+                         for (sha, size), st in zip(files, stats)
+                         if st.st_size != size]
             continue
         # ONE read pass gives each blob's own sha AND the combined digest, which
         # must equal the run's checksum (catches a record listing files out of order).
@@ -290,7 +318,12 @@ def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
 def missing_runs(root: pathlib.Path,
                  checksums: Iterable[str]) -> list[ArchiveProblem]:
     """Missing/malformed records, non-sha checksums, missing and wrong-size blobs;
-    cheap (stat, no re-hash)."""
+    cheap (stat, no re-hash).
+
+    An archive file that is there but unreadable (permissions) raises `OSError`,
+    for this and `verify_runs` alike: that is "could not check", never "missing"
+    (#268). The caller decides how to report it.
+    """
     return _check(root, checksums, rehash=False, seen=None)
 
 

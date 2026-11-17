@@ -9,7 +9,7 @@ as they were. This module wraps `releases.publish` (untouched) and adds:
 - when `DRUGREF_ARCHIVE` is set, `releases/<tag>.json` (every finished ingest
   run, NOT only the ones feeding the live registry) and
   `releases/<tag>.curated.json` (every curated row, superseded included, and
-  every class-ruling reach row).
+  every class-ruling reach and snapshot-marker row).
 
 It never commits: the CLI owns the transaction. The files are written before
 that commit; if the commit then fails they name a tag absent from the database.
@@ -36,14 +36,18 @@ _EXPORT_TABLES = {
     # Audit data no upstream file can rebuild: who a class ruling reached (db/080).
     "curated_class_interaction_reach":
         "curated_class_interaction_id, side, moiety_uuid",
+    # ...and which rulings were snapshotted at all, so an empty one reads "reached
+    # no one", not "never recorded" (db/082, #266).
+    "curated_class_interaction_snapshot": "curated_class_interaction_id",
 }
 assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 
 
 class ArchiveIncomplete(Exception):
     """Publish refused before writing anything: a path-like tag, a release file
-    that already exists, or a finished run whose inputs are not (fully) archived
-    (publishing would produce a release that cannot be reconstructed)."""
+    that already exists, a finished run whose inputs are not (fully) archived
+    (publishing would produce a release that cannot be reconstructed), or an
+    archive this process cannot read (#268)."""
 
     def __init__(self, problems: list[archive.ArchiveProblem]):
         self.problems = problems
@@ -139,9 +143,10 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
 
     Raises `ArchiveIncomplete` BEFORE writing anything when the tag is path-like
     (with or without `root`), or when `root` is set and a release file for the
-    tag already exists or a finished run is not fully archived. A release file
-    that appears after that check (a racing publish) raises the same refusal
-    from the write itself, and this publish's database rows are rolled back.
+    tag already exists, a finished run is not fully archived, or the archive
+    cannot be read. A release file that appears after that check (a racing
+    publish) raises the same refusal from the write itself, and this publish's
+    database rows are rolled back.
     If the curated export then fails, the release record this call just wrote
     is removed, so no record outlives its rolled-back rows. Returns the
     manifest id.
@@ -153,12 +158,23 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
         raise ArchiveIncomplete([archive.ArchiveProblem(tag, str(exc))]) from exc
     runs = finished_runs(conn)
     if root is not None:
-        for path in (archive.release_record_path(root, tag),
-                     archive.curated_export_path(root, tag)):
-            if path.exists():
-                raise ArchiveIncomplete([archive.ArchiveProblem(
-                    tag, _existing_file_problem(conn, tag, path))])
-        problems = archive.missing_runs(root, {r["source_checksum"] for r in runs})
+        try:
+            # `stat_or_none`, not `exists()`: that returns False for an unsearchable
+            # `releases/` on Python 3.14 but raises on 3.12 (#268).
+            for path in (archive.release_record_path(root, tag),
+                         archive.curated_export_path(root, tag)):
+                if archive.stat_or_none(path) is not None:
+                    raise ArchiveIncomplete([archive.ArchiveProblem(
+                        tag, _existing_file_problem(conn, tag, path))])
+            problems = archive.missing_runs(
+                root, {r["source_checksum"] for r in runs})
+        except OSError as exc:
+            # Unreadable, not missing: one refusal line, never a traceback, and
+            # never "re-ingest" for bytes that are there.
+            raise ArchiveIncomplete([archive.ArchiveProblem(tag, (
+                f"cannot read the archive: {exc.filename}: "
+                f"{exc.strerror or exc}; fix its permissions and publish again"))]
+            ) from exc
         if problems:
             raise ArchiveIncomplete([_name_runs(p, runs) for p in problems])
     # The exists-check above gives the friendly early refusal; the no-clobber write

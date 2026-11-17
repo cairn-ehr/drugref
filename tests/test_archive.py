@@ -1,5 +1,6 @@
 """The content-addressed input archive (#258): files only, no database."""
 import json
+import os
 from importlib import resources
 
 import pytest
@@ -230,3 +231,51 @@ def test_a_no_clobber_write_refuses_an_existing_file_and_leaves_no_temp(tmp_path
     fresh = tmp_path / "r2.json"
     archive.atomic_write(fresh, lambda fh: fh.write(b"new"), overwrite=False)
     assert fresh.read_text() == "new"
+
+
+def _unsearchable(path):
+    """Context: `path` is a directory this process cannot search (mode 0600)."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        path.chmod(0o600)
+        try:
+            yield
+        finally:
+            path.chmod(0o755)
+    return ctx()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches a 0600 dir anyway")
+@pytest.mark.parametrize("check", [archive.missing_runs, archive.verify_runs])
+@pytest.mark.parametrize("where", ["runs", "blob shard"])
+def test_an_unsearchable_dir_raises_rather_than_reading_as_missing(
+        tmp_path, check, where):
+    """Unreadable is not missing, on EVERY Python (#268): `is_file()` raises here on
+    3.12 but returns False on 3.14, which reported an intact run as "no run record"
+    / "missing blob" and told publish to re-ingest bytes that are there."""
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a)
+    blob = archive.blob_path(root, archive.file_digests(a)[1][0].sha256)
+    target = root / "runs" if where == "runs" else blob.parent
+    with _unsearchable(target), pytest.raises(PermissionError):
+        check(root, [digest])
+
+
+@pytest.mark.parametrize("check", [archive.missing_runs, archive.verify_runs])
+def test_a_directory_where_a_record_or_blob_should_be_is_missing(tmp_path, check):
+    """Not a regular file is still "missing" (what `is_file()` used to say), not an
+    unreadable-file error."""
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a)
+    sha = archive.file_digests(a)[1][0].sha256
+    blob = archive.blob_path(root, sha)
+    blob.unlink()
+    blob.mkdir()
+    assert check(root, [digest]) == [archive.ArchiveProblem(digest, f"missing blob {sha}")]
+    record = archive.run_record_path(root, "e" * 64)
+    record.mkdir()
+    assert check(root, ["e" * 64]) == [archive.ArchiveProblem("e" * 64, "no run record")]

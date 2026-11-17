@@ -88,3 +88,22 @@ def test_backfill_wins_over_at_ruling_on_a_mixed_side(conn, ingest_run_id, capsy
     assert [s.captured for s in audit.sides] == ["backfill_db080", "at_ruling"]
     cli_audit._handle_class_ruling(conn, argparse.Namespace(ruling_id=rid))
     assert "reconstructed by db/080" in capsys.readouterr().out
+
+
+def test_an_empty_snapshot_reads_as_reached_no_one(conn, ingest_run_id, capsys):
+    """A correction made after the subject class emptied: the snapshot WAS taken and
+    reached nobody, the opposite of "never recorded" (#266)."""
+    from drugref import curation
+    _rid, sc, oc, x, _y = _ruled(conn, ingest_run_id)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+    rid = curation.record_class_interaction_judgement(
+        conn, sc, oc, "CI_MoA", True, severity="contraindicated",
+        evidence_grade="established", reviewed_by="test", reviewed_against="2026")
+    subject, partner = class_ruling_reach.audit_ruling(conn, rid).sides
+    assert (subject.captured, subject.then) == ("at_ruling", frozenset())
+    assert partner.captured == "at_ruling" and partner.then
+    cli_audit._handle_class_ruling(conn, argparse.Namespace(ruling_id=rid))
+    out = capsys.readouterr().out
+    assert "subject: then 0, now 0 (captured: at_ruling)" in out
+    assert "snapshot taken: this side reached no one then" in out
+    assert "no ruling-time snapshot" not in out

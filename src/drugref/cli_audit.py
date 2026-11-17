@@ -30,6 +30,8 @@ def _handle_class_ruling(conn, args) -> int:
                   "NOT recorded at ruling time")
         if s.captured == "none":
             print("  note: no ruling-time snapshot for this side")
+        elif not s.then:    # db/082's marker: taken, and empty (#266)
+            print("  note: snapshot taken: this side reached no one then")
         for label, ids in (("added", s.added), ("removed", s.removed)):
             print(f"  {label}: {len(ids)}")
             for u in sorted(ids, key=str):
