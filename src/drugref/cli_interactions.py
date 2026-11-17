@@ -45,8 +45,8 @@ evidence of absence, and the overlay is small and deliberately so.
 import sys
 import uuid
 
-from drugref import (class_grain_read, curated_read, curation, migration_guard,
-                     registry_read)
+from drugref import (class_grain_read, class_ruling_reach, curated_read, curation,
+                     migration_guard, registry_read, release_state)
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -134,16 +134,17 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     and whether the partner is in it would take a membership read. A class-grain orphan
     is shown when an asked drug is among its subject OR partner members, or when
     either side reaches nobody (see `class_grain_read.class_rules_reaching`). Both lean
-    towards over-warning, this tool's safe direction; the one known under-warn (a drug
-    that alone left a class) needs membership history, #258.
+    towards over-warning, this tool's safe direction. A drug that has since left a
+    class is still caught, via the reach recorded when the rule was made (or, for a
+    ruling older than db/080, at migration time) (#258).
 
     TWO GUARDED READS, NOT ONE: each guarded block holds exactly one call
     (`migration_guard.guarded`), and the member read is a different migration
-    (db/079). It runs only when a class-grain orphan exists, which is expected never.
-    WITHOUT db/079 IT FALLS BACK RATHER THAN ABORTS: the list has already printed, so
-    raising would exit 2 with no banner at all (moiety orphans included). Keeping
-    every class orphan is the pre-#255 behaviour -- noisy, never silent -- and stderr
-    says why.
+    (db/079, db/080). It runs only when a class-grain orphan exists, which is
+    expected never. WITHOUT db/079 OR db/080 IT FALLS BACK RATHER THAN ABORTS: the
+    list has already printed, so raising would exit 2 with no banner at all (moiety
+    orphans included). Keeping every class orphan is the pre-#255 behaviour -- noisy,
+    never silent -- and stderr says why.
 
     "RULING", NOT "GRADE": the view also carries `applies = false` rulings, which the
     list never shows. "Any grade among them is missing" is true of both.
@@ -155,17 +156,23 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     reaching = set()
     class_orphans = [o for o in unresolved
                      if o.target_table == "curated_class_interaction"]
-    if class_orphans and conn.execute(
-            "SELECT to_regclass(%s)",
-            (class_grain_read.RULE_MEMBER_VIEW,)).fetchone()[0] is None:
-        print(f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079) is missing, so "
+    needed = (class_grain_read.RULE_MEMBER_VIEW, class_ruling_reach.REACH_TABLE)
+    # Probed once, and only when a class orphan makes the answer matter.
+    absent = [f"{rel} ({db})" for rel, db in zip(needed, ("db/079", "db/080"))
+              if class_orphans and conn.execute(
+                  "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None]
+    if absent:
+        verb = "are" if len(absent) > 1 else "is"
+        print(f"note: {' and '.join(absent)} {verb} missing, so "
               "every class-rule orphan is shown, not only those concerning the drugs "
               "asked. Run `drugref status`.", file=sys.stderr)
         reaching = {(o.subject_class, o.object_uuid, o.relationship)
                     for o in class_orphans}
     elif class_orphans:
+        # ONE three-digit prefix (the ledger rejects anything else); 080 recorded
+        # implies 079 is too, since migrations apply in order.
         with migration_guard.guarded(
-                conn, relations=(class_grain_read.RULE_MEMBER_VIEW,), migration="079",
+                conn, relations=needed, migration="080",
                 consequence="drugref cannot tell which drugs a missing class-rule "
                             "grade concerns"):
             reaching = class_grain_read.class_rules_reaching(conn, subjects)
@@ -261,6 +268,9 @@ def _handle_interactions(conn, args) -> int:
     which is what #82 objects to elsewhere; a script piping this command gets a
     machine-readable signal instead.
     """
+    # THE RELEASE HEADER COMES FIRST, whatever follows (#258): a grade read out of
+    # context is the failure the decision audit exists to prevent.
+    print(release_state.release_header(conn))
     # dict.fromkeys RATHER THAN set(): the report lists the offending identifiers, and a
     # set would reorder them, so `X --with Y` could name Y first. It also collapses the
     # duplicate in the self-pair case, so the same uuid is not reported twice.

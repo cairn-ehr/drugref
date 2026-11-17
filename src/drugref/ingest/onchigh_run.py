@@ -32,7 +32,7 @@ import psycopg
 
 from drugref import db, interactions, provenance, questions
 from drugref.ingest import onchigh
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 from drugref.ingest.onchigh_resolve import (  # noqa: F401 -- re-exported, see module docstring
     OBJECT_SCHEME,
     SUBJECT_SCHEME,
@@ -225,7 +225,7 @@ def ingest_onchigh(conn: psycopg.Connection, *, path: pathlib.Path,
     try:
         run_id = provenance.open_run(
             conn, source=SOURCE, upstream_release=upstream_release,
-            source_checksum=checksum(path), writer=WRITER, clock=clock)
+            source_checksum=archived_checksum(path), writer=WRITER, clock=clock)
 
         entries = onchigh.parse(path)
 

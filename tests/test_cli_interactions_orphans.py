@@ -21,7 +21,8 @@ import uuid
 import psycopg
 import pytest
 
-from drugref import class_grain_read, classes, cli_interactions, curation
+from drugref import (class_grain_read, class_ruling_reach, classes,
+                     cli_interactions, curation)
 from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
                                                  _file_member)
 from tests.test_cli_interactions import (_KNOWN_TO_THE_STUB, _RaisingConn,
@@ -399,3 +400,130 @@ def test_a_missing_class_rule_member_view_banners_every_class_orphan(
     captured = capsys.readouterr()
     assert "INCOMPLETE" in captured.out
     assert "079" in captured.err
+
+
+class _BothMissing(_MemberViewMissing):
+    """db/079's view AND db/080's reach table are gone."""
+
+    def fetchone(self):
+        if "to_regclass" in self._last and {
+                class_grain_read.RULE_MEMBER_VIEW,
+                class_ruling_reach.REACH_TABLE} & set(self._params or ()):
+            return (None,)
+        return super().fetchone()
+
+
+def test_both_missing_relations_are_named_in_one_sentence(monkeypatch, capsys):
+    monkeypatch.setattr(curation, "unresolved_targets", lambda conn: [_orphan(
+        target_table="curated_class_interaction", subject_class=uuid.uuid4())])
+    assert cli_interactions._handle_interactions(
+        _BothMissing(psycopg.errors.UndefinedTable("gone")),
+        _args(_KNOWN_TO_THE_STUB)) == cli_interactions.EXIT_INCOMPLETE
+    assert (f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079) and "
+            f"{class_ruling_reach.REACH_TABLE} (db/080) are missing, so every "
+            "class-rule orphan is shown") in capsys.readouterr().err
+
+
+def _left_the_class_orphan(conn, ingest_run_id, n, correct=False):
+    """Rule A x B graded while X is in A beside Z; then X alone leaves A (and, with
+    `correct`, the ruling is re-recorded AFTER X left, so only the FIRST version's
+    reach holds X); then the candidate is dropped. Returns X (#258)."""
+    sc, oc, (x, _z), _o = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code=f"N00000258{n}0",
+        object_code=f"N00000258{n}1",
+        subject_members=[(f"TESTUN258{n}A", "leaver"), (f"TESTUN258{n}B", "stayer")],
+        object_members=[(f"TESTUN258{n}C", "partner")], severity="contraindicated")
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+    if correct:
+        curation.record_class_interaction_judgement(
+            conn, sc, oc, "CI_MoA", True, severity="major",
+            evidence_grade="established", reviewed_by="test", reviewed_against="2026")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (sc,))
+    return x
+
+
+def test_a_drug_that_alone_left_the_class_is_still_bannered(
+        conn, ingest_run_id, capsys):
+    """#258's exact case: X left A, A keeps Z, so live membership no longer names X."""
+    x = _left_the_class_orphan(conn, ingest_run_id, 1)
+    assert cli_interactions._handle_interactions(
+        conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_a_superseded_versions_reach_still_counts(conn, ingest_run_id, capsys):
+    """Premise: the ruling was corrected AFTER X left the class, so only the first
+    version's recorded reach holds X; the banner must still match X by natural key."""
+    x = _left_the_class_orphan(conn, ingest_run_id, 2, correct=True)
+    assert cli_interactions._handle_interactions(
+        conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_without_db080_every_class_orphan_is_shown(conn, ingest_run_id, capsys):
+    sc, _o, (s,), (o,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025830", object_code="N0000025831",
+        subject_members=[("TESTUN2583A", "subject")],
+        object_members=[("TESTUN2583B", "partner")], severity="contraindicated")
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (sc,))
+    conn.execute("DROP TABLE drugref.curated_class_interaction_reach")
+    assert cli_interactions._handle_interactions(
+        conn, _args(s, o)) == cli_interactions.EXIT_INCOMPLETE
+    captured = capsys.readouterr()
+    assert "INCOMPLETE" in captured.out
+    assert "080" in captured.err and "079" not in captured.err
+    # "Every" orphan: a drug unrelated to the orphan's classes sees it too.
+    stranger = _a_moiety(conn, ingest_run_id, "TESTUN2583C", "stranger")
+    assert cli_interactions._handle_interactions(
+        conn, _args(stranger)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_a_wrong_shaped_reach_read_names_db080_not_a_traceback(
+        conn, ingest_run_id, monkeypatch):
+    """Both relations exist, but the read itself is the wrong shape. The guard must
+    produce its operator sentence (RuntimeError), not a ValueError from passing it a
+    migration that is not one three-digit prefix (the bug was "079 or 080")."""
+    _orphaned_class_rule(conn, ingest_run_id, 6, [("TESTUN2561", "subject")],
+                         [("TESTUN2562", "partner")])
+
+    def _wrong_shape(conn, subjects):
+        raise psycopg.errors.UndefinedColumn("no such column")
+    monkeypatch.setattr(class_grain_read, "class_rules_reaching", _wrong_shape)
+
+    with pytest.raises(RuntimeError) as raised:
+        cli_interactions._handle_interactions(conn, _args(_a_moiety(
+            conn, ingest_run_id, "TESTUN2563", "asked")))
+    assert "080" in str(raised.value)
+
+
+def test_a_drug_that_left_the_partner_class_is_still_bannered(
+        conn, ingest_run_id, capsys):
+    """The mirror of #258's case on the PARTNER side: P left B, B keeps W."""
+    sc, _oc, _s, (p, _w) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025840", object_code="N0000025841",
+        subject_members=[("TESTUN2584A", "subject")],
+        object_members=[("TESTUN2584B", "leaver"), ("TESTUN2584C", "stayer")],
+        severity="contraindicated")
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+    conn.execute("DELETE FROM drugref.class_pair_contraindication "
+                 "WHERE subject_class_uuid = %s", (sc,))
+    assert cli_interactions._handle_interactions(
+        conn, _args(p)) == cli_interactions.EXIT_INCOMPLETE
+    assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def test_another_live_rulings_reach_does_not_banner_its_members(
+        conn, ingest_run_id, capsys):
+    """Reach rows count only for versions of the ORPHANED rule: a member of a separate,
+    still-live class rule C x D (which has reach rows of its own) is not bannered."""
+    _orphaned_class_rule(conn, ingest_run_id, 7, [("TESTUN2571", "orphan subject")],
+                         [("TESTUN2572", "orphan partner")])
+    _c, _d, (c_member,), _dm = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025850", object_code="N0000025851",
+        subject_members=[("TESTUN2585A", "live subject")],
+        object_members=[("TESTUN2585B", "live partner")], severity="major")
+    assert cli_interactions._handle_interactions(conn, _args(c_member)) == 0
+    assert "INCOMPLETE" not in capsys.readouterr().out

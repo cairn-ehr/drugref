@@ -1481,6 +1481,21 @@ expansion into a view (`class_rule_member`) and seeds the class walk from the cu
 now fires only for drugs the rule concerns (or for everyone, when either side reaches nobody). PROJECT-NOTES § "The standing
 open-issue ledger".
 
+### Decision audit (#258) ✅ DONE (2026-11-16) — `db/080`, `db/081`
+drugref can now show what information was available when a decision was made (owner ruling on #258). A clinical
+decision is anchored on a **release tag**: the `current_release` view names the release the database answers from and
+whether it has drifted since, and `drugref interactions` / `status` print that line first. With `DRUGREF_ARCHIVE` set,
+every ingest keeps its input files (content-addressed) and `drugref release publish` writes a release record and a
+curated export, refusing when any run's files are missing; `drugref audit archive` re-checks them. Each class ruling
+records the drugs it reached when written (`db/080`), so the orphan banner warns a drug that left the class, and
+`drugref audit class-ruling <id>` shows reach then vs now. PROJECT-NOTES § "The decision audit"; spec
+[decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md); docs-site *Design decisions*,
+"Release tag as the decision-audit anchor". **Open follow-ups:** #259 (rebuild a release into a fresh database from
+the archive), #260 (diff-based membership tracking, only if archive disk use grows), #261 (archive files created
+`0600`; `audit archive` traceback on `OSError`), #262 (same-tag publish race), #263 (PBS in an archive, under #25:
+decide before archives are shared), #265 (drift ignores sources the release never carried), #266 (`captured: none`
+conflates an empty snapshot with none). Production must be built from nothing with the archive set.
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

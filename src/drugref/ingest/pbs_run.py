@@ -24,9 +24,9 @@ from dataclasses import dataclass
 
 import psycopg
 
-from drugref import classes, local, provenance
+from drugref import archive, classes, local, provenance
 from drugref.ingest import pbs
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +138,11 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
     """
     clock = provenance.start_clock()  # FIRST: see provenance.start_clock (#159)
     path = pathlib.Path(items_csv_path)
+    if source_checksum is not None and archive.archive_root() is not None:
+        # A supplied checksum skips the archiving read, so the run would have no
+        # record and a later publish would refuse on it, unexplained (#258).
+        raise ValueError(f"{archive.ENV_VAR} is set: let ingest_pbs compute "
+                         "source_checksum so the input is archived")
     if source_checksum is None:
         # THE SHARED HELPER, not a fifth hand-written hash (#43). This was the last
         # module still hashing its own input -- `hashlib.file_digest(fh, "sha256")`,
@@ -147,7 +152,7 @@ def ingest_pbs(conn: psycopg.Connection, items_csv_path: str | pathlib.Path,
         # was rewritten by collapsing it. The reason to collapse it anyway is the
         # reason checksum.py exists: four copies of a rule were three chances to fix
         # it in three places, and this one had already drifted to a different API.
-        source_checksum = checksum(path)
+        source_checksum = archived_checksum(path)
     try:
         run_id = provenance.open_run(conn, source=SOURCE,
                                      upstream_release=upstream_release,

@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 import psycopg
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from drugref import keys, release_verification, releases, signatures, signing
+from drugref import (archive, keys, release_archive, release_verification,
+                     signatures, signing)
 from drugref.cli_signing import _BlankArgumentError, _reject_blank, _write
 
 # THE ONE TARGET KIND NEITHER `sign` NOR `verify --target-kind` CAN SERVE. It is a real
@@ -336,13 +337,34 @@ def _handle_publish(conn, args) -> int:
     # release_manifest_row_count/_digest_length/_upstream_releases_array are
     # all values THIS process computes and can never genuinely fail; the one
     # constraint a real operator mistake can trip is release_tag's UNIQUE --
-    # reusing a tag a previous publish already claimed.
-    manifest_id = _write(
-        conn, releases.publish, psycopg.errors.UniqueViolation,
-        release_tag=args.release_tag, published_by=args.published_by,
-        private_key=private_key, key_fingerprint=fingerprint)
+    # reusing a tag a previous publish already claimed. `publish_archived` also
+    # refuses up front (ArchiveIncomplete, exit 1) before writing anything.
+    root = archive.archive_root()
+    try:
+        manifest_id = _write(
+            conn, release_archive.publish_archived, psycopg.errors.UniqueViolation,
+            root=root, release_tag=args.release_tag, published_by=args.published_by,
+            private_key=private_key, key_fingerprint=fingerprint)
+    except release_archive.ArchiveIncomplete as exc:
+        for problem in exc.problems:
+            print(f"drugref: {problem.source_checksum}: {problem.what}",
+                  file=sys.stderr)
+        return 1
     if manifest_id is None:
         return 2
+    if root is None:
+        print(f"note: DRUGREF_ARCHIVE is not set, so release {args.release_tag} "
+              "is NOT reconstructable")
+    # The commit publish RECORDED (decision-audit spec §7): without a clean one,
+    # nobody can say which code turned the archived inputs into this release.
+    commit = conn.execute("SELECT git_commit FROM drugref.release_build "
+                          "WHERE release_tag = %s", (args.release_tag,)).fetchone()[0]
+    if commit == "unknown":
+        print(f"note: drugref code version unknown, so release {args.release_tag} "
+              "is NOT fully reconstructable")
+    elif commit.endswith("-dirty"):
+        print(f"note: drugref code had uncommitted changes ({commit}), so release "
+              f"{args.release_tag} is NOT fully reconstructable")
     print(f"published manifest_id={manifest_id} release_tag={args.release_tag}")
     print(f"fingerprint={fingerprint}")
     return 0

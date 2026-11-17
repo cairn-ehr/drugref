@@ -210,6 +210,7 @@ def test_apply_migrations_is_idempotent(conn):
         # keyed on the natural key rather than the database-local target_id).
         "signing_key_status_kind", "signature_target_kind", "signing_key",
         "assertion_signature", "release_manifest", "release_manifest_entry",
+        "release_build", "current_release",
         # Slice 5c.4, db/030 section 7: the read path. curated_signature_status is
         # REGISTRY-LEVEL ONLY (Postgres cannot check an Ed25519 signature) and
         # LEFT-joined into curated_ddi_pair/curated_condition_ruling below, on pain
@@ -236,6 +237,8 @@ def test_apply_migrations_is_idempotent(conn):
         # natural key by EQUALITY and NULL = NULL is never true -- a polymorphic
         # subject would silently stop guarding.
         "class_pair_contraindication", "curated_class_interaction",
+        # db/080 (#258): what each class ruling reached when it was made.
+        "curated_class_interaction_reach",
         # db/058, class profiles
         "curated_property_ruling",
         # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.

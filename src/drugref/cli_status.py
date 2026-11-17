@@ -32,7 +32,7 @@ reason it covers the five above -- and it PASSES on the loaded-release SELECT be
 same exception cli.py's docstring already draws for `_handle_status`.
 """
 from drugref import (class_grain_read, curated_read, migration_guard, provenance,
-                     spl_census)
+                     release_state, spl_census)
 
 
 def print_loaded_release_block(conn) -> None:
@@ -66,6 +66,8 @@ def print_loaded_release_block(conn) -> None:
     because it is the FIRST of them -- see `_read_loaded_release` for the whole
     argument.
     """
+    # The release header is status's first stdout line (#258).
+    print(release_state.release_header(conn))
     rows, refusal = _read_loaded_release(conn)
     print("loaded releases:" if rows else "loaded releases: none")
     for source, writer, release, finished_at, started_at, measured in rows:

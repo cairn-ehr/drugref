@@ -46,3 +46,16 @@ def checksum(*paths: StrPath) -> str:
             for chunk in iter(lambda: fh.read(CHUNK_BYTES), b""):
                 digest.update(chunk)
     return digest.hexdigest()
+
+
+def archived_checksum(*paths: StrPath) -> str:
+    """`checksum(*paths)`, also archiving the files if DRUGREF_ARCHIVE is set (#258).
+
+    Unset: exactly `checksum` (same digest, no extra I/O). Set: the files are
+    copied into the content-addressed archive BEFORE the run opens, so a failed
+    run leaves only harmless extra blobs.
+    """
+    # Lazy: drugref.archive imports CHUNK_BYTES from this module (import cycle).
+    from drugref import archive
+    root = archive.archive_root()
+    return checksum(*paths) if root is None else archive.store_run(root, *paths)

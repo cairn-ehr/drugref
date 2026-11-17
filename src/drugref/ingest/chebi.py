@@ -12,7 +12,7 @@ import logging
 import psycopg
 
 from drugref import claims, provenance
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,8 @@ def _enrich_from_chebi(conn: psycopg.Connection, chebi_path, upstream_release: s
                        clock: provenance.RunClock) -> int:
     """The body of one ChEBI enrichment (see enrich_from_chebi for the contract)."""
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(chebi_path), writer=WRITER,
+                                 source_checksum=archived_checksum(chebi_path),
+                                 writer=WRITER,
                                  clock=clock)
 
     added = 0

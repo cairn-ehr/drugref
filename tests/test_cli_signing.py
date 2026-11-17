@@ -69,6 +69,7 @@ below is the test that could not have caught the bug this fixes without it.
 """
 import argparse
 import datetime as dt
+import subprocess
 
 import pytest
 
@@ -808,6 +809,55 @@ def test_publish_and_verify_release_round_trip(
     # See test_keys_register_prints_the_fingerprint_it_derived's comment for
     # what this counter does and does not prove.
     assert wconn.commit_count == 1
+
+
+def test_publish_cli_exits_1_and_names_the_missing_run(
+        wconn, conn, a_key_file, tmp_path, monkeypatch, capsys):
+    """An archive root is set but a finished run was never archived: refuse (#258)."""
+    monkeypatch.setenv("DRUGREF_ARCHIVE", str(tmp_path / "arch"))
+    conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, "
+        "writer, finished_at) VALUES ('UNII', 'v', 'cs-unarchived', 'unii_run', now() + interval '1 second')")
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.11.16-refused", "--published-by", "op",
+        "--key", str(a_key_file["path"])]) == 1
+    assert "cs-unarchived" in capsys.readouterr().err
+    assert conn.execute("SELECT 1 FROM drugref.release_manifest WHERE release_tag = "
+                        "'2026.11.16-refused'").fetchone() is None
+
+
+def test_publish_cli_notes_when_no_archive_is_configured(wconn, a_key_file, capsys):
+    assert _run(wconn, [
+        "publish", "--release-tag", "2026.11.16-noarch", "--published-by", "op",
+        "--key", str(a_key_file["path"])]) == 0
+    assert ("note: DRUGREF_ARCHIVE is not set, so release 2026.11.16-noarch "
+            "is NOT reconstructable") in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("git", ["dirty", "no-git", "clean"])
+def test_publish_cli_notes_an_unknown_code_version(
+        wconn, a_key_file, monkeypatch, capsys, git):
+    """Spec 7: a non-git checkout (or uncommitted edits) must WARN, not pass silently;
+    a clean commit must not."""
+    from tests.test_release_archive import fake_git
+    if git == "no-git":
+        def no_git(*a, **k):
+            raise FileNotFoundError("git")
+        monkeypatch.setattr(subprocess, "run", no_git)
+    else:
+        fake_git(monkeypatch, status="?? stray.py\n" if git == "dirty" else "")
+    tag = f"2026.11.16-{git}"
+    assert _run(wconn, ["publish", "--release-tag", tag, "--published-by", "op",
+                        "--key", str(a_key_file["path"])]) == 0
+    out = capsys.readouterr().out
+    if git == "dirty":
+        assert (f"note: drugref code had uncommitted changes ({'a' * 40}-dirty), so "
+                f"release {tag} is NOT fully reconstructable") in out
+    elif git == "no-git":
+        assert (f"note: drugref code version unknown, so release {tag} is NOT fully "
+                "reconstructable") in out
+    else:
+        assert "NOT fully reconstructable" not in out
 
 
 def test_publish_refuses_a_blank_release_tag_before_any_write(

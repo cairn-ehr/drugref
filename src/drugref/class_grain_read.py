@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import psycopg
 
+from drugref.class_ruling_reach import REACH_TABLE
+
 
 @dataclass(frozen=True)
 class ClassGrainCounts:
@@ -187,13 +189,15 @@ def class_rules_reaching(conn: psycopg.Connection,
     re-ingest drops the candidate AND that one class's memberships, leaving the other
     side populated and the retired side's former members otherwise unbannered.
 
-    shortcut: membership is read as it is NOW, not as it was when the ruling was made,
-    so a drug that alone left a class which keeps other members is not bannered; fixing
-    that needs historical membership (#258).
+    A rule also concerns a drug it REACHED WHEN RULED (db/080; for a ruling older than
+    db/080, membership at migration time): any version of the rule's natural key,
+    superseded ones included, whose reach snapshot holds the drug.
+    That covers a drug that has since left a class which keeps other members.
 
     Asked only when `drugref interactions` has a class-grain orphan in hand (expected
     never), so its cost is not on the ordinary read. Raises UndefinedTable uncaught
-    on a database predating db/079; the caller's guard turns that into a sentence.
+    on a database predating db/079 or db/080; the caller's guard turns that into a
+    sentence.
     """
     rows = conn.execute(
         "SELECT cci.subject_class_uuid, cci.object_class_uuid, cci.relationship "
@@ -203,6 +207,14 @@ def class_rules_reaching(conn: psycopg.Connection,
         "              WHERE m.curated_class_interaction_id "
         "                    = cci.curated_class_interaction_id "
         "                AND m.moiety_uuid = ANY(%s)) "
+        f"  OR EXISTS (SELECT 1 FROM {REACH_TABLE} r "
+        "              JOIN drugref.curated_class_interaction v "
+        "                ON v.curated_class_interaction_id "
+        "                   = r.curated_class_interaction_id "
+        "             WHERE v.subject_class_uuid = cci.subject_class_uuid "
+        "               AND v.object_class_uuid = cci.object_class_uuid "
+        "               AND v.relationship = cci.relationship "
+        "               AND r.moiety_uuid = ANY(%s)) "
         f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
         "                  WHERE m.curated_class_interaction_id "
         "                        = cci.curated_class_interaction_id "
@@ -211,5 +223,5 @@ def class_rules_reaching(conn: psycopg.Connection,
         "                  WHERE m.curated_class_interaction_id "
         "                        = cci.curated_class_interaction_id "
         "                    AND m.side = 'partner'))",
-        (list(moieties),)).fetchall()
+        (list(moieties), list(moieties))).fetchall()
     return {tuple(r) for r in rows}

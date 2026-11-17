@@ -92,3 +92,7 @@ history is never lost — it remains in the git log and in the dated design spec
 - [A drug is matched by its US label spelling too](us-label-spellings.md) — why UNII official names
   (*rifampin*, *acetaminophen*) are SPL match keys beside the registry's INN, why the registry name wins a
   clash, and the measured reason four official names (*glucose*, *retinal*, *pca*, *glycol*) are excluded.
+- [Release tag as the decision-audit anchor](release-tag-as-the-audit-anchor.md) — why a clinical decision is
+  anchored on a release tag rather than a migration id, why reconstruction is by archived upstream files plus a
+  per-ruling reach snapshot rather than in-database history, why a node's own local feeds are not drift, and the
+  owner's diff-based fallback if archive disk use grows.

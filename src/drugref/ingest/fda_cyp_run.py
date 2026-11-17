@@ -36,7 +36,7 @@ import psycopg
 
 from drugref import classes, db, provenance, questions
 from drugref.ingest import fda_cyp
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 # The per-tuple decisions, moved out for issue 177. Imported BY NAME so the loop
 # below reads them from this module's globals -- which is what lets a test
 # monkeypatch fda_cyp_run._classify and have the writer call the patched one.
@@ -221,7 +221,7 @@ def ingest_fda_cyp(conn: psycopg.Connection, *, page_path: str | pathlib.Path,
     footnote_by_marker = fda_cyp.parse_footnotes(page)
     if upstream_release is None:
         upstream_release = fda_cyp.parse_release(page)
-    source_checksum = checksum(page_path)
+    source_checksum = archived_checksum(page_path)
 
     # 1a. REFUSE A PAGE THAT WOULD GUT THE PROJECTION -- here, with the rest of
     #     the parse-time refusals, so a refusal leaves NO run row to explain,

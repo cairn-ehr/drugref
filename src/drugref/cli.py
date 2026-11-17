@@ -58,10 +58,10 @@ import sys
 from collections.abc import Sequence
 
 import drugref
-from drugref import (cli_allergy, cli_class_profile, cli_curate, cli_drugcentral,
-                     cli_fda_cyp, cli_interactions, cli_names, cli_policy, cli_signing,
-                     cli_spl, cli_status, curation, db, interactions,
-                     migration_guard, server_messages, signatures)
+from drugref import (archive, cli_allergy, cli_audit, cli_class_profile, cli_curate,
+                     cli_drugcentral, cli_fda_cyp, cli_interactions, cli_names,
+                     cli_policy, cli_signing, cli_spl, cli_status, curation, db,
+                     interactions, migration_guard, server_messages, signatures)
 from drugref.cli_chain import (ChainError, IngestStep, check_release_agreement,
                                resolve_inputs, selected_steps)
 from drugref.ingest import (chebi, gsrs_run, medrt_run, mesh_rel_run, mesh_run,
@@ -457,6 +457,7 @@ def build_parser() -> argparse.ArgumentParser:
     # consumer, and building it is what turned the DIRECTIONAL contract from a docstring
     # paragraph into a user-visible choice -- see cli_interactions.py.
     cli_interactions.register(commands)
+    cli_audit.register(commands)
 
     return parser
 
@@ -471,6 +472,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     server_messages.configure_logging(args.log_level)
     try:
+        # Validate DRUGREF_ARCHIVE up front: an ingest only reads it after its parse.
+        archive.archive_root()
         with db.connect(args.dsn) as conn:
             return args.handler(conn, args)
     except (RuntimeError, ChainError, interactions.NoLiveDecisionError) as exc:

@@ -14,7 +14,7 @@ import psycopg
 
 from drugref import claims, ids, provenance, questions
 from drugref.ingest import gate, unii
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +92,8 @@ def _ingest_unii(conn: psycopg.Connection, unii_path, crosswalk_path,
     allowlist = gate.load_allowlist(allowlist_path)
 
     run_id = provenance.open_run(conn, source=SOURCE, upstream_release=upstream_release,
-                                 source_checksum=checksum(unii_path), writer=WRITER,
+                                 source_checksum=archived_checksum(unii_path),
+                                 writer=WRITER,
                                  clock=clock)
 
     # The admission projection is rebuilt, not appended to (db/011): clear it

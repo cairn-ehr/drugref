@@ -38,7 +38,7 @@ from drugref import classes as class_writer
 from drugref import db, provenance
 from drugref.classes import ClassConcept
 from drugref.ingest import allergy_groups
-from drugref.ingest.checksum import checksum
+from drugref.ingest.checksum import archived_checksum
 from drugref.ingest.mesh_run import resolve_moieties
 
 SOURCE = "DRUGREF-ALLERGY"
@@ -122,7 +122,7 @@ def _ingest(conn, desc_path, supp_path, allow_list_path, upstream_release,
 
     run_id = provenance.open_run(
         conn, source=SOURCE, upstream_release=upstream_release,
-        source_checksum=checksum(allow_list_path, desc_path, supp_path),
+        source_checksum=archived_checksum(allow_list_path, desc_path, supp_path),
         writer=WRITER, clock=clock)
 
     # Step 2. Class rows first: allergy_group references substance_class. The MeSH root
