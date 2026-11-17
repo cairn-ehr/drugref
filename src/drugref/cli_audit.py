@@ -80,11 +80,13 @@ def _handle_archive(conn, args) -> int:
     except ValueError as exc:
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
+    # Read, never `is_file()` first: on an unsearchable directory it raises on
+    # Python 3.12 but returns False on 3.14, so "missing" would depend on the version.
     try:
-        if not record.is_file():
-            print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
-            return 2
         body = record.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"drugref: no release record for {tag} at {record}", file=sys.stderr)
+        return 2
     except OSError as exc:      # unreadable is "could not check", not a traceback
         print(_unreadable(exc, record), file=sys.stderr)
         return 2
@@ -145,10 +147,12 @@ def _curated_export_problems(tag, path) -> list[archive.ArchiveProblem]:
     An `OSError` (unreadable, not corrupt) propagates: the caller reports it as
     "could not check", like any other unreadable archive file.
     """
-    if not path.is_file():
+    try:
+        body = path.read_text(encoding="utf-8")     # not is_file(): see the record read
+    except FileNotFoundError:
         return [archive.ArchiveProblem(tag, f"missing curated export {path}")]
     try:
-        if isinstance(json.loads(path.read_text(encoding="utf-8")), dict):
+        if isinstance(json.loads(body), dict):
             return []
     except ValueError:
         pass

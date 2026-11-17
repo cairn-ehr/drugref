@@ -6657,8 +6657,9 @@ disk becomes a problem (**#260**).
   set; today's named databases can only publish unarchived (with the warning).
 - **Archive files get the umask's mode** (`atomic_write` `fchmod`s mkstemp's `0600` away before writing), so a second
   account can read them; `drugref audit archive` turns any `OSError` into `drugref: <path>: <reason>`, **exit 2**
-  ("could not check", not "problems found"). **#261, fixed 2026-11-17.** Guard the `is_file()` too: on Python
-  3.12 it raises `PermissionError` for an unsearchable directory, it does not return False. Runs are verified one
+  ("could not check", not "problems found"). **#261, fixed 2026-11-17.** Never ask `is_file()` first: for an
+  unsearchable directory it raises on Python 3.12 (local) but returns False on 3.14 (CI), so read and map
+  `FileNotFoundError` to "missing". Runs are verified one
   at a time, so an unreadable file skips only its own run and a problem found elsewhere still wins (exit 1); an
   unreadable curated export is exit 2 like any other unreadable file.
 - **Release files are written no-clobber** (`atomic_write(..., overwrite=False)` ends in `os.link`, which needs a

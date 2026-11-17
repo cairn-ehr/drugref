@@ -160,7 +160,8 @@ def test_problems_found_win_over_an_unreadable_blob(conn, tmp_path, monkeypatch,
 @pytest.mark.skipif(os.geteuid() == 0, reason="root searches a 0600 dir anyway")
 def test_an_unsearchable_releases_dir_exits_2_with_one_line(
         conn, tmp_path, monkeypatch, capsys):
-    """`Path.is_file()` raises EACCES on 3.12, so the existence check must be guarded too."""
+    """Unreadable, not missing, on every Python: `is_file()` raises here on 3.12 and
+    returns False on 3.14, so the handler must not ask it."""
     root, _ = _archived_release(tmp_path, monkeypatch)
     releases = root / "releases"
     releases.chmod(0o600)
