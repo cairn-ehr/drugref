@@ -1,6 +1,7 @@
 """`drugref audit archive` verifies a release's archived inputs (#258). DB-gated."""
 import contextlib
 import json
+import os
 
 import pytest
 
@@ -122,6 +123,20 @@ def test_a_malformed_release_record_exits_2(conn, tmp_path, monkeypatch, capsys,
     record.write_text(body)
     assert _run_cli(conn, "--release", TAG) == 2
     assert f"malformed release record {record}" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a 0000 file anyway")
+def test_an_unreadable_blob_exits_2_with_one_line(conn, tmp_path, monkeypatch, capsys):
+    """Could not check is not "problems found" (1), and never a traceback (#261)."""
+    root, sums = _archived_release(tmp_path, monkeypatch)
+    sha = json.loads(archive.run_record_path(root, sums[0]).read_text())["files"][0]["sha256"]
+    blob = archive.blob_path(root, sha)
+    blob.chmod(0)
+    try:
+        assert _run_cli(conn, "--release", TAG) == 2
+    finally:
+        blob.chmod(0o644)
+    assert capsys.readouterr().err.splitlines()[-1] == f"drugref: {blob}: Permission denied"
 
 
 @pytest.mark.parametrize("tag", ["../x", "a/b", "a\\b"])

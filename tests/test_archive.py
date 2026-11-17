@@ -200,3 +200,33 @@ def test_temp_files_are_unique_per_write(tmp_path, monkeypatch):
     archive.store_run(tmp_path / "arch", a)
     archive.store_run(tmp_path / "arch2", a)
     assert len(names) == 4 and len(set(names)) == 4
+
+
+def test_archive_files_get_the_umask_mode_not_mkstemps_0600(tmp_path):
+    """mkstemp always creates 0600, so an auditor under a second account could not
+    read the archive; nothing in it is secret, so honour the umask instead (#261)."""
+    import os
+    import stat
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    old = os.umask(0o022)
+    try:
+        digest = archive.store_run(root, a)
+    finally:
+        os.umask(old)
+    blob = archive.blob_path(root, archive.file_digests(a)[1][0].sha256)
+    for path in (blob, archive.run_record_path(root, digest)):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o644
+
+
+def test_a_no_clobber_write_refuses_an_existing_file_and_leaves_no_temp(tmp_path):
+    """Release files are never overwritten (#262): the check and the write are one step."""
+    dest = tmp_path / "r1.json"
+    dest.write_text("first")
+    with pytest.raises(FileExistsError):
+        archive.atomic_write(dest, lambda fh: fh.write(b"second"), overwrite=False)
+    assert dest.read_text() == "first"
+    assert list(tmp_path.iterdir()) == [dest]
+    fresh = tmp_path / "r2.json"
+    archive.atomic_write(fresh, lambda fh: fh.write(b"new"), overwrite=False)
+    assert fresh.read_text() == "new"

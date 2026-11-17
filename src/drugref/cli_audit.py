@@ -48,8 +48,9 @@ def _handle_archive(conn, args) -> int:
 
     0 = complete, 1 = problems found (each printed), 2 = nothing to check: the
     archive env var is unset, the tag is path-like, no release is named or
-    published (or the database predates db/081), or the release record is
-    missing or malformed (an OSError while reading still escapes: #261). Default
+    published (or the database predates db/081), the release record is
+    missing or malformed, or a file could not be read (an `OSError`, e.g.
+    permissions: "could not check", not "problems found"; #261). Default
     release is the one the database answers from. A tag this database has no
     `release_build` row for is still checked -- the database may be what was lost
     -- but gets a note: its files may be debris of a publish that never committed.
@@ -83,14 +84,18 @@ def _handle_archive(conn, args) -> int:
     if args.release is not None and not _built_here(conn, tag):
         print(f"note: {tag} has no release_build row in this database (published "
               "elsewhere, or a publish that did not commit)", file=sys.stderr)
-    try:
-        checksums = [archive.require_sha256(r["source_checksum"]) for r in
-                     json.loads(record.read_text(encoding="utf-8"))["runs"]]
-    except (ValueError, KeyError, TypeError):
-        print(f"drugref: malformed release record {record}", file=sys.stderr)
-        return 2
     blobs: set[str] = set()
-    problems = archive.verify_runs(root, checksums, seen=blobs)
+    try:
+        try:
+            checksums = [archive.require_sha256(r["source_checksum"]) for r in
+                         json.loads(record.read_text(encoding="utf-8"))["runs"]]
+        except (ValueError, KeyError, TypeError):
+            print(f"drugref: malformed release record {record}", file=sys.stderr)
+            return 2
+        problems = archive.verify_runs(root, checksums, seen=blobs)
+    except OSError as exc:      # unreadable is "could not check", not a traceback
+        print(f"drugref: {exc.filename}: {exc.strerror}", file=sys.stderr)
+        return 2
     problems += _curated_export_problems(root, tag)
     for p in problems:
         print(f"{p.source_checksum}: {p.what}")

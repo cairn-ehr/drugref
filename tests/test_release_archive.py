@@ -185,6 +185,26 @@ def test_publish_never_overwrites_an_existing_release_file(conn, key, tmp_path):
     assert (root / "releases" / f"{TAG}.json").read_text() == "{}"
 
 
+def test_a_release_file_appearing_after_the_check_is_never_clobbered(
+        conn, key, tmp_path, monkeypatch):
+    """Another publish (e.g. from a second database sharing this archive root) may
+    write the file between the exists-check and the write (#262). The write itself
+    must refuse, and nothing of this publish may stay in the database."""
+    root = tmp_path / "arch"
+    record = root / "releases" / f"{TAG}.json"
+
+    def racing_publish(*args):
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text("theirs")
+        return []
+    monkeypatch.setattr(archive, "missing_runs", racing_publish)
+    assert str(record) in _refused(conn, key, root).problems[0].what
+    assert record.read_text() == "theirs"
+    assert not archive.curated_export_path(root, TAG).exists()
+    assert conn.execute("SELECT 1 FROM drugref.release_build WHERE release_tag = %s",
+                        (TAG,)).fetchone() is None
+
+
 def test_a_release_file_left_by_an_uncommitted_publish_says_so(conn, key, tmp_path):
     """The tag is in no release_manifest row, so the file is debris from a publish whose
     commit failed; the refusal says how to free the tag (drugref never deletes it)."""

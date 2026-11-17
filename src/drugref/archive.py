@@ -142,25 +142,47 @@ def curated_export_path(root: pathlib.Path, tag: str) -> pathlib.Path:
     return root / "releases" / f"{tag}.curated.json"
 
 
-def atomic_write(dest: pathlib.Path, fill) -> None:
-    """Write `dest` through a UNIQUE temp file in its directory, then `os.replace`.
+def _umask_file_mode() -> int:
+    """The mode a plain `open(path, "w")` would give a new file under this umask."""
+    umask = os.umask(0)    # reading the umask means setting it; restore at once
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
+def atomic_write(dest: pathlib.Path, fill, *, overwrite: bool = True) -> None:
+    """Write `dest` through a UNIQUE temp file in its directory, then rename it in.
 
     `fill(fh)` writes the bytes to a binary file handle. The data is fsynced before
     the atomic rename and the directory after it, so neither a crash nor power loss
     leaves a half-written file under the final name. The temp name is
     unique (`tempfile.mkstemp`), so two ingests archiving the same MeSH file at
     once cannot clobber each other's temp. If `fill` raises, the temp is removed.
+
+    `overwrite=False` makes the final step `os.link`, which raises
+    `FileExistsError` if `dest` already exists: the existence check and the write
+    are then ONE atomic step, so a racing writer cannot be clobbered (#262).
+    `os.replace` (the default) silently replaces an existing `dest`.
+
+    The file gets the mode the umask gives any new file, not mkstemp's 0600, so a
+    second account (an auditor) can read the archive (#261).
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     try:
+        os.fchmod(fd, _umask_file_mode())   # before any byte, so 0600 is never final
         with os.fdopen(fd, "wb") as out:
             fill(out)
             # Durable before it is visible: without fsync, power loss after the
             # rename can leave an empty file under the final name.
             out.flush()
             os.fsync(out.fileno())
-        os.replace(tmp, dest)
+        if overwrite:
+            os.replace(tmp, dest)
+        else:
+            # shortcut: needs hard-link support (any POSIX local fs); on one without
+            # it (FAT, some SMB mounts) this raises OSError, so publish fails loudly.
+            os.link(tmp, dest)
+            os.unlink(tmp)
     except BaseException:
         pathlib.Path(tmp).unlink(missing_ok=True)
         raise
