@@ -89,8 +89,8 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#261,
-#262 FIXED by this branch (close on merge).** #258 closed (PR #264); **open from it: #259, #260, #263, #265, #266** (replay, diff fallback, PBS in
-the archive, drift scope, empty-snapshot ambiguity); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
+#262 FIXED by this branch (close on merge).** #258 closed (PR #264); **open from it: #259, #260, #263, #265, #266, #268** (replay, diff fallback, PBS in
+the archive, drift scope, empty-snapshot ambiguity, is_file by Python version); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
 **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,

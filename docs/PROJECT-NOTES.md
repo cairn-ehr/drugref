@@ -6848,7 +6848,8 @@ the db/081 view comment names `drugref signing`) and **[#266](https://github.com
 (`captured: none` conflates an empty snapshot with none).
 **Archive fixes (2026-11-17, no migration)** — **#261** (archive files `0600`; `audit archive` traceback on `OSError`)
 and **#262** (publish's never-overwrite check could race) **FIXED** (§ "The decision audit"). +4 tests, 3548 → 3552;
-the #267 final review added 5 more (3557).
+the #267 final review added 5 more (3557) and filed **[#268](https://github.com/cairn-ehr/drugref/issues/268)**
+(`archive._check` reads "missing" vs "unreadable" differently on Python 3.12 and 3.14).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
