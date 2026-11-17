@@ -19,13 +19,11 @@
 suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line
 and the collected suite disagree.
 
-**⇒ THIS ROUND (#261, #262, archive fixes):** archive files get the umask's mode, not mkstemp's `0600`; `drugref
-audit archive` turns an `OSError` into one line, exit 2; release files are written no-clobber (`os.link`), and
-publish's DB rows sit in a SAVEPOINT so a late refusal undoes them. **Finding:** on ONE database the #262 race
-could not clobber (the UNIQUE INSERT serializes it); the real exposure was two databases sharing an archive root.
-The #267 final review: the audit now guards `is_file()` (raises EACCES on 3.12) and checks run by run, so a
-found problem beats an unreadable file; publish removes its own record if the curated export then fails.
-Traps: PROJECT-NOTES § "The decision audit".
+**⇒ THIS ROUND (#261, #262, archive fixes):** archive files get the umask's mode, not mkstemp's `0600`; `audit
+archive` turns an `OSError` into one line, exit 2 (a found problem still wins: runs are checked one by one);
+release files are written no-clobber (`os.link`) with publish's DB rows in a SAVEPOINT. **Finding:** on ONE
+database the race could not clobber (UNIQUE serializes it); the exposure is two databases sharing an archive.
+Traps (incl. the #267 review's): PROJECT-NOTES § "The decision audit".
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
