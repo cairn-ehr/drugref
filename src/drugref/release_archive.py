@@ -170,11 +170,13 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
                 root, {r["source_checksum"] for r in runs})
         except OSError as exc:
             # Unreadable, not missing: one refusal line, never a traceback, and
-            # never "re-ingest" for bytes that are there.
+            # never "re-ingest" for bytes that are there. A read error on an open
+            # file has no filename, so fall back to the archive root.
+            advice = ("; fix its permissions and publish again"
+                      if isinstance(exc, PermissionError) else "")
             raise ArchiveIncomplete([archive.ArchiveProblem(tag, (
-                f"cannot read the archive: {exc.filename}: "
-                f"{exc.strerror or exc}; fix its permissions and publish again"))]
-            ) from exc
+                f"cannot read the archive: {exc.filename or root}: "
+                f"{exc.strerror or exc}{advice}"))]) from exc
         if problems:
             raise ArchiveIncomplete([_name_runs(p, runs) for p in problems])
     # The exists-check above gives the friendly early refusal; the no-clobber write

@@ -267,15 +267,17 @@ def _check(root: pathlib.Path, checksums: Iterable[str], rehash: bool,
         except ValueError:
             problems.append(ArchiveProblem(cs, "not a sha256 checksum"))
             continue
-        # Read, never `is_file()` first (see `stat_or_none`): only "nothing there"
-        # is a missing record; any other OSError propagates as "could not check".
+        # Read, never `is_file()` first (see `stat_or_none`): nothing there, or a
+        # directory where the record should be, is a missing record; any other
+        # OSError propagates as "could not check". Bytes, not text: a decode error
+        # is a malformed record, caught below with the other ValueErrors.
         try:
-            text = record.read_text(encoding="utf-8")
+            raw = record.read_bytes()
         except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
             problems.append(ArchiveProblem(cs, "no run record"))
             continue
         try:
-            body = json.loads(text)
+            body = json.loads(raw.decode("utf-8"))
             files = [(require_sha256(f["sha256"]), f["size"]) for f in body["files"]]
             if not all(isinstance(size, int) for _, size in files):
                 raise TypeError("size is not an integer")

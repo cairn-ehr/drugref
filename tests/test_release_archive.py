@@ -322,3 +322,17 @@ def test_an_unsearchable_archive_dir_refuses_publish_as_unreadable(
         target.chmod(0o755)
     assert "cannot read the archive" in what and "Permission denied" in what
     assert "re-ingest" not in what
+
+
+def test_an_unreadable_archive_without_a_filename_names_the_archive(
+        conn, key, tmp_path, monkeypatch):
+    """A read error on an already-open file has no filename (e.g. EIO): the refusal
+    names the archive root, not "None", and gives permission advice only for EACCES."""
+    root = tmp_path / "arch"
+    _run(conn, checksum=_archive_run(root, tmp_path, "in.txt", "hello"))
+
+    def eio(*_args, **_kwargs):
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(archive, "missing_runs", eio)
+    what = _refused(conn, key, root).problems[0].what
+    assert what == f"cannot read the archive: {root}: Input/output error"

@@ -97,7 +97,7 @@ def test_no_release_published_and_none_named_exits_2(conn, tmp_path, monkeypatch
     assert _run_cli(conn) == 2
 
 
-@pytest.mark.parametrize("body", [None, "{not json"])
+@pytest.mark.parametrize("body", [None, b"{not json", b"\xff\xfe{"])
 def test_a_missing_or_unparseable_curated_export_exits_1(
         conn, tmp_path, monkeypatch, capsys, body):
     """The export is the only copy of the curated inputs if the DB is lost (spec 6.2)."""
@@ -106,21 +106,21 @@ def test_a_missing_or_unparseable_curated_export_exits_1(
     if body is None:
         export.unlink()
     else:
-        export.write_text(body)
+        export.write_bytes(body)    # bytes: a non-UTF-8 export is corrupt, not a crash
     assert _run_cli(conn, "--release", TAG) == 1
     out = capsys.readouterr().out
     assert str(export) in out and "archive complete" not in out
 
 
 @pytest.mark.parametrize("body", [
-    "{not json", '{"release_tag": "r1"}', '{"runs": 5}',
-    '{"runs": [{"source_checksum": "../../etc/passwd"}]}'])
+    b"{not json", b'{"release_tag": "r1"}', b'{"runs": 5}',
+    b'{"runs": [{"source_checksum": "../../etc/passwd"}]}', b"\xff\xfe{"])
 def test_a_malformed_release_record_exits_2(conn, tmp_path, monkeypatch, capsys, body):
     """Exit 1 means "problems found in the archive"; a record drugref cannot read at
     all must not look like that, nor like a crash."""
     root, _ = _archived_release(tmp_path, monkeypatch)
     record = root / "releases" / f"{TAG}.json"
-    record.write_text(body)
+    record.write_bytes(body)
     assert _run_cli(conn, "--release", TAG) == 2
     assert f"malformed release record {record}" in capsys.readouterr().err
 

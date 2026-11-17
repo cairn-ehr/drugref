@@ -1,7 +1,8 @@
 """`drugref audit class-ruling`: reach then vs now for one ruling (#258, #256)."""
 import argparse
+import re
 
-from drugref import class_ruling_reach, cli_audit
+from drugref import class_ruling_reach, cli_audit, db
 from tests.test_class_ruling_reach import _ruled
 
 
@@ -107,3 +108,24 @@ def test_an_empty_snapshot_reads_as_reached_no_one(conn, ingest_run_id, capsys):
     assert "subject: then 0, now 0 (captured: at_ruling)" in out
     assert "snapshot taken: this side reached no one then" in out
     assert "no ruling-time snapshot" not in out
+
+
+def test_an_empty_backfilled_side_says_db080_found_no_one(conn, ingest_run_id, capsys):
+    """db/082 marks a db/080-backfilled ruling `backfill_db080` as a whole, so its
+    empty side reached no one when db/080 rebuilt it, NOT at ruling time (#266)."""
+    _, sc, oc, _x, y = _ruled(conn, ingest_run_id)
+    rid = _raw_ruling(conn, sc, oc)
+    conn.execute(
+        "INSERT INTO drugref.curated_class_interaction_reach "
+        "(curated_class_interaction_id, side, moiety_uuid, captured) "
+        "VALUES (%s, 'partner', %s, 'backfill_db080')", (rid, y))
+    sql = (db.migration_dir() / "082_class_ruling_snapshot.sql").read_text()
+    conn.execute(re.search(r"-- backfill:begin\n(.*?)-- backfill:end", sql, re.S)[1])
+    subject, partner = class_ruling_reach.audit_ruling(conn, rid).sides
+    assert (subject.captured, subject.then) == ("backfill_db080", frozenset())
+    assert (partner.captured, partner.then) == ("backfill_db080", {y})
+    cli_audit._handle_class_ruling(conn, argparse.Namespace(ruling_id=rid))
+    out = capsys.readouterr().out.split("partner:", 1)[0]
+    assert "reconstructed by db/080" in out
+    assert "this side reached no one when db/080 rebuilt it" in out
+    assert "no ruling-time snapshot" not in out and "no one then" not in out

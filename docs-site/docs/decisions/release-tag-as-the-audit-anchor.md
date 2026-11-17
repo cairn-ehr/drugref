@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Last reviewed:** 2026-11-16
-**Applies to:** the decision audit -- `db/080`, `db/081`, `drugref.current_release`, `DRUGREF_ARCHIVE`, `drugref audit`
+**Applies to:** the decision audit -- `db/080`, `db/081`, `db/082`, `drugref.current_release`, `DRUGREF_ARCHIVE`, `drugref audit`
 **Full derivation:** the [decision-audit design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (with its dated review amendments)
 
 ## Context

@@ -33,9 +33,10 @@ COMMENT ON TABLE drugref.curated_class_interaction_snapshot IS
 
 -- Rulings snapshotted before this table: their reach rows prove a snapshot was taken.
 -- Backfill wins when a ruling mixes both kinds, as `audit_ruling` decides per side.
--- shortcut: a ruling written between db/080 and db/082 whose class was EMPTY left no
--- reach rows, so it gets no marker and reads "never recorded"; no named database
--- carries db/080 yet (HANDOVER), so none exists -- revisit if one ever does.
+-- shortcut: a ruling with an EMPTY class left no reach rows -- whether live when
+-- db/080's backfill ran or written between db/080 and db/082 -- so it gets no marker
+-- and reads "never recorded"; no named database carries db/080 yet (HANDOVER), so
+-- none exists -- revisit if one ever does.
 -- backfill:begin
 INSERT INTO drugref.curated_class_interaction_snapshot
     (curated_class_interaction_id, captured)

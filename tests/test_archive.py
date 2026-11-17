@@ -1,5 +1,6 @@
 """The content-addressed input archive (#258): files only, no database."""
 import json
+import shutil
 import os
 from importlib import resources
 
@@ -113,16 +114,17 @@ def test_a_malformed_run_record_is_a_problem_not_a_crash(tmp_path):
     """`drugref audit archive` exists to report a hand-damaged archive (#258)."""
     root = tmp_path / "arch"
     (root / "runs").mkdir(parents=True)
-    bad, nofiles, badsha = "a" * 64, "b" * 64, "c" * 64
+    bad, nofiles, badsha, notutf8 = "a" * 64, "b" * 64, "c" * 64, "d" * 64
     archive.run_record_path(root, bad).write_text("{not json")
+    archive.run_record_path(root, notutf8).write_bytes(b"\xff\xfe{")
     archive.run_record_path(root, nofiles).write_text('{"source_checksum": "x"}')
     # A sha that is not 64 lowercase hex must never become part of a path.
     archive.run_record_path(root, badsha).write_text(
         '{"files": [{"name": "f", "size": 1, "sha256": "../../escape"}]}')
-    problems = archive.verify_runs(root, [bad, nofiles, badsha])
-    assert [(p.source_checksum, p.what) for p in problems] == [
-        (bad, "malformed run record"), (nofiles, "malformed run record"),
-        (badsha, "malformed run record")]
+    checksums = [bad, nofiles, badsha, notutf8]
+    for check in (archive.missing_runs, archive.verify_runs):
+        assert [(p.source_checksum, p.what) for p in check(root, checksums)] == [
+            (cs, "malformed run record") for cs in checksums]
 
 
 def test_a_non_sha256_checksum_is_a_problem_and_builds_no_path(tmp_path):
@@ -279,3 +281,20 @@ def test_a_directory_where_a_record_or_blob_should_be_is_missing(tmp_path, check
     record = archive.run_record_path(root, "e" * 64)
     record.mkdir()
     assert check(root, ["e" * 64]) == [archive.ArchiveProblem("e" * 64, "no run record")]
+
+
+@pytest.mark.parametrize("check", [archive.missing_runs, archive.verify_runs])
+def test_a_file_where_a_directory_should_be_is_missing(tmp_path, check):
+    """ENOTDIR (a regular file in place of a blob shard or `runs/`) means "nothing
+    there", like ENOENT -- never "could not check"."""
+    (a,) = _files(tmp_path, 1)
+    root = tmp_path / "arch"
+    digest = archive.store_run(root, a)
+    sha = archive.file_digests(a)[1][0].sha256
+    shard = archive.blob_path(root, sha).parent
+    shutil.rmtree(shard)
+    shard.write_text("not a directory")
+    assert check(root, [digest]) == [archive.ArchiveProblem(digest, f"missing blob {sha}")]
+    shutil.rmtree(root / "runs")
+    (root / "runs").write_text("not a directory")
+    assert check(root, [digest]) == [archive.ArchiveProblem(digest, "no run record")]

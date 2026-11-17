@@ -6603,7 +6603,7 @@ run:** a real SPL ingest storing the count. The end-to-end census test stores it
 era of rows) before merge; the three local databases holding db/078 had its ledger checksum re-recorded, as no other
 database ever applied it.
 
-## The decision audit (#258, 2026-11-16) — `db/080`–`db/082`, tested on `drugref_test` only, suite 3436 → 3548
+## The decision audit (#258, 2026-11-16) — `db/080`–`db/082`, tested on `drugref_test` only, suite 3436 → 3548 (#258; db/082 in #269)
 
 **Owner ruling (2026-11-16, on #258): drugref must be able to show what information was available when a decision
 was made.** Spec: [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (and its dated
@@ -6623,11 +6623,11 @@ disk becomes a problem (**#260**).
   under-warning is closed and the `shortcut:` comment is gone.
 - **`db/082` `curated_class_interaction_snapshot`** (#266, 2026-11-17; insert-only): one row per SNAPSHOTTED
   ruling, written by `snapshot_reach` beside the reach rows. A side with no reach rows takes the marker's
-  `captured`, so `drugref audit class-ruling` prints "snapshot taken: this side reached no one then" instead
-  of the old `captured: none`; `none` now means only "never snapshotted" (superseded before db/080, or written by
-  raw SQL). The migration backfills a marker for every ruling with reach rows (backfill wins on a mixed ruling).
-  **Gap, by design:** a ruling written between db/080 and db/082 whose class was empty gets no marker and reads
-  "never recorded"; no named database carries db/080, so none exists. The marker is in the curated export, so a
+  `captured`, so `drugref audit class-ruling` prints "snapshot taken: this side reached no one then" ("… when
+  db/080 rebuilt it" for a backfilled ruling) instead of the old `captured: none`; `none` now means "never
+  snapshotted" (superseded before db/080, or written by raw SQL), bar the gap below. The migration backfills a marker for every ruling with reach rows (backfill wins on a mixed ruling).
+  **Gap, by design:** a ruling whose class was empty, whether live when db/080's backfill ran or written between
+  db/080 and db/082, gets no marker and reads "never recorded"; no named database carries db/080, so none exists. The marker is in the curated export, so a
   replay (#259) keeps it, which a timestamp rule (`reviewed_at` vs db/080's `applied_at`) would not: replayed rulings
   keep their old `reviewed_at`. Owner chose the marker over the timestamp rule.
 - **`db/081` `release_build`** (insert-only sidecar to the immutable `release_manifest`: `git_commit`,
@@ -6871,7 +6871,7 @@ the #267 final review added 5 more (3557) and filed **[#268](https://github.com/
 **Audit fixes (2026-11-17, `db/082`)** — **#268** (`archive._check` asked `is_file()`, so an unreadable run read
 "missing" on 3.14; publish now refuses an unreadable archive in one line) and **#266** (`captured: none` for an
 empty snapshot; `db/082`'s marker row, the owner's pick over a timestamp rule) **FIXED** (§ "The decision audit").
-+13 tests, 3557 → 3570.
++13 tests, 3557 → 3570; the #269 final review added 6 more (3576).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7057,7 +7057,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3570 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3576 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

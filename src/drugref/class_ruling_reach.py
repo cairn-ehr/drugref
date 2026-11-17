@@ -44,7 +44,8 @@ class SideReach:
 
     `captured` is 'at_ruling' (a true ruling-time snapshot), 'backfill_db080' (the
     snapshot was reconstructed by the migration, so `then` is NOT ruling-time; wins
-    if any row is backfill), or 'none' (no snapshot was ever taken). A side with no
+    if any row is backfill), or 'none' (no snapshot on record: never taken, or the
+    class was empty before db/082 could mark it -- see db/082). A side with no
     rows takes the ruling's SNAPSHOT_TABLE marker, so `captured` != 'none' with an
     empty `then` means "snapshot taken, reached no one" (#266).
     """
