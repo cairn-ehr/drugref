@@ -84,18 +84,32 @@ def git_commit() -> str:
 
 def finished_runs(conn) -> list[dict]:
     """Every finished ingest run, oldest first (all of them: a source's older
-    runs still shaped decisions made while they were current)."""
+    runs still shaped decisions made while they were current).
+
+    `started_at` tells a replay which curated rows the run could see (#259)."""
     cur = conn.execute(
         "SELECT source, writer, ingest_run_id, upstream_release, source_checksum, "
-        "finished_at FROM drugref.ingest_run WHERE finished_at IS NOT NULL "
+        "started_at, finished_at FROM drugref.ingest_run WHERE finished_at IS NOT NULL "
         "ORDER BY ingest_run_id")
     names = [c.name for c in cur.description]
     out = []
     for row in cur.fetchall():
         rec = dict(zip(names, row))
-        rec["finished_at"] = rec["finished_at"].isoformat()
+        for stamp in ("started_at", "finished_at"):
+            rec[stamp] = rec[stamp].isoformat()
         out.append(rec)
     return out
+
+
+def manifest_entries(conn, manifest_id: int) -> list[dict]:
+    """A release's signed entries, so a replay can compare without the database
+    that published them (#259): the archive held no copy before."""
+    return [{"target_kind": kind, "natural_key": key, "payload_context": context,
+             "payload_digest": bytes(digest).hex()}
+            for kind, key, context, digest in conn.execute(
+                "SELECT target_kind, natural_key, payload_context, payload_digest "
+                "FROM drugref.release_manifest_entry WHERE manifest_id = %s "
+                "ORDER BY target_kind, natural_key", (manifest_id,))]
 
 
 def curated_export(conn) -> dict[str, list[dict]]:
@@ -198,7 +212,8 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
             if root is not None:
                 record = archive.release_record_path(root, tag)
                 _write_json(record, {"release_tag": tag, "git_commit": commit,
-                                     "ledger_head": head, "runs": runs})
+                                     "ledger_head": head, "runs": runs,
+                                     "manifest": manifest_entries(conn, manifest_id)})
                 try:
                     _write_json(archive.curated_export_path(root, tag),
                                 curated_export(conn))

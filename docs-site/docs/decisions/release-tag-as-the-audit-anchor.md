@@ -55,8 +55,10 @@ file (issue #260). Not built now.
 - A release is reconstructable only if it was built with the archive set from its first ingest. A release record
   lists every finished run, so publish refuses on any run that predates the archive. Production must be built from
   nothing with `DRUGREF_ARCHIVE` set (an absolute path).
-- Rebuilding is possible and checked (`drugref audit archive` re-hashes every file a release needs), but not
-  automated: the replay command is a follow-up (issue #259).
+- Rebuilding is checked (`drugref audit archive` re-hashes every file a release needs) and automated:
+  `drugref audit replay --release TAG` rebuilds the release into an empty database, refusing unless the code is
+  the release's own commit, and reports any class ruling whose reach at ruling time the rebuild does not reproduce
+  (issue #259).
 - A class ruling recorded before `db/080` has only a snapshot taken when the migration ran, not when the curator
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
 - `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now, which is also the data for

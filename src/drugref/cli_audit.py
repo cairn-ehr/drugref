@@ -6,11 +6,14 @@ versus now, and which data loads preceded the review. The SQL lives in
 
 `archive [--release TAG]` re-hashes a release's archived inputs (#258); the checks
 live in `archive`, and this module reads the release record and curated export.
+
+`replay --release TAG` rebuilds that release into the (empty) database `--dsn`
+names, from the archive alone (#259); the work lives in `release_replay`.
 """
 import json
 import sys
 
-from drugref import archive, class_ruling_reach, release_state
+from drugref import archive, class_ruling_reach, release_replay, release_state
 
 
 def _handle_class_ruling(conn, args) -> int:
@@ -131,6 +134,39 @@ def _handle_archive(conn, args) -> int:
     return 0
 
 
+def _handle_replay(conn, args) -> int:
+    """Exit 0 reproduced, 1 replayed with differences, 2 refused (nothing written)."""
+    root = archive.archive_root()
+    if root is None:
+        print(f"drugref: {archive.ENV_VAR} is not set", file=sys.stderr)
+        return 2
+    try:
+        archive.check_release_tag(args.release)
+        report = release_replay.replay(conn, root, args.release,
+                                       allow_code_mismatch=args.allow_code_mismatch)
+    except ValueError as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
+    except release_replay.ReplayRefused as exc:
+        print(f"drugref: replay of {args.release} refused, nothing written:",
+              file=sys.stderr)
+        for problem in exc.problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 2
+    for line in report.warnings:
+        print(f"warning: {line}", file=sys.stderr)
+    for line in report.differences:
+        print(line)
+    summary = (f"{report.runs} runs, {report.curated_rows} curated rows, "
+               f"{report.rulings_checked} ruling reaches checked")
+    if report.differences:
+        print(f"replay of {args.release}: {len(report.differences)} difference(s) "
+              f"({summary})")
+        return 1
+    print(f"replay of {args.release} reproduced ({summary})")
+    return 0
+
+
 def _built_here(conn, tag: str) -> bool:
     """True when this database recorded publishing `tag` (or predates db/081)."""
     probe = conn.execute("SELECT to_regclass('drugref.release_build')").fetchone()
@@ -164,7 +200,7 @@ def _curated_export_problems(tag, path) -> list[archive.ArchiveProblem]:
 
 
 def register(commands) -> None:
-    """Add the `audit` group: `class-ruling` and `archive`."""
+    """Add the `audit` group: `class-ruling`, `archive` and `replay`."""
     audit = commands.add_parser(
         "audit", help="reconstruct what was known at decision time")
     sub = audit.add_subparsers(dest="audit_command", required=True)
@@ -174,3 +210,10 @@ def register(commands) -> None:
     ar = sub.add_parser("archive", help="verify a release's archived input files")
     ar.add_argument("--release", help="release tag (default: the current release)")
     ar.set_defaults(handler=_handle_archive)
+    rp = sub.add_parser(
+        "replay", help="rebuild a release into the empty database --dsn names")
+    rp.add_argument("--release", required=True, help="release tag to rebuild")
+    rp.add_argument("--allow-code-mismatch", action="store_true",
+                    help="replay with code other than the release's git commit "
+                         "(the result may then differ; a warning says so)")
+    rp.set_defaults(handler=_handle_replay)

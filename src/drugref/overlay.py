@@ -59,3 +59,19 @@ def supersede(conn: psycopg.Connection, table: str, pk_column: str, new_id: int,
                 "WHERE {where} AND superseded_by IS NULL AND {pk} <> %s").format(
             table=sql.Identifier(table), where=where, pk=sql.Identifier(pk_column)),
         (new_id, *key_values, new_id))
+
+
+def point_rows(conn: psycopg.Connection, table: str, pk_column: str, new_id: int,
+               old_ids: list[int]) -> None:
+    """Point the rows with ids `old_ids` at `new_id`: step 2 by id, not natural key.
+
+    FOR A REPLAY ONLY (`release_replay`, #259). It reloads rows whose exported
+    `superseded_by` already says which row replaced which, so it repeats that exact
+    pointer rather than re-deriving it from the natural key. Same order rule as
+    `supersede`: call it after `new_id` exists. Does not commit.
+    """
+    conn.execute(
+        sql.SQL("UPDATE drugref.{table} SET superseded_by = %s "
+                "WHERE {pk} = ANY(%s) AND superseded_by IS NULL").format(
+            table=sql.Identifier(table), pk=sql.Identifier(pk_column)),
+        (new_id, old_ids))
