@@ -37,10 +37,11 @@ def _t(minutes):
 # ---- pure helpers ----------------------------------------------------------
 
 
-def test_schedule_puts_each_row_before_the_first_run_that_started_after_it():
-    runs = [{"started_at": _t(0), "finished_at": _t(1)},
-            {"started_at": _t(10), "finished_at": _t(11)}]
-    rows = [("curated_interaction", {"curated_interaction_id": 2, "reviewed_at": _t(5)}),
+def test_schedule_puts_each_row_before_the_first_run_that_finished_after_it():
+    """A run's work commits at `finished_at`: a row written while run 2 was still
+    in flight (minute 10) saw the database WITHOUT run 2, so it loads before it."""
+    runs = [{"finished_at": _t(1)}, {"finished_at": _t(11)}]
+    rows = [("curated_interaction", {"curated_interaction_id": 2, "reviewed_at": _t(10)}),
             ("curated_interaction", {"curated_interaction_id": 1, "reviewed_at": _t(-1)}),
             ("class_expansion_policy", {"policy_id": 1, "reviewed_at": _t(20)})]
     batches = release_replay.schedule(rows, runs)
@@ -48,10 +49,11 @@ def test_schedule_puts_each_row_before_the_first_run_that_started_after_it():
         [1], [2], ["p"]]
 
 
-def test_schedule_falls_back_to_finished_at_for_an_older_record():
+def test_schedule_a_row_written_as_a_run_finished_follows_that_run():
+    """Same rule as `class_ruling_reach`: `finished_at <= reviewed_at` preceded it."""
     runs = [{"finished_at": _t(10)}]
-    rows = [("curated_condition", {"curated_condition_id": 1, "reviewed_at": _t(5)})]
-    assert release_replay.schedule(rows, runs) == [rows, []]
+    rows = [("curated_condition", {"curated_condition_id": 1, "reviewed_at": _t(10)})]
+    assert release_replay.schedule(rows, runs) == [[], rows]
 
 
 def test_schedule_orders_equal_times_by_table_then_id():
@@ -78,15 +80,23 @@ def test_code_problem_names_the_commit_to_check_out():
     assert SHA in release_replay.code_problem("b" * 40, SHA)
 
 
-def test_split_spl_inputs_by_name():
+@pytest.mark.parametrize("unii_names, parts", [
+    ("UNII_Names_1.txt", ["dm_spl_release_human_rx_part1.zip"]),
+    (None, ["dm_spl_release_human_rx_part1.zip"]),
+    ("UNII_Names_1.txt", []),
+])
+def test_split_spl_inputs_inverts_the_orchestrators_order(unii_names, parts):
+    """Pinned to `spl_run.checksummed_inputs` itself, so the two cannot drift."""
     from pathlib import Path
-    files = [Path(n) for n in ("UNII_Names_1.txt", "dm_spl_release_human_rx_part1.zip",
-                               "drug-label-0001-of-0002.json.zip", "suppress.toml",
-                               "exclusions.toml")]
-    partitions, parts, names = release_replay.split_spl_inputs(files)
-    assert [p.name for p in partitions] == ["drug-label-0001-of-0002.json.zip"]
-    assert [p.name for p in parts] == ["dm_spl_release_human_rx_part1.zip"]
-    assert names.name == "UNII_Names_1.txt"
+    from drugref.ingest import spl_run
+    partitions = [Path("drug-label-0002-of-0002.json.zip"),
+                  Path("drug-label-0001-of-0002.json.zip")]
+    files = [Path(f.name) for f in spl_run.checksummed_inputs(
+        partitions, [Path(p) for p in parts], unii_names)]
+    got_partitions, got_parts, got_names = release_replay.split_spl_inputs(files)
+    assert sorted(got_partitions) == sorted(partitions)
+    assert [p.name for p in got_parts] == parts
+    assert (got_names.name if got_names else None) == unii_names
 
 
 def test_manifest_differences():
@@ -204,9 +214,8 @@ def _replay(p, **kw):
         return release_replay.replay(c, p["root"], TAG, **kw)
 
 
-def test_publish_records_started_at_and_the_manifest_entries(published):
+def test_publish_records_the_manifest_entries(published):
     record = json.loads(archive.release_record_path(published["root"], TAG).read_text())
-    assert all(r["started_at"] for r in record["runs"])
     (entry,) = record["manifest"]
     assert entry["target_kind"] == "curated_class_interaction"
     assert set(entry) == {"target_kind", "natural_key", "payload_context",
@@ -214,9 +223,14 @@ def test_publish_records_started_at_and_the_manifest_entries(published):
 
 
 def test_a_replay_reproduces_the_release(published):
+    before = {p: p.read_bytes() for p in published["root"].rglob("*") if p.is_file()}
     report = _replay(published)
-    assert report.differences == [] and report.warnings == []
+    assert report.differences == [] and report.warnings == [] and report.reproduced
     assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 2, 2)
+    # Replayed runs read the archive; they never write into it.
+    assert {p: p.read_bytes() for p in published["root"].rglob("*")
+            if p.is_file()} == before
+    assert os.environ[archive.ENV_VAR] == str(published["root"])
     with psycopg.connect(published["target"]) as c:
         reach = set(c.execute(
             "SELECT side, moiety_uuid, captured FROM "
@@ -249,7 +263,10 @@ def test_a_reach_the_replay_does_not_rebuild_is_a_difference(published):
     export = archive.curated_export_path(published["root"], TAG)
     _edit(export, lambda b: b["curated_class_interaction_reach"].pop(0))
     report = _replay(published)
-    assert any("reach differs" in d for d in report.differences)
+    # Row 0 is the FIRST ruling's partner reach: exactly that one is reported.
+    assert report.differences == [
+        f"class ruling {published['ruling'] - 1}: partner reach differs from ruling "
+        "time: 1 added, 0 missing"]
 
 
 def test_altered_curated_content_is_a_manifest_difference(published):
@@ -272,7 +289,87 @@ def test_other_code_is_refused_unless_allowed(published, monkeypatch):
     with pytest.raises(release_replay.ReplayRefused, match="git worktree add"):
         _replay(published)
     report = _replay(published, allow_code_mismatch=True)
-    assert report.differences == [] and len(report.warnings) == 1
+    (warning,) = report.warnings
+    assert report.differences == [] and "code mismatch allowed" in warning
+    # Other code can build other memberships: never a verified reproduction.
+    assert not report.reproduced
+
+
+def test_other_migrations_are_refused_even_with_other_code_allowed(published):
+    record = archive.release_record_path(published["root"], TAG)
+    _edit(record, lambda b: b.update(ledger_head="000_other.sql"))
+    with pytest.raises(release_replay.ReplayRefused, match="migrations end at"):
+        _replay(published, allow_code_mismatch=True)
+    _assert_nothing_written(published)
+
+
+def test_two_inputs_sharing_a_name_are_refused(published, monkeypatch):
+    twins = [archive.ArchivedFile("a.txt", 1, "0" * 64)] * 2
+    monkeypatch.setattr(release_replay, "_run_files", lambda root, cs: twins)
+    with pytest.raises(release_replay.ReplayRefused, match="share a name"):
+        _replay(published)
+    _assert_nothing_written(published)
+
+
+def test_a_malformed_timestamp_is_refused_before_anything_is_written(published):
+    record = archive.release_record_path(published["root"], TAG)
+    _edit(record, lambda b: b["runs"][1].update(finished_at="yesterday"))
+    with pytest.raises(release_replay.ReplayRefused, match="timestamp"):
+        _replay(published)
+    _assert_nothing_written(published)
+
+
+def test_a_run_that_rebuilds_from_other_bytes_is_a_difference(published, monkeypatch,
+                                                              tmp_path):
+    def tampered(conn, files, release):
+        copy = tmp_path / "tampered" / files[0].name
+        copy.parent.mkdir(exist_ok=True)
+        copy.write_text(files[0].read_text() + f"{B} {X}\n")
+        _fake_ingest(conn, [copy], release)
+    monkeypatch.setitem(release_replay.ADAPTERS, "onchigh_run", tampered)
+    report = _replay(published)
+    runs = [d for d in report.differences if d.startswith("run ")]
+    assert len(runs) == 2 and all("replayed with checksum" in d for d in runs)
+
+
+def test_a_record_without_a_manifest_is_not_a_verified_reproduction(published):
+    record = archive.release_record_path(published["root"], TAG)
+    _edit(record, lambda b: b.pop("manifest"))
+    report = _replay(published)
+    (warning,) = report.warnings
+    assert report.differences == [] and "predates manifest" in warning
+    assert not report.reproduced
+
+
+def test_a_curator_policy_superseding_a_seeded_one_replays(databases, tmp_path,
+                                                          monkeypatch):
+    """db/010 seeds expansion policies: the target has them before any load, and a
+    curator's override must point the SEEDED row at itself, as in the origin."""
+    origin, target = databases
+    root = tmp_path / "archive"
+    monkeypatch.setenv(archive.ENV_VAR, str(root))
+    monkeypatch.setattr(release_archive, "git_commit", lambda: SHA)
+    monkeypatch.setitem(release_replay.ADAPTERS, "onchigh_run", _fake_ingest)
+    (tmp_path / "members.txt").write_text(f"{A} {X}\n{B} {Y}\n")
+    kp = signing.generate_keypair()
+    query = ("SELECT policy_id, superseded_by FROM drugref.class_expansion_policy "
+             "ORDER BY policy_id")
+    with psycopg.connect(origin) as c:
+        _fake_ingest(c, [tmp_path / "members.txt"], "r1")
+        interactions.record_expansion_decision(
+            c, "MED-RT", "N0000009065", "deny", "Hematologic Activity Alteration [PE]",
+            "re-reviewed", "test", "2026")
+        c.commit()
+        release_archive.publish_archived(
+            c, root=root, release_tag=TAG, published_by="op",
+            private_key=kp.private_key, key_fingerprint=signing.fingerprint(kp.public_key))
+        c.commit()
+        want = c.execute(query).fetchall()
+    assert sum(sup is not None for _, sup in want) == 1     # the seeded row, superseded
+    with psycopg.connect(target) as c:
+        report = release_replay.replay(c, root, TAG)
+        assert report.differences == [] and report.curated_rows == 1
+        assert c.execute(query).fetchall() == want
 
 
 def test_a_writer_without_an_adapter_is_refused(published):
@@ -282,20 +379,68 @@ def test_a_writer_without_an_adapter_is_refused(published):
         _replay(published)
 
 
+def _assert_nothing_written(p):
+    with psycopg.connect(p["target"]) as c:
+        assert c.execute("SELECT to_regclass('drugref.schema_migration')"
+                         ).fetchone()[0] is None
+
+
 def test_a_damaged_archive_is_refused_before_anything_is_written(published):
     record = archive.release_record_path(published["root"], TAG)
     cs = json.loads(record.read_text())["runs"][0]["source_checksum"]
     archive.run_record_path(published["root"], cs).unlink()
     with pytest.raises(release_replay.ReplayRefused, match="no run record"):
         _replay(published)
-    with psycopg.connect(published["target"]) as c:
-        assert c.execute("SELECT to_regclass('drugref.schema_migration')"
-                         ).fetchone()[0] is None
+    _assert_nothing_written(published)
+
+
+def _argv(p):
+    return ["--dsn", p["target"], "audit", "replay", "--release", TAG]
 
 
 def test_the_cli_exit_codes(published, capsys):
-    argv = ["--dsn", published["target"], "audit", "replay", "--release", TAG]
-    assert cli.main(argv) == 0
+    assert cli.main(_argv(published)) == 0
     assert "reproduced" in capsys.readouterr().out
-    assert cli.main(argv) == 2        # now non-empty: refused
+    assert cli.main(_argv(published)) == 2        # now non-empty: refused
     assert "not empty" in capsys.readouterr().err
+
+
+def test_the_cli_exits_1_on_a_difference(published, capsys):
+    export = archive.curated_export_path(published["root"], TAG)
+    _edit(export, lambda b: b["curated_class_interaction_reach"].pop(0))
+    assert cli.main(_argv(published)) == 1
+    out = capsys.readouterr().out
+    assert "reach differs" in out and "1 difference(s)" in out
+
+
+def test_the_cli_exits_1_when_the_replay_is_not_verified(published, capsys):
+    _edit(archive.release_record_path(published["root"], TAG), lambda b: b.pop("manifest"))
+    assert cli.main(_argv(published)) == 1
+    captured = capsys.readouterr()
+    assert "NOT verified" in captured.out and "reproduced" not in captured.out
+    assert "predates manifest" in captured.err
+
+
+def test_a_failure_after_writing_began_exits_3_not_refused(published, capsys,
+                                                          monkeypatch):
+    """An orchestrator's own ValueError mid-replay is no refusal: the target is
+    migrated and part-built, and the operator must be told to drop it."""
+    calls = []
+
+    def second_run_fails(conn, files, release):
+        calls.append(release)
+        if len(calls) == 2:
+            raise ValueError("group would have no member")
+        _fake_ingest(conn, files, release)
+    monkeypatch.setitem(release_replay.ADAPTERS, "onchigh_run", second_run_fails)
+    assert cli.main(_argv(published)) == 3
+    err = capsys.readouterr().err
+    assert "group would have no member" in err and "drop" in err
+    assert "refused" not in err
+
+
+def test_a_bad_tag_is_refused_by_the_cli(published, capsys):
+    argv = _argv(published)
+    argv[-1] = "../escape"
+    assert cli.main(argv) == 2
+    _assert_nothing_written(published)

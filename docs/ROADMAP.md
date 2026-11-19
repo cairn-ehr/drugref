@@ -1492,8 +1492,10 @@ records the drugs it reached when written (`db/080`), so the orphan banner warns
 [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md); docs-site *Design decisions*,
 "Release tag as the decision-audit anchor". **#259 built 2026-11-18:** `drugref audit replay --release TAG`
 rebuilds a release into an empty database from the archive and reports what did not reproduce (ruling-time reach,
-manifest digests). **Open follow-ups:** #270 (curated tables the export omits), #260 (diff-based membership tracking, only if archive disk use grows), #263 (PBS in an archive, under #25:
-decide before archives are shared), #265 (drift ignores sources the release never carried). #261 and #262 fixed
+manifest digests). **Open follow-ups:** #270 (curated tables the export omits; the reviewer-service's
+annotations already need it), #272 (three replay adapters untested end to end), #260 (diff-based membership
+tracking, only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are shared),
+#265 (drift ignores sources the release never carried). #261 and #262 fixed
 2026-11-17; #266 (an empty snapshot read `captured: none`; `db/082` marks every snapshotted ruling) and #268 (an
 unreadable archive file read "missing" on Python 3.14) fixed 2026-11-17. Production must be built from nothing with
 the archive set.

@@ -84,19 +84,16 @@ def git_commit() -> str:
 
 def finished_runs(conn) -> list[dict]:
     """Every finished ingest run, oldest first (all of them: a source's older
-    runs still shaped decisions made while they were current).
-
-    `started_at` tells a replay which curated rows the run could see (#259)."""
+    runs still shaped decisions made while they were current)."""
     cur = conn.execute(
         "SELECT source, writer, ingest_run_id, upstream_release, source_checksum, "
-        "started_at, finished_at FROM drugref.ingest_run WHERE finished_at IS NOT NULL "
+        "finished_at FROM drugref.ingest_run WHERE finished_at IS NOT NULL "
         "ORDER BY ingest_run_id")
     names = [c.name for c in cur.description]
     out = []
     for row in cur.fetchall():
         rec = dict(zip(names, row))
-        for stamp in ("started_at", "finished_at"):
-            rec[stamp] = rec[stamp].isoformat()
+        rec["finished_at"] = rec["finished_at"].isoformat()
         out.append(rec)
     return out
 

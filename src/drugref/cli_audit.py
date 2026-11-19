@@ -135,24 +135,31 @@ def _handle_archive(conn, args) -> int:
 
 
 def _handle_replay(conn, args) -> int:
-    """Exit 0 reproduced, 1 replayed with differences, 2 refused (nothing written)."""
+    """Exit 0 reproduced, 1 replayed but not reproduced (differences, or a check it
+    could not make), 2 refused (nothing written), 3 failed part-way (drop the target).
+    """
     root = archive.archive_root()
     if root is None:
         print(f"drugref: {archive.ENV_VAR} is not set", file=sys.stderr)
         return 2
     try:
         archive.check_release_tag(args.release)
-        report = release_replay.replay(conn, root, args.release,
-                                       allow_code_mismatch=args.allow_code_mismatch)
     except ValueError as exc:
         print(f"drugref: {exc}", file=sys.stderr)
         return 2
+    try:
+        report = release_replay.replay(conn, root, args.release,
+                                       allow_code_mismatch=args.allow_code_mismatch)
     except release_replay.ReplayRefused as exc:
         print(f"drugref: replay of {args.release} refused, nothing written:",
               file=sys.stderr)
         for problem in exc.problems:
             print(f"  {problem}", file=sys.stderr)
         return 2
+    except release_replay.ReplayFailed as exc:
+        print(f"drugref: replay of {args.release} FAILED part-way, the target is "
+              f"half-built: drop it before replaying again.\n  {exc}", file=sys.stderr)
+        return 3
     for line in report.warnings:
         print(f"warning: {line}", file=sys.stderr)
     for line in report.differences:
@@ -162,6 +169,10 @@ def _handle_replay(conn, args) -> int:
     if report.differences:
         print(f"replay of {args.release}: {len(report.differences)} difference(s) "
               f"({summary})")
+        return 1
+    if not report.reproduced:
+        print(f"replay of {args.release}: no differences found, but NOT verified as a "
+              f"reproduction (see the warnings) ({summary})")
         return 1
     print(f"replay of {args.release} reproduced ({summary})")
     return 0

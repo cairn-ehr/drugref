@@ -8,18 +8,23 @@ archive alone, even after the publishing database is gone.
 
 WHAT IT DOES, in order (`replay`):
 
-1. Refuses BEFORE WRITING ANYTHING when the archive fails its re-hash, the target
-   database is not empty, a run names a writer no orchestrator implements, the
+1. Refuses BEFORE WRITING ANYTHING (`ReplayRefused`) when the release record or
+   curated export is missing or malformed (a timestamp included), the archive
+   fails its re-hash, the target database is not empty, a run names a writer no
+   orchestrator implements, two of a run's input files share a name, the
    checked-out migrations do not end at the release's ledger head, or the running
    code is not the release's git commit (unless `allow_code_mismatch`: then it is
    a warning). Different code can build different memberships from the same bytes.
-2. Migrates the empty target.
+2. Migrates the empty target. From here on any exception is `ReplayFailed`: the
+   target is half-built and must be dropped.
 3. Replays EVERY run in the release record, in order, from the archived blobs
    (symlinked under their original names, because parsers read names: `.gz`,
    openFDA's partition glob), and checks each run re-derives its recorded
    `source_checksum`.
 4. Loads the curated rows INTERLEAVED with the runs: a row goes in before the
-   first run that started after the curator wrote it. Loading them all at the
+   first run that FINISHED after the curator wrote it (a run's work commits at
+   its finish, so a curator writing mid-run saw the database without it -- the
+   same rule `class_ruling_reach` uses). Loading them all at the
    end would be wrong twice over: a later ingest can delete a question a ruling
    cites (its FK insert then fails), and a ruling's reach would be checked
    against membership the curator never saw.
@@ -29,12 +34,22 @@ WHAT IT DOES, in order (`replay`):
      test of "the replay rebuilt what the curator saw";
    - the live curated digests against the release's manifest entries.
 
+A replay with no differences is a verified reproduction (`ReplayReport.reproduced`)
+only when it also has no warnings: other code, or a record from before the
+manifest was archived, leaves "nothing differed" short of "reproduced".
+
 Ingest guards that compare with STORED counts (fda-cyp's shrink checks, SPL's
 floors) are passed open: the original run already passed them. Every run replays
 with the release's code, even a run first ingested by older code.
 
-Orchestrators commit, so a replay that fails part-way leaves a half-built target;
-it is a scratch database, and a second replay into it is refused (not empty).
+Orchestrators commit, so a replay that fails part-way leaves a half-built target
+(`ReplayFailed`); it is a scratch database, and a second replay into it is
+refused (not empty).
+
+NOT REPLAYED: the reviewer-service's annotations and evidence references, and the
+question bookkeeping tables (#270). An ingest keeps a closed question that one of
+them cites, so where the origin had them a replay can lose a question, and a
+curated row citing it then fails its FK (`ReplayFailed`).
 """
 import contextlib
 import datetime as dt
@@ -77,14 +92,27 @@ class ReplayRefused(Exception):
         super().__init__("; ".join(problems))
 
 
+class ReplayFailed(Exception):
+    """Writing had begun when this was raised: the target is half-built; drop it.
+
+    Distinct from `ReplayRefused` so the CLI never reports a part-written target
+    as "refused, nothing written" (an orchestrator's own ValueError included).
+    """
+
+
 @dataclass
 class ReplayReport:
-    """What a finished replay found. Empty `differences` = reproduced."""
+    """What a finished replay found: `differences` did not reproduce; `warnings`
+    are checks the replay could not make, so either one means not `reproduced`."""
     runs: int = 0
     curated_rows: int = 0
     rulings_checked: int = 0
     differences: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+    @property
+    def reproduced(self) -> bool:
+        return not self.differences and not self.warnings
 
 
 # ---- one adapter per orchestrator --------------------------------------------
@@ -163,20 +191,20 @@ def schedule(rows: list[tuple[str, dict]], runs: list[dict]) -> list[list]:
     """Split (table, row) pairs into len(runs) + 1 batches: batch i loads before
     run i, the last after every run.
 
-    A row joins the batch of the first run that STARTED after the row was written
-    (`reviewed_at`), i.e. the first run that could have seen it. A record written
-    before `started_at` was recorded falls back to `finished_at`. Within a batch:
+    A row joins the batch of the first run that FINISHED after the row was written
+    (`reviewed_at`): a run's work is invisible until it commits at `finished_at`,
+    so that is the first run whose effect the curator had not seen. Within a batch:
     time, then table order (`_TIMED`), then id, so a correction loads after the row
     it supersedes.
     """
-    starts = [_when(r.get("started_at") or r["finished_at"]) for r in runs]
+    ends = [_when(r["finished_at"]) for r in runs]
     rank = {t: i for i, t in enumerate(_TIMED)}
     ordered = sorted(rows, key=lambda tr: (_when(tr[1]["reviewed_at"]), rank[tr[0]],
                                            tr[1][_TIMED[tr[0]]]))
     batches: list[list] = [[] for _ in range(len(runs) + 1)]
     for table, row in ordered:
         when = _when(row["reviewed_at"])
-        i = next((k for k, s in enumerate(starts) if s > when), len(runs))
+        i = next((k for k, e in enumerate(ends) if e > when), len(runs))
         batches[i].append((table, row))
     return batches
 
@@ -395,36 +423,53 @@ def replay(conn: psycopg.Connection, root: pathlib.Path, tag: str, *,
            allow_code_mismatch: bool = False) -> ReplayReport:
     """Rebuild release `tag` into the empty database `conn` points at.
 
-    Raises `ReplayRefused` before writing anything (see the module docstring);
-    otherwise returns the report, whose `differences` are what did not reproduce.
+    Raises `ReplayRefused` before writing anything (see the module docstring), or
+    `ReplayFailed` once writing began; otherwise returns the report, whose
+    `differences` are what did not reproduce (and `reproduced` the verdict).
     """
     record = _read_json(archive.release_record_path(root, tag), "release record")
     export = _read_json(archive.curated_export_path(root, tag), "curated export")
     report = ReplayReport()
     refusals = _refusals(conn, root, record, allow_code_mismatch=allow_code_mismatch,
                          warnings=report.warnings)
+    runs = record["runs"]
+    try:     # before writing: a bad timestamp is a damaged archive, not a failure
+        batches = schedule([(t, r) for t in _TIMED for r in export[t]], runs)
+    except (KeyError, ValueError) as exc:
+        refusals.append(f"a run or curated row has a missing or malformed "
+                        f"timestamp: {exc}")
     if refusals:
         raise ReplayRefused(refusals)
-    db.apply_migrations(conn)
-    loader = _Loader(conn, export, report)
-    rows = [(t, r) for t in _TIMED for r in export[t]]
-    runs = record["runs"]
-    with _no_archiving():
-        for i, batch in enumerate(schedule(rows, runs)):
-            for table, row in batch:
-                loader.load(table, row)
-            conn.commit()      # deferred single-live checks fire here
-            if i < len(runs):
-                _replay_run(conn, root, runs[i], report)
-    loader.reset_sequences()
-    conn.commit()
-    if "manifest" in record:
-        live = [{"target_kind": e.target_kind, "natural_key": e.natural_key,
-                 "payload_context": e.payload_context,
-                 "payload_digest": e.payload_digest.hex()}
-                for e in releases.enumerate_live(conn)]
-        report.differences += manifest_differences(record["manifest"], live)
-    else:
+    step = "migrating the target"
+    try:
+        db.apply_migrations(conn)
+        loader = _Loader(conn, export, report)
+        with _no_archiving():
+            for i, batch in enumerate(batches):
+                step = (f"loading curated rows before run {i + 1} of {len(runs)}"
+                        if i < len(runs) else "loading curated rows after every run")
+                for table, row in batch:
+                    loader.load(table, row)
+                conn.commit()      # deferred single-live checks fire here
+                if i < len(runs):
+                    step = (f"replaying run {runs[i]['ingest_run_id']} "
+                            f"({runs[i]['writer']})")
+                    _replay_run(conn, root, runs[i], report)
+        step = "resetting sequences"
+        loader.reset_sequences()
+        conn.commit()
+        step = "comparing the manifest"
+        if "manifest" in record:
+            live = [{"target_kind": e.target_kind, "natural_key": e.natural_key,
+                     "payload_context": e.payload_context,
+                     "payload_digest": e.payload_digest.hex()}
+                    for e in releases.enumerate_live(conn)]
+            report.differences += manifest_differences(record["manifest"], live)
+    except Exception as exc:
+        with contextlib.suppress(psycopg.Error):
+            conn.rollback()     # so the caller's connection closes cleanly
+        raise ReplayFailed(f"{step}: {type(exc).__name__}: {exc}") from exc
+    if "manifest" not in record:
         report.warnings.append("the release record predates manifest entries (#259): "
                                "curated digests were not compared")
     return report

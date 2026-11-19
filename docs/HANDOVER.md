@@ -20,9 +20,9 @@ else**; `uv run pytest` fails if the line and the collected suite disagree.
 
 **⇒ THIS ROUND (#259):** `drugref --dsn <empty db> audit replay --release TAG` rebuilds a release from the archive
 alone: refuses unless the archive re-hashes clean, the target is empty and the code is the release's commit
-(owner's pick; `--allow-code-mismatch` warns instead), replays every run, loads curated rows **interleaved by time**,
-and reports any ruling-time reach or manifest digest that did not reproduce. Publish now records each run's
-`started_at` and the manifest entries. Traps: PROJECT-NOTES § "The release replay". Filed **#270** (export gaps).
+(owner's pick; `--allow-code-mismatch` warns), replays every run, loads curated rows **interleaved by time**, and
+reports any ruling-time reach or manifest digest not reproduced. Exit 3 = failed part-way, drop the target. Publish
+records the manifest. Traps: PROJECT-NOTES § "The release replay". Filed **#270** (export gaps), **#272**.
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
@@ -83,12 +83,12 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
    that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input); **#270**
-   (curated tables the export omits: fix when the first writer of one lands).
+   (curated tables the export omits: the reviewer-service's annotations already need it).
 
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#259 BUILT
-by this branch (close on merge), filed #270;** #266, #268 closed (PR #269); #261, #262 (PR #267); #258 (PR #264);
+by this branch (close on merge), filed #270, #272;** #266, #268 closed (PR #269); #261, #262 (PR #267); #258 (PR #264);
 **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #256 commented. **#255
 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
