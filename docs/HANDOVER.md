@@ -13,16 +13,17 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/release-replay-259`: #259 is BUILT and committed; a PR to `main` closes it (see `gh pr list
---head claude/release-replay-259`). No migration; schema still ends at `db/082`.** No agent round queued after it:
-the owner picks (see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
-else**; `uv run pytest` fails if the line and the collected suite disagree.
+**On branch `claude/replay-coverage-270-272`: #272 FIXED, #270 GUARDED (stays open); a PR to `main` carries both
+(see `gh pr list --head claude/replay-coverage-270-272`). No migration; schema still ends at `db/082`.** #259 is
+merged (PR #271). No agent round queued after it: the owner picks (see "DO THIS NEXT"). The suite total lives in
+PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND (#259):** `drugref --dsn <empty db> audit replay --release TAG` rebuilds a release from the archive
-alone: refuses unless the archive re-hashes clean, the target is empty and the code is the release's commit
-(owner's pick; `--allow-code-mismatch` warns), replays every run, loads curated rows **interleaved by time**, and
-reports any ruling-time reach or manifest digest not reproduced. Exit 3 = failed part-way, drop the target. Publish
-records the manifest. Traps: PROJECT-NOTES § "The release replay". Filed **#270** (export gaps), **#272**.
+**⇒ THIS ROUND:** all 14 replay adapters now run end to end (`test_release_replay_sources.py`; the SPL corpus is
+zipped at test time). `release_archive.NOT_EXPORTED` names every append-only table the curated export leaves out, and
+why; `test_release_export_coverage.py` fails on a new one in neither place. **#270's gap is real today**: the
+reviewer-service writes `reviewer_annotation` / `reviewer_evidence_reference`, and no release carries them (nor
+signatures or signing keys). Exporting them needs an owner call: which reviewer tables travel (never credentials or
+sessions), and does a replay restore signatures. Traps: PROJECT-NOTES § "The release replay".
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
@@ -87,15 +88,14 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#259 BUILT
-by this branch (close on merge), filed #270, #272;** #266, #268 closed (PR #269); #261, #262 (PR #267); #258 (PR #264);
-**open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #256 commented. **#255
-CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
-**#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
-From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
-**#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
-#128/#129, #124, #104, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE`
-set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#272 FIXED by
+this branch (close on merge); #270 guarded, open;** #259 closed (PR #271); #258, #261, #262, #266, #268 closed;
+**open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly
+done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
+profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**.
+Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158**
+untouched. Also #148, #152, #128/#129, #124, #104, #94. Before production: re-run every parser on current releases
+**with `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

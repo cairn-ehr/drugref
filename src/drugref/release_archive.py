@@ -42,6 +42,43 @@ _EXPORT_TABLES = {
 }
 assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 
+# Tables no rebuild touches (append-only / insert-only) that the export above
+# leaves out, each with why. tests/test_release_export_coverage.py fails on any
+# such table in neither place, so a new one forces a decision instead of making
+# releases silently not reconstructable for it (#270).
+_GAP = "curated, NOT YET EXPORTED: a replay cannot restore it (#270)"
+NOT_EXPORTED = {
+    # Curator work with no writer outside its own module yet.
+    "question_state": _GAP,
+    "question_source_check": _GAP,   # no trigger: observations, never superseded
+    "question_evidence": _GAP,
+    "additive_effect": _GAP,
+    "effect_contribution": _GAP,
+    "interaction_group": _GAP,       # the identity interaction_group_* rows name
+    "interaction_group_assertion": _GAP,
+    "interaction_group_member": _GAP,
+    # Written by the reviewer-service today, so these releases already lack them.
+    "reviewer_annotation": _GAP,
+    "reviewer_evidence_reference": _GAP,
+    "reviewer_account": _GAP + "; who wrote an annotation",
+    "reviewer_profile": _GAP + "; who wrote an annotation",
+    "reviewer_key_enrolment": _GAP + "; the key a reviewer signs with",
+    "signing_key": _GAP + "; the keys signatures verify against",
+    "assertion_signature": _GAP + "; curator and release signatures",
+    # Never exported: secrets and sessions stay on the node that issued them.
+    "reviewer_password_credential": "a password hash: never leaves the node",
+    "auth_session": "a login session: node-local and short-lived",
+    "auth_session_revocation": "a login session: node-local and short-lived",
+    # Vocabularies the migrations seed; a replay migrates its target first.
+    "reviewer_role_kind": "a vocabulary db/044 seeds",
+    "signing_key_status_kind": "a vocabulary db/030 seeds",
+    # Publish's own bookkeeping: the release record carries the manifest, and the
+    # replay compares against it rather than restoring it.
+    "release_manifest": "written by publish; the release record carries it",
+    "release_manifest_entry": "written by publish; the release record carries it",
+    "release_build": "written by publish; the release record carries it",
+}
+
 
 class ArchiveIncomplete(Exception):
     """Publish refused before writing anything: a path-like tag, a release file
