@@ -124,8 +124,9 @@ def run_record_path(root: pathlib.Path, source_checksum: str) -> pathlib.Path:
 def check_release_tag(tag: str) -> None:
     """Raise ValueError if `tag` could name a file outside `<root>/releases/`.
 
-    ONE home for the rule: `publish` (which writes these files) and
-    `audit archive --release` (which reads them) must agree on it (#258).
+    ONE home for the rule: `publish` (which writes these files), `audit archive
+    --release` and `audit replay --release` (which read them) must agree on it
+    (#258, #259).
     """
     if "/" in tag or "\\" in tag or ".." in tag:
         raise ValueError("release tag must not contain a path separator or '..'")

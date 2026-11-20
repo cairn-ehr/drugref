@@ -98,6 +98,17 @@ def finished_runs(conn) -> list[dict]:
     return out
 
 
+def manifest_entries(conn, manifest_id: int) -> list[dict]:
+    """A release's signed entries, so a replay can compare without the database
+    that published them (#259): the archive held no copy before."""
+    return [{"target_kind": kind, "natural_key": key, "payload_context": context,
+             "payload_digest": bytes(digest).hex()}
+            for kind, key, context, digest in conn.execute(
+                "SELECT target_kind, natural_key, payload_context, payload_digest "
+                "FROM drugref.release_manifest_entry WHERE manifest_id = %s "
+                "ORDER BY target_kind, natural_key", (manifest_id,))]
+
+
 def curated_export(conn) -> dict[str, list[dict]]:
     """All rows of the curated tables, the expansion policy and the class-ruling
     reach snapshots, superseded ones included, ordered by primary key."""
@@ -198,7 +209,8 @@ def publish_archived(conn, *, root: Path | None, **publish_kwargs) -> int:
             if root is not None:
                 record = archive.release_record_path(root, tag)
                 _write_json(record, {"release_tag": tag, "git_commit": commit,
-                                     "ledger_head": head, "runs": runs})
+                                     "ledger_head": head, "runs": runs,
+                                     "manifest": manifest_entries(conn, manifest_id)})
                 try:
                     _write_json(archive.curated_export_path(root, tag),
                                 curated_export(conn))

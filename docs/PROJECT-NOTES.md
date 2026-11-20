@@ -366,9 +366,9 @@ verify` can. Full account and the traps: § "Slice 5c.4" below.
 **Decision audit — what was known when a decision was made** (`db/080`–`db/082`, #258). A clinical decision is
 anchored on a **release tag**: `current_release` names the release the database answers from and whether it has
 drifted, and `drugref interactions` / `status` print that line first. With `DRUGREF_ARCHIVE` set, every ingest
-archives its input files and publish writes a release record and a curated export, so a release can be rebuilt
-(the replay tool is #259). Each class ruling keeps the drugs it reached when written, and the orphan banner reads
-it. Full account and the traps: § "The decision audit" below.
+archives its input files and publish writes a release record and a curated export, and `drugref audit replay`
+rebuilds a release into an empty database from them (#259). Each class ruling keeps the drugs it reached when
+written, and the orphan banner reads it. Full account and the traps: § "The decision audit" below.
 
 **Slice 8a — PBS localisation, the local tier's first attachment.** `db/009` (three tables, a rebuildable projection with
 **no** append-only floor, because a de-listed PBS item must be able to disappear); `ingest/pbs.py` (pure parser), `local.py`
@@ -6639,14 +6639,17 @@ disk becomes a problem (**#260**).
   `runs/<source_checksum>.json`, `releases/<tag>.json`, `releases/<tag>.curated.json`). Every ingest orchestrator
   calls it through `ingest/checksum.archived_checksum`; unset means no archive I/O at all.
 - **`release_archive.py`** — `publish_archived` wraps `releases.publish` (untouched): writes the `release_build`
-  row and, with the archive set, the release record and the curated export (every curated row, superseded
-  included, every `class_expansion_policy` row, every reach row and every `db/082` snapshot marker).
+  row and, with the archive set, the release record (runs, `git_commit`, `ledger_head`, and since #259 the
+  `manifest` entries) and the curated export (every curated row, superseded included, every
+  `class_expansion_policy` row, every reach row and every `db/082` snapshot marker).
 - **`release_state.py`** — `current_release`, `release_line`, `release_header`. **`drugref interactions` and
   `drugref status` print the release line FIRST** (`drugref release: <tag>` / `... (DRIFTED since publication:
   ...)` / `none published` / `unknown (database predates db/081)`); it never changes an exit code.
 - **`cli_audit.py`** — **`drugref audit class-ruling <id>`** (per side: reach then vs now, added / removed, the
-  ingest runs loaded at `reviewed_at`; exit 2 for an unknown id) and **`drugref audit archive [--release TAG]`**
-  (re-hashes every blob a release needs and checks the curated export; 0 complete, 1 problems, 2 nothing to check).
+  ingest runs loaded at `reviewed_at`; exit 2 for an unknown id), **`drugref audit archive [--release TAG]`**
+  (re-hashes every blob a release needs and checks the curated export; 0 complete, 1 problems, 2 nothing to check)
+  and **`drugref audit replay --release TAG`** (`release_replay.py`; 0 reproduced, 1 not reproduced, 2 refused, 3
+  failed part-way: § "The release replay").
 - **`drugref publish`** refuses (exit 1, naming each problem) when the archive is set and any finished run's
   record or blob is missing or the wrong size, when a release file for the tag already exists, or when the tag is
   path-like; it **warns** when the archive is unset ("NOT reconstructable") and when the recorded code version is
@@ -6697,8 +6700,8 @@ disk becomes a problem (**#260**).
 - `tests/conftest.py` clears `DRUGREF_ARCHIVE` for every test (autouse), so a test can never write a real archive.
 
 **Filed:** **#259** (release replay: rebuild a release into a fresh database from the archive — the spec's
-non-goal), **#260** (diff-based membership tracking if archive disk grows), **#261**, **#262**, **#263**,
-**#265**, **#266** (fixed by `db/082`), **#268** (fixed). **#256**
+non-goal; **built 2026-11-18**, § "The release replay"), **#260** (diff-based membership tracking if archive disk
+grows), **#261**, **#262**, **#263**, **#265**, **#266** (fixed by `db/082`), **#268** (fixed). **#256**
 got a comment: `drugref audit class-ruling` now lists added / removed members, the data its report needs.
 
 **Tests (+99):** `test_class_ruling_reach.py`, `test_class_ruling_audit.py`, `test_archive.py`,
@@ -6706,6 +6709,74 @@ got a comment: `drugref audit class-ruling` now lists added / removed members, t
 `test_cli_audit_archive.py`, plus additions to `test_cli_interactions_orphans.py`, `test_cli_signing.py`,
 `test_pbs_run.py`, `test_expansion_policy.py` and `test_db.py`. **Not run:** an archived ingest of the real
 releases, or a publish on a named database; no named database carries `db/080`–`db/082` yet.
+
+## The release replay (#259, 2026-11-18) — no migration, suite 3576 → 3611
+
+**`drugref --dsn <empty db> audit replay --release TAG [--allow-code-mismatch]`** rebuilds a published release
+from `DRUGREF_ARCHIVE` alone (`release_replay.py`; CLI in `cli_audit.py`). Exit **0** reproduced; **1** replayed
+but not reproduced: differences (each printed), or none found but a check it could not make (other code allowed, a
+record without `manifest`), printed as "NOT verified"; **2** refused with nothing written (or the archive env unset
+/ a path-like tag); **3** failed part-way (`ReplayFailed`, any exception once migration began, an orchestrator's
+own `ValueError` included): the target is half-built, drop it.
+
+**What it does.** (1) Refuses before writing when: the release record or curated export is missing or malformed
+(a run or row timestamp included); the archive fails `verify_runs`' re-hash; the target has a
+migration ledger (only a freshly created database is accepted, so a production DSN typed by mistake is refused); a
+run's `writer` has no adapter (`curation`, `unattributed`); a run's input files share a name; this checkout's
+migrations do not end at the release's `ledger_head`; or the running code is not the release's `git_commit`
+(owner's pick, 2026-11-18: refuse; `--allow-code-mismatch` turns it into a warning; a `-dirty` / `unknown` record
+can never match). (2) Migrates. (3) Replays **every** run in the release record in order: its blobs are symlinked
+under their original names into a temp dir (parsers read names: `.gz`, openFDA's partition glob) and
+`release_replay.ADAPTERS[writer]` calls the orchestrator with the record's `upstream_release`; each run must
+re-derive its recorded `source_checksum`. (4) Loads the curated export **interleaved by time**
+(`release_replay.schedule`): a row goes in before the first run that FINISHED after its `reviewed_at`. Rows go in
+verbatim (`OVERRIDING SYSTEM VALUE`, generated columns skipped), supersession pointers are repeated by id
+(`overlay.point_rows`: the overlay contract keeps every `SET superseded_by` in `overlay.py`), identity sequences
+are moved past the loaded ids. (5) Reports as differences: a class ruling whose ruling-time reach (`at_ruling`
+marker) differs from what the replayed `class_rule_member` gives the moment the ruling loads, and live curated
+digests that differ from the release's manifest entries.
+
+**Publish now writes more** (`release_archive.publish_archived`): the release record carries `manifest` (every
+signed entry: kind, natural key, context, digest hex), since the archive held no copy of the manifest before. A
+record without `manifest` replays with a warning, so it exits 1 "NOT verified", never 0.
+
+**Traps.**
+
+- **Interleaving is load-bearing, twice.** Every curated assertion row except `class_expansion_policy` may cite an
+  `open_question` (nullable FK), and a later ingest deletes a question with no curator work yet, so loading curated
+  rows after all runs can fail the insert; and a ruling's reach would be compared with membership the curator never
+  saw. The end-to-end test files a member out of its class after the ruling, so loading at the end fails it
+  (mutation-checked).
+- **Schedule by `finished_at`, not `started_at`** (PR #271 review). `open_run` commits the run row (backdated
+  `started_at`) on its own; the run's work commits at `finished_at`. A curator writing mid-run saw the database
+  WITHOUT that run, so the row loads before it — the rule `class_ruling_reach` already uses (`finished_at <=
+  reviewed_at` means the run preceded the review). Scheduling by `started_at` gave a false "reach differs" for a
+  ruling made during a long run, and an FK failure if the run closed a question the ruling cites. The release record
+  no longer carries `started_at`. Concurrent runs (not increasing with `ingest_run_id`) are not modelled.
+- **Migration-seeded rows** (`class_expansion_policy`) are already in the fresh target: the loader skips any id
+  present after migration, but still points it at a later superseder.
+- **Guards are passed open:** fda-cyp's `allow_shrink` / `allow_resolution_drop`, SPL's floors. The original run
+  already passed them; on a replay they compare with stored counts the replay itself is rebuilding.
+- **Every run replays with the release's code**, even a run first ingested by older code: a release record carries
+  one `git_commit`. Packaged inputs (UNII's crosswalk and allow-list, SPL's two shipped lists) come from that
+  checkout; the archived copies of SPL's two are only checked through the run's checksum.
+- **Orchestrators commit**, so a replay that fails part-way leaves a half-built target (exit 3); replaying into it
+  again is refused (not empty). Drop and recreate it. The `except ValueError` is around `check_release_tag` ONLY:
+  orchestrators raise `ValueError` for their own refusals after migrations and earlier runs are committed.
+- **The export does not cover every curated table: #270.** `reviewer_annotation` and `reviewer_evidence_reference`
+  ARE written today (the reviewer-service), and an ingest keeps a closed question either one cites; a replay
+  without them can drop that question, and a curated row citing it then fails its FK (exit 3). `question_state` /
+  `question_source_check` / `question_evidence` and the accumulation tables have no writer yet.
+- A replayed database has no `release_manifest` / `release_build`, so `drugref status` reads "none published".
+
+**Tests (+35):** 34 in `test_release_replay.py` (pure helpers, the SPL split pinned to `spl_run.checksummed_inputs`;
+a stand-in writer end to end: interleave, supersession incl. a curator policy over a seeded one, sequences, reach,
+run-checksum and manifest differences, every refusal, the archive left untouched, the CLI's exit codes 0–3) and
+`test_release_replay_sources.py`, plus 1 from the bare-psycopg guard's parametrization over the new module
+(11 real writers through the CLI into the origin, replayed through the adapters: every drugref table ends with the
+same row count). **Not covered end to end:** `spl_run`, `moiety_name_run`, `mesh_synonym_run` (no on-disk fixture
+they accept): **#272**. Also run on Python 3.14. **Not run:** a replay of a real-corpus release (none is archived
+yet).
 
 ## The standing open-issue ledger
 
@@ -6850,7 +6921,7 @@ left a class that keeps other members is not bannered (needs membership history)
 when the candidate survives but a partner leaves the class or an expansion-policy deny cuts it;
 `curated_target_unresolved` does not see that. +11 tests, 3425 → 3436.
 **The decision audit (2026-11-16, `db/080`–`db/081`)** —
-**[#258](https://github.com/cairn-ehr/drugref/issues/258)** **FIXED** (close on merge): each class ruling records
+**[#258](https://github.com/cairn-ehr/drugref/issues/258)** **FIXED** (closed by PR #264): each class ruling records
 which drugs it reached when written, and the orphan banner reads that record, so a drug that alone left a class is
 bannered again; releases name their build and drift, and with `DRUGREF_ARCHIVE` set every input file is archived
 (§ "The decision audit"). Filed: **[#259](https://github.com/cairn-ehr/drugref/issues/259)** (release replay
@@ -6872,6 +6943,11 @@ the #267 final review added 5 more (3557) and filed **[#268](https://github.com/
 "missing" on 3.14; publish now refuses an unreadable archive in one line) and **#266** (`captured: none` for an
 empty snapshot; `db/082`'s marker row, the owner's pick over a timestamp rule) **FIXED** (§ "The decision audit").
 +13 tests, 3557 → 3570; the #269 final review added 6 more (3576).
+**The release replay (2026-11-18)** — **[#259](https://github.com/cairn-ehr/drugref/issues/259)** **FIXED**
+(close on merge): `drugref audit replay` (§ "The release replay"). Filed:
+**[#270](https://github.com/cairn-ehr/drugref/issues/270)** (the curated export omits the reviewer annotation and
+evidence-reference tables, which the reviewer-service writes today, and the question and accumulation tables, which
+have no writer yet) and **#272** (the three writers no replay test exercises). +35 tests, 3576 → 3611.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7057,7 +7133,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3576 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3611 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7441,7 +7517,8 @@ ran in CI and `ruff` was not even a project dependency.
   + the decision-audit surface (`db/080`–`db/082`, #258): `class_ruling_reach.py` (the reach snapshot writer and
   `audit_ruling`), `archive.py` (the `DRUGREF_ARCHIVE` content-addressed store and its verifier),
   `release_archive.py` (`publish_archived`: build row, release record, curated export), `release_state.py` (the
-  `current_release` read and the release header line) and `cli_audit.py` (`drugref audit class-ruling|archive`)
+  `current_release` read and the release header line), `cli_audit.py` (`drugref audit class-ruling|archive|replay`)
+  and `release_replay.py` (`replay`, `ADAPTERS`, `schedule`: rebuild a release into an empty database)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so

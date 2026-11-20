@@ -1,7 +1,7 @@
 # Release tag as the decision-audit anchor
 
 **Status:** Active
-**Last reviewed:** 2026-11-16
+**Last reviewed:** 2026-11-18
 **Applies to:** the decision audit -- `db/080`, `db/081`, `db/082`, `drugref.current_release`, `DRUGREF_ARCHIVE`, `drugref audit`
 **Full derivation:** the [decision-audit design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-16-drugref-decision-audit-design.md) (with its dated review amendments)
 
@@ -32,7 +32,7 @@ line is the signal.
 **2. Reconstruction is by archived upstream files (A), plus a reach snapshot per class ruling (C).** With
 `DRUGREF_ARCHIVE` set, every ingest keeps its input files, content-addressed by SHA-256 so a file shared by two
 runs is stored once, and `drugref publish` writes a release record (every finished ingest run, the git
-commit, the migration ledger head) and a curated export. Publish refuses when any run's files are missing, and
+commit, the migration ledger head, the signed manifest entries) and a curated export. Publish refuses when any run's files are missing, and
 warns when the archive is unset or the code version is unknown or has uncommitted changes (`-dirty`). This costs nothing on reads or ingests; its price
 is disk. Separately, each class ruling records the drugs it reached when written, because the orphan warning has to
 work *live* and cannot rebuild an old release on demand.
@@ -55,8 +55,11 @@ file (issue #260). Not built now.
 - A release is reconstructable only if it was built with the archive set from its first ingest. A release record
   lists every finished run, so publish refuses on any run that predates the archive. Production must be built from
   nothing with `DRUGREF_ARCHIVE` set (an absolute path).
-- Rebuilding is possible and checked (`drugref audit archive` re-hashes every file a release needs), but not
-  automated: the replay command is a follow-up (issue #259).
+- Rebuilding is checked (`drugref audit archive` re-hashes every file a release needs) and automated:
+  `drugref audit replay --release TAG` rebuilds the release into an empty database. It refuses when the code is
+  not the release's own commit (`--allow-code-mismatch` warns instead, and the result is then never "reproduced").
+  It reports any class ruling whose reach at ruling time the rebuild does not reproduce, and any curated manifest
+  digest that differs (issue #259). The reviewer-service's annotations are not yet in the export (issue #270).
 - A class ruling recorded before `db/080` has only a snapshot taken when the migration ran, not when the curator
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
 - `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now, which is also the data for
@@ -74,5 +77,5 @@ file (issue #260). Not built now.
 - [Signing the curated overlay](signing-the-curated-overlay.md) -- `release_manifest`, the immutable record of
   what was published, which `release_build` sits beside
 - [The hybrid store](hybrid-store.md) -- why projections are rebuildable and the curated tier is append-only
-- Code: `src/drugref/archive.py`, `release_archive.py`, `release_state.py`, `class_ruling_reach.py`,
-  `cli_audit.py`
+- Code: `src/drugref/archive.py`, `release_archive.py`, `release_replay.py`, `release_state.py`,
+  `class_ruling_reach.py`, `cli_audit.py`

@@ -13,17 +13,16 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/audit-fixes-266-268`: #266 and #268 are FIXED and committed; a PR to `main` closes both (see
-`gh pr list --head claude/audit-fixes-266-268`). PR #267 (#261, #262) is MERGED. Schema now ends at `db/082`.** No
-agent round queued after it: the owner picks (see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How
-to run / test" and **nowhere else**; `uv run pytest` fails if the line and the collected suite disagree.
+**On branch `claude/release-replay-259`: #259 is BUILT and committed; a PR to `main` closes it (see `gh pr list
+--head claude/release-replay-259`). No migration; schema still ends at `db/082`.** No agent round queued after it:
+the owner picks (see "DO THIS NEXT"). The suite total lives in PROJECT-NOTES § "How to run / test" and **nowhere
+else**; `uv run pytest` fails if the line and the collected suite disagree.
 
-**⇒ THIS ROUND (#268, #266):** `archive._check` no longer asks `is_file()` (`archive.stat_or_none`: only ENOENT /
-ENOTDIR is "missing"), so an unreadable run is "could not check" on Python 3.12 AND 3.14, and publish refuses an
-unreadable archive in one line. **`db/082` `curated_class_interaction_snapshot`** marks every snapshotted class
-ruling (owner's pick over a timestamp rule: it survives a #259 replay), so `audit class-ruling` tells "reached no
-one" from "never recorded". Traps (incl. testing on 3.14 without clobbering `.venv`): PROJECT-NOTES § "The decision
-audit".
+**⇒ THIS ROUND (#259):** `drugref --dsn <empty db> audit replay --release TAG` rebuilds a release from the archive
+alone: refuses unless the archive re-hashes clean, the target is empty and the code is the release's commit
+(owner's pick; `--allow-code-mismatch` warns), replays every run, loads curated rows **interleaved by time**, and
+reports any ruling-time reach or manifest digest not reproduced. Exit 3 = failed part-way, drop the target. Publish
+records the manifest. Traps: PROJECT-NOTES § "The release replay". Filed **#270** (export gaps), **#272**.
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
@@ -83,14 +82,15 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
-   that has not happened. Agent-sized, from #258: **#259** (replay; large, test with a fixture archive, and
-   load the `db/082` markers too); **#265** (drift scope: needs a node-local source list, owner input).
+   that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input); **#270**
+   (curated tables the export omits: the reviewer-service's annotations already need it).
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#266,
-#268 FIXED by this branch (close on merge);** #261, #262 closed (PR #267). #258 closed (PR #264); **open from it:
-#259, #260, #263, #265** (replay, diff fallback, PBS in the archive, drift scope); #256 commented. **#255 CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#259 BUILT
+by this branch (close on merge), filed #270, #272;** #266, #268 closed (PR #269); #261, #262 (PR #267); #258 (PR #264);
+**open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #256 commented. **#255
+CLOSED** (PR #257); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
 **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
