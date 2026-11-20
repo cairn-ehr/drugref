@@ -21,7 +21,8 @@ from tests.test_spl_run import LABELS, WORDING, _dailymed_part, _openfda_partiti
 FIX = pathlib.Path(__file__).parent / "fixtures"
 TAG = "2026.11.18-sources"
 
-# One CLI call per writer, in chain order (unii first, onchigh last).
+# One CLI call per writer: chain steps in chain order (unii first, onchigh last),
+# the non-chain writers slotted in after the registry they read.
 INGESTS = [
     ["unii", "--release", "u1", "--unii", FIX / "unii_subset.tsv"],
     ["chebi", "--release", "c1", "--chebi", FIX / "chebi_subset.tsv"],
@@ -36,8 +37,8 @@ INGESTS = [
     ["drugcentral", "--release", "d1", "--dump", FIX / "drugcentral_ddi_subset.sql.gz"],
     ["allergy-groups", "--release", "2026", "--desc", FIX / "allergy_desc_subset.xml",
      "--supp", FIX / "allergy_supp_subset.xml"],
-    # Not chain steps either: both read the registry `unii` built, and moiety-names
-    # refuses a release other than the registry's own ("u1").
+    # Like the three above, not chain steps: both read the registry `unii` built,
+    # and moiety-names refuses a release other than the registry's own ("u1").
     ["moiety-names", "--release", "u1", "--unii-names", FIX / "unii_names_subset.txt"],
     ["mesh-synonyms", "--release", "2026", "--desc", FIX / "mesh_synonym_desc_subset.xml",
      "--supp", FIX / "mesh_synonym_supp_subset.xml"],

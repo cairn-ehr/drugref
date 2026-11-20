@@ -18,12 +18,12 @@
 merged (PR #271). No agent round queued after it: the owner picks (see "DO THIS NEXT"). The suite total lives in
 PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** all 14 replay adapters now run end to end (`test_release_replay_sources.py`; the SPL corpus is
-zipped at test time). `release_archive.NOT_EXPORTED` names every append-only table the curated export leaves out, and
-why; `test_release_export_coverage.py` fails on a new one in neither place. **#270's gap is real today**: the
-reviewer-service writes `reviewer_annotation` / `reviewer_evidence_reference`, and no release carries them (nor
-signatures or signing keys). Exporting them needs an owner call: which reviewer tables travel (never credentials or
-sessions), and does a replay restore signatures. Traps: PROJECT-NOTES § "The release replay".
+**⇒ THIS ROUND:** all 14 replay adapters run end to end (`test_release_replay_sources.py`; SPL's corpus zipped at test
+time). `release_archive.NOT_EXPORTED` names every table no rebuild touches that the export leaves out, and why;
+`test_release_export_coverage.py` (write-once trigger, or no `ingest_run` FK) fails on a new one in neither. **#270's
+gap is real today**: the reviewer-service writes `reviewer_annotation` / `reviewer_evidence_reference`, and no release
+carries them (nor signatures or signing keys). Exporting them needs an owner call: which reviewer tables travel (never
+credentials or sessions), and does a replay restore signatures. Traps: PROJECT-NOTES § "The release replay".
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built

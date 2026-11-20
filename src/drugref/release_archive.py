@@ -42,10 +42,11 @@ _EXPORT_TABLES = {
 }
 assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 
-# Tables no rebuild touches (append-only / insert-only) that the export above
-# leaves out, each with why. tests/test_release_export_coverage.py fails on any
-# such table in neither place, so a new one forces a decision instead of making
-# releases silently not reconstructable for it (#270).
+# Tables no rebuild touches that the export above leaves out, each with why.
+# tests/test_release_export_coverage.py finds them by write-once trigger name
+# (`*_append_only`, `*_insert_only`, `*_immortal`) and by having no foreign key to
+# ingest_run, and fails on any in neither place, so a new one forces a decision
+# instead of making releases silently not reconstructable for it (#270).
 _GAP = "curated, NOT YET EXPORTED: a replay cannot restore it (#270)"
 NOT_EXPORTED = {
     # Curator work with no writer outside its own module yet.
@@ -63,6 +64,8 @@ NOT_EXPORTED = {
     "reviewer_account": _GAP + "; who wrote an annotation",
     "reviewer_profile": _GAP + "; who wrote an annotation",
     "reviewer_key_enrolment": _GAP + "; the key a reviewer signs with",
+    # Written today by drugref itself (`keys register`, `sign`, publish's release
+    # signature) as well as by the reviewer-service.
     "signing_key": _GAP + "; the keys signatures verify against",
     "assertion_signature": _GAP + "; curator and release signatures",
     # Never exported: secrets and sessions stay on the node that issued them.
@@ -72,6 +75,19 @@ NOT_EXPORTED = {
     # Vocabularies the migrations seed; a replay migrates its target first.
     "reviewer_role_kind": "a vocabulary db/044 seeds",
     "signing_key_status_kind": "a vocabulary db/030 seeds",
+    "signature_target_kind": "a vocabulary db/030 seeds",
+    "ci_axis": "a vocabulary db/006 and db/031 seed",
+    "condition_ci_axis": "a vocabulary db/014 seeds",
+    "condition_indication_axis": "a vocabulary db/019 seeds",
+    "source_tier": "a vocabulary db/008 seeds",
+    "composition_relation": "a vocabulary db/028 seeds",
+    "severity_kind": "a vocabulary db/035 seeds",
+    "fda_cyp_pathway": "a vocabulary db/043 seeds",
+    "ddi_source_severity": "a vocabulary db/049 seeds",
+    "spl_advice_level": "a vocabulary db/066 seeds",
+    # Bookkeeping the replay produces for itself.
+    "schema_migration": "the migration ledger: a replay migrates its target first",
+    "ingest_run": "one row per run: the replay writes its own as it re-runs each",
     # Publish's own bookkeeping: the release record carries the manifest, and the
     # replay compares against it rather than restoring it.
     "release_manifest": "written by publish; the release record carries it",
