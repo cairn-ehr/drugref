@@ -6766,17 +6766,26 @@ record without `manifest` replays with a warning, so it exits 1 "NOT verified", 
 - **The export does not cover every curated table: #270.** `reviewer_annotation` and `reviewer_evidence_reference`
   ARE written today (the reviewer-service), and an ingest keeps a closed question either one cites; a replay
   without them can drop that question, and a curated row citing it then fails its FK (exit 3). `question_state` /
-  `question_source_check` / `question_evidence` and the accumulation tables have no writer yet.
+  `question_source_check` / `question_evidence` and the accumulation tables have no writer yet. **Guarded since
+  2026-11-20:** `release_archive.NOT_EXPORTED` lists every table no rebuild touches that the export leaves out,
+  with why (the #270 gaps; credentials and sessions, never exported; vocabularies the migrations seed; publish's
+  and the replay's own bookkeeping). `test_release_export_coverage.py` finds such tables two ways — a write-once
+  trigger named `*_append_only` / `*_insert_only` / `*_immortal`, or no foreign key to `ingest_run` (every source
+  projection has one; trigger-less `question_source_check` is found this way) — and fails on one in neither place,
+  so the next one forces a decision. `forbid_*` triggers are not matched: they guard ingest-written tables. #270
+  stays open for the gaps themselves.
 - A replayed database has no `release_manifest` / `release_build`, so `drugref status` reads "none published".
 
 **Tests (+35):** 34 in `test_release_replay.py` (pure helpers, the SPL split pinned to `spl_run.checksummed_inputs`;
 a stand-in writer end to end: interleave, supersession incl. a curator policy over a seeded one, sequences, reach,
 run-checksum and manifest differences, every refusal, the archive left untouched, the CLI's exit codes 0–3) and
 `test_release_replay_sources.py`, plus 1 from the bare-psycopg guard's parametrization over the new module
-(11 real writers through the CLI into the origin, replayed through the adapters: every drugref table ends with the
-same row count). **Not covered end to end:** `spl_run`, `moiety_name_run`, `mesh_synonym_run` (no on-disk fixture
-they accept): **#272**. Also run on Python 3.14. **Not run:** a replay of a real-corpus release (none is archived
-yet).
+(real writers through the CLI into the origin, replayed through the adapters: every drugref table ends with the
+same row count; 11 at #259). **#272 (2026-11-20): all 14 writers now go end to end**: `moiety-names` and
+`mesh-synonyms` read `unii_names_subset.txt` / `mesh_synonym_*_subset.xml`, and the SPL corpus is zipped at test
+time by `test_spl_run`'s helpers (its labels re-keyed to a registry UNII, or SPL refuses an empty read). The test
+also asserts those writers' tables are non-empty, since equal counts of zero prove nothing. Also run on Python
+3.14. **Not run:** a replay of a real-corpus release (none is archived yet).
 
 ## The standing open-issue ledger
 
@@ -6948,6 +6957,9 @@ empty snapshot; `db/082`'s marker row, the owner's pick over a timestamp rule) *
 **[#270](https://github.com/cairn-ehr/drugref/issues/270)** (the curated export omits the reviewer annotation and
 evidence-reference tables, which the reviewer-service writes today, and the question and accumulation tables, which
 have no writer yet) and **#272** (the three writers no replay test exercises). +35 tests, 3576 → 3611.
+**Replay coverage (2026-11-20)** — **#272 FIXED** (close on merge): the three writers replay end to end. **#270
+guarded, still open**: `release_archive.NOT_EXPORTED` plus `test_release_export_coverage.py` (§ "The release
+replay"). +2 tests, 3611 → 3613; its final review added the no-`ingest_run`-FK guard (3614).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7133,7 +7145,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3611 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3614 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
