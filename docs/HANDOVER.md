@@ -13,32 +13,32 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/replay-coverage-270-272`: #272 FIXED, #270 GUARDED (stays open); a PR to `main` carries both
-(see `gh pr list --head claude/replay-coverage-270-272`). No migration; schema still ends at `db/082`.** #259 is
-merged (PR #271). No agent round queued after it: the owner picks (see "DO THIS NEXT"). The suite total lives in
-PROJECT-NOTES § "How to run / test" and **nowhere else**; `uv run pytest` fails if the line and the suite disagree.
+**On branch `claude/registry-drift-104`: #104 FIXED; a PR to `main` carries it. No migration; schema still ends at
+`db/082`.** #272 closed (PR #273). Next agent round: **#270**, now ruled (below). The suite total lives in PROJECT-NOTES
+§ "How to run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** all 14 replay adapters run end to end (`test_release_replay_sources.py`; SPL's corpus zipped at test
-time). `release_archive.NOT_EXPORTED` names every table no rebuild touches that the export leaves out, and why;
-`test_release_export_coverage.py` (write-once trigger, or no `ingest_run` FK) fails on a new one in neither. **#270's
-gap is real today**: the reviewer-service writes `reviewer_annotation` / `reviewer_evidence_reference`, and no release
-carries them (nor signatures or signing keys). Exporting them needs an owner call: which reviewer tables travel (never
-credentials or sessions), and does a replay restore signatures. Traps: PROJECT-NOTES § "The release replay".
+**⇒ THIS ROUND:** `drugref status` has an eighth block: `question registry: in step with the gap views`, or `N stale,
+M unregistered` per kind (a `curate` run answers questions that only an ingest re-derives). It compares key sets
+with a fresh read of every gap view, about 5 s on a full registry. Guarded on `db/075`: **a migration adding or
+redefining a gap view bumps that guard in the same commit.** PROJECT-NOTES § "The registry-drift block".
+
+**⇒ #270, OWNER RULED 2026-11-21, ready for an agent round:** the curated export (and replay) carries
+`reviewer_annotation`, `reviewer_evidence_reference`, **and the public signing keys and signatures** (never private
+keys, credentials or sessions), so a replay shows who vouched for what. Open: key-revocation history must travel
+with the keys; `release_archive.NOT_EXPORTED` and `test_release_export_coverage.py` then shrink.
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/080`–`db/082` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/079`–`db/082` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
-**⇒ NEW, owner (#263, under #25):** an archive on a PBS-ingesting database holds the encumbered PBS file and its
-release record lists the PBS run. Fine node-local; decide before archives are shared.
-
-**⇒ NEW: #244** (brand → composition: *Augmentin* finds nothing, so its amoxicillin is never allergy-checked).
-Owner design pass; SPL (public domain, on disk) has brand names + ingredient UNIIs, not Australian-only brands.
-
-**⇒ STILL OWED FROM #231/#232 (owner):** the exclusion list applies to search (*glucose* does not find dextrose);
-from #227: glance at the exclusions and the 12 shadowed names.
+**⇒ NEW, owner:** **#263** (under #25): an archive on a PBS-ingesting database holds the encumbered PBS file and its
+release record lists the PBS run; fine node-local, decide before archives are shared. **#244** (brand → composition:
+*Augmentin* finds nothing, so its amoxicillin is never allergy-checked): owner design pass; SPL (public domain, on
+disk) has brand names + ingredient UNIIs, not Australian-only brands. **Still owed (#231/#232):** the exclusion
+list applies to search (*glucose* does not find dextrose); from #227: glance at the exclusions and the 12 shadowed
+names.
 
 **⇒ CARRY TO cairn-ehr's allergy slice (do not edit that repo from here):** `no-match` is NOT "safe" for
 cross-reactivity: case (c), cefalexin for a penicillin allergy, answers `no-match` (no cross-reactivity rule yet,
@@ -83,19 +83,19 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
-   that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input); **#270**
-   (curated tables the export omits: the reviewer-service's annotations already need it).
+   that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input). **#270**
+   is ruled (above) and is the obvious next agent round.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#272 FIXED by
-this branch (close on merge); #270 guarded, open;** #259 closed (PR #271); #258, #261, #262, #266, #268 closed;
-**open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly
-done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
-profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**.
-Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158**
-untouched. Also #148, #152, #128/#129, #124, #104, #94. Before production: re-run every parser on current releases
-**with `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#104 FIXED by
+this branch (close on merge); #270 ruled, open;** #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
+#260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly done. **#244.**
+**#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
+From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
+**#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
+#128/#129, #124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE` set**,
+resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
@@ -103,7 +103,7 @@ untouched. Also #148, #152, #128/#129, #124, #104, #94. Before production: re-ru
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it. No named database carries `db/079`–`db/082` yet: both rounds were tested against `drugref_test` only.
+  patch it (no named database carries `db/079`–`db/082`: see STANDING).
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

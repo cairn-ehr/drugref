@@ -1,8 +1,8 @@
 # src/drugref/cli_status.py
 """`drugref status`'s BLOCKS, split out of cli.py -- the loaded releases and their
 runtimes (issue 159, and which of them may be published at all: db/054, issue 176), the
-class grain (db/035), the unrankable-severity fault (db/038, issue 116) and the SPL run
-census (db/057, issue 199).
+class grain (db/035), the unrankable-severity fault (db/038, issue 116), the SPL run
+census (db/057, issue 199) and the question registry's lag behind the gap views (#104).
 
 NO BLOCK COUNT HERE, on purpose: this docstring stated one three times and each new
 block made it wrong. The list above is the count. The module name was always the
@@ -32,7 +32,7 @@ reason it covers the five above -- and it PASSES on the loaded-release SELECT be
 same exception cli.py's docstring already draws for `_handle_status`.
 """
 from drugref import (class_grain_read, curated_read, migration_guard, provenance,
-                     release_state, spl_census)
+                     questions, release_state, spl_census)
 
 
 def print_loaded_release_block(conn) -> None:
@@ -116,11 +116,12 @@ def _read_loaded_release(conn):
     the end of a report, and NOT at the start of one.
     This block is the first, so raising here costs the operator the unfinished runs,
     the orphaned curated targets, the backdated signatures, the class grain, the
-    unrankable severities and the SPL census as well. Before db/054 this same database
-    printed all six blocks it then had: the watershed read None and every runtime said
-    `pre-db/053`. Turning that into a total failure would be a regression wearing a
-    guard's clothes, and this project has already recorded "status crashed mid-output
-    ... killing the five later blocks" as a defect ONE ROUND AGO.
+    unrankable severities, the SPL census and the registry drift as well. Before
+    db/054 this same database printed all six blocks it then had: the watershed read
+    None and every runtime said `pre-db/053`. Turning that into a total failure would
+    be a regression wearing a guard's clothes, and this project has already recorded
+    "status crashed mid-output ... killing the five later blocks" as a defect ONE
+    ROUND AGO.
 
     ⇒ WHAT IS REFUSED IS THE NUMBER, NOT THE REPORT, which is this round's own rule
     applied to itself. db/025's columns are still there, so the listing is read from
@@ -389,8 +390,8 @@ def print_spl_census_block(conn) -> None:
     NO THRESHOLD AND NO BANNER, deliberately: #163 rules these counts never refuse, and
     a banner needs a cut-off nobody has measured. The operator compares the two runs.
 
-    LAST, AND IT RAISES like the other guarded blocks rather than degrading like the
-    first: nothing is printed after it, so aborting here costs no other block.
+    IT RAISES like the other guarded blocks rather than degrading like the first;
+    only the eighth block (#104) follows it, so aborting here costs that one alone.
 
     THE GUARD NAMES THE NEWEST MIGRATION THE READER SELECTS, db/078 (#248), not
     db/057 or db/072: a db/072-077 database fails a column or two short, and a guard
@@ -466,3 +467,32 @@ def _group_line(label: str, counts: list[tuple[str, int | None]]) -> str:
     return f"    {label}: " + "  ".join(
         f"{name} {'not measured' if value is None else f'{value:,}'}"
         for name, value in counts)
+
+
+def print_registry_drift_block(conn) -> None:
+    """THE EIGHTH BLOCK (issue 104): is the stored worklist behind the gap views?
+
+    `open_question` is re-derived only by an ingest, and `drugref curate` is kept out
+    of that on purpose, so after a curate run the worklist still lists what it just
+    answered. This makes that window visible instead of changing who writes when.
+    Guarded on db/075, the newest migration that (re)defines a gap view this reads.
+    """
+    with migration_guard.guarded(
+            conn, relations=questions.REGISTRY_RELATIONS, migration="075",
+            consequence="a worklist behind the gap views reads as current"):
+        drift = questions.registry_drift(conn)
+    print()
+    for line in registry_drift_lines(drift):
+        print(line)
+
+
+def registry_drift_lines(drift) -> list[str]:
+    """PURE: the eighth block's lines for `questions.registry_drift`'s result."""
+    if not drift:
+        return ["question registry: in step with the gap views"]
+    stale = sum(d.stale for d in drift)
+    unregistered = sum(d.unregistered for d in drift)
+    return [f"question registry: {stale} stale, {unregistered} unregistered"
+            "  ** the worklist is behind the gap views; the next ingest re-derives "
+            "it **"] + [f"  {d.gap_kind:<34} stale {d.stale} unregistered "
+                        f"{d.unregistered}" for d in drift]

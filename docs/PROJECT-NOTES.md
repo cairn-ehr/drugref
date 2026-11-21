@@ -345,7 +345,8 @@ FDA-CYP nor DrugCentral, because both are standalone subcommands.
 ([#104](https://github.com/cairn-ehr/drugref/issues/104)): `drugref curate` is deliberately not a chain step, so
 the 8 questions ONCHIGH curation answered stay on the worklist until the next ingest re-derives. **Verified
 identical on `drugref_db034`, so it predates `db/035`.** The views are right (`gap_uncurated_interaction_rule`
-returns 593); only the stored projection lags. The earlier **EXPECTED 2,226 / 21,060** hedging was settled at Slice
+returns 593); only the stored projection lags. **Made visible 2026-11-21** (the issue's option 3): `drugref status`'s
+eighth block (§ "The registry-drift block"). The earlier **EXPECTED 2,226 / 21,060** hedging was settled at Slice
 3 — the assembled registry gave **2,245**, 19 more than the raw-extract query predicted, the 19 being composites
 whose only activity ruling sits on a mirror record the orchestrator does not read a ruling from (Slice 3 erratum
 below). `unruled_composition_activity` is gap kind 12 (`db/028`, Slice 3 Task 5): composites carrying components
@@ -6773,7 +6774,9 @@ record without `manifest` replays with a warning, so it exits 1 "NOT verified", 
   trigger named `*_append_only` / `*_insert_only` / `*_immortal`, or no foreign key to `ingest_run` (every source
   projection has one; trigger-less `question_source_check` is found this way) — and fails on one in neither place,
   so the next one forces a decision. `forbid_*` triggers are not matched: they guard ingest-written tables. #270
-  stays open for the gaps themselves.
+  stays open for the gaps themselves. **Owner ruling (2026-11-21):** the export carries the reviewer annotations
+  and evidence references, **and the public signing keys and signatures** (never private key material, credentials
+  or sessions), so a replay shows who vouched for what. Key-revocation history then has to travel with the keys.
 - A replayed database has no `release_manifest` / `release_build`, so `drugref status` reads "none published".
 
 **Tests (+35):** 34 in `test_release_replay.py` (pure helpers, the SPL split pinned to `spl_run.checksummed_inputs`;
@@ -6786,6 +6789,28 @@ same row count; 11 at #259). **#272 (2026-11-20): all 14 writers now go end to e
 time by `test_spl_run`'s helpers (its labels re-keyed to a registry UNII, or SPL refuses an empty read). The test
 also asserts those writers' tables are non-empty, since equal counts of zero prove nothing. Also run on Python
 3.14. **Not run:** a replay of a real-corpus release (none is archived yet).
+
+## The registry-drift block (#104, 2026-11-21) — no migration, suite 3614 → 3624
+
+`open_question` is re-derived only by an ingest (any source's: `register_from_gaps` re-derives every kind), and
+`drugref curate` deliberately is not one, so after a curate the worklist still lists what it answered. The issue's
+option 3 makes that visible rather than moving the write: `questions.registry_drift` compares the current stored
+questions with a fresh read of every gap view (the same `key_sql`), and `cli_status.print_registry_drift_block`
+prints `question registry: in step with the gap views` or `N stale, M unregistered` with a per-kind list.
+
+- **Key sets, not counts.** A gap that closed and one that opened in the same kind cancel out in a count. A retired
+  question (`is_current` false) whose gap has reopened counts as unregistered: it is off the worklist.
+- **Cost: one read of every gap view**, 5.25 s on `drugref_hygiene214` (28,872 current questions, in step). It is
+  the slowest status block; acceptable for an operator command, not for anything run per request.
+- **Guarded on `db/075`**, the newest migration that (re)defines a gap view, with `questions.REGISTRY_RELATIONS`
+  (`open_question` plus every gap view) as the probed relations. Naming only `open_question` told a db/034 database
+  "the relations exist ... a column is missing" when five views were absent. A migration that adds or redefines a
+  gap view must bump the guard's migration in the same commit.
+- **It is the last status block** (after the SPL census, whose docstring no longer claims to be last), so its guard
+  raising costs no other block.
+- Not reproduced on #104's own `drugref_db034`: that database predates five of the gap views, so the block refuses
+  there (as above). The tests drive the window instead (`test_question_registry_drift.py`, +7, plus one line in
+  `test_cli.py`'s empty-database stub).
 
 ## The standing open-issue ledger
 
@@ -6803,7 +6828,8 @@ curation scales · **#30 blocked: no PBS release on disk** (`downloads/` holds U
 figures, do not re-derive them**; `curation.py` **crossed the cap at 523** (the db/038 round, issue
 115's docstring — it was 500 with no headroom when this line was written; split 2026-10-31, § "The
 curation.py split") · **#88** a type checker
-is a real ongoing cost and a decision · **#82/#104** both change the operator surface, held back deliberately ·
+is a real ongoing cost and a decision · **#82** changes the operator surface, held back deliberately (#104, its
+pair here, was done 2026-11-21 as a status block) ·
 **Filed by slice 5c.3's implementation round (2026-08-27)** — **[#159](https://github.com/cairn-ehr/drugref/issues/159)
 `ingest_run.finished_at − started_at` is not a duration for ANY feed** — **CLOSED 2026-09-02 by `db/053`**, and
 its own headline figure had already evaporated before anyone read it: the 49.85 s it cited for `spl_run` became
@@ -6960,6 +6986,9 @@ have no writer yet) and **#272** (the three writers no replay test exercises). +
 **Replay coverage (2026-11-20)** — **#272 FIXED** (close on merge): the three writers replay end to end. **#270
 guarded, still open**: `release_archive.NOT_EXPORTED` plus `test_release_export_coverage.py` (§ "The release
 replay"). +2 tests, 3611 → 3613; its final review added the no-`ingest_run`-FK guard (3614).
+**Registry drift (2026-11-21)** — **[#104](https://github.com/cairn-ehr/drugref/issues/104) FIXED** (close on
+merge) by option 3: `drugref status`'s eighth block (§ "The registry-drift block"). Owner ruled on **#270**
+(public keys and signatures travel too; § "The release replay"). +10 tests, 3614 → 3624 (3 from review).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7145,7 +7174,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3614 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3624 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
