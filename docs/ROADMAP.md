@@ -1496,11 +1496,11 @@ rebuilds a release into an empty database from the archive and reports what did 
 manifest digests); #272 (2026-11-20) put all 14 writers through it end to end. **Open follow-ups:** #270 (curated
 tables the export omits; the reviewer-service's annotations already need it; since 2026-11-20 a guard test fails on
 any new curated table the export omits unexplained; owner ruled 2026-11-21 that public signing keys and signatures
-travel with the annotations, never private keys, credentials or sessions), #260 (diff-based membership tracking, only if archive disk
-use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift ignores sources the
-release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read `captured: none`; `db/082`
-marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on Python 3.14) fixed
-2026-11-17. Production must be built from nothing with the archive set.
+travel with the annotations, never private keys, credentials or sessions), #260 (diff-based membership tracking,
+only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265
+(drift ignores sources the release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read
+`captured: none`; `db/082` marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on
+Python 3.14) fixed 2026-11-17. Production must be built from nothing with the archive set.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

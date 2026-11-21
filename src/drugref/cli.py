@@ -342,16 +342,16 @@ def _handle_status(conn, args) -> int:
         print("\nbackdated signatures: none")
 
     cli_status.print_class_grain_block(conn)
-    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE BLOCKS THAT REPORT SOMETHING
-    # WRONG, because it is the rarest: it reports a SCHEMA fault -- a live curated
-    # ruling whose severity is absent from severity_kind, which a foreign key on both
-    # curated tables makes unreachable -- so on every healthy database it is one line
-    # of `none`, and the blocks an operator actually reads should not have to be
-    # scrolled past to reach it.
+    # THE SIXTH BLOCK (db/038, issue 116). LAST OF THE BLOCKS THAT REPORT A FAULT (the
+    # eighth reports a lag), because it is the rarest: it reports a SCHEMA fault -- a
+    # live curated ruling whose severity is absent from severity_kind, which a foreign
+    # key on both curated tables makes unreachable -- so on every healthy database it
+    # is one line of `none`, and the blocks an operator actually reads should not have
+    # to be scrolled past to reach it.
     #
     # STILL EXITS 0 when it finds something, like the backdated-signature block and
     # unlike a raised guard. `status` REPORTS; it is not a health check with a contract
-    # on its exit code, and three of these blocks would already have claims on it.
+    # on its exit code, and four of these blocks would already have claims on it.
     cli_status.print_unrankable_severity_block(conn)
     # THE SEVENTH (db/057, issue 199; guard db/072, #235): no fault, a comparison.
     cli_status.print_spl_census_block(conn)

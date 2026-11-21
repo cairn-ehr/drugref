@@ -95,6 +95,18 @@ def test_a_RETIRED_question_whose_gap_reopened_counts_as_unregistered(conn):
         questions.RegistryDrift("unclassified_moiety", stale=0, unregistered=1)]
 
 
+def test_a_closed_and_an_opened_gap_in_one_kind_do_not_cancel(conn):
+    """The docstring's reason for comparing KEY SETS: by count, one gap closed and
+    one opened in the same kind is 1 stored vs 1 derived and reads as in step."""
+    run_id = _run(conn)
+    m = _moiety(conn, run_id, "orphanium")
+    questions.register_from_gaps(conn, run_id)
+    _classify(conn, run_id, m)
+    _moiety(conn, run_id, "newcomium")
+    assert questions.registry_drift(conn) == [
+        questions.RegistryDrift("unclassified_moiety", stale=1, unregistered=1)]
+
+
 def test_re_deriving_clears_the_drift(conn):
     run_id = _run(conn)
     m = _moiety(conn, run_id, "orphanium")
@@ -105,6 +117,36 @@ def test_re_deriving_clears_the_drift(conn):
 
     questions.register_from_gaps(conn, run_id)
     assert questions.registry_drift(conn) == []
+
+
+def test_the_same_key_under_another_kind_is_not_a_match(conn):
+    """Kinds share key shapes ('CLASS:' alone has five), so the join must match on
+    the kind too: a question stored under one kind does not answer another kind's
+    gap with the same key. Also pins one row per kind, ordered by kind."""
+    run_id = _run(conn)
+    m = _moiety(conn, run_id, "orphanium")
+    key = f"MOIETY:{m}"
+    conn.execute("INSERT INTO drugref.open_question (question_uuid, gap_kind, gap_key, "
+                 "question_text, first_derived_ingest, last_derived_ingest) "
+                 "VALUES (%s, 'condition_without_indication', %s, 'q', %s, %s)",
+                 (ids.mint_question_uuid("condition_without_indication", key), key,
+                  run_id, run_id))
+    assert questions.registry_drift(conn) == [
+        questions.RegistryDrift("condition_without_indication", stale=1,
+                                unregistered=0),
+        questions.RegistryDrift("unclassified_moiety", stale=0, unregistered=1)]
+
+
+def test_a_database_without_a_gap_view_gets_the_guards_sentence(conn):
+    """`drugref status` on a database short of db/075 must print the guard's one
+    line, not a psycopg traceback. Renamed inside the transaction, as
+    tests/test_spl_run_census.py does for db/078: the guard's probe rolls the
+    rename back, so this lands in its "NOT a missing migration" branch, and what it
+    pins is THIS block's migration and consequence."""
+    conn.execute("ALTER VIEW drugref.gap_unclassified_moiety RENAME TO before_db075")
+    with pytest.raises(RuntimeError, match=r"(?i)db/075[\s\S]*a worklist behind "
+                       r"the gap views reads as current"):
+        cli_status.print_registry_drift_block(conn)
 
 
 # ---- the status block's wording (pure, no database) --------------------------

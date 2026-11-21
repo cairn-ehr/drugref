@@ -1,8 +1,8 @@
 # src/drugref/cli_status.py
 """`drugref status`'s BLOCKS, split out of cli.py -- the loaded releases and their
 runtimes (issue 159, and which of them may be published at all: db/054, issue 176), the
-class grain (db/035), the unrankable-severity fault (db/038, issue 116) and the SPL run
-census (db/057, issue 199).
+class grain (db/035), the unrankable-severity fault (db/038, issue 116), the SPL run
+census (db/057, issue 199) and the question registry's lag behind the gap views (#104).
 
 NO BLOCK COUNT HERE, on purpose: this docstring stated one three times and each new
 block made it wrong. The list above is the count. The module name was always the
@@ -116,11 +116,12 @@ def _read_loaded_release(conn):
     the end of a report, and NOT at the start of one.
     This block is the first, so raising here costs the operator the unfinished runs,
     the orphaned curated targets, the backdated signatures, the class grain, the
-    unrankable severities and the SPL census as well. Before db/054 this same database
-    printed all six blocks it then had: the watershed read None and every runtime said
-    `pre-db/053`. Turning that into a total failure would be a regression wearing a
-    guard's clothes, and this project has already recorded "status crashed mid-output
-    ... killing the five later blocks" as a defect ONE ROUND AGO.
+    unrankable severities, the SPL census and the registry drift as well. Before
+    db/054 this same database printed all six blocks it then had: the watershed read
+    None and every runtime said `pre-db/053`. Turning that into a total failure would
+    be a regression wearing a guard's clothes, and this project has already recorded
+    "status crashed mid-output ... killing the five later blocks" as a defect ONE
+    ROUND AGO.
 
     ⇒ WHAT IS REFUSED IS THE NUMBER, NOT THE REPORT, which is this round's own rule
     applied to itself. db/025's columns are still there, so the listing is read from

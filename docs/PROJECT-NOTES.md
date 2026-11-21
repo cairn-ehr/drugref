@@ -6790,7 +6790,7 @@ time by `test_spl_run`'s helpers (its labels re-keyed to a registry UNII, or SPL
 also asserts those writers' tables are non-empty, since equal counts of zero prove nothing. Also run on Python
 3.14. **Not run:** a replay of a real-corpus release (none is archived yet).
 
-## The registry-drift block (#104, 2026-11-21) — no migration, suite 3614 → 3621
+## The registry-drift block (#104, 2026-11-21) — no migration, suite 3614 → 3624
 
 `open_question` is re-derived only by an ingest (any source's: `register_from_gaps` re-derives every kind), and
 `drugref curate` deliberately is not one, so after a curate the worklist still lists what it answered. The issue's
@@ -6988,7 +6988,7 @@ guarded, still open**: `release_archive.NOT_EXPORTED` plus `test_release_export_
 replay"). +2 tests, 3611 → 3613; its final review added the no-`ingest_run`-FK guard (3614).
 **Registry drift (2026-11-21)** — **[#104](https://github.com/cairn-ehr/drugref/issues/104) FIXED** (close on
 merge) by option 3: `drugref status`'s eighth block (§ "The registry-drift block"). Owner ruled on **#270**
-(public keys and signatures travel too; § "The release replay"). +7 tests, 3614 → 3621.
+(public keys and signatures travel too; § "The release replay"). +10 tests, 3614 → 3624 (3 from review).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7174,7 +7174,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3621 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3624 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

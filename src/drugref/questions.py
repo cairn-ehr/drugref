@@ -45,8 +45,9 @@ from drugref.gap_sources_registry import REGISTRY_GAP_SOURCES
 _GAP_SOURCES = {**REGISTRY_GAP_SOURCES, **INTERACTION_GAP_SOURCES,
                 **CLASS_PROFILE_GAP_SOURCES}
 
-# Every relation register_from_gaps and registry_drift read, for a migration guard to
-# probe: naming only some of them misdiagnoses a missing view as a missing column.
+# Every relation registry_drift reads (NOT register_from_gaps, whose DELETE also reads
+# the curated tables), for its migration guard to probe: naming only some of them
+# misdiagnoses a missing view as a missing column.
 REGISTRY_RELATIONS = ("drugref.open_question",) + tuple(
     f"drugref.{spec['view']}" for spec in _GAP_SOURCES.values())
 
@@ -197,7 +198,7 @@ def registry_drift(conn: psycopg.Connection) -> list[RegistryDrift]:
 
     It reuses `_GAP_SOURCES`' `key_sql`, the same expression register_from_gaps
     stores, so the two cannot disagree on what a gap's key is. The cost is one read
-    of every gap view, the same reads register_from_gaps does without its writes.
+    of every gap view's key column; register_from_gaps also reads text and rank.
     """
     # Kind names are passed as parameters; the view names and key expressions are
     # this module's own constants, never caller input.

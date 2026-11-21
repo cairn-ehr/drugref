@@ -14,7 +14,8 @@ import pathlib
 
 import psycopg
 
-from drugref import archive, cli, release_archive, release_replay, signing
+from drugref import (archive, cli, questions, release_archive, release_replay,
+                     signing)
 from tests.test_release_replay import SHA, databases  # noqa: F401  (fixture)
 from tests.test_spl_run import LABELS, WORDING, _dailymed_part, _openfda_partition
 
@@ -92,6 +93,10 @@ def test_real_orchestrators_replay_to_the_same_tables(databases, tmp_path,  # no
         assert cli.main(["--dsn", origin, "ingest", *map(str, argv)]) == 0, argv
     kp = signing.generate_keypair()
     with psycopg.connect(origin) as c:
+        # #104: after every writer has run, the stored worklist must agree with a
+        # fresh derive in every kind -- a kind whose stored gap_key differed from
+        # registry_drift's would show a "behind" banner no ingest could clear.
+        assert questions.registry_drift(c) == []
         release_archive.publish_archived(
             c, root=root, release_tag=TAG, published_by="op",
             private_key=kp.private_key, key_fingerprint=signing.fingerprint(kp.public_key))
