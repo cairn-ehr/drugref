@@ -511,7 +511,8 @@ table. **`TEMPLATE drugref_db034` → `drugref migrate` was re-tested** and work
 **Three findings filed rather than fixed** — [#104](https://github.com/cairn-ehr/drugref/issues/104) **`curate`
 leaves the question registry stale until the next ingest** (601 stored vs 593 derived on the reference database:
 the 8 rules ONCHIGH curation answered still sit on the worklist, because `curate` is deliberately not a chain step
-and only ingest re-derives — **pre-existing, verified identical on db/034**) ·
+and only ingest re-derives — **pre-existing, verified identical on db/034**; **made visible 2026-11-21**:
+`drugref status` reports stale and unregistered questions per kind) ·
 [#105](https://github.com/cairn-ehr/drugref/issues/105) promote `curated_grain_disagreement` to a gap kind once
 class-grain content ships (a `gap_key` is frozen forever and zero class-grain rows exist to choose its grain
 against) · [#106](https://github.com/cairn-ehr/drugref/issues/106) two **moiety**-grain rules on different axes can
@@ -1494,7 +1495,8 @@ records the drugs it reached when written (`db/080`), so the orphan banner warns
 rebuilds a release into an empty database from the archive and reports what did not reproduce (ruling-time reach,
 manifest digests); #272 (2026-11-20) put all 14 writers through it end to end. **Open follow-ups:** #270 (curated
 tables the export omits; the reviewer-service's annotations already need it; since 2026-11-20 a guard test fails on
-any new curated table the export omits unexplained), #260 (diff-based membership tracking, only if archive disk
+any new curated table the export omits unexplained; owner ruled 2026-11-21 that public signing keys and signatures
+travel with the annotations, never private keys, credentials or sessions), #260 (diff-based membership tracking, only if archive disk
 use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift ignores sources the
 release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read `captured: none`; `db/082`
 marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on Python 3.14) fixed

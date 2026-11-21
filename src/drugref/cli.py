@@ -218,14 +218,15 @@ def _handle_migrate(conn, args) -> int:
 
 def _handle_status(conn, args) -> int:
     """What is loaded, what died trying, what a rebuild orphaned, what was signed late,
-    what the class grain is doing, what drugref cannot rank, and how the last SPL
-    release's census compares with the one before. SEVEN blocks, one command: an
-    operator asking "is this current?" needs all of them, and reading only the first
-    would report a stale release as healthy. (It said THREE until db/035 added the
-    fifth and left this sentence behind -- cli_status.py's block calls itself the fifth
-    in its own first line, so the two disagreed by two. db/038's sixth is counted here
-    in the same commit that adds it, which is the whole lesson of that drift, and
-    db/057's seventh likewise.)
+    what the class grain is doing, what drugref cannot rank, how the last SPL
+    release's census compares with the one before, and whether the worklist is behind
+    the gap views. EIGHT blocks, one command: an operator asking "is this current?"
+    needs all of them, and reading only the first would report a stale release as
+    healthy. (It said THREE until db/035 added the fifth and left this sentence behind
+    -- cli_status.py's block calls itself the fifth in its own first line, so the two
+    disagreed by two. db/038's sixth is counted here in the same commit that adds it,
+    which is the whole lesson of that drift, and db/057's seventh and #104's eighth
+    likewise.)
 
     The third block is issue 76. It goes through `curation.unresolved_targets` rather
     than a SELECT embedded here, unlike the two above it: those read operational views,
@@ -354,6 +355,8 @@ def _handle_status(conn, args) -> int:
     cli_status.print_unrankable_severity_block(conn)
     # THE SEVENTH (db/057, issue 199; guard db/072, #235): no fault, a comparison.
     cli_status.print_spl_census_block(conn)
+    # THE EIGHTH (#104): the stored worklist against a fresh derive of the gap views.
+    cli_status.print_registry_drift_block(conn)
     return 0
 
 

@@ -19,6 +19,7 @@ promotion step means real gaps sit unregistered because nobody did the paperwork
 so the noise control is `withdrawn`, not a manual allow-list.
 """
 import uuid
+from typing import NamedTuple
 
 import psycopg
 
@@ -43,6 +44,11 @@ from drugref.gap_sources_registry import REGISTRY_GAP_SOURCES
 # keys).
 _GAP_SOURCES = {**REGISTRY_GAP_SOURCES, **INTERACTION_GAP_SOURCES,
                 **CLASS_PROFILE_GAP_SOURCES}
+
+# Every relation register_from_gaps and registry_drift read, for a migration guard to
+# probe: naming only some of them misdiagnoses a missing view as a missing column.
+REGISTRY_RELATIONS = ("drugref.open_question",) + tuple(
+    f"drugref.{spec['view']}" for spec in _GAP_SOURCES.values())
 
 
 def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str, int]:
@@ -167,6 +173,51 @@ def register_from_gaps(conn: psycopg.Connection, ingest_run_id: int) -> dict[str
         counts[gap_kind] = len(live_keys)
 
     return counts
+
+
+class RegistryDrift(NamedTuple):
+    """One gap_kind whose stored questions disagree with what its gap view derives now.
+
+    `stale`: questions still current on the worklist whose gap has since closed (the
+    #104 case: `drugref curate` answered them, and only an ingest re-derives).
+    `unregistered`: gaps the view derives now that have no current question, either
+    never registered or retired before the gap reopened.
+    """
+    gap_kind: str
+    stale: int
+    unregistered: int
+
+
+def registry_drift(conn: psycopg.Connection) -> list[RegistryDrift]:
+    """READ-ONLY (issue 104): compare `open_question` with a fresh derive, per kind.
+
+    Returns only the kinds that disagree, ordered by kind, so an empty list means the
+    worklist is in step. It compares KEY SETS, not counts: a closed gap and a new one
+    in the same kind would cancel out in a count and read as in step.
+
+    It reuses `_GAP_SOURCES`' `key_sql`, the same expression register_from_gaps
+    stores, so the two cannot disagree on what a gap's key is. The cost is one read
+    of every gap view, the same reads register_from_gaps does without its writes.
+    """
+    # Kind names are passed as parameters; the view names and key expressions are
+    # this module's own constants, never caller input.
+    derived = " UNION ALL ".join(
+        f"SELECT %s::text AS gap_kind, ({spec['key_sql']})::text AS gap_key "
+        f"FROM drugref.{spec['view']}" for spec in _GAP_SOURCES.values())
+    rows = conn.execute(
+        f"WITH derived AS ({derived}), "
+        "stored AS (SELECT gap_kind, gap_key FROM drugref.open_question "
+        "           WHERE is_current) "
+        "SELECT coalesce(s.gap_kind, d.gap_kind), "
+        "       count(*) FILTER (WHERE d.gap_key IS NULL), "
+        "       count(*) FILTER (WHERE s.gap_key IS NULL) "
+        "FROM stored s FULL JOIN derived d "
+        "  ON s.gap_kind = d.gap_kind AND s.gap_key = d.gap_key "
+        "WHERE s.gap_key IS NULL OR d.gap_key IS NULL "
+        "GROUP BY 1 ORDER BY 1",
+        list(_GAP_SOURCES)).fetchall()
+    return [RegistryDrift(kind, stale, unregistered)
+            for kind, stale, unregistered in rows]
 
 
 def current_state(conn: psycopg.Connection, question_uuid: uuid.UUID) -> str:
