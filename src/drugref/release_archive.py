@@ -8,8 +8,11 @@ as they were. This module wraps `releases.publish` (untouched) and adds:
   `current_release` view needs to detect drift (db/081);
 - when `DRUGREF_ARCHIVE` is set, `releases/<tag>.json` (every finished ingest
   run, NOT only the ones feeding the live registry) and
-  `releases/<tag>.curated.json` (every curated row, superseded included, and
-  every class-ruling reach and snapshot-marker row).
+  `releases/<tag>.curated.json` (every curated row, superseded included, every
+  class-ruling reach and snapshot-marker row, and who vouched for what: reviewer
+  accounts, profiles, key enrolments, notes and references, the PUBLIC signing
+  keys with their revocation history, and every signature -- never a password
+  hash or session).
 
 It never commits: the CLI owns the transaction. The files are written before
 that commit; if the commit then fails they name a tag absent from the database.
@@ -39,6 +42,17 @@ _EXPORT_TABLES = {
     # ...and which rulings were snapshotted at all, so an empty one reads "reached
     # no one", not "never recorded" (db/082, #266).
     "curated_class_interaction_snapshot": "curated_class_interaction_id",
+    # Who vouched for what (#270, owner ruling 2026-11-21). A profile carries a
+    # reviewer's name and bio into the archive: decide before archives are shared.
+    "reviewer_account": "reviewer_uuid",
+    "reviewer_profile": "reviewer_profile_id",
+    "reviewer_key_enrolment": "reviewer_key_enrolment_id",
+    "reviewer_annotation": "reviewer_annotation_id",
+    "reviewer_evidence_reference": "reviewer_evidence_reference_id",
+    # Public halves only (no private key ever enters the database), superseded rows
+    # included: a revocation is a superseding row, so its history travels too.
+    "signing_key": "signing_key_id",
+    "assertion_signature": "signature_id",   # curator and release signatures
 }
 assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 
@@ -47,9 +61,11 @@ assert set(releases._CURATED_KINDS) <= set(_EXPORT_TABLES)
 # (`*_append_only`, `*_insert_only`, `*_immortal`) and by having no foreign key to
 # ingest_run, and fails on any in neither place, so a new one forces a decision
 # instead of making releases silently not reconstructable for it (#270).
-_GAP = "curated, NOT YET EXPORTED: a replay cannot restore it (#270)"
+_GAP = "curated, NOT YET EXPORTED: a replay cannot restore it (#275)"
 NOT_EXPORTED = {
-    # Curator work with no writer outside its own module yet.
+    # Curator work with no writer outside its own module yet. All but
+    # question_source_check name an ingest_run id, and a replay writes its own run
+    # rows, so exporting them needs a decision about those ids (#275).
     "question_state": _GAP,
     "question_source_check": _GAP,   # no trigger: observations, never superseded
     "question_evidence": _GAP,
@@ -58,16 +74,6 @@ NOT_EXPORTED = {
     "interaction_group": _GAP,       # the identity interaction_group_* rows name
     "interaction_group_assertion": _GAP,
     "interaction_group_member": _GAP,
-    # Written by the reviewer-service today, so these releases already lack them.
-    "reviewer_annotation": _GAP,
-    "reviewer_evidence_reference": _GAP,
-    "reviewer_account": _GAP + "; who wrote an annotation",
-    "reviewer_profile": _GAP + "; who wrote an annotation",
-    "reviewer_key_enrolment": _GAP + "; the key a reviewer signs with",
-    # Written today by drugref itself (`keys register`, `sign`, publish's release
-    # signature) as well as by the reviewer-service.
-    "signing_key": _GAP + "; the keys signatures verify against",
-    "assertion_signature": _GAP + "; curator and release signatures",
     # Never exported: secrets and sessions stay on the node that issued them.
     "reviewer_password_credential": "a password hash: never leaves the node",
     "auth_session": "a login session: node-local and short-lived",

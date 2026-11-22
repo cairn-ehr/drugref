@@ -1493,10 +1493,11 @@ records the drugs it reached when written (`db/080`), so the orphan banner warns
 [decision audit](superpowers/specs/2026-11-16-drugref-decision-audit-design.md); docs-site *Design decisions*,
 "Release tag as the decision-audit anchor". **#259 built 2026-11-18:** `drugref audit replay --release TAG`
 rebuilds a release into an empty database from the archive and reports what did not reproduce (ruling-time reach,
-manifest digests); #272 (2026-11-20) put all 14 writers through it end to end. **Open follow-ups:** #270 (curated
-tables the export omits; the reviewer-service's annotations already need it; since 2026-11-20 a guard test fails on
-any new curated table the export omits unexplained; owner ruled 2026-11-21 that public signing keys and signatures
-travel with the annotations, never private keys, credentials or sessions), #260 (diff-based membership tracking,
+manifest digests); #272 (2026-11-20) put all 14 writers through it end to end. **#270 fixed 2026-11-22:** the
+export and the replay carry the reviewer annotations and evidence references, the accounts and profiles behind
+them, the public signing keys with their revocation history, and every signature (never credentials or sessions);
+since 2026-11-20 a guard test fails on any new curated table the export omits unexplained. **Open follow-ups:**
+#275 (the question bookkeeping and accumulation tables, once they have a writer), #260 (diff-based membership tracking,
 only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265
 (drift ignores sources the release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read
 `captured: none`; `db/082` marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on

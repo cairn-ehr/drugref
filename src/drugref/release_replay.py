@@ -46,14 +46,15 @@ Orchestrators commit, so a replay that fails part-way leaves a half-built target
 (`ReplayFailed`); it is a scratch database, and a second replay into it is
 refused (not empty).
 
-NOT REPLAYED: the reviewer-service's annotations and evidence references, and the
-question bookkeeping tables (#270). An ingest keeps a closed question that one of
-them cites, so where the origin had them a replay can lose a question, and a
-curated row citing it then fails its FK (`ReplayFailed`).
+The reviewer-service's notes and references load the same way, with the accounts,
+profiles, public keys (revocations included) and signatures behind them (#270): a
+note loaded before a run keeps the question it cites, as it did in the origin. A
+release's own signature stays in the archive (`_signs_a_release`). An export
+missing one of these tables predates this code and is refused as such.
+NOT REPLAYED: the question bookkeeping and accumulation tables (no writer, #275).
 """
 import contextlib
 import datetime as dt
-import fnmatch
 import json
 import os
 import pathlib
@@ -65,19 +66,30 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from drugref import archive, db, overlay, release_archive, releases
-from drugref.ingest import (allergy_group_run, chebi, drugcentral_run, fda_cyp_run,
-                            gsrs_run, medrt_run, mesh_rel_run, mesh_run,
-                            mesh_synonym_run, moiety_name_run, onchigh_run, pbs_run,
-                            run, spl_run)
+# Re-exported: tests and callers patch `release_replay.ADAPTERS` (the same dict).
+from drugref.replay_adapters import ADAPTERS, split_spl_inputs  # noqa: F401
 
-# Curated tables with a timestamp, in load order for rows written at one instant,
-# and each one's primary key. The reach and snapshot tables have no timestamp: they
-# load with their ruling.
-_TIMED = {"curated_interaction": "curated_interaction_id",
-          "curated_condition": "curated_condition_id",
-          "curated_class_interaction": "curated_class_interaction_id",
-          "curated_property_ruling": "curated_property_ruling_id",
-          "class_expansion_policy": "policy_id"}
+# Exported tables with a timestamp: (primary key, when the row was written). The
+# ORDER is the load order for rows written at one instant (one transaction stamps
+# one `now()`): every table after the ones its foreign keys name. The reach and
+# snapshot tables have no timestamp: they load with their ruling. Not handled: the
+# self-FK `reviewer_account.created_by` -- two accounts created in ONE transaction
+# tie and load by uuid order (the reviewer-service creates one per transaction).
+_TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
+          "reviewer_profile": ("reviewer_profile_id", "recorded_at"),
+          "signing_key": ("signing_key_id", "registered_at"),
+          "reviewer_key_enrolment": ("reviewer_key_enrolment_id", "enrolled_at"),
+          "curated_interaction": ("curated_interaction_id", "reviewed_at"),
+          "curated_condition": ("curated_condition_id", "reviewed_at"),
+          "curated_class_interaction": ("curated_class_interaction_id", "reviewed_at"),
+          "curated_property_ruling": ("curated_property_ruling_id", "reviewed_at"),
+          "class_expansion_policy": ("policy_id", "reviewed_at"),
+          # No FK to its target or its key (db/030), so it may follow any of them.
+          # A RELEASE's signature is not loaded (`_signs_a_release`).
+          "assertion_signature": ("signature_id", "recorded_at"),
+          "reviewer_annotation": ("reviewer_annotation_id", "recorded_at"),
+          "reviewer_evidence_reference": ("reviewer_evidence_reference_id",
+                                          "recorded_at")}
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
@@ -103,7 +115,9 @@ class ReplayFailed(Exception):
 @dataclass
 class ReplayReport:
     """What a finished replay found: `differences` did not reproduce; `warnings`
-    are checks the replay could not make, so either one means not `reproduced`."""
+    are checks the replay could not make, so either one means not `reproduced`.
+    `curated_rows` counts every archived timed row loaded (`_TIMED`): rulings, and
+    the accounts, keys, signatures and notes behind them."""
     runs: int = 0
     curated_rows: int = 0
     rulings_checked: int = 0
@@ -115,71 +129,6 @@ class ReplayReport:
         return not self.differences and not self.warnings
 
 
-# ---- one adapter per orchestrator --------------------------------------------
-# Each takes (conn, files in run-record order, upstream_release) and maps the files
-# to the orchestrator's arguments in the order it passed them to `archived_checksum`.
-
-
-def _unii(conn, f, release):
-    from drugref import cli    # lazy: cli imports cli_audit, which imports us
-    run.ingest_unii(conn, unii_path=f[0], crosswalk_path=cli.CROSSWALK,
-                    allowlist_path=cli.ALLOWLIST, upstream_release=release)
-
-
-def split_spl_inputs(files: list[pathlib.Path]):
-    """(openFDA partitions, DailyMed parts, UNII_Names) from an SPL run's files.
-
-    The record lists them sorted by name, then two packaged lists the orchestrator
-    reads itself (`spl_run.checksummed_inputs`), so the last two are dropped. The
-    partitions are named by the glob the orchestrator uses; UNII_Names is the one
-    text file; the rest are DailyMed zips.
-    """
-    corpora = files[:-2]
-    partitions = [p for p in corpora
-                  if fnmatch.fnmatch(p.name, "drug-label-*.json.zip")]
-    names = [p for p in corpora if p.suffix == ".txt"]
-    parts = [p for p in corpora if p not in partitions and p not in names]
-    return partitions, parts, (names[0] if names else None)
-
-
-def _spl(conn, f, release):
-    partitions, parts, names = split_spl_inputs(f)
-    # Every file is staged in one directory, so it doubles as the openFDA directory:
-    # the orchestrator globs only the partitions out of it.
-    spl_run.ingest_spl(conn, openfda_dir=f[0].parent, dailymed_parts=parts,
-                       release=release, unii_names=names)
-
-
-ADAPTERS = {
-    "unii_run": _unii,
-    "chebi": lambda c, f, r: chebi.enrich_from_chebi(
-        c, chebi_path=f[0], upstream_release=r),
-    "medrt_run": lambda c, f, r: medrt_run.ingest_medrt(
-        c, medrt_path=f[0], upstream_release=r),
-    "mesh_run": lambda c, f, r: mesh_run.ingest_mesh(
-        c, pa_path=f[0], desc_path=f[1], supp_path=f[2], upstream_release=r),
-    "mesh_rel_run": lambda c, f, r: mesh_rel_run.ingest_mesh_relations(
-        c, medrt_path=f[0], desc_path=f[1], supp_path=f[2], upstream_release=r),
-    "pbs_run": lambda c, f, r: pbs_run.ingest_pbs(c, f[0], r),
-    "gsrs_run": lambda c, f, r: gsrs_run.ingest_gsrs(c, dump_path=f[0],
-                                                     upstream_release=r),
-    "onchigh_run": lambda c, f, r: onchigh_run.ingest_onchigh(
-        c, path=f[0], upstream_release=r),
-    "fda_cyp_run": lambda c, f, r: fda_cyp_run.ingest_fda_cyp(
-        c, page_path=f[0], upstream_release=r, allow_shrink=True,
-        allow_resolution_drop=True),
-    "drugcentral_run": lambda c, f, r: drugcentral_run.ingest_drugcentral(
-        c, dump_path=f[0], release=r),
-    "spl_run": _spl,
-    "allergy_group_run": lambda c, f, r: allergy_group_run.ingest_allergy_groups(
-        c, allow_list_path=f[0], desc_path=f[1], supp_path=f[2], upstream_release=r),
-    "moiety_name_run": lambda c, f, r: moiety_name_run.ingest_moiety_names(
-        c, unii_names_path=f[0], upstream_release=r),
-    "mesh_synonym_run": lambda c, f, r: mesh_synonym_run.ingest_mesh_synonyms(
-        c, desc_path=f[0], supp_path=f[1], upstream_release=r),
-}
-
-
 # ---- pure helpers ------------------------------------------------------------
 
 
@@ -187,23 +136,36 @@ def _when(stamp: str) -> dt.datetime:
     return dt.datetime.fromisoformat(stamp)
 
 
+def _signs_a_release(table: str, row: dict) -> bool:
+    """A release's own signature points at a `release_manifest` id, and the replay
+    does not restore manifests (the release record carries it). Loaded, it would
+    dangle -- and attach to whatever manifest a later publish in the target gets
+    under the same id, failing that release's check. It stays in the archive."""
+    return table == "assertion_signature" and row["target_kind"] == "release_manifest"
+
+
 def schedule(rows: list[tuple[str, dict]], runs: list[dict]) -> list[list]:
     """Split (table, row) pairs into len(runs) + 1 batches: batch i loads before
     run i, the last after every run.
 
     A row joins the batch of the first run that FINISHED after the row was written
-    (`reviewed_at`): a run's work is invisible until it commits at `finished_at`,
-    so that is the first run whose effect the curator had not seen. Within a batch:
-    time, then table order (`_TIMED`), then id, so a correction loads after the row
-    it supersedes.
+    (its table's timestamp in `_TIMED`, e.g. `reviewed_at`): a run's work is
+    invisible until it commits at `finished_at`, so that is the first run whose
+    effect the writer had not seen. Within a batch: time, then table order
+    (`_TIMED`), then id, so a correction loads after the row it supersedes.
     """
     ends = [_when(r["finished_at"]) for r in runs]
     rank = {t: i for i, t in enumerate(_TIMED)}
-    ordered = sorted(rows, key=lambda tr: (_when(tr[1]["reviewed_at"]), rank[tr[0]],
-                                           tr[1][_TIMED[tr[0]]]))
+
+    def written(table_row):
+        table, row = table_row
+        return _when(row[_TIMED[table][1]])
+
+    ordered = sorted(rows, key=lambda tr: (written(tr), rank[tr[0]],
+                                           tr[1][_TIMED[tr[0]][0]]))
     batches: list[list] = [[] for _ in range(len(runs) + 1)]
     for table, row in ordered:
-        when = _when(row["reviewed_at"])
+        when = written((table, row))
         i = next((k for k, e in enumerate(ends) if e > when), len(runs))
         batches[i].append((table, row))
     return batches
@@ -345,16 +307,22 @@ class _Loader:
     def __init__(self, conn, export, report):
         self.conn, self.report = conn, report
         self.cols = {t: _columns(conn, t) for t in release_archive._EXPORT_TABLES}
+        # Tables that supersede: their rows MUST carry the pointer (a missing one
+        # is a damaged export, never "live"); insert-only tables have none.
+        self.superseding = {t for t in _TIMED if "superseded_by" in self.cols[t]}
         # Rows a migration seeds (expansion policies) are already in the fresh
         # target: never re-inserted, but a curator's later row may supersede them.
+        # Read through to_jsonb so ids compare as the export spells them (a uuid key
+        # is a string there).
         self.seeded = {t: {r[0] for r in conn.execute(sql.SQL(
-            "SELECT {pk} FROM drugref.{t}").format(
-            pk=sql.Identifier(pk), t=sql.Identifier(t)))} for t, pk in _TIMED.items()}
+            "SELECT to_jsonb({pk}) FROM drugref.{t}").format(
+            pk=sql.Identifier(pk), t=sql.Identifier(t)))}
+            for t, (pk, _) in _TIMED.items()}
         self.loaded = {t: set(ids) for t, ids in self.seeded.items()}
-        # superseder id -> ids it superseded, per table
+        # superseder id -> ids it superseded, per table that supersedes at all
         self.points: dict[str, dict[int, list[int]]] = {t: {} for t in _TIMED}
-        for t, pk in _TIMED.items():
-            for row in export[t]:
+        for t, (pk, _) in _TIMED.items():
+            for row in export[t] if t in self.superseding else []:
                 if row["superseded_by"] is not None:
                     self.points[t].setdefault(row["superseded_by"], []).append(row[pk])
         self.reach: dict[int, list[dict]] = {}
@@ -371,14 +339,16 @@ class _Loader:
                     ).format(t=sql.Identifier(table), c=cols), (Jsonb(row),))
 
     def load(self, table, row) -> None:
-        pk = _TIMED[table]
-        rid, sup = row[pk], row["superseded_by"]
+        pk = _TIMED[table][0]
+        rid = row[pk]
+        sup = row["superseded_by"] if table in self.superseding else None
         if rid in self.seeded[table]:
             return
         # Point at the superseder only if it is already in; otherwise it points
         # back at this row when it loads.
-        self._insert(table, dict(row, superseded_by=sup if sup in self.loaded[table]
-                                 else None))
+        if sup is not None and sup not in self.loaded[table]:
+            row = dict(row, superseded_by=None)
+        self._insert(table, row)
         self.loaded[table].add(rid)
         earlier = [o for o in self.points[table].get(rid, [])
                    if o in self.loaded[table]]
@@ -410,8 +380,12 @@ class _Loader:
             self._insert(_SNAPSHOT, marker)
 
     def reset_sequences(self) -> None:
-        """Move each identity past the loaded ids, so a later write cannot collide."""
-        for table, pk in _TIMED.items():
+        """Move each identity past the loaded ids, so a later write cannot collide.
+        A uuid key (reviewer_account) has no sequence and is skipped."""
+        for table, (pk, _) in _TIMED.items():
+            if self.conn.execute("SELECT pg_get_serial_sequence(%s, %s)",
+                                 (f"drugref.{table}", pk)).fetchone()[0] is None:
+                continue
             self.conn.execute(sql.SQL(
                 "SELECT setval(pg_get_serial_sequence({q}, {p}), max({pk})) "
                 "FROM drugref.{t} HAVING max({pk}) IS NOT NULL").format(
@@ -433,8 +407,14 @@ def replay(conn: psycopg.Connection, root: pathlib.Path, tag: str, *,
     refusals = _refusals(conn, root, record, allow_code_mismatch=allow_code_mismatch,
                          warnings=report.warnings)
     runs = record["runs"]
+    older = sorted(set(release_archive._EXPORT_TABLES) - set(export))
+    if older:     # an export from before these tables were archived, not damage
+        refusals.append(f"the curated export predates {', '.join(older)} joining "
+                        f"it: replay it from `git worktree add <dir> "
+                        f"{record['git_commit']}`")
     try:     # before writing: a bad timestamp is a damaged archive, not a failure
-        batches = schedule([(t, r) for t in _TIMED for r in export[t]], runs)
+        batches = schedule([(t, r) for t in _TIMED for r in export.get(t, [])
+                            if not _signs_a_release(t, r)], runs)
     except (KeyError, ValueError) as exc:
         refusals.append(f"a run or curated row has a missing or malformed "
                         f"timestamp: {exc}")

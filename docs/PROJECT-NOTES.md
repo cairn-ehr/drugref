@@ -6764,19 +6764,17 @@ record without `manifest` replays with a warning, so it exits 1 "NOT verified", 
 - **Orchestrators commit**, so a replay that fails part-way leaves a half-built target (exit 3); replaying into it
   again is refused (not empty). Drop and recreate it. The `except ValueError` is around `check_release_tag` ONLY:
   orchestrators raise `ValueError` for their own refusals after migrations and earlier runs are committed.
-- **The export does not cover every curated table: #270.** `reviewer_annotation` and `reviewer_evidence_reference`
-  ARE written today (the reviewer-service), and an ingest keeps a closed question either one cites; a replay
-  without them can drop that question, and a curated row citing it then fails its FK (exit 3). `question_state` /
-  `question_source_check` / `question_evidence` and the accumulation tables have no writer yet. **Guarded since
-  2026-11-20:** `release_archive.NOT_EXPORTED` lists every table no rebuild touches that the export leaves out,
-  with why (the #270 gaps; credentials and sessions, never exported; vocabularies the migrations seed; publish's
-  and the replay's own bookkeeping). `test_release_export_coverage.py` finds such tables two ways — a write-once
-  trigger named `*_append_only` / `*_insert_only` / `*_immortal`, or no foreign key to `ingest_run` (every source
-  projection has one; trigger-less `question_source_check` is found this way) — and fails on one in neither place,
-  so the next one forces a decision. `forbid_*` triggers are not matched: they guard ingest-written tables. #270
-  stays open for the gaps themselves. **Owner ruling (2026-11-21):** the export carries the reviewer annotations
-  and evidence references, **and the public signing keys and signatures** (never private key material, credentials
-  or sessions), so a replay shows who vouched for what. Key-revocation history then has to travel with the keys.
+- **The export covers the reviewer side since 2026-11-22 (#270, § "Who vouched for what").** Accounts, profiles,
+  key enrolments, annotations, evidence references, public signing keys (superseded rows included) and every
+  signature load interleaved like the curated rows. **Still not exported: #275**, the question bookkeeping and
+  accumulation tables (no writer yet; all but `question_source_check` name an `ingest_run` id the replay
+  renumbers). **Guarded since 2026-11-20:** `release_archive.NOT_EXPORTED` lists every table no rebuild touches
+  that the export leaves out, with why (the #275 gaps; credentials and sessions, never exported; vocabularies the
+  migrations seed; publish's and the replay's own bookkeeping). `test_release_export_coverage.py` finds such tables
+  two ways — a write-once trigger named `*_append_only` / `*_insert_only` / `*_immortal`, or no foreign key to
+  `ingest_run` (every source projection has one; trigger-less `question_source_check` is found this way) — and
+  fails on one in neither place, so the next one forces a decision. `forbid_*` triggers are not matched: they guard
+  ingest-written tables. **It does not fire for the #275 tables' first writer**: they are already in the ledger.
 - A replayed database has no `release_manifest` / `release_build`, so `drugref status` reads "none published".
 
 **Tests (+35):** 34 in `test_release_replay.py` (pure helpers, the SPL split pinned to `spl_run.checksummed_inputs`;
@@ -6811,6 +6809,47 @@ prints `question registry: in step with the gap views` or `N stale, M unregister
 - Not reproduced on #104's own `drugref_db034`: that database predates five of the gap views, so the block refuses
   there (as above). The tests drive the window instead (`test_question_registry_drift.py`, +7, plus one line in
   `test_cli.py`'s empty-database stub).
+
+## Who vouched for what (#270, 2026-11-22) — no migration, suite 3624 → 3630
+
+The owner ruled (2026-11-21) that the curated export, and so the replay, carries the reviewer side, so a replay
+shows who vouched for what. `release_archive._EXPORT_TABLES` gained `reviewer_account`, `reviewer_profile`,
+`reviewer_key_enrolment`, `reviewer_annotation`, `reviewer_evidence_reference`, `signing_key` and
+`assertion_signature`. **Never exported:** `reviewer_password_credential`, `auth_session`,
+`auth_session_revocation` (a test pins it). No private key is ever in the database to export.
+
+- **`release_replay._TIMED` maps each table to (primary key, timestamp column)**: `created_at`, `recorded_at`,
+  `registered_at`, `enrolled_at`, `reviewed_at`. Its ORDER is the load order for rows written at one instant (one
+  transaction stamps one `now()`): accounts, profiles, keys, enrolments, curated rows, signatures, notes. Every
+  table comes after the ones its foreign keys name.
+- **Key-revocation history travels as superseded `signing_key` rows** (`keys.revoke` inserts and supersedes), so
+  the loader's supersession pointers rebuild it. `curated_signature_status` in the replay equals the origin's.
+- **The release's own signature is exported but NOT loaded** (`release_replay._signs_a_release`): publish writes
+  it before the export, so the archive holds it. It points at a `manifest_id`, and the replay does not restore
+  `release_manifest`. Loading it was not inert (PR #276 review): the target's manifest identity starts at 1, so the
+  next publish in a replayed database reused the id and `verify --release` read the ORIGIN's signature over it
+  (`unknown_key`/bad digest on a genuine release). The reviewers test now publishes in the target and verifies it.
+- **Loader:** a table supersedes iff it has a `superseded_by` column (`_Loader.superseding`); on such a table a row
+  missing the key is a `KeyError` (damaged export), never "live". Seeded ids are read through `to_jsonb` so a uuid
+  key compares as the export spells it; `reset_sequences` skips a key with no sequence (`reviewer_account`).
+  `ReplayReport.curated_rows` counts every `_TIMED` row loaded, not only rulings.
+- **An export older than the code** (a table of `_EXPORT_TABLES` missing, e.g. a pre-#270 archive) is refused as
+  "predates <tables>", naming the release's commit to replay from -- it used to read as a malformed timestamp.
+- **`release_replay.py` was split** at 498 lines: the per-orchestrator adapters (`ADAPTERS`, `split_spl_inputs`)
+  moved verbatim to `replay_adapters.py`; `release_replay` re-exports both (tests patch the same dict).
+- **Not handled:** two accounts created in ONE transaction, where one created the other, tie on `created_at` and
+  load by uuid order, so the child can come first (FK failure, exit 3). The reviewer-service creates one account
+  per request, so this does not happen today. Filed with the review's pre-existing loader gaps (a seeded row
+  skipped uncompared, `overlay.point_rows` unchecked count) and test gaps as
+  **[#277](https://github.com/cairn-ehr/drugref/issues/277)**.
+- **Profiles carry names, qualifications and bios into the archive.** Fine while archives are node-local; decide
+  before they are shared (the same point as #263).
+- The stand-in writer in `test_release_replay.py` now calls `questions.register_from_gaps`, as every real
+  orchestrator does. `test_release_replay_reviewers.py` (+4) reproduces #270: a note on the class-pair question
+  between runs 1 and 2 keeps the question that run 2 closes (asserted: retained, `is_current` false).
+  Mutation-checked: loading the notes after every run fails the replay on the note's question FK. It also plants a
+  password hash and a session and asserts neither appears in the export's bytes. `test_release_replay.py` +1: an
+  export missing a table is refused as older.
 
 ## The standing open-issue ledger
 
@@ -6989,6 +7028,10 @@ replay"). +2 tests, 3611 → 3613; its final review added the no-`ingest_run`-FK
 **Registry drift (2026-11-21)** — **[#104](https://github.com/cairn-ehr/drugref/issues/104) FIXED** (close on
 merge) by option 3: `drugref status`'s eighth block (§ "The registry-drift block"). Owner ruled on **#270**
 (public keys and signatures travel too; § "The release replay"). +10 tests, 3614 → 3624 (3 from review).
+**Who vouched for what (2026-11-22)** — **#270 FIXED** (close on merge): the export and the replay carry the
+reviewer side (§ "Who vouched for what"). Filed **[#275](https://github.com/cairn-ehr/drugref/issues/275)** (the
+question bookkeeping and accumulation tables, once they have a writer). +6 tests, 3624 → 3630 (2 from review: one
+new test, and one per-module test picking up `replay_adapters.py`).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7174,7 +7217,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3624 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3630 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7559,7 +7602,8 @@ ran in CI and `ruff` was not even a project dependency.
   `audit_ruling`), `archive.py` (the `DRUGREF_ARCHIVE` content-addressed store and its verifier),
   `release_archive.py` (`publish_archived`: build row, release record, curated export), `release_state.py` (the
   `current_release` read and the release header line), `cli_audit.py` (`drugref audit class-ruling|archive|replay`)
-  and `release_replay.py` (`replay`, `ADAPTERS`, `schedule`: rebuild a release into an empty database)
+  and `release_replay.py` (`replay`, `schedule`: rebuild a release into an empty database; its per-orchestrator
+  `ADAPTERS` live in `replay_adapters.py`)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so

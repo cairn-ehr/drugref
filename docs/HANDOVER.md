@@ -13,19 +13,19 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/registry-drift-104`: #104 FIXED; a PR to `main` carries it. No migration; schema still ends at
-`db/082`.** #272 closed (PR #273). Next agent round: **#270**, now ruled (below). The suite total lives in PROJECT-NOTES
-§ "How to run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
+**On branch `claude/export-reviewer-270`: #270 FIXED; a PR to `main` carries it. No migration; schema still ends at
+`db/082`.** #104 closed (PR #274). The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**;
+`uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** `drugref status` has an eighth block: `question registry: in step with the gap views`, or `N stale,
-M unregistered` per kind (a `curate` run answers questions that only an ingest re-derives). It compares key sets
-with a fresh read of every gap view, about 5 s on a full registry. Guarded on `db/075`: **a migration adding or
-redefining a gap view bumps that guard in the same commit.** PROJECT-NOTES § "The registry-drift block".
+**⇒ THIS ROUND:** the curated export and `drugref audit replay` carry who vouched for what: reviewer accounts,
+profiles, enrolments, notes, evidence references, PUBLIC signing keys (revocation history included) and every
+signature (a release's own stays in the archive, not loaded). Never credentials or sessions. `release_replay._TIMED`
+maps each table to (pk, timestamp column), in FK-safe load order. PROJECT-NOTES § "Who vouched for what".
 
-**⇒ #270, OWNER RULED 2026-11-21, ready for an agent round:** the curated export (and replay) carries
-`reviewer_annotation`, `reviewer_evidence_reference`, **and the public signing keys and signatures** (never private
-keys, credentials or sessions), so a replay shows who vouched for what. Open: key-revocation history must travel
-with the keys; `release_archive.NOT_EXPORTED` and `test_release_export_coverage.py` then shrink.
+**⇒ OWNER, from this round:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
+archives are node-local; decide before they are shared (with #263). **#275** (filed): the question bookkeeping and
+accumulation tables are still not exported. No writer outside their own modules yet; they name `ingest_run` ids
+the replay renumbers, and the coverage guard will NOT fire for their first writer. Decide with that writer.
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
@@ -83,13 +83,13 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 7. **#155** (PK-axis classes): this round answers it by exclusion (the MED-RT PK and APC axes are never matched).
    Owner to close it or say what remains.
 8. Still open on their own triggers: #164, #169 (SPL); `5c.5` pregnancy/lactation is gated on a clinician review
-   that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input). **#270**
-   is ruled (above) and is the obvious next agent round.
+   that has not happened. From #258: **#265** (drift scope: needs a node-local source list, owner input); **#275**
+   waits for a writer.
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#104 FIXED by
-this branch (close on merge); #270 ruled, open;** #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#270 FIXED by
+this branch (close on merge); #275 filed;** #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
 #260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and

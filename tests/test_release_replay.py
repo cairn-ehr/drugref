@@ -21,7 +21,7 @@ import pytest
 from psycopg import sql
 
 from drugref import (archive, cli, curation, db, ids, interactions, provenance,
-                     release_archive, release_replay, signing)
+                     questions, release_archive, release_replay, signing)
 from drugref.ingest.checksum import archived_checksum
 from tests.conftest import _drop_database, session_dsn
 
@@ -146,7 +146,8 @@ def _fake_ingest(conn, files, release):
     """A stand-in orchestrator: each line `class_code moiety_code` files a member.
 
     Delete-and-rebuild like the real ones, so a moiety missing from the next
-    file leaves its class. Archives its input exactly as a real one does.
+    file leaves its class. Archives its input and re-derives the questions
+    exactly as a real one does.
     """
     path = files[0]
     run = provenance.open_run(conn, source="ONCHIGH", upstream_release=release,
@@ -175,6 +176,7 @@ def _fake_ingest(conn, files, release):
         interactions.add_class_pair_contraindication(
             conn, ids.mint_class_uuid("MED-RT", A), ids.mint_class_uuid("MED-RT", B),
             "CI_MoA", "ONCHIGH", run)
+    questions.register_from_gaps(conn, run)     # as every real orchestrator does
     provenance.finish_run(conn, run)
     conn.commit()
 
@@ -226,6 +228,7 @@ def test_a_replay_reproduces_the_release(published):
     before = {p: p.read_bytes() for p in published["root"].rglob("*") if p.is_file()}
     report = _replay(published)
     assert report.differences == [] and report.warnings == [] and report.reproduced
+    # Two rulings; the release's own signature stays in the archive (#270).
     assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 2, 2)
     # Replayed runs read the archive; they never write into it.
     assert {p: p.read_bytes() for p in published["root"].rglob("*")
@@ -319,6 +322,18 @@ def test_a_malformed_timestamp_is_refused_before_anything_is_written(published):
     _assert_nothing_written(published)
 
 
+def test_an_export_older_than_this_code_is_refused_as_older(published):
+    """An export written before a table joined the export (here #270's) is not a
+    damaged timestamp: the refusal names the missing table and the way out."""
+    _edit(archive.curated_export_path(published["root"], TAG),
+          lambda b: b.pop("reviewer_account"))
+    with pytest.raises(release_replay.ReplayRefused, match="predates") as refused:
+        _replay(published)
+    assert "reviewer_account" in str(refused.value)
+    assert "timestamp" not in str(refused.value)
+    _assert_nothing_written(published)
+
+
 def test_a_run_that_rebuilds_from_other_bytes_is_a_difference(published, monkeypatch,
                                                               tmp_path):
     def tampered(conn, files, release):
@@ -368,6 +383,7 @@ def test_a_curator_policy_superseding_a_seeded_one_replays(databases, tmp_path,
     assert sum(sup is not None for _, sup in want) == 1     # the seeded row, superseded
     with psycopg.connect(target) as c:
         report = release_replay.replay(c, root, TAG)
+        # The policy (the release's signature is not loaded).
         assert report.differences == [] and report.curated_rows == 1
         assert c.execute(query).fetchall() == want
 
