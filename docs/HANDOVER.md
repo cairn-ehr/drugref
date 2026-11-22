@@ -17,9 +17,10 @@
 `db/082`.** #270 closed (PR #276). The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**;
 `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** a seeded row (db/010's policies) is compared with its exported copy (a mismatch is a difference);
-`overlay.point_rows` raises unless it repointed every id; three reviewer-replay test gaps closed. PROJECT-NOTES §
-"Replay loader checks". **Not handled** (documented): two accounts made in one transaction can load child-first.
+**⇒ THIS ROUND:** a seeded row (db/010's policies) is compared with its exported copy, and one the export lacks, or
+a superseder it names but lacks, is a difference too; `overlay.point_rows` raises unless it repointed every id; three
+reviewer-replay test gaps closed. PROJECT-NOTES § "Replay loader checks". **Not handled** (documented): two
+accounts made in one transaction can load child-first.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and

@@ -407,9 +407,38 @@ def test_a_seeded_row_the_export_spells_differently_is_a_difference(published):
         "one a migration seeded"]
 
 
+def test_a_seeded_row_the_export_lacks_is_a_difference(published):
+    """Every seeded row must be compared: one the export omits never is (#278)."""
+    export = archive.curated_export_path(published["root"], TAG)
+    seeded = {}
+    _edit(export, lambda b: seeded.update(
+        id=b["class_expansion_policy"].pop(0)["policy_id"]))
+    assert _replay(published).differences == [
+        f"class_expansion_policy {seeded['id']}: a migration seeded it, but the "
+        "export lacks it"]
+
+
+def test_a_superseder_the_export_lacks_is_a_difference(published):
+    """A row pointing at a superseder the export does not carry loads live, though
+    the origin had it superseded: nothing would repoint it, so report it (#278).
+    A seeded row is the quietest case: its pointer is not compared at all."""
+    export = archive.curated_export_path(published["root"], TAG)
+    seeded = {}
+
+    def dangle(body):
+        row = body["class_expansion_policy"][0]
+        row["superseded_by"] = 999_999
+        seeded["id"] = row["policy_id"]
+    _edit(export, dangle)
+    assert _replay(published).differences == [
+        f"class_expansion_policy [{seeded['id']}]: superseded by 999999, which the "
+        "export lacks"]
+
+
 def test_point_rows_refuses_to_repoint_fewer_rows_than_asked(conn):
-    """A pointer that changes no row (the id is missing or already superseded)
-    would leave the replayed history silently unlike the export's (#277)."""
+    """A pointer that changes no row (here the id is missing; an already-superseded
+    row matches no row either) would leave the replayed history silently unlike
+    the export's (#277)."""
     live = conn.execute("SELECT min(policy_id) FROM drugref.class_expansion_policy"
                         ).fetchone()[0]
     with pytest.raises(ValueError, match="repointed 0 of 1"):

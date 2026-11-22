@@ -198,7 +198,8 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
     with psycopg.connect(target) as c:
         report = release_replay.replay(c, root, TAG)
         assert report.differences == [] and report.reproduced
-        # Run 2 closed the gap; the annotation loaded before it kept the question.
+        # Run 2 closed the gap; the evidence reference loaded before it kept the
+        # question.
         assert {t: _rows(c, t) for t in want} == want
         assert c.execute(_STATUS).fetchall() == want_status
         # Every identity moved past the loaded ids: new rows in the replayed target

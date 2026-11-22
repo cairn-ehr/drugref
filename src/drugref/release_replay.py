@@ -34,7 +34,8 @@ WHAT IT DOES, in order (`replay`):
      test of "the replay rebuilt what the curator saw";
    - the live curated digests against the release's manifest entries;
    - each row a migration already seeded (the expansion policies) against its
-     exported copy, which is never re-inserted (#277).
+     exported copy, which is never re-inserted (#277); a seeded row the export
+     lacks, or a superseder it names but lacks, is a difference too (#278).
 
 A replay with no differences is a verified reproduction (`ReplayReport.reproduced`)
 only when it also has no warnings: other code, or a record from before the
@@ -322,6 +323,7 @@ class _Loader:
             pk=sql.Identifier(pk), t=sql.Identifier(t)))}
             for t, (pk, _) in _TIMED.items()}
         self.loaded = {t: set(ids) for t, ids in self.seeded.items()}
+        self.compared: dict[str, set] = {t: set() for t in _TIMED}   # seeded, seen
         # superseder id -> ids it superseded, per table that supersedes at all
         self.points: dict[str, dict[int, list[int]]] = {t: {} for t in _TIMED}
         for t, (pk, _) in _TIMED.items():
@@ -346,6 +348,7 @@ class _Loader:
         rid = row[pk]
         sup = row["superseded_by"] if table in self.superseding else None
         if rid in self.seeded[table]:
+            self.compared[table].add(rid)
             self._compare_seeded(table, row)
             return
         # Point at the superseder only if it is already in; otherwise it points
@@ -405,6 +408,19 @@ class _Loader:
         if marker is not None:
             self._insert(_SNAPSHOT, marker)
 
+    def unmatched(self) -> None:
+        """After the last row: report what the export names but never supplied
+        (#278). A row pointing at a superseder the export lacks loaded live, though
+        the origin has it superseded; a seeded row absent from it was never compared."""
+        for t in _TIMED:
+            for sup in sorted(self.points[t].keys() - self.loaded[t]):
+                self.report.differences.append(
+                    f"{t} {self.points[t][sup]}: superseded by {sup}, which the "
+                    "export lacks")
+            for rid in sorted(self.seeded[t] - self.compared[t]):
+                self.report.differences.append(
+                    f"{t} {rid}: a migration seeded it, but the export lacks it")
+
     def reset_sequences(self) -> None:
         """Move each identity past the loaded ids, so a later write cannot collide.
         A uuid key (reviewer_account) has no sequence and is skipped."""
@@ -461,6 +477,7 @@ def replay(conn: psycopg.Connection, root: pathlib.Path, tag: str, *,
                     step = (f"replaying run {runs[i]['ingest_run_id']} "
                             f"({runs[i]['writer']})")
                     _replay_run(conn, root, runs[i], report)
+        loader.unmatched()
         step = "resetting sequences"
         loader.reset_sequences()
         conn.commit()
