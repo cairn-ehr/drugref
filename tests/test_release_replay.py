@@ -21,7 +21,7 @@ import pytest
 from psycopg import sql
 
 from drugref import (archive, cli, curation, db, ids, interactions, provenance,
-                     release_archive, release_replay, signing)
+                     questions, release_archive, release_replay, signing)
 from drugref.ingest.checksum import archived_checksum
 from tests.conftest import _drop_database, session_dsn
 
@@ -146,7 +146,8 @@ def _fake_ingest(conn, files, release):
     """A stand-in orchestrator: each line `class_code moiety_code` files a member.
 
     Delete-and-rebuild like the real ones, so a moiety missing from the next
-    file leaves its class. Archives its input exactly as a real one does.
+    file leaves its class. Archives its input and re-derives the questions
+    exactly as a real one does.
     """
     path = files[0]
     run = provenance.open_run(conn, source="ONCHIGH", upstream_release=release,
@@ -175,6 +176,7 @@ def _fake_ingest(conn, files, release):
         interactions.add_class_pair_contraindication(
             conn, ids.mint_class_uuid("MED-RT", A), ids.mint_class_uuid("MED-RT", B),
             "CI_MoA", "ONCHIGH", run)
+    questions.register_from_gaps(conn, run)     # as every real orchestrator does
     provenance.finish_run(conn, run)
     conn.commit()
 
@@ -226,7 +228,8 @@ def test_a_replay_reproduces_the_release(published):
     before = {p: p.read_bytes() for p in published["root"].rglob("*") if p.is_file()}
     report = _replay(published)
     assert report.differences == [] and report.warnings == [] and report.reproduced
-    assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 2, 2)
+    # Two rulings and the release's own signature (#270: signatures travel).
+    assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 3, 2)
     # Replayed runs read the archive; they never write into it.
     assert {p: p.read_bytes() for p in published["root"].rglob("*")
             if p.is_file()} == before
@@ -368,7 +371,8 @@ def test_a_curator_policy_superseding_a_seeded_one_replays(databases, tmp_path,
     assert sum(sup is not None for _, sup in want) == 1     # the seeded row, superseded
     with psycopg.connect(target) as c:
         report = release_replay.replay(c, root, TAG)
-        assert report.differences == [] and report.curated_rows == 1
+        # The policy and the release's signature.
+        assert report.differences == [] and report.curated_rows == 2
         assert c.execute(query).fetchall() == want
 
 

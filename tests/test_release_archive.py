@@ -63,8 +63,15 @@ def test_publish_writes_record_export_and_build_row(conn, key, tmp_path, a_grade
         (root / "releases" / f"{TAG}.curated.json").read_text(encoding="utf-8"))
     assert set(export) == {*releases._CURATED_KINDS, "class_expansion_policy",
                            "curated_class_interaction_reach",
-                           "curated_class_interaction_snapshot"}
+                           "curated_class_interaction_snapshot",
+                           "reviewer_account", "reviewer_profile",
+                           "reviewer_key_enrolment", "reviewer_annotation",
+                           "reviewer_evidence_reference", "signing_key",
+                           "assertion_signature"}
     assert any(r["reviewed_by"] == "é curator" for r in export["curated_interaction"])
+    # The release's own signature is written before the export, so it travels (#270).
+    assert [s["target_kind"] for s in export["assertion_signature"]] == [
+        "release_manifest"]
     build = conn.execute("SELECT git_commit, ledger_head, run_ids FROM "
                          "drugref.release_build WHERE release_tag = %s", (TAG,)).fetchone()
     assert build[1] == record["ledger_head"]

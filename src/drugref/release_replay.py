@@ -46,10 +46,10 @@ Orchestrators commit, so a replay that fails part-way leaves a half-built target
 (`ReplayFailed`); it is a scratch database, and a second replay into it is
 refused (not empty).
 
-NOT REPLAYED: the reviewer-service's annotations and evidence references, and the
-question bookkeeping tables (#270). An ingest keeps a closed question that one of
-them cites, so where the origin had them a replay can lose a question, and a
-curated row citing it then fails its FK (`ReplayFailed`).
+The reviewer-service's notes and references load the same way, with the accounts,
+profiles, public keys (revocations included) and signatures behind them (#270): a
+note loaded before a run keeps the question it cites, as it did in the origin.
+NOT REPLAYED: the question bookkeeping and accumulation tables (no writer, #275).
 """
 import contextlib
 import datetime as dt
@@ -70,14 +70,24 @@ from drugref.ingest import (allergy_group_run, chebi, drugcentral_run, fda_cyp_r
                             mesh_synonym_run, moiety_name_run, onchigh_run, pbs_run,
                             run, spl_run)
 
-# Curated tables with a timestamp, in load order for rows written at one instant,
-# and each one's primary key. The reach and snapshot tables have no timestamp: they
-# load with their ruling.
-_TIMED = {"curated_interaction": "curated_interaction_id",
-          "curated_condition": "curated_condition_id",
-          "curated_class_interaction": "curated_class_interaction_id",
-          "curated_property_ruling": "curated_property_ruling_id",
-          "class_expansion_policy": "policy_id"}
+# Exported tables with a timestamp: (primary key, when the row was written). The
+# ORDER is the load order for rows written at one instant (one transaction stamps
+# one `now()`): every table after the ones its foreign keys name. The reach and
+# snapshot tables have no timestamp: they load with their ruling.
+_TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
+          "reviewer_profile": ("reviewer_profile_id", "recorded_at"),
+          "signing_key": ("signing_key_id", "registered_at"),
+          "reviewer_key_enrolment": ("reviewer_key_enrolment_id", "enrolled_at"),
+          "curated_interaction": ("curated_interaction_id", "reviewed_at"),
+          "curated_condition": ("curated_condition_id", "reviewed_at"),
+          "curated_class_interaction": ("curated_class_interaction_id", "reviewed_at"),
+          "curated_property_ruling": ("curated_property_ruling_id", "reviewed_at"),
+          "class_expansion_policy": ("policy_id", "reviewed_at"),
+          # No FK to its target (a pointer, db/030), so it may follow any of them.
+          "assertion_signature": ("signature_id", "recorded_at"),
+          "reviewer_annotation": ("reviewer_annotation_id", "recorded_at"),
+          "reviewer_evidence_reference": ("reviewer_evidence_reference_id",
+                                          "recorded_at")}
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
@@ -192,18 +202,23 @@ def schedule(rows: list[tuple[str, dict]], runs: list[dict]) -> list[list]:
     run i, the last after every run.
 
     A row joins the batch of the first run that FINISHED after the row was written
-    (`reviewed_at`): a run's work is invisible until it commits at `finished_at`,
-    so that is the first run whose effect the curator had not seen. Within a batch:
-    time, then table order (`_TIMED`), then id, so a correction loads after the row
-    it supersedes.
+    (its table's timestamp in `_TIMED`, e.g. `reviewed_at`): a run's work is
+    invisible until it commits at `finished_at`, so that is the first run whose
+    effect the writer had not seen. Within a batch: time, then table order
+    (`_TIMED`), then id, so a correction loads after the row it supersedes.
     """
     ends = [_when(r["finished_at"]) for r in runs]
     rank = {t: i for i, t in enumerate(_TIMED)}
-    ordered = sorted(rows, key=lambda tr: (_when(tr[1]["reviewed_at"]), rank[tr[0]],
-                                           tr[1][_TIMED[tr[0]]]))
+
+    def written(table_row):
+        table, row = table_row
+        return _when(row[_TIMED[table][1]])
+
+    ordered = sorted(rows, key=lambda tr: (written(tr), rank[tr[0]],
+                                           tr[1][_TIMED[tr[0]][0]]))
     batches: list[list] = [[] for _ in range(len(runs) + 1)]
     for table, row in ordered:
-        when = _when(row["reviewed_at"])
+        when = written((table, row))
         i = next((k for k, e in enumerate(ends) if e > when), len(runs))
         batches[i].append((table, row))
     return batches
@@ -347,15 +362,18 @@ class _Loader:
         self.cols = {t: _columns(conn, t) for t in release_archive._EXPORT_TABLES}
         # Rows a migration seeds (expansion policies) are already in the fresh
         # target: never re-inserted, but a curator's later row may supersede them.
+        # Read through to_jsonb so ids compare as the export spells them (a uuid key
+        # is a string there).
         self.seeded = {t: {r[0] for r in conn.execute(sql.SQL(
-            "SELECT {pk} FROM drugref.{t}").format(
-            pk=sql.Identifier(pk), t=sql.Identifier(t)))} for t, pk in _TIMED.items()}
+            "SELECT to_jsonb({pk}) FROM drugref.{t}").format(
+            pk=sql.Identifier(pk), t=sql.Identifier(t)))}
+            for t, (pk, _) in _TIMED.items()}
         self.loaded = {t: set(ids) for t, ids in self.seeded.items()}
-        # superseder id -> ids it superseded, per table
+        # superseder id -> ids it superseded, per table that supersedes at all
         self.points: dict[str, dict[int, list[int]]] = {t: {} for t in _TIMED}
-        for t, pk in _TIMED.items():
+        for t, (pk, _) in _TIMED.items():
             for row in export[t]:
-                if row["superseded_by"] is not None:
+                if row.get("superseded_by") is not None:
                     self.points[t].setdefault(row["superseded_by"], []).append(row[pk])
         self.reach: dict[int, list[dict]] = {}
         for row in export[_REACH]:
@@ -371,14 +389,15 @@ class _Loader:
                     ).format(t=sql.Identifier(table), c=cols), (Jsonb(row),))
 
     def load(self, table, row) -> None:
-        pk = _TIMED[table]
-        rid, sup = row[pk], row["superseded_by"]
+        pk = _TIMED[table][0]
+        rid, sup = row[pk], row.get("superseded_by")
         if rid in self.seeded[table]:
             return
         # Point at the superseder only if it is already in; otherwise it points
-        # back at this row when it loads.
-        self._insert(table, dict(row, superseded_by=sup if sup in self.loaded[table]
-                                 else None))
+        # back at this row when it loads. (Insert-only tables have no pointer.)
+        if sup is not None and sup not in self.loaded[table]:
+            row = dict(row, superseded_by=None)
+        self._insert(table, row)
         self.loaded[table].add(rid)
         earlier = [o for o in self.points[table].get(rid, [])
                    if o in self.loaded[table]]
@@ -410,8 +429,12 @@ class _Loader:
             self._insert(_SNAPSHOT, marker)
 
     def reset_sequences(self) -> None:
-        """Move each identity past the loaded ids, so a later write cannot collide."""
-        for table, pk in _TIMED.items():
+        """Move each identity past the loaded ids, so a later write cannot collide.
+        A uuid key (reviewer_account) has no sequence and is skipped."""
+        for table, (pk, _) in _TIMED.items():
+            if self.conn.execute("SELECT pg_get_serial_sequence(%s, %s)",
+                                 (f"drugref.{table}", pk)).fetchone()[0] is None:
+                continue
             self.conn.execute(sql.SQL(
                 "SELECT setval(pg_get_serial_sequence({q}, {p}), max({pk})) "
                 "FROM drugref.{t} HAVING max({pk}) IS NOT NULL").format(
