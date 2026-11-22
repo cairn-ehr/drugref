@@ -6841,7 +6841,8 @@ shows who vouched for what. `release_archive._EXPORT_TABLES` gained `reviewer_ac
   load by uuid order, so the child can come first (FK failure, exit 3). The reviewer-service creates one account
   per request, so this does not happen today. Filed with the review's pre-existing loader gaps (a seeded row
   skipped uncompared, `overlay.point_rows` unchecked count) and test gaps as
-  **[#277](https://github.com/cairn-ehr/drugref/issues/277)**.
+  **[#277](https://github.com/cairn-ehr/drugref/issues/277)**; the loader and test gaps are fixed (§ "Replay
+  loader checks"), the tie is still not handled.
 - **Profiles carry names, qualifications and bios into the archive.** Fine while archives are node-local; decide
   before they are shared (the same point as #263).
 - The stand-in writer in `test_release_replay.py` now calls `questions.register_from_gaps`, as every real
@@ -6850,6 +6851,32 @@ shows who vouched for what. `release_archive._EXPORT_TABLES` gained `reviewer_ac
   Mutation-checked: loading the notes after every run fails the replay on the note's question FK. It also plants a
   password hash and a session and asserts neither appears in the export's bytes. `test_release_replay.py` +1: an
   export missing a table is refused as older.
+
+## Replay loader checks (#277, 2026-11-22) — no migration, suite 3630 → 3634
+
+The PR #276 review's pre-existing loader gaps, fixed. Neither changes a replay of a sound archive.
+
+- **A seeded row is compared, not skipped blind** (`_Loader._compare_seeded`). A row whose id a migration already
+  seeded (today only db/010's expansion policies) is still never re-inserted, but its exported copy is compared
+  with the seeded one as typed values in SQL (`ROW(...) IS DISTINCT FROM ROW(...)` over `jsonb_populate_record`,
+  so a time zone or JSON spelling never reads as a difference). A mismatch is a DIFFERENCE: `<table> <id>: the
+  exported row differs from the one a migration seeded`. **Left out of the comparison:** the `_TIMED` timestamp
+  (the migration stamps `now()` when it runs, so origin and target always differ) and `superseded_by`
+  (repointed when the superseder loads). Seeded rows are still not counted in `curated_rows`.
+- **`overlay.point_rows` raises `ValueError` unless every id was repointed** (`repointed N of M rows at <id>`).
+  Its one caller is the loader, where it surfaces as `ReplayFailed` (exit 3).
+- **What the export names but never supplies is a difference** (`_Loader.unmatched`, after the last batch; PR
+  #278 review). A row whose `superseded_by` names an id the export lacks loads LIVE, though the origin has it
+  superseded: nothing would ever repoint it (`<table> [<ids>]: superseded by <id>, which the export lacks`). A
+  seeded row the export lacks was never compared (`<table> <id>: a migration seeded it, but the export lacks
+  it`). Both need a damaged or hand-edited export; a normal publish produces neither.
+- **Tests (+4; 2 from the PR #278 review: a dropped seeded policy, a dangling `superseded_by`):** `test_release_replay.py` alters a seeded policy's rationale in the export and asserts exactly
+  that difference; a `point_rows` call on a missing id raises. `test_release_replay_reviewers.py`'s end-to-end
+  test was reshaped, no new test: only the EVIDENCE REFERENCE cites the question before run 2 (the note comes
+  after), so the reference's own scheduling keeps the question; after run 2 a role change and a disabled
+  enrolment supersede rows from an earlier batch (single-live fires at two batch commits); after the replay a
+  note, a key and a release signature are written into the target (each would collide on a loaded id without
+  `reset_sequences`).
 
 ## The standing open-issue ledger
 
@@ -7032,6 +7059,9 @@ merge) by option 3: `drugref status`'s eighth block (§ "The registry-drift bloc
 reviewer side (§ "Who vouched for what"). Filed **[#275](https://github.com/cairn-ehr/drugref/issues/275)** (the
 question bookkeeping and accumulation tables, once they have a writer). +6 tests, 3624 → 3630 (2 from review: one
 new test, and one per-module test picking up `replay_adapters.py`).
+**Replay loader checks (2026-11-22)** — **[#277](https://github.com/cairn-ehr/drugref/issues/277) FIXED** (close on
+merge): seeded rows compared, `point_rows` counts, three test gaps closed (§ "Replay loader checks"). The
+same-transaction account tie stays documented, not handled. +4 tests, 3630 → 3634.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7217,7 +7247,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3630 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3634 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
