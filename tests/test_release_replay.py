@@ -228,8 +228,8 @@ def test_a_replay_reproduces_the_release(published):
     before = {p: p.read_bytes() for p in published["root"].rglob("*") if p.is_file()}
     report = _replay(published)
     assert report.differences == [] and report.warnings == [] and report.reproduced
-    # Two rulings and the release's own signature (#270: signatures travel).
-    assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 3, 2)
+    # Two rulings; the release's own signature stays in the archive (#270).
+    assert (report.runs, report.curated_rows, report.rulings_checked) == (2, 2, 2)
     # Replayed runs read the archive; they never write into it.
     assert {p: p.read_bytes() for p in published["root"].rglob("*")
             if p.is_file()} == before
@@ -322,6 +322,18 @@ def test_a_malformed_timestamp_is_refused_before_anything_is_written(published):
     _assert_nothing_written(published)
 
 
+def test_an_export_older_than_this_code_is_refused_as_older(published):
+    """An export written before a table joined the export (here #270's) is not a
+    damaged timestamp: the refusal names the missing table and the way out."""
+    _edit(archive.curated_export_path(published["root"], TAG),
+          lambda b: b.pop("reviewer_account"))
+    with pytest.raises(release_replay.ReplayRefused, match="predates") as refused:
+        _replay(published)
+    assert "reviewer_account" in str(refused.value)
+    assert "timestamp" not in str(refused.value)
+    _assert_nothing_written(published)
+
+
 def test_a_run_that_rebuilds_from_other_bytes_is_a_difference(published, monkeypatch,
                                                               tmp_path):
     def tampered(conn, files, release):
@@ -371,8 +383,8 @@ def test_a_curator_policy_superseding_a_seeded_one_replays(databases, tmp_path,
     assert sum(sup is not None for _, sup in want) == 1     # the seeded row, superseded
     with psycopg.connect(target) as c:
         report = release_replay.replay(c, root, TAG)
-        # The policy and the release's signature.
-        assert report.differences == [] and report.curated_rows == 2
+        # The policy (the release's signature is not loaded).
+        assert report.differences == [] and report.curated_rows == 1
         assert c.execute(query).fetchall() == want
 
 

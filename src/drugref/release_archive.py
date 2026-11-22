@@ -10,8 +10,9 @@ as they were. This module wraps `releases.publish` (untouched) and adds:
   run, NOT only the ones feeding the live registry) and
   `releases/<tag>.curated.json` (every curated row, superseded included, every
   class-ruling reach and snapshot-marker row, and who vouched for what: reviewer
-  accounts, profiles, notes and references, the PUBLIC signing keys with their
-  revocation history, and every signature -- never a password hash or session).
+  accounts, profiles, key enrolments, notes and references, the PUBLIC signing
+  keys with their revocation history, and every signature -- never a password
+  hash or session).
 
 It never commits: the CLI owns the transaction. The files are written before
 that commit; if the commit then fails they name a tag absent from the database.

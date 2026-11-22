@@ -19,13 +19,13 @@
 
 **⇒ THIS ROUND:** the curated export and `drugref audit replay` carry who vouched for what: reviewer accounts,
 profiles, enrolments, notes, evidence references, PUBLIC signing keys (revocation history included) and every
-signature. Never credentials or sessions. `release_replay._TIMED` maps each table to (pk, timestamp column), in
-FK-safe load order. PROJECT-NOTES § "Who vouched for what".
+signature (a release's own stays in the archive, not loaded). Never credentials or sessions. `release_replay._TIMED`
+maps each table to (pk, timestamp column), in FK-safe load order. PROJECT-NOTES § "Who vouched for what".
 
 **⇒ OWNER, from this round:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275** (filed): the question bookkeeping and
-accumulation tables are still not exported. They have no writer, but they name `ingest_run` ids the replay
-renumbers, and the coverage guard will NOT fire for their first writer. Decide with that writer.
+accumulation tables are still not exported. No writer outside their own modules yet; they name `ingest_run` ids
+the replay renumbers, and the coverage guard will NOT fire for their first writer. Decide with that writer.
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built

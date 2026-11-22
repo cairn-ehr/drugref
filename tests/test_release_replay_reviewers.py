@@ -17,11 +17,11 @@ import psycopg
 from psycopg import sql
 
 from drugref import (archive, curation, ids, keys, release_archive, release_replay,
-                     signatures, signing)
+                     release_verification, releases, signatures, signing)
 from tests.test_release_replay import (  # noqa: F401  (`databases` is a fixture)
     A, B, SHA, TAG, X, Y, _fake_ingest, _t, databases)
 
-#: The tables the owner's ruling adds, in the order a replay must load them.
+#: The tables the owner's ruling adds, in `_TIMED`'s load order.
 _VOUCHED = ("reviewer_account", "reviewer_profile", "signing_key",
             "reviewer_key_enrolment", "assertion_signature", "reviewer_annotation",
             "reviewer_evidence_reference")
@@ -91,8 +91,29 @@ def _sign(c, kp, kind, target_id) -> None:
 
 
 def _rows(c, table):
-    return c.execute(sql.SQL("SELECT to_jsonb(t) FROM drugref.{} t ORDER BY 1").format(
+    """Every row of `table`, less the release's own signature: it signs a manifest
+    the replay does not restore, so the replay leaves it in the archive."""
+    rows = c.execute(sql.SQL("SELECT to_jsonb(t) FROM drugref.{} t ORDER BY 1").format(
         sql.Identifier(table))).fetchall()
+    return [r for r in rows if r[0].get("target_kind") != "release_manifest"]
+
+
+#: Signature verdicts, less the release's own (see `_rows`).
+_STATUS = ("SELECT * FROM drugref.curated_signature_status "
+           "WHERE target_kind <> 'release_manifest' ORDER BY 1, 2")
+
+
+def _secrets(c, who) -> list[str]:
+    """A password hash and a session token for `who`, as the export must never
+    carry them; returns what to search the archive bytes for."""
+    hashed = "$argon2id$v=19$m=19456,t=2,p=1$c2VjcmV0c2FsdA$NEVER-IN-AN-ARCHIVE"
+    c.execute("INSERT INTO drugref.reviewer_password_credential (reviewer_uuid, "
+              "password_hash, recorded_by) VALUES (%s, %s, %s)", (who, hashed, who))
+    session, token = uuid.uuid4(), bytes(range(32))
+    c.execute("INSERT INTO drugref.auth_session (session_uuid, reviewer_uuid, "
+              "token_digest, expires_at) VALUES (%s, %s, %s, now() + interval '1 h')",
+              (session, who, token))
+    return [hashed, str(session), token.hex()]
 
 
 def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F811
@@ -115,6 +136,7 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
         assert c.execute("SELECT 1 FROM drugref.open_question WHERE question_uuid = %s",
                          (question,)).fetchone(), "run 1 must raise the class question"
         who = _reviewer(c, curator)
+        secrets = _secrets(c, who)
         c.execute("INSERT INTO drugref.reviewer_annotation (question_uuid, "
                   "reviewer_uuid, annotation_markdown) VALUES (%s, %s, 'see SmPC')",
                   (question, who))
@@ -132,25 +154,39 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
                     status="rotated", revoked_by="curator.one")
         c.commit()
         _fake_ingest(c, [two / "members.txt"], "r2")
+        # The precondition that makes this #270's test: run 2 closed the gap, so
+        # only the annotation keeps the question (retained, no longer current).
+        assert c.execute("SELECT is_current FROM drugref.open_question WHERE "
+                         "question_uuid = %s", (question,)).fetchone() == (False,)
         release_archive.publish_archived(
             c, root=root, release_tag=TAG, published_by="op",
             private_key=institution.private_key,
             key_fingerprint=signing.fingerprint(institution.public_key))
         c.commit()
         want = {t: _rows(c, t) for t in (*_VOUCHED, "open_question")}
-        want_status = c.execute("SELECT * FROM drugref.curated_signature_status "
-                                "ORDER BY 1, 2").fetchall()
+        want_status = c.execute(_STATUS).fetchall()
     assert len(want["signing_key"]) == 2            # registered, then rotated
-    assert len(want["assertion_signature"]) == 2    # the curator's and the release's
+    assert len(want["assertion_signature"]) == 1    # the curator's (less the release's)
+    exported = archive.curated_export_path(root, TAG).read_text()
+    assert [s for s in secrets if s in exported] == []
     with psycopg.connect(target) as c:
         report = release_replay.replay(c, root, TAG)
         assert report.differences == [] and report.reproduced
         # Run 2 closed the gap; the annotation loaded before it kept the question.
         assert {t: _rows(c, t) for t in want} == want
-        assert c.execute("SELECT * FROM drugref.curated_signature_status "
-                         "ORDER BY 1, 2").fetchall() == want_status
+        assert c.execute(_STATUS).fetchall() == want_status
         # Every identity moved past the loaded ids: the next note gets a fresh one.
         nxt = c.execute("SELECT nextval(pg_get_serial_sequence("
                         "'drugref.reviewer_annotation', 'reviewer_annotation_id'))"
                         ).fetchone()[0]
         assert nxt > 1
+        # A release published from the replayed database verifies on its own: no
+        # origin release signature is left pointing at the manifest id it reuses.
+        operator = signing.generate_keypair()
+        keys.register(c, public_key=operator.public_key, holder="Replay operator",
+                      registered_by="op")
+        releases.publish(c, release_tag="replayed", published_by="op",
+                         private_key=operator.private_key,
+                         key_fingerprint=signing.fingerprint(operator.public_key))
+        verdict = release_verification.verify_release(c, "replayed")
+        assert verdict.signature == signing.VALID and verdict.manifest_digest_ok

@@ -59,9 +59,9 @@ file (issue #260). Not built now.
   `drugref audit replay --release TAG` rebuilds the release into an empty database. It refuses when the code is
   not the release's own commit (`--allow-code-mismatch` warns instead, and the result is then never "reproduced").
   It reports any class ruling whose reach at ruling time the rebuild does not reproduce, and any curated manifest
-  digest that differs (issue #259). The export also carries the reviewers' notes and references, their
-  public signing keys (with revocations) and every signature, so a rebuild shows who vouched for what. It never
-  carries passwords or sessions (issue #270).
+  digest that differs (issue #259). The export also carries the reviewer accounts and profiles (names,
+  qualifications and bios), their notes and references, every public signing key (with revocations) and every
+  signature, so a rebuild shows who vouched for what. It never carries passwords or sessions (issue #270).
 - A class ruling recorded before `db/080` has only a snapshot taken when the migration ran, not when the curator
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
 - `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now, which is also the data for
