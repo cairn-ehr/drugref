@@ -69,9 +69,16 @@ def point_rows(conn: psycopg.Connection, table: str, pk_column: str, new_id: int
     `superseded_by` already says which row replaced which, so it repeats that exact
     pointer rather than re-deriving it from the natural key. Same order rule as
     `supersede`: call it after `new_id` exists. Does not commit.
+
+    Raises ValueError unless EVERY id in `old_ids` was repointed: a missing or
+    already-superseded row would leave the rebuilt history unlike the export's,
+    and nothing downstream would notice (#277).
     """
-    conn.execute(
+    changed = conn.execute(
         sql.SQL("UPDATE drugref.{table} SET superseded_by = %s "
                 "WHERE {pk} = ANY(%s) AND superseded_by IS NULL").format(
             table=sql.Identifier(table), pk=sql.Identifier(pk_column)),
-        (new_id, old_ids))
+        (new_id, old_ids)).rowcount
+    if changed != len(old_ids):
+        raise ValueError(f"{table}: repointed {changed} of {len(old_ids)} rows "
+                         f"at {new_id}")

@@ -13,17 +13,16 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/export-reviewer-270`: #270 FIXED; a PR to `main` carries it. No migration; schema still ends at
-`db/082`.** #104 closed (PR #274). The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**;
+**On branch `claude/replay-loader-277`: #277 FIXED; a PR to `main` carries it. No migration; schema still ends at
+`db/082`.** #270 closed (PR #276). The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**;
 `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** the curated export and `drugref audit replay` carry who vouched for what: reviewer accounts,
-profiles, enrolments, notes, evidence references, PUBLIC signing keys (revocation history included) and every
-signature (a release's own stays in the archive, not loaded). Never credentials or sessions. `release_replay._TIMED`
-maps each table to (pk, timestamp column), in FK-safe load order. PROJECT-NOTES § "Who vouched for what".
+**⇒ THIS ROUND:** a seeded row (db/010's policies) is compared with its exported copy (a mismatch is a difference);
+`overlay.point_rows` raises unless it repointed every id; three reviewer-replay test gaps closed. PROJECT-NOTES §
+"Replay loader checks". **Not handled** (documented): two accounts made in one transaction can load child-first.
 
-**⇒ OWNER, from this round:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
-archives are node-local; decide before they are shared (with #263). **#275** (filed): the question bookkeeping and
+**⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
+archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
 accumulation tables are still not exported. No writer outside their own modules yet; they name `ingest_run` ids
 the replay renumbers, and the coverage guard will NOT fire for their first writer. Decide with that writer.
 
@@ -88,8 +87,8 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#270 FIXED by
-this branch (close on merge); #275 filed;** #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#277 FIXED by
+this branch (close on merge);** #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
 #260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and

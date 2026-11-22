@@ -5,10 +5,11 @@ references, the accounts and profiles they name, and the PUBLIC signing keys
 (their whole status history: a revocation is a superseding row) and every
 signature. It never carries a password hash or a session.
 
-The end-to-end test reproduces #270's failure: a reviewer annotates a question
-between two runs, and run 2 closes the question's gap. The origin keeps the
-question (an annotation cites it); a replay that did not load the annotation
-before run 2 would delete it.
+The end-to-end test reproduces #270's failure: a reviewer cites evidence on a
+question between two runs, and run 2 closes the question's gap. The origin keeps
+the question (the reference cites it); a replay that did not load the reference
+before run 2 would delete it. Only the reference cites it before run 2 (the note
+comes after), so the reference's own scheduling is what is tested (#277).
 """
 import datetime as dt
 import uuid
@@ -16,8 +17,9 @@ import uuid
 import psycopg
 from psycopg import sql
 
-from drugref import (archive, curation, ids, keys, release_archive, release_replay,
-                     release_verification, releases, signatures, signing)
+from drugref import (archive, curation, ids, keys, overlay, release_archive,
+                     release_replay, release_verification, releases, signatures,
+                     signing)
 from tests.test_release_replay import (  # noqa: F401  (`databases` is a fixture)
     A, B, SHA, TAG, X, Y, _fake_ingest, _t, databases)
 
@@ -80,6 +82,13 @@ def _reviewer(c, kp) -> uuid.UUID:
     return who
 
 
+def _supersede(c, table, key_column, key_value, insert, params) -> None:
+    """Insert a correction, then point the live row for the same key at it: the
+    overlay's one correction sequence (`overlay.supersede`)."""
+    new_id = c.execute(insert, params).fetchone()[0]
+    overlay.supersede(c, table, f"{table}_id", new_id, (key_column,), (key_value,))
+
+
 def _sign(c, kp, kind, target_id) -> None:
     fp = signing.fingerprint(kp.public_key)
     when = dt.datetime.now(dt.timezone.utc)
@@ -137,9 +146,6 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
                          (question,)).fetchone(), "run 1 must raise the class question"
         who = _reviewer(c, curator)
         secrets = _secrets(c, who)
-        c.execute("INSERT INTO drugref.reviewer_annotation (question_uuid, "
-                  "reviewer_uuid, annotation_markdown) VALUES (%s, %s, 'see SmPC')",
-                  (question, who))
         c.execute("INSERT INTO drugref.reviewer_evidence_reference (question_uuid, "
                   "reviewer_uuid, reference_scheme, reference_value) "
                   "VALUES (%s, %s, 'PMID', '12345')", (question, who))
@@ -155,9 +161,27 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
         c.commit()
         _fake_ingest(c, [two / "members.txt"], "r2")
         # The precondition that makes this #270's test: run 2 closed the gap, so
-        # only the annotation keeps the question (retained, no longer current).
+        # only the evidence reference keeps the question (retained, not current).
         assert c.execute("SELECT is_current FROM drugref.open_question WHERE "
                          "question_uuid = %s", (question,)).fetchone() == (False,)
+        # After run 2: a note on the retained question, a role change and a
+        # disabled enrolment. The last two supersede rows the replay loads in an
+        # EARLIER batch, so their deferred single-live checks fire at two batch
+        # commits (#277).
+        c.execute("INSERT INTO drugref.reviewer_annotation (question_uuid, "
+                  "reviewer_uuid, annotation_markdown) VALUES (%s, %s, 'see SmPC')",
+                  (question, who))
+        _supersede(c, "reviewer_profile", "reviewer_uuid", who,
+                   "INSERT INTO drugref.reviewer_profile (reviewer_uuid, full_name, "
+                   "role, active, recorded_by) VALUES (%s, 'Curator One', 'reviewer', "
+                   "true, %s) RETURNING reviewer_profile_id", (who, who))
+        enrolled_key = c.execute("SELECT signing_key_id FROM "
+                                 "drugref.reviewer_key_enrolment").fetchone()[0]
+        _supersede(c, "reviewer_key_enrolment", "signing_key_id", enrolled_key,
+                   "INSERT INTO drugref.reviewer_key_enrolment (reviewer_uuid, "
+                   "signing_key_id, enrolled, enrolled_by) VALUES (%s, %s, false, %s) "
+                   "RETURNING reviewer_key_enrolment_id", (who, enrolled_key, who))
+        c.commit()
         release_archive.publish_archived(
             c, root=root, release_tag=TAG, published_by="op",
             private_key=institution.private_key,
@@ -167,6 +191,8 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
         want_status = c.execute(_STATUS).fetchall()
     assert len(want["signing_key"]) == 2            # registered, then rotated
     assert len(want["assertion_signature"]) == 1    # the curator's (less the release's)
+    assert len(want["reviewer_profile"]) == 2       # administrator, then reviewer
+    assert len(want["reviewer_key_enrolment"]) == 2  # enrolled, then disabled
     exported = archive.curated_export_path(root, TAG).read_text()
     assert [s for s in secrets if s in exported] == []
     with psycopg.connect(target) as c:
@@ -175,11 +201,12 @@ def test_a_replay_restores_who_vouched_for_what(databases, tmp_path,  # noqa: F8
         # Run 2 closed the gap; the annotation loaded before it kept the question.
         assert {t: _rows(c, t) for t in want} == want
         assert c.execute(_STATUS).fetchall() == want_status
-        # Every identity moved past the loaded ids: the next note gets a fresh one.
-        nxt = c.execute("SELECT nextval(pg_get_serial_sequence("
-                        "'drugref.reviewer_annotation', 'reviewer_annotation_id'))"
-                        ).fetchone()[0]
-        assert nxt > 1
+        # Every identity moved past the loaded ids: new rows in the replayed target
+        # (a note here; the key and the release signature below) would otherwise
+        # collide with a loaded primary key and fail.
+        c.execute("INSERT INTO drugref.reviewer_annotation (question_uuid, "
+                  "reviewer_uuid, annotation_markdown) VALUES (%s, %s, 'later')",
+                  (question, who))
         # A release published from the replayed database verifies on its own: no
         # origin release signature is left pointing at the manifest id it reuses.
         operator = signing.generate_keypair()

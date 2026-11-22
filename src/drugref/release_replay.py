@@ -32,7 +32,9 @@ WHAT IT DOES, in order (`replay`):
    - each class ruling's ruling-time reach (db/080) against what the replayed
      `class_rule_member` gives at the moment the ruling is loaded -- the direct
      test of "the replay rebuilt what the curator saw";
-   - the live curated digests against the release's manifest entries.
+   - the live curated digests against the release's manifest entries;
+   - each row a migration already seeded (the expansion policies) against its
+     exported copy, which is never re-inserted (#277).
 
 A replay with no differences is a verified reproduction (`ReplayReport.reproduced`)
 only when it also has no warnings: other code, or a record from before the
@@ -311,7 +313,8 @@ class _Loader:
         # is a damaged export, never "live"); insert-only tables have none.
         self.superseding = {t for t in _TIMED if "superseded_by" in self.cols[t]}
         # Rows a migration seeds (expansion policies) are already in the fresh
-        # target: never re-inserted, but a curator's later row may supersede them.
+        # target: never re-inserted (only compared, `_compare_seeded`), but a
+        # curator's later row may supersede them.
         # Read through to_jsonb so ids compare as the export spells them (a uuid key
         # is a string there).
         self.seeded = {t: {r[0] for r in conn.execute(sql.SQL(
@@ -343,6 +346,7 @@ class _Loader:
         rid = row[pk]
         sup = row["superseded_by"] if table in self.superseding else None
         if rid in self.seeded[table]:
+            self._compare_seeded(table, row)
             return
         # Point at the superseder only if it is already in; otherwise it points
         # back at this row when it loads.
@@ -357,6 +361,28 @@ class _Loader:
         self.report.curated_rows += 1
         if table == _RULINGS:
             self._ruling_reach(rid)
+
+    def _compare_seeded(self, table, row) -> None:
+        """A row a migration already seeded is not re-inserted: report it when the
+        exported copy differs (#277). Compared as typed values in SQL, so a time
+        zone or JSON spelling never reads as a difference. Two columns are left
+        out: the timestamp (the migration stamped it when IT ran) and
+        `superseded_by` (repointed when its superseder loads)."""
+        pk, stamp = _TIMED[table]
+        cols = [c for c in self.cols[table] if c not in (stamp, "superseded_by")]
+
+        def of(alias):
+            return sql.SQL(", ").join(sql.Identifier(alias, c) for c in cols)
+        differs = self.conn.execute(sql.SQL(
+            "SELECT ROW({t}) IS DISTINCT FROM ROW({e}) FROM drugref.{table} t, "
+            "jsonb_populate_record(NULL::drugref.{table}, %s) e "
+            "WHERE t.{pk} = e.{pk}").format(
+            t=of("t"), e=of("e"), table=sql.Identifier(table),
+            pk=sql.Identifier(pk)), (Jsonb(row),)).fetchone()[0]
+        if differs:
+            self.report.differences.append(
+                f"{table} {row[pk]}: the exported row differs from the one a "
+                "migration seeded")
 
     def _ruling_reach(self, rid) -> None:
         """Load a ruling's reach rows; compare a ruling-time snapshot with now."""

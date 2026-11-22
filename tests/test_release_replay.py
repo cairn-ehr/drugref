@@ -20,8 +20,9 @@ import psycopg
 import pytest
 from psycopg import sql
 
-from drugref import (archive, cli, curation, db, ids, interactions, provenance,
-                     questions, release_archive, release_replay, signing)
+from drugref import (archive, cli, curation, db, ids, interactions, overlay,
+                     provenance, questions, release_archive, release_replay,
+                     signing)
 from drugref.ingest.checksum import archived_checksum
 from tests.conftest import _drop_database, session_dsn
 
@@ -386,6 +387,33 @@ def test_a_curator_policy_superseding_a_seeded_one_replays(databases, tmp_path,
         # The policy (the release's signature is not loaded).
         assert report.differences == [] and report.curated_rows == 1
         assert c.execute(query).fetchall() == want
+
+
+def test_a_seeded_row_the_export_spells_differently_is_a_difference(published):
+    """db/010 seeds expansion policies, so the target has them before any load and
+    the exported copy is never inserted. It is compared instead (#277): a seeded
+    row that differs from the exported one would otherwise vanish without a word."""
+    export = archive.curated_export_path(published["root"], TAG)
+    seeded = {}
+
+    def alter(body):
+        row = body["class_expansion_policy"][0]
+        row["rationale"] = "not what db/010 seeds"
+        seeded["id"] = row["policy_id"]
+    _edit(export, alter)
+    report = _replay(published)
+    assert report.differences == [
+        f"class_expansion_policy {seeded['id']}: the exported row differs from the "
+        "one a migration seeded"]
+
+
+def test_point_rows_refuses_to_repoint_fewer_rows_than_asked(conn):
+    """A pointer that changes no row (the id is missing or already superseded)
+    would leave the replayed history silently unlike the export's (#277)."""
+    live = conn.execute("SELECT min(policy_id) FROM drugref.class_expansion_policy"
+                        ).fetchone()[0]
+    with pytest.raises(ValueError, match="repointed 0 of 1"):
+        overlay.point_rows(conn, "class_expansion_policy", "policy_id", live, [-1])
 
 
 def test_a_writer_without_an_adapter_is_refused(published):
