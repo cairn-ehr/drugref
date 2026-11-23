@@ -126,3 +126,92 @@ def audit_ruling(conn: psycopg.Connection,
     ).fetchall()
     return RulingAudit(curated_class_interaction_id, row[0], row[1], row[2], sides,
                        tuple(tuple(r) for r in runs))
+
+
+@dataclass(frozen=True)
+class DepartedReach:
+    """A live class ruling that graded `pairs` when made and no longer reaches them
+    (#256). Each pair is (subject moiety, partner moiety). `captured` is the reach's
+    provenance: 'backfill_db080' means "then" is membership at migration time, not
+    at ruling time (see SideReach)."""
+    curated_class_interaction_id: int
+    subject_class: uuid.UUID
+    object_class: uuid.UUID
+    relationship: str
+    severity: str
+    reviewed_by: str
+    reviewed_against: str
+    captured: str
+    pairs: frozenset[tuple[uuid.UUID, uuid.UUID]]
+
+
+def departed_reach(conn: psycopg.Connection, subject: uuid.UUID,
+                   partner: uuid.UUID | None = None) -> list[DepartedReach]:
+    """Live, applying class rulings whose grade for `subject` (against `partner`, or
+    any partner) has silently left `curated_ddi_pair` although its candidate survives.
+
+    WHY BOTH CAUSES ARE ONE QUERY: `class_rule_member` (db/079) already applies
+    class membership AND expansion-policy denies, so "the drug left the class" and
+    "a deny now cuts the subclass it was reached through" both show as a pair in the
+    ruling's own reach snapshot (REACH_TABLE) that the view no longer reaches.
+
+    WHAT IT LEAVES OUT, each on purpose:
+      * superseded rulings -- the live version was ruled against the membership of
+        its own day and has its own snapshot (a correction re-snapshots);
+      * `applies = false` rulings -- the list never showed them, so nothing fell out;
+      * rulings whose candidate (`class_pair_contraindication`) is gone -- those are
+        `curated_target_unresolved` orphans, already bannered by #121's read.
+
+    DIRECTIONAL, like `curated_read.effective_grades_for`: `subject` is the ruling's
+    subject side. Raises UndefinedTable on a database predating db/080; the caller's
+    guard turns that into a sentence. Most recent ruling first.
+    """
+    # `now` reads the recursive member view ONCE (MATERIALIZED), not per reach row.
+    rows = conn.execute(
+        "WITH ruled AS ("
+        "  SELECT cci.* FROM drugref.curated_class_interaction cci "
+        "  WHERE cci.superseded_by IS NULL AND cci.applies "
+        f"   AND EXISTS (SELECT 1 FROM {REACH_TABLE} r "
+        "               WHERE r.curated_class_interaction_id "
+        "                     = cci.curated_class_interaction_id "
+        "                 AND r.side = 'subject' AND r.moiety_uuid = %(subject)s) "
+        "   AND EXISTS (SELECT 1 FROM drugref.class_pair_contraindication cpc "
+        "               WHERE cpc.subject_class_uuid = cci.subject_class_uuid "
+        "                 AND cpc.object_class_uuid = cci.object_class_uuid "
+        "                 AND cpc.relationship = cci.relationship)), "
+        "now AS MATERIALIZED ("
+        "  SELECT m.curated_class_interaction_id, m.side, m.moiety_uuid "
+        "  FROM drugref.class_rule_member m "
+        "  WHERE m.curated_class_interaction_id "
+        "        IN (SELECT curated_class_interaction_id FROM ruled)) "
+        "SELECT c.curated_class_interaction_id, c.subject_class_uuid, "
+        "       c.object_class_uuid, c.relationship, c.severity, "
+        "       c.reviewed_by, c.reviewed_against, "
+        "       bool_or('backfill_db080' IN (s.captured, p.captured)), "
+        "       array_agg(p.moiety_uuid ORDER BY p.moiety_uuid) "
+        "FROM ruled c "
+        f"JOIN {REACH_TABLE} s ON s.curated_class_interaction_id "
+        "     = c.curated_class_interaction_id AND s.side = 'subject' "
+        "     AND s.moiety_uuid = %(subject)s "
+        f"JOIN {REACH_TABLE} p ON p.curated_class_interaction_id "
+        "     = c.curated_class_interaction_id AND p.side = 'partner' "
+        "WHERE p.moiety_uuid <> s.moiety_uuid "   # self-pairs never grade (db/038)
+        "  AND (%(partner)s::uuid IS NULL OR p.moiety_uuid = %(partner)s) "
+        "  AND NOT (EXISTS (SELECT 1 FROM now n "
+        "                   WHERE n.curated_class_interaction_id "
+        "                         = c.curated_class_interaction_id "
+        "                     AND n.side = 'subject' "
+        "                     AND n.moiety_uuid = s.moiety_uuid) "
+        "       AND EXISTS (SELECT 1 FROM now n "
+        "                   WHERE n.curated_class_interaction_id "
+        "                         = c.curated_class_interaction_id "
+        "                     AND n.side = 'partner' "
+        "                     AND n.moiety_uuid = p.moiety_uuid)) "
+        "GROUP BY c.curated_class_interaction_id, c.subject_class_uuid, "
+        "         c.object_class_uuid, c.relationship, c.severity, c.reviewed_by, "
+        "         c.reviewed_against, c.reviewed_at "
+        "ORDER BY c.reviewed_at DESC, c.curated_class_interaction_id DESC",
+        {"subject": subject, "partner": partner}).fetchall()
+    return [DepartedReach(r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+                          "backfill_db080" if r[7] else "at_ruling",
+                          frozenset((subject, p) for p in r[8])) for r in rows]

@@ -6878,6 +6878,36 @@ The PR #276 review's pre-existing loader gaps, fixed. Neither changes a replay o
   note, a key and a release signature are written into the target (each would collide on a loaded id without
   `reset_sequences`).
 
+## Reviewed grades that no longer reach a pair (#256, 2026-11-23) — no migration, suite 3634 → 3645
+
+#121's banner covers a class-grain grade whose CANDIDATE is gone. A grade also leaves `curated_ddi_pair` while the
+candidate survives: a drug leaves the subject or partner class (membership is delete-and-rebuild), or an
+expansion-policy deny cuts the descendant class it was reached through. `drugref interactions` then printed `no
+curated grade` for a pair the curator graded, with nothing saying why.
+
+- **One read covers both causes** (`class_ruling_reach.departed_reach`). `class_rule_member` (db/079) already
+  applies membership and denies, so both show as a (subject, partner) pair in the ruling's db/080 reach snapshot
+  that the view no longer reaches. Pair-level and directional, like `effective_grades_for`.
+- **Left out on purpose:** superseded rulings (a correction re-snapshots, so the live version was ruled against its
+  own day's membership), `applies = false` rulings (never listed, so nothing fell out), and rulings whose candidate
+  is gone (#121's orphans, already bannered: one ruling, one banner).
+- **The banner** (`cli_interactions._report_departures`): `** CHANGED SINCE REVIEW ...`, one line per ruling with
+  its id, classes, axis, severity and reviewer, the pairs no longer reached, and a pointer to `drugref audit
+  class-ruling <id>`. A `backfill_db080` reach says "recorded at db/080's migration, not at ruling time". Exit 3
+  (`EXIT_INCOMPLETE`), and the pair form withholds its "ABSENT RULE" sentence. The one-drug form asks with the drug
+  as subject only (it lists only those grades); the pair form asks both directions.
+- **Without db/079 or db/080** a stderr note says drugref cannot tell, and the exit code is left alone: "cannot tell"
+  is not "known incomplete".
+- **Cost:** the member view is read once per call (`MATERIALIZED` CTE scoped to the asked subject's live
+  rulings), not once per reach row. The ordinary read already walks it inside `curated_ddi_pair`.
+- **Not handled, filed [#279](https://github.com/cairn-ehr/drugref/issues/279):** the moiety grain has the same gap
+  (a partner leaves a `curated_interaction`'s object class) and no reach snapshot to compare against. `drugref
+  status` does not count departures (the banner reaches the person being under-warned; `audit class-ruling` serves
+  the operator).
+- **Tests (+11)** in `tests/test_cli_interactions_departed.py`: subject- and partner-side leavers, a deny cutting a
+  subclass, a correction after the drug left, an orphan, an `applies = false` ruling, a backfilled reach, both
+  command forms in both argument orders, a stayer, and a database without db/080.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -7059,9 +7089,14 @@ merge) by option 3: `drugref status`'s eighth block (§ "The registry-drift bloc
 reviewer side (§ "Who vouched for what"). Filed **[#275](https://github.com/cairn-ehr/drugref/issues/275)** (the
 question bookkeeping and accumulation tables, once they have a writer). +6 tests, 3624 → 3630 (2 from review: one
 new test, and one per-module test picking up `replay_adapters.py`).
-**Replay loader checks (2026-11-22)** — **[#277](https://github.com/cairn-ehr/drugref/issues/277) FIXED** (close on
-merge): seeded rows compared, `point_rows` counts, three test gaps closed (§ "Replay loader checks"). The
+**Replay loader checks (2026-11-22)** — **[#277](https://github.com/cairn-ehr/drugref/issues/277) FIXED, CLOSED** (PR
+#278): seeded rows compared, `point_rows` counts, three test gaps closed (§ "Replay loader checks"). The
 same-transaction account tie stays documented, not handled. +4 tests, 3630 → 3634.
+**Reviewed grades that no longer reach a pair (2026-11-23)** — **[#256](https://github.com/cairn-ehr/drugref/issues/256)
+FIXED** for the class grain (close on merge): `drugref interactions` banners `CHANGED SINCE REVIEW` when a live
+class ruling's reach snapshot holds an asked pair it no longer reaches (§ "Reviewed grades that no longer reach a
+pair"). Filed **[#279](https://github.com/cairn-ehr/drugref/issues/279)**: the moiety grain, which has no reach
+snapshot. +11 tests, 3634 → 3645.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7247,7 +7282,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3634 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3645 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

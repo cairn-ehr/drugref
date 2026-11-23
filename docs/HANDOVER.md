@@ -13,14 +13,14 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/replay-loader-277`: #277 FIXED; a PR to `main` carries it. No migration; schema still ends at
-`db/082`.** #270 closed (PR #276). The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**;
-`uv run pytest` fails if the line and the suite disagree.
+**On branch `claude/silent-grade-drop-256`: #256 FIXED for the class grain; a PR to `main` carries it. No
+migration; schema still ends at `db/082`.** #277 closed (PR #278). The suite total lives in PROJECT-NOTES § "How to
+run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
 
-**⇒ THIS ROUND:** a seeded row (db/010's policies) is compared with its exported copy, and one the export lacks, or
-a superseder it names but lacks, is a difference too; `overlay.point_rows` raises unless it repointed every id; three
-reviewer-replay test gaps closed. PROJECT-NOTES § "Replay loader checks". **Not handled** (documented): two
-accounts made in one transaction can load child-first.
+**⇒ THIS ROUND:** `drugref interactions` prints `** CHANGED SINCE REVIEW` (exit 3) when a live class ruling graded an
+asked pair when made and no longer reaches it, its candidate intact: a drug left a class, or a policy deny cuts the
+subclass. PROJECT-NOTES § "Reviewed grades that no longer reach a pair". **Filed #279:** the moiety grain (no reach
+snapshot yet). Not handled (documented): two accounts made in one transaction can load child-first in a replay.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -88,9 +88,9 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#277 FIXED by
-this branch (close on merge);** #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
-#260, #263, #265** (diff fallback, PBS in the archive, drift scope); **open: #256.** #224 partly done. **#244.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256 FIXED by
+this branch (close on merge); filed #279;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
+#260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
 **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,

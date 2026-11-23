@@ -193,6 +193,51 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     return True
 
 
+def _report_departures(conn, directions) -> bool:
+    """Banner any live class ruling that graded an asked pair when the curator ruled
+    and no longer reaches it, its candidate intact (#256). Returns whether it printed.
+
+    THE GAP #121'S BANNER LEFT: a drug leaving a class, or a policy deny cutting the
+    subclass it was reached through, drops the grade from the list with no orphan to
+    show, so `no curated grade` read as reassurance for a pair drugref has judged.
+    `directions` is (subject, partner-or-None) per lookup the caller printed, so the
+    banner speaks about exactly the lists above it.
+
+    WITHOUT db/080 THERE IS NO REACH TO COMPARE: a note on stderr, and the exit code
+    is left alone -- "cannot tell" is not "known incomplete".
+    """
+    needed = (class_grain_read.RULE_MEMBER_VIEW, class_ruling_reach.REACH_TABLE)
+    absent = [f"{rel} ({db})" for rel, db in zip(needed, ("db/079", "db/080"))
+              if conn.execute("SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None]
+    if absent:
+        print(f"note: {' and '.join(absent)} missing, so drugref cannot tell whether "
+              "a class ruling's grade has dropped out since it was reviewed. Run "
+              "`drugref status`.", file=sys.stderr)
+        return False
+    with migration_guard.guarded(
+            conn, relations=needed, migration="080",
+            consequence="drugref cannot tell whether a reviewed class grade "
+                        "dropped out"):
+        departed = [d for subject, partner in directions
+                    for d in class_ruling_reach.departed_reach(conn, subject, partner)]
+    if not departed:
+        return False
+    print(f"** CHANGED SINCE REVIEW: {len(departed)} curated class ruling(s) graded "
+          "the pair(s) below when the curator ruled and NO LONGER REACH THEM (a drug "
+          "left a class, or an expansion-policy deny now cuts the class it was reached "
+          "through), so their grade is MISSING from the list above **")
+    for d in departed:
+        when = (" (reach recorded at db/080's migration, not at ruling time)"
+                if d.captured == "backfill_db080" else "")
+        pairs = ", ".join(f"{s} -> {p}" for s, p in sorted(d.pairs, key=str))
+        print(f"   ruling {d.curated_class_interaction_id}: class {d.subject_class} -> "
+              f"class {d.object_class} [{d.relationship}] {d.severity}, reviewed by "
+              f"{d.reviewed_by} against {d.reviewed_against}{when}")
+        print(f"      no longer reached: {pairs}. "
+              f"See `drugref audit class-ruling {d.curated_class_interaction_id}`")
+    return True
+
+
 def _known_moieties(conn, asked: list[uuid.UUID]) -> set[uuid.UUID]:
     """`known_moieties`, guarded like every other read this command makes.
 
@@ -289,6 +334,7 @@ def _handle_interactions(conn, args) -> int:
         _print_grades(_grades_for(conn, args.moiety),
                       f"grades with {args.moiety} as subject")
         incomplete = _report_orphans(conn, {args.moiety})
+        incomplete |= _report_departures(conn, [(args.moiety, None)])
         print("note: rules are DIRECTIONAL (db/006) -- this lists only rules drugref "
               "states with this moiety as the SUBJECT. Ask about a specific pair to "
               "search both directions.")
@@ -316,7 +362,10 @@ def _handle_interactions(conn, args) -> int:
                   if g.partner_moiety == partner]
         found += len(grades)
         _print_grades(grades, f"{subject} -> {partner}")
-    if _report_orphans(conn, {args.moiety, args.against}):
+    # Both banners print before either decides the exit: one must not hide the other.
+    orphaned = _report_orphans(conn, {args.moiety, args.against})
+    if _report_departures(conn, [(args.moiety, args.against),
+                                 (args.against, args.moiety)]) or orphaned:
         return EXIT_INCOMPLETE
     if not found:
         # NOT "no interaction", AND NOT "safe". drugref has not asserted anything about
