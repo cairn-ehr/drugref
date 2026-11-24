@@ -19,8 +19,8 @@ run / test" **and nowhere else**; `uv run pytest` fails if the line and the suit
 
 **⇒ THIS ROUND:** `drugref interactions` prints `** CHANGED SINCE REVIEW` (exit 3) when a live class ruling graded an
 asked pair when made and no longer reaches it, its candidate intact: a drug left a class, or a policy deny cuts the
-subclass. PROJECT-NOTES § "Reviewed grades that no longer reach a pair". **Filed #279:** the moiety grain (no reach
-snapshot yet). Not handled (documented): two accounts made in one transaction can load child-first in a replay.
+subclass. PROJECT-NOTES § "Reviewed grades that no longer reach a pair". **Filed #279** (moiety grain) and **#281**
+(OWNER: a drug that left before a correction, or joined after the ruling, still departs silently).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -88,9 +88,9 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256 FIXED by
-this branch (close on merge); filed #279;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from #258:
-#260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256 FIXED
+(close on merge); filed #279, #281;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from
+#258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
 **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,

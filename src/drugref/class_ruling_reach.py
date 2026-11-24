@@ -130,10 +130,11 @@ def audit_ruling(conn: psycopg.Connection,
 
 @dataclass(frozen=True)
 class DepartedReach:
-    """A live class ruling that graded `pairs` when made and no longer reaches them
-    (#256). Each pair is (subject moiety, partner moiety). `captured` is the reach's
-    provenance: 'backfill_db080' means "then" is membership at migration time, not
-    at ruling time (see SideReach)."""
+    """A live class ruling whose recorded reach held `pairs` and which no longer
+    reaches them (#256). Each pair is (subject moiety, partner moiety). `captured` is
+    'at_ruling' (reach recorded when the curator ruled) or 'backfill_db080' (reach is
+    membership at db/080's migration, not ruling time); never 'none', since a
+    departure needs reach rows to depart from."""
     curated_class_interaction_id: int
     subject_class: uuid.UUID
     object_class: uuid.UUID
@@ -156,17 +157,20 @@ def departed_reach(conn: psycopg.Connection, subject: uuid.UUID,
     ruling's own reach snapshot (REACH_TABLE) that the view no longer reaches.
 
     WHAT IT LEAVES OUT, each on purpose:
-      * superseded rulings -- the live version was ruled against the membership of
-        its own day and has its own snapshot (a correction re-snapshots);
+      * superseded rulings -- the live version has its own snapshot (a correction
+        re-snapshots), so a drug that left BEFORE a correction is not seen (#281);
       * `applies = false` rulings -- the list never showed them, so nothing fell out;
       * rulings whose candidate (`class_pair_contraindication`) is gone -- those are
-        `curated_target_unresolved` orphans, already bannered by #121's read.
+        `curated_target_unresolved` orphans, already bannered by #121's read;
+      * a drug that joined the class AFTER the ruling and later left -- it was never
+        in the snapshot, so there is nothing to compare (#281).
 
     DIRECTIONAL, like `curated_read.effective_grades_for`: `subject` is the ruling's
-    subject side. Raises UndefinedTable on a database predating db/080; the caller's
-    guard turns that into a sentence. Most recent ruling first.
+    subject side. Raises UndefinedTable on a database predating db/079 or db/080
+    (the CLI probes for both first). Most recent ruling first.
     """
-    # `now` reads the recursive member view ONCE (MATERIALIZED), not per reach row.
+    # `now` reads the recursive member view ONCE per call (MATERIALIZED), not per
+    # reach row. The view still walks every class; `ruled` only filters its output.
     rows = conn.execute(
         "WITH ruled AS ("
         "  SELECT cci.* FROM drugref.curated_class_interaction cci "
