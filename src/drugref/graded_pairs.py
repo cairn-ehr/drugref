@@ -66,7 +66,9 @@ class Departure:
 
 
 # `now` is `curated_ddi_pair` reduced to (ruling key, pair), read ONCE per call
-# (MATERIALIZED) rather than once per open episode. `live` is the live version of
+# (MATERIALIZED) rather than once per open episode. It takes the same subject /
+# partner filters as the outer query, so the one-drug banner reduces only that
+# drug's rows instead of the whole view. `live` is the live version of
 # every ruling key, both grains in `curated_ddi_pair`'s vocabulary, with the
 # `curated_target_unresolved` arm name the orphan check matches on.
 _DEPARTED_SQL = f"""
@@ -75,7 +77,9 @@ WITH now AS MATERIALIZED (
            CASE p.rule_grain WHEN 'class_rule' THEN p.via_subject_class
                              ELSE p.subject_moiety END AS subject_key,
            p.via_class, p.relationship, p.subject_moiety, p.partner_moiety
-    FROM   drugref.curated_ddi_pair p),
+    FROM   drugref.curated_ddi_pair p
+    WHERE  (%(subject)s::uuid IS NULL OR p.subject_moiety = %(subject)s)
+    AND    (%(partner)s::uuid IS NULL OR p.partner_moiety = %(partner)s)),
 live AS (
     SELECT 'moiety_rule' AS rule_grain, 'curated_interaction' AS target_table,
            curated_interaction_id AS ruling_id, subject_moiety_uuid AS subject_key,

@@ -270,3 +270,41 @@ def test_no_subject_lists_every_departure(conn, ingest_run_id):
         ("class_rule", class_ruling, frozenset({(x, p)})),
         ("moiety_rule", moiety_ruling, frozenset({(s, q)}))]
     assert graded_pairs.departed(conn, partner=q) == [got[1]]
+
+
+def test_first_seen_at_is_the_earliest_open_episode(conn, ingest_run_id):
+    """Two pairs of one ruling depart; the entry dates from the older episode."""
+    _sc, _oc, (s,), (p, q) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000028120", object_code="N0000028121",
+        subject_members=[("TESTUN2812A", "subject")],
+        object_members=[("TESTUN2812B", "older"), ("TESTUN2812C", "newer")])
+    commit_point(conn)
+    conn.execute(f"ALTER TABLE {graded_pairs.OBSERVATION_TABLE} "
+                 "DISABLE TRIGGER graded_pair_observation_insert_only")
+    older = conn.execute(
+        f"UPDATE {graded_pairs.OBSERVATION_TABLE} "
+        "SET first_seen_at = first_seen_at - interval '30 days' "
+        "WHERE partner_moiety = %s RETURNING first_seen_at", (p,)).fetchone()[0]
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid IN (%s, %s)",
+                 (p, q))
+
+    (d,) = graded_pairs.departed(conn, s)
+    assert d.pairs == frozenset({(s, p), (s, q)})
+    assert d.first_seen_at == older
+
+
+def test_most_recently_reviewed_ruling_first_then_highest_id(conn, ingest_run_id):
+    """Rulings made in one transaction share reviewed_at (now()), so the id breaks
+    the tie, highest first; an earlier reviewed_at sorts after both."""
+    first, *_ = _a_rule_x_left(conn, ingest_run_id, 1)
+    second, *_ = _a_rule_x_left(conn, ingest_run_id, 2)
+    third, *_ = _a_rule_x_left(conn, ingest_run_id, 3)
+    assert [d.ruling_id for d in graded_pairs.departed(conn)] == [third, second, first]
+
+    conn.execute("SET CONSTRAINTS ALL IMMEDIATE")   # ALTER refuses pending events
+    conn.execute("ALTER TABLE drugref.curated_class_interaction "
+                 "DISABLE TRIGGER curated_class_interaction_append_only")
+    conn.execute("UPDATE drugref.curated_class_interaction "
+                 "SET reviewed_at = reviewed_at - interval '1 day' "
+                 "WHERE curated_class_interaction_id = %s", (third,))
+    assert [d.ruling_id for d in graded_pairs.departed(conn)] == [second, first, third]
