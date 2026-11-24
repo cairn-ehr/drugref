@@ -34,7 +34,12 @@ _TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
-assert set(_TIMED) | {_REACH, _SNAPSHOT} == set(release_archive._EXPORT_TABLES)
+# Exported, but not yet loaded or compared: Task 7 of #281 (the replay
+# regenerates observations through db/083's triggers as rulings and runs land).
+_OBSERVATIONS = "graded_pair_observation"
+_ACKS = "graded_pair_departure_ack"
+assert (set(_TIMED) | {_REACH, _SNAPSHOT, _OBSERVATIONS, _ACKS}
+        == set(release_archive._EXPORT_TABLES))
 
 
 def _columns(conn, table) -> list[str]:
