@@ -43,7 +43,8 @@ _EXPORT_TABLES = {
     # no one", not "never recorded" (db/082, #266).
     "curated_class_interaction_snapshot": "curated_class_interaction_id",
     # Every pair a reviewed grade reached, and the curator acts that closed an
-    # episode (db/083, #281). A replay compares the first and loads the second.
+    # episode (db/083, #281). Task 7 of #281: a replay will compare the first and
+    # load the second; until then it exports them only.
     "graded_pair_observation": "observation_id",
     "graded_pair_departure_ack": "ack_id",
     # Who vouched for what (#270, owner ruling 2026-11-21). A profile carries a
