@@ -6,6 +6,8 @@ stops listing it; the CLI wraps it as `drugref curate acknowledge-departure`.
 The CLI tests reuse test_cli_signing's `_NoCommit` wrapper so the handler's real
 `conn.commit()` never escapes the rolled-back `conn` fixture (conftest.py).
 """
+import uuid
+
 import psycopg
 import pytest
 
@@ -13,7 +15,8 @@ from drugref import cli, graded_pairs
 from tests.graded_pair_helpers import commit_point
 from tests.test_cli_signing import _NoCommit, _FakeConnectionContext
 from tests.test_class_subject_read_path import _a_graded_class_rule, _file_member
-from tests.test_graded_pairs_departed import _a_rule_x_left, _live_ruling, _rerule
+from tests.test_graded_pairs_departed import (_a_rule_x_left, _live_ruling, _moiety_rule,
+                                                _rerule)
 
 _WHY = dict(rationale="X left A on purpose", reviewed_by="dr t", reviewed_against="2026")
 
@@ -23,8 +26,8 @@ def _ack_count(conn):
 
 
 def test_acknowledging_silences_the_banner_for_that_drug_only(conn, ingest_run_id):
-    ruling, x, z, p, a, _b = _a_rule_x_left(conn, ingest_run_id, 1)
-    w = z                        # a second drug that also leaves the same ruling
+    ruling, x, w, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 1)
+    # w, a second drug, also leaves the same ruling
     conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (w,))
     assert graded_pairs.departed(conn, w) != []
 
@@ -88,6 +91,24 @@ def test_a_superseded_ruling_id_acknowledges_its_key(conn, ingest_run_id):
     assert graded_pairs.departed(conn, x) == []
 
 
+def test_a_moiety_grain_ack_works_end_to_end(conn, ingest_run_id):
+    ruling, s, p, _b = _moiety_rule(conn, ingest_run_id, 3)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+    assert graded_pairs.departed(conn, s) != []
+    assert graded_pairs.acknowledge(conn, "moiety", ruling, p, **_WHY) == {(s, p)}
+    assert graded_pairs.departed(conn, s) == []
+
+
+def test_a_moiety_ruling_id_under_the_class_grain_acknowledges_nothing(
+        conn, ingest_run_id):
+    ruling, s, p, _b = _moiety_rule(conn, ingest_run_id, 4)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+    with pytest.raises((graded_pairs.UnknownRuling, graded_pairs.NothingDeparted)):
+        graded_pairs.acknowledge(conn, "class", ruling, p, **_WHY)
+    assert _ack_count(conn) == 0
+    assert graded_pairs.departed(conn, s) != []
+
+
 def test_nothing_departed_refuses_and_writes_nothing(conn, ingest_run_id):
     ruling, _x, z, _p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 5)
     with pytest.raises(graded_pairs.NothingDeparted):
@@ -98,7 +119,7 @@ def test_nothing_departed_refuses_and_writes_nothing(conn, ingest_run_id):
 def test_an_unknown_ruling_id_is_refused(conn):
     with pytest.raises(graded_pairs.UnknownRuling):
         graded_pairs.acknowledge(
-            conn, "moiety", 2_000_000_000, __import__("uuid").uuid4(), **_WHY)
+            conn, "moiety", 2_000_000_000, uuid.uuid4(), **_WHY)
 
 
 def test_a_blank_rationale_is_refused(conn, ingest_run_id):
@@ -139,5 +160,5 @@ def test_cli_acknowledge_exits_1_when_nothing_departed(cli_conn, ingest_run_id, 
 
 
 def test_cli_acknowledge_exits_2_for_an_unknown_ruling(cli_conn, capsys):
-    assert cli.main(_argv(2_000_000_000, __import__("uuid").uuid4())) == 2
+    assert cli.main(_argv(2_000_000_000, uuid.uuid4())) == 2
     assert capsys.readouterr().err
