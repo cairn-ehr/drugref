@@ -1,6 +1,6 @@
 # Ever-graded pairs: a reviewed grade never vanishes silently (#281, #279)
 
-Date: 2026-11-24. Status: design, awaiting owner approval. Owner rulings: #281 option (c) "track what was
+Date: 2026-11-24. Status: design, APPROVED by the owner 2026-11-25. Owner rulings: #281 option (c) "track what was
 ever graded", applied to both grains (so it also closes #279); a departure banner ends by an explicit,
 recorded acknowledgement; curators find open departures with `drugref audit departures` (2026-11-25).
 Calls marked "my call" are the designer's and open to correction.
