@@ -59,11 +59,12 @@ CLI layer catches neither.
 import logging
 import pathlib
 import sys
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import drugref
-from drugref import curation
+from drugref import curation, graded_pairs
 from drugref.ingest import onchigh, onchigh_run
 
 log = logging.getLogger(__name__)
@@ -418,6 +419,27 @@ def _handle_curate_onchigh(conn, args) -> int:
     return 0
 
 
+def _handle_curate_acknowledge_departure(conn, args) -> int:
+    """`drugref curate acknowledge-departure`: record that a curator accepted a
+    reviewed grade no longer reaching DRUG. COMMITS (the CLI owns the transaction).
+    Exit 2 for an unknown ruling or blank text, 1 when nothing is departed."""
+    try:
+        _reject_blank(args, "rationale", "reviewed_by", "reviewed_against")
+        pairs = graded_pairs.acknowledge(
+            conn, args.grain, args.ruling_id, args.drug, rationale=args.rationale,
+            reviewed_by=args.reviewed_by, reviewed_against=args.reviewed_against)
+    except (_BlankArgumentError, graded_pairs.UnknownRuling) as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 2
+    except graded_pairs.NothingDeparted as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 1
+    conn.commit()
+    for subject, partner in sorted(pairs):
+        print(f"acknowledged {subject} {partner}")
+    return 0
+
+
 def register(commands) -> None:
     """Add the `curate` command group to an existing subparsers object.
 
@@ -443,3 +465,14 @@ def register(commands) -> None:
         "--reviewed-against", required=True,
         help="the release/edition this judgement was formed against")
     onchigh_parser.set_defaults(handler=_handle_curate_onchigh)
+
+    ack = curate_sources.add_parser(
+        "acknowledge-departure",
+        help="accept that a reviewed grade no longer reaches a drug")
+    ack.add_argument("--grain", required=True, choices=("class", "moiety"))
+    ack.add_argument("ruling_id", type=int, help="any version's id of the ruling")
+    ack.add_argument("drug", type=uuid.UUID, help="moiety UUID of the departed drug")
+    ack.add_argument("--rationale", required=True)
+    ack.add_argument("--reviewed-by", required=True)
+    ack.add_argument("--reviewed-against", required=True)
+    ack.set_defaults(handler=_handle_curate_acknowledge_departure)

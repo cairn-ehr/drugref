@@ -146,3 +146,64 @@ def departed(conn: psycopg.Connection, subject: uuid.UUID | None = None,
     """
     rows = conn.execute(_DEPARTED_SQL, {"subject": subject, "partner": partner})
     return [Departure(*r[:10], frozenset(zip(r[10], r[11]))) for r in rows]
+
+
+class UnknownRuling(LookupError):
+    """No ruling (of any version) has that id in that grain."""
+
+
+class NothingDeparted(ValueError):
+    """The drug is in no open departed episode of that ruling's key."""
+
+
+# Ruling-key lookup: any version's id names its key (a curator may paste a
+# superseded id from an old banner). Keyed by the CLI's grain spelling.
+_KEY_SQL = {
+    "moiety": ("moiety_rule",
+               "SELECT subject_moiety_uuid, object_class_uuid, relationship "
+               "FROM drugref.curated_interaction WHERE curated_interaction_id = %s"),
+    "class": ("class_rule",
+              "SELECT subject_class_uuid, object_class_uuid, relationship "
+              "FROM drugref.curated_class_interaction "
+              "WHERE curated_class_interaction_id = %s"),
+}
+
+
+def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
+                drug: uuid.UUID, *, rationale: str, reviewed_by: str,
+                reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
+    """Ack every open, currently-departed episode of the key of `ruling_id` (any
+    version) in which `drug` is the subject or partner moiety; return the pairs.
+
+    "Currently departed" is exactly what `departed` reports, so this reuses it
+    (once per direction) instead of repeating its SQL, then closes EVERY open
+    episode of those pairs, duplicates included. Raises `UnknownRuling` /
+    `NothingDeparted`; a blank rationale trips the table's CHECK. Does not commit.
+    """
+    rule_grain, sql = _KEY_SQL[grain]
+    key = conn.execute(sql, (ruling_id,)).fetchone()
+    if key is None:
+        raise UnknownRuling(f"no {grain} ruling with id {ruling_id}")
+    pairs = frozenset(
+        pair
+        for d in departed(conn, subject=drug) + departed(conn, partner=drug)
+        if (d.rule_grain, d.subject_key, d.object_class, d.relationship)
+        == (rule_grain, *key)
+        for pair in d.pairs)
+    if not pairs:
+        raise NothingDeparted(f"{drug} is in no open departed episode of ruling "
+                              f"{ruling_id}")
+    subjects, partners = zip(*pairs)
+    conn.execute(
+        f"""INSERT INTO {ACK_TABLE} (observation_id, rationale, reviewed_by,
+                                     reviewed_against)
+            SELECT o.observation_id, %s, %s, %s FROM {OBSERVATION_TABLE} o
+            WHERE o.rule_grain = %s AND o.subject_key = %s
+            AND   o.object_class_uuid = %s AND o.relationship = %s
+            AND   (o.subject_moiety, o.partner_moiety) IN
+                  (SELECT * FROM unnest(%s::uuid[], %s::uuid[]))
+            AND   NOT EXISTS (SELECT 1 FROM {ACK_TABLE} a
+                              WHERE a.observation_id = o.observation_id)""",
+        (rationale, reviewed_by, reviewed_against, rule_grain, *key,
+         list(subjects), list(partners)))
+    return pairs
