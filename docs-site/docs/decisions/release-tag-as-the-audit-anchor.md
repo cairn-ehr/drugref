@@ -64,8 +64,9 @@ file (issue #260). Not built now.
   signature, so a rebuild shows who vouched for what. It never carries passwords or sessions (issue #270).
 - A class ruling recorded before `db/080` has only a snapshot taken when the migration ran, not when the curator
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
-- `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now, which is also the data for
-  reporting a grade that silently dropped (issue #256).
+- `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now. The same reach record lets
+  `drugref interactions` warn `CHANGED SINCE REVIEW` when a ruling no longer reaches a pair it graded (issue #256);
+  the moiety grain has no reach record yet (#279).
 - A snapshot that reached no one is recorded as such (`db/082`, one marker row per snapshotted ruling, carried in
   the curated export), so the audit tells "reached no one" from "never recorded" (issue #266).
 - An archive file that is there but unreadable is reported as "could not check", never as "missing": "missing"
