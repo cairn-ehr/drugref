@@ -7103,7 +7103,7 @@ new test, and one per-module test picking up `replay_adapters.py`).
 #278): seeded rows compared, `point_rows` counts, three test gaps closed (§ "Replay loader checks"). The
 same-transaction account tie stays documented, not handled. +4 tests, 3630 → 3634.
 **Reviewed grades that no longer reach a pair (2026-11-23)** —
-**[#256](https://github.com/cairn-ehr/drugref/issues/256) FIXED** for the class grain (close on merge): `drugref
+**[#256](https://github.com/cairn-ehr/drugref/issues/256) FIXED, CLOSED** for the class grain (PR #280): `drugref
 interactions` banners `CHANGED SINCE REVIEW` when a live class ruling's reach snapshot holds an asked pair it no
 longer reaches (§ "Reviewed grades that no longer reach a pair"). Filed
 **[#279](https://github.com/cairn-ehr/drugref/issues/279)**: the moiety grain, which has no reach snapshot. Filed by

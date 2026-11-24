@@ -13,8 +13,8 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/silent-grade-drop-256`: #256 FIXED for the class grain; a PR to `main` carries it. No
-migration; schema still ends at `db/082`.** #277 closed (PR #278). The suite total lives in PROJECT-NOTES § "How to
+**Branch `claude/ever-graded-281`: #281 (owner: (c) "ever graded", both grains, closes #279; ended by acknowledgement),
+spec `superpowers/specs/2026-11-24-drugref-ever-graded-design.md`. Schema ends at `db/082`.** #256 closed (PR #280). The suite total lives in PROJECT-NOTES § "How to
 run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
 
 **⇒ THIS ROUND:** `drugref interactions` prints `** CHANGED SINCE REVIEW` (exit 3) when a live class ruling graded an
