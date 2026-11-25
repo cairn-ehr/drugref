@@ -1,8 +1,8 @@
 # A reviewed grade never vanishes silently
 
 **Status:** Active
-**Last reviewed:** 2026-11-25
-**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, `db/083`, `db/084`, `db/085`
+**Last reviewed:** 2026-11-26
+**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, `db/083`, `db/084`, `db/085`, `db/086`
 **Full derivation:** the [ever-graded design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-24-drugref-ever-graded-design.md)
 
 ## Context
@@ -31,7 +31,14 @@ written by the reviewer GUI's Rust service, and the release replay inserts them 
 on callers remembering to refresh would miss exactly the writers nobody thought of. A ruling changes grades only
 for its own rule, so a ruling's commit refreshes just that rule (`db/084`): milliseconds, where a full read of the
 grading view takes about 5 seconds on a full registry. An expansion-policy decision or a finished ingest can change
-any rule, so those still pay the full read, once per commit (issue #285).
+any rule, so those still pay the full read, once per commit (issue #285). Every writer of the ledger (both
+refreshes and an acknowledgement) first takes one database lock, held until it commits (`db/086`, issue #287).
+Without it, two commits at the same moment could each miss the other's work: a ruling saved during an ingest would
+not see the ingest's new class members, and an acknowledgement racing an ingest that grades the pair again would
+close the only episode. Each case left a pair graded with nothing to warn when it next departed. The lock makes
+such commits take turns: a ruling saved while an ingest is committing can wait for that ingest's 5-second refresh.
+Commits that change no ruling, expansion policy, ingest run or acknowledgement never wait. The lock refuses to
+run outside the database's default isolation level (READ COMMITTED), where it could not work.
 
 **3. A departure ends only when a curator acknowledges it.** The warning (`CHANGED SINCE REVIEW`, exit 3) repeats
 on every answer until `drugref curate acknowledge-departure` records who accepted the departure, when, against what
@@ -67,4 +74,4 @@ graded. The moiety grain has no earlier evidence; its history starts at `db/083`
   the reach snapshot it supersedes for the warning
 - [Append-only claims](append-only-claims.md) -- why the ledger and its acknowledgements are never rewritten
 - Code: `src/drugref/graded_pairs.py`, `cli_departures.py`, `db/083_graded_pair.sql`,
-  `db/084_graded_pair_per_key.sql`
+  `db/084_graded_pair_per_key.sql`, `db/086_graded_pair_lock.sql`

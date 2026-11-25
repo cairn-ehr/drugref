@@ -229,10 +229,17 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
     """Ack every open, currently-departed episode of the key of `ruling_id` (any
     version) in which `drug` is the subject or partner moiety; return the pairs
     (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
-    included. Raises `UnknownRuling` / `NothingDeparted` (also when a concurrent
-    ack closed them first, so this INSERT wrote nothing); a blank rationale trips
-    the table's CHECK. Does not commit.
+    included. Raises `UnknownRuling` / `NothingDeparted` (also when another
+    curator's ack committed first: the lock makes this call wait for it, then see
+    nothing departed); a blank rationale trips the table's CHECK. Does not commit,
+    so the caller holds the ledger lock (db/086) until it commits or rolls back,
+    also after a raise: end the transaction promptly.
     """
+    # Before reading (#287): an ingest re-grading the pair either committed first,
+    # so the read below sees it graded and leaves its episode open (NothingDeparted
+    # if nothing else departed), or waits for this commit and then opens a new
+    # episode after the ack.
+    conn.execute("SELECT drugref.lock_graded_pair_ledger()")
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
     pairs = pairs_to_acknowledge(conn, grain, ruling_id, drug)
     if not pairs:
@@ -251,8 +258,9 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                               WHERE a.observation_id = o.observation_id)""",
         (rationale, reviewed_by, reviewed_against, rule_grain, *key,
          list(subjects), list(partners))).rowcount
-    # Another curator's ack can commit between the read above and this INSERT
-    # (READ COMMITTED): then nothing was written, and "acknowledged" would be false.
+    # Defensive since db/086: a concurrent `acknowledge` waits on the lock and is
+    # caught by `if not pairs` above, so only an ack written WITHOUT the lock (raw
+    # SQL, a future GUI writer, #283) gets here; "acknowledged" would then be false.
     if not written:
         raise NothingDeparted(f"{drug}'s departures of ruling {ruling_id} were "
                               "already acknowledged by another curator")
