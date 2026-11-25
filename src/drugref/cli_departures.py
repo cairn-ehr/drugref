@@ -52,7 +52,7 @@ def format_departure(d: graded_pairs.Departure,
             f", {not_shown} not shown above" if not_shown else "")
         lines.append(f"      acknowledge ({scope}): drugref curate "
                      f"acknowledge-departure --grain {grain} {d.ruling_id} {drug} "
-                     "--rationale '...'")
+                     "--rationale '...' --reviewed-by NAME --reviewed-against REF")
     return lines
 
 

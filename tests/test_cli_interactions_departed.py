@@ -238,6 +238,8 @@ def test_format_departure_is_pure_over_its_hints():
     lines = cli_departures.format_departure(d, [(x, 3, 2)])
     assert lines[-1].startswith(
         "      acknowledge (closes 3 pair(s), 2 not shown above): ")
-    assert f"--grain class 7 {x} --rationale '...'" in lines[-1]
+    assert lines[-1].endswith(
+        f"--grain class 7 {x} --rationale '...' --reviewed-by NAME "
+        "--reviewed-against REF")
     assert not any("acknowledge" in ln
                    for ln in cli_departures.format_departure(d, []))
