@@ -43,7 +43,8 @@ def _departed(c):
 
 @pytest.fixture
 def build(databases, tmp_path, monkeypatch):  # noqa: F811
-    """`build(withdraw=False, acknowledge=False, twice=False)` publishes the origin and returns
+    """`build(withdraw=False, acknowledge=False, twice=False, cycle=False)` publishes
+    the origin and returns
     {origin, target, root, ruling, departed, keys, acks}: the origin's departures,
     (key, pair) set and acknowledgement rows (less ids), read after publishing."""
     origin, target = databases
@@ -57,7 +58,7 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
     (two / "members.txt").write_text(f"{A} {Y}\n{B} {Y}\n")
     kp = signing.generate_keypair()
 
-    def _build(*, withdraw=False, acknowledge=False, twice=False):
+    def _build(*, withdraw=False, acknowledge=False, twice=False, cycle=False):
         with psycopg.connect(origin) as c:
             _fake_ingest(c, [one / "members.txt"], "r1")
             rid = _rule(c)
@@ -79,6 +80,9 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
                     c, "class", rid, ids.mint_moiety_uuid(X), rationale="X left A",
                     reviewed_by="test", reviewed_against="2026")
                 c.commit()
+            if cycle:     # X returns (a second episode opens), then leaves again
+                _fake_ingest(c, [one / "members.txt"], "r3")
+                _fake_ingest(c, [two / "members.txt"], "r4")
             release_archive.publish_archived(
                 c, root=root, release_tag=TAG, published_by="op",
                 private_key=kp.private_key,
@@ -137,7 +141,9 @@ def test_an_observation_the_replay_lacks_is_a_difference(build):
     _edit(_export(p), retarget)
     assert _replay(p).differences == [
         "graded pair observed in the origin but not the replay: " + tampered["fake"],
-        "graded pair observed in the replay but not the origin: " + tampered["real"]]
+        "graded pair observed in the replay but not the origin: " + tampered["real"],
+        "graded pair left open in the origin but not the replay: " + tampered["fake"],
+        "graded pair left open in the replay but not the origin: " + tampered["real"]]
 
 
 def test_a_backfilled_export_warns_and_skips_the_comparison(build):
@@ -221,3 +227,32 @@ def test_an_ack_of_a_concurrent_second_episode_is_a_warning(build):
         "which the serial replay never opened: skipped"]
     with psycopg.connect(p["target"]) as c:
         assert _departed(c) == p["departed"] and _acks(c) == p["acks"][:1]
+
+
+def test_a_second_episode_after_an_ack_is_reproduced(build):
+    """Ack, X comes back (episode 2 opens), X leaves again: episode 2 is open and
+    departed in both, and the ack sits on episode 1 in both."""
+    p = build(acknowledge=True, cycle=True)
+    assert p["departed"] and len(p["acks"]) == 1
+    report = _replay(p)
+    assert report.differences == [] and report.reproduced
+    with psycopg.connect(p["target"]) as c:
+        assert _departed(c) == p["departed"] and _acks(c) == p["acks"]
+
+
+def test_an_ack_that_closed_the_other_episode_is_a_difference(build):
+    """Origin: ack episode 1, X returns (episode 2), X leaves: episode 2 is open.
+    The export's ack is moved after run 4, so the replay loads it onto the latest
+    open episode, which is episode 1 (run 3 opened nothing while it was open). Both
+    sides hold the same (key, pair)s; only the origin has one left open, and that
+    is reported (#286 review)."""
+    p = build(acknowledge=True, cycle=True)
+
+    def late(body):
+        (ack,) = body["graded_pair_departure_ack"]
+        ack["acknowledged_at"] = (release_replay._when(ack["acknowledged_at"])
+                                  + dt.timedelta(hours=1)).isoformat()
+    _edit(_export(p), late)
+    (o, *_) = json.loads(_export(p).read_text())["graded_pair_observation"]
+    assert _replay(p).differences == [
+        "graded pair left open in the origin but not the replay: " + _line(o)]

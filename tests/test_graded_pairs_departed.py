@@ -322,3 +322,40 @@ def test_a_self_pair_is_never_a_departure(conn, ingest_run_id):
 
     (d,) = graded_pairs.departed(conn, x)
     assert d.pairs == frozenset({(x, z)})
+
+
+# ============================================================================
+# Orphans: left to #121's banner, which must then see what db/083 saw (#286 review)
+# ============================================================================
+
+
+def test_a_moiety_orphan_is_left_to_the_orphan_banner(conn, ingest_run_id):
+    """The moiety arm of the orphan match (`subject_class` is NULL there, db/035)."""
+    _ruling, s, p, _b = _moiety_rule(conn, ingest_run_id, 7)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+    assert graded_pairs.departed(conn, s), "a departure before the orphaning"
+    conn.execute("DELETE FROM drugref.class_contraindication "
+                 "WHERE subject_moiety_uuid = %s", (s,))
+    assert graded_pairs.departed(conn, s) == []
+
+
+def test_a_late_joiner_of_an_orphaned_rule_still_reaches_the_orphan_banner(
+        conn, ingest_run_id):
+    """Y joined after the ruling (no db/080 snapshot holds it), was observed, then
+    left in the ingest that also dropped the candidate. `departed` defers to the
+    orphan banner, so the orphan banner must know Y from db/083's observations."""
+    from drugref import class_grain_read
+    sc, oc, (_x,), (_p,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000028120", object_code="N0000028121",
+        subject_members=[("TESTUN2812A", "original")],
+        object_members=[("TESTUN2812B", "partner")])
+    commit_point(conn)
+    y = _a_moiety(conn, ingest_run_id, "TESTUN2812C", "joined later")
+    _file_member(conn, y, sc, ingest_run_id)
+    _a_finished_run(conn)
+    commit_point(conn)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (y,))
+    conn.execute("DELETE FROM drugref.class_pair_contraindication")
+
+    assert graded_pairs.departed(conn, y) == []
+    assert class_grain_read.class_rules_reaching(conn, {y}) == {(sc, oc, "CI_MoA")}

@@ -3,7 +3,7 @@
 Split out of `release_replay` to keep that file under the ~500-line cap. The
 loader is the part the curated export grows with, so it lives alone with the
 table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_OBSERVATIONS`) it
-is driven by; `release_replay` imports them back (tests patch `release_replay.*`).
+is driven by; `release_replay` imports `_TIMED` and `_Loader` from here.
 """
 from psycopg import sql
 from psycopg.types.json import Jsonb
@@ -88,6 +88,9 @@ class _Loader:
         self.snapshot = {r["curated_class_interaction_id"]: r
                          for r in export[_SNAPSHOT]}
         self.observations = {r["observation_id"]: r for r in export[_OBSERVATIONS]}
+        # The origin's acked episodes, so `compare_observations` can tell which of
+        # its (key, pair)s were left open.
+        self.origin_acked = {r["observation_id"] for r in export[_ACKS]}
         self.stamp = None     # the last loaded row's timestamp (`load`)
         self.acked: set[tuple] = set()   # ((key, pair), acknowledged_at) loaded
 
@@ -176,20 +179,34 @@ class _Loader:
 
     def compare_observations(self) -> None:
         """After the last commit: each (key, pair) the export observed and the
-        replay did not, or the reverse, is one difference (spec 5.6). An export
-        holding db/083's backfill cannot match (the replay migrates an empty
-        database, so its backfill wrote nothing): warn and skip instead."""
+        replay did not, or the reverse, is one difference (spec 5.6); so is each
+        (key, pair) left with an OPEN (unacknowledged) episode on one side only.
+
+        WHY BOTH: the first is blind to which episode an ack closed. An ack loaded
+        onto an episode the replay still graded closes it, the next refresh opens
+        another, and both sides then hold the same (key, pair)s while disagreeing
+        on whether a departure is still open. An export holding db/083's backfill
+        cannot match (the replay migrates an empty database, so its backfill wrote
+        nothing): warn and skip instead."""
         if any(o["captured"] == "backfill_db083" for o in self.observations.values()):
             self.report.warnings.append("observations predate db/083: not reproducible")
             return
-        origin = {tuple(o[c] for c in _KEY_PAIR) for o in self.observations.values()}
-        replay = set(self.conn.execute(
-            "SELECT " + ", ".join(f"{c}::text" for c in _KEY_PAIR)
-            + f" FROM {graded_pairs.OBSERVATION_TABLE}"))
-        for side, extra in (("the origin but not the replay", origin - replay),
-                            ("the replay but not the origin", replay - origin)):
-            self.report.differences += [f"graded pair observed in {side}: "
-                                        + " ".join(k) for k in sorted(extra)]
+        key_pair = "SELECT " + ", ".join(f"o.{c}::text" for c in _KEY_PAIR)
+        table = f" FROM {graded_pairs.OBSERVATION_TABLE} o"
+        unacked = (f" WHERE NOT EXISTS (SELECT 1 FROM {graded_pairs.ACK_TABLE} a "
+                   "WHERE a.observation_id = o.observation_id)")
+        for what, origin, replay in (
+                ("observed", {tuple(o[c] for c in _KEY_PAIR)
+                              for o in self.observations.values()},
+                 set(self.conn.execute(key_pair + table))),
+                ("left open", {tuple(o[c] for c in _KEY_PAIR)
+                               for i, o in self.observations.items()
+                               if i not in self.origin_acked},
+                 set(self.conn.execute(key_pair + table + unacked)))):
+            for side, extra in (("the origin but not the replay", origin - replay),
+                                ("the replay but not the origin", replay - origin)):
+                self.report.differences += [f"graded pair {what} in {side}: "
+                                            + " ".join(k) for k in sorted(extra)]
 
     def _compare_seeded(self, table, row) -> None:
         """A row a migration already seeded is not re-inserted: report it when the

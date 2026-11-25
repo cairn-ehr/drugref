@@ -6896,14 +6896,16 @@ curated grade` for a pair the curator graded, with nothing saying why.
   fresh snapshot lacks it), and a drug that joined after the ruling and later left (never in the snapshot). Both
   were named in `departed_reach`'s docstring; that function is gone, and the banner now reads the ever-graded
   ledger (§ "Ever-graded pairs").
-- **The banner** (then `cli_interactions._report_departures`, now `cli_departures.report_departures`):
-  `** CHANGED SINCE REVIEW ...`, an entry per ruling (its id, classes, axis, severity and reviewer; then the pairs
-  no longer reached and a pointer to `drugref audit class-ruling <id>`). A ruling departing both directions of the
-  asked pair (a class against itself) is one entry. A `backfill_db080` reach says "recorded at db/080's migration,
-  not at ruling time". Exit 3 (`EXIT_INCOMPLETE`), and the pair form withholds its "ABSENT RULE" sentence. The
+- **The banner** (as #256 shipped it, `cli_interactions._report_departures`; since #281
+  `cli_departures.report_departures`, see § "Ever-graded pairs"): `** CHANGED SINCE REVIEW ...`, an entry per
+  ruling (its id, classes, axis, severity and reviewer; then the pairs no longer reached and a pointer to `drugref
+  audit class-ruling <id>`). A ruling departing both directions of the asked pair (a class against itself) is one
+  entry. #256's version said "recorded at db/080's migration, not at ruling time" for a `backfill_db080` reach
+  (#281's says the same of a `backfill_db083` observation). Exit 3 (`EXIT_INCOMPLETE`), and the pair form withholds its "ABSENT RULE" sentence. The
   one-drug form asks with the drug as subject only (it lists only those grades); the pair form asks both
   directions.
-- **Without db/079 or db/080** a stderr note says drugref cannot tell, and the exit code is left alone: "cannot tell"
+- **Without db/079 or db/080** (#256's version; since #281 the probe is db/083's two tables) a stderr note says
+  drugref cannot tell, and the exit code is left alone: "cannot tell"
   is not "known incomplete". The note is `migration_guard.guard_message` fed by the ledger, so a table dropped after
   db/080 ran is named DROPPED; and the pair form replaces "ABSENT RULE" with "could not check ... not a complete
   answer", since that reassurance rests on the check that did not run. The relations are probed with `to_regclass`
@@ -6920,7 +6922,7 @@ curated grade` for a pair the curator graded, with nothing saying why.
   ruling never paired it with), a self-pair, one ruling departing both directions, an orphan banner not hiding a
   departure, and a database without db/080 in both forms.
 
-## Ever-graded pairs (#281, #279, 2026-11-25) — `db/083`–`db/084`, on `drugref_test`, suite 3649 → 3715
+## Ever-graded pairs (#281, #279, 2026-11-25) — `db/083`–`db/085`, on `drugref_test`, suite 3649 → 3721
 
 The #256 banner compared a pair against a ruling-time snapshot, so three departures stayed silent: a drug that left
 before a correction (the correction re-snapshots), a drug that joined after the ruling and later left, and every
@@ -7028,18 +7030,28 @@ docs-site *A reviewed grade never vanishes silently*.
   ignored Rust tests failed before this work: [#282](https://github.com/cairn-ehr/drugref/issues/282).
 - **Removed:** `class_ruling_reach.departed_reach`. db/080's reach snapshot stays as the "what the curator saw when
   ruling" audit (`drugref audit class-ruling`); the banner no longer reads it.
-- **Tests (+66, 3649 → 3715):** the ledger, refresh and trigger guard (every trigger exists on its table; a
-  `finish_run` and a ruling each fire it), `departed` for each Review Focus (two open episodes for one pair listed
-  once and closed together; a class against itself; a pasted superseded id; withdrawn then reinstated; the
-  join-then-leave and correction-after-leaving cases that were silent before), the moiety grain (a partner leaves,
-  a deny cuts a subclass), `acknowledge` and its refusals, the banner and its R7 hint, `audit departures`, the
-  release export and replay comparison (set differences, acks loaded, the backfill warning, the concurrent-episode
-  warning), and an ignored Rust test in `reviewer-service/src/decisions.rs` that a GUI-recorded moiety ruling is
-  observed at commit (it fails on db/082 and with the trigger dropped; passes on db/084). db/084's five
-  (`tests/test_graded_pairs_refresh_key.py`): the per-key refresh records exactly the full refresh's rows for its
-  key and nothing for another, keeps the open-episode rule, matches nothing across grains, a ruling's commit
-  refreshes only its own key, and a guard that the ruling triggers run the per-key function and the other two
-  the full one. No timing assertion; the figures are under "Cost".
+- **Final review (`/finalcheck`, +6 tests):** (1) the orphan banner's `class_rules_reaching` gained a db/083 arm:
+  a drug that joined after a class ruling (no reach snapshot holds it) and left in the ingest that also orphaned
+  the ruling was in NEITHER banner, since `departed` defers orphans to #121's; its guard is now db/083's. (2)
+  `audit departures` counts orphaned rulings (`curation.unresolved_targets`) and exits 3 on any, so the post-ingest
+  gate cannot read "0" over them. (3) `acknowledge` raises `NothingDeparted` when its INSERT wrote nothing (a
+  concurrent ack got there first) rather than reporting success. (4) The replay also compares the (key, pair)s left
+  with an OPEN episode: the observed-set comparison was blind to an ack closing a different episode than the
+  origin's. (5) `db/085` re-comments db/083's table and `refresh_graded_pairs` for db/084's split (comments only).
+  Filed [#287](https://github.com/cairn-ehr/drugref/issues/287): two READ COMMITTED races (a ruling committing
+  during an ingest's refresh; an ack racing a re-grade) can each miss an episode.
+- **Tests (+72, 3649 → 3721; the last 6 from the final review):** the ledger, refresh and trigger guard (every
+  trigger exists on its table; a `finish_run` and a ruling each fire it), `departed` for each Review Focus (two open
+  episodes for one pair listed once and closed together; a class against itself; a pasted superseded id; withdrawn
+  then reinstated; the join-then-leave and correction-after-leaving cases that were silent before), the moiety grain
+  (a partner leaves, a deny cuts a subclass), `acknowledge` and its refusals, the banner and its R7 hint,
+  `audit departures`, the release export and replay comparison (set differences, acks loaded, the backfill warning,
+  the concurrent-episode warning), and an ignored Rust test in `reviewer-service/src/decisions.rs` that a
+  GUI-recorded moiety ruling is observed at commit (it fails on db/082 and with the trigger dropped; passes on
+  db/084). db/084's five (`tests/test_graded_pairs_refresh_key.py`): the per-key refresh records exactly the full
+  refresh's rows for its key and nothing for another, keeps the open-episode rule, matches nothing across grains, a
+  ruling's commit refreshes only its own key, and a guard that the ruling triggers run the per-key function and the
+  other two the full one. No timing assertion; the figures are under "Cost".
 
 ## The standing open-issue ledger
 
@@ -7240,7 +7252,8 @@ before a correction, or joined after the ruling, still departs silently. +15 tes
 **[#284](https://github.com/cairn-ehr/drugref/issues/284)** (sign acknowledgements),
 **[#285](https://github.com/cairn-ehr/drugref/issues/285)** (retitled after `db/084`: policy writes and ingest
 finishes still run the ~5 s full refresh; acceptable), **[#282](https://github.com/cairn-ehr/drugref/issues/282)**
-(two ignored Rust tests failed before this work). +66 tests, 3649 → 3715.
+(two ignored Rust tests failed before this work), **[#287](https://github.com/cairn-ehr/drugref/issues/287)**
+(two READ COMMITTED races can miss an episode). +72 tests, 3649 → 3721.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7426,7 +7439,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3715 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3721 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7811,12 +7824,13 @@ ran in CI and `ruff` was not even a project dependency.
   `audit_ruling`; `departed_reach` was deleted by #281), `archive.py` (the `DRUGREF_ARCHIVE` content-addressed
   store and its verifier), `release_archive.py` (`publish_archived`: build row, release record, curated export),
   `release_state.py` (the `current_release` read and the release header line), `cli_audit.py` (`drugref audit
-  class-ruling|archive|replay`) and `release_replay.py` (`replay`, `schedule`: rebuild a release into an empty
-  database; its per-orchestrator `ADAPTERS` live in `replay_adapters.py`, and its `_Loader` in `replay_loader.py`)
-  + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; #281/#279): `graded_pairs.py`
-  (`refresh`, `departed`, `leavers`, `pairs_to_acknowledge`, `acknowledge`: the ledger's whole Python API) and
-  `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure `format_departure`, `ack_hints`,
-  `drugref audit departures`, `EXIT_INCOMPLETE`)
+  class-ruling|archive|replay|departures`; the last in `cli_departures.py`) and `release_replay.py` (`replay`,
+  `schedule`: rebuild a release into an empty database; its per-orchestrator `ADAPTERS` live in
+  `replay_adapters.py`, and its `_Loader` in `replay_loader.py`)
+  + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; `db/085` their comments; #281/#279):
+  `graded_pairs.py` (`refresh`, `departed`, `leavers`, `pairs_to_acknowledge`, `acknowledge`: the ledger's whole
+  Python API) and `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure
+  `format_departure`, `ack_hints`, `drugref audit departures`, `EXIT_INCOMPLETE`)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so

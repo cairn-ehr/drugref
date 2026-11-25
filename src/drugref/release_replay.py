@@ -40,8 +40,12 @@ WHAT IT DOES, in order (`replay`):
      replay's own refreshes observed (they are never loaded), each extra on
      either side one difference. An export holding db/083's backfill cannot
      match (the empty target's backfill wrote nothing): a WARNING, not compared;
+   - each (ruling key, pair) left with an open (unacknowledged) episode, the same
+     way: it catches an ack that closed a different episode than the origin's;
    - each acknowledgement, loaded onto the replayed episode of its (key, pair)
-     open at that moment: none open is a difference, and the ack is skipped.
+     open at that moment: none open is a difference, and the ack is skipped --
+     unless it closed a second concurrent origin episode the serial replay never
+     opened, which is a WARNING (skipped too).
 
 A replay with no differences is a verified reproduction (`ReplayReport.reproduced`)
 only when it also has no warnings: other code, or a record from before the

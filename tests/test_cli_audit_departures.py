@@ -57,3 +57,15 @@ def test_one_pair_departed_by_two_rulings_is_counted_once(conn, ingest_run_id, c
 
     assert cli_departures.handle_audit_departures(conn, None) == 3
     assert "open departures: 2 ruling(s), 2 pair(s)" in capsys.readouterr().out
+
+
+def test_an_orphan_is_counted_and_exits_3(conn, ingest_run_id, capsys):
+    """`departed` leaves an orphaned ruling to #121's banner, so the audit, which is
+    the post-ingest gate, must not read "0" over it (#286 review)."""
+    _a_rule_x_left(conn, ingest_run_id, 5)
+    conn.execute("DELETE FROM drugref.class_pair_contraindication")
+
+    assert cli_departures.handle_audit_departures(conn, None) == 3
+    out = capsys.readouterr().out
+    assert "open departures: 0 ruling(s), 0 pair(s)" in out
+    assert "orphaned rulings: 1" in out and "drugref status" in out

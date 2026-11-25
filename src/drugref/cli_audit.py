@@ -9,6 +9,9 @@ live in `archive`, and this module reads the release record and curated export.
 
 `replay --release TAG` rebuilds that release into the (empty) database `--dsn`
 names, from the archive alone (#259); the work lives in `release_replay`.
+
+`departures` lists every open departure of a reviewed grade, both grains, and
+counts orphaned rulings (#281); the handler lives in `cli_departures`.
 """
 import json
 import sys

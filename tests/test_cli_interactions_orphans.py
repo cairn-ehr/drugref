@@ -422,8 +422,10 @@ def test_both_missing_relations_are_named_in_one_sentence(monkeypatch, capsys):
     assert cli_interactions._handle_interactions(
         _BothMissing(psycopg.errors.UndefinedTable("gone")),
         _args(_KNOWN_TO_THE_STUB)) == cli_interactions.EXIT_INCOMPLETE
-    assert (f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079) and "
-            f"{class_ruling_reach.REACH_TABLE} (db/080) are missing, so every "
+    # The stub has no db/083 either, so its table is named too.
+    assert (f"note: {class_grain_read.RULE_MEMBER_VIEW} (db/079), "
+            f"{class_ruling_reach.REACH_TABLE} (db/080) and "
+            f"{graded_pairs.OBSERVATION_TABLE} (db/083) are missing, so every "
             "class-rule orphan is shown") in capsys.readouterr().err
 
 
@@ -488,7 +490,8 @@ def test_a_wrong_shaped_reach_read_names_db080_not_a_traceback(
         conn, ingest_run_id, monkeypatch):
     """Both relations exist, but the read itself is the wrong shape. The guard must
     produce its operator sentence (RuntimeError), not a ValueError from passing it a
-    migration that is not one three-digit prefix (the bug was "079 or 080")."""
+    migration that is not one three-digit prefix (the bug was "079 or 080"); the
+    prefix is db/083's since the read gained its observation arm."""
     _orphaned_class_rule(conn, ingest_run_id, 6, [("TESTUN2561", "subject")],
                          [("TESTUN2562", "partner")])
 
@@ -499,7 +502,7 @@ def test_a_wrong_shaped_reach_read_names_db080_not_a_traceback(
     with pytest.raises(RuntimeError) as raised:
         cli_interactions._handle_interactions(conn, _args(_a_moiety(
             conn, ingest_run_id, "TESTUN2563", "asked")))
-    assert "080" in str(raised.value)
+    assert "083" in str(raised.value)
 
 
 def test_a_drug_that_left_the_partner_class_is_still_bannered(

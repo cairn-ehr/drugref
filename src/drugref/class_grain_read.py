@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import psycopg
 
 from drugref.class_ruling_reach import REACH_TABLE
+from drugref.graded_pairs import OBSERVATION_TABLE
 
 
 @dataclass(frozen=True)
@@ -194,10 +195,16 @@ def class_rules_reaching(conn: psycopg.Connection,
     superseded ones included, whose reach snapshot holds the drug.
     That covers a drug that has since left a class which keeps other members.
 
+    A rule also concerns a drug db/083 OBSERVED it grading (any version of the key,
+    subject or partner side): a drug that joined after the ruling, so no reach
+    snapshot holds it, and left in the ingest that orphaned the rule.
+    `graded_pairs.departed` leaves orphans to this banner, so without this arm
+    neither banner would name it.
+
     Asked only when `drugref interactions` has a class-grain orphan in hand (expected
     never), so its cost is not on the ordinary read. Raises UndefinedTable uncaught
-    on a database predating db/079 or db/080; the caller's guard turns that into a
-    sentence.
+    on a database predating db/079, db/080 or db/083; the caller's guard turns that
+    into a sentence.
     """
     rows = conn.execute(
         "SELECT cci.subject_class_uuid, cci.object_class_uuid, cci.relationship "
@@ -215,6 +222,13 @@ def class_rules_reaching(conn: psycopg.Connection,
         "               AND v.object_class_uuid = cci.object_class_uuid "
         "               AND v.relationship = cci.relationship "
         "               AND r.moiety_uuid = ANY(%s)) "
+        f"  OR EXISTS (SELECT 1 FROM {OBSERVATION_TABLE} o "
+        "              WHERE o.rule_grain = 'class_rule' "
+        "                AND o.subject_key = cci.subject_class_uuid "
+        "                AND o.object_class_uuid = cci.object_class_uuid "
+        "                AND o.relationship = cci.relationship "
+        "                AND (o.subject_moiety = ANY(%s) "
+        "                     OR o.partner_moiety = ANY(%s))) "
         f"  OR NOT EXISTS (SELECT 1 FROM {RULE_MEMBER_VIEW} m "
         "                  WHERE m.curated_class_interaction_id "
         "                        = cci.curated_class_interaction_id "
@@ -223,5 +237,5 @@ def class_rules_reaching(conn: psycopg.Connection,
         "                  WHERE m.curated_class_interaction_id "
         "                        = cci.curated_class_interaction_id "
         "                    AND m.side = 'partner'))",
-        (list(moieties), list(moieties))).fetchall()
+        [list(moieties)] * 4).fetchall()
     return {tuple(r) for r in rows}

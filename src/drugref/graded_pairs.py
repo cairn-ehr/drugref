@@ -7,8 +7,9 @@ no trace there, so nobody can be told a reviewed warning stopped reaching a drug
 db/083 writes one observation per (ruling key, pair) episode, refreshed at every
 COMMIT that could change the view. `departed` compares it with the live view to
 find the pairs a still-standing ruling stopped grading. The SQL owns the refresh
-(`drugref.refresh_graded_pairs()`); this module names its objects, lets a caller
-refresh before committing, and reads the departures.
+(`drugref.refresh_graded_pairs()` at an ingest or policy commit, db/084's
+`refresh_graded_pairs_for_key` at a ruling commit); this module names its objects,
+lets a caller refresh before committing, and reads the departures.
 """
 import uuid
 from dataclasses import dataclass
@@ -228,7 +229,8 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
     """Ack every open, currently-departed episode of the key of `ruling_id` (any
     version) in which `drug` is the subject or partner moiety; return the pairs
     (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
-    included. Raises `UnknownRuling` / `NothingDeparted`; a blank rationale trips
+    included. Raises `UnknownRuling` / `NothingDeparted` (also when a concurrent
+    ack closed them first, so this INSERT wrote nothing); a blank rationale trips
     the table's CHECK. Does not commit.
     """
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
@@ -237,7 +239,7 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
         raise NothingDeparted(f"{drug} is in no open departed episode of ruling "
                               f"{ruling_id}")
     subjects, partners = zip(*pairs)
-    conn.execute(
+    written = conn.execute(
         f"""INSERT INTO {ACK_TABLE} (observation_id, rationale, reviewed_by,
                                      reviewed_against)
             SELECT o.observation_id, %s, %s, %s FROM {OBSERVATION_TABLE} o
@@ -248,5 +250,10 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
             AND   NOT EXISTS (SELECT 1 FROM {ACK_TABLE} a
                               WHERE a.observation_id = o.observation_id)""",
         (rationale, reviewed_by, reviewed_against, rule_grain, *key,
-         list(subjects), list(partners)))
+         list(subjects), list(partners))).rowcount
+    # Another curator's ack can commit between the read above and this INSERT
+    # (READ COMMITTED): then nothing was written, and "acknowledged" would be false.
+    if not written:
+        raise NothingDeparted(f"{drug}'s departures of ruling {ruling_id} were "
+                              "already acknowledged by another curator")
     return pairs

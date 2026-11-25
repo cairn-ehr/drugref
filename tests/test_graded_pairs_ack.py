@@ -162,3 +162,16 @@ def test_cli_acknowledge_exits_1_when_nothing_departed(cli_conn, ingest_run_id, 
 def test_cli_acknowledge_exits_2_for_an_unknown_ruling(cli_conn, capsys):
     assert cli.main(_argv(2_000_000_000, uuid.uuid4())) == 2
     assert capsys.readouterr().err
+
+
+def test_an_ack_that_closes_nothing_is_refused(conn, ingest_run_id, monkeypatch):
+    """Another curator's ack committed between the departure read and the INSERT:
+    the INSERT writes no row, so this curator's rationale is nowhere. Refused, not
+    reported as done (#286 review). The race is staged by replaying the read."""
+    ruling, x, _z, _p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 9)
+    stale = graded_pairs.pairs_to_acknowledge(conn, "class", ruling, x)
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+    monkeypatch.setattr(graded_pairs, "pairs_to_acknowledge", lambda *a: stale)
+
+    with pytest.raises(graded_pairs.NothingDeparted, match="already acknowledged"):
+        graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
