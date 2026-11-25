@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Last reviewed:** 2026-11-25
-**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, `db/083`
+**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, `db/083`, `db/084`
 **Full derivation:** the [ever-graded design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-24-drugref-ever-graded-design.md)
 
 ## Context
@@ -28,8 +28,10 @@ class rule's grade may now see only a weaker one, and is told.
 **2. The ledger is refreshed by deferred database triggers, not by calls from Python.** A refresh runs at commit
 after any insert of a ruling or an expansion-policy decision, and after any ingest run finishes. Rulings are also
 written by the reviewer GUI's Rust service, and the release replay inserts them directly, so a rule that depended
-on callers remembering to refresh would miss exactly the writers nobody thought of. The price is one full read of
-the grading view per such row; a batch of N rulings costs N reads (issue #285).
+on callers remembering to refresh would miss exactly the writers nobody thought of. A ruling changes grades only
+for its own rule, so a ruling's commit refreshes just that rule (`db/084`): milliseconds, where a full read of the
+grading view takes about 5 seconds on a full registry. An expansion-policy decision or a finished ingest can change
+any rule, so those still pay the full read, once per commit (issue #285).
 
 **3. A departure ends only when a curator acknowledges it.** The warning (`CHANGED SINCE REVIEW`, exit 3) repeats
 on every answer until `drugref curate acknowledge-departure` records who accepted the departure, when, against what
@@ -62,4 +64,5 @@ graded. The moiety grain has no earlier evidence; its history starts at `db/083`
 - [Release tag as the decision-audit anchor](release-tag-as-the-audit-anchor.md) -- the audit this extends, and
   the reach snapshot it supersedes for the warning
 - [Append-only claims](append-only-claims.md) -- why the ledger and its acknowledgements are never rewritten
-- Code: `src/drugref/graded_pairs.py`, `cli_departures.py`, `db/083_graded_pair.sql`
+- Code: `src/drugref/graded_pairs.py`, `cli_departures.py`, `db/083_graded_pair.sql`,
+  `db/084_graded_pair_per_key.sql`
