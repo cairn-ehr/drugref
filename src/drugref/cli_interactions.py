@@ -42,14 +42,12 @@ NEITHER FORM EVER SAYS "SAFE". drugref publishes facts, never verdicts (the rule
 `accumulation.py` states for the same reason): an absent rule is an absent rule, not
 evidence of absence, and the overlay is small and deliberately so.
 """
-import dataclasses
 import sys
 import uuid
 
-import psycopg
-
-from drugref import (class_grain_read, class_ruling_reach, curated_read, curation, db,
-                     migration_guard, registry_read, release_state)
+from drugref import (class_grain_read, class_ruling_reach, cli_departures,
+                     curated_read, curation, migration_guard, registry_read,
+                     release_state)
 
 
 def _print_grades(grades, heading: str) -> None:
@@ -196,77 +194,6 @@ def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
     return True
 
 
-def _report_departures(conn, directions) -> bool | None:
-    """Banner any live class ruling that graded an asked pair when the curator ruled
-    and no longer reaches it, its candidate intact (#256). Returns whether it printed,
-    or None for "cannot tell".
-
-    THE GAP #121'S BANNER LEFT: a drug leaving a class, or a policy deny cutting the
-    subclass it was reached through, drops the grade from the list with no orphan to
-    show, so `no curated grade` read as reassurance for a pair drugref has judged.
-    `directions` is (subject, partner-or-None) per lookup the caller printed, so the
-    banner speaks about exactly the lists above it. ONE ENTRY PER RULING: a class
-    against itself can depart both directions of one pair, and that is one ruling.
-
-    WITHOUT db/079 OR db/080 THERE IS NO REACH TO COMPARE: a note on stderr, the
-    exit code is left alone -- "cannot tell" is not "known incomplete" -- and None
-    tells the pair form not to conclude "ABSENT RULE". The note is migration_guard's
-    own sentence, fed by the ledger, so a table DROPPED after db/080 ran is named as
-    dropped rather than sent round `drugref migrate`'s no-op loop. Probed with
-    `to_regclass` first, not by catching the failed read, so the transaction is never
-    aborted and nothing needs rolling back.
-    """
-    needed = (class_grain_read.RULE_MEMBER_VIEW, class_ruling_reach.REACH_TABLE)
-    absent = tuple(rel for rel in needed if conn.execute(
-        "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None)
-    if absent:
-        consequence = ("drugref cannot tell whether a reviewed class grade dropped "
-                       "out since it was reviewed")
-        try:
-            applied = db.migration_applied(conn, "080")
-        except psycopg.Error:   # no ledger (hand-bootstrapped): say only what is known
-            print(f"note: {', '.join(absent)} missing (db/079, db/080), so "
-                  f"{consequence}. Run `drugref status`.", file=sys.stderr)
-            return None
-        print("note: " + migration_guard.guard_message(
-            migration_guard.Diagnosis(
-                absent=absent, migration_applied=applied,
-                detail="to_regclass found no such relation"),
-            migration="080", consequence=consequence), file=sys.stderr)
-        return None
-    by_ruling: dict[int, class_ruling_reach.DepartedReach] = {}
-    with migration_guard.guarded(
-            conn, relations=needed, migration="080",
-            consequence="drugref cannot tell whether a reviewed class grade "
-                        "dropped out"):
-        # Both relations exist, so only a wrong-shaped read lands here. One call per
-        # direction -- the same read on the same relations -- and the pair form asks
-        # two; widening this would not hide a different relation's failure.
-        for subject, partner in directions:
-            for d in class_ruling_reach.departed_reach(conn, subject, partner):
-                seen = by_ruling.get(d.curated_class_interaction_id)
-                by_ruling[d.curated_class_interaction_id] = (
-                    d if seen is None else
-                    dataclasses.replace(seen, pairs=seen.pairs | d.pairs))
-    departed = list(by_ruling.values())
-    if not departed:
-        return False
-    print(f"** CHANGED SINCE REVIEW: {len(departed)} curated class ruling(s) graded "
-          "the pair(s) below when the curator ruled and NO LONGER REACH THEM (a drug "
-          "left a class, or an expansion-policy deny now cuts the class it was reached "
-          "through), so their grade no longer reaches the list above **")
-    for d in departed:
-        when = (" (reach recorded at db/080's migration, not at ruling time)"
-                if d.captured == "backfill_db080" else "")
-        pairs = ", ".join(f"{s} -> {p}" for s, p in sorted(d.pairs, key=str))
-        print(f"   ruling {d.curated_class_interaction_id}: class {d.subject_class} -> "
-              f"class {d.object_class} [{d.relationship}] {d.severity}, reviewed by "
-              f"{d.reviewed_by} against {d.reviewed_against}{when}")
-        print(f"      no longer reached: {pairs}. "
-              f"See `drugref audit class-ruling {d.curated_class_interaction_id}`")
-    return True
-
-
 def _known_moieties(conn, asked: list[uuid.UUID]) -> set[uuid.UUID]:
     """`known_moieties`, guarded like every other read this command makes.
 
@@ -363,7 +290,8 @@ def _handle_interactions(conn, args) -> int:
         _print_grades(_grades_for(conn, args.moiety),
                       f"grades with {args.moiety} as subject")
         incomplete = _report_orphans(conn, {args.moiety})
-        incomplete |= bool(_report_departures(conn, [(args.moiety, None)]))
+        incomplete |= bool(cli_departures.report_departures(
+            conn, [(args.moiety, None)]))
         print("note: rules are DIRECTIONAL (db/006) -- this lists only rules drugref "
               "states with this moiety as the SUBJECT. Ask about a specific pair to "
               "search both directions.")
@@ -393,8 +321,8 @@ def _handle_interactions(conn, args) -> int:
         _print_grades(grades, f"{subject} -> {partner}")
     # Both banners print before either decides the exit: one must not hide the other.
     orphaned = _report_orphans(conn, {args.moiety, args.against})
-    departed = _report_departures(conn, [(args.moiety, args.against),
-                                         (args.against, args.moiety)])
+    departed = cli_departures.report_departures(
+        conn, [(args.moiety, args.against), (args.against, args.moiety)])
     if departed or orphaned:
         return EXIT_INCOMPLETE
     if not found and departed is None:

@@ -308,3 +308,17 @@ def test_most_recently_reviewed_ruling_first_then_highest_id(conn, ingest_run_id
                  "SET reviewed_at = reviewed_at - interval '1 day' "
                  "WHERE curated_class_interaction_id = %s", (third,))
     assert [d.ruling_id for d in graded_pairs.departed(conn)] == [second, first, third]
+
+
+def test_a_self_pair_is_never_a_departure(conn, ingest_run_id):
+    """A x A (a class against itself, db/032 DECISION 2): X sat on both sides.
+    (X, X) never graded (db/038), so X leaving departs (X, Z) only."""
+    sc, _oc, (x, z), _ = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025610", object_code="N0000025610",
+        subject_members=[("TESTUN2561A", "leaver"), ("TESTUN2561B", "stayer")],
+        object_members=[])
+    commit_point(conn)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+
+    (d,) = graded_pairs.departed(conn, x)
+    assert d.pairs == frozenset({(x, z)})

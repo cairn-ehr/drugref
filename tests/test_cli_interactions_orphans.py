@@ -22,7 +22,7 @@ import psycopg
 import pytest
 
 from drugref import (class_grain_read, class_ruling_reach, classes,
-                     cli_interactions, curation)
+                     cli_interactions, curation, graded_pairs)
 from tests.test_class_subject_read_path import (_a_graded_class_rule, _a_moiety,
                                                  _file_member)
 from tests.test_cli_interactions import (_KNOWN_TO_THE_STUB, _RaisingConn,
@@ -379,8 +379,11 @@ class _MemberViewMissing(_RaisingConn):
         return self
 
     def fetchone(self):
-        if "to_regclass" in self._last and class_grain_read.RULE_MEMBER_VIEW in (
-                self._params or ()):
+        # The banner's own probe (db/083's table) also finds nothing on this stub,
+        # so it says "cannot tell" instead of reading through the fake connection.
+        if "to_regclass" in self._last and {
+                class_grain_read.RULE_MEMBER_VIEW,
+                graded_pairs.OBSERVATION_TABLE} & set(self._params or ()):
             return (None,)
         return super().fetchone()
 
