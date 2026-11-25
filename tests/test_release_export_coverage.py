@@ -41,7 +41,7 @@ _NO_RUN_FOREIGN_KEY = (
     "WHERE k.contype = 'f' AND n.nspname = 'drugref' AND s.relname = t.tablename "
     "AND k.confrelid = 'drugref.ingest_run'::regclass)")
 
-_HINT = ("add each to _EXPORT_TABLES (and release_replay._TIMED), or to "
+_HINT = ("add each to _EXPORT_TABLES (and replay_loader._TIMED), or to "
          "NOT_EXPORTED with the reason a replay need not restore it")
 
 

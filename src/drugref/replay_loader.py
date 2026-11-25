@@ -2,13 +2,13 @@
 
 Split out of `release_replay` to keep that file under the ~500-line cap. The
 loader is the part the curated export grows with, so it lives alone with the
-table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`) it is driven by;
-`release_replay` imports them back (tests patch `release_replay.*`).
+table constants (`_TIMED`, `_RULINGS`, `_REACH`, `_SNAPSHOT`, `_OBSERVATIONS`) it
+is driven by; `release_replay` imports them back (tests patch `release_replay.*`).
 """
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from drugref import overlay, release_archive
+from drugref import graded_pairs, overlay, release_archive
 
 # Exported tables with a timestamp: (primary key, when the row was written). The
 # ORDER is the load order for rows written at one instant (one transaction stamps
@@ -30,15 +30,21 @@ _TIMED = {"reviewer_account": ("reviewer_uuid", "created_at"),
           "assertion_signature": ("signature_id", "recorded_at"),
           "reviewer_annotation": ("reviewer_annotation_id", "recorded_at"),
           "reviewer_evidence_reference": ("reviewer_evidence_reference_id",
-                                          "recorded_at")}
+                                          "recorded_at"),
+          # After the rulings: an ack names an episode a ruling opened (db/083).
+          # Loaded onto the REPLAYED episode of its (key, pair) (`_ack_episode`).
+          "graded_pair_departure_ack": ("ack_id", "acknowledged_at")}
 _RULINGS = "curated_class_interaction"
 _REACH = "curated_class_interaction_reach"
 _SNAPSHOT = "curated_class_interaction_snapshot"
-# Exported, but not yet loaded or compared: Task 7 of #281 (the replay
-# regenerates observations through db/083's triggers as rulings and runs land).
+# Compared, never loaded: db/083's triggers regenerate observations in the target
+# as rulings load and runs finish (`compare_observations`).
 _OBSERVATIONS = "graded_pair_observation"
 _ACKS = "graded_pair_departure_ack"
-assert (set(_TIMED) | {_REACH, _SNAPSHOT, _OBSERVATIONS, _ACKS}
+# An observation's (ruling key, pair): what both sides of the comparison match on.
+_KEY_PAIR = ("rule_grain", "subject_key", "object_class_uuid", "relationship",
+             "subject_moiety", "partner_moiety")
+assert (set(_TIMED) | {_REACH, _SNAPSHOT, _OBSERVATIONS}
         == set(release_archive._EXPORT_TABLES))
 
 
@@ -81,6 +87,8 @@ class _Loader:
             self.reach.setdefault(row["curated_class_interaction_id"], []).append(row)
         self.snapshot = {r["curated_class_interaction_id"]: r
                          for r in export[_SNAPSHOT]}
+        self.observations = {r["observation_id"]: r for r in export[_OBSERVATIONS]}
+        self.stamp = None     # the last loaded row's timestamp (`load`)
 
     def _insert(self, table, row) -> None:
         cols = sql.SQL(", ").join(map(sql.Identifier, self.cols[table]))
@@ -90,7 +98,14 @@ class _Loader:
                     ).format(t=sql.Identifier(table), c=cols), (Jsonb(row),))
 
     def load(self, table, row) -> None:
-        pk = _TIMED[table][0]
+        pk, stamp = _TIMED[table]
+        # A new timestamp is a new origin transaction, so the previous one had
+        # COMMITTED: fire the refreshes it queued now, as its commit did. Left to
+        # the batch's one commit, they would see only the batch's final state (a
+        # ruling withdrawn later in the batch would never be observed).
+        if row[stamp] != self.stamp:
+            self._commit_point()
+            self.stamp = row[stamp]
         rid = row[pk]
         sup = row["superseded_by"] if table in self.superseding else None
         if rid in self.seeded[table]:
@@ -101,6 +116,13 @@ class _Loader:
         # back at this row when it loads.
         if sup is not None and sup not in self.loaded[table]:
             row = dict(row, superseded_by=None)
+        if table == _ACKS:
+            episode = self._ack_episode(row)
+            if episode is None:
+                self.report.differences.append(
+                    f"acknowledgement {rid} has no open episode in the replay")
+                return
+            row = dict(row, observation_id=episode)
         self._insert(table, row)
         self.loaded[table].add(rid)
         earlier = [o for o in self.points[table].get(rid, [])
@@ -110,6 +132,49 @@ class _Loader:
         self.report.curated_rows += 1
         if table == _RULINGS:
             self._ruling_reach(rid)
+
+    def _commit_point(self) -> None:
+        """Run the db/083 refreshes queued so far, as COMMIT would, without
+        committing (switching their deferred triggers to IMMEDIATE fires them)."""
+        names = ", ".join(graded_pairs.REFRESH_TRIGGERS)
+        self.conn.execute(f"SET CONSTRAINTS {names} IMMEDIATE")
+        self.conn.execute(f"SET CONSTRAINTS {names} DEFERRED")
+
+    def _ack_episode(self, ack) -> int | None:
+        """The replayed observation an exported ack closes: the OPEN episode (no
+        ack yet) of the same (key, pair) as the one it named in the origin, the
+        latest if several. None when the export lacks that observation or the
+        replay has no such episode open: reported, the ack is not loaded."""
+        named = self.observations.get(ack["observation_id"])
+        if named is None:
+            return None
+        found = self.conn.execute(
+            f"SELECT o.observation_id FROM {graded_pairs.OBSERVATION_TABLE} o "
+            "WHERE (o.rule_grain, o.subject_key::text, o.object_class_uuid::text, "
+            "o.relationship, o.subject_moiety::text, o.partner_moiety::text) "
+            "= (%s, %s, %s, %s, %s, %s) "
+            f"AND NOT EXISTS (SELECT 1 FROM {graded_pairs.ACK_TABLE} a "
+            "WHERE a.observation_id = o.observation_id) "
+            "ORDER BY o.first_seen_at DESC, o.observation_id DESC LIMIT 1",
+            [named[c] for c in _KEY_PAIR]).fetchone()
+        return None if found is None else found[0]
+
+    def compare_observations(self) -> None:
+        """After the last commit: each (key, pair) the export observed and the
+        replay did not, or the reverse, is one difference (spec 5.6). An export
+        holding db/083's backfill cannot match (the replay migrates an empty
+        database, so its backfill wrote nothing): warn and skip instead."""
+        if any(o["captured"] == "backfill_db083" for o in self.observations.values()):
+            self.report.warnings.append("observations predate db/083: not reproducible")
+            return
+        origin = {tuple(o[c] for c in _KEY_PAIR) for o in self.observations.values()}
+        replay = set(self.conn.execute(
+            "SELECT " + ", ".join(f"{c}::text" for c in _KEY_PAIR)
+            + f" FROM {graded_pairs.OBSERVATION_TABLE}"))
+        for side, extra in (("the origin but not the replay", origin - replay),
+                            ("the replay but not the origin", replay - origin)):
+            self.report.differences += [f"graded pair observed in {side}: "
+                                        + " ".join(k) for k in sorted(extra)]
 
     def _compare_seeded(self, table, row) -> None:
         """A row a migration already seeded is not re-inserted: report it when the
@@ -169,7 +234,8 @@ class _Loader:
 
     def reset_sequences(self) -> None:
         """Move each identity past the loaded ids, so a later write cannot collide.
-        A uuid key (reviewer_account) has no sequence and is skipped."""
+        A uuid key (reviewer_account) has no sequence and is skipped. Observations
+        need none: the target wrote its own, from its own sequence."""
         for table, (pk, _) in _TIMED.items():
             if self.conn.execute("SELECT pg_get_serial_sequence(%s, %s)",
                                  (f"drugref.{table}", pk)).fetchone()[0] is None:

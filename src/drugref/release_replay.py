@@ -35,7 +35,13 @@ WHAT IT DOES, in order (`replay`):
    - the live curated digests against the release's manifest entries;
    - each row a migration already seeded (the expansion policies) against its
      exported copy, which is never re-inserted (#277); a seeded row the export
-     lacks, or a superseder it names but lacks, is a difference too (#278).
+     lacks, or a superseder it names but lacks, is a difference too (#278);
+   - every (ruling key, pair) db/083 observed in the origin against the ones the
+     replay's own refreshes observed (they are never loaded), each extra on
+     either side one difference. An export holding db/083's backfill cannot
+     match (the empty target's backfill wrote nothing): a WARNING, not compared;
+   - each acknowledgement, loaded onto the replayed episode of its (key, pair)
+     open at that moment: none open is a difference, and the ack is skipped.
 
 A replay with no differences is a verified reproduction (`ReplayReport.reproduced`)
 only when it also has no warnings: other code, or a record from before the
@@ -312,6 +318,7 @@ def replay(conn: psycopg.Connection, root: pathlib.Path, tag: str, *,
                             f"({runs[i]['writer']})")
                     _replay_run(conn, root, runs[i], report)
         loader.unmatched()
+        loader.compare_observations()
         step = "resetting sequences"
         loader.reset_sequences()
         conn.commit()
