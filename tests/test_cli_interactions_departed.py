@@ -108,8 +108,8 @@ def test_an_orphan_does_not_hide_a_departure(conn, ingest_run_id, capsys):
 
 
 def test_without_db083_the_read_says_it_cannot_tell(conn, ingest_run_id, capsys):
-    """No observations to compare: say so on stderr in migration_guard's own wording (which
-    names a DROPPED table as dropped), and never conclude "ABSENT RULE" -- that
+    """No observations to compare: say so on stderr in migration_guard's own wording
+    (which names a DROPPED table as dropped), and never conclude "ABSENT RULE" -- that
     sentence is reassurance, and the check behind it did not run.
 
     Nothing is rolled back (the probe is `to_regclass`, not a failed read), so the
@@ -123,7 +123,8 @@ def test_without_db083_the_read_says_it_cannot_tell(conn, ingest_run_id, capsys)
     assert "CHANGED SINCE REVIEW" not in captured.out
     assert "db/083" in captured.err
     assert "DROPPED" in captured.err
-    assert "stopped reaching" in captured.err   # the caller's consequence reaches the operator
+    # the caller's consequence reaches the operator
+    assert "stopped reaching" in captured.err
 
 
 def test_the_pair_form_withholds_absent_rule_when_it_cannot_tell(
@@ -155,31 +156,88 @@ def test_a_moiety_rule_departure_is_bannered_with_its_grain(
     assert f"{s} -> {p}" in out
 
 
-def test_each_entry_names_the_acknowledge_command(conn, ingest_run_id, capsys):
-    """One `acknowledge:` line naming the drug that left. Class grain, X left the
-    SUBJECT class with several partners: X is named. The moiety grain names the
-    partner. The curator fills in the rationale, so it is printed literally."""
-    ruling, x, _z, p0, _a, _b = _a_rule_x_left(conn, ingest_run_id, 3)
+def _ack_lines(out):
+    return [ln for ln in out.splitlines() if "acknowledge (" in ln]
+
+
+def _leave(conn, *moieties):
+    for m in moieties:
+        conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s",
+                     (m,))
+
+
+def test_a_subject_side_leaver_is_named_as_the_drug(conn, ingest_run_id, capsys):
+    """X left the SUBJECT class (single pair (X, P)): X is named, not P. The
+    curator fills in the rationale, so it is printed literally."""
+    ruling, x, _z, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 3)
     cli_interactions._handle_interactions(conn, _args(x))
-    out = capsys.readouterr().out
-    assert (f"acknowledge: drugref curate acknowledge-departure --grain class "
-            f"{ruling} {p0} --rationale '...'") in out
-    assert out.count("acknowledge:") == 1
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert ("acknowledge (closes 1 pair(s)): drugref curate acknowledge-departure "
+            f"--grain class {ruling} {x} --rationale '...'") in line
+    assert str(p) not in line
 
-    mruling, s, p, _b2 = _moiety_rule(conn, ingest_run_id, 3)
-    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+
+def test_a_partner_side_leaver_is_named_as_the_drug(conn, ingest_run_id, capsys):
+    sc, _oc, (s,), (p, _w) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025640", object_code="N0000025641",
+        subject_members=[("TESTUN2564A", "subject")],
+        object_members=[("TESTUN2564B", "leaver"), ("TESTUN2564C", "stayer")])
+    commit_point(conn)
+    _leave(conn, p)
     cli_interactions._handle_interactions(conn, _args(s))
-    out = capsys.readouterr().out
-    assert (f"acknowledge: drugref curate acknowledge-departure --grain moiety "
-            f"{mruling} {p} --rationale '...'") in out
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert f"{_live_ruling(conn, sc)} {p} --rationale" in line
 
 
-def test_a_leaving_subject_with_several_partners_is_named_as_the_drug():
-    """Pure rule: pairs (X, P1), (X, P2) share the subject, so X is who left."""
-    x, p1, p2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+def test_the_one_drug_form_names_the_partner_leavers_not_the_asked_drug(
+        conn, ingest_run_id, capsys):
+    """Both partners P1, P2 left; the asked subject S stayed. Pairs share subject S,
+    but S did not leave, so the lines name P1 and P2."""
+    _sc, _oc, (s,), (p1, p2) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025650", object_code="N0000025651",
+        subject_members=[("TESTUN2565A", "subject")],
+        object_members=[("TESTUN2565B", "p1"), ("TESTUN2565C", "p2")])
+    commit_point(conn)
+    _leave(conn, p1, p2)
+    cli_interactions._handle_interactions(conn, _args(s))
+    lines = _ack_lines(capsys.readouterr().out)
+    assert len(lines) == 2
+    assert all(f" {s} --rationale" not in ln for ln in lines)
+    assert {p1, p2} == {m for m in (p1, p2) if any(str(m) in ln for ln in lines)}
+
+
+def test_an_acknowledge_that_reaches_an_unseen_departure_says_so(
+        conn, ingest_run_id, capsys):
+    """P left; subjects X and Y both depart with it, but the question asks only X.
+    Naming P closes (Y, P) too, which the banner did not show."""
+    _sc, _oc, (x, _y), (p,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025660", object_code="N0000025661",
+        subject_members=[("TESTUN2566A", "asked"), ("TESTUN2566B", "unseen")],
+        object_members=[("TESTUN2566C", "leaver")])
+    commit_point(conn)
+    _leave(conn, p)
+    cli_interactions._handle_interactions(conn, _args(x))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert "acknowledge (closes 2 pair(s), 1 not shown above)" in line
+    assert f" {p} --rationale" in line
+
+
+def test_a_moiety_entry_names_the_partner(conn, ingest_run_id, capsys):
+    mruling, s, p, _b = _moiety_rule(conn, ingest_run_id, 3)
+    _leave(conn, p)
+    cli_interactions._handle_interactions(conn, _args(s))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert ("--grain moiety " f"{mruling} {p} --rationale '...'") in line
+
+
+def test_format_departure_is_pure_over_its_hints():
+    x, p = uuid.uuid4(), uuid.uuid4()
     d = graded_pairs.Departure(
         "class_rule", 7, uuid.uuid4(), uuid.uuid4(), "CI_MoA", "major", "r", "2026",
-        False, None, frozenset({(x, p1), (x, p2)}))
-    lines = cli_departures.format_departure(d)
-    acks = [ln for ln in lines if "acknowledge:" in ln]
-    assert len(acks) == 1 and f"7 {x} --rationale" in acks[0]
+        False, None, frozenset({(x, p)}))
+    lines = cli_departures.format_departure(d, [(x, 3, 2)])
+    assert lines[-1].startswith(
+        "      acknowledge (closes 3 pair(s), 2 not shown above): ")
+    assert f"--grain class 7 {x} --rationale '...'" in lines[-1]
+    assert not any("acknowledge" in ln
+                   for ln in cli_departures.format_departure(d, []))

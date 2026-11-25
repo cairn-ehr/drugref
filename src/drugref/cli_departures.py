@@ -18,25 +18,22 @@ from drugref import db, graded_pairs, migration_guard
 _MIGRATION = "083"
 
 
-def _drugs_to_name(d: graded_pairs.Departure) -> list[uuid.UUID]:
-    """The drug(s) a curator passes to `acknowledge-departure` for this entry.
-
-    Acknowledging either side of a pair closes it, so this is only about telling
-    the curator who left. Moiety grain: the subject is the rule's own drug and
-    cannot leave, so name the partners. Class grain: if every pair shares one
-    partner, that partner left; else if every pair shares one subject, that
-    subject left; otherwise (including a single pair, where we cannot tell which
-    side left) name the partner(s), as the brief says.
-    """
-    subjects = {s for s, _ in d.pairs}
-    partners = {p for _, p in d.pairs}
-    if d.rule_grain == "class_rule" and len(partners) > 1 and len(subjects) == 1:
-        return sorted(subjects, key=str)
-    return sorted(partners, key=str)
+def _hints(conn, d: graded_pairs.Departure) -> list[tuple[uuid.UUID, int, int]]:
+    """(drug that left, pairs acknowledging it closes, of those how many are not
+    among `d.pairs`) per leaver. Acknowledging closes by DRUG, not by the pairs on
+    screen, so the curator is told when it reaches further than the banner shows."""
+    grain = "class" if d.rule_grain == "class_rule" else "moiety"
+    out = []
+    for drug in sorted(graded_pairs.leavers(conn, d), key=str):
+        closes = graded_pairs.pairs_to_acknowledge(conn, grain, d.ruling_id, drug)
+        out.append((drug, len(closes), len(closes - d.pairs)))
+    return out
 
 
-def format_departure(d: graded_pairs.Departure) -> list[str]:
-    """The banner lines for one departed ruling (pure; the audit listing reuses it)."""
+def format_departure(d: graded_pairs.Departure,
+                     hints: list[tuple[uuid.UUID, int, int]]) -> list[str]:
+    """The banner lines for one departed ruling (pure; the audit listing reuses it).
+    `hints` is `_hints`' output: one acknowledge line per (drug, closes, not_shown)."""
     grain = "class" if d.rule_grain == "class_rule" else "moiety"
     subject = (f"class {d.subject_key}" if grain == "class"
                else f"drug {d.subject_key}")
@@ -49,9 +46,12 @@ def format_departure(d: graded_pairs.Departure) -> list[str]:
              f"[{d.relationship}] {d.severity}, reviewed by {d.reviewed_by} "
              f"against {d.reviewed_against}{when}",
              f"      no longer reached: {pairs}{audit}"]
-    lines += [f"      acknowledge: drugref curate acknowledge-departure "
-              f"--grain {grain} {d.ruling_id} {drug} --rationale '...'"
-              for drug in _drugs_to_name(d)]
+    for drug, closes, not_shown in hints:
+        scope = f"closes {closes} pair(s)" + (
+            f", {not_shown} not shown above" if not_shown else "")
+        lines.append(f"      acknowledge ({scope}): drugref curate "
+                     f"acknowledge-departure --grain {grain} {d.ruling_id} {drug} "
+                     "--rationale '...'")
     return lines
 
 
@@ -72,7 +72,7 @@ def report_departures(conn, directions) -> bool | None:
     as dropped. Probed with `to_regclass` first, not by catching the failed read,
     so the transaction is never aborted.
     """
-    needed = (graded_pairs.OBSERVATION_TABLE,)
+    needed = (graded_pairs.OBSERVATION_TABLE, graded_pairs.ACK_TABLE)
     absent = tuple(rel for rel in needed if conn.execute(
         "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None)
     if absent:
@@ -109,5 +109,9 @@ def report_departures(conn, directions) -> bool | None:
           "expansion-policy deny now cuts the class it was reached through), so "
           "their grade no longer reaches the list above **")
     for d in by_ruling.values():
-        print("\n".join(format_departure(d)))
+        with migration_guard.guarded(
+                conn, relations=needed, migration=_MIGRATION,
+                consequence="drugref cannot say who left"):
+            hints = _hints(conn, d)
+        print("\n".join(format_departure(d, hints)))
     return True

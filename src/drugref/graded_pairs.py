@@ -169,27 +169,70 @@ _KEY_SQL = {
 }
 
 
-def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
-                drug: uuid.UUID, *, rationale: str, reviewed_by: str,
-                reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
-    """Ack every open, currently-departed episode of the key of `ruling_id` (any
-    version) in which `drug` is the subject or partner moiety; return the pairs.
-
-    "Currently departed" is exactly what `departed` reports, so this reuses it
-    (once per direction) instead of repeating its SQL, then closes EVERY open
-    episode of those pairs, duplicates included. Raises `UnknownRuling` /
-    `NothingDeparted`; a blank rationale trips the table's CHECK. Does not commit.
-    """
+def _ruling_key(conn: psycopg.Connection, grain: str, ruling_id: int):
+    """(rule_grain, (subject_key, object_class, relationship)) of the ruling's key,
+    from any version's id. Raises `UnknownRuling`."""
     rule_grain, sql = _KEY_SQL[grain]
     key = conn.execute(sql, (ruling_id,)).fetchone()
     if key is None:
         raise UnknownRuling(f"no {grain} ruling with id {ruling_id}")
-    pairs = frozenset(
+    return rule_grain, tuple(key)
+
+
+def pairs_to_acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
+                         drug: uuid.UUID) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
+    """The UNFILTERED set `acknowledge` would close: every open, currently-departed
+    pair of the key of `ruling_id` (any version) in which `drug` is the subject or
+    partner moiety. Empty when nothing departed. Raises `UnknownRuling`.
+
+    "Currently departed" is exactly what `departed` reports, so this reuses it
+    (once per direction) instead of repeating its SQL. A banner shows only the pairs
+    its question asked about, so this can be larger than what the curator saw.
+    """
+    rule_grain, key = _ruling_key(conn, grain, ruling_id)
+    return frozenset(
         pair
         for d in departed(conn, subject=drug) + departed(conn, partner=drug)
         if (d.rule_grain, d.subject_key, d.object_class, d.relationship)
         == (rule_grain, *key)
         for pair in d.pairs)
+
+
+def leavers(conn: psycopg.Connection, d: Departure) -> frozenset[uuid.UUID]:
+    """The drugs that actually LEFT in `d`'s displayed pairs.
+
+    Class grain: a pair's subject left if it is no longer a subject-side member of
+    the live ruling in `class_rule_member`; likewise the partner on its side (both
+    can be missing, then both left). Moiety grain: the subject is the ruling's own
+    drug, so the partner left. If a pair has no missing side (cause unknown), its
+    partner is named, so the result is never empty for a non-empty `d.pairs`.
+    """
+    if d.rule_grain == "moiety_rule":
+        return frozenset(p for _, p in d.pairs)
+    now = {"subject": set(), "partner": set()}
+    for side, moiety in conn.execute(
+            "SELECT side, moiety_uuid FROM drugref.class_rule_member "
+            "WHERE curated_class_interaction_id = %s", (d.ruling_id,)):
+        now[side].add(moiety)
+    out: set[uuid.UUID] = set()
+    for s, p in d.pairs:
+        gone = {x for x, side in ((s, "subject"), (p, "partner"))
+                if x not in now[side]}
+        out |= gone or {p}
+    return frozenset(out)
+
+
+def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
+                drug: uuid.UUID, *, rationale: str, reviewed_by: str,
+                reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
+    """Ack every open, currently-departed episode of the key of `ruling_id` (any
+    version) in which `drug` is the subject or partner moiety; return the pairs
+    (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
+    included. Raises `UnknownRuling` / `NothingDeparted`; a blank rationale trips
+    the table's CHECK. Does not commit.
+    """
+    rule_grain, key = _ruling_key(conn, grain, ruling_id)
+    pairs = pairs_to_acknowledge(conn, grain, ruling_id, drug)
     if not pairs:
         raise NothingDeparted(f"{drug} is in no open departed episode of ruling "
                               f"{ruling_id}")

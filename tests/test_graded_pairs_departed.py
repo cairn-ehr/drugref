@@ -124,7 +124,7 @@ def test_a_deny_that_cuts_a_subclass_is_a_departure(conn, ingest_run_id):
 
 
 def test_an_orphaned_rule_is_left_to_the_orphan_banner(conn, ingest_run_id):
-    """Candidate gone: #121's banner already names the ruling; one ruling, one banner."""
+    """Candidate gone: #121's banner already names the ruling; one banner."""
     _ruling, x, _z, _p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 3)
     conn.execute("DELETE FROM drugref.class_pair_contraindication")
     assert graded_pairs.departed(conn, x) == []
