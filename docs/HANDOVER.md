@@ -13,14 +13,13 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/graded-pair-races-287`: #287 FIXED (the PR closes it). Schema ends at `db/086`.** PR #286 (#281,
-#279) merged. The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest`
-fails if they disagree.
+**Branch `claude/lock-timeout-289`: #289 and #282 FIXED (the PR closes both). No migration; schema ends at
+`db/086`.** PR #288 (#287) merged. The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere
+else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND:** `db/086`'s `lock_graded_pair_ledger()` (one advisory xact lock) is taken by both refreshes and
-`graded_pairs.acknowledge` before reading: racing commits no longer lose an episode (PROJECT-NOTES § "The ledger
-lock"). **Open from #286:** #283 (GUI acknowledge), #284 (sign acks), #285 (~5 s full refresh per policy/ingest
-commit; a ruling saved during one now waits for it), #282 (old Rust failures).
+**⇒ THIS ROUND** (PROJECT-NOTES § "The bounded ack ..."): `acknowledge` gives up on the ledger lock after 30 s,
+naming the holder (`LedgerBusy`); refreshes still wait unbounded (owner's choice). Live Rust tests seed their own
+data and rerun green. **Open:** #283 (GUI ack: bound its lock wait, roll back on error), #284, #285.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -88,8 +87,8 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#287 FIXED
-(close on merge); #256, #281, #279 closed; open: #282–#285, #289;** #277, #270, #104, #272, #259, #258, #261,
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#289, #282
+FIXED (close on merge); #287 closed; open: #283–#285;** #277, #270, #104, #272, #259, #258, #261,
 #262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope);
 #224 partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from
 class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**.

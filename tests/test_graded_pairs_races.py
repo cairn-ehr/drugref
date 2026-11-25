@@ -181,3 +181,21 @@ def test_the_ledger_lock_refuses_a_snapshot_taken_before_its_wait(conn):
     conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
     with pytest.raises(psycopg.errors.RaiseException, match="READ COMMITTED"):
         conn.execute("SELECT drugref.lock_graded_pair_ledger()")
+
+
+def test_an_ack_behind_an_idle_lock_holder_fails_fast_and_names_it(conn, monkeypatch):
+    """#289: a session left idle in a transaction that took the ledger lock used to
+    stall `acknowledge` with no output. The interactive ack now waits at most
+    ACK_LOCK_TIMEOUT, then raises LedgerBusy naming the holder's pid, and leaves
+    the caller's transaction usable with its own lock_timeout back (the wait runs
+    in a savepoint). The holder takes the lock without committing, so no commit
+    escapes the rolled-back `conn`."""
+    monkeypatch.setattr(graded_pairs, "ACK_LOCK_TIMEOUT", "100ms")
+    with psycopg.connect(conn.info.dsn) as holder:
+        holder.execute("SELECT drugref.lock_graded_pair_ledger()")    # then idles
+        conn.execute("SET LOCAL lock_timeout = '7s'")
+        with pytest.raises(graded_pairs.LedgerBusy,
+                           match=rf"backend {holder.info.backend_pid} \(idle in "):
+            _ack_x(conn, -1)    # no such ruling: the lock comes before the lookup
+        assert conn.execute("SHOW lock_timeout").fetchone() == ("7s",)
+        holder.rollback()

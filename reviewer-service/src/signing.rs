@@ -696,10 +696,12 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, AppError> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let high = hex_nibble(pair[0])?;
-            let low = hex_nibble(pair[1])?;
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[high, low]| {
+            let high = hex_nibble(high)?;
+            let low = hex_nibble(low)?;
             Ok((high << 4) | low)
         })
         .collect()
@@ -773,6 +775,9 @@ mod tests {
             .connect(&database_url)
             .await
             .expect("review signing test database");
+        // Held to the end of the test: its administrator must not appear while the
+        // administration test needs none (#282).
+        let _serialised = crate::live_accounts::serialise(&database_url).await;
         let reviewer_uuid = Uuid::new_v4();
         let subject_uuid = Uuid::new_v4();
         let object_uuid = Uuid::new_v4();
@@ -803,7 +808,11 @@ mod tests {
             "INSERT INTO drugref.reviewer_account (reviewer_uuid, username) VALUES ($1, $2)",
         )
         .bind(administrator_uuid)
-        .bind(format!("t{}", administrator_uuid.simple()))
+        .bind(format!(
+            "{}{}",
+            crate::live_accounts::TEST_ADMIN_PREFIX,
+            administrator_uuid.simple()
+        ))
         .execute(&pool)
         .await
         .expect("test administrator");

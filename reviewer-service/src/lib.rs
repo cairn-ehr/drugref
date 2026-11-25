@@ -10,6 +10,8 @@ mod decision_targets;
 mod decisions;
 mod error;
 mod limiter;
+#[cfg(test)]
+mod live_accounts;
 mod queue;
 mod records;
 mod signing;

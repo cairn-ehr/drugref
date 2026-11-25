@@ -153,6 +153,10 @@ class UnknownRuling(LookupError):
     """No ruling (of any version) has that id in that grain."""
 
 
+class LedgerBusy(RuntimeError):
+    """`acknowledge` waited ACK_LOCK_TIMEOUT for the ledger lock (#289)."""
+
+
 class NothingDeparted(ValueError):
     """The drug is in no open departed episode of that ruling's key."""
 
@@ -223,6 +227,54 @@ def leavers(conn: psycopg.Connection, d: Departure) -> frozenset[uuid.UUID]:
     return frozenset(out)
 
 
+# How long the interactive `acknowledge` waits for the ledger lock (db/086) before
+# raising LedgerBusy (#289). An ingest's commit-time refresh holds it ~5 s (#285),
+# so a longer wait means a transaction was left open. Only `acknowledge` is bounded:
+# a bound on the commit-time triggers would fail an hours-long ingest at COMMIT.
+ACK_LOCK_TIMEOUT = "30s"
+
+# The advisory-lock key text; must match db/086's `lock_graded_pair_ledger()`
+# (test_graded_pairs_races finds the holder by it, so a mismatch fails there).
+_LEDGER_LOCK_KEY = "drugref.graded_pair_observation"
+
+
+def _ledger_holders(conn: psycopg.Connection) -> str:
+    """Who holds the ledger lock now, e.g. 'backend 123 (idle in transaction)'."""
+    rows = conn.execute(
+        "SELECT l.pid, a.state FROM pg_locks l JOIN pg_stat_activity a USING (pid) "
+        "WHERE l.locktype = 'advisory' AND l.granted "
+        "AND l.database = (SELECT oid FROM pg_database "
+        "                  WHERE datname = current_database()) "
+        # A bigint advisory key shows in pg_locks as two 32-bit halves.
+        "AND ((l.classid::bigint << 32) | l.objid::bigint) "
+        "    = hashtextextended(%s, 0) ORDER BY l.pid",
+        (_LEDGER_LOCK_KEY,)).fetchall()
+    return (", ".join(f"backend {pid} ({state})" for pid, state in rows)
+            or "a transaction that has since ended")
+
+
+def _lock_ledger_bounded(conn: psycopg.Connection) -> None:
+    """Take the ledger lock, waiting at most ACK_LOCK_TIMEOUT; raise LedgerBusy
+    naming the holder. The wait runs in a savepoint, so a timeout leaves the
+    caller's transaction usable; the caller's own lock_timeout is put back."""
+    # Also opens the transaction, so `conn.transaction()` below is a SAVEPOINT
+    # (not a BEGIN/COMMIT that would release the lock at once).
+    previous = conn.execute("SELECT current_setting('lock_timeout')").fetchone()[0]
+    try:
+        with conn.transaction():
+            conn.execute("SELECT set_config('lock_timeout', %s, true)",
+                         (ACK_LOCK_TIMEOUT,))
+            conn.execute("SELECT drugref.lock_graded_pair_ledger()")
+    except psycopg.errors.LockNotAvailable:
+        # The savepoint's rollback already restored lock_timeout.
+        raise LedgerBusy(
+            f"the graded-pair ledger lock is held by {_ledger_holders(conn)}; "
+            f"waited {ACK_LOCK_TIMEOUT}, longer than any ingest commit takes, so "
+            "a transaction was probably left open. End it (pg_terminate_backend("
+            "pid) as a last resort) and retry (db/086, #289)") from None
+    conn.execute("SELECT set_config('lock_timeout', %s, true)", (previous,))
+
+
 def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                 drug: uuid.UUID, *, rationale: str, reviewed_by: str,
                 reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
@@ -231,15 +283,16 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
     (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
     included. Raises `UnknownRuling` / `NothingDeparted` (also when another
     curator's ack committed first: the lock makes this call wait for it, then see
-    nothing departed); a blank rationale trips the table's CHECK. Does not commit,
-    so the caller holds the ledger lock (db/086) until it commits or rolls back,
-    also after a raise: end the transaction promptly.
+    nothing departed), or `LedgerBusy` after ACK_LOCK_TIMEOUT behind another
+    holder; a blank rationale trips the table's CHECK. Does not commit, so the
+    caller holds the ledger lock (db/086) until it commits or rolls back, also
+    after UnknownRuling / NothingDeparted: end the transaction promptly.
     """
     # Before reading (#287): an ingest re-grading the pair either committed first,
     # so the read below sees it graded and leaves its episode open (NothingDeparted
     # if nothing else departed), or waits for this commit and then opens a new
     # episode after the ack.
-    conn.execute("SELECT drugref.lock_graded_pair_ledger()")
+    _lock_ledger_bounded(conn)
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
     pairs = pairs_to_acknowledge(conn, grain, ruling_id, drug)
     if not pairs:

@@ -233,6 +233,7 @@ mod tests {
     use super::{revoke_user_sessions, rotate_user_password, update_user_profile};
     use crate::{
         auth::{hash_password, verify_password},
+        live_accounts::{self, TEST_ADMIN_PREFIX},
         store::{bootstrap_admin, create_user, login_row, start_session},
     };
     use reviewer_domain::{CreateAccountRequest, ReviewerRole, UpdateReviewerProfileRequest};
@@ -241,15 +242,18 @@ mod tests {
 
     /// Exercise append-only administration, safety guards, and reason-specific revocations.
     #[tokio::test]
-    #[ignore = "requires a clean migrated Drugref PostgreSQL test database"]
+    #[ignore = "requires a migrated Drugref PostgreSQL test database with no administrator"]
     async fn live_account_administration_round_trip() {
         let database_url = std::env::var("DRUGREF_REVIEW_TEST_DATABASE_URL")
-            .expect("DRUGREF_REVIEW_TEST_DATABASE_URL must name a clean migrated database");
+            .expect("DRUGREF_REVIEW_TEST_DATABASE_URL must name a migrated test database");
         let pool = PgPoolOptions::new()
             .max_connections(2)
             .connect(&database_url)
             .await
             .expect("review account test database");
+        // Held to the end of the test: no other account test runs meanwhile.
+        let _serialised = live_accounts::serialise(&database_url).await;
+        live_accounts::retire_earlier_test_administrators(&pool).await;
         let existing_administrators: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM drugref.reviewer_profile \
              WHERE role = 'administrator' AND active AND superseded_by IS NULL",
@@ -259,12 +263,13 @@ mod tests {
         .expect("active administrator count");
         assert_eq!(
             existing_administrators, 0,
-            "account administration integration requires a clean account database"
+            "account administration integration requires a database whose only \
+             administrators were created by this test"
         );
 
         let administrator_seed = Uuid::new_v4();
         let administrator = CreateAccountRequest {
-            username: format!("a{}", administrator_seed.simple()),
+            username: format!("{TEST_ADMIN_PREFIX}{}", administrator_seed.simple()),
             full_name: "Test Administrator".into(),
             qualifications: "PharmD".into(),
             bio_markdown: String::new(),
