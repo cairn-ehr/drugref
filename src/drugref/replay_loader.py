@@ -89,6 +89,7 @@ class _Loader:
                          for r in export[_SNAPSHOT]}
         self.observations = {r["observation_id"]: r for r in export[_OBSERVATIONS]}
         self.stamp = None     # the last loaded row's timestamp (`load`)
+        self.acked: set[tuple] = set()   # ((key, pair), acknowledged_at) loaded
 
     def _insert(self, table, row) -> None:
         cols = sql.SQL(", ").join(map(sql.Identifier, self.cols[table]))
@@ -102,7 +103,9 @@ class _Loader:
         # A new timestamp is a new origin transaction, so the previous one had
         # COMMITTED: fire the refreshes it queued now, as its commit did. Left to
         # the batch's one commit, they would see only the batch's final state (a
-        # ruling withdrawn later in the batch would never be observed).
+        # ruling withdrawn later in the batch would never be observed). Two origin
+        # transactions sharing one timestamp get no refresh between them: the
+        # assumption `schedule` already makes (one transaction, one `now()`).
         if row[stamp] != self.stamp:
             self._commit_point()
             self.stamp = row[stamp]
@@ -117,11 +120,23 @@ class _Loader:
         if sup is not None and sup not in self.loaded[table]:
             row = dict(row, superseded_by=None)
         if table == _ACKS:
-            episode = self._ack_episode(row)
+            named = self.observations.get(row["observation_id"])
+            act = named and (tuple(named[c] for c in _KEY_PAIR),
+                             row["acknowledged_at"])
+            episode = self._ack_episode(named)
+            if episode is None and act in self.acked:
+                # One `acknowledge` closed two open episodes of one pair, which
+                # concurrent origin commits opened; the serial replay opened one,
+                # and observation_id is UNIQUE, so this ack has nowhere to go.
+                self.report.warnings.append(
+                    f"acknowledgement {rid} closed a second concurrent episode of "
+                    "its pair, which the serial replay never opened: skipped")
+                return
             if episode is None:
                 self.report.differences.append(
                     f"acknowledgement {rid} has no open episode in the replay")
                 return
+            self.acked.add(act)
             row = dict(row, observation_id=episode)
         self._insert(table, row)
         self.loaded[table].add(rid)
@@ -140,19 +155,19 @@ class _Loader:
         self.conn.execute(f"SET CONSTRAINTS {names} IMMEDIATE")
         self.conn.execute(f"SET CONSTRAINTS {names} DEFERRED")
 
-    def _ack_episode(self, ack) -> int | None:
-        """The replayed observation an exported ack closes: the OPEN episode (no
-        ack yet) of the same (key, pair) as the one it named in the origin, the
-        latest if several. None when the export lacks that observation or the
-        replay has no such episode open: reported, the ack is not loaded."""
-        named = self.observations.get(ack["observation_id"])
+    def _ack_episode(self, named) -> int | None:
+        """The replayed observation an exported ack closes, given the exported
+        observation it `named` in the origin: the OPEN episode (no ack yet) of the
+        same (key, pair), the latest if several. None when the export lacks that
+        observation (`named` is None) or the replay has no such episode open."""
         if named is None:
             return None
+        # Cast the parameters, not the columns, so the (key, pair) index applies.
         found = self.conn.execute(
             f"SELECT o.observation_id FROM {graded_pairs.OBSERVATION_TABLE} o "
-            "WHERE (o.rule_grain, o.subject_key::text, o.object_class_uuid::text, "
-            "o.relationship, o.subject_moiety::text, o.partner_moiety::text) "
-            "= (%s, %s, %s, %s, %s, %s) "
+            "WHERE (o.rule_grain, o.subject_key, o.object_class_uuid, "
+            "o.relationship, o.subject_moiety, o.partner_moiety) "
+            "= (%s, %s::uuid, %s::uuid, %s, %s::uuid, %s::uuid) "
             f"AND NOT EXISTS (SELECT 1 FROM {graded_pairs.ACK_TABLE} a "
             "WHERE a.observation_id = o.observation_id) "
             "ORDER BY o.first_seen_at DESC, o.observation_id DESC LIMIT 1",

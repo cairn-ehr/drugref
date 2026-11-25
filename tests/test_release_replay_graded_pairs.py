@@ -43,7 +43,7 @@ def _departed(c):
 
 @pytest.fixture
 def build(databases, tmp_path, monkeypatch):  # noqa: F811
-    """`build(withdraw=False, acknowledge=False)` publishes the origin and returns
+    """`build(withdraw=False, acknowledge=False, twice=False)` publishes the origin and returns
     {origin, target, root, ruling, departed, keys, acks}: the origin's departures,
     (key, pair) set and acknowledgement rows (less ids), read after publishing."""
     origin, target = databases
@@ -57,7 +57,7 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
     (two / "members.txt").write_text(f"{A} {Y}\n{B} {Y}\n")
     kp = signing.generate_keypair()
 
-    def _build(*, withdraw=False, acknowledge=False):
+    def _build(*, withdraw=False, acknowledge=False, twice=False):
         with psycopg.connect(origin) as c:
             _fake_ingest(c, [one / "members.txt"], "r1")
             rid = _rule(c)
@@ -66,6 +66,13 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
                 rid = _rule(c, applies=False)
                 c.commit()
             _fake_ingest(c, [two / "members.txt"], "r2")
+            if twice:     # a second open episode, as two concurrent commits leave
+                c.execute(f"INSERT INTO {graded_pairs.OBSERVATION_TABLE} "
+                          "(rule_grain, subject_key, object_class_uuid, relationship, "
+                          "subject_moiety, partner_moiety, captured) "
+                          "SELECT rule_grain, subject_key, object_class_uuid, "
+                          "relationship, subject_moiety, partner_moiety, captured "
+                          f"FROM {graded_pairs.OBSERVATION_TABLE}")
             if acknowledge:
                 assert graded_pairs.departed(c), "run 2 must depart (X, Y)"
                 graded_pairs.acknowledge(
@@ -198,3 +205,19 @@ def test_the_export_carries_both_tables(build):
     body = json.loads(_export(build(acknowledge=True)).read_text())
     assert len(body["graded_pair_observation"]) == 1
     assert len(body["graded_pair_departure_ack"]) == 1
+
+
+def test_an_ack_of_a_concurrent_second_episode_is_a_warning(build):
+    """Two concurrent origin commits opened (X, Y) twice and one `acknowledge`
+    closed both (Review Focus 1). The serial replay opens it once, so the second
+    ack has no episode; that is the replay's limit, not damage: a warning."""
+    p = build(acknowledge=True, twice=True)
+    assert len(p["acks"]) == 2 and p["departed"] == []
+    report = _replay(p)
+    second = p["acks"][1][0]
+    assert report.differences == []
+    assert report.warnings == [
+        f"acknowledgement {second} closed a second concurrent episode of its pair, "
+        "which the serial replay never opened: skipped"]
+    with psycopg.connect(p["target"]) as c:
+        assert _departed(c) == p["departed"] and _acks(c) == p["acks"][:1]
