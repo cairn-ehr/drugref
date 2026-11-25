@@ -18,7 +18,7 @@ from drugref import db, graded_pairs, migration_guard
 _MIGRATION = "083"
 
 
-def _hints(conn, d: graded_pairs.Departure) -> list[tuple[uuid.UUID, int, int]]:
+def ack_hints(conn, d: graded_pairs.Departure) -> list[tuple[uuid.UUID, int, int]]:
     """(drug that left, pairs acknowledging it closes, of those how many are not
     among `d.pairs`) per leaver. Acknowledging closes by DRUG, not by the pairs on
     screen, so the curator is told when it reaches further than the banner shows."""
@@ -33,7 +33,8 @@ def _hints(conn, d: graded_pairs.Departure) -> list[tuple[uuid.UUID, int, int]]:
 def format_departure(d: graded_pairs.Departure,
                      hints: list[tuple[uuid.UUID, int, int]]) -> list[str]:
     """The banner lines for one departed ruling (pure; the audit listing reuses it).
-    `hints` is `_hints`' output: one acknowledge line per (drug, closes, not_shown)."""
+    `hints` is `ack_hints` output: one acknowledge line per
+    (drug, closes, not_shown)."""
     grain = "class" if d.rule_grain == "class_rule" else "moiety"
     subject = (f"class {d.subject_key}" if grain == "class"
                else f"drug {d.subject_key}")
@@ -55,6 +56,33 @@ def format_departure(d: graded_pairs.Departure,
     return lines
 
 
+_NEEDED = (graded_pairs.OBSERVATION_TABLE, graded_pairs.ACK_TABLE)
+
+
+def _cannot_tell(conn) -> bool:
+    """True (after a stderr note in migration_guard's own words) when db/083's
+    tables are absent. Probed with `to_regclass`, not by catching a failed read, so
+    the transaction is never aborted."""
+    absent = tuple(rel for rel in _NEEDED if conn.execute(
+        "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None)
+    if absent:
+        consequence = ("drugref cannot tell whether a reviewed grade stopped "
+                       "reaching a pair since it was reviewed")
+        try:
+            applied = db.migration_applied(conn, _MIGRATION)
+        except psycopg.Error:   # no ledger (hand-bootstrapped): say only what is known
+            print(f"note: {', '.join(absent)} missing (db/083), so {consequence}. "
+                  "Run `drugref status`.", file=sys.stderr)
+            return True
+        print("note: " + migration_guard.guard_message(
+            migration_guard.Diagnosis(
+                absent=absent, migration_applied=applied,
+                detail="to_regclass found no such relation"),
+            migration=_MIGRATION, consequence=consequence), file=sys.stderr)
+        return True
+    return False
+
+
 def report_departures(conn, directions) -> bool | None:
     """Banner any live ruling (either grain) that graded an asked pair and no
     longer reaches it, its candidate intact. Returns whether it printed, or None
@@ -72,27 +100,11 @@ def report_departures(conn, directions) -> bool | None:
     as dropped. Probed with `to_regclass` first, not by catching the failed read,
     so the transaction is never aborted.
     """
-    needed = (graded_pairs.OBSERVATION_TABLE, graded_pairs.ACK_TABLE)
-    absent = tuple(rel for rel in needed if conn.execute(
-        "SELECT to_regclass(%s)", (rel,)).fetchone()[0] is None)
-    if absent:
-        consequence = ("drugref cannot tell whether a reviewed grade stopped "
-                       "reaching a pair since it was reviewed")
-        try:
-            applied = db.migration_applied(conn, _MIGRATION)
-        except psycopg.Error:   # no ledger (hand-bootstrapped): say only what is known
-            print(f"note: {', '.join(absent)} missing (db/083), so {consequence}. "
-                  "Run `drugref status`.", file=sys.stderr)
-            return None
-        print("note: " + migration_guard.guard_message(
-            migration_guard.Diagnosis(
-                absent=absent, migration_applied=applied,
-                detail="to_regclass found no such relation"),
-            migration=_MIGRATION, consequence=consequence), file=sys.stderr)
+    if _cannot_tell(conn):
         return None
     by_ruling: dict[tuple[str, int], graded_pairs.Departure] = {}
     with migration_guard.guarded(
-            conn, relations=needed, migration=_MIGRATION,
+            conn, relations=_NEEDED, migration=_MIGRATION,
             consequence="drugref cannot tell whether a reviewed grade stopped "
                         "reaching a pair"):
         # One call per direction (the pair form asks two): same read, same relations.
@@ -110,8 +122,28 @@ def report_departures(conn, directions) -> bool | None:
           "their grade no longer reaches the list above **")
     for d in by_ruling.values():
         with migration_guard.guarded(
-                conn, relations=needed, migration=_MIGRATION,
+                conn, relations=_NEEDED, migration=_MIGRATION,
                 consequence="drugref cannot say who left"):
-            hints = _hints(conn, d)
+            hints = ack_hints(conn, d)
         print("\n".join(format_departure(d, hints)))
     return True
+
+
+def handle_audit_departures(conn, args) -> int:
+    """`drugref audit departures`: every open departure, all rulings, both grains.
+    Exit 0 none, 3 some (incomplete), 2 when db/083 is absent ("cannot tell")."""
+    from drugref.cli_interactions import EXIT_INCOMPLETE  # cycle: it imports us
+    if _cannot_tell(conn):
+        return 2
+    with migration_guard.guarded(
+            conn, relations=_NEEDED, migration=_MIGRATION,
+            consequence="drugref cannot tell whether a reviewed grade stopped "
+                        "reaching a pair"):
+        found = graded_pairs.departed(conn)
+        entries = [(d, ack_hints(conn, d)) for d in found]
+    print(f"open departures: {len(found)} ruling(s), "
+          f"{sum(len(d.pairs) for d in found)} pair(s)")
+    for d, hints in entries:
+        print("\n".join(format_departure(d, hints)))
+        print(f"      first seen: {d.first_seen_at:%Y-%m-%d %H:%M}")
+    return EXIT_INCOMPLETE if found else 0
