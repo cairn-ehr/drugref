@@ -7053,6 +7053,33 @@ docs-site *A reviewed grade never vanishes silently*.
   ruling's commit refreshes only its own key, and a guard that the ruling triggers run the per-key function and the
   other two the full one. No timing assertion; the figures are under "Cost".
 
+## The ledger lock (#287, 2026-11-26) — `db/086`, on `drugref_test`, suite 3721 → 3723
+
+Two READ COMMITTED races could each lose an episode (both found in #286's final review): **(1)** a ruling on key K
+commits while an ingest's full refresh runs at COMMIT. The ruling's per-key refresh cannot see the ingest's
+uncommitted new members, and the ingest's refresh ran before the ruling existed, so (K × new member) is never
+observed. **(2)** An ack of departed episode E races an ingest that grades the pair again. The ingest's refresh
+sees E open (ack uncommitted) and opens nothing, then the ack closes E: graded, no open episode, and the next
+departure never banners.
+
+- **The fix:** `drugref.lock_graded_pair_ledger()` takes `pg_advisory_xact_lock(hashtextextended(
+  'drugref.graded_pair_observation', 0))`. `refresh_graded_pairs` and `refresh_graded_pairs_for_key` take it as
+  their first statement (db/086 restates db/083's and db/084's bodies verbatim with the lock added; a
+  rename-and-wrap fails because db/083's body names its parameter `refresh_graded_pairs.captured`), and so does
+  `graded_pairs.acknowledge` before its first read. The later transaction waits until the earlier COMMITS (an xact
+  lock is released after the commit is visible), and its next statement's fresh snapshot includes the earlier's
+  rows. One lock for the whole ledger, not per key: the full refresh covers every key. Advisory locks are per
+  database, so pytest's per-session copies never contend.
+- **Cost:** a ruling saved while an ingest commits waits for its ~5 s refresh (#285); two rulings take turns
+  (~16 ms each). `acknowledge` holds the lock until its caller commits (the CLI commits at once).
+- **TRAP:** call the refresh only by these two names. A future migration restating either body must keep the
+  `PERFORM drugref.lock_graded_pair_ledger();` line; the two race tests fail without it.
+- **Tests (+2)** in `tests/test_graded_pairs_races.py`: one per race, on two real connections in a fresh database
+  beside the session one (`databases`; the ledger is insert-only, so committed rows cannot be cleaned up). Each
+  holds one transaction at the racing moment, commits the other from a thread, and asserts both the episode and
+  that the thread waited on the advisory lock (`pg_stat_activity`). Both failed before db/086. `_fake_ingest`
+  gained `commit=False` for them.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -7254,6 +7281,9 @@ before a correction, or joined after the ruling, still departs silently. +15 tes
 finishes still run the ~5 s full refresh; acceptable), **[#282](https://github.com/cairn-ehr/drugref/issues/282)**
 (two ignored Rust tests failed before this work), **[#287](https://github.com/cairn-ehr/drugref/issues/287)**
 (two READ COMMITTED races can miss an episode). +72 tests, 3649 → 3721.
+**The ledger lock (2026-11-26)** — **[#287](https://github.com/cairn-ehr/drugref/issues/287) FIXED** (`db/086`, §
+"The ledger lock"): both refreshes and `acknowledge` take one advisory lock, so two racing commits cannot lose
+an episode. +2 tests, 3721 → 3723.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7439,7 +7469,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3721 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3723 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7827,7 +7857,8 @@ ran in CI and `ruff` was not even a project dependency.
   class-ruling|archive|replay|departures`; the last in `cli_departures.py`) and `release_replay.py` (`replay`,
   `schedule`: rebuild a release into an empty database; its per-orchestrator `ADAPTERS` live in
   `replay_adapters.py`, and its `_Loader` in `replay_loader.py`)
-  + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; `db/085` their comments; #281/#279):
+  + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; `db/085` their comments; `db/086` the
+  ledger lock, #287; #281/#279):
   `graded_pairs.py` (`refresh`, `departed`, `leavers`, `pairs_to_acknowledge`, `acknowledge`: the ledger's whole
   Python API) and `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure
   `format_departure`, `ack_hints`, `drugref audit departures`, `EXIT_INCOMPLETE`)

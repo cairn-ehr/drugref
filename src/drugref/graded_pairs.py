@@ -231,8 +231,13 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
     (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
     included. Raises `UnknownRuling` / `NothingDeparted` (also when a concurrent
     ack closed them first, so this INSERT wrote nothing); a blank rationale trips
-    the table's CHECK. Does not commit.
+    the table's CHECK. Does not commit, so the caller holds the ledger lock (db/086)
+    until it does: commit promptly.
     """
+    # Before reading (#287): an ingest re-grading the pair either committed first,
+    # so the read below sees it graded and raises NothingDeparted, or waits for
+    # this commit and then opens a new episode after the ack.
+    conn.execute("SELECT drugref.lock_graded_pair_ledger()")
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
     pairs = pairs_to_acknowledge(conn, grain, ruling_id, drug)
     if not pairs:

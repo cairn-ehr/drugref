@@ -143,12 +143,13 @@ A, B = "N0000025901", "N0000025902"
 X, Y = "TESTUNI259X", "TESTUNI259Y"
 
 
-def _fake_ingest(conn, files, release):
+def _fake_ingest(conn, files, release, commit=True):
     """A stand-in orchestrator: each line `class_code moiety_code` files a member.
 
     Delete-and-rebuild like the real ones, so a moiety missing from the next
     file leaves its class. Archives its input and re-derives the questions
-    exactly as a real one does.
+    exactly as a real one does. `commit=False` leaves the run finished but
+    uncommitted (the race tests hold an ingest open at its COMMIT).
     """
     path = files[0]
     run = provenance.open_run(conn, source="ONCHIGH", upstream_release=release,
@@ -179,7 +180,8 @@ def _fake_ingest(conn, files, release):
             "CI_MoA", "ONCHIGH", run)
     questions.register_from_gaps(conn, run)     # as every real orchestrator does
     provenance.finish_run(conn, run)
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 @pytest.fixture
