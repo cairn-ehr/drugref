@@ -67,7 +67,8 @@ def test_publish_writes_record_export_and_build_row(conn, key, tmp_path, a_grade
                            "reviewer_account", "reviewer_profile",
                            "reviewer_key_enrolment", "reviewer_annotation",
                            "reviewer_evidence_reference", "signing_key",
-                           "assertion_signature"}
+                           "assertion_signature", "graded_pair_observation",
+                           "graded_pair_departure_ack"}
     assert any(r["reviewed_by"] == "é curator" for r in export["curated_interaction"])
     # The release's own signature is written before the export, so it travels (#270).
     assert [s["target_kind"] for s in export["assertion_signature"]] == [

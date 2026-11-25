@@ -241,6 +241,9 @@ def test_apply_migrations_is_idempotent(conn):
         "curated_class_interaction_reach",
         # db/082 (#266): which rulings were snapshotted, even when they reached no one.
         "curated_class_interaction_snapshot",
+        # db/083 (#281, #279): every pair a reviewed grade reached, and the
+        # acknowledgements that close an episode.
+        "graded_pair_observation", "graded_pair_departure_ack",
         # db/058, class profiles
         "curated_property_ruling",
         # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.

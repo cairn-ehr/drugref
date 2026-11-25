@@ -9,11 +9,15 @@ live in `archive`, and this module reads the release record and curated export.
 
 `replay --release TAG` rebuilds that release into the (empty) database `--dsn`
 names, from the archive alone (#259); the work lives in `release_replay`.
+
+`departures` lists every open departure of a reviewed grade, both grains, and
+counts orphaned rulings (#281); the handler lives in `cli_departures`.
 """
 import json
 import sys
 
-from drugref import archive, class_ruling_reach, release_replay, release_state
+from drugref import (archive, cli_departures, class_ruling_reach, release_replay,
+                     release_state)
 
 
 def _handle_class_ruling(conn, args) -> int:
@@ -211,7 +215,7 @@ def _curated_export_problems(tag, path) -> list[archive.ArchiveProblem]:
 
 
 def register(commands) -> None:
-    """Add the `audit` group: `class-ruling`, `archive` and `replay`."""
+    """Add the `audit` group: `class-ruling`, `archive`, `replay` and `departures`."""
     audit = commands.add_parser(
         "audit", help="reconstruct what was known at decision time")
     sub = audit.add_subparsers(dest="audit_command", required=True)
@@ -228,3 +232,7 @@ def register(commands) -> None:
                     help="replay with code other than the release's git commit "
                          "(the result may then differ; a warning says so)")
     rp.set_defaults(handler=_handle_replay)
+    dp = sub.add_parser(
+        "departures", help="every open departure: a reviewed grade that stopped "
+                           "reaching a pair and is not acknowledged")
+    dp.set_defaults(handler=cli_departures.handle_audit_departures)

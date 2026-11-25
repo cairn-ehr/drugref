@@ -1501,11 +1501,14 @@ since 2026-11-20 a guard test fails on any new curated table the export omits un
 seeded row or a named superseder the export lacks), and a supersession pointer that repoints fewer rows than asked
 fails the replay. **#256 fixed 2026-11-23** (class grain): `drugref interactions` warns `CHANGED SINCE REVIEW`
 when a class ruling graded an asked pair when made and no longer reaches it (a drug left a class, or a deny cut
-a subclass). **Open follow-ups:** #279 (the same for the moiety grain, which has no reach snapshot yet), #281
-(owner ruling: a drug that left before a correction, or joined after the ruling, still departs silently),
-#275 (the question bookkeeping and accumulation tables, once they have a writer), #260 (diff-based membership tracking,
-only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265
-(drift ignores sources the release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read
+a subclass). **#281 and #279 fixed 2026-11-25** (`db/083`; `db/084` refreshes per ruling key): every pair a ruling
+key ever graded is recorded, both grains, and a departure banners until a curator acknowledges it
+(`drugref curate acknowledge-departure`; `drugref audit departures` lists them). **Open follow-ups:** #283
+(acknowledge from the reviewer GUI), #284 (sign acknowledgements), #285 (policy writes and ingest finishes still run
+the ~5 s full refresh; rulings are per key since db/084), #287 (two READ COMMITTED races can miss an episode), #275
+(the question bookkeeping and accumulation tables, once they have a writer), #260 (diff-based membership tracking,
+only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift
+ignores sources the release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read
 `captured: none`; `db/082` marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on
 Python 3.14) fixed 2026-11-17. Production must be built from nothing with the archive set.
 

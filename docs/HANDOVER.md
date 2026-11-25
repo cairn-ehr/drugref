@@ -13,14 +13,14 @@
 
 ## ⇒ NEXT
 
-**On branch `claude/silent-grade-drop-256`: #256 FIXED for the class grain; a PR to `main` carries it. No
-migration; schema still ends at `db/082`.** #277 closed (PR #278). The suite total lives in PROJECT-NOTES § "How to
-run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
+**Branch `claude/ever-graded-281`: #281, #279 FIXED (the PR closes both). Schema ends at `db/085`.** The suite total
+lives in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND:** `drugref interactions` prints `** CHANGED SINCE REVIEW` (exit 3) when a live class ruling graded an
-asked pair when made and no longer reaches it, its candidate intact: a drug left a class, or a policy deny cuts the
-subclass. PROJECT-NOTES § "Reviewed grades that no longer reach a pair". **Filed #279** (moiety grain) and **#281**
-(OWNER: a drug that left before a correction, or joined after the ruling, still departs silently).
+**⇒ THIS ROUND:** `db/083` records every pair a ruling key ever graded (deferred triggers cover Rust and replay;
+`db/084`: a ruling commit refreshes only its key, 16 ms not ~5 s); `drugref interactions` banners
+`** CHANGED SINCE REVIEW` (exit 3) until `drugref curate acknowledge-departure`; `drugref audit departures` lists the
+open ones (run after each ingest). PROJECT-NOTES § "Ever-graded pairs". **Filed:** #283 (GUI acknowledge), #284 (sign
+acks), #285 (policy and ingest commits still pay the ~5 s full refresh), #282 (old Rust failures), #287 (two races).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -29,7 +29,7 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/082` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/079`–`db/085` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
@@ -88,14 +88,14 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256 FIXED
-(close on merge); filed #279, #281;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from
-#258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256, #281,
+#279 FIXED (close on merge); filed #282–#285;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed;
+**open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
-From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
-**#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152,
-#128/#129, #124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE` set**,
-resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and **#102**;
+**#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also #148, #152, #128/#129,
+#124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE` set**, resolve #17,
+the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
@@ -103,7 +103,7 @@ resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it (no named database carries `db/079`–`db/082`: see STANDING).
+  patch it (no named database carries `db/079`–`db/085`: see STANDING).
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

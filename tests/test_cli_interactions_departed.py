@@ -1,134 +1,32 @@
-"""`drugref interactions` must say when a class ruling no longer reaches a pair it
-graded when the curator ruled (#256).
+"""`drugref interactions` must say when a reviewed ruling no longer reaches a pair it
+graded (#256, widened to both grains by #281/#279).
 
-THE DEFECT. #121's banner covers a class-grain grade whose CANDIDATE a re-ingest
-dropped. A grade also vanishes while the candidate survives: a drug leaves the subject
-or partner class (membership is delete-and-rebuild), or an expansion-policy deny cuts
-the descendant class it was reached through. `class_rule_member` (db/079) applies both,
-so both read the same way: the pair is in the ruling's reach snapshot (db/080) and no
-longer in `class_rule_member`. The list then said `no curated grade` for a pair the
-curator graded, and nothing said why.
+THE DEFECT. A grade can vanish while its candidate survives: a drug leaves the
+subject or partner class (membership is delete-and-rebuild), or an expansion-policy
+deny cuts the descendant class it was reached through. The list then said `no curated
+grade` for a pair the curator graded. The banner reads `graded_pairs.departed`
+(db/083's observations compared with `curated_ddi_pair`), so class and moiety rulings,
+corrections made after the drug left, and drugs that joined late are all covered; each
+entry names its grain and the `acknowledge-departure` command that silences it.
 
 PAIR-LEVEL AND DIRECTIONAL, like the list it qualifies: a departure is reported for
-(subject, partner) exactly when the ruling reached that pair when made and does not
-now. DB-gated.
+(subject, partner) exactly when a ruling graded that pair and does not now. Without
+db/083 there is nothing to compare: a stderr note, exit code unchanged. DB-gated.
 """
-from drugref import class_ruling_reach, cli_interactions, curation
-from tests.test_class_subject_read_path import (_a_descent_and_policy_fixture,
-                                                 _a_graded_class_rule, _deny)
+import uuid
+
+from drugref import cli_departures, cli_interactions, graded_pairs
+from tests.graded_pair_helpers import commit_point
+from tests.test_class_subject_read_path import _a_graded_class_rule
 from tests.test_cli_interactions import _args
-
-
-def _rerule(conn, sc, oc, applies=True):
-    """Correct the live ruling on A x B (append-then-point, re-snapshotting reach)."""
-    grade = (dict(severity="major", evidence_grade="established") if applies else {})
-    curation.record_class_interaction_judgement(
-        conn, sc, oc, "CI_MoA", applies, reviewed_by="test", reviewed_against="2026",
-        **grade)
-
-
-def _live_ruling(conn, sc):
-    return conn.execute(
-        "SELECT curated_class_interaction_id FROM drugref.curated_class_interaction "
-        "WHERE subject_class_uuid = %s AND superseded_by IS NULL", (sc,)).fetchone()[0]
-
-
-def _a_rule_x_left(conn, ingest_run_id, n, *, before_leaving=None):
-    """Rule A x B graded while X and Z are in A and P is in B; then X alone leaves A.
-    The candidate survives. `before_leaving(sc, oc)` runs while X is still in A.
-    Returns (ruling id, X, Z, P, A, B)."""
-    sc, oc, (x, z), (p,) = _a_graded_class_rule(
-        conn, ingest_run_id, subject_code=f"N00000256{n}0",
-        object_code=f"N00000256{n}1",
-        subject_members=[(f"TESTUN256{n}A", "leaver"), (f"TESTUN256{n}B", "stayer")],
-        object_members=[(f"TESTUN256{n}C", "partner")], severity="contraindicated")
-    if before_leaving:
-        before_leaving(sc, oc)
-    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
-    return _live_ruling(conn, sc), x, z, p, sc, oc
+# The read's tests (this file's old section 1) moved to test_graded_pairs_departed
+# with db/083's read (#281); the fixtures moved with them.
+from tests.test_graded_pairs_departed import (_a_rule_x_left, _live_ruling,
+                                              _moiety_rule)
 
 
 # ============================================================================
-# 1. the read
-# ============================================================================
-
-
-def test_a_drug_that_left_its_class_is_a_departure_of_each_pair_it_was_in(
-        conn, ingest_run_id):
-    ruling, x, z, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 1)
-
-    (d,) = class_ruling_reach.departed_reach(conn, x)
-    assert (d.curated_class_interaction_id, d.pairs) == (ruling, frozenset({(x, p)}))
-    assert (d.severity, d.captured) == ("contraindicated", "at_ruling")
-    assert class_ruling_reach.departed_reach(conn, x, p) == [d]
-    # The stayer still reaches P; the mirror direction was never ruled.
-    assert class_ruling_reach.departed_reach(conn, z) == []
-    assert class_ruling_reach.departed_reach(conn, p, x) == []
-
-
-def test_a_partner_that_left_its_class_departs_its_subjects_pairs(conn, ingest_run_id):
-    """Partner side: S's pairs with P depart, and P has none as subject."""
-    sc, _oc, (s,), (p, w) = _a_graded_class_rule(
-        conn, ingest_run_id, subject_code="N0000025690", object_code="N0000025691",
-        subject_members=[("TESTUN2569A", "subject")],
-        object_members=[("TESTUN2569B", "leaver"), ("TESTUN2569C", "stayer")])
-    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
-
-    (d,) = class_ruling_reach.departed_reach(conn, s)
-    assert d.pairs == frozenset({(s, p)})
-    assert class_ruling_reach.departed_reach(conn, s, w) == []
-    assert class_ruling_reach.departed_reach(conn, p) == []
-
-
-def test_a_deny_that_cuts_a_subclass_is_a_departure(conn, ingest_run_id):
-    """The second cause #256 names: membership unchanged, a policy deny now stops
-    the descent the ruling reached the drug through."""
-    f = _a_descent_and_policy_fixture(conn, ingest_run_id, expanding_side="subject")
-    assert class_ruling_reach.departed_reach(conn, f["descendant_only"]) == []
-    _deny(conn, f["expanding_class"], "Subject Parent [MoA]")
-
-    (d,) = class_ruling_reach.departed_reach(conn, f["descendant_only"])
-    assert d.pairs == frozenset({(f["descendant_only"], f["fixed"])})
-    assert class_ruling_reach.departed_reach(conn, f["direct"]) == []
-
-
-def test_a_correction_after_the_drug_left_is_not_a_departure(conn, ingest_run_id):
-    """The live version is the one being read, and it was ruled without X: only
-    the superseded version's reach holds X, and that ruling no longer grades."""
-    _ruling, x, _z, _p, sc, oc = _a_rule_x_left(conn, ingest_run_id, 2)
-    _rerule(conn, sc, oc)
-    assert class_ruling_reach.departed_reach(conn, x) == []
-
-
-def test_an_orphaned_rule_is_left_to_the_orphan_banner(conn, ingest_run_id):
-    """Candidate gone: #121's banner already names the ruling; one ruling, one banner."""
-    _ruling, x, _z, _p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 3)
-    conn.execute("DELETE FROM drugref.class_pair_contraindication")
-    assert class_ruling_reach.departed_reach(conn, x) == []
-
-
-def test_an_applies_false_ruling_dropped_no_grade(conn, ingest_run_id):
-    """Re-ruled "does not apply" while X was still in A: the reach holds X, but
-    the list never showed an applies = false ruling, so nothing fell out of it."""
-    _ruling, x, _z, _p, _a, _b = _a_rule_x_left(
-        conn, ingest_run_id, 4,
-        before_leaving=lambda sc, oc: _rerule(conn, sc, oc, applies=False))
-    assert class_ruling_reach.departed_reach(conn, x) == []
-
-
-def test_a_backfilled_reach_says_so(conn, ingest_run_id):
-    ruling, x, _z, _p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 5)
-    conn.execute("ALTER TABLE drugref.curated_class_interaction_reach "
-                 "DISABLE TRIGGER curated_class_interaction_reach_insert_only")
-    conn.execute("UPDATE drugref.curated_class_interaction_reach "
-                 "SET captured = 'backfill_db080' WHERE curated_class_interaction_id "
-                 "= %s", (ruling,))
-    (d,) = class_ruling_reach.departed_reach(conn, x)
-    assert d.captured == "backfill_db080"
-
-
-# ============================================================================
-# 2. the command
+# the command (the read itself: tests/test_graded_pairs_departed.py)
 # ============================================================================
 
 
@@ -140,7 +38,7 @@ def test_the_one_drug_form_says_a_reviewed_grade_no_longer_reaches_it(
         conn, _args(x)) == cli_interactions.EXIT_INCOMPLETE
     out = capsys.readouterr().out
     assert "CHANGED SINCE REVIEW" in out
-    assert f"ruling {ruling}" in out and "contraindicated" in out
+    assert f"class ruling {ruling}" in out and "contraindicated" in out
     assert f"drugref audit class-ruling {ruling}" in out
 
 
@@ -170,20 +68,6 @@ def test_a_stayer_and_a_stranger_get_no_banner(conn, ingest_run_id, capsys):
     assert "ABSENT RULE" in out
 
 
-def test_a_self_pair_is_never_a_departure(conn, ingest_run_id):
-    """A x A (a class against itself, db/032 DECISION 2): X sat on both sides, so the
-    reach holds X as subject AND partner. (X, X) never graded (db/038), so X leaving
-    departs (X, Z) only."""
-    sc, _oc, (x, z), _ = _a_graded_class_rule(
-        conn, ingest_run_id, subject_code="N0000025610", object_code="N0000025610",
-        subject_members=[("TESTUN2561A", "leaver"), ("TESTUN2561B", "stayer")],
-        object_members=[])
-    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
-
-    (d,) = class_ruling_reach.departed_reach(conn, x)
-    assert d.pairs == frozenset({(x, z)})
-
-
 def test_a_ruling_departing_both_directions_is_one_ruling(conn, ingest_run_id, capsys):
     """A x A again: asked as the pair (X, Z), the one ruling departs X -> Z AND
     Z -> X. The banner counts rulings, so it must say one, listing both pairs."""
@@ -191,14 +75,15 @@ def test_a_ruling_departing_both_directions_is_one_ruling(conn, ingest_run_id, c
         conn, ingest_run_id, subject_code="N0000025620", object_code="N0000025620",
         subject_members=[("TESTUN2562A", "leaver"), ("TESTUN2562B", "stayer")],
         object_members=[])
+    commit_point(conn)
     conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
     ruling = _live_ruling(conn, sc)
 
     assert cli_interactions._handle_interactions(
         conn, _args(x, z)) == cli_interactions.EXIT_INCOMPLETE
     out = capsys.readouterr().out
-    assert "CHANGED SINCE REVIEW: 1 curated class ruling(s)" in out
-    assert out.count(f"ruling {ruling}:") == 1
+    assert "CHANGED SINCE REVIEW: 1 curated ruling(s)" in out
+    assert out.count(f"class ruling {ruling}:") == 1
     assert f"{x} -> {z}" in out and f"{z} -> {x}" in out
 
 
@@ -222,33 +107,139 @@ def test_an_orphan_does_not_hide_a_departure(conn, ingest_run_id, capsys):
         assert "CHANGED SINCE REVIEW" in out
 
 
-def test_without_db080_the_read_says_it_cannot_tell(conn, ingest_run_id, capsys):
-    """No reach to compare: say so on stderr in migration_guard's own wording (which
-    names a DROPPED table as dropped), and never conclude "ABSENT RULE" -- that
+def test_without_db083_the_read_says_it_cannot_tell(conn, ingest_run_id, capsys):
+    """No observations to compare: say so on stderr in migration_guard's own wording
+    (which names a DROPPED table as dropped), and never conclude "ABSENT RULE" -- that
     sentence is reassurance, and the check behind it did not run.
 
     Nothing is rolled back (the probe is `to_regclass`, not a failed read), so the
     rollback-isolated fixture reaches the real DROPPED branch here.
     """
     _ruling, x, _z, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 9)
-    conn.execute("DROP TABLE drugref.curated_class_interaction_reach")
+    conn.execute(f"DROP TABLE {graded_pairs.OBSERVATION_TABLE} CASCADE")
 
     assert cli_interactions._handle_interactions(conn, _args(x)) == 0
     captured = capsys.readouterr()
     assert "CHANGED SINCE REVIEW" not in captured.out
-    assert "db/080" in captured.err
+    assert "db/083" in captured.err
     assert "DROPPED" in captured.err
-    assert "dropped out" in captured.err   # the caller's consequence reaches the operator
+    # the caller's consequence reaches the operator
+    assert "stopped reaching" in captured.err
 
 
 def test_the_pair_form_withholds_absent_rule_when_it_cannot_tell(
         conn, ingest_run_id, capsys):
-    """A pair with no surviving grade, on a database whose reach table is gone."""
+    """A pair with no surviving grade, on a database whose observation table is gone."""
     _ruling, x, _z, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 9)
-    conn.execute("DROP TABLE drugref.curated_class_interaction_reach")
+    conn.execute(f"DROP TABLE {graded_pairs.OBSERVATION_TABLE} CASCADE")
 
     assert cli_interactions._handle_interactions(conn, _args(x, p)) == 0
     captured = capsys.readouterr()
     assert "ABSENT RULE" not in captured.out
     assert "could not check" in captured.out
-    assert "db/080" in captured.err
+    assert "db/083" in captured.err
+
+
+def test_a_moiety_rule_departure_is_bannered_with_its_grain(
+        conn, ingest_run_id, capsys):
+    """#279 at the CLI: the partner P leaves class B, so the moiety rule S -> B
+    stops reaching (S, P). The entry says `moiety ruling` and `drug S -> class B`."""
+    ruling, s, p, b = _moiety_rule(conn, ingest_run_id, 2)
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (p,))
+
+    assert cli_interactions._handle_interactions(
+        conn, _args(s)) == cli_interactions.EXIT_INCOMPLETE
+    out = capsys.readouterr().out
+    assert "CHANGED SINCE REVIEW" in out
+    assert f"moiety ruling {ruling}:" in out
+    assert f"drug {s} -> class {b}" in out
+    assert f"{s} -> {p}" in out
+
+
+def _ack_lines(out):
+    return [ln for ln in out.splitlines() if "acknowledge (" in ln]
+
+
+def _leave(conn, *moieties):
+    for m in moieties:
+        conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s",
+                     (m,))
+
+
+def test_a_subject_side_leaver_is_named_as_the_drug(conn, ingest_run_id, capsys):
+    """X left the SUBJECT class (single pair (X, P)): X is named, not P. The
+    curator fills in the rationale, so it is printed literally."""
+    ruling, x, _z, p, _a, _b = _a_rule_x_left(conn, ingest_run_id, 3)
+    cli_interactions._handle_interactions(conn, _args(x))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert ("acknowledge (closes 1 pair(s)): drugref curate acknowledge-departure "
+            f"--grain class {ruling} {x} --rationale '...'") in line
+    assert str(p) not in line
+
+
+def test_a_partner_side_leaver_is_named_as_the_drug(conn, ingest_run_id, capsys):
+    sc, _oc, (s,), (p, _w) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025640", object_code="N0000025641",
+        subject_members=[("TESTUN2564A", "subject")],
+        object_members=[("TESTUN2564B", "leaver"), ("TESTUN2564C", "stayer")])
+    commit_point(conn)
+    _leave(conn, p)
+    cli_interactions._handle_interactions(conn, _args(s))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert f"{_live_ruling(conn, sc)} {p} --rationale" in line
+
+
+def test_the_one_drug_form_names_the_partner_leavers_not_the_asked_drug(
+        conn, ingest_run_id, capsys):
+    """Both partners P1, P2 left; the asked subject S stayed. Pairs share subject S,
+    but S did not leave, so the lines name P1 and P2."""
+    _sc, _oc, (s,), (p1, p2) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025650", object_code="N0000025651",
+        subject_members=[("TESTUN2565A", "subject")],
+        object_members=[("TESTUN2565B", "p1"), ("TESTUN2565C", "p2")])
+    commit_point(conn)
+    _leave(conn, p1, p2)
+    cli_interactions._handle_interactions(conn, _args(s))
+    lines = _ack_lines(capsys.readouterr().out)
+    assert len(lines) == 2
+    assert all(f" {s} --rationale" not in ln for ln in lines)
+    assert {p1, p2} == {m for m in (p1, p2) if any(str(m) in ln for ln in lines)}
+
+
+def test_an_acknowledge_that_reaches_an_unseen_departure_says_so(
+        conn, ingest_run_id, capsys):
+    """P left; subjects X and Y both depart with it, but the question asks only X.
+    Naming P closes (Y, P) too, which the banner did not show."""
+    _sc, _oc, (x, _y), (p,) = _a_graded_class_rule(
+        conn, ingest_run_id, subject_code="N0000025660", object_code="N0000025661",
+        subject_members=[("TESTUN2566A", "asked"), ("TESTUN2566B", "unseen")],
+        object_members=[("TESTUN2566C", "leaver")])
+    commit_point(conn)
+    _leave(conn, p)
+    cli_interactions._handle_interactions(conn, _args(x))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert "acknowledge (closes 2 pair(s), 1 not shown above)" in line
+    assert f" {p} --rationale" in line
+
+
+def test_a_moiety_entry_names_the_partner(conn, ingest_run_id, capsys):
+    mruling, s, p, _b = _moiety_rule(conn, ingest_run_id, 3)
+    _leave(conn, p)
+    cli_interactions._handle_interactions(conn, _args(s))
+    (line,) = _ack_lines(capsys.readouterr().out)
+    assert ("--grain moiety " f"{mruling} {p} --rationale '...'") in line
+
+
+def test_format_departure_is_pure_over_its_hints():
+    x, p = uuid.uuid4(), uuid.uuid4()
+    d = graded_pairs.Departure(
+        "class_rule", 7, uuid.uuid4(), uuid.uuid4(), "CI_MoA", "major", "r", "2026",
+        False, None, frozenset({(x, p)}))
+    lines = cli_departures.format_departure(d, [(x, 3, 2)])
+    assert lines[-1].startswith(
+        "      acknowledge (closes 3 pair(s), 2 not shown above): ")
+    assert lines[-1].endswith(
+        f"--grain class 7 {x} --rationale '...' --reviewed-by NAME "
+        "--reviewed-against REF")
+    assert not any("acknowledge" in ln
+                   for ln in cli_departures.format_departure(d, []))

@@ -601,4 +601,118 @@ mod tests {
             ReviewDecision::ContextDependent
         );
     }
+
+    /// A GUI ruling is observed at its own COMMIT by db/083's deferred trigger, with no
+    /// Python involved (#281, #279): the Rust write path inserts a moiety-grain ruling
+    /// and a `graded_pair_observation` row must exist once `create` returns.
+    #[tokio::test]
+    #[ignore = "requires a migrated Drugref PostgreSQL database"]
+    async fn live_decision_is_observed_as_a_graded_pair() {
+        let database_url = std::env::var("DRUGREF_REVIEW_TEST_DATABASE_URL")
+            .expect("DRUGREF_REVIEW_TEST_DATABASE_URL must name a migrated database");
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&database_url)
+            .await
+            .expect("review decision test database");
+        let subject_uuid = Uuid::new_v4();
+        let partner_uuid = Uuid::new_v4();
+        let object_uuid = Uuid::new_v4();
+        let question_uuid = Uuid::new_v4();
+        let target_key = format!("MOIETY:{subject_uuid}/CLASS:{object_uuid}/CI_AXIS:CI_MoA");
+        let run_id: i64 = sqlx::query_scalar(
+            "INSERT INTO drugref.ingest_run \
+             (source, upstream_release, source_checksum, writer) \
+             VALUES ('MED-RT', $1, 'deadbeef', 'medrt_run') RETURNING ingest_run_id",
+        )
+        .bind(format!("graded-pair-test-{question_uuid}"))
+        .fetch_one(&pool)
+        .await
+        .expect("test ingest run");
+        for (uuid, name) in [(subject_uuid, "Subject"), (partner_uuid, "Partner")] {
+            sqlx::query(
+                "INSERT INTO drugref.substance_moiety \
+                 (moiety_uuid, display_name, first_seen_ingest) VALUES ($1, $2, $3)",
+            )
+            .bind(uuid)
+            .bind(name)
+            .bind(run_id)
+            .execute(&pool)
+            .await
+            .expect("test moiety");
+        }
+        sqlx::query(
+            "INSERT INTO drugref.substance_class \
+             (class_uuid, source, source_code, class_name, concept_type, first_seen_ingest) \
+             VALUES ($1, 'MED-RT', $2, 'Test class', 'MoA', $3)",
+        )
+        .bind(object_uuid)
+        .bind(format!("N{}", object_uuid.simple()))
+        .bind(run_id)
+        .execute(&pool)
+        .await
+        .expect("test class");
+        // The partner's membership of the object class is what makes the pair gradable.
+        sqlx::query(
+            "INSERT INTO drugref.class_membership \
+             (moiety_uuid, class_uuid, relationship, ingest_run) VALUES ($1, $2, 'has_MoA', $3)",
+        )
+        .bind(partner_uuid)
+        .bind(object_uuid)
+        .bind(run_id)
+        .execute(&pool)
+        .await
+        .expect("test partner membership");
+        sqlx::query(
+            "INSERT INTO drugref.class_contraindication \
+             (subject_moiety_uuid, object_class_uuid, relationship, source, ingest_run) \
+             VALUES ($1, $2, 'CI_MoA', 'MED-RT', $3)",
+        )
+        .bind(subject_uuid)
+        .bind(object_uuid)
+        .bind(run_id)
+        .execute(&pool)
+        .await
+        .expect("test candidate");
+        sqlx::query(
+            "INSERT INTO drugref.open_question \
+             (question_uuid, gap_kind, gap_key, question_text, first_derived_ingest, \
+              last_derived_ingest) VALUES ($1, 'uncurated_interaction_rule', $2, \
+              'Test decision?', $3, $3)",
+        )
+        .bind(question_uuid)
+        .bind(&target_key)
+        .bind(run_id)
+        .execute(&pool)
+        .await
+        .expect("test question");
+
+        create(
+            &pool,
+            &CreateReviewDecisionRequest {
+                kind: ReviewKind::InteractionRule,
+                target_key,
+                decision: ReviewDecision::Applies,
+                severity: Some(Severity::Major),
+                mechanism: Some("Test mechanism".into()),
+                management: Some("Avoid combination".into()),
+                evidence_grade: Some(EvidenceGrade::Probable),
+                expected_revision_id: None,
+            },
+            "Test Reviewer",
+        )
+        .await
+        .expect("GUI ruling");
+
+        let observed: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM drugref.graded_pair_observation \
+             WHERE rule_grain = 'moiety_rule' AND subject_key = $1 AND partner_moiety = $2",
+        )
+        .bind(subject_uuid)
+        .bind(partner_uuid)
+        .fetch_one(&pool)
+        .await
+        .expect("observation count");
+        assert_eq!(observed, 1);
+    }
 }
