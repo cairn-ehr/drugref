@@ -37,7 +37,8 @@ Without it, two commits at the same moment could each miss the other's work: a r
 not see the ingest's new class members, and an acknowledgement racing an ingest that grades the pair again would
 close the only episode. Each case left a pair graded with nothing to warn when it next departed. The lock makes
 such commits take turns: a ruling saved while an ingest is committing can wait for that ingest's 5-second refresh.
-Commits that do not write the ledger never wait.
+Commits that change no ruling, expansion policy, ingest run or acknowledgement never wait. The lock refuses to
+run outside the database's default isolation level (READ COMMITTED), where it could not work.
 
 **3. A departure ends only when a curator acknowledges it.** The warning (`CHANGED SINCE REVIEW`, exit 3) repeats
 on every answer until `drugref curate acknowledge-departure` records who accepted the departure, when, against what

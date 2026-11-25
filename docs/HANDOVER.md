@@ -89,7 +89,7 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#287 FIXED
-(close on merge); #256, #281, #279 closed; open from #286: #282–#285;** #277, #270, #104, #272, #259, #258, #261,
+(close on merge); #256, #281, #279 closed; open: #282–#285, #289;** #277, #270, #104, #272, #259, #258, #261,
 #262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope);
 #224 partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from
 class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**.

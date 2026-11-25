@@ -7053,7 +7053,7 @@ docs-site *A reviewed grade never vanishes silently*.
   ruling's commit refreshes only its own key, and a guard that the ruling triggers run the per-key function and the
   other two the full one. No timing assertion; the figures are under "Cost".
 
-## The ledger lock (#287, 2026-11-26) — `db/086`, on `drugref_test`, suite 3721 → 3723
+## The ledger lock (#287, 2026-11-26) — `db/086`, on `drugref_test`, suite 3721 → 3725
 
 Two READ COMMITTED races could each lose an episode (both found in #286's final review): **(1)** a ruling on key K
 commits while an ingest's full refresh runs at COMMIT. The ruling's per-key refresh cannot see the ingest's
@@ -7070,15 +7070,27 @@ departure never banners.
   lock is released after the commit is visible), and its next statement's fresh snapshot includes the earlier's
   rows. One lock for the whole ledger, not per key: the full refresh covers every key. Advisory locks are per
   database, so pytest's per-session copies never contend.
-- **Cost:** a ruling saved while an ingest commits waits for its ~5 s refresh (#285); two rulings take turns
-  (~16 ms each). `acknowledge` holds the lock until its caller commits (the CLI commits at once).
+- **READ COMMITTED only:** under REPEATABLE READ or SERIALIZABLE the snapshot predates the wait and the races
+  return silently (`INSERT ... WHERE NOT EXISTS` raises no serialisation failure), so the lock function RAISES
+  at those levels. Nothing in `src/` raises isolation on a ledger-writing path.
+- **Cost:** every commit that fires a refresh (ruling, expansion policy, ingest run) or acknowledges takes the
+  lock, even when it inserts nothing. A ruling saved while an ingest commits waits for its ~5 s refresh (#285);
+  two rulings take turns (~16 ms each). `acknowledge` holds the lock until its caller commits or rolls back,
+  also after it raises (the CLI commits at once and exits on an error). There is no `lock_timeout`, so a session
+  left idle in a transaction that took the lock stalls every later ingest COMMIT, ruling save and ack: find it
+  with `SELECT pid, state, query FROM pg_locks JOIN pg_stat_activity USING (pid) WHERE locktype = 'advisory'
+  AND granted`.
 - **TRAP:** call the refresh only by these two names. A future migration restating either body must keep the
   `PERFORM drugref.lock_graded_pair_ledger();` line; the two race tests fail without it.
-- **Tests (+2)** in `tests/test_graded_pairs_races.py`: one per race, on two real connections in a fresh database
-  beside the session one (`databases`; the ledger is insert-only, so committed rows cannot be cleaned up). Each
-  holds one transaction at the racing moment, commits the other from a thread, and asserts both the episode and
-  that the thread waited on the advisory lock (`pg_stat_activity`). Both failed before db/086. `_fake_ingest`
-  gained `commit=False` for them.
+- **Tests (+4)** in `tests/test_graded_pairs_races.py`: race 1, race 2 in both orders (ack holds the lock;
+  ingest holds it, and the ack must wait then raise `NothingDeparted` -- the one test that pins the lock BEFORE
+  `acknowledge`'s reads), and the isolation guard. The three race tests use two real connections in a fresh
+  database beside the session one (`databases`; the ledger is insert-only, so committed rows cannot be cleaned
+  up). Each holds one transaction at the racing moment, commits the other from a thread, and asserts that the
+  thread waited on the advisory lock (`pg_stat_activity`) and the episode counts. Removing the lock from any of
+  its three call sites fails at least one. The threaded connection sets `lock_timeout=20s`: without it, a wait on
+  any OTHER lock deadlocks the test's teardown client-side (psycopg's connection lock) instead of failing it.
+  `_fake_ingest` gained `commit=False` for them.
 
 ## The standing open-issue ledger
 
@@ -7283,7 +7295,9 @@ finishes still run the ~5 s full refresh; acceptable), **[#282](https://github.c
 (two READ COMMITTED races can miss an episode). +72 tests, 3649 → 3721.
 **The ledger lock (2026-11-26)** — **[#287](https://github.com/cairn-ehr/drugref/issues/287) FIXED** (`db/086`, §
 "The ledger lock"): both refreshes and `acknowledge` take one advisory lock, so two racing commits cannot lose
-an episode. +2 tests, 3721 → 3723.
+an episode. +4 tests, 3721 → 3725. Its pre-merge review filed
+**[#289](https://github.com/cairn-ehr/drugref/issues/289)** (the lock wait has no `lock_timeout`; an idle holder
+stalls every ingest COMMIT, ruling save and ack -- needs a per-caller ruling).
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7469,7 +7483,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3723 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3725 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

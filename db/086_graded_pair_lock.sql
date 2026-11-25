@@ -21,23 +21,41 @@
 -- only after the commit is visible), and its next statement takes a fresh READ
 -- COMMITTED snapshot that includes the earlier one's rows. One lock for the whole
 -- ledger, not per key: the full refresh touches every key, and the per-key refresh
--- costs ~16 ms, so the only serialisation is between commits that write here.
--- Advisory locks are per database, so concurrent test databases never contend.
+-- costs ~16 ms. The only commits that take turns are those that fire a refresh (a
+-- ruling, an expansion-policy decision, an ingest run) or acknowledge, even when
+-- they insert nothing; a ruling saved while an ingest commits waits for that
+-- ingest's ~5 s full refresh (#285). Advisory locks are per database, so
+-- concurrent test databases never contend.
+--
+-- READ COMMITTED ONLY. Under REPEATABLE READ or SERIALIZABLE the snapshot is taken
+-- at the transaction's first statement, BEFORE the wait, so the races return with
+-- no error (`INSERT ... WHERE NOT EXISTS` raises no serialisation failure). The lock
+-- therefore refuses to run at those levels: loud, where the alternative is silent.
 
 CREATE OR REPLACE FUNCTION drugref.lock_graded_pair_ledger() RETURNS void AS $$
-    SELECT pg_advisory_xact_lock(hashtextextended('drugref.graded_pair_observation', 0));
-$$ LANGUAGE sql VOLATILE;
+BEGIN
+    IF current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION 'lock_graded_pair_ledger: the graded-pair ledger must be '
+            'written under READ COMMITTED, not %; a snapshot taken before the lock '
+            'wait loses episodes (db/086, #287)',
+            current_setting('transaction_isolation');
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('drugref.graded_pair_observation', 0));
+END;
+$$ LANGUAGE plpgsql VOLATILE;
 
 COMMENT ON FUNCTION drugref.lock_graded_pair_ledger() IS
-    'Takes the transaction-scoped advisory lock every writer of '
-    'graded_pair_observation and graded_pair_departure_ack holds before reading '
-    '(db/086, #287).';
+    'Takes the ledger''s transaction-scoped advisory lock; refuses outside READ '
+    'COMMITTED. Called by refresh_graded_pairs(), refresh_graded_pairs_for_key() '
+    'and graded_pairs.acknowledge before they read (db/086, #287); any new writer '
+    'of graded_pair_observation or graded_pair_departure_ack must call it too.';
 
 -- db/083's and db/084's refresh bodies, restated VERBATIM with the lock as their
 -- first statement (both are applied, hence immutable). Every caller -- the
--- trigger functions, `graded_pairs.refresh`, the replay -- calls these names, so
--- all of them get the lock. (A rename-and-wrap would avoid restating the bodies,
--- but db/083's body qualifies its parameter as `refresh_graded_pairs.captured`.)
+-- trigger functions (which the replay fires via `_commit_point`) and
+-- `graded_pairs.refresh` -- calls these names, so all of them get the lock. (A
+-- rename-and-wrap would avoid restating the bodies, but db/083's body qualifies
+-- its parameter as `refresh_graded_pairs.captured`.)
 CREATE OR REPLACE FUNCTION drugref.refresh_graded_pairs(captured text DEFAULT 'observed')
 RETURNS integer AS $$
 DECLARE
