@@ -13,14 +13,14 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/ever-graded-281`: #281 (owner: (c) "ever graded", both grains, closes #279; ended by acknowledgement),
-spec `superpowers/specs/2026-11-24-drugref-ever-graded-design.md`. Schema ends at `db/082`.** #256 closed (PR #280). The suite total lives in PROJECT-NOTES § "How to
-run / test" **and nowhere else**; `uv run pytest` fails if the line and the suite disagree.
+**Branch `claude/ever-graded-281`: #281, #279 FIXED (the PR closes both). Schema ends at `db/083`.** The suite total
+lives in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND:** `drugref interactions` prints `** CHANGED SINCE REVIEW` (exit 3) when a live class ruling graded an
-asked pair when made and no longer reaches it, its candidate intact: a drug left a class, or a policy deny cuts the
-subclass. PROJECT-NOTES § "Reviewed grades that no longer reach a pair". **Filed #279** (moiety grain) and **#281**
-(OWNER: a drug that left before a correction, or joined after the ruling, still departs silently).
+**⇒ THIS ROUND:** `db/083` records every pair a ruling key ever graded (deferred triggers: the Rust service and replay
+are covered); `drugref interactions` banners `** CHANGED SINCE REVIEW` (exit 3) until `drugref curate
+acknowledge-departure`; `drugref audit departures` lists the open ones (run it after each ingest). PROJECT-NOTES §
+"Ever-graded pairs". **Filed:** #283 (GUI acknowledge), #284 (sign acks), #285 (N rulings = N full refreshes; revisit
+past 10^6 observations, beside #260), #282 (two ignored Rust tests failed before this work).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -29,7 +29,7 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/082` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/079`–`db/083` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
@@ -88,8 +88,8 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256 FIXED
-(close on merge); filed #279, #281;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#256, #281, #279 FIXED
+(close on merge); filed #282–#285;** #277, #270, #104, #272, #259, #258, #261, #262, #266, #268 closed; **open from
 #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly done. **#244.**
 **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class profiles: #203, #204.
 From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing: **#155** and
@@ -103,7 +103,7 @@ resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it (no named database carries `db/079`–`db/082`: see STANDING).
+  patch it (no named database carries `db/079`–`db/083`: see STANDING).
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

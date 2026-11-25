@@ -96,3 +96,7 @@ history is never lost — it remains in the git log and in the dated design spec
   anchored on a release tag rather than a migration id, why reconstruction is by archived upstream files plus a
   per-ruling reach snapshot rather than in-database history, why a node's own local feeds are not drift, and the
   owner's diff-based fallback if archive disk use grows.
+- [A reviewed grade never vanishes silently](a-reviewed-grade-never-vanishes-silently.md) — why drugref records every
+  pair a ruling ever graded rather than comparing against a ruling-time snapshot, why the record is refreshed by
+  deferred database triggers, why a departure warning ends only when a curator acknowledges it, and why a ruling
+  that stops reaching a pair is flagged even when another ruling still grades it.

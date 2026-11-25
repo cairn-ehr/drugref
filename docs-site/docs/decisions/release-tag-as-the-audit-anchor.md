@@ -66,7 +66,8 @@ file (issue #260). Not built now.
   ruled, and `drugref audit class-ruling` says so. No such rulings exist today.
 - `drugref audit class-ruling <id>` shows which drugs a ruling reached then versus now. The same reach record lets
   `drugref interactions` warn `CHANGED SINCE REVIEW` when a ruling no longer reaches a pair it graded (issue #256);
-  the moiety grain has no reach record yet (#279).
+  since `db/083` that banner reads a ledger of every pair a ruling ever graded, for both grains (issues #281,
+  #279; see [A reviewed grade never vanishes silently](a-reviewed-grade-never-vanishes-silently.md)).
 - A snapshot that reached no one is recorded as such (`db/082`, one marker row per snapshotted ruling, carried in
   the curated export), so the audit tells "reached no one" from "never recorded" (issue #266).
 - An archive file that is there but unreadable is reported as "could not check", never as "missing": "missing"
