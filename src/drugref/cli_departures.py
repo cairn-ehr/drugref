@@ -56,6 +56,10 @@ def format_departure(d: graded_pairs.Departure,
     return lines
 
 
+# AN ANSWER KNOWN TO BE INCOMPLETE gets its own exit code, for #82's reason: a banner
+# alone is human-only, and a script reading 0 would take the list as complete. Not 2,
+# which means "nothing was asked".
+EXIT_INCOMPLETE = 3
 _NEEDED = (graded_pairs.OBSERVATION_TABLE, graded_pairs.ACK_TABLE)
 
 
@@ -132,7 +136,6 @@ def report_departures(conn, directions) -> bool | None:
 def handle_audit_departures(conn, args) -> int:
     """`drugref audit departures`: every open departure, all rulings, both grains.
     Exit 0 none, 3 some (incomplete), 2 when db/083 is absent ("cannot tell")."""
-    from drugref.cli_interactions import EXIT_INCOMPLETE  # cycle: it imports us
     if _cannot_tell(conn):
         return 2
     with migration_guard.guarded(
@@ -142,7 +145,7 @@ def handle_audit_departures(conn, args) -> int:
         found = graded_pairs.departed(conn)
         entries = [(d, ack_hints(conn, d)) for d in found]
     print(f"open departures: {len(found)} ruling(s), "
-          f"{sum(len(d.pairs) for d in found)} pair(s)")
+          f"{len(set().union(*(d.pairs for d in found)))} pair(s)")
     for d, hints in entries:
         print("\n".join(format_departure(d, hints)))
         print(f"      first seen: {d.first_seen_at:%Y-%m-%d %H:%M}")

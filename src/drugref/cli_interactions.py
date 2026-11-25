@@ -113,10 +113,7 @@ def _grades_for(conn, subject: uuid.UUID):
         return curated_read.effective_grades_for(conn, subject)
 
 
-# AN ANSWER KNOWN TO BE INCOMPLETE gets its own exit code, for #82's reason: a banner
-# alone is human-only, and a script reading 0 would take the list as complete. Not 2,
-# which means "nothing was asked".
-EXIT_INCOMPLETE = 3
+EXIT_INCOMPLETE = cli_departures.EXIT_INCOMPLETE   # defined there (leaf module)
 
 
 def _report_orphans(conn, subjects: set[uuid.UUID]) -> bool:
