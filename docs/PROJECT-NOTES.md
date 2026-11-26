@@ -7282,6 +7282,31 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   ack tests fail identically at the base commit (database state, not code). Frontend: `svelte-check` 0 errors,
   production build.
 
+## Drug effects on laboratory values (#294, 2026-11-27) — source evaluation only, no migration, suite 3752 → 3759
+
+Step 1 of 4 (ROADMAP). The record is the
+[source evaluation](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md); its figures come from
+`tools/lab_effect_survey.py` (pure grading rule tested in `tests/test_lab_effect_survey.py`; the tool reads all 14
+openFDA partitions in ~2.5 min and needs no database) and from `drugref_allergy` (MED-RT `CI_with`/`induces`/PE).
+**+5 tests, and +2 that main had already drifted by** (PR #296's review fixes did not move the count): 3752 → 3759.
+
+- **Owner rulings:** (A) record and grade, the consumer filters; curated salience (B) later. A fourth role,
+  *interferes* (false reading, or a reference range that no longer applies): ReportTriage#36.
+- **Labels are the main source**: 66 of 68 test-set checks found (mention level, an upper bound), 63 in a boxed,
+  warnings or precautions section. Misses: aspirin (OTC, no single-substance Rx label); trimethoprim's INR
+  warning is on the co-trimoxazole combination label, and combination labels are skipped. **The grade cuts each
+  effect's list to a quarter to a half, but does not make it salient** (244 substances name thrombocytopenia in a
+  warnings section).
+- **The interference section is thin and mixed**: 161 substances; of a 41 sample, 20 method interference (2 of
+  them imaging), 10 real reference-range shifts, 5 empty, 6 misfiled by openFDA. Biotin has no Rx label.
+- **MED-RT `CI_with` never states the role** (Hypokalemia lists QT drugs, Hyperkalemia lists causers) and matches
+  11 of 26 test pairs; `induces` none. `Decreased Renal K+ Excretion [PE]` (48 members) is a mechanism seed.
+- **Licences (checked 2026-11-27):** MedDRA BLOCKED (so OnSIDES and SIDER data); LOINC's no-change, no-derivative
+  and field-of-use terms make it unfit to bundle; LiverTox and DILIrank public domain; CTCAE uncertain (MedDRA
+  terms). **The LOINC and LiverTox pages refused a second automated fetch: re-read both by hand before ingest.**
+- **Open owner questions** (record §6): analyte identity given LOINC; key statements to the MeSH `condition`
+  registry plus a condition → (analyte, direction) map, or a new analyte registry.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -7611,6 +7636,10 @@ owner-role bypass; **13** `TRUNCATE`-ing modules depend on it — re-grep before
 immortality · #33 MeSH CAS keys name specific forms (behind #68) · #5 INN from UNII's `Display Name` ·
 **#7/#29 row-at-a-time ingest** — the two MeSH legs are 75.7% of a 133 s chain.
 
+**Drug effects on laboratory values** — **#294 open** (ReportTriage's request; step 1, the source evaluation, done
+2026-11-27; the model waits on two owner rulings, § "Drug effects on laboratory values"). Its fourth role's
+consumer side is ReportTriage#36.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -7689,7 +7718,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3752 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3759 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
