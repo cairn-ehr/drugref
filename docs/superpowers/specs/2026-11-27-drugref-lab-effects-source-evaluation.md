@@ -29,9 +29,9 @@ applies).
 ## 2. Licences
 
 Rule 6 (CLAUDE.md) is a blocker, not a cleanup. Sources already in drugref keep their clearance as recorded in
-`NOTICE`. The new sources were checked on 2026-11-27 against the publisher's own page. **The LOINC and LiverTox
-pages refused a second automated fetch (403, captcha), so their quotes below come from that one check. Re-read
-both pages by hand before the ingest that uses them.**
+`NOTICE`. The new sources were checked on 2026-11-27 against the publisher's own page. **The LiverTox page refused
+a second automated fetch (captcha), so its quote comes from that one check; re-read it by hand before the ingest
+that uses it.** LOINC's terms were read in full from the licence text the owner supplied (2026-11-27); §2.1.
 
 | Source | Licence, as stated by the publisher | Verdict for drugref tables |
 |---|---|---|
@@ -41,13 +41,39 @@ both pages by hand before the ingest that uses them.**
 | MeSH 2026 | NLM Terms and Conditions, already ingested | **Clear** (`NOTICE`) |
 | LiverTox (NIDDK, NCBI Bookshelf NBK547852) | "This publication is in the public domain"; "copyright free" | **Clear with conditions**: exclude figures marked "Reprinted with permission"; bulk download from the LitArch FTP (`livertox_NBK547852.tar.gz`), never by crawling the Bookshelf; credit NIDDK |
 | DILIrank 2.0 / DILIst (FDA NCTR) | no licence of its own; FDA site policy: "not copyrighted. They are in the public domain" | **Clear**, from fda.gov, not from the journal papers (copyrighted) |
-| LOINC (Regenstrief) | free to "use, copy, or distribute" with a mandatory notice; extracted content must carry the code and its display name; field contents "shall not be changed"; parts used only "as they are presented"; not for "developing or promulgating a different standard"; no derivative works | **Not AGPL-compatible as bundled data**, because of the no-change, no-derivative and field-of-use terms. Usable only under its own licence and notice, outside the AGPL tables. **Owner decision, §6 Q1** |
+| LOINC (Regenstrief) | free to "use, copy, or distribute ... for any commercial or non-commercial purpose", subject to terms that forbid changes, derivative works and one field of use (§2.1) | **Usable under its own licence, never inside the AGPL tables** (§2.1). Not needed for the model, by owner ruling (§6) |
 | MedDRA (MSSO) | "may not grant any sublicense nor publish nor otherwise distribute MedDRA to a third party"; names "open-source platforms, publicly accessible datasets" as violations (MSSO statement, 2026-05-20) | **Blocked** |
 | OnSIDES v3.1.1 | data CC BY 4.0, but every effect is a MedDRA code | **Blocked as data** (MedDRA). The method stays usable (MIT), as PROJECT-NOTES already records |
 | SIDER 4.1 | CC BY-SA 4.0, but its effect terms are MedDRA; frozen since 2015 | **Blocked as data** (MedDRA) |
 | CTCAE v6.0 (NCI) | NCI text "free of copyright", but "Each CTCAE v6.0 term is a MedDRA v28.0 LLT" | **Uncertain**: the grading text is clear, the term strings and LLT codes are not. Not needed for this work (thresholds stay in ReportTriage) |
 | Young's *Effects of Drugs on Clinical Laboratory Tests*, Lexicomp, Micromedex, CLSI EP07 tables | proprietary | **Barred** |
 | AMT, SNOMED CT, ATC | barred from drugref tables already | **Barred** |
+
+### 2.1 LOINC, read in full
+
+The owner supplied the full licence text on 2026-11-27. It is more permissive about **distribution** than the
+first check suggested, and it changes none of the §6 rulings:
+
+- **Distribution is allowed.** "portions of the Group 1 Artifacts or Group 3 Artifacts may be incorporated into
+  other products and services, such as ... data dictionaries, online terminology services, software programs",
+  provided the product carries the fixed LOINC notice, keeps third-party copyrighted content out (or complies
+  with it), and gives every extracted item "the corresponding identifier from LOINC ... and ... the
+  corresponding LOINC display name".
+- **Its terms are not free-software terms.** It forbids changing "any contents of, any fields", creating
+  "derivative works ... without the prior written permission", and use "for the purpose of developing or
+  promulgating a different standard for identifying patient observations". A field-of-use restriction and a ban
+  on modification cannot be passed through AGPL-3.0 (§10 of the AGPL forbids imposing further restrictions on
+  recipients). So LOINC content can travel **beside** drugref, as a separate work under its own licence and
+  notice. It cannot be **part of** the AGPL-licensed tables.
+- **The Part File carries SNOMED CT.** "The LOINC Part File ... include[s] SNOMED Clinical Terms", and SNOMED CT
+  is barred here. If drugref ever references LOINC, it uses LOINC Table codes (`LOINC_NUM` with
+  `LONG_COMMON_NAME`), never Part numbers, and only codes whose `EXTERNAL_COPYRIGHT_NOTICE` is empty.
+- **The field-of-use clause binds the design.** drugref's analyte concepts must not be **derived from** LOINC. If
+  they were, a drugref analyte list could be read as "a different standard" built from LOINC material. They are
+  derived from MeSH conditions (§6, ruling 2), so the clause does not reach them.
+- **Consumers are unaffected.** LOINC codes "may be used in electronic records and electronic messages in
+  conjunction with laboratory test results ... without the need to include this Copyright Notice". ReportTriage
+  matching its own LOINC-coded results to drugref analytes is that use.
 
 **No openly licensed dataset dedicated to drug effects on laboratory values, or to assay interference, was
 found.** The content has to be extracted (labels) or curated.
@@ -175,22 +201,18 @@ Worth a later ingest for ALT, AST, ALP and bilirubin. Not first.
 4. **Review and signing** go through the existing reviewer, as for every curated statement. Label-derived rows
    are recorded as "not confirmed" until a curator rules.
 
-## 6. Questions for the owner (before the model is specified)
+## 6. Owner rulings (2026-11-27) and what is still open
 
-1. **How should analytes be identified, given LOINC's licence?** LOINC's no-change, no-derivative and
-   field-of-use terms make it unfit for bundled data under rule 6. Options:
-   - **(a) drugref-owned analyte concepts with no LOINC codes.** The consumer maps them to LOINC on its side.
-     ReportTriage already holds LOINC codes for its results, and it is a small, stable list. My pick: it keeps
-     drugref's tables clean, and the mapping lives where the LOINC licence already applies.
-   - **(b) the same concepts, plus a LOINC mapping file shipped separately** under LOINC's own notice, as a
-     node-local plug-in (the rule-6 pattern for encumbered sources).
-   - **(c) treat LOINC as compatible and bundle the codes with its notice.** Not recommended without a ruling,
-     because of the no-derivative clause.
-2. **Is the analyte object a new registry, or the existing MeSH `condition` registry plus a mapping?** Labels
-   name conditions (hyperkalaemia), and ReportTriage needs analytes (potassium, high). Keying statements to MeSH
-   conditions reuses the existing machinery (`condition_subtree`, curated condition rulings) and the drug–
-   disease layer's provenance. It needs a small authored condition → (analyte, direction) map. Bleeding to
-   haemoglobin needs a pathway marker there.
+1. **Analytes are drugref's own concepts, with no LOINC codes in drugref's tables.** The consumer maps them to
+   LOINC on its side: ReportTriage already holds LOINC codes for its results, and the list is small and stable.
+   §2.1 shows a LOINC crosswalk is lawful as a separate, separately noticed work. Whether to ship one later
+   (beside the repo, or as a node-local plug-in) is **left open**: there is one consumer, and it already has the
+   codes.
+2. **Statements key to the existing MeSH `condition` registry**, plus a small authored condition → (analyte,
+   direction) map. Labels name conditions (hyperkalaemia), and ReportTriage needs analytes (potassium, high).
+   This reuses the existing machinery (`condition_subtree`, curated condition rulings) and the drug–disease
+   layer's provenance. Bleeding reaches haemoglobin only through a pathway, so the map needs a marker for that.
+   Deriving the analytes from MeSH, not LOINC, also keeps LOINC's field-of-use clause out of reach (§2.1).
 3. **The additive-effect registry** (`db/020`) is keyed to MED-RT physiologic-effect classes and is empty. It
    answers "do these effects add up", which is a different question. This evaluation finds no reason to build
    on it, beyond reusing MED-RT `Decreased Renal K+ Excretion [PE]`-style classes as seeds.

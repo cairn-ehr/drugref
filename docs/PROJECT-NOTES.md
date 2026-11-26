@@ -7301,11 +7301,14 @@ openFDA partitions in ~2.5 min and needs no database) and from `drugref_allergy`
   them imaging), 10 real reference-range shifts, 5 empty, 6 misfiled by openFDA. Biotin has no Rx label.
 - **MED-RT `CI_with` never states the role** (Hypokalemia lists QT drugs, Hyperkalemia lists causers) and matches
   11 of 26 test pairs; `induces` none. `Decreased Renal K+ Excretion [PE]` (48 members) is a mechanism seed.
-- **Licences (checked 2026-11-27):** MedDRA BLOCKED (so OnSIDES and SIDER data); LOINC's no-change, no-derivative
-  and field-of-use terms make it unfit to bundle; LiverTox and DILIrank public domain; CTCAE uncertain (MedDRA
-  terms). **The LOINC and LiverTox pages refused a second automated fetch: re-read both by hand before ingest.**
-- **Open owner questions** (record §6): analyte identity given LOINC; key statements to the MeSH `condition`
-  registry plus a condition → (analyte, direction) map, or a new analyte registry.
+- **Licences (checked 2026-11-27):** MedDRA BLOCKED (so OnSIDES and SIDER data); LOINC, read in full from the
+  owner-supplied text (record §2.1), may be distributed beside drugref under its own notice but never inside the
+  AGPL tables (no-change, no-derivative, field-of-use), and its Part File carries SNOMED CT; LiverTox and DILIrank
+  public domain; CTCAE uncertain (MedDRA terms). **LiverTox's page refused a second fetch: re-read it by hand.**
+- **Owner rulings 2026-11-27 (record §6):** analytes are drugref's own concepts, derived from MeSH, NOT from LOINC
+  (which keeps LOINC's field-of-use clause out of reach), with no LOINC codes in drugref tables, so the consumer
+  maps; statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map. A later
+  LOINC crosswalk (separately noticed) stays open.
 
 ## The standing open-issue ledger
 
@@ -7637,7 +7640,7 @@ immortality · #33 MeSH CAS keys name specific forms (behind #68) · #5 INN from
 **#7/#29 row-at-a-time ingest** — the two MeSH legs are 75.7% of a 133 s chain.
 
 **Drug effects on laboratory values** — **#294 open** (ReportTriage's request; step 1, the source evaluation, done
-2026-11-27; the model waits on two owner rulings, § "Drug effects on laboratory values"). Its fourth role's
+2026-11-27; both model rulings given the same day, § "Drug effects on laboratory values"). Its fourth role's
 consumer side is ReportTriage#36.
 
 ## Verify before the first production load

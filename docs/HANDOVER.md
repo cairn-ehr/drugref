@@ -19,8 +19,8 @@ in PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fa
 **⇒ THIS ROUND** (PROJECT-NOTES § "Drug effects on laboratory values";
 [source evaluation](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md)): **Owner:** record
 graded label statements, the consumer filters; a fourth role, *interferes with the result* (ReportTriage#36).
-**⇒ OWNER, before the model spec (record §6):** (1) analyte identity, given LOINC's no-change/no-derivative
-licence; (2) key to the MeSH `condition` registry plus a condition → (analyte, direction) map, or a new registry.
+**Owner (record §6):** drugref-owned analytes derived from MeSH, no LOINC codes in drugref tables (consumer
+maps); statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map.
 **Then:** the model/read-view/gap-view spec, then the openFDA ingest. **Also next:** #299, #293, #295/#298, #297, #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
