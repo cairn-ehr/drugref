@@ -92,5 +92,11 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
   cargo test live_detached_signing_round_trip -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_departure_is_listed_and_acknowledged -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_ack_is_signed_in_a_batch -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_account_administration_round_trip -- --ignored
 ```

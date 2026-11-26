@@ -9,7 +9,8 @@
 -- registry and curated_signature_status (db/030, db/048) are already generic over
 -- target_kind, so `drugref sign` / `drugref verify` need only the one catalog row
 -- below. The reviewer GUI reuses the registry tables but has its own ack code
--- (reviewer-service/src/ack_signing.rs), which hard-codes the kind and field order.
+-- (reviewer-domain and reviewer-service ack_signing.rs), which restates the kind
+-- and field order.
 --
 -- OWNER RULING (2026-11-26): acks are signed one by one by curators and are NOT
 -- part of a signed release manifest (`releases._CURATED_KINDS`). A release attests
@@ -37,7 +38,8 @@
 -- them serially in the same order, so the ordinal survives a replay where the id
 -- does not. (The one case it does not: the replay's warning that one acknowledge
 -- closed two CONCURRENT episodes the serial replay opened once. Later acks of that
--- pair then read BAD_SIGNATURE and need re-signing: fail-safe, never fail-open.)
+-- pair then read BAD_SIGNATURE and need re-signing: fail-safe, never fail-open;
+-- `drugref audit departures` names them.)
 --
 -- ack_id is the target id (assertion_signature.target_id), as every kind's surrogate
 -- key is; the replay keeps ack ids verbatim, so signatures still point at their ack.
@@ -82,7 +84,9 @@ ON CONFLICT (target_kind) DO NOTHING;
 -- row. Like that view it is REGISTRY policy, not cryptography: `drugref verify`
 -- checks the mathematics. An ack needs a signature exactly when this reads anything
 -- but `signed` (no signature by a key the registry does not object to), the rule the
--- GUI's pending-signature list uses for rulings.
+-- GUI's pending-signature list uses for rulings. Acks are not in a signed release, so
+-- the audit ALSO verifies every `signed` ack (graded_pairs.ack_signature_statuses);
+-- the GUI list does not yet (#299).
 CREATE OR REPLACE VIEW drugref.departure_ack_signature AS
 SELECT p.*,
        COALESCE(s.signature_status, 'unsigned') AS signature_status,

@@ -15,6 +15,8 @@ mod limiter;
 #[cfg(test)]
 mod live_accounts;
 #[cfg(test)]
+mod live_ack_signing;
+#[cfg(test)]
 mod live_graded_seed;
 #[cfg(test)]
 mod live_queue_seed;

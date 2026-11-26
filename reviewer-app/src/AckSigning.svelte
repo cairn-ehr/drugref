@@ -14,9 +14,10 @@
     SIGNING_PASSPHRASE_MIN_LENGTH,
   } from "./lib/constants";
   import { completeAckSignatures, loadUnsignedDepartureAcks, prepareAckSignatures } from "./lib/ackSigning";
-  import { workingRecordDate } from "./lib/presentation";
+  import { signatureStatusLabel, workingRecordDate } from "./lib/presentation";
   import { loadSigningStatus } from "./lib/signing";
-  import type { AckSignaturePreview, AckSignatureQuery, DeviceSigningStatus, UnsignedDepartureAck } from "./lib/types";
+  import type { AckSignaturePreview, AckSignatureQuery, UnsignedDepartureAck } from "./lib/ackTypes";
+  import type { DeviceSigningStatus } from "./lib/types";
 
   /** Human labels for the frozen field names; unknown future names stay visible. */
   const FIELD_LABELS: Readonly<Record<string, string>> = {
@@ -135,7 +136,7 @@
   {#if successMessage}<p class="form-success" role="status">{successMessage}</p>{/if}
   {#if loaded && !preview}
     {#each acks as ack (ack.ackId)}
-      <p class="pending-attribution">#{ack.ackId} · {ack.subjectMoietyName} × {ack.partnerMoietyName} ({ack.subjectName} → {ack.objectClassName}) · {ack.reviewedBy}, {workingRecordDate(ack.acknowledgedAt)}{ack.signatureStatus === "unsigned" ? "" : ` · ${ack.signatureStatus.replaceAll("_", " ")}`}</p>
+      <p class="pending-attribution">#{ack.ackId} · {ack.subjectMoietyName} × {ack.partnerMoietyName} ({ack.subjectName} → {ack.objectClassName}) · {ack.reviewedBy}, {workingRecordDate(ack.acknowledgedAt)}{ack.signatureStatus === "unsigned" ? "" : ` · ${signatureStatusLabel(ack.signatureStatus)}`}</p>
     {:else}
       <p class="admin-empty">No acknowledgement awaits a signature (registry status; <code>drugref verify</code> checks the signatures themselves).</p>
     {/each}

@@ -7,9 +7,9 @@ import type {
   AckSignaturePreview,
   AckSignatureQuery,
   AckSignatureResult,
-  CanonicalField,
   UnsignedDepartureAck,
-} from "./types";
+} from "./ackTypes";
+import type { CanonicalField } from "./types";
 
 /** Whether calls may cross the protected native trust boundary. */
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -76,7 +76,8 @@ export async function completeAckSignatures(
   return { recorded: query.ackIds.length };
 }
 
-/** Representative payload fields, used only by the browser preview. */
+/** Representative payload fields (all 13 of `graded_pair_departure_ack/v1`, in
+ * order), used only by the browser preview. */
 function previewFields(ackId: number, keyFingerprint: string, signedAt: string): CanonicalField[] {
   const ack = previewAcks.find((item) => item.ackId === ackId);
   return [
@@ -86,6 +87,7 @@ function previewFields(ackId: number, keyFingerprint: string, signedAt: string):
     { name: "relationship", value: "CI_MoA" },
     { name: "subject_moiety", value: `00000000-0000-4000-8000-0000000000${ackId}` },
     { name: "partner_moiety", value: "00000000-0000-4000-8000-000000000043" },
+    { name: "episode_ordinal", value: "1" },
     { name: "rationale", value: ack?.rationale ?? "" },
     { name: "reviewed_by", value: ack?.reviewedBy ?? "" },
     { name: "reviewed_against", value: ack?.reviewedAgainst ?? "" },

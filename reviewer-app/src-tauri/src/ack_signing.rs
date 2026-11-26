@@ -269,5 +269,19 @@ mod tests {
         let mut ruling = challenge(9, &fp);
         ruling.target_kind = "curated_interaction".into();
         assert!(refused(vec![challenge(4, &fp), ruling]));
+        let mut other_context = challenge(9, &fp);
+        other_context.payload_context = "graded_pair_departure_ack/v2".into();
+        assert!(refused(vec![challenge(4, &fp), other_context]));
+        // An instant other than the batch's, on the challenge or inside its bytes.
+        let mut late = challenge(9, &fp);
+        late.signed_at = "2026-11-26T00:00:01.000000Z".into();
+        assert!(refused(vec![challenge(4, &fp), late]));
+        let mut late_bytes = challenge(9, &fp);
+        for field in &mut late_bytes.fields {
+            if field.name == "signed_at" {
+                field.value = Some("2026-11-26T00:00:01.000000Z".into());
+            }
+        }
+        assert!(refused(vec![challenge(4, &fp), late_bytes]));
     }
 }

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     signing::{validate_lower_hex, ED25519_SIGNATURE_HEX_LENGTH, SHA256_HEX_LENGTH},
-    CanonicalField, ReviewSignatureChallenge, RuleGrain, ValidationError,
+    CanonicalField, ReviewSignatureChallenge, RuleGrain, SignatureStatus, ValidationError,
 };
 
 /// Database signature target kind of an acknowledgement.
@@ -73,7 +73,7 @@ pub struct UnsignedDepartureAck {
     /// RFC 3339 recording timestamp.
     pub acknowledged_at: String,
     /// `unsigned`, or a registry status naming only objected signatures.
-    pub signature_status: String,
+    pub signature_status: SignatureStatus,
 }
 
 /// Selector for preparing signatures over a batch of acknowledgements.

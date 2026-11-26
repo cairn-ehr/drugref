@@ -127,6 +127,22 @@ def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
     assert "not signed" not in out
 
 
+def test_an_ack_whose_signature_no_longer_verifies_needs_signing(
+        conn, ingest_run_id, capsys):
+    """Acks are not in a signed release, so the audit is the routine check that
+    their signatures still verify: an altered rationale keeps its registry-trusted
+    signature row but must not count as signed."""
+    _sign_the_ack(conn, ingest_run_id, 9)
+    conn.execute("ALTER TABLE drugref.graded_pair_departure_ack "
+                 "DISABLE TRIGGER graded_pair_departure_ack_insert_only")
+    conn.execute(f"UPDATE {graded_pairs.ACK_TABLE} SET rationale = 'something else'")
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (bad_signature 1)" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out
+
+
 def test_an_ack_signed_only_by_a_compromised_key_needs_signing(conn, ingest_run_id,
                                                                 capsys):
     """"Needs a signature" is anything but `signed`, not just `unsigned`: a

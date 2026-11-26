@@ -452,7 +452,8 @@ pub async fn submit(
 }
 
 /// Record one verified detached signature over a challenge's exact payload. A second
-/// copy of the same attestation is a conflict (reported as `duplicate`), not an error.
+/// copy of the same attestation (a unique violation) becomes a 409 conflict carrying
+/// the caller's `duplicate` message.
 pub(crate) async fn insert_signature(
     connection: &mut PgConnection,
     challenge: &ReviewSignatureChallenge,

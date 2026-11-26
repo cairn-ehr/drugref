@@ -150,6 +150,9 @@ def test_a_signature_copied_onto_a_later_episode_does_not_verify(conn, ingest_ru
     assert ordinals == {ack_id: 1, forged: 2}
     assert [v.verdict for v in signatures.verify_target(conn, KIND, forged)] == [
         signing.BAD_SIGNATURE]
+    # The registry alone reads the copy as `signed`; the audit's read must not.
+    statuses = dict(graded_pairs.ack_signature_statuses(conn))
+    assert statuses == {ack_id: "signed", forged: signing.BAD_SIGNATURE}
 
 
 def test_drugref_sign_and_verify_take_an_ack(conn, ingest_run_id, wconn, a_key_file,  # noqa: F811

@@ -447,7 +447,7 @@ mod tests {
         .is_err());
     }
 
-    /// Reproduce every curated-row payload committed by the Python reference encoder.
+    /// Reproduce every curator-signed payload committed by the Python reference encoder.
     #[test]
     fn rust_encoder_matches_published_signing_vectors() {
         let fixture: Value =

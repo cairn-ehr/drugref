@@ -19,8 +19,8 @@ PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails
 **⇒ THIS ROUND** (PROJECT-NOTES § "Signed departure acknowledgements"): acks are a fifth curator signature target
 kind (`db/088`; a view signs the episode by content: pair, ruling key and `episode_ordinal`, so it survives a
 replay and cannot be copied onto a later episode). CLI `sign`/`verify` unchanged; the GUI signs a batch (one vault
-unlock); `audit departures` names unsigned acks (exit unchanged). **Owner:** acks are NOT release content.
-**Next:** #293, #295/#298 (`signing.rs` splits), #297 (live queue test race), #292. **Open:** #285 (~3 s list).
+unlock); `audit departures` names unsigned acks and verifies `signed` ones. **Owner:** acks are NOT release content.
+**Next:** #299 (GUI trusts registry status), #293, #295/#298 (`signing.rs` splits), #297 (live test race), #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -89,13 +89,13 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#284 FIXED
-(close on merge); #283, #289, #282, #287 closed; open: #285, #292, #293, #295;** #277, #270, #104, #272, #259, #258, #261,
-#262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224
-partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
-profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing:
-**#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also
-#148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE`
-set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+(close on merge); #283, #289, #282, #287 closed; open: #285, #292, #293, #295, #297, #298, #299;** #277, #270, #104,
+#272, #259, #258, #261, #262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the
+archive, drift scope); #224 partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups:
+#223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**.
+Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks
+a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #94. Before production: re-run every parser on
+current releases **with `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 

@@ -7198,7 +7198,7 @@ asking the reviewer to type it.
   on a fresh scratch database (`drugref_rust283`, created, migrated, dropped). Frontend: `svelte-check` 0 errors,
   production build, and a browser-preview pass (list, rationale, acknowledge, empty state).
 
-## Signed departure acknowledgements (#284, 2026-11-26) — `db/088`, suite 3737 → 3750
+## Signed departure acknowledgements (#284, 2026-11-26) — `db/088`, suite 3737 → 3752
 
 An acknowledgement silences a CHANGED SINCE REVIEW banner, so a forged or altered one hides a departure. Acks are
 now a fifth curator signature target kind, signed from the CLI (`drugref sign --target-kind
@@ -7259,13 +7259,28 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   (db/087, LG004), which a scratch database lacks; the batch test keeps a keeper member in the class.
   **Pre-existing flake** [#297](https://github.com/cairn-ehr/drugref/issues/297): the live queue test races the other
   live tests (counts off by 1–3); it fails at the PR head too and passes alone.
-- **Tests:** Python +13 (+11, then +2 in review; `tests/test_ack_signing.py` 6 incl. CLI sign/verify and tamper → BAD_SIGNATURE; audit +3;
-  the coverage alarm +1; the replay +1). Rust: domain +3 (batch query bounds, submission matches the query in
-  order, the challenge encoder's frozen list), service +1 unit (vector) and +1 live (`live_ack_is_signed_in_a_batch`:
-  listed unsigned, a stale digest is 409, signed, then `signed` and gone from the list), Tauri +2 (binding;
-  substituted/unbound/wrong-digest/wrong-kind challenges refused). Live suite: 8/8 three consecutive runs on a fresh
-  scratch database (`drugref_rust284`, created, migrated, dropped). Frontend: `svelte-check` 0 errors, production
-  build, and a browser-preview pass (list, prepare 2, per-ack payloads, sign, empty state).
+- **Second review (PR #296, finalcheck):** the registry reads a copied, altered or replay-drifted ack as `signed`
+  (it never checks the mathematics), and acks are not in a release, so nothing routinely verified them.
+  `graded_pairs.ack_signature_statuses` now runs `signatures.verify_target` over every registry-`signed` ack and,
+  unless one signature is VALID, reports its worst verdict (`bad_signature`), so `drugref audit departures` names
+  it. The GUI's unsigned list still reads registry policy: filed
+  [#299](https://github.com/cairn-ehr/drugref/issues/299). Service `submit` pairs signatures with its own rebuilt
+  challenges (`paired`: same count, same ack ids, in order) rather than trusting the caller validated. The live
+  batch test moved verbatim to `live_ack_signing.rs` (service `ack_signing.rs` 563 → 418); the TS ack types moved
+  to `lib/ackTypes.ts` (`types.ts` back to 449). `UnsignedDepartureAck.signature_status` is the `SignatureStatus`
+  enum in Rust and TS (drift fails loudly); the browser preview shows all 13 fields (it lacked `episode_ordinal`).
+- **Tests:** Python +15 (first commit +11, first review +2, second review +2): `tests/test_ack_signing.py` 7
+  (incl. CLI sign/verify, tamper → BAD_SIGNATURE, a copy onto a later episode reads `bad_signature` in the
+  audit's read), audit +5 (incl. an altered signed ack needs signing), the coverage alarm +1, the replay +2 (a
+  signed ack, and a signed ack of a SECOND episode, still verify after a replay). Rust: domain +3 (batch query
+  bounds, submission matches the query in order, the challenge encoder's frozen list); service +5 unit (the
+  vector; `verify_detached`, `ensure_fresh`, `parse_signed_at`; `paired` refuses a short, reordered or empty
+  batch) and +1 live (`live_ack_is_signed_in_a_batch`: a batch of two, a stale digest 409 / a forged slot 2 400
+  with nothing recorded, then signed, a retry 409); Tauri +2 (binding; substituted, unbound, wrong-digest,
+  wrong-kind, wrong-context and wrong-instant challenges refused). Live suite at the second-review head: 8/8 on a
+  fresh scratch database (`drugref_rust296`, created, migrated, dropped); on the long-lived `drugref_test` the
+  ack tests fail identically at the base commit (database state, not code). Frontend: `svelte-check` 0 errors,
+  production build.
 
 ## The standing open-issue ledger
 
@@ -7486,8 +7501,9 @@ functions (owner: one home, not a Rust copy); `graded_pairs.py` calls them, and 
 (`db/088`, § "Signed departure acknowledgements"): acks are a signature target kind (CLI and GUI batch signing),
 NOT release content (owner). #293 item 3 (service `lib.rs` size) done; filed
 **[#295](https://github.com/cairn-ehr/drugref/issues/295)** (Tauri `signing.rs` 779 lines), and in review **[#297](https://github.com/cairn-ehr/drugref/issues/297)** (live queue
-test race) and **[#298](https://github.com/cairn-ehr/drugref/issues/298)** (service `signing.rs` 1224 lines). +13
-tests, 3737 → 3750.
+test race) and **[#298](https://github.com/cairn-ehr/drugref/issues/298)** (service `signing.rs` 1224 lines);
+second review **[#299](https://github.com/cairn-ehr/drugref/issues/299)** (the GUI's unsigned lists trust registry
+status, never the mathematics). +15 tests, 3737 → 3752.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7673,7 +7689,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3750 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3752 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
