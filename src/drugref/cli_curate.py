@@ -422,7 +422,9 @@ def _handle_curate_onchigh(conn, args) -> int:
 def _handle_curate_acknowledge_departure(conn, args) -> int:
     """`drugref curate acknowledge-departure`: record that a curator accepted a
     reviewed grade no longer reaching DRUG. COMMITS (the CLI owns the transaction).
-    Exit 2 for an unknown ruling or blank text, 1 when nothing is departed."""
+    Exit 2 for an unknown ruling or blank text, 1 when nothing is departed, 3 when
+    the ledger lock is busy (`graded_pairs.LedgerBusy`, #289): nothing was recorded,
+    retry later. Not 1, which a script may read as "already acknowledged"."""
     try:
         _reject_blank(args, "rationale", "reviewed_by", "reviewed_against")
         pairs = graded_pairs.acknowledge(
@@ -434,6 +436,9 @@ def _handle_curate_acknowledge_departure(conn, args) -> int:
     except graded_pairs.NothingDeparted as exc:
         print(f"drugref: {exc}", file=sys.stderr)
         return 1
+    except graded_pairs.LedgerBusy as exc:
+        print(f"drugref: {exc}", file=sys.stderr)
+        return 3
     conn.commit()
     for subject, partner in sorted(pairs):
         print(f"acknowledged {subject} {partner}")

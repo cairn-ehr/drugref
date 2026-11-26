@@ -7076,10 +7076,12 @@ departure never banners.
 - **Cost:** every commit that fires a refresh (ruling, expansion policy, ingest run) or acknowledges takes the
   lock, even when it inserts nothing. A ruling saved while an ingest commits waits for its ~5 s refresh (#285);
   two rulings take turns (~16 ms each). `acknowledge` holds the lock until its caller commits or rolls back,
-  also after it raises (the CLI commits at once and exits on an error). There is no `lock_timeout`, so a session
-  left idle in a transaction that took the lock stalls every later ingest COMMIT, ruling save and ack: find it
-  with `SELECT pid, state, query FROM pg_locks JOIN pg_stat_activity USING (pid) WHERE locktype = 'advisory'
-  AND granted`.
+  also after it raises (the CLI commits at once and exits on an error). A session left idle in a transaction
+  that took the lock stalls every later ingest COMMIT and ruling save, which wait with no bound (by design,
+  #289: a timeout would fail an hours-long ingest at COMMIT). Only `acknowledge` gives up, after
+  `graded_pairs.ACK_LOCK_TIMEOUT` (30 s), raising `LedgerBusy` that names the holder (§ "The bounded ack" below).
+  Find a holder by hand with `SELECT pid, state, query FROM pg_locks JOIN pg_stat_activity USING (pid) WHERE
+  locktype = 'advisory' AND granted`.
 - **TRAP:** call the refresh only by these two names. A future migration restating either body must keep the
   `PERFORM drugref.lock_graded_pair_ledger();` line; the two race tests fail without it.
 - **Tests (+4)** in `tests/test_graded_pairs_races.py`: race 1, race 2 in both orders (ack holds the lock;
@@ -7091,6 +7093,37 @@ departure never banners.
   its three call sites fails at least one. The threaded connection sets `lock_timeout=20s`: without it, a wait on
   any OTHER lock deadlocks the test's teardown client-side (psycopg's connection lock) instead of failing it.
   `_fake_ingest` gained `commit=False` for them.
+
+## The bounded ack and self-contained live Rust tests (#289, #282, 2026-11-26) — no migration, suite 3725 → 3729
+
+- **#289:** `graded_pairs.acknowledge` takes the ledger lock through `_lock_ledger_bounded`. The lock call runs
+  in a SAVEPOINT with `set_config('lock_timeout', ACK_LOCK_TIMEOUT, true)`. On `LockNotAvailable` the savepoint
+  rolls back (the caller's transaction stays usable and its own `lock_timeout` comes back), and `LedgerBusy`
+  names each holder as `backend <pid> (<role>, <state>)` from `pg_locks`. PostgreSQL hides another role's
+  `state` without `pg_read_all_stats`, so the role is always shown and a hidden state says so. The CLI exits 3
+  on it, not 1: 1 is `NothingDeparted`, which can mean another curator already acknowledged, while `LedgerBusy`
+  recorded nothing. The lock survives the savepoint's RELEASE (the race tests still pass). **TRAP:** the holder query recomputes db/086's key from
+  `_LEDGER_LOCK_KEY`. If the SQL key changes, change it too; the new test fails if they differ.
+  The function's first `SELECT` opens the caller's transaction, so `conn.transaction()` is a SAVEPOINT. Under
+  autocommit it would BEGIN/COMMIT and release the lock at once, so `acknowledge` refuses an autocommit
+  connection with `RuntimeError`. +4 tests: the idle-holder test (connects with `_migrated`: psycopg drops the
+  password from `conn.info.dsn`, which failed CI), the autocommit refusal, the CLI's exit 3, and the caller's
+  `lock_timeout` restored after a successful lock.
+- **Still owed by #283:** the GUI acknowledge is Rust and does not use this function. It must take the lock,
+  bound its own wait, and roll back on every error path.
+- **#282:** `queue.rs`'s live test seeds (via test-only `live_queue_seed.rs`, which keeps `queue.rs` under 500
+  lines) a full default page of interaction rules (25 subjects contraindicated
+  with one single-member MoA class) and a full filtered page of condition contradictions (5 drugs both
+  `may_treat` and `CI_with` one condition), so it passes on a freshly migrated database. The account
+  administration test and the signing test now share `live_accounts.rs` (test-only): one SESSION advisory lock
+  on a dedicated connection serialises them (a pooled connection would keep the lock), and both name their
+  administrators `live-admin-test-*`. The administration test first retires those with raw append-then-supersede
+  SQL (demoted to inactive reviewer), because `bootstrap_admin` also counts inactive administrators and the
+  API's last-admin guard refuses to demote the last active one. Its "no administrator" check counts inactive
+  ones too, matching `bootstrap_admin`. Verified: three consecutive full `cargo test -- --ignored` runs, 6/6, on a
+  fresh scratch database (created, migrated, dropped afterwards).
+- **Also fixed:** clippy 1.98's new `chunks_exact_to_as_chunks` lint failed `-D warnings` on main
+  (`signing.rs` `decode_hex`); it now uses `as_chunks::<2>()`.
 
 ## The standing open-issue ledger
 
@@ -7298,6 +7331,10 @@ finishes still run the ~5 s full refresh; acceptable), **[#282](https://github.c
 an episode. +4 tests, 3721 → 3725. Its pre-merge review filed
 **[#289](https://github.com/cairn-ehr/drugref/issues/289)** (the lock wait has no `lock_timeout`; an idle holder
 stalls every ingest COMMIT, ruling save and ack -- needs a per-caller ruling).
+**The bounded ack (2026-11-26)** — **[#289](https://github.com/cairn-ehr/drugref/issues/289) FIXED** (owner chose
+"`acknowledge` only": it gives up after 30 s and names the holder; the commit-time refreshes still wait without
+bound) and **[#282](https://github.com/cairn-ehr/drugref/issues/282) FIXED** (the live Rust tests seed their own
+data and rerun safely) (§ "The bounded ack and self-contained live Rust tests"). +4 tests, 3725 → 3729.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7483,7 +7520,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3725 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3729 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

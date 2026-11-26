@@ -61,10 +61,14 @@ objects to the fingerprint's entire history. Current revisions left with no
 registry-unobjected signature return from `GET /v1/pending-signatures` as independent
 counter-sign tasks, without withdrawing the clinical row.
 
-Run the populated-database integration check explicitly:
+Run the live integration checks explicitly against any migrated database. Each one
+seeds its own uniquely keyed rows and leaves them in place, so each can be rerun (#282).
+The account-administration check needs a database with no administrator except those
+the live tests created (usernames `live-admin-test-*`, which it retires before it
+runs). It shares a lock with the signing check, so a full `-- --ignored` run is safe:
 
 ```sh
-DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_db038' \
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_queue_query_reads_pages_filters_and_metadata -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
@@ -72,6 +76,9 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_decision_revision_round_trip -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_decision_is_observed_as_a_graded_pair -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_detached_signing_round_trip -- --ignored

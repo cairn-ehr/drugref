@@ -386,15 +386,21 @@ mod tests {
 
     /// Exercise paging, filters, and metadata against an explicitly supplied live database.
     #[tokio::test]
-    #[ignore = "requires a populated Drugref PostgreSQL database"]
+    #[ignore = "requires a migrated Drugref PostgreSQL database"]
     async fn live_queue_query_reads_pages_filters_and_metadata() {
         let database_url = std::env::var("DRUGREF_REVIEW_TEST_DATABASE_URL")
-            .expect("DRUGREF_REVIEW_TEST_DATABASE_URL must name a populated database");
+            .expect("DRUGREF_REVIEW_TEST_DATABASE_URL must name a migrated database");
         let pool = PgPoolOptions::new()
             .max_connections(1)
             .connect(&database_url)
             .await
             .expect("review queue test database");
+        crate::live_queue_seed::seed_queue(
+            &pool,
+            DEFAULT_PAGE_SIZE as i32,
+            i32::from(FILTERED_PAGE_SIZE),
+        )
+        .await;
         let query = ReviewQueueQuery::default()
             .validate()
             .expect("default queue query");
