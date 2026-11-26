@@ -255,8 +255,9 @@ mod tests {
         let _serialised = live_accounts::serialise(&database_url).await;
         live_accounts::retire_earlier_test_administrators(&pool).await;
         let existing_administrators: i64 = sqlx::query_scalar(
+            // Inactive ones too: `bootstrap_admin` refuses while any exists.
             "SELECT count(*) FROM drugref.reviewer_profile \
-             WHERE role = 'administrator' AND active AND superseded_by IS NULL",
+             WHERE role = 'administrator' AND superseded_by IS NULL",
         )
         .fetch_one(&pool)
         .await
@@ -264,7 +265,7 @@ mod tests {
         assert_eq!(
             existing_administrators, 0,
             "account administration integration requires a database whose only \
-             administrators were created by this test"
+             administrators were created by the live tests"
         );
 
         let administrator_seed = Uuid::new_v4();

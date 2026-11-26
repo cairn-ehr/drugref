@@ -183,19 +183,30 @@ def test_the_ledger_lock_refuses_a_snapshot_taken_before_its_wait(conn):
         conn.execute("SELECT drugref.lock_graded_pair_ledger()")
 
 
-def test_an_ack_behind_an_idle_lock_holder_fails_fast_and_names_it(conn, monkeypatch):
+def test_an_ack_behind_an_idle_lock_holder_fails_fast_and_names_it(
+        conn, _migrated, monkeypatch):
     """#289: a session left idle in a transaction that took the ledger lock used to
     stall `acknowledge` with no output. The interactive ack now waits at most
-    ACK_LOCK_TIMEOUT, then raises LedgerBusy naming the holder's pid, and leaves
-    the caller's transaction usable with its own lock_timeout back (the wait runs
-    in a savepoint). The holder takes the lock without committing, so no commit
-    escapes the rolled-back `conn`."""
+    ACK_LOCK_TIMEOUT, then raises LedgerBusy naming the holder's pid and role, and
+    leaves the caller's transaction usable with its own lock_timeout back (the wait
+    runs in a savepoint). The holder takes the lock without committing, so no
+    commit escapes the rolled-back `conn`. It connects with the session DSN
+    `_migrated`, not `conn.info.dsn`: psycopg leaves the password out of that."""
     monkeypatch.setattr(graded_pairs, "ACK_LOCK_TIMEOUT", "100ms")
-    with psycopg.connect(conn.info.dsn) as holder:
+    with psycopg.connect(_migrated) as holder:
         holder.execute("SELECT drugref.lock_graded_pair_ledger()")    # then idles
         conn.execute("SET LOCAL lock_timeout = '7s'")
+        pid, user = holder.info.backend_pid, holder.info.user
         with pytest.raises(graded_pairs.LedgerBusy,
-                           match=rf"backend {holder.info.backend_pid} \(idle in "):
+                           match=rf"backend {pid} \({user}, idle in "):
             _ack_x(conn, -1)    # no such ruling: the lock comes before the lookup
         assert conn.execute("SHOW lock_timeout").fetchone() == ("7s",)
         holder.rollback()
+
+
+def test_an_ack_on_an_autocommit_connection_is_refused(_migrated):
+    """In autocommit the savepoint would be a BEGIN/COMMIT of its own, releasing
+    the ledger lock at once and reopening #287's race without a sound."""
+    with psycopg.connect(_migrated, autocommit=True) as auto:
+        with pytest.raises(RuntimeError, match="autocommit"):
+            _ack_x(auto, -1)

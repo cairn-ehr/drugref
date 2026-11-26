@@ -78,6 +78,9 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
   cargo test live_decision_revision_round_trip -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_decision_is_observed_as_a_graded_pair -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_detached_signing_round_trip -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \

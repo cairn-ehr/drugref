@@ -12,6 +12,8 @@ mod error;
 mod limiter;
 #[cfg(test)]
 mod live_accounts;
+#[cfg(test)]
+mod live_queue_seed;
 mod queue;
 mod records;
 mod signing;

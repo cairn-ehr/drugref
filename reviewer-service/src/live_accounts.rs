@@ -2,11 +2,12 @@
 //!
 //! `administration`'s round trip needs a database with no administrator, because it
 //! bootstraps one and then checks that the last one cannot be disabled. `signing`'s
-//! round trip inserts an administrator of its own. Run together, whichever creates
-//! one first broke the other, and every run left one behind. Both now hold one
-//! session advisory lock for their whole run. Both name their administrators with
-//! `TEST_ADMIN_PREFIX`, so the administration test can retire the ones earlier
-//! runs left.
+//! round trip inserts an administrator of its own. Run together, the signing
+//! test's administrator broke the administration test whenever it appeared (before
+//! the count check or during the last-admin check), and every run left one behind.
+//! Both now hold one session advisory lock for their whole run. Both name their
+//! administrators with `TEST_ADMIN_PREFIX`, so the administration test can retire
+//! the ones earlier runs left.
 
 use sqlx::{Connection, PgConnection, PgPool};
 
@@ -29,11 +30,14 @@ pub async fn serialise(database_url: &str) -> PgConnection {
 }
 
 /// Retire every live administrator that an earlier live test created, so
-/// `bootstrap_admin` sees none again. The API cannot do this: its last-admin
-/// guard refuses, and `bootstrap_admin` counts inactive administrators too. So
-/// this demotes each one to an inactive reviewer with the same
-/// append-then-supersede SQL as `update_user_profile`. History stays intact, and
-/// administrators created outside these tests are never touched.
+/// `bootstrap_admin` sees none again. Deactivating them is not enough:
+/// `bootstrap_admin` counts inactive administrators too, and the API's last-admin
+/// guard refuses to demote the last active one. So this demotes each one to an
+/// inactive reviewer with the same append-then-supersede protocol as
+/// `update_user_profile`, in one statement. Unlike that function it records the
+/// retired reviewer as its own actor and revokes no sessions (test accounts hold
+/// none that matter). History stays intact, and administrators created outside
+/// these tests are never touched.
 pub async fn retire_earlier_test_administrators(pool: &PgPool) {
     sqlx::query(
         "WITH old AS ( \

@@ -762,6 +762,8 @@ mod tests {
         assert_eq!(encode_hex(&[0x00, 0xaf, 0xff]), "00afff");
         assert_eq!(decode_hex("00afff").expect("hex"), vec![0x00, 0xaf, 0xff]);
         assert!(decode_hex("00AF").is_err());
+        assert!(decode_hex("abc").is_err());
+        assert!(decode_hex("0g").is_err());
     }
 
     /// Exercise enrolment, resume discovery, challenge, verification, and insertion.

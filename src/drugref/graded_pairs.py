@@ -239,9 +239,13 @@ _LEDGER_LOCK_KEY = "drugref.graded_pair_observation"
 
 
 def _ledger_holders(conn: psycopg.Connection) -> str:
-    """Who holds the ledger lock now, e.g. 'backend 123 (idle in transaction)'."""
+    """Who holds the ledger lock now, e.g. 'backend 123 (ingest, idle in
+    transaction)'. PostgreSQL hides another role's `state` from a caller without
+    pg_read_all_stats; the role name is always visible, so it is shown too."""
     rows = conn.execute(
-        "SELECT l.pid, a.state FROM pg_locks l JOIN pg_stat_activity a USING (pid) "
+        "SELECT l.pid, a.usename, "
+        "       coalesce(a.state, 'state hidden: needs pg_read_all_stats') "
+        "FROM pg_locks l JOIN pg_stat_activity a USING (pid) "
         "WHERE l.locktype = 'advisory' AND l.granted "
         "AND l.database = (SELECT oid FROM pg_database "
         "                  WHERE datname = current_database()) "
@@ -249,7 +253,7 @@ def _ledger_holders(conn: psycopg.Connection) -> str:
         "AND ((l.classid::bigint << 32) | l.objid::bigint) "
         "    = hashtextextended(%s, 0) ORDER BY l.pid",
         (_LEDGER_LOCK_KEY,)).fetchall()
-    return (", ".join(f"backend {pid} ({state})" for pid, state in rows)
+    return (", ".join(f"backend {pid} ({user}, {state})" for pid, user, state in rows)
             or "a transaction that has since ended")
 
 
@@ -257,6 +261,10 @@ def _lock_ledger_bounded(conn: psycopg.Connection) -> None:
     """Take the ledger lock, waiting at most ACK_LOCK_TIMEOUT; raise LedgerBusy
     naming the holder. The wait runs in a savepoint, so a timeout leaves the
     caller's transaction usable; the caller's own lock_timeout is put back."""
+    if conn.autocommit:
+        # There `conn.transaction()` is a BEGIN/COMMIT of its own: the lock would
+        # be released at once and #287's race would reopen without a sound.
+        raise RuntimeError("acknowledge needs a transaction, not autocommit (db/086)")
     # Also opens the transaction, so `conn.transaction()` below is a SAVEPOINT
     # (not a BEGIN/COMMIT that would release the lock at once).
     previous = conn.execute("SELECT current_setting('lock_timeout')").fetchone()[0]
@@ -284,7 +292,8 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
     included. Raises `UnknownRuling` / `NothingDeparted` (also when another
     curator's ack committed first: the lock makes this call wait for it, then see
     nothing departed), or `LedgerBusy` after ACK_LOCK_TIMEOUT behind another
-    holder; a blank rationale trips the table's CHECK. Does not commit, so the
+    holder, or RuntimeError on an autocommit connection (the lock would not be
+    held); a blank rationale trips the table's CHECK. Does not commit, so the
     caller holds the ledger lock (db/086) until it commits or rolls back, also
     after UnknownRuling / NothingDeparted: end the transaction promptly.
     """

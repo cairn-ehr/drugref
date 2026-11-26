@@ -159,6 +159,25 @@ def test_cli_acknowledge_exits_1_when_nothing_departed(cli_conn, ingest_run_id, 
     assert _ack_count(cli_conn) == 0
 
 
+def test_cli_acknowledge_exits_3_when_the_ledger_lock_is_busy(
+        cli_conn, capsys, monkeypatch):
+    """Not 1: NothingDeparted's 1 can mean "another curator already did it", while
+    LedgerBusy recorded nothing and must be retried (#290 review)."""
+    def busy(*_a, **_k):
+        raise graded_pairs.LedgerBusy("held by backend 42 (u, idle in transaction)")
+    monkeypatch.setattr(graded_pairs, "acknowledge", busy)
+    assert cli.main(_argv(1, uuid.uuid4())) == 3
+    assert "backend 42" in capsys.readouterr().err
+    assert cli_conn.commit_count == 0
+
+
+def test_a_successful_ack_puts_the_callers_lock_timeout_back(conn, ingest_run_id):
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 10)
+    conn.execute("SET LOCAL lock_timeout = '7s'")
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+    assert conn.execute("SHOW lock_timeout").fetchone() == ("7s",)
+
+
 def test_cli_acknowledge_exits_2_for_an_unknown_ruling(cli_conn, capsys):
     assert cli.main(_argv(2_000_000_000, uuid.uuid4())) == 2
     assert capsys.readouterr().err
