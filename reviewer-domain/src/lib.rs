@@ -6,6 +6,7 @@
 
 mod accounts;
 mod decisions;
+mod departures;
 mod records;
 mod signing;
 mod trust;
@@ -18,6 +19,10 @@ pub use accounts::{
 pub use decisions::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,
     ReviewDecisionRevision, Severity, SignatureStatus,
+};
+pub use departures::{
+    closes_per_leaver, AcknowledgeDepartureRequest, DepartureAcknowledgement, DepartureLeaver,
+    GradedPairDeparture, RuleGrain,
 };
 pub use records::{
     CreateAnnotationRequest, CreateEvidenceReferenceRequest, EvidenceReference,

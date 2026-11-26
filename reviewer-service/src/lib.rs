@@ -8,10 +8,13 @@ mod administration;
 mod auth;
 mod decision_targets;
 mod decisions;
+mod departures;
 mod error;
 mod limiter;
 #[cfg(test)]
 mod live_accounts;
+#[cfg(test)]
+mod live_graded_seed;
 #[cfg(test)]
 mod live_queue_seed;
 mod queue;
@@ -78,6 +81,11 @@ pub fn router(state: AppState) -> Router {
             get(review_decision).post(create_review_decision),
         )
         .route("/v1/review-annotations", post(create_annotation))
+        .route("/v1/graded-pair-departures", get(departures::list_handler))
+        .route(
+            "/v1/graded-pair-departures/acknowledgements",
+            post(departures::acknowledge_handler),
+        )
         .route(
             "/v1/review-evidence-references",
             post(create_evidence_reference),

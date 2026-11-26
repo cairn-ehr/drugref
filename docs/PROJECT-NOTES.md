@@ -7025,7 +7025,8 @@ docs-site *A reviewed grade never vanishes silently*.
   finishes still run the full refresh, ~5 s per commit; acceptable, revisit if ingest or replay time matters.
   Related to #260.
 - **Filed, not built:** [#283](https://github.com/cairn-ehr/drugref/issues/283) acknowledging from the reviewer GUI
-  (CLI-only today); [#284](https://github.com/cairn-ehr/drugref/issues/284) signing acknowledgements (they carry
+  (CLI-only then; built 2026-11-26, § "The GUI acknowledgement");
+  [#284](https://github.com/cairn-ehr/drugref/issues/284) signing acknowledgements (they carry
   `reviewed_by` / `reviewed_against` but no signature; the `curated_signature_status` path could cover them). Two
   ignored Rust tests failed before this work: [#282](https://github.com/cairn-ehr/drugref/issues/282).
 - **Removed:** `class_ruling_reach.departed_reach`. db/080's reach snapshot stays as the "what the curator saw when
@@ -7102,15 +7103,18 @@ departure never banners.
   names each holder as `backend <pid> (<role>, <state>)` from `pg_locks`. PostgreSQL hides another role's
   `state` without `pg_read_all_stats`, so the role is always shown and a hidden state says so. The CLI exits 3
   on it, not 1: 1 is `NothingDeparted`, which can mean another curator already acknowledged, while `LedgerBusy`
-  recorded nothing. The lock survives the savepoint's RELEASE (the race tests still pass). **TRAP:** the holder query recomputes db/086's key from
-  `_LEDGER_LOCK_KEY`. If the SQL key changes, change it too; the new test fails if they differ.
+  recorded nothing. The lock survives the savepoint's RELEASE (the race tests still pass). **TRAP:** the holder
+  query repeats db/086's key text (since `db/087` inside `acknowledge_departure`, no longer Python's
+  `_LEDGER_LOCK_KEY`). If the key changes, change both; the idle-holder test fails if they differ. **Since #283
+  (`db/087`)** the lock, the wait and the holder message are SQL; the savepoint, `lock_timeout` restore and
+  autocommit refusal behave as described here.
   The function's first `SELECT` opens the caller's transaction, so `conn.transaction()` is a SAVEPOINT. Under
   autocommit it would BEGIN/COMMIT and release the lock at once, so `acknowledge` refuses an autocommit
   connection with `RuntimeError`. +4 tests: the idle-holder test (connects with `_migrated`: psycopg drops the
   password from `conn.info.dsn`, which failed CI), the autocommit refusal, the CLI's exit 3, and the caller's
   `lock_timeout` restored after a successful lock.
-- **Still owed by #283:** the GUI acknowledge is Rust and does not use this function. It must take the lock,
-  bound its own wait, and roll back on every error path.
+- **#283 (done, § "The GUI acknowledgement"):** the GUI acknowledge calls the same SQL function, so it takes the
+  lock with the same bound, and its transaction rolls back on every error path.
 - **#282:** `queue.rs`'s live test seeds (via test-only `live_queue_seed.rs`, which keeps `queue.rs` under 500
   lines) a full default page of interaction rules (25 subjects contraindicated
   with one single-member MoA class) and a full filtered page of condition contradictions (5 drugs both
@@ -7124,6 +7128,61 @@ departure never banners.
   fresh scratch database (created, migrated, dropped afterwards).
 - **Also fixed:** clippy 1.98's new `chunks_exact_to_as_chunks` lint failed `-D warnings` on main
   (`signing.rs` `decode_hex`); it now uses `as_chunks::<2>()`.
+
+## The GUI acknowledgement (#283, 2026-11-26) — `db/087`, suite 3729 → 3735
+
+Reviewers can now close a departure from the reviewer GUI (*Departed grades*, under Workspace), not only with
+`drugref curate acknowledge-departure`. Two owner rulings shaped it: **(1) one home, in SQL**, not a Rust copy of
+the Python rules; **(2) the GUI derives `reviewed_against`** from the ruling's class memberships rather than
+asking the reviewer to type it.
+
+- **`db/087`** adds four functions. `drugref.departed_graded_pairs(subject, partner)` is `_DEPARTED_SQL` verbatim
+  (plus `reviewed_at`, so callers can order: the function returns rows unordered). `drugref.departure_leavers(grain,
+  live ruling id, subjects[], partners[])` is `leavers`. `drugref.acknowledge_departure(grain, ruling id, drug,
+  rationale, reviewed_by, reviewed_against, lock_wait)` is `acknowledge` with #289's bounded lock: the wait runs
+  in a plpgsql exception block (a subtransaction), restores the caller's `lock_timeout`, and raises the
+  holder message itself. It returns `(acked_subject, acked_partner, acked_against)`.
+  `drugref.departure_reviewed_against(grain, ruling id)` is the GUI's derived value: `SOURCE release` of every run
+  holding a current membership of the ruling's classes (moiety grain: object class; class grain: both), joined by
+  ` / `; a memberless class names its own `substance_class.source`'s latest FINISHED run. A NULL
+  `reviewed_against` passed to `acknowledge_departure` is derived AFTER the lock, so it is the release the
+  departure was read against.
+- **SQLSTATEs, class `LG`** (I-Z classes are implementation-defined; A-H are reserved): `LG001` unknown ruling,
+  `LG002` nothing departed, `LG003` lock busy, `LG004` nothing to derive `reviewed_against` from. Python maps the
+  first three to `UnknownRuling` / `NothingDeparted` / `LedgerBusy`; the service to 404 / 409 / 503 / 409. The
+  503 message hides the holder's pid and role (database internals) from the reviewer.
+- **Python** (`graded_pairs.py` 329 → ~215 lines): `departed`, `leavers` and `acknowledge` are thin callers; the
+  public API and every existing test are unchanged, so the old tests check the port. `ACK_LOCK_TIMEOUT` is now
+  `None` (= SQL's 30 s default); tests still shorten it. `acknowledge` keeps the autocommit refusal (its contract
+  is "does not commit") and runs the function in a SAVEPOINT so a refusal leaves the caller's transaction usable.
+  **TRAP, hit during this round:** psycopg's `conn.transaction()` on an IDLE non-autocommit connection is a
+  BEGIN/COMMIT, not a savepoint, which released the lock before the caller committed (race test 2 caught it).
+  `acknowledge` runs `SELECT 1` first to open the transaction.
+- **One behaviour narrowed:** the read and the INSERT are now one locked function call, so "the INSERT wrote
+  nothing" and "nothing departed" are one check (`LG002`). `test_an_ack_that_closes_nothing_is_refused` staged the
+  old gap by monkeypatching `pairs_to_acknowledge`, which `acknowledge` no longer calls; it was deleted.
+- **Service** (`reviewer-service/src/departures.rs`): `GET /v1/graded-pair-departures` (the unfiltered list, with
+  subject / class / leaver names and, per leaver, how many listed pairs acknowledging it closes: the pure
+  `reviewer_domain::closes_per_leaver`, exact because the list is unfiltered) and `POST
+  /v1/graded-pair-departures/acknowledgements` (any authenticated reviewer; `reviewed_by` = the profile's full
+  name, as decisions do). The acknowledgement runs in its own sqlx transaction, which rolls back when dropped on
+  any error. `ensure_schema` now also requires `acknowledge_departure`, so the service refuses a pre-087 database.
+  Domain types in `reviewer-domain/src/departures.rs`; Tauri commands in `src-tauri/src/departures.rs`; the view is
+  `reviewer-app/src/Departures.svelte` with a browser-preview fixture in `lib/departures.ts`.
+- **Measured** on a scratch copy of `drugref_profiles` migrated to `db/087` with 20 synthetic moiety rulings (1,868
+  observations) and one membership deleted (dropped afterwards): the old Python read and the SQL function take the
+  same time (one-drug ~6-77 ms either way; unfiltered ~3 s either way, the view's cost, #285). The GUI list is the
+  unfiltered read, so it takes ~3 s on a full registry. `acknowledge_departure` with a derived release: 38 ms,
+  recorded `MED-RT 2026.07.06`.
+- **Tests:** Python +7 (`tests/test_graded_pairs_sql.py`: LG001, LG002, returned pairs, the derived release from
+  memberships, its fallback, NULL derived after the lock, leavers) and -1 (above). Rust: domain +4 (rationale
+  validation, grain spelling, `closes_per_leaver` on a class against itself), service +1 unit (the SQLSTATE →
+  status map) and +1 live (`live_departure_is_listed_and_acknowledged`: a GUI ruling's partner leaves, the list
+  names it as the one leaver closing one pair, the ack records the reviewer and `MED-RT <seed release>`, the
+  departure is gone, a second ack is 409). The seeding moved to test-only `live_graded_seed.rs`, shared with
+  `decisions.rs`'s observed-at-commit test. Live suite: 7/7 three consecutive runs on a fresh scratch database
+  (`drugref_rust283`, created, migrated, dropped). Frontend: `svelte-check` 0 errors, production build, and a
+  browser-preview pass (list, rationale, acknowledge, empty state).
 
 ## The standing open-issue ledger
 
@@ -7335,6 +7394,11 @@ stalls every ingest COMMIT, ruling save and ack -- needs a per-caller ruling).
 "`acknowledge` only": it gives up after 30 s and names the holder; the commit-time refreshes still wait without
 bound) and **[#282](https://github.com/cairn-ehr/drugref/issues/282) FIXED** (the live Rust tests seed their own
 data and rerun safely) (§ "The bounded ack and self-contained live Rust tests"). +4 tests, 3725 → 3729.
+**The GUI acknowledgement (2026-11-26)** — **[#283](https://github.com/cairn-ehr/drugref/issues/283) FIXED**
+(`db/087`, § "The GUI acknowledgement"): the departure read, the leavers and the acknowledgement moved into SQL
+functions (owner: one home, not a Rust copy); `graded_pairs.py` calls them, and so does the reviewer service's new
+*Departed grades* view, which records `reviewed_against` derived from the ruling's class memberships (owner).
++7 tests, -1 (its race can no longer be staged), 3729 → 3735.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7520,7 +7584,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3729 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3735 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7909,9 +7973,9 @@ ran in CI and `ruff` was not even a project dependency.
   `schedule`: rebuild a release into an empty database; its per-orchestrator `ADAPTERS` live in
   `replay_adapters.py`, and its `_Loader` in `replay_loader.py`)
   + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; `db/085` their comments; `db/086` the
-  ledger lock, #287; #281/#279):
+  ledger lock, #287; `db/087` the departure / leaver / acknowledgement SQL functions, #283; #281/#279):
   `graded_pairs.py` (`refresh`, `departed`, `leavers`, `pairs_to_acknowledge`, `acknowledge`: the ledger's whole
-  Python API) and `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure
+  Python API, thin callers of db/087 since #283; the reviewer service's `departures.rs` calls the same functions) and `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure
   `format_departure`, `ack_hints`, `drugref audit departures`, `EXIT_INCOMPLETE`)
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a

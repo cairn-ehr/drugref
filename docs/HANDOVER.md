@@ -13,13 +13,14 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/lock-timeout-289`: #289 and #282 FIXED (the PR closes both). No migration; schema ends at
-`db/086`.** PR #288 (#287) merged. The suite total lives in PROJECT-NOTES § "How to run / test" **and nowhere
-else**; `uv run pytest` fails if they disagree.
+**Branch `claude/gui-ack-283`: #283 FIXED (the PR closes it). Schema ends at `db/087`.** The suite total lives in
+PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND** (PROJECT-NOTES § "The bounded ack ..."): `acknowledge` gives up on the ledger lock after 30 s,
-naming the holder (`LedgerBusy`); refreshes still wait unbounded (owner's choice). Live Rust tests seed their own
-data and rerun green. **Open:** #283 (GUI ack: bound its lock wait, roll back on error), #284, #285.
+**⇒ THIS ROUND** (PROJECT-NOTES § "The GUI acknowledgement"): reviewers close a departure from the GUI's *Departed
+grades* view. The departure read, the leavers and the acknowledgement are now `db/087` SQL functions shared by the
+CLI and the Rust service (owner: one home); the GUI records `reviewed_against` derived from the ruling's class
+memberships (owner). **Next natural item: #284** (sign acknowledgements; the GUI flow now exists to sign in).
+**Open:** #284, #285 (the GUI list reads the whole view, ~3 s on a full registry: same cost).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -28,7 +29,7 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/086` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/079`–`db/087` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
@@ -87,13 +88,13 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#289, #282
-FIXED (close on merge); #287 closed; open: #283–#285;** #277, #270, #104, #272, #259, #258, #261,
-#262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope);
-#224 partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from
-class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**.
-Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158**
-untouched. Also #148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#283 FIXED
+(close on merge); #289, #282, #287 closed; open: #284, #285;** #277, #270, #104, #272, #259, #258, #261, #262, #266,
+#268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly
+done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
+profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing:
+**#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also
+#148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with
 `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN

@@ -1505,8 +1505,9 @@ a subclass). **#281 and #279 fixed 2026-11-25** (`db/083`; `db/084` refreshes pe
 key ever graded is recorded, both grains, and a departure banners until a curator acknowledges it
 (`drugref curate acknowledge-departure`; `drugref audit departures` lists them). **#287 fixed 2026-11-26**
 (`db/086`): the ledger's writers share one lock, so racing commits cannot lose an episode. **#289 fixed
-2026-11-26**: `acknowledge` waits at most 30 s for that lock, then names who holds it. **Open follow-ups:** #283
-(acknowledge from the reviewer GUI; it must bound its lock wait and roll back on error), #284 (sign
+2026-11-26**: `acknowledge` waits at most 30 s for that lock, then names who holds it. **#283 fixed 2026-11-26**
+(`db/087`): reviewers acknowledge from the GUI too; the departure rules are SQL functions both callers share.
+**Open follow-ups:** #284 (sign
 acknowledgements), #285 (policy writes and ingest finishes still run the ~5 s full refresh; rulings are per key
 since db/084), #275 (the question bookkeeping and accumulation tables, once they have a writer), #260 (diff-based
 membership tracking, only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are

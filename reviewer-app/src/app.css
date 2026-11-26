@@ -344,6 +344,10 @@ button { color: inherit; }
 .pending-detail-panel h2 { margin: 4px 0 2px; font: 500 25px Georgia, serif; }
 .pending-object { margin: 0; color: #53645b; font: 14px Georgia, serif; }
 .pending-attribution { margin: 13px 0; color: #7c8982; font-size: 8px; text-transform: capitalize; }
+/* Departed grades (#283): free-text names must not be title-cased; leaver rows read as form text. */
+.departure-attribution { text-transform: none; }
+.departure-intro { margin: 0 0 14px; }
+.departure-leaver { align-items: center; justify-content: space-between; margin-top: 9px; color: #53645b; font-size: 10px; }
 .counter-sign-notice { margin: 12px 0; padding: 11px 12px; color: #76562e; background: #fbf0da; border: 1px solid #ead2a6; border-radius: 6px; font-size: 9px; line-height: 1.55; }
 
 /* Administrator public-key trust, revocation impact, and counter-sign policy. */

@@ -45,6 +45,9 @@ export const EVIDENCE_NOTE_MAX_LENGTH = 10_000;
 /** Maximum characters accepted for mechanism or management prose. */
 export const CLINICAL_PROSE_MAX_LENGTH = 20_000;
 
+/** Maximum characters in a departure acknowledgement's rationale (reviewer-domain). */
+export const DEPARTURE_RATIONALE_MAX_LENGTH = 10_000;
+
 /** Minimum length of the distinct local signing-vault passphrase. */
 export const SIGNING_PASSPHRASE_MIN_LENGTH = 12;
 
