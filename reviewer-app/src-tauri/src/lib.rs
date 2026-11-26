@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 mod accounts;
+mod ack_signing;
 mod departures;
 mod signing;
 
@@ -48,6 +49,9 @@ pub fn run() {
             signing::replace_local_signing_key,
             signing::prepare_review_signature,
             signing::complete_review_signature,
+            ack_signing::load_unsigned_departure_acks,
+            ack_signing::prepare_ack_signatures,
+            ack_signing::complete_ack_signatures,
             accounts::logout,
         ])
         .run(tauri::generate_context!())

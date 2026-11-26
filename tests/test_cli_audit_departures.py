@@ -69,3 +69,89 @@ def test_an_orphan_is_counted_and_exits_3(conn, ingest_run_id, capsys):
     out = capsys.readouterr().out
     assert "open departures: 0 ruling(s), 0 pair(s)" in out
     assert "orphaned rulings: 1" in out and "drugref status" in out
+
+
+# ---- db/088 (#284): acknowledgement signature status -------------------------
+
+
+def _ack_id(conn):
+    return conn.execute(f"SELECT max(ack_id) FROM {graded_pairs.ACK_TABLE}").fetchone()[0]
+
+
+def test_no_acknowledgements_reads_zero(conn, capsys):
+    cli_departures.handle_audit_departures(conn, None)
+    assert "acknowledgements: 0" in capsys.readouterr().out
+
+
+def test_an_unsigned_ack_is_named_with_the_command_that_signs_it(
+        conn, ingest_run_id, capsys):
+    """Unsigned is a provenance gap, not a missing departure: named, exit unchanged."""
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 6)
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+
+    assert cli_departures.handle_audit_departures(conn, None) == 0
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (unsigned 1)" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out
+    assert "drugref sign --target-kind graded_pair_departure_ack" in out
+
+
+def _sign_the_ack(conn, ingest_run_id, n):
+    """Acknowledge a departure and sign its ack with a fresh registered key.
+    Returns the key's fingerprint."""
+    import datetime as dt
+
+    from drugref import keys, signatures, signing
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, n)
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+    kp = signing.generate_keypair()
+    fp = signing.fingerprint(kp.public_key)
+    keys.register(conn, public_key=kp.public_key, holder="dr t", registered_by="op")
+    at = dt.datetime(2026, 11, 26, tzinfo=dt.timezone.utc)
+    context, payload = signatures.payload_for(
+        conn, "graded_pair_departure_ack", _ack_id(conn), key_fingerprint=fp,
+        signed_at=at)
+    signatures.record(conn, target_kind="graded_pair_departure_ack",
+                      target_id=_ack_id(conn), payload_context=context,
+                      payload=payload, key_fingerprint=fp,
+                      signature=signing.sign(kp.private_key, payload), signed_at=at)
+    return fp
+
+
+def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
+    _sign_the_ack(conn, ingest_run_id, 7)
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (signed 1)" in out
+    assert "not signed" not in out
+
+
+def test_an_ack_whose_signature_no_longer_verifies_needs_signing(
+        conn, ingest_run_id, capsys):
+    """Acks are not in a signed release, so the audit is the routine check that
+    their signatures still verify: an altered rationale keeps its registry-trusted
+    signature row but must not count as signed."""
+    _sign_the_ack(conn, ingest_run_id, 9)
+    conn.execute("ALTER TABLE drugref.graded_pair_departure_ack "
+                 "DISABLE TRIGGER graded_pair_departure_ack_insert_only")
+    conn.execute(f"UPDATE {graded_pairs.ACK_TABLE} SET rationale = 'something else'")
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (bad_signature 1)" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out
+
+
+def test_an_ack_signed_only_by_a_compromised_key_needs_signing(conn, ingest_run_id,
+                                                                capsys):
+    """"Needs a signature" is anything but `signed`, not just `unsigned`: a
+    compromised key's signature must not count as trusted."""
+    from drugref import keys
+    fp = _sign_the_ack(conn, ingest_run_id, 8)
+    keys.revoke(conn, key_fingerprint=fp, status="compromised", revoked_by="op")
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "(signed_by_revoked_key 1)" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out

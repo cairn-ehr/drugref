@@ -4,9 +4,11 @@
    * once graded (a drug left a class, or a policy cut a subclass). A departure keeps
    * its CHANGED SINCE REVIEW banner until a reviewer acknowledges it here or with
    * `drugref curate acknowledge-departure`; both call the same SQL rule (db/087).
+   * Acknowledgements are then signed below (`AckSigning`, db/088).
    */
 
   import { onMount } from "svelte";
+  import AckSigning from "./AckSigning.svelte";
   import { DEPARTURE_RATIONALE_MAX_LENGTH } from "./lib/constants";
   import { acknowledgeGradedPairDeparture, loadGradedPairDepartures } from "./lib/departures";
   import { workingRecordDate } from "./lib/presentation";
@@ -22,6 +24,8 @@
   let loadError = $state("");
   let ackError = $state("");
   let statusMessage = $state("");
+  // Bumped after each acknowledgement so the unsigned list below reloads (#284).
+  let ackVersion = $state(0);
 
   onMount((): void => void refresh());
 
@@ -75,11 +79,14 @@
       });
       statusMessage = `Acknowledged ${leaver.displayName}: closed ${done.closedPairs} ${done.closedPairs === 1 ? "pair" : "pairs"}, recorded against ${done.reviewedAgainst}.`;
       rationale = "";
+      ackVersion += 1;
       await refresh();
     } catch (error) {
       // Reload so a departure another reviewer closed (409) disappears; restore the
       // error after the reload, which clears it if the selection moved.
+      // Reload the unsigned list too: the ack may have committed with its reply lost.
       const message = String(error);
+      ackVersion += 1;
       await refresh();
       ackError = message;
     } finally {
@@ -130,5 +137,6 @@
     {:else if loaded}
       <p class="admin-empty">Nothing to acknowledge.</p>
     {/if}
+    <AckSigning version={ackVersion} />
   </article>
 </section>

@@ -6,11 +6,17 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{records::validated_target_key, ReviewKind, ValidationError};
+use crate::{
+    ack_signing::{
+        DEPARTURE_ACK_TARGET_KIND, DEPARTURE_ACK_V1_CONTEXT, GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS,
+    },
+    records::validated_target_key,
+    ReviewKind, ValidationError,
+};
 
 const ED25519_PUBLIC_KEY_HEX_LENGTH: usize = 64;
-const ED25519_SIGNATURE_HEX_LENGTH: usize = 128;
-const SHA256_HEX_LENGTH: usize = 64;
+pub(crate) const ED25519_SIGNATURE_HEX_LENGTH: usize = 128;
+pub(crate) const SHA256_HEX_LENGTH: usize = 64;
 const MAXIMUM_SIGNING_PASSPHRASE_LENGTH: usize = 1024;
 const MINIMUM_SIGNING_PASSPHRASE_LENGTH: usize = 12;
 const PAYLOAD_PROLOGUE: &str = "drugref-sig-v1";
@@ -236,6 +242,9 @@ impl ReviewSignatureChallenge {
                 CURATED_INTERACTION_V1_FIELDS.as_slice()
             }
             ("curated_condition", "curated_condition/v1") => CURATED_CONDITION_V1_FIELDS.as_slice(),
+            (DEPARTURE_ACK_TARGET_KIND, DEPARTURE_ACK_V1_CONTEXT) => {
+                GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS.as_slice()
+            }
             _ => {
                 return Err(ValidationError(
                     "signature challenge has an unsupported target context".into(),
@@ -438,7 +447,7 @@ mod tests {
         .is_err());
     }
 
-    /// Reproduce every curated-row payload committed by the Python reference encoder.
+    /// Reproduce every curator-signed payload committed by the Python reference encoder.
     #[test]
     fn rust_encoder_matches_published_signing_vectors() {
         let fixture: Value =
@@ -447,7 +456,9 @@ mod tests {
         let cases = fixture["cases"].as_array().expect("vector cases");
         for case in cases {
             let context = case["context"].as_str().expect("context");
-            if !context.starts_with("curated_") {
+            // Every curator-signed row context; the release manifest carries groups,
+            // which only the Python publisher encodes.
+            if context.starts_with("release_manifest/") {
                 continue;
             }
             let fields = case["fields"]

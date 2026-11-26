@@ -61,6 +61,14 @@ objects to the fingerprint's entire history. Current revisions left with no
 registry-unobjected signature return from `GET /v1/pending-signatures` as independent
 counter-sign tasks, without withdrawing the clinical row.
 
+`GET /v1/graded-pair-departures` lists graded pairs whose drug left a ruling's class
+since review, and `POST /v1/graded-pair-departures/acknowledgements` records a
+curator's acknowledgement (db/083, db/087). Acknowledgements are signed in batches
+(db/088): `GET /v1/departure-acks/unsigned` lists those without a registry-trusted
+signature, `POST /v1/departure-ack-signatures/challenges` prepares one challenge per
+ack under one signing instant, and `POST /v1/departure-ack-signatures` rebuilds,
+verifies and records every signature of the batch, or none of them.
+
 Run the live integration checks explicitly against any migrated database. Each one
 seeds its own uniquely keyed rows and leaves them in place, so each can be rerun (#282).
 The account-administration check needs a database with no administrator except those
@@ -82,6 +90,12 @@ DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_t
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_detached_signing_round_trip -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_departure_is_listed_and_acknowledged -- --ignored
+
+DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
+  cargo test live_ack_is_signed_in_a_batch -- --ignored
 
 DRUGREF_REVIEW_TEST_DATABASE_URL='postgresql://postgres@localhost:5532/drugref_test' \
   cargo test live_account_administration_round_trip -- --ignored

@@ -290,6 +290,67 @@
       "signature": "dab9329bd3720db7c2f0d67f855e111eb644adfb7ce427de0e56dc14e86bd0fb9feb7bf66f7c531ebba3f7adb8953a1095cc0082a823adc591bbd67cad735d0f"
     },
     {
+      "name": "an acknowledgement of one departed CLASS-ruling pair",
+      "context": "graded_pair_departure_ack/v1",
+      "fields": [
+        [
+          "rule_grain",
+          "class_rule"
+        ],
+        [
+          "subject_key",
+          "6c2e9a14-3b7d-5f81-9e40-2d8a6c1f5b93"
+        ],
+        [
+          "object_class_uuid",
+          "a7d31e58-9c04-5b62-8f17-4e9b2c6d0a35"
+        ],
+        [
+          "relationship",
+          "CI_MoA"
+        ],
+        [
+          "subject_moiety",
+          "1f8b4d27-6e93-5a0c-b5d2-7c3e9a1f4d86"
+        ],
+        [
+          "partner_moiety",
+          "d4a06b39-2f71-5e8c-a3b9-8e5d1c7f2a40"
+        ],
+        [
+          "episode_ordinal",
+          "2"
+        ],
+        [
+          "rationale",
+          "left the class in MED-RT 2026.07.06;\nthe \"new\" class is right"
+        ],
+        [
+          "reviewed_by",
+          "a departure curator"
+        ],
+        [
+          "reviewed_against",
+          "MED-RT 2026.07.06"
+        ],
+        [
+          "acknowledged_at",
+          "2026-11-26T03:14:15.926535Z"
+        ],
+        [
+          "signer_key_fingerprint",
+          "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c"
+        ],
+        [
+          "signed_at",
+          "2026-11-26T03:15:00.000000Z"
+        ]
+      ],
+      "payload": "drugref-sig-v1\ngraded_pair_departure_ack/v1\n13\n10:rule_grain:S:10:class_rule\n11:subject_key:S:36:6c2e9a14-3b7d-5f81-9e40-2d8a6c1f5b93\n17:object_class_uuid:S:36:a7d31e58-9c04-5b62-8f17-4e9b2c6d0a35\n12:relationship:S:6:CI_MoA\n14:subject_moiety:S:36:1f8b4d27-6e93-5a0c-b5d2-7c3e9a1f4d86\n14:partner_moiety:S:36:d4a06b39-2f71-5e8c-a3b9-8e5d1c7f2a40\n15:episode_ordinal:S:1:2\n9:rationale:S:61:left the class in MED-RT 2026.07.06;\nthe \"new\" class is right\n11:reviewed_by:S:19:a departure curator\n16:reviewed_against:S:17:MED-RT 2026.07.06\n15:acknowledged_at:S:27:2026-11-26T03:14:15.926535Z\n22:signer_key_fingerprint:S:64:56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c\n9:signed_at:S:27:2026-11-26T03:15:00.000000Z\n",
+      "digest": "563256da575f5b98d18801ca3e33b8bfe64d457933bf15a6a4fbfa65c29b82b7",
+      "signature": "526ffdbfb172b5f1ea62a138eafd3ea79489757d96642e4cbf6449be566a02a37567c73f423fcc210db60956fd58e9d0d0c0fea2cf20779ef8046c0f42b53a0b"
+    },
+    {
       "name": "a manifest ENTRY digest over case 1's judgement",
       "context": "curated_interaction/v1",
       "fields": [

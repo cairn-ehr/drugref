@@ -1,8 +1,8 @@
 # Signing the curated overlay
 
 **Status:** Active
-**Last reviewed:** 2026-10-30
-**Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`, `db/048`,
+**Last reviewed:** 2026-11-26 (departure acknowledgements, #284)
+**Applies to:** slice 5c.4 and reviewer signing/key trust — `db/030`, `db/047`, `db/048`, `db/088`,
 `signing.py`, `signing_contexts.py`, `keys.py`, `signatures.py`, `releases.py`,
 `release_verification.py`, `release_signature.py`, the
 `drugref keys | sign | verify | publish` commands, and the reviewer app/service
@@ -51,6 +51,14 @@ native core, and asks the service to independently rebuild and verify the payloa
 insertion. Authentication remains a separate password-backed session and is never
 treated as clinical attestation.
 
+Curators also sign their **departure acknowledgements** (`db/088`, issue #284): an
+acknowledgement silences a "changed since review" warning, so a forged one would hide a
+departure. Its signed content is the drug pair, the ruling it departed from and which
+episode of that pair it closes, plus the curator's rationale, never a database-local id: the
+signature survives a release replay and cannot be copied onto a later episode of the pair.
+One acknowledgement can close many pairs; the desktop reviewer signs them as a batch, every
+payload shown, the key unlocked once, and the service records all or none.
+
 ### The release layer — distribution integrity and completeness
 
 `drugref publish` enumerates every live curated assertion, records each one's content digest in
@@ -65,6 +73,10 @@ them.
 
 An empty manifest is a meaningful statement, not a wildcard: it says drugref published nothing, and verifying
 a database that *does* hold curated rows against it fails with an `added` finding.
+
+The manifest lists the **rulings** consumers read. Departure acknowledgements are signed at the
+row layer only (owner ruling, 2026-11-26): they change what reviewers are shown, not what a
+prescriber is told.
 
 ### Signatures are detached, not a column
 

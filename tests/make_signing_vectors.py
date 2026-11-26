@@ -156,6 +156,27 @@ def _cases(fp: str) -> list[dict]:
         ["signer_key_fingerprint", fp],
         ["signed_at", "2026-11-07T05:13:02.125000Z"],
     ]
+    departure_ack_fields = [
+        # THE DEPARTURE-ACK case (db/088, #284). The only context signed over a VIEW:
+        # the episode is named by its ruling key and drug pair (graded_pair_observation's
+        # key columns), never by the observation_id a replay renumbers. A CLASS ruling,
+        # so subject_key is the subject class and differs from subject_moiety; the
+        # rationale carries a quote and a newline, which the length prefix must hold.
+        # episode_ordinal 2: the pair's SECOND episode, the case it exists to bind.
+        ["rule_grain", "class_rule"],
+        ["subject_key", "6c2e9a14-3b7d-5f81-9e40-2d8a6c1f5b93"],
+        ["object_class_uuid", "a7d31e58-9c04-5b62-8f17-4e9b2c6d0a35"],
+        ["relationship", "CI_MoA"],
+        ["subject_moiety", "1f8b4d27-6e93-5a0c-b5d2-7c3e9a1f4d86"],
+        ["partner_moiety", "d4a06b39-2f71-5e8c-a3b9-8e5d1c7f2a40"],
+        ["episode_ordinal", "2"],
+        ["rationale", "left the class in MED-RT 2026.07.06;\nthe \"new\" class is right"],
+        ["reviewed_by", "a departure curator"],
+        ["reviewed_against", "MED-RT 2026.07.06"],
+        ["acknowledged_at", "2026-11-26T03:14:15.926535Z"],
+        ["signer_key_fingerprint", fp],
+        ["signed_at", "2026-11-26T03:15:00.000000Z"],
+    ]
     # THE MANIFEST-ENTRY case: the SAME judgement as the first, rebuilt the way an
     # ENTRY's digest is
     # -- the two attestation fields replaced by the entry sentinel pair. An entry attests
@@ -209,6 +230,11 @@ def _cases(fp: str) -> list[dict]:
             "name": "a CLASS-subject property ruling with generated key columns",
             "context": "curated_property_ruling/v1",
             "fields": property_ruling_fields,
+        },
+        {
+            "name": "an acknowledgement of one departed CLASS-ruling pair",
+            "context": "graded_pair_departure_ack/v1",
+            "fields": departure_ack_fields,
         },
         {
             "name": "a manifest ENTRY digest over case 1's judgement",

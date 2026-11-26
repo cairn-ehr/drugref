@@ -17,6 +17,8 @@ from datetime import datetime
 
 import psycopg
 
+from drugref import signatures, signing
+
 OBSERVATION_TABLE = "drugref.graded_pair_observation"
 ACK_TABLE = "drugref.graded_pair_departure_ack"
 
@@ -217,3 +219,32 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
             raise
         raise refusal(error.diag.message_primary) from error
     return frozenset((s, p) for s, p, _against in rows)
+
+
+# db/088 (#284): the view `drugref audit departures` and the reviewer service read,
+# so "unsigned" means one thing in both. Its target kind in signature_target_kind.
+ACK_SIGNATURE_VIEW = "drugref.departure_ack_signature"
+ACK_TARGET_KIND = "graded_pair_departure_ack"
+
+
+def ack_signature_statuses(conn: psycopg.Connection) -> list[tuple[int, str]]:
+    """(ack_id, signature status) for every acknowledgement, oldest first.
+
+    The status is curated_signature_status' vocabulary plus `unsigned`; anything
+    but `signed` still needs a signature by a key the registry trusts. An ack the
+    registry reads as `signed` is ALSO checked cryptographically: unless one of its
+    signatures is VALID, it reads as its worst `drugref verify` verdict (e.g.
+    `bad_signature`). WHY HERE: acks are not in a signed release (db/088's owner
+    ruling), so `drugref verify --release` never checks them, and the registry
+    alone reads a copied or since-altered ack as `signed`. Acks are few."""
+    out = []
+    for ack_id, status in conn.execute(
+            f"SELECT ack_id, signature_status FROM {ACK_SIGNATURE_VIEW} ORDER BY ack_id"
+    ).fetchall():
+        if status == "signed":
+            verdicts = [v.verdict for v in
+                        signatures.verify_target(conn, ACK_TARGET_KIND, ack_id)]
+            if signing.VALID not in verdicts:
+                status = min(verdicts, key=signing.VERDICT_PRECEDENCE.index)
+        out.append((ack_id, status))
+    return out

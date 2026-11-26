@@ -99,11 +99,25 @@ CURATED_PROPERTY_RULING_V1 = (
     "source", "reviewed_by", "reviewed_against", "reviewed_at",
     *ATTESTATION_FIELDS)
 
+# db/088 (#284), departure acknowledgements. The columns of the
+# `graded_pair_departure_ack_payload` VIEW, not of the ack table: the table names its
+# episode by `observation_id`, a database-local id a release replay renumbers, so the
+# view signs the episode's ruling key and pair instead, plus `episode_ordinal` (which
+# episode of that key and pair), so a signature cannot be copied onto a later episode
+# (see db/088's preamble). NOT in a release manifest (owner ruling, 2026-11-26), so no
+# natural key below.
+GRADED_PAIR_DEPARTURE_ACK_V1 = (
+    "rule_grain", "subject_key", "object_class_uuid", "relationship",
+    "subject_moiety", "partner_moiety", "episode_ordinal", "rationale", "reviewed_by",
+    "reviewed_against", "acknowledged_at",
+    *ATTESTATION_FIELDS)
+
 FIELD_LISTS = {
     "curated_interaction/v1": CURATED_INTERACTION_V1,
     "curated_condition/v1": CURATED_CONDITION_V1,
     "curated_class_interaction/v1": CURATED_CLASS_INTERACTION_V1,
     "curated_property_ruling/v1": CURATED_PROPERTY_RULING_V1,
+    "graded_pair_departure_ack/v1": GRADED_PAIR_DEPARTURE_ACK_V1,
     "release_manifest/v1": RELEASE_MANIFEST_V1,
 }
 

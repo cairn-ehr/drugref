@@ -1228,6 +1228,7 @@ dependencies = [
  "ed25519-dalek",
  "reviewer-domain",
  "serde",
+ "serde_json",
  "sha2",
  "sqlx",
  "tokio",

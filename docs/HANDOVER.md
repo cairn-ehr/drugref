@@ -13,14 +13,14 @@
 
 ## ⇒ NEXT
 
-**Branch `claude/gui-ack-283`: #283 FIXED (the PR closes it). Schema ends at `db/087`.** The suite total lives in
+**Branch `claude/sign-acks-284`: #284 FIXED (the PR closes it). Schema ends at `db/088`.** The suite total lives in
 PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
-**⇒ THIS ROUND** (PROJECT-NOTES § "The GUI acknowledgement"): reviewers close a departure from the GUI's *Departed
-grades* view. The departure read, the leavers and the acknowledgement are now `db/087` SQL functions shared by the
-CLI and the Rust service (owner: one home); the GUI records `reviewed_against` derived from the ruling's class
-memberships (owner). **Next natural item: #284** (sign acknowledgements; the GUI flow now exists to sign in).
-**Open:** #284, #285 (the GUI list reads the whole view, ~3 s: same cost), #292 (owner rulings), #293 (tests).
+**⇒ THIS ROUND** (PROJECT-NOTES § "Signed departure acknowledgements"): acks are a fifth curator signature target
+kind (`db/088`; a view signs the episode by content: pair, ruling key and `episode_ordinal`, so it survives a
+replay and cannot be copied onto a later episode). CLI `sign`/`verify` unchanged; the GUI signs a batch (one vault
+unlock); `audit departures` names unsigned acks and verifies `signed` ones. **Owner:** acks are NOT release content.
+**Next:** #299 (GUI trusts registry status), #293, #295/#298 (`signing.rs` splits), #297 (live test race), #292.
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -29,7 +29,7 @@ the replay renumbers, and the coverage guard will NOT fire for their first write
 
 **⇒ STANDING (#258):** `DRUGREF_ARCHIVE` (absolute path; unset = no archive I/O, and publish warns the release is NOT
 reconstructable). **Publish refuses on any run ingested before the archive was set**, so production must be built
-from nothing with it set. **No named database carries `db/079`–`db/087` yet** (tested on `drugref_test` only).
+from nothing with it set. **No named database carries `db/079`–`db/088` yet** (tested on `drugref_test` only).
 `ruff format` is NOT applied here; match the hand style. **Never VALIDATE `db/078`'s `NOT VALID` CHECK.** **No
 `-p no:cacheprovider` on a full run.**
 
@@ -88,14 +88,14 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 
 ## Open follow-ups
 
-The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#283 FIXED
-(close on merge); #289, #282, #287 closed; open: #284, #285, #292, #293;** #277, #270, #104, #272, #259, #258, #261,
-#262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224
-partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
-profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing:
-**#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also
-#148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE`
-set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#284 FIXED
+(close on merge); #283, #289, #282, #287 closed; open: #285, #292, #293, #295, #297, #298, #299;** #277, #270, #104,
+#272, #259, #258, #261, #262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the
+archive, drift scope); #224 partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups:
+#223, #224.** **Open from class profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**.
+Open: **#164**, **#169**. Standing: **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks
+a grain; **#158** untouched. Also #148, #152, #128/#129, #124, #94. Before production: re-run every parser on
+current releases **with `DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
@@ -103,7 +103,7 @@ set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
   tests; never for reviewer accounts or GUI data. Pytest runs in a per-session copy,
   `<dbname>_pid<pid>_<token>` (#153, fixed): concurrent sessions on one DSN are safe, and the role needs CREATEDB.
 - **`drugref_excl248`** (#248/#249) is `createdb -T drugref_hygiene214` migrated to `db/078`, no ingest; never
-  patch it (no named database carries `db/079`–`db/086`: see STANDING).
+  patch it (no named database carries `db/079`–`db/088`: see STANDING).
 - **`drugref_hygiene214` is #214's SPL database**: `createdb -T drugref_ambig132`, `db/077`, **SPL run 19
   is the shipped measurement** (run 18: refused by the old class floor, unfinished, nothing written). Never patch
   it. **`drugref_names243`** (#243) had its official names truncated on purpose: never use it as a template.

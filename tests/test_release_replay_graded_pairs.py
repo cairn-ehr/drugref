@@ -18,8 +18,8 @@ import json
 import psycopg
 import pytest
 
-from drugref import (archive, curation, graded_pairs, ids, release_archive,
-                     release_replay, signing)
+from drugref import (archive, curation, graded_pairs, ids, keys, release_archive,
+                     release_replay, signatures, signing)
 from tests.test_release_replay import (  # noqa: F401  (`databases` is a fixture)
     A, B, SHA, TAG, X, Y, _edit, _fake_ingest, databases)
 
@@ -58,7 +58,26 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
     (two / "members.txt").write_text(f"{A} {Y}\n{B} {Y}\n")
     kp = signing.generate_keypair()
 
-    def _build(*, withdraw=False, acknowledge=False, twice=False, cycle=False):
+    def _sign_newest_ack(c):
+        """db/088: the curator signs the newest ack (kp also signs the release)."""
+        if not keys.history(c, signing.fingerprint(kp.public_key)):
+            keys.register(c, public_key=kp.public_key, holder="test",
+                          registered_by="op")
+        (ack,) = c.execute(f"SELECT max(ack_id) FROM {graded_pairs.ACK_TABLE}"
+                           ).fetchone()
+        when = dt.datetime.now(dt.timezone.utc)
+        fp = signing.fingerprint(kp.public_key)
+        context, payload = signatures.payload_for(
+            c, graded_pairs.ACK_TARGET_KIND, ack, key_fingerprint=fp,
+            signed_at=when)
+        signatures.record(
+            c, target_kind=graded_pairs.ACK_TARGET_KIND, target_id=ack,
+            payload_context=context, payload=payload, key_fingerprint=fp,
+            signature=signing.sign(kp.private_key, payload), signed_at=when)
+        c.commit()
+
+    def _build(*, withdraw=False, acknowledge=False, twice=False, cycle=False,
+               sign=False, sign_second=False):
         with psycopg.connect(origin) as c:
             _fake_ingest(c, [one / "members.txt"], "r1")
             rid = _rule(c)
@@ -80,9 +99,17 @@ def build(databases, tmp_path, monkeypatch):  # noqa: F811
                     c, "class", rid, ids.mint_moiety_uuid(X), rationale="X left A",
                     reviewed_by="test", reviewed_against="2026")
                 c.commit()
+            if sign:
+                _sign_newest_ack(c)
             if cycle:     # X returns (a second episode opens), then leaves again
                 _fake_ingest(c, [one / "members.txt"], "r3")
                 _fake_ingest(c, [two / "members.txt"], "r4")
+            if sign_second:   # episode 2 acknowledged and signed too
+                graded_pairs.acknowledge(
+                    c, "class", rid, ids.mint_moiety_uuid(X), rationale="X left A",
+                    reviewed_by="test", reviewed_against="2026")
+                c.commit()
+                _sign_newest_ack(c)
             release_archive.publish_archived(
                 c, root=root, release_tag=TAG, published_by="op",
                 private_key=kp.private_key,
@@ -174,6 +201,33 @@ def test_an_acknowledgement_is_replayed_onto_its_episode(build):
         nxt = c.execute("SELECT nextval(pg_get_serial_sequence("
                         "'drugref.graded_pair_departure_ack', 'ack_id'))").fetchone()[0]
         assert nxt > p["acks"][0][0]
+
+
+def test_a_signed_ack_still_verifies_after_a_replay(build):
+    """db/088 signs the ack's episode by CONTENT because the replay loads the ack
+    onto ITS OWN observation id; a signature over the id would break here."""
+    p = build(acknowledge=True, sign=True)
+    assert _replay(p).reproduced
+    with psycopg.connect(p["target"]) as c:
+        (ack,) = c.execute(f"SELECT ack_id FROM {graded_pairs.ACK_TABLE}").fetchone()
+        assert [v.verdict for v in signatures.verify_target(
+            c, graded_pairs.ACK_TARGET_KIND, ack)] == [signing.VALID]
+
+
+def test_a_signed_ack_of_a_second_episode_still_verifies_after_a_replay(build):
+    """The case `episode_ordinal` exists for (db/088): the replay renumbers
+    observations, but regenerates them serially in the same order, so the second
+    episode's ack still signs ordinal 2 and still verifies."""
+    p = build(acknowledge=True, sign=True, cycle=True, sign_second=True)
+    assert _replay(p).reproduced
+    with psycopg.connect(p["target"]) as c:
+        rows = c.execute(
+            "SELECT ack_id, episode_ordinal FROM drugref.graded_pair_departure_ack_payload "
+            "ORDER BY ack_id").fetchall()
+        assert [ordinal for _ack, ordinal in rows] == [1, 2]
+        for ack, _ordinal in rows:
+            assert [v.verdict for v in signatures.verify_target(
+                c, graded_pairs.ACK_TARGET_KIND, ack)] == [signing.VALID]
 
 
 def test_an_ack_with_no_open_episode_is_a_difference(build):
