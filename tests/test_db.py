@@ -244,6 +244,9 @@ def test_apply_migrations_is_idempotent(conn):
         # db/083 (#281, #279): every pair a reviewed grade reached, and the
         # acknowledgements that close an episode.
         "graded_pair_observation", "graded_pair_departure_ack",
+        # db/088 (#284): an ack's signing target (its episode by content, not id) and
+        # every ack with its signature status.
+        "graded_pair_departure_ack_payload", "departure_ack_signature",
         # db/058, class profiles
         "curated_property_ruling",
         # Slice 5c.2, db/034 (Task 11B): the class grain's OWN class-DAG walk.

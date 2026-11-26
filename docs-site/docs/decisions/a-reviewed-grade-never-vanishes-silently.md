@@ -1,8 +1,8 @@
 # A reviewed grade never vanishes silently
 
 **Status:** Active
-**Last reviewed:** 2026-11-26 (GUI acknowledgement, #283)
-**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, the reviewer GUI's *Departed grades* view, `db/083`, `db/084`, `db/085`, `db/086`, `db/087`
+**Last reviewed:** 2026-11-26 (signed acknowledgements, #284)
+**Applies to:** `drugref interactions`, `drugref audit departures`, `drugref curate acknowledge-departure`, the reviewer GUI's *Departed grades* view, `db/083`, `db/084`, `db/085`, `db/086`, `db/087`, `db/088`
 **Full derivation:** the [ever-graded design spec](https://github.com/cairn-ehr/drugref/blob/main/docs/superpowers/specs/2026-11-24-drugref-ever-graded-design.md)
 
 ## Context
@@ -68,7 +68,12 @@ graded. The moiety grain has no earlier evidence; its history starts at `db/083`
   it loads the acknowledgements. A release that holds backfilled rows cannot reproduce them, so the replay skips
   the comparison and warns, which keeps it short of "reproduced". Production is built from nothing with the
   archive set, so a real release never has them.
-- Acknowledgements are not signed yet (issue #284).
+- Acknowledgements are signed like curated rulings, with the curator's own key, from the reviewer GUI or
+  `drugref sign` (`db/088`, issue #284). The signature covers the drug pair and the ruling it departed from,
+  not the database's internal episode id, so it still verifies after a release replay. `drugref audit
+  departures` names every acknowledgement without a trusted signature; that does not change its exit code.
+  By owner ruling, a signed release does not list acknowledgements: it attests to the rulings consumers read,
+  and an acknowledgement changes only what reviewers are shown.
 - The GUI's list is the unfiltered departure list, which reads the whole grading view (about 3 seconds on a full
   registry).
 - The earlier snapshot stays as the audit of what the curator saw when ruling (`drugref audit class-ruling`); the

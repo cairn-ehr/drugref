@@ -7026,7 +7026,8 @@ docs-site *A reviewed grade never vanishes silently*.
   Related to #260.
 - **Filed, not built:** [#283](https://github.com/cairn-ehr/drugref/issues/283) acknowledging from the reviewer GUI
   (CLI-only then; built 2026-11-26, § "The GUI acknowledgement");
-  [#284](https://github.com/cairn-ehr/drugref/issues/284) signing acknowledgements (they carry
+  [#284](https://github.com/cairn-ehr/drugref/issues/284) (built 2026-11-26, § "Signed departure
+  acknowledgements") signing acknowledgements (they carry
   `reviewed_by` / `reviewed_against` but no signature; the `curated_signature_status` path could cover them). Two
   ignored Rust tests failed before this work: [#282](https://github.com/cairn-ehr/drugref/issues/282).
 - **Removed:** `class_ruling_reach.departed_reach`. db/080's reach snapshot stays as the "what the curator saw when
@@ -7196,6 +7197,55 @@ asking the reviewer to type it.
   `live_graded_seed.rs`, shared with `decisions.rs`'s observed-at-commit test. Live suite: 7/7 three consecutive runs
   on a fresh scratch database (`drugref_rust283`, created, migrated, dropped). Frontend: `svelte-check` 0 errors,
   production build, and a browser-preview pass (list, rationale, acknowledge, empty state).
+
+## Signed departure acknowledgements (#284, 2026-11-26) — `db/088`, suite 3737 → 3748
+
+An acknowledgement silences a CHANGED SINCE REVIEW banner, so a forged or altered one hides a departure. Acks are
+now a fifth curator signature target kind, signed from the CLI (`drugref sign --target-kind
+graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned acknowledgements*). **Owner rulings
+(2026-11-26):** (1) acks are NOT release content: `releases._CURATED_KINDS` stays four, and
+`test_every_curated_catalog_kind_is_covered_by_a_release` subtracts the kind by name with the reason; (2) all of
+#284 in one PR.
+
+- **`db/088`:** the target is a VIEW, `graded_pair_departure_ack_payload` (`ack_id` + the episode's
+  `graded_pair_observation` key columns + the ack's own fields), not the table. **WHY:** the ack names its episode by
+  `observation_id`, which a release replay renumbers (`replay_loader._ack_episode`), so a signature over it would
+  break after a replay and would not say which pair was accepted. `captured` and `first_seen_at` are not signed
+  (each database writes its own). `ack_id` is kept verbatim by the replay, so signatures still point at their ack;
+  `test_a_signed_ack_still_verifies_after_a_replay` pins it. `drugref.departure_ack_signature` is every ack with
+  `curated_signature_status`' vocabulary plus `unsigned`: the one read the CLI audit and the service share.
+- **Frozen list** `signing_contexts.GRADED_PAIR_DEPARTURE_ACK_V1` (12 fields, attestation last) and the Rust twin
+  `reviewer_domain::GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS`; no natural key (not in releases). New committed vector
+  (purely additive: no existing vector moved). The Rust vector test now covers every row context (it skipped any
+  not starting `curated_`), and the service has a test rebuilding the vector's bytes from a payload-view row.
+  `test_the_ack_field_list_accounts_for_every_column` is the ack's own coverage alarm: the view is signed fields +
+  `ack_id`, and a new column on the ack OR observation table fails until signed or excluded by name.
+- **`drugref audit departures`** prints `acknowledgements: N (signed a, unsigned b, ...)` and names every ack not
+  `signed`, with the sign command. **Exit code unchanged** (an unsigned ack is a provenance gap, not a missing
+  departure). No CLI code was needed to sign or verify: both read the catalog.
+- **GUI batch signing.** One acknowledgement can close many episodes (one ack row each), so the GUI signs a batch
+  of up to `MAXIMUM_ACK_SIGNATURE_BATCH` (100): `POST /v1/departure-ack-signatures/challenges` returns one
+  challenge per ack under one `signed_at`; the Tauri core (`src-tauri/src/ack_signing.rs`) binds each to the
+  requested ack id, kind, context, key and instant, re-derives its bytes, retains the batch, and after
+  confirmation unlocks the vault ONCE (`signing::sign_locally`, now shared with ruling signing) and signs each;
+  `POST /v1/departure-ack-signatures` rebuilds every payload, compares digests, verifies every signature and
+  inserts all in one transaction (any failure records none). `GET /v1/departure-acks/unsigned` lists them. Any
+  authenticated reviewer may sign any ack, as with rulings' counter-signatures. Ack rows are insert-only, so no
+  row lock. The service refuses to start on a pre-088 database (`ensure_schema`).
+- **Service refactor:** `signing.rs` gained `parse_signed_at`, `ensure_fresh`, `verify_detached` and
+  `insert_signature`, now used by both submit paths (the ruling path's behaviour and messages are unchanged). The
+  eight signing handlers moved verbatim from `lib.rs` to `signing_routes.rs`: **`lib.rs` 532 → 423**, closing item
+  3 of [#293](https://github.com/cairn-ehr/drugref/issues/293). `serde_json` became a dev-dependency of the
+  service (already in its lockfile via axum; MIT/Apache).
+- **Size:** `src-tauri/src/signing.rs` 745 → 777 (already over the cap): filed
+  [#295](https://github.com/cairn-ehr/drugref/issues/295) (move the vault into `vault.rs`).
+- **Tests:** Python +11 (`tests/test_ack_signing.py` 6 incl. CLI sign/verify and tamper → BAD_SIGNATURE; audit +3;
+  the coverage alarm +1; the replay +1). Rust: domain +3 (batch query bounds, submission matches the query in
+  order, the challenge encoder's frozen list), service +1 unit (vector) and +1 live (`live_ack_is_signed_in_a_batch`:
+  listed unsigned, a stale digest is 409, signed, then `signed` and gone from the list), Tauri +2 (binding;
+  substituted/unbound/wrong-digest/wrong-kind challenges refused). Live suite: 8/8 three consecutive runs on a fresh
+  scratch database (`drugref_rust284`, created, migrated, dropped). Frontend: `svelte-check` 0 errors, production
+  build, and a browser-preview pass (list, prepare 2, per-ack payloads, sign, empty state).
 
 ## The standing open-issue ledger
 
@@ -7412,6 +7462,10 @@ data and rerun safely) (§ "The bounded ack and self-contained live Rust tests")
 functions (owner: one home, not a Rust copy); `graded_pairs.py` calls them, and so does the reviewer service's new
 *Departed grades* view, which records `reviewed_against` derived from the ruling's class memberships (owner).
 +9 tests, -1 (its race can no longer be staged), 3729 → 3737.
+**Signed acknowledgements (2026-11-26)** — **[#284](https://github.com/cairn-ehr/drugref/issues/284) FIXED**
+(`db/088`, § "Signed departure acknowledgements"): acks are a signature target kind (CLI and GUI batch signing),
+NOT release content (owner). #293 item 3 (service `lib.rs` size) done; filed
+**[#295](https://github.com/cairn-ehr/drugref/issues/295)** (Tauri `signing.rs` 777 lines). +11 tests, 3737 → 3748.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7597,7 +7651,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3737 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3748 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
@@ -7986,10 +8040,13 @@ ran in CI and `ruff` was not even a project dependency.
   `schedule`: rebuild a release into an empty database; its per-orchestrator `ADAPTERS` live in
   `replay_adapters.py`, and its `_Loader` in `replay_loader.py`)
   + the ever-graded surface (`db/083`; `db/084` the per-key ruling refresh; `db/085` their comments; `db/086` the
-  ledger lock, #287; `db/087` the departure / leaver / acknowledgement SQL functions, #283; #281/#279):
+  ledger lock, #287; `db/087` the departure / leaver / acknowledgement SQL functions, #283; `db/088` acks as a
+  signature target kind, #284; #281/#279):
   `graded_pairs.py` (`refresh`, `departed`, `leavers`, `pairs_to_acknowledge`, `acknowledge`: the ledger's whole
   Python API, thin callers of db/087 since #283; the reviewer service's `departures.rs` calls the same functions) and `cli_departures.py` (the `CHANGED SINCE REVIEW` banner `report_departures`, pure
-  `format_departure`, `ack_hints`, `drugref audit departures`, `EXIT_INCOMPLETE`)
+  `format_departure`, `ack_hints`, `format_ack_signatures`, `drugref audit departures`, `EXIT_INCOMPLETE`);
+  ack signing in the reviewer stack is `ack_signing.rs` in each of `reviewer-domain`, `reviewer-service` and
+  `src-tauri`, plus `AckSigning.svelte`
   + `src/drugref/ingest/*.py`; seed data under
   `src/drugref/data/`; fixtures under `tests/fixtures/`. **`accumulation.py`** is Plan C's single writer plus the two PURE evaluation rules a
   consumer applies (`fires`, `group_fires`) — drugref publishes facts, never verdicts, but hands out the rules as code so

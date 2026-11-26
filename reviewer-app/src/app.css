@@ -312,6 +312,7 @@ button { color: inherit; }
 .signature-confirmation { display: grid; gap: 8px; margin-top: 11px; padding-top: 11px; border-top: 1px solid #d5e1d8; }
 .signature-confirmation > strong { color: #334d42; font: 600 13px Georgia, serif; text-transform: capitalize; }
 .signed-content { display: grid; gap: 8px; margin: 3px 0; padding: 12px; background: #fff; border: 1px solid #d6dfd9; border-radius: 6px; }
+.ack-signing .signed-content summary { font-size: 0.8rem; font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
 .signed-content-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .signed-content-head h3 { margin: 2px 0 0; color: #31483f; font: 600 14px Georgia, serif; }
 .signed-content-head > span { flex: 0 0 auto; padding: 4px 7px; color: #456257; background: #e6f0e9; border-radius: 999px; font-size: 7px; font-weight: 750; }

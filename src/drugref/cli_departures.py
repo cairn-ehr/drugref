@@ -57,6 +57,25 @@ def format_departure(d: graded_pairs.Departure,
     return lines
 
 
+def format_ack_signatures(statuses: list[tuple[int, str]]) -> list[str]:
+    """The audit's acknowledgement-signature lines (pure; db/088, #284).
+    `statuses` is `graded_pairs.ack_signature_statuses` output. Every ack not
+    `signed` is named, with the command that signs one."""
+    counts: dict[str, int] = {}
+    for _ack, status in statuses:
+        counts[status] = counts.get(status, 0) + 1
+    breakdown = ", ".join(f"{s} {n}" for s, n in sorted(counts.items()))
+    lines = [f"acknowledgements: {len(statuses)}"
+             + (f" ({breakdown})" if breakdown else "")]
+    needing = [str(a) for a, status in statuses if status != "signed"]
+    if needing:
+        lines.append(f"   not signed by a trusted key: ack {', '.join(needing)}. Sign "
+                     f"in the reviewer GUI (Departed grades), or: drugref sign "
+                     f"--target-kind {graded_pairs.ACK_TARGET_KIND} --target-id ID "
+                     "--key KEYFILE")
+    return lines
+
+
 # AN ANSWER KNOWN TO BE INCOMPLETE gets its own exit code, for #82's reason: a banner
 # alone is human-only, and a script reading 0 would take the list as complete. Not 2,
 # which means "cannot tell" here (db/083 absent) and "nothing was asked" elsewhere.
@@ -139,8 +158,9 @@ def report_departures(conn, directions) -> bool | None:
 
 def handle_audit_departures(conn, args) -> int:
     """`drugref audit departures`: every open departure, all rulings, both grains,
-    then a count of ORPHANED rulings. Exit 0 neither, 3 either (incomplete), 2 when
-    db/083 is absent ("cannot tell").
+    then a count of ORPHANED rulings, then every acknowledgement's signature status
+    (db/088). Exit 0 neither, 3 either (incomplete), 2 when db/083 is absent
+    ("cannot tell"); unsigned acks do not change it.
 
     THE ORPHAN COUNT IS PART OF THE GATE: `departed` leaves a ruling whose candidate
     is gone to #121's banner, so without it a re-ingest that retired a class would
@@ -169,4 +189,12 @@ def handle_audit_departures(conn, args) -> int:
     if orphans:
         print(f"orphaned rulings: {orphans} (candidate gone, so any grade among them "
               "reaches nobody; not listed above). Run `drugref status`")
+    # An unsigned ack is a provenance gap, not a missing departure: reported, but it
+    # does not change the exit code. Without db/088 there is nothing to report.
+    if conn.execute("SELECT to_regclass(%s)",
+                    (graded_pairs.ACK_SIGNATURE_VIEW,)).fetchone()[0] is None:
+        print("acknowledgement signatures: cannot tell (db/088 not applied)")
+    else:
+        print("\n".join(format_ack_signatures(
+            graded_pairs.ack_signature_statuses(conn))))
     return EXIT_INCOMPLETE if found or orphans else 0

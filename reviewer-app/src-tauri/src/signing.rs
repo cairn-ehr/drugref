@@ -60,6 +60,8 @@ struct PendingSignature {
 pub struct SigningClient {
     vault_directory: PathBuf,
     pending: Mutex<Option<PendingSignature>>,
+    /// The acknowledgement batch previewed and not yet confirmed (#284).
+    pub(crate) pending_acks: Mutex<Option<crate::ack_signing::PendingAckBatch>>,
 }
 
 impl SigningClient {
@@ -68,6 +70,7 @@ impl SigningClient {
         Self {
             vault_directory,
             pending: Mutex::new(None),
+            pending_acks: Mutex::new(None),
         }
     }
 
@@ -75,6 +78,10 @@ impl SigningClient {
     pub fn clear_pending(&self) -> Result<(), String> {
         *self
             .pending
+            .lock()
+            .map_err(|_| "native signing preview store is unavailable".to_string())? = None;
+        *self
+            .pending_acks
             .lock()
             .map_err(|_| "native signing preview store is unavailable".to_string())? = None;
         Ok(())
@@ -373,24 +380,14 @@ pub async fn complete_review_signature(
             .ok_or_else(|| "prepare this exact signature again before confirming it".to_string())?;
         (clone_challenge(&pending.challenge), pending.payload.clone())
     };
-    let paths = signing.paths(reviewer.reviewer_uuid);
-    if !paths.snapshot.exists() {
-        return Err("this reviewer has no local signing vault on this device".into());
-    }
-    let vault = OpenVault::open(&paths, &passphrase)?;
-    let client = vault.client(false)?;
-    let public_key = public_key(&client)?;
-    if encode_hex(&Sha256::digest(&public_key)) != query.key_fingerprint {
-        return Err("the local signing key does not match the confirmed enrolment".into());
-    }
-    let signature = execute(
-        &client,
-        StrongholdProcedure::Ed25519Sign(Ed25519Sign {
-            private_key: private_key_location(),
-            msg: payload,
-        }),
-        "sign the confirmed review payload",
-    )?;
+    let signature = sign_locally(
+        &signing,
+        reviewer.reviewer_uuid,
+        &passphrase,
+        &query.key_fingerprint,
+        &[payload],
+    )?
+    .remove(0);
     let input = SubmitReviewSignatureRequest {
         query,
         signed_at: challenge.signed_at,
@@ -407,6 +404,41 @@ pub async fn complete_review_signature(
     .await?;
     signing.clear_pending()?;
     Ok(record)
+}
+
+/// Unlock the reviewer's vault once and sign each confirmed payload with its key,
+/// refusing when the vault's key is not the confirmed enrolment. The private key
+/// never leaves Stronghold; only signatures come back.
+pub(crate) fn sign_locally(
+    signing: &SigningClient,
+    reviewer_uuid: Uuid,
+    passphrase: &str,
+    key_fingerprint: &str,
+    payloads: &[Vec<u8>],
+) -> Result<Vec<Vec<u8>>, String> {
+    let paths = signing.paths(reviewer_uuid);
+    if !paths.snapshot.exists() {
+        return Err("this reviewer has no local signing vault on this device".into());
+    }
+    let vault = OpenVault::open(&paths, passphrase)?;
+    let client = vault.client(false)?;
+    let public_key = public_key(&client)?;
+    if encode_hex(&Sha256::digest(&public_key)) != key_fingerprint {
+        return Err("the local signing key does not match the confirmed enrolment".into());
+    }
+    payloads
+        .iter()
+        .map(|payload| {
+            execute(
+                &client,
+                StrongholdProcedure::Ed25519Sign(Ed25519Sign {
+                    private_key: private_key_location(),
+                    msg: payload.clone(),
+                }),
+                "sign the confirmed review payload",
+            )
+        })
+        .collect()
 }
 
 /// Recreate a challenge without adding Clone to the public contract unnecessarily.
@@ -574,7 +606,7 @@ fn remove_file_if_present(path: &Path, label: &str) -> Result<(), String> {
 }
 
 /// Encode bytes as canonical lowercase hexadecimal without exposing private bytes.
-fn encode_hex(bytes: &[u8]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

@@ -381,7 +381,8 @@ def register(commands) -> None:
     sign = commands.add_parser(
         "sign", help="sign one curated row with a local private key file")
     sign.add_argument("--target-kind", required=True,
-                      help="curated_interaction or curated_condition")
+                      help="a drugref.signature_target_kind, e.g. "
+                           "curated_interaction or graded_pair_departure_ack")
     sign.add_argument("--target-id", required=True, type=int)
     sign.add_argument("--key", required=True,
                       help="path to a raw 32-byte Ed25519 PRIVATE key file")

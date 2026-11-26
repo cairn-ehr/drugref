@@ -104,7 +104,8 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), AppError> {
          AND to_regclass('drugref.signing_key') IS NOT NULL \
          AND to_regclass('drugref.assertion_signature') IS NOT NULL \
          AND to_regclass('drugref.reviewer_key_enrolment') IS NOT NULL \
-         AND to_regprocedure('drugref.acknowledge_departure(text, bigint, uuid, text, text, text, text)') IS NOT NULL",
+         AND to_regprocedure('drugref.acknowledge_departure(text, bigint, uuid, text, text, text, text)') IS NOT NULL \
+         AND to_regclass('drugref.departure_ack_signature') IS NOT NULL",
     )
     .fetch_one(pool)
     .await?;

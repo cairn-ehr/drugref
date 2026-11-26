@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 mod accounts;
+mod ack_signing;
 mod decisions;
 mod departures;
 mod records;
@@ -15,6 +16,12 @@ pub use accounts::{
     AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, LoginRequest,
     ReviewerAccount, ReviewerRole, RotateReviewerPasswordRequest, SessionGrant,
     UpdateReviewerProfileRequest,
+};
+pub use ack_signing::{
+    AckSignature, AckSignatureChallenges, AckSignaturePreview, AckSignaturePreviewItem,
+    AckSignatureQuery, AckSignatureResult, SubmitAckSignaturesRequest, UnsignedDepartureAck,
+    DEPARTURE_ACK_TARGET_KIND, DEPARTURE_ACK_V1_CONTEXT, GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS,
+    MAXIMUM_ACK_SIGNATURE_BATCH,
 };
 pub use decisions::{
     CreateReviewDecisionRequest, EvidenceGrade, ReviewDecision, ReviewDecisionRecord,

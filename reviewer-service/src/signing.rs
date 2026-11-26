@@ -408,24 +408,10 @@ pub async fn submit(
     input: &SubmitReviewSignatureRequest,
     reviewer_uuid: Uuid,
 ) -> Result<ReviewDecisionRecord, AppError> {
-    let parsed = DateTime::parse_from_rfc3339(&input.signed_at)
-        .map_err(|_| AppError::bad_request("signedAt must be an RFC 3339 instant"))?
-        .with_timezone(&Utc);
-    if format_timestamp(parsed) != input.signed_at {
-        return Err(AppError::bad_request(
-            "signedAt must use canonical UTC microsecond precision",
-        ));
-    }
+    let parsed = parse_signed_at(&input.signed_at)?;
     let mut transaction = pool.begin().await?;
     decision_targets::lock_target(&mut transaction, &input.query.target_key).await?;
-    let now = Utc::now();
-    if parsed < now - Duration::minutes(MAXIMUM_CHALLENGE_AGE_MINUTES)
-        || parsed > now + Duration::seconds(MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS)
-    {
-        return Err(AppError::conflict(
-            "the signing challenge expired; prepare the current revision again",
-        ));
-    }
+    ensure_fresh(parsed, "the current revision")?;
     let public_key = ensure_active_enrolment(
         &mut transaction,
         reviewer_uuid,
@@ -441,18 +427,39 @@ pub async fn submit(
     let payload = challenge
         .canonical_payload()
         .map_err(|error| AppError::internal(error.0))?;
-    let signature_bytes = decode_hex(&input.signature_hex)?;
-    let public_key: [u8; 32] = public_key
-        .try_into()
-        .map_err(|_| AppError::internal("registered Ed25519 public key has invalid length"))?;
-    let verifying_key = VerifyingKey::from_bytes(&public_key)
-        .map_err(|_| AppError::internal("registered Ed25519 public key is invalid"))?;
-    let signature = Signature::from_slice(&signature_bytes)
-        .map_err(|_| AppError::bad_request("signatureHex has invalid Ed25519 length"))?;
-    verifying_key
-        .verify_strict(&payload, &signature)
-        .map_err(|_| AppError::bad_request("detached signature does not verify"))?;
+    let signature_bytes = verify_detached(&public_key, &payload, &input.signature_hex)?;
 
+    insert_signature(
+        &mut transaction,
+        &challenge,
+        &payload,
+        &input.query.key_fingerprint,
+        signature_bytes,
+        parsed,
+    )
+    .await?;
+    transaction.commit().await?;
+
+    decisions::load(
+        pool,
+        &ReviewRecordQuery {
+            kind: input.query.kind,
+            target_key: input.query.target_key.clone(),
+        },
+    )
+    .await
+}
+
+/// Record one verified detached signature over a challenge's exact payload. A second
+/// copy of the same attestation is a conflict, not an error.
+pub(crate) async fn insert_signature(
+    connection: &mut PgConnection,
+    challenge: &ReviewSignatureChallenge,
+    payload: &[u8],
+    key_fingerprint: &str,
+    signature_bytes: Vec<u8>,
+    signed_at: DateTime<Utc>,
+) -> Result<(), AppError> {
     let result = sqlx::query(
         "INSERT INTO drugref.assertion_signature \
          (target_kind, target_id, payload_context, payload_digest, key_fingerprint, \
@@ -461,12 +468,12 @@ pub async fn submit(
     .bind(&challenge.target_kind)
     .bind(challenge.target_id)
     .bind(&challenge.payload_context)
-    .bind(Sha256::digest(&payload).as_slice())
-    .bind(&input.query.key_fingerprint)
+    .bind(Sha256::digest(payload).as_slice())
+    .bind(key_fingerprint)
     .bind(ED25519_ALGORITHM)
     .bind(signature_bytes)
-    .bind(parsed)
-    .execute(&mut *transaction)
+    .bind(signed_at)
+    .execute(connection)
     .await;
     if let Err(error) = result {
         if error
@@ -481,16 +488,54 @@ pub async fn submit(
         }
         return Err(error.into());
     }
-    transaction.commit().await?;
+    Ok(())
+}
 
-    decisions::load(
-        pool,
-        &ReviewRecordQuery {
-            kind: input.query.kind,
-            target_key: input.query.target_key.clone(),
-        },
-    )
-    .await
+/// Parse a client-echoed signing instant, accepting only the canonical spelling.
+pub(crate) fn parse_signed_at(value: &str) -> Result<DateTime<Utc>, AppError> {
+    let parsed = DateTime::parse_from_rfc3339(value)
+        .map_err(|_| AppError::bad_request("signedAt must be an RFC 3339 instant"))?
+        .with_timezone(&Utc);
+    if format_timestamp(parsed) != value {
+        return Err(AppError::bad_request(
+            "signedAt must use canonical UTC microsecond precision",
+        ));
+    }
+    Ok(parsed)
+}
+
+/// Refuse a challenge older than the confirmation window or issued in the future.
+pub(crate) fn ensure_fresh(signed_at: DateTime<Utc>, what: &str) -> Result<(), AppError> {
+    let now = Utc::now();
+    if signed_at < now - Duration::minutes(MAXIMUM_CHALLENGE_AGE_MINUTES)
+        || signed_at > now + Duration::seconds(MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS)
+    {
+        return Err(AppError::conflict(format!(
+            "the signing challenge expired; prepare {what} again"
+        )));
+    }
+    Ok(())
+}
+
+/// Verify one detached Ed25519 signature over `payload` against a registered public
+/// key, returning the decoded signature bytes to record.
+pub(crate) fn verify_detached(
+    public_key: &[u8],
+    payload: &[u8],
+    signature_hex: &str,
+) -> Result<Vec<u8>, AppError> {
+    let signature_bytes = decode_hex(signature_hex)?;
+    let public_key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| AppError::internal("registered Ed25519 public key has invalid length"))?;
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|_| AppError::internal("registered Ed25519 public key is invalid"))?;
+    let signature = Signature::from_slice(&signature_bytes)
+        .map_err(|_| AppError::bad_request("signatureHex has invalid Ed25519 length"))?;
+    verifying_key
+        .verify_strict(payload, &signature)
+        .map_err(|_| AppError::bad_request("detached signature does not verify"))?;
+    Ok(signature_bytes)
 }
 
 /// Rebuild a challenge for one exact current row and signing instant.
@@ -648,7 +693,7 @@ async fn condition_fields(
 }
 
 /// Pair one frozen list with its equally-sized rendered value vector.
-fn named_fields<const N: usize>(
+pub(crate) fn named_fields<const N: usize>(
     names: &[&str; N],
     values: Vec<Option<String>>,
 ) -> Vec<CanonicalField> {
@@ -663,7 +708,7 @@ fn named_fields<const N: usize>(
 }
 
 /// Resolve an active enrolled key and return its public bytes for verification.
-async fn ensure_active_enrolment(
+pub(crate) async fn ensure_active_enrolment(
     connection: &mut PgConnection,
     reviewer_uuid: Uuid,
     fingerprint: &str,
@@ -685,12 +730,12 @@ async fn ensure_active_enrolment(
 }
 
 /// Render a PostgreSQL-compatible timestamp with exactly six UTC fractional digits.
-fn format_timestamp(value: DateTime<Utc>) -> String {
+pub(crate) fn format_timestamp(value: DateTime<Utc>) -> String {
     value.to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 /// Decode validated lowercase hexadecimal without accepting alternate spellings.
-fn decode_hex(value: &str) -> Result<Vec<u8>, AppError> {
+pub(crate) fn decode_hex(value: &str) -> Result<Vec<u8>, AppError> {
     if !value.len().is_multiple_of(2) {
         return Err(AppError::bad_request("hexadecimal value has odd length"));
     }
@@ -719,7 +764,7 @@ fn hex_nibble(value: u8) -> Result<u8, AppError> {
 }
 
 /// Encode bytes as the registry's canonical lowercase hexadecimal.
-fn encode_hex(bytes: &[u8]) -> String {
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

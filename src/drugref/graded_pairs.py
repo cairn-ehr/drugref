@@ -217,3 +217,18 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
             raise
         raise refusal(error.diag.message_primary) from error
     return frozenset((s, p) for s, p, _against in rows)
+
+
+# db/088 (#284): the view `drugref audit departures` and the reviewer service read,
+# so "unsigned" means one thing in both. Its target kind in signature_target_kind.
+ACK_SIGNATURE_VIEW = "drugref.departure_ack_signature"
+ACK_TARGET_KIND = "graded_pair_departure_ack"
+
+
+def ack_signature_statuses(conn: psycopg.Connection) -> list[tuple[int, str]]:
+    """(ack_id, registry signature status) for every acknowledgement, oldest
+    first. The status is curated_signature_status' vocabulary plus `unsigned`;
+    anything but `signed` still needs a signature by a key the registry trusts.
+    Registry policy, not cryptography: `drugref verify` checks the mathematics."""
+    return [(r[0], r[1]) for r in conn.execute(
+        f"SELECT ack_id, signature_status FROM {ACK_SIGNATURE_VIEW} ORDER BY ack_id")]

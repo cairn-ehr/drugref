@@ -147,12 +147,36 @@ def test_every_curated_catalog_kind_is_covered_by_a_release(conn):
     Derived from the catalog, so the catalog is what raises the alarm. `release_manifest`
     is excluded because a release cannot enumerate itself -- stated as a subtraction
     rather than a second literal list, so adding a fourth kind cannot satisfy it by
-    accident."""
+    accident. `graded_pair_departure_ack` (db/088) is excluded by OWNER RULING
+    (2026-11-26, #284): a release attests to the rulings consumers read, and an ack
+    changes only what reviewers are shown; each ack is signed by its curator instead."""
     from drugref import releases
 
     catalog_kinds = {row[0] for row in conn.execute(
         "SELECT target_kind FROM drugref.signature_target_kind").fetchall()}
-    assert catalog_kinds - {"release_manifest"} == set(releases._CURATED_KINDS)
+    assert catalog_kinds - {"release_manifest", "graded_pair_departure_ack"} == set(
+        releases._CURATED_KINDS)
+
+
+def test_the_ack_field_list_accounts_for_every_column(conn):
+    """db/088's alarm, the ack's own shape of the test above it. The target is a VIEW,
+    so three things must hold: the view's columns are the signed fields plus `ack_id`
+    (the target id); every ack-table column is signed except its two ids; and every
+    observation column is signed except the three a database writes for itself
+    (`observation_id`, renumbered by a replay; `captured` and `first_seen_at`, written
+    by whichever database ran the refresh). A new column on either table fails here,
+    forcing a deliberate `/v2` or a stated exclusion."""
+    def columns(table):
+        return {row[0] for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'drugref' AND table_name = %s", (table,)).fetchall()}
+
+    signed = (set(signing_contexts.GRADED_PAIR_DEPARTURE_ACK_V1)
+              - set(signing_contexts.ATTESTATION_FIELDS))
+    assert columns("graded_pair_departure_ack_payload") == signed | {"ack_id"}
+    assert columns("graded_pair_departure_ack") - {"ack_id", "observation_id"} <= signed
+    assert columns("graded_pair_observation") - {
+        "observation_id", "captured", "first_seen_at"} <= signed
 
 
 def test_every_frozen_context_names_its_own_target_kind(conn):

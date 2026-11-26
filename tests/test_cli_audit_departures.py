@@ -69,3 +69,52 @@ def test_an_orphan_is_counted_and_exits_3(conn, ingest_run_id, capsys):
     out = capsys.readouterr().out
     assert "open departures: 0 ruling(s), 0 pair(s)" in out
     assert "orphaned rulings: 1" in out and "drugref status" in out
+
+
+# ---- db/088 (#284): acknowledgement signature status -------------------------
+
+
+def _ack_id(conn):
+    return conn.execute(f"SELECT max(ack_id) FROM {graded_pairs.ACK_TABLE}").fetchone()[0]
+
+
+def test_no_acknowledgements_reads_zero(conn, capsys):
+    cli_departures.handle_audit_departures(conn, None)
+    assert "acknowledgements: 0" in capsys.readouterr().out
+
+
+def test_an_unsigned_ack_is_named_with_the_command_that_signs_it(
+        conn, ingest_run_id, capsys):
+    """Unsigned is a provenance gap, not a missing departure: named, exit unchanged."""
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 6)
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+
+    assert cli_departures.handle_audit_departures(conn, None) == 0
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (unsigned 1)" in out
+    assert f"not signed by a trusted key: ack {_ack_id(conn)}" in out
+    assert "drugref sign --target-kind graded_pair_departure_ack" in out
+
+
+def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
+    import datetime as dt
+
+    from drugref import keys, signatures, signing
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 7)
+    graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
+    kp = signing.generate_keypair()
+    fp = signing.fingerprint(kp.public_key)
+    keys.register(conn, public_key=kp.public_key, holder="dr t", registered_by="op")
+    at = dt.datetime(2026, 11, 26, tzinfo=dt.timezone.utc)
+    context, payload = signatures.payload_for(
+        conn, "graded_pair_departure_ack", _ack_id(conn), key_fingerprint=fp,
+        signed_at=at)
+    signatures.record(conn, target_kind="graded_pair_departure_ack",
+                      target_id=_ack_id(conn), payload_context=context,
+                      payload=payload, key_fingerprint=fp,
+                      signature=signing.sign(kp.private_key, payload), signed_at=at)
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "acknowledgements: 1 (signed 1)" in out
+    assert "not signed" not in out

@@ -1507,8 +1507,11 @@ key ever graded is recorded, both grains, and a departure banners until a curato
 (`db/086`): the ledger's writers share one lock, so racing commits cannot lose an episode. **#289 fixed
 2026-11-26**: `acknowledge` waits at most 30 s for that lock, then names who holds it. **#283 fixed 2026-11-26**
 (`db/087`): reviewers acknowledge from the GUI too; the departure rules are SQL functions both callers share.
-**Open follow-ups:** #284 (sign acknowledgements), #292 (owner rulings: acknowledging a non-leaver; partial
-class-grain provenance), #293 (class-grain live test, router auth tests, lib.rs size), #285 (policy writes and
+**#284 fixed 2026-11-26** (`db/088`): acknowledgements are signed by curators (CLI, or a GUI batch), and
+`drugref audit departures` names unsigned ones; by owner ruling they are not part of a signed release.
+**Open follow-ups:** #292 (owner rulings: acknowledging a non-leaver; partial
+class-grain provenance), #293 (class-grain live test, router auth tests; its lib.rs item is done), #295 (the
+reviewer app's native `signing.rs` size), #285 (policy writes and
 ingest finishes still run the ~5 s full refresh; rulings are per key since db/084), #275 (the question bookkeeping
 and accumulation tables, once they have a writer), #260 (diff-based membership tracking, only if archive disk use
 grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift ignores sources the

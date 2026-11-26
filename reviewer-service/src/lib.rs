@@ -4,6 +4,7 @@
 //! the GUI receives only typed projections and never connects to the database directly.
 #![deny(missing_docs)]
 
+mod ack_signing;
 mod administration;
 mod auth;
 mod decision_targets;
@@ -20,6 +21,7 @@ mod live_queue_seed;
 mod queue;
 mod records;
 mod signing;
+mod signing_routes;
 mod store;
 mod trust;
 
@@ -32,14 +34,10 @@ use axum::{
     Json, Router,
 };
 use reviewer_domain::{
-    validate_signing_key_fingerprint, AccountAdministrationResult, AdministerSigningKeyRequest,
-    BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest, CreateEvidenceReferenceRequest,
-    CreateReviewDecisionRequest, EnrolSigningKeyRequest, EvidenceReference, LoginRequest,
-    PendingReviewSignature, ReplaceSigningKeyRequest, ReviewAnnotation, ReviewDecisionRecord,
-    ReviewQueuePage, ReviewQueueQuery, ReviewRecord, ReviewRecordQuery, ReviewSignatureChallenge,
-    ReviewSignatureQuery, ReviewerAccount, ReviewerRole, RotateReviewerPasswordRequest,
-    SessionGrant, SigningKeyAdministrationResult, SigningKeyReplacement, SigningKeyStatus,
-    SigningKeySummary, SigningKeyTrustStatus, SubmitReviewSignatureRequest,
+    AccountAdministrationResult, BootstrapStatus, CreateAccountRequest, CreateAnnotationRequest,
+    CreateEvidenceReferenceRequest, CreateReviewDecisionRequest, EvidenceReference, LoginRequest,
+    ReviewAnnotation, ReviewDecisionRecord, ReviewQueuePage, ReviewQueueQuery, ReviewRecord,
+    ReviewRecordQuery, ReviewerAccount, ReviewerRole, RotateReviewerPasswordRequest, SessionGrant,
     UpdateReviewerProfileRequest,
 };
 use sqlx::PgPool;
@@ -92,20 +90,36 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/signing-keys/current",
-            get(signing_keys)
-                .post(enrol_signing_key)
-                .delete(replace_signing_key),
+            get(signing_routes::signing_keys)
+                .post(signing_routes::enrol_signing_key)
+                .delete(signing_routes::replace_signing_key),
         )
-        .route("/v1/signing-keys", get(signing_key_trust))
+        .route("/v1/signing-keys", get(signing_routes::signing_key_trust))
         .route(
             "/v1/signing-keys/{key_fingerprint}/status",
-            put(administer_signing_key),
+            put(signing_routes::administer_signing_key),
         )
         .route(
             "/v1/review-signature",
-            get(review_signature_challenge).post(submit_review_signature),
+            get(signing_routes::review_signature_challenge)
+                .post(signing_routes::submit_review_signature),
         )
-        .route("/v1/pending-signatures", get(pending_signatures))
+        .route(
+            "/v1/pending-signatures",
+            get(signing_routes::pending_signatures),
+        )
+        .route(
+            "/v1/departure-acks/unsigned",
+            get(ack_signing::unsigned_handler),
+        )
+        .route(
+            "/v1/departure-ack-signatures/challenges",
+            post(ack_signing::challenges_handler),
+        )
+        .route(
+            "/v1/departure-ack-signatures",
+            post(ack_signing::submit_handler),
+        )
         .route("/v1/users", get(list_users).post(create_user))
         .route(
             "/v1/users/{reviewer_uuid}/profile",
@@ -374,129 +388,6 @@ async fn create_evidence_reference(
     Ok((StatusCode::CREATED, Json(reference)))
 }
 
-/// Return signing keys enrolled to the current authenticated reviewer.
-async fn signing_keys(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<SigningKeyStatus>, AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    Ok(Json(
-        signing::list_keys(&state.pool, authenticated.reviewer.reviewer_uuid).await?,
-    ))
-}
-
-/// Return every current public key and its trust impact to an administrator.
-async fn signing_key_trust(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<SigningKeyTrustStatus>, AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    require_admin(&authenticated.reviewer)?;
-    Ok(Json(trust::list(&state.pool).await?))
-}
-
-/// Append an administrator-confirmed retired or compromised key correction.
-async fn administer_signing_key(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(key_fingerprint): Path<String>,
-    Json(input): Json<AdministerSigningKeyRequest>,
-) -> Result<Json<SigningKeyAdministrationResult>, AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    require_admin(&authenticated.reviewer)?;
-    validate_signing_key_fingerprint(&key_fingerprint)
-        .map_err(|error| AppError::bad_request(error.0))?;
-    Ok(Json(
-        trust::administer(
-            &state.pool,
-            &key_fingerprint,
-            input.status,
-            authenticated.reviewer.reviewer_uuid,
-            &authenticated.reviewer.full_name,
-        )
-        .await?,
-    ))
-}
-
-/// Return live curated revisions whose detached sign-off can be resumed.
-async fn pending_signatures(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<PendingReviewSignature>>, AppError> {
-    authenticate_headers(&state, &headers).await?;
-    Ok(Json(signing::pending(&state.pool).await?))
-}
-
-/// Register and enrol one public key generated by the authenticated native device.
-async fn enrol_signing_key(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<EnrolSigningKeyRequest>,
-) -> Result<(StatusCode, Json<SigningKeySummary>), AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    let input = input
-        .validate()
-        .map_err(|error| AppError::bad_request(error.0))?;
-    let key = signing::enrol_key(
-        &state.pool,
-        &input,
-        authenticated.reviewer.reviewer_uuid,
-        &authenticated.reviewer.full_name,
-    )
-    .await?;
-    Ok((StatusCode::CREATED, Json(key)))
-}
-
-/// Retire one owned key, withdraw its enrolment, and preserve prior signatures.
-async fn replace_signing_key(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<ReplaceSigningKeyRequest>,
-) -> Result<Json<SigningKeyReplacement>, AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    let input = input
-        .validate()
-        .map_err(|error| AppError::bad_request(error.0))?;
-    Ok(Json(
-        signing::replace_key(
-            &state.pool,
-            &input.key_fingerprint,
-            authenticated.reviewer.reviewer_uuid,
-            &authenticated.reviewer.full_name,
-        )
-        .await?,
-    ))
-}
-
-/// Prepare one exact current curated-row payload for native confirmation.
-async fn review_signature_challenge(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<ReviewSignatureQuery>,
-) -> Result<Json<ReviewSignatureChallenge>, AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    let query = query
-        .validate()
-        .map_err(|error| AppError::bad_request(error.0))?;
-    Ok(Json(
-        signing::challenge(&state.pool, &query, authenticated.reviewer.reviewer_uuid).await?,
-    ))
-}
-
-/// Independently re-derive, verify, and record a native detached signature.
-async fn submit_review_signature(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<SubmitReviewSignatureRequest>,
-) -> Result<(StatusCode, Json<ReviewDecisionRecord>), AppError> {
-    let authenticated = authenticate_headers(&state, &headers).await?;
-    let input = input
-        .validate()
-        .map_err(|error| AppError::bad_request(error.0))?;
-    let record = signing::submit(&state.pool, &input, authenticated.reviewer.reviewer_uuid).await?;
-    Ok((StatusCode::CREATED, Json(record)))
-}
-
 /// Append a revocation for the current authenticated session.
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
     let authenticated = authenticate_headers(&state, &headers).await?;
@@ -510,7 +401,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Sta
 }
 
 /// Authenticate the bearer token from an HTTP header against a live session.
-async fn authenticate_headers(
+pub(crate) async fn authenticate_headers(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<store::Authenticated, AppError> {
@@ -524,7 +415,7 @@ async fn authenticate_headers(
 }
 
 /// Reject an authenticated reviewer whose current role is not administrator.
-fn require_admin(reviewer: &ReviewerAccount) -> Result<(), AppError> {
+pub(crate) fn require_admin(reviewer: &ReviewerAccount) -> Result<(), AppError> {
     if reviewer.role != ReviewerRole::Administrator {
         return Err(AppError::forbidden());
     }

@@ -48,6 +48,9 @@ export const CLINICAL_PROSE_MAX_LENGTH = 20_000;
 /** Maximum characters in a departure acknowledgement's rationale (reviewer-domain). */
 export const DEPARTURE_RATIONALE_MAX_LENGTH = 10_000;
 
+/** Most acknowledgements one signing batch may cover (reviewer-domain, #284). */
+export const ACK_SIGNATURE_BATCH_MAX = 100;
+
 /** Minimum length of the distinct local signing-vault passphrase. */
 export const SIGNING_PASSPHRASE_MIN_LENGTH = 12;
 
