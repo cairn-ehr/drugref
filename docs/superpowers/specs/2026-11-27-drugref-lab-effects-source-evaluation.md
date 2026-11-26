@@ -2,9 +2,9 @@
 
 **Date:** 2026-11-27 · **Issue:** [#294](https://github.com/cairn-ehr/drugref/issues/294) (requested by
 ReportTriage) · **Status:** source evaluation, step 1 of 4. The model, read view and gap view are the next
-document; nothing is ingested yet. **Measured with:** `tools/lab_effect_survey.py` (openFDA export of
-2026-08-22, 14 partitions, SHA-256s in the mining record §2) and the `drugref_allergy` database (MED-RT
-2026.07.06, MeSH 2026).
+document; nothing is ingested yet. **Measured with:** `tools/lab_effect_survey.py` (openFDA export of 2026-08-22,
+14 partitions, SHA-256s in the [mining record §2](2026-08-24-drugref-slice-5c3-spl-mining-measurement.md)) and the
+`drugref_allergy` database (MED-RT 2026.07.06, MeSH 2026).
 
 ## 1. The question, and the owner's rulings so far
 
@@ -86,41 +86,54 @@ found.** The content has to be extracted (labels) or curated.
 substance: **32,998 labels, 1,931 substances**. A combination label is skipped, because its warning cannot be
 attributed to one ingredient. For each substance and effect it keeps the **strongest** section that mentions
 the effect, in the order boxed warning > warnings and cautions > warnings > precautions > laboratory tests >
-drug interactions > adverse reactions.
+drug interactions > adverse reactions > adverse reactions table.
 
 **These are mention counts, an upper bound.** "Do not use in patients with hyperkalemia" mentions the effect
-without saying the drug causes it. A statement-level reader will find fewer.
+without saying the drug causes it. A statement-level reader will find fewer. The patterns read potassium as a
+measured analyte (serum, plasma or blood potassium, or a potassium level), so a potassium salt in a product name
+is not counted; "creatinine clearance" dosing text and "platelet aggregation" are excluded the same way (each
+pinned in `tests/test_lab_effect_survey.py`).
+
+**The population is the openFDA-keyed subset, not every US prescription label.** Of the 262,032 records, 175,458
+have no `openfda` block, so the survey cannot tell their product type or substance and skips them (36,375 of them
+carry a boxed warning or a warnings and cautions section); a further 49,577 are not prescription labels, 3,340 are
+combinations and 659 name no substance. The tool counts each reason. Resolving the unkeyed labels through
+DailyMed, as the ingest does, is [#301](https://github.com/cairn-ehr/drugref/issues/301). The two misses below
+were checked against the unkeyed labels by product-name prefix, and both hold.
 
 **Test set (the 10 rows in #294, expanded to 68 drug × effect checks with common class members):** 66 are
 found in the label, 63 of them in a boxed warning or a warnings or precautions section. The two misses are
 structural, not signal failures:
 
-- **aspirin**: no single-substance prescription label (US aspirin is OTC);
+- **aspirin**: no single-substance prescription label (US aspirin is OTC). The unkeyed aspirin labels in
+  prescription format are all combinations (with dipyridamole, omeprazole, or caffeine and dihydrocodeine);
 - **trimethoprim and the INR**: the warfarin warning sits on the sulfamethoxazole/trimethoprim combination
-  label, which the survey skips. Combination labels need an attribution rule (§5).
+  label, which the survey skips. The unkeyed single-substance trimethoprim labels do not mention the INR either.
+  Combination labels need an attribution rule (§5).
 
-Weak spots: trimethoprim and creatinine is found only in adverse reactions. naproxen and creatinine, and
-furosemide and creatinine, reach only precautions. The azoles and metronidazole state the INR effect in
-precautions or drug interactions, which is the right place for an interaction seen through a laboratory value.
-Carbimazole is not US-marketed, so methimazole stood in.
+Weak spots: trimethoprim and creatinine is found only in adverse reactions. naproxen and creatinine, furosemide
+and creatinine, and trimethoprim and potassium reach only precautions. Amiodarone, the azoles and metronidazole
+state the INR effect in precautions or drug interactions, which is the right place for an interaction seen through
+a laboratory value. Carbimazole is not US-marketed, so methimazole stood in.
 
 **Over-inclusion, and what the grade does about it** (substances, of 1,931, with any mention, and with a
 mention in the boxed warning or a warnings section):
 
 | Effect | Any mention | Boxed or warnings | Boxed only |
 |---|---:|---:|---:|
-| potassium high | 288 | 76 | 5 |
-| potassium low | 460 | 183 | 9 |
+| potassium high | 223 | 76 | 5 |
+| potassium low | 403 | 179 | 9 |
 | sodium low | 283 | 82 | 2 |
-| creatinine high | 584 | 222 | 22 |
+| creatinine high | 571 | 215 | 22 |
 | bleeding | 852 | 411 | 68 |
 | INR high | 297 | 80 | 3 |
 | neutrophils low | 618 | 241 | 16 |
-| platelets low | 731 | 244 | 14 |
+| platelets low | 746 | 245 | 14 |
 
-The grade cuts each list to between a quarter and a half. **It does not make a salient list on its own**: 244
-substances name thrombocytopenia in a warnings section. This is the expected cost of ruling A. Ruling B (curated
-salience) is what closes it, and the read view must carry the grade so the consumer can filter meanwhile.
+The grade cuts each list to between a quarter and a half. **It does not make a salient list on its own**: 245
+substances mention low platelets in a boxed warning or warnings section. This is the expected cost of ruling A.
+Ruling B (curated salience) is what closes it, and the read view must carry the grade so the consumer can filter
+meanwhile.
 
 **The interference section** (`drug_and_or_laboratory_test_interactions`) is present for only **161
 substances**. In an evenly spaced sample of 41:
