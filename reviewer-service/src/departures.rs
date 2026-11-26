@@ -70,11 +70,15 @@ impl TryFrom<DepartureRow> for GradedPairDeparture {
 
     /// Parse database vocabularies and count what each leaver's acknowledgement closes.
     fn try_from(row: DepartureRow) -> Result<Self, Self::Error> {
-        let pairs: Vec<(Uuid, Uuid)> = row
+        // The arrays hold one entry per open episode, and a pair can have two; count
+        // distinct pairs, as the acknowledgement's result and the CLI do.
+        let mut pairs: Vec<(Uuid, Uuid)> = row
             .subject_moieties
             .into_iter()
             .zip(row.partner_moieties)
             .collect();
+        pairs.sort_unstable();
+        pairs.dedup();
         let leavers = closes_per_leaver(&pairs, &row.leaver_uuids)
             .into_iter()
             .zip(row.leaver_names)
@@ -136,23 +140,32 @@ pub async fn acknowledge(
     .fetch_all(&mut *transaction)
     .await
     .map_err(|error| {
-        refusal(error.as_database_error().and_then(|d| d.code()).as_deref())
-            .unwrap_or_else(|| error.into())
+        let sqlstate = error.as_database_error().and_then(|d| d.code());
+        match refusal(sqlstate.as_deref()) {
+            Some(refused) => {
+                // The detail (LG003 names the lock holder) is for operators only.
+                tracing::warn!(?sqlstate, %error, "departure acknowledgement refused");
+                refused
+            }
+            None => error.into(),
+        }
     })?;
+    // LG002 guarantees at least one row; an empty result is a broken invariant.
+    let Some((_, _, reviewed_against)) = rows.first().cloned() else {
+        return Err(AppError::internal(
+            "acknowledge_departure returned no rows without raising LG002",
+        ));
+    };
     transaction.commit().await?;
     Ok(DepartureAcknowledgement {
         closed_pairs: u32::try_from(rows.len()).unwrap_or(u32::MAX),
-        reviewed_against: rows
-            .into_iter()
-            .next()
-            .map(|(_, _, against)| against)
-            .unwrap_or_default(),
+        reviewed_against,
     })
 }
 
 /// The client-safe response for each of db/087's refusals; `None` for any other
-/// SQLSTATE. The LG003 detail names database backends and roles, so it is logged by
-/// PostgreSQL's own message, not shown to a reviewer.
+/// SQLSTATE. The detail (LG003 names database backends and roles) goes to the
+/// service log, never to a reviewer.
 fn refusal(sqlstate: Option<&str>) -> Option<AppError> {
     match sqlstate? {
         "LG001" => Some(AppError::not_found("no ruling has that id")),
@@ -199,8 +212,41 @@ mod tests {
     use axum::http::StatusCode;
     use reviewer_domain::{AcknowledgeDepartureRequest, RuleGrain};
 
-    use super::{acknowledge, list, refusal};
+    use chrono::Utc;
+    use reviewer_domain::GradedPairDeparture;
+    use uuid::Uuid;
+
+    use super::{acknowledge, list, refusal, DepartureRow};
     use crate::live_graded_seed::{live_pool, seed_gui_moiety_ruling};
+
+    /// Two open episodes of one pair (`test_two_open_episodes_for_one_pair_are_both_
+    /// acknowledged`) come back from SQL as two array entries; the GUI must count the
+    /// pair once, as the acknowledgement's DISTINCT result and the CLI's frozenset do.
+    #[test]
+    fn duplicate_open_episodes_count_as_one_pair() {
+        let (x, p, q) = (Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3));
+        let row = DepartureRow {
+            rule_grain: "moiety_rule".into(),
+            ruling_id: 7,
+            subject_key: x,
+            subject_name: Some("X".into()),
+            object_class_uuid: Uuid::from_u128(9),
+            object_class_name: "C".into(),
+            relationship: "interacts".into(),
+            severity: "major".into(),
+            reviewed_by: "R".into(),
+            reviewed_against: "MED-RT 1".into(),
+            backfilled: false,
+            first_seen_at: Utc::now(),
+            subject_moieties: vec![x, x, x],
+            partner_moieties: vec![p, p, q],
+            leaver_uuids: vec![p],
+            leaver_names: vec!["P".into()],
+        };
+        let departure = GradedPairDeparture::try_from(row).expect("parses");
+        assert_eq!(departure.pair_count, 2);
+        assert_eq!(departure.leavers[0].closes, 1);
+    }
 
     #[test]
     fn each_ledger_refusal_has_its_own_status_and_others_pass_through() {

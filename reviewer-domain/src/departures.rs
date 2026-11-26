@@ -103,8 +103,11 @@ pub struct AcknowledgeDepartureRequest {
 }
 
 impl AcknowledgeDepartureRequest {
-    /// Require and trim the rationale before storage is accessed.
+    /// Require a positive ruling id and a trimmed rationale before storage is accessed.
     pub fn validate(mut self) -> Result<Self, ValidationError> {
+        if self.ruling_id <= 0 {
+            return Err(ValidationError("rulingId must be positive".into()));
+        }
         validate_text(
             "rationale",
             &self.rationale,
@@ -126,9 +129,10 @@ pub struct DepartureAcknowledgement {
     pub reviewed_against: String,
 }
 
-/// For each leaver, in the given order, how many `pairs` name it on either side:
-/// exactly what acknowledging that drug closes, because the list a reviewer sees
-/// is the unfiltered departure (db/087 closes every pair of the key with the drug).
+/// For each leaver, in the given order, how many `pairs` name it on either side.
+/// Given distinct pairs, that is exactly what acknowledging that drug closes,
+/// because the list a reviewer sees is the unfiltered departure (db/087 closes
+/// every pair of the key with the drug).
 pub fn closes_per_leaver(pairs: &[(Uuid, Uuid)], leavers: &[Uuid]) -> Vec<(Uuid, u32)> {
     leavers
         .iter()
@@ -160,6 +164,24 @@ mod tests {
     #[test]
     fn a_blank_rationale_is_refused() {
         assert!(request("   ").validate().is_err());
+    }
+
+    #[test]
+    fn a_non_positive_ruling_id_is_refused() {
+        for ruling_id in [0, -1] {
+            let input = AcknowledgeDepartureRequest {
+                ruling_id,
+                ..request("left on purpose")
+            };
+            assert!(input.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn an_unknown_grain_is_refused_on_the_wire() {
+        let body = r#"{"ruleGrain":"class","rulingId":7,
+            "moietyUuid":"00000000-0000-0000-0000-000000000000","rationale":"x"}"#;
+        assert!(serde_json::from_str::<AcknowledgeDepartureRequest>(body).is_err());
     }
 
     #[test]

@@ -98,7 +98,8 @@ class UnknownRuling(LookupError):
 
 
 class LedgerBusy(RuntimeError):
-    """`acknowledge` waited ACK_LOCK_TIMEOUT for the ledger lock (#289)."""
+    """`acknowledge` waited ACK_LOCK_TIMEOUT (None = db/087's 30 s) for the ledger
+    lock (#289)."""
 
 
 class NothingDeparted(ValueError):
@@ -130,13 +131,15 @@ def _ruling_key(conn: psycopg.Connection, grain: str, ruling_id: int):
 
 def pairs_to_acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                          drug: uuid.UUID) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
-    """The UNFILTERED set `acknowledge` would close: every open, currently-departed
-    pair of the key of `ruling_id` (any version) in which `drug` is the subject or
-    partner moiety. Empty when nothing departed. Raises `UnknownRuling`.
+    """A read-only preview of the UNFILTERED set `acknowledge` would close: every
+    open, currently-departed pair of the key of `ruling_id` (any version) in which
+    `drug` is the subject or partner moiety. Empty when nothing departed. Raises
+    `UnknownRuling`.
 
-    "Currently departed" is exactly what `departed` reports, so this reuses it
-    (once per direction) instead of repeating its SQL. A banner shows only the pairs
-    its question asked about, so this can be larger than what the curator saw.
+    It mirrors db/087's `acknowledge_departure` selection over the same
+    `departed_graded_pairs` read (once per direction, filtered to the key); the
+    acknowledgement itself does not call it. A banner shows only the pairs its
+    question asked about, so this can be larger than what the curator saw.
     """
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
     return frozenset(
@@ -179,10 +182,11 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                 drug: uuid.UUID, *, rationale: str, reviewed_by: str,
                 reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
     """Ack every open, currently-departed episode of the key of `ruling_id` (any
-    version) in which `drug` is the subject or partner moiety; return the pairs
-    (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
-    included. The rule is db/087's `drugref.acknowledge_departure` (the reviewer
-    GUI calls it too); it takes db/086's ledger lock before reading (#287).
+    version) in which `drug` is the subject or partner moiety; return the distinct
+    pairs closed (the set `pairs_to_acknowledge` previews), closing EVERY open
+    episode of them, duplicates included. The rule is db/087's
+    `drugref.acknowledge_departure` (the reviewer GUI calls it too); it takes
+    db/086's ledger lock before reading (#287).
 
     Raises `UnknownRuling` / `NothingDeparted` (also when another curator's ack
     committed first: the lock makes this call wait for it, then see nothing
@@ -211,5 +215,5 @@ def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
         refusal = _ACK_REFUSALS.get(error.sqlstate or "")
         if refusal is None:
             raise
-        raise refusal(error.diag.message_primary) from None
+        raise refusal(error.diag.message_primary) from error
     return frozenset((s, p) for s, p, _against in rows)

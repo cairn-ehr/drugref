@@ -82,9 +82,40 @@ def test_reviewed_against_falls_back_to_the_class_sources_latest_run(
     assert _releases(conn, "moiety_rule", ruling) == f"{source} fallback-test"
 
 
-def test_a_null_reviewed_against_is_derived_after_the_lock(conn, ingest_run_id):
-    """The GUI passes NULL; the function derives it once it holds the ledger lock,
-    so the release recorded is the one the departure was read against."""
+def test_reviewed_against_joins_the_runs_of_both_classes(conn, ingest_run_id):
+    """Class grain: the subject and object classes can come from different runs;
+    each is named once, joined by ' / ' (sorted, as string_agg DISTINCT returns)."""
+    ruling, *_rest, b = _a_rule_x_left(conn, ingest_run_id, 16)
+    (other,) = conn.execute(
+        "INSERT INTO drugref.ingest_run (source, upstream_release, source_checksum, "
+        "writer, started_at) SELECT source, 'second-run', 'x', 'unattributed', now() "
+        "FROM drugref.ingest_run WHERE ingest_run_id = %s RETURNING ingest_run_id",
+        (ingest_run_id,)).fetchone()
+    conn.execute("UPDATE drugref.class_membership SET ingest_run = %s "
+                 "WHERE class_uuid = %s", (other, b))
+    expected = " / ".join(sorted({_release_of(conn, ingest_run_id),
+                                  _release_of(conn, other)}))
+    assert _releases(conn, "class_rule", ruling) == expected
+
+
+def test_no_release_to_derive_raises_lg004_and_writes_nothing(conn, ingest_run_id):
+    """A memberless class whose source has no finished run leaves nothing to record
+    the GUI's acknowledgement against: refuse rather than record a blank release."""
+    ruling, _s, p, b = _moiety_rule(conn, ingest_run_id, 6)
+    conn.execute("DELETE FROM drugref.class_membership WHERE class_uuid = %s", (b,))
+    # rolled back with the test's transaction (commit_point does not commit)
+    conn.execute("UPDATE drugref.ingest_run SET finished_at = NULL WHERE source = "
+                 "(SELECT source FROM drugref.substance_class WHERE class_uuid = %s)",
+                 (b,))
+    assert _releases(conn, "moiety_rule", ruling) is None
+    assert _sqlstate(conn, _ACK, ("moiety_rule", ruling, p, None)) == "LG004"
+    assert conn.execute(
+        f"SELECT count(*) FROM {graded_pairs.ACK_TABLE}").fetchone() == (0,)
+
+
+def test_a_null_reviewed_against_is_derived_and_recorded(conn, ingest_run_id):
+    """The GUI passes NULL; the function derives the release (after taking the ledger
+    lock, by its structure; the race tests pin the lock order) and records it."""
     ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 14)
     (against,) = {r[0] for r in conn.execute(
         "SELECT acked_against FROM drugref.acknowledge_departure(%s, %s, %s, "

@@ -42,13 +42,13 @@ run outside the database's default isolation level (READ COMMITTED), where it co
 
 **3. A departure ends only when a curator acknowledges it.** The warning (`CHANGED SINCE REVIEW`, exit 3) repeats
 on every answer until `drugref curate acknowledge-departure`, or the reviewer GUI's *Departed grades* view, records
-who accepted the departure, when, against what and why. A warning a person cannot end teaches clinicians to ignore it. The acknowledgement covers that
-*episode*: if the pair is graded again and departs again, the warning returns. The warning's hint names the drug
-that actually left and says how many pairs acknowledging it closes, so a curator cannot silence departures they
-were not shown. `drugref audit departures` lists every open departure for the operator, counts orphaned rulings
-(whose candidate is gone, so their grade reaches nobody and they are not departures), and exits 3 when there are
-any of either, so it can gate a post-ingest checklist. An orphan's warning stays the orphan banner, which also
-names a drug the ruling was only ever observed grading.
+who accepted the departure, when, against what and why. A warning a person cannot end teaches clinicians to ignore
+it. The acknowledgement covers that *episode*: if the pair is graded again and departs again, the warning returns.
+The warning's hint names the drug that actually left and says how many pairs acknowledging it closes, so a curator
+cannot silence departures they were not shown. `drugref audit departures` lists every open departure for the
+operator, counts orphaned rulings (whose candidate is gone, so their grade reaches nobody and they are not
+departures), and exits 3 when there are any of either, so it can gate a post-ingest checklist. An orphan's warning
+stays the orphan banner, which also names a drug the ruling was only ever observed grading.
 
 **4. The rules live in the database, once, for every caller (owner ruling, issue #283).** What departed, which drug
 left, and what an acknowledgement closes are SQL functions (`db/087`) that the command line and the reviewer GUI
@@ -70,7 +70,7 @@ graded. The moiety grain has no earlier evidence; its history starts at `db/083`
   archive set, so a real release never has them.
 - Acknowledgements are not signed yet (issue #284).
 - The GUI's list is the unfiltered departure list, which reads the whole grading view (about 3 seconds on a full
-  registry, the cost in decision 2).
+  registry).
 - The earlier snapshot stays as the audit of what the curator saw when ruling (`drugref audit class-ruling`); the
   warning no longer reads it.
 - A grade that *changed* (severity, mechanism) is not a departure; only a grade that stopped reaching a pair is.

@@ -1507,13 +1507,14 @@ key ever graded is recorded, both grains, and a departure banners until a curato
 (`db/086`): the ledger's writers share one lock, so racing commits cannot lose an episode. **#289 fixed
 2026-11-26**: `acknowledge` waits at most 30 s for that lock, then names who holds it. **#283 fixed 2026-11-26**
 (`db/087`): reviewers acknowledge from the GUI too; the departure rules are SQL functions both callers share.
-**Open follow-ups:** #284 (sign
-acknowledgements), #285 (policy writes and ingest finishes still run the ~5 s full refresh; rulings are per key
-since db/084), #275 (the question bookkeeping and accumulation tables, once they have a writer), #260 (diff-based
-membership tracking, only if archive disk use grows), #263 (PBS in an archive, under #25: decide before archives are
-shared), #265 (drift ignores sources the release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty
-snapshot read `captured: none`; `db/082` marks every snapshotted ruling) and #268 (an unreadable archive file read
-"missing" on Python 3.14) fixed 2026-11-17. Production must be built from nothing with the archive set.
+**Open follow-ups:** #284 (sign acknowledgements), #292 (owner rulings: acknowledging a non-leaver; partial
+class-grain provenance), #293 (class-grain live test, router auth tests, lib.rs size), #285 (policy writes and
+ingest finishes still run the ~5 s full refresh; rulings are per key since db/084), #275 (the question bookkeeping
+and accumulation tables, once they have a writer), #260 (diff-based membership tracking, only if archive disk use
+grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift ignores sources the
+release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot read `captured: none`; `db/082`
+marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on Python 3.14) fixed
+2026-11-17. Production must be built from nothing with the archive set.
 
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;

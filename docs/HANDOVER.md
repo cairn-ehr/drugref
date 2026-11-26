@@ -20,7 +20,7 @@ PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails
 grades* view. The departure read, the leavers and the acknowledgement are now `db/087` SQL functions shared by the
 CLI and the Rust service (owner: one home); the GUI records `reviewed_against` derived from the ruling's class
 memberships (owner). **Next natural item: #284** (sign acknowledgements; the GUI flow now exists to sign in).
-**Open:** #284, #285 (the GUI list reads the whole view, ~3 s on a full registry: same cost).
+**Open:** #284, #285 (the GUI list reads the whole view, ~3 s: same cost), #292 (owner rulings), #293 (tests).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and
@@ -89,13 +89,13 @@ for any beta-lactam). `unplaced` means "not checked" (30% of prescribable moieti
 ## Open follow-ups
 
 The full ledger lives once in [PROJECT-NOTES § "The standing open-issue ledger"](PROJECT-NOTES.md). **#283 FIXED
-(close on merge); #289, #282, #287 closed; open: #284, #285;** #277, #270, #104, #272, #259, #258, #261, #262, #266,
-#268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224 partly
-done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
+(close on merge); #289, #282, #287 closed; open: #284, #285, #292, #293;** #277, #270, #104, #272, #259, #258, #261,
+#262, #266, #268 closed; **open from #258: #260, #263, #265** (diff fallback, PBS in the archive, drift scope); #224
+partly done. **#244.** **#214 open; filed #245, #246.** **Open from allergy groups: #223, #224.** **Open from class
 profiles: #203, #204. From class mentions: #220–#222.** FDA-CYP names: **#239**. Open: **#164**, **#169**. Standing:
 **#155** and **#102**; **#67** (salt↔base) is wanted by three sources and blocks a grain; **#158** untouched. Also
-#148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with
-`DRUGREF_ARCHIVE` set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
+#148, #152, #128/#129, #124, #94. Before production: re-run every parser on current releases **with `DRUGREF_ARCHIVE`
+set**, resolve #17, the three rule-6 deeds (#6, #25, GSRS).
 
 ## Current DSN
 
