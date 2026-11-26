@@ -436,6 +436,7 @@ pub async fn submit(
         &input.query.key_fingerprint,
         signature_bytes,
         parsed,
+        "this detached signature is already recorded",
     )
     .await?;
     transaction.commit().await?;
@@ -451,7 +452,7 @@ pub async fn submit(
 }
 
 /// Record one verified detached signature over a challenge's exact payload. A second
-/// copy of the same attestation is a conflict, not an error.
+/// copy of the same attestation is a conflict (reported as `duplicate`), not an error.
 pub(crate) async fn insert_signature(
     connection: &mut PgConnection,
     challenge: &ReviewSignatureChallenge,
@@ -459,6 +460,7 @@ pub(crate) async fn insert_signature(
     key_fingerprint: &str,
     signature_bytes: Vec<u8>,
     signed_at: DateTime<Utc>,
+    duplicate: &str,
 ) -> Result<(), AppError> {
     let result = sqlx::query(
         "INSERT INTO drugref.assertion_signature \
@@ -482,9 +484,7 @@ pub(crate) async fn insert_signature(
             .as_deref()
             == Some(UNIQUE_VIOLATION_SQLSTATE)
         {
-            return Err(AppError::conflict(
-                "this detached signature is already recorded",
-            ));
+            return Err(AppError::conflict(duplicate));
         }
         return Err(error.into());
     }
@@ -777,10 +777,12 @@ pub(crate) fn encode_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        challenge, decode_hex, encode_hex, enrol_key, format_timestamp, list_keys, pending,
-        replace_key, submit,
+        challenge, decode_hex, encode_hex, enrol_key, ensure_fresh, format_timestamp, list_keys,
+        parse_signed_at, pending, replace_key, submit, verify_detached,
+        MAXIMUM_CHALLENGE_AGE_MINUTES, MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS,
     };
-    use chrono::{TimeZone, Utc};
+    use axum::http::StatusCode;
+    use chrono::{Duration, TimeZone, Utc};
     use ed25519_dalek::{Signer, SigningKey};
     use reviewer_domain::{
         AdministrativeSigningKeyStatus, CreateReviewDecisionRequest, EnrolSigningKeyRequest,
@@ -809,6 +811,67 @@ mod tests {
         assert!(decode_hex("00AF").is_err());
         assert!(decode_hex("abc").is_err());
         assert!(decode_hex("0g").is_err());
+    }
+
+    /// The one cryptographic gate both submit paths share: only a signature by this
+    /// key over these exact bytes passes (a forged row would read `signed`).
+    #[test]
+    fn a_detached_signature_verifies_only_over_its_own_bytes_and_key() {
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let public = key.verifying_key().to_bytes();
+        let signed = encode_hex(&key.sign(b"payload").to_bytes());
+        assert!(verify_detached(&public, b"payload", &signed).is_ok());
+
+        let refused = |public: &[u8], signature: &str| {
+            verify_detached(public, b"payload", signature)
+                .expect_err("refused")
+                .status()
+        };
+        let other_bytes = encode_hex(&key.sign(b"other").to_bytes());
+        assert_eq!(refused(&public, &other_bytes), StatusCode::BAD_REQUEST);
+        let other_key = SigningKey::from_bytes(&[8; 32]).verifying_key().to_bytes();
+        assert_eq!(refused(&other_key, &signed), StatusCode::BAD_REQUEST);
+        assert_eq!(refused(&public, &signed[..126]), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            refused(&public, &signed.to_uppercase()),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    /// The confirmation window bounds preview-to-submit time on both paths.
+    #[test]
+    fn a_stale_or_future_signing_instant_is_refused() {
+        let now = Utc::now();
+        assert!(ensure_fresh(now, "it").is_ok());
+        for instant in [
+            now - Duration::minutes(MAXIMUM_CHALLENGE_AGE_MINUTES + 1),
+            now + Duration::seconds(MAXIMUM_FUTURE_CLOCK_SKEW_SECONDS + 60),
+        ] {
+            assert_eq!(
+                ensure_fresh(instant, "it").expect_err("stale").status(),
+                StatusCode::CONFLICT
+            );
+        }
+    }
+
+    /// Only the canonical six-digit UTC spelling of `signedAt` is accepted.
+    #[test]
+    fn only_the_canonical_signed_at_spelling_parses() {
+        let canonical = "2026-11-26T00:00:00.000000Z";
+        assert_eq!(
+            format_timestamp(parse_signed_at(canonical).expect("canonical")),
+            canonical
+        );
+        for spelling in [
+            "2026-11-26T00:00:00Z",
+            "2026-11-26T00:00:00.000000+00:00",
+            "x",
+        ] {
+            assert_eq!(
+                parse_signed_at(spelling).expect_err("refused").status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
     }
 
     /// Exercise enrolment, resume discovery, challenge, verification, and insertion.

@@ -7198,7 +7198,7 @@ asking the reviewer to type it.
   on a fresh scratch database (`drugref_rust283`, created, migrated, dropped). Frontend: `svelte-check` 0 errors,
   production build, and a browser-preview pass (list, rationale, acknowledge, empty state).
 
-## Signed departure acknowledgements (#284, 2026-11-26) — `db/088`, suite 3737 → 3748
+## Signed departure acknowledgements (#284, 2026-11-26) — `db/088`, suite 3737 → 3750
 
 An acknowledgement silences a CHANGED SINCE REVIEW banner, so a forged or altered one hides a departure. Acks are
 now a fifth curator signature target kind, signed from the CLI (`drugref sign --target-kind
@@ -7211,10 +7211,16 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   `graded_pair_observation` key columns + the ack's own fields), not the table. **WHY:** the ack names its episode by
   `observation_id`, which a release replay renumbers (`replay_loader._ack_episode`), so a signature over it would
   break after a replay and would not say which pair was accepted. `captured` and `first_seen_at` are not signed
-  (each database writes its own). `ack_id` is kept verbatim by the replay, so signatures still point at their ack;
+  (each database writes its own). **`episode_ordinal`** (the episode's 1-based position among its key and pair's
+  episodes, in `observation_id` order) IS signed: the (key, pair) is not unique per episode, so without it a signed
+  ack's fields and signature copied onto an ack of a LATER episode verified VALID and silenced a real second
+  departure (PR #296 review). Observations are insert-only and a replay regenerates them in order, so the ordinal
+  survives a replay; the one exception is the replay's "two concurrent episodes" warning, after which that pair's
+  later acks read BAD_SIGNATURE (fail-safe). `test_a_signature_copied_onto_a_later_episode_does_not_verify` pins it.
+  `ack_id` is kept verbatim by the replay, so signatures still point at their ack;
   `test_a_signed_ack_still_verifies_after_a_replay` pins it. `drugref.departure_ack_signature` is every ack with
   `curated_signature_status`' vocabulary plus `unsigned`: the one read the CLI audit and the service share.
-- **Frozen list** `signing_contexts.GRADED_PAIR_DEPARTURE_ACK_V1` (12 fields, attestation last) and the Rust twin
+- **Frozen list** `signing_contexts.GRADED_PAIR_DEPARTURE_ACK_V1` (13 fields, attestation last) and the Rust twin
   `reviewer_domain::GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS`; no natural key (not in releases). New committed vector
   (purely additive: no existing vector moved). The Rust vector test now covers every row context (it skipped any
   not starting `curated_`), and the service has a test rebuilding the vector's bytes from a payload-view row.
@@ -7237,9 +7243,23 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   eight signing handlers moved verbatim from `lib.rs` to `signing_routes.rs`: **`lib.rs` 532 → 423**, closing item
   3 of [#293](https://github.com/cairn-ehr/drugref/issues/293). `serde_json` became a dev-dependency of the
   service (already in its lockfile via axum; MIT/Apache).
-- **Size:** `src-tauri/src/signing.rs` 745 → 777 (already over the cap): filed
-  [#295](https://github.com/cairn-ehr/drugref/issues/295) (move the vault into `vault.rs`).
-- **Tests:** Python +11 (`tests/test_ack_signing.py` 6 incl. CLI sign/verify and tamper → BAD_SIGNATURE; audit +3;
+- **Size:** `src-tauri/src/signing.rs` 745 → 779 (already over the cap): filed
+  [#295](https://github.com/cairn-ehr/drugref/issues/295) (move the vault into `vault.rs`). The service's
+  `reviewer-service/src/signing.rs` 1116 → 1224 (shared helpers + their review tests): filed
+  [#298](https://github.com/cairn-ehr/drugref/issues/298) (split out `signing_core.rs`).
+- **PR #296 review fixes:** `episode_ordinal` (above); unit tests for `verify_detached` (forged / other-key /
+  malformed refused), `ensure_fresh` (stale and future → 409) and `parse_signed_at`; the live ack test now signs a
+  batch of TWO and proves one stale digest or one forged signature in slot 2 records NOTHING, then that a retried
+  batch is a 409 with batch wording (`insert_signature` takes its duplicate message); an ack signed only by a
+  compromised key still needs signing (`test_an_ack_signed_only_by_a_compromised_key_needs_signing`). GUI: a failed
+  submit drops the dead challenge and reloads (Prepare comes back), Cancel reloads, a failed acknowledge also reloads
+  the unsigned list, and a recorded batch clears only the ack batch, best-effort, so it is never reported failed.
+  Copy says "registry-trusted" (the status is registry policy; `drugref verify` checks the mathematics).
+  **Live-test trap:** a class with no members left records `reviewed_against` from the source's latest FINISHED run
+  (db/087, LG004), which a scratch database lacks; the batch test keeps a keeper member in the class.
+  **Pre-existing flake** [#297](https://github.com/cairn-ehr/drugref/issues/297): the live queue test races the other
+  live tests (counts off by 1–3); it fails at the PR head too and passes alone.
+- **Tests:** Python +13 (+11, then +2 in review; `tests/test_ack_signing.py` 6 incl. CLI sign/verify and tamper → BAD_SIGNATURE; audit +3;
   the coverage alarm +1; the replay +1). Rust: domain +3 (batch query bounds, submission matches the query in
   order, the challenge encoder's frozen list), service +1 unit (vector) and +1 live (`live_ack_is_signed_in_a_batch`:
   listed unsigned, a stale digest is 409, signed, then `signed` and gone from the list), Tauri +2 (binding;
@@ -7465,7 +7485,9 @@ functions (owner: one home, not a Rust copy); `graded_pairs.py` calls them, and 
 **Signed acknowledgements (2026-11-26)** — **[#284](https://github.com/cairn-ehr/drugref/issues/284) FIXED**
 (`db/088`, § "Signed departure acknowledgements"): acks are a signature target kind (CLI and GUI batch signing),
 NOT release content (owner). #293 item 3 (service `lib.rs` size) done; filed
-**[#295](https://github.com/cairn-ehr/drugref/issues/295)** (Tauri `signing.rs` 777 lines). +11 tests, 3737 → 3748.
+**[#295](https://github.com/cairn-ehr/drugref/issues/295)** (Tauri `signing.rs` 779 lines), and in review **[#297](https://github.com/cairn-ehr/drugref/issues/297)** (live queue
+test race) and **[#298](https://github.com/cairn-ehr/drugref/issues/298)** (service `signing.rs` 1224 lines). +13
+tests, 3737 → 3750.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7651,7 +7673,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3748 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3750 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,

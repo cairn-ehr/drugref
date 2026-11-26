@@ -7,8 +7,9 @@
 --
 -- THE FIX. A fifth curator signature target kind. assertion_signature, the key
 -- registry and curated_signature_status (db/030, db/048) are already generic over
--- target_kind, so `drugref sign` / `drugref verify` and the reviewer GUI work
--- through the one catalog row below.
+-- target_kind, so `drugref sign` / `drugref verify` need only the one catalog row
+-- below. The reviewer GUI reuses the registry tables but has its own ack code
+-- (reviewer-service/src/ack_signing.rs), which hard-codes the kind and field order.
 --
 -- OWNER RULING (2026-11-26): acks are signed one by one by curators and are NOT
 -- part of a signed release manifest (`releases._CURATED_KINDS`). A release attests
@@ -27,6 +28,17 @@
 -- `captured` and `first_seen_at` are written by whichever database ran the refresh,
 -- so a replay records its own values for them.
 --
+-- WHY episode_ordinal. The (key, pair) is NOT unique per episode (db/083: a pair
+-- graded again after an ack opens a new episode of the same key and pair). Without a
+-- discriminator, a signed ack's fields and signature copied onto an ack of a LATER
+-- episode rebuild byte-identical bytes and verify, silencing a real second departure.
+-- episode_ordinal is the episode's 1-based position among its (key, pair)'s episodes
+-- in observation_id order. Observations are insert-only and a replay regenerates
+-- them serially in the same order, so the ordinal survives a replay where the id
+-- does not. (The one case it does not: the replay's warning that one acknowledge
+-- closed two CONCURRENT episodes the serial replay opened once. Later acks of that
+-- pair then read BAD_SIGNATURE and need re-signing: fail-safe, never fail-open.)
+--
 -- ack_id is the target id (assertion_signature.target_id), as every kind's surrogate
 -- key is; the replay keeps ack ids verbatim, so signatures still point at their ack.
 --
@@ -37,14 +49,22 @@ CREATE OR REPLACE VIEW drugref.graded_pair_departure_ack_payload AS
 SELECT a.ack_id,
        o.rule_grain, o.subject_key, o.object_class_uuid, o.relationship,
        o.subject_moiety, o.partner_moiety,
+       (SELECT count(*)
+        FROM   drugref.graded_pair_observation e
+        WHERE  (e.rule_grain, e.subject_key, e.object_class_uuid, e.relationship,
+                e.subject_moiety, e.partner_moiety)
+             = (o.rule_grain, o.subject_key, o.object_class_uuid, o.relationship,
+                o.subject_moiety, o.partner_moiety)
+        AND    e.observation_id <= o.observation_id) AS episode_ordinal,
        a.rationale, a.reviewed_by, a.reviewed_against, a.acknowledged_at
 FROM   drugref.graded_pair_departure_ack a
 JOIN   drugref.graded_pair_observation o ON o.observation_id = a.observation_id;
 
 COMMENT ON VIEW drugref.graded_pair_departure_ack_payload IS
     'The signing target of kind graded_pair_departure_ack (db/088, #284): one row per '
-    'acknowledgement, naming its episode by content (ruling key and pair), never by '
-    'the database-local observation_id a replay renumbers.';
+    'acknowledgement, naming its episode by content (ruling key, pair and the '
+    'episode''s ordinal within them), never by the database-local observation_id a '
+    'replay renumbers.';
 
 INSERT INTO drugref.signature_target_kind
     (target_kind, target_table, pk_column, payload_context)

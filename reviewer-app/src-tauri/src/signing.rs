@@ -74,7 +74,9 @@ impl SigningClient {
         }
     }
 
-    /// Remove an unconfirmed payload when its authenticated session ends.
+    /// Remove every unconfirmed payload, the ruling preview AND the ack batch, so
+    /// whatever ends a session or changes the key (and a completed ruling
+    /// signature) voids both flows' previews.
     pub fn clear_pending(&self) -> Result<(), String> {
         *self
             .pending

@@ -53,8 +53,9 @@ treated as clinical attestation.
 
 Curators also sign their **departure acknowledgements** (`db/088`, issue #284): an
 acknowledgement silences a "changed since review" warning, so a forged one would hide a
-departure. Its signed content is the drug pair and the ruling it departed from plus the
-curator's rationale, never a database-local id, so the signature survives a release replay.
+departure. Its signed content is the drug pair, the ruling it departed from and which
+episode of that pair it closes, plus the curator's rationale, never a database-local id: the
+signature survives a release replay and cannot be copied onto a later episode of the pair.
 One acknowledgement can close many pairs; the desktop reviewer signs them as a batch, every
 payload shown, the key unlocked once, and the service records all or none.
 

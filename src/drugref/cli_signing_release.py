@@ -379,10 +379,12 @@ def register(commands) -> None:
     integration to the single call the task brief asks for.
     """
     sign = commands.add_parser(
-        "sign", help="sign one curated row with a local private key file")
+        "sign", help="sign one curated row or departure acknowledgement with a local "
+                     "private key file")
     sign.add_argument("--target-kind", required=True,
-                      help="a drugref.signature_target_kind, e.g. "
-                           "curated_interaction or graded_pair_departure_ack")
+                      help="a curator drugref.signature_target_kind, e.g. "
+                           "curated_interaction or graded_pair_departure_ack "
+                           "(not release_manifest: see `publish`)")
     sign.add_argument("--target-id", required=True, type=int)
     sign.add_argument("--key", required=True,
                       help="path to a raw 32-byte Ed25519 PRIVATE key file")
@@ -396,9 +398,11 @@ def register(commands) -> None:
         "verify",
         help="check a signature's mathematics -- not just its registry status")
     verify.add_argument("--target-kind",
-                        help="with --target-id: one curated row to check")
+                        help="with --target-id: one curated row or acknowledgement "
+                             "to check")
     verify.add_argument("--target-id", type=int,
-                        help="with --target-kind: one curated row to check")
+                        help="with --target-kind: one curated row or acknowledgement "
+                             "to check")
     verify.add_argument("--release",
                         help="a release_tag to check instead of one row")
     verify.set_defaults(handler=_handle_verify)

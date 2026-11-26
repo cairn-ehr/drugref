@@ -17,11 +17,10 @@
 PROJECT-NOTES § "How to run / test" **and nowhere else**; `uv run pytest` fails if they disagree.
 
 **⇒ THIS ROUND** (PROJECT-NOTES § "Signed departure acknowledgements"): acks are a fifth curator signature target
-kind (`db/088`; the target is a view that signs the episode's pair by content, so it survives a replay). CLI
-`drugref sign`/`verify` work unchanged; the GUI signs a batch (one vault unlock); `drugref audit departures` names
-unsigned acks (exit code unchanged). **Owner:** acks are NOT release content. Service `lib.rs` split (#293 item 3).
-**Next natural items:** #293 (class-grain live test, router auth tests), #295 (Tauri `signing.rs` vault split),
-#292 (owner rulings). **Open:** #285 (the GUI departures list reads the whole view, ~3 s).
+kind (`db/088`; a view signs the episode by content: pair, ruling key and `episode_ordinal`, so it survives a
+replay and cannot be copied onto a later episode). CLI `sign`/`verify` unchanged; the GUI signs a batch (one vault
+unlock); `audit departures` names unsigned acks (exit unchanged). **Owner:** acks are NOT release content.
+**Next:** #293, #295/#298 (`signing.rs` splits), #297 (live queue test race), #292. **Open:** #285 (~3 s list).
 
 **⇒ OWNER, from #270:** profiles put reviewers' names, qualifications and bios into the archive. Fine while
 archives are node-local; decide before they are shared (with #263). **#275**: the question bookkeeping and

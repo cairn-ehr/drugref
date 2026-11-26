@@ -10,11 +10,13 @@ WHY A VIEW IS THE TARGET, NOT THE TABLE. The ack row names its episode by
 `observation_id`, a database-local id that a release replay renumbers
 (`replay_loader._ack_episode`). A signature over it would stop verifying after a
 replay, and would not say WHICH pair was accepted. The view signs the episode's
-content instead: the ruling key and the drug pair, plus the curator's own fields.
+content instead: the ruling key, the drug pair and the episode's ordinal within
+them, plus the curator's own fields.
 """
 import datetime as dt
 
 from drugref import graded_pairs, keys, signatures, signing
+from tests.test_class_subject_read_path import _file_member
 from tests.test_cli_signing import _run, a_key_file, wconn  # noqa: F401 (fixtures)
 from tests.test_graded_pairs_departed import _a_rule_x_left
 
@@ -106,6 +108,47 @@ def test_an_altered_rationale_no_longer_verifies(conn, ingest_run_id):
                  "WHERE ack_id = %s", (ack_id,))
 
     assert [v.verdict for v in signatures.verify_target(conn, KIND, ack_id)] == [
+        signing.BAD_SIGNATURE]
+
+
+def test_a_signature_copied_onto_a_later_episode_does_not_verify(conn, ingest_run_id):
+    """The (key, pair) is not unique per episode: X returns, the pair re-opens, X
+    leaves again. A writer who copies the first ack's fields AND its signature onto
+    an ack of the second episode must not get a VALID verdict; episode_ordinal is
+    what differs (db/088)."""
+    ack_id, x, _p, a, _b = _an_ack(conn, ingest_run_id, 46)
+    private, public, fingerprint = _key()
+    keys.register(conn, public_key=public, holder="dr t", registered_by="an operator")
+    _sign(conn, ack_id, private, fingerprint)
+    _file_member(conn, x, a, ingest_run_id)
+    graded_pairs.refresh(conn)          # X reaches P again: episode 2 opens
+    conn.execute("DELETE FROM drugref.class_membership WHERE moiety_uuid = %s", (x,))
+    (forged,) = conn.execute(
+        f"INSERT INTO {graded_pairs.ACK_TABLE} (observation_id, rationale, "
+        "reviewed_by, reviewed_against, acknowledged_at) "
+        f"SELECT o2.observation_id, a.rationale, a.reviewed_by, a.reviewed_against, "
+        f"a.acknowledged_at FROM {graded_pairs.ACK_TABLE} a "
+        f"JOIN {graded_pairs.OBSERVATION_TABLE} o1 ON o1.observation_id = a.observation_id "
+        f"JOIN {graded_pairs.OBSERVATION_TABLE} o2 "
+        "ON (o2.rule_grain, o2.subject_key, o2.object_class_uuid, o2.relationship, "
+        "    o2.subject_moiety, o2.partner_moiety) = (o1.rule_grain, o1.subject_key, "
+        "    o1.object_class_uuid, o1.relationship, o1.subject_moiety, o1.partner_moiety) "
+        "AND o2.observation_id > o1.observation_id "
+        "WHERE a.ack_id = %s RETURNING ack_id", (ack_id,)).fetchone()
+    columns = [c for (c,) in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = "
+        "'drugref' AND table_name = 'assertion_signature' AND is_generated = 'NEVER' "
+        "AND identity_generation IS NULL AND column_name <> 'target_id'").fetchall()]
+    listed = ", ".join(columns)
+    conn.execute(f"INSERT INTO drugref.assertion_signature (target_id, {listed}) "
+                 f"SELECT %s, {listed} FROM drugref.assertion_signature "
+                 "WHERE target_kind = %s AND target_id = %s", (forged, KIND, ack_id))
+
+    ordinals = dict(conn.execute(
+        "SELECT ack_id, episode_ordinal FROM drugref.graded_pair_departure_ack_payload "
+        "WHERE ack_id = ANY(%s)", ([ack_id, forged],)).fetchall())
+    assert ordinals == {ack_id: 1, forged: 2}
+    assert [v.verdict for v in signatures.verify_target(conn, KIND, forged)] == [
         signing.BAD_SIGNATURE]
 
 

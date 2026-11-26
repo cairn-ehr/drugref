@@ -26,6 +26,7 @@
     relationship: "Relationship",
     subject_moiety: "Subject drug",
     partner_moiety: "Partner drug",
+    episode_ordinal: "Episode of this pair",
     rationale: "Rationale",
     reviewed_by: "Acknowledged by",
     reviewed_against: "Reviewed against",
@@ -105,7 +106,12 @@
       await refresh();
       successMessage = `${done.recorded} ${done.recorded === 1 ? "signature" : "signatures"} verified and recorded.`;
     } catch (error) {
-      errorMessage = String(error);
+      // The retained challenge cannot succeed again (expired, changed, or already
+      // recorded by an attempt whose reply was lost): drop it and reload, so the list
+      // is current and Prepare is offered, keeping the error on screen.
+      const message = String(error);
+      await refresh();
+      errorMessage = message;
     } finally {
       busy = false;
     }
@@ -131,7 +137,7 @@
     {#each acks as ack (ack.ackId)}
       <p class="pending-attribution">#{ack.ackId} · {ack.subjectMoietyName} × {ack.partnerMoietyName} ({ack.subjectName} → {ack.objectClassName}) · {ack.reviewedBy}, {workingRecordDate(ack.acknowledgedAt)}{ack.signatureStatus === "unsigned" ? "" : ` · ${ack.signatureStatus.replaceAll("_", " ")}`}</p>
     {:else}
-      <p class="admin-empty">Every acknowledgement carries a trusted signature.</p>
+      <p class="admin-empty">No acknowledgement awaits a signature (registry status; <code>drugref verify</code> checks the signatures themselves).</p>
     {/each}
     {#if acks.length > batch.length}<p class="record-status">Signing the first {batch.length}; prepare again for the rest.</p>{/if}
   {/if}
@@ -155,7 +161,7 @@
       <dl class="signature-metadata"><div><dt>Context</dt><dd>{preview.payloadContext}</dd></div><div><dt>Key</dt><dd title={preview.keyFingerprint}>{compact(preview.keyFingerprint)}</dd></div><div><dt>Signing instant</dt><dd>{preview.signedAt}</dd></div></dl>
       <label><span>Signing-vault passphrase</span><input type="password" autocomplete="off" name="signing-vault-passphrase" required minlength={SIGNING_PASSPHRASE_MIN_LENGTH} maxlength={SIGNING_PASSPHRASE_MAX_LENGTH} bind:value={passphrase} /></label>
       <p>Open each acknowledgement to review its exact signed values. The service rebuilds every payload and verifies every signature before recording any of them.</p>
-      <div class="decision-preview-actions"><button class="secondary-button" type="button" disabled={busy} onclick={() => { preview = null; query = null; passphrase = ""; }}>Cancel</button><button class="primary-button primary-button--compact" type="submit" disabled={busy}>{busy ? "Signing locally…" : "Sign and verify all"}</button></div>
+      <div class="decision-preview-actions"><button class="secondary-button" type="button" disabled={busy} onclick={() => void refresh()}>Cancel</button><button class="primary-button primary-button--compact" type="submit" disabled={busy}>{busy ? "Signing locally…" : "Sign and verify all"}</button></div>
     </form>
   {/if}
 </section>

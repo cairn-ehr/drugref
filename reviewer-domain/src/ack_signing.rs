@@ -23,13 +23,16 @@ pub const DEPARTURE_ACK_V1_CONTEXT: &str = "graded_pair_departure_ack/v1";
 /// db/088's `graded_pair_departure_ack_payload` view, as Python's
 /// `signing_contexts.GRADED_PAIR_DEPARTURE_ACK_V1` names them (the committed vectors
 /// pin both).
-pub const GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS: [&str; 12] = [
+pub const GRADED_PAIR_DEPARTURE_ACK_V1_FIELDS: [&str; 13] = [
     "rule_grain",
     "subject_key",
     "object_class_uuid",
     "relationship",
     "subject_moiety",
     "partner_moiety",
+    // Which episode of the (key, pair): stops a signature being copied onto a
+    // later episode of the same pair (db/088).
+    "episode_ordinal",
     "rationale",
     "reviewed_by",
     "reviewed_against",

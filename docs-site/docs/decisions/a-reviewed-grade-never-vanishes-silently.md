@@ -69,9 +69,11 @@ graded. The moiety grain has no earlier evidence; its history starts at `db/083`
   the comparison and warns, which keeps it short of "reproduced". Production is built from nothing with the
   archive set, so a real release never has them.
 - Acknowledgements are signed like curated rulings, with the curator's own key, from the reviewer GUI or
-  `drugref sign` (`db/088`, issue #284). The signature covers the drug pair and the ruling it departed from,
-  not the database's internal episode id, so it still verifies after a release replay. `drugref audit
-  departures` names every acknowledgement without a trusted signature; that does not change its exit code.
+  `drugref sign` (`db/088`, issue #284). The signature covers the drug pair, the ruling it departed from and
+  which episode of that pair it closes (its ordinal), not the database's internal episode id, so it still
+  verifies after a release replay and cannot be copied onto a later departure of the same pair. `drugref
+  audit departures` names every acknowledgement without a registry-trusted signature; that does not change
+  its exit code.
   By owner ruling, a signed release does not list acknowledgements: it attests to the rulings consumers read,
   and an acknowledgement changes only what reviewers are shown.
 - The GUI's list is the unfiltered departure list, which reads the whole grading view (about 3 seconds on a full

@@ -69,8 +69,9 @@ def format_ack_signatures(statuses: list[tuple[int, str]]) -> list[str]:
              + (f" ({breakdown})" if breakdown else "")]
     needing = [str(a) for a, status in statuses if status != "signed"]
     if needing:
-        lines.append(f"   not signed by a trusted key: ack {', '.join(needing)}. Sign "
-                     f"in the reviewer GUI (Departed grades), or: drugref sign "
+        lines.append(f"   not signed by a registry-trusted key: ack "
+                     f"{', '.join(needing)}. Sign in the reviewer GUI (Departed "
+                     "grades), or: drugref sign "
                      f"--target-kind {graded_pairs.ACK_TARGET_KIND} --target-id ID "
                      "--key KEYFILE")
     return lines

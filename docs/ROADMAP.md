@@ -1508,10 +1508,12 @@ key ever graded is recorded, both grains, and a departure banners until a curato
 2026-11-26**: `acknowledge` waits at most 30 s for that lock, then names who holds it. **#283 fixed 2026-11-26**
 (`db/087`): reviewers acknowledge from the GUI too; the departure rules are SQL functions both callers share.
 **#284 fixed 2026-11-26** (`db/088`): acknowledgements are signed by curators (CLI, or a GUI batch), and
-`drugref audit departures` names unsigned ones; by owner ruling they are not part of a signed release.
+`drugref audit departures` names unsigned ones; by owner ruling they are not part of a signed release. The
+signature binds which episode of the pair it closes (`episode_ordinal`, PR #296 review), so it cannot be copied
+onto a later departure of the same pair.
 **Open follow-ups:** #292 (owner rulings: acknowledging a non-leaver; partial
-class-grain provenance), #293 (class-grain live test, router auth tests; its lib.rs item is done), #295 (the
-reviewer app's native `signing.rs` size), #285 (policy writes and
+class-grain provenance), #293 (class-grain live test, router auth tests; its lib.rs item is done), #295 and #298 (the
+native and the service `signing.rs` sizes), #297 (the live queue test races the other live tests), #285 (policy writes and
 ingest finishes still run the ~5 s full refresh; rulings are per key since db/084), #275 (the question bookkeeping
 and accumulation tables, once they have a writer), #260 (diff-based membership tracking, only if archive disk use
 grows), #263 (PBS in an archive, under #25: decide before archives are shared), #265 (drift ignores sources the

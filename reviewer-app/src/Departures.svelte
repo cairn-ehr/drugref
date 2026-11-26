@@ -84,7 +84,9 @@
     } catch (error) {
       // Reload so a departure another reviewer closed (409) disappears; restore the
       // error after the reload, which clears it if the selection moved.
+      // Reload the unsigned list too: the ack may have committed with its reply lost.
       const message = String(error);
+      ackVersion += 1;
       await refresh();
       ackError = message;
     } finally {

@@ -106,6 +106,7 @@ struct AckPayloadRow {
     relationship: String,
     subject_moiety: Uuid,
     partner_moiety: Uuid,
+    episode_ordinal: i64,
     rationale: String,
     reviewed_by: String,
     reviewed_against: String,
@@ -126,6 +127,7 @@ fn ack_challenge(
         Some(row.relationship),
         Some(row.subject_moiety.to_string()),
         Some(row.partner_moiety.to_string()),
+        Some(row.episode_ordinal.to_string()),
         Some(row.rationale),
         Some(row.reviewed_by),
         Some(row.reviewed_against),
@@ -156,8 +158,8 @@ async fn challenges_at(
 ) -> Result<AckSignatureChallenges, AppError> {
     let mut rows: HashMap<i64, AckPayloadRow> = sqlx::query_as::<_, AckPayloadRow>(
         "SELECT ack_id, rule_grain, subject_key, object_class_uuid, relationship, \
-                subject_moiety, partner_moiety, rationale, reviewed_by, reviewed_against, \
-                acknowledged_at \
+                subject_moiety, partner_moiety, episode_ordinal, rationale, reviewed_by, \
+                reviewed_against, acknowledged_at \
          FROM drugref.graded_pair_departure_ack_payload WHERE ack_id = ANY($1)",
     )
     .bind(&query.ack_ids)
@@ -237,6 +239,8 @@ pub async fn submit(
             &input.query.key_fingerprint,
             signature,
             signed_at,
+            "these acknowledgements' signatures are already recorded (an earlier \
+             attempt succeeded); reload the list",
         )
         .await?;
     }
@@ -334,6 +338,7 @@ mod tests {
             relationship: field("relationship"),
             subject_moiety: uuid("subject_moiety"),
             partner_moiety: uuid("partner_moiety"),
+            episode_ordinal: field("episode_ordinal").parse().expect("ordinal"),
             rationale: field("rationale"),
             reviewed_by: field("reviewed_by"),
             reviewed_against: field("reviewed_against"),
@@ -354,8 +359,9 @@ mod tests {
     }
 
     /// The GUI path end to end (#284): an acknowledged departure is listed unsigned,
-    /// a batch is prepared and signed with an enrolled key, the ack then reads
-    /// `signed`, and a submission whose confirmed digest is stale is refused.
+    /// a batch of two is prepared and signed with an enrolled key, and the acks then
+    /// read `signed`. A batch with one stale digest or one forged signature records
+    /// none of its signatures, and a retried batch is refused.
     #[tokio::test]
     #[ignore = "requires a migrated Drugref PostgreSQL database"]
     async fn live_ack_is_signed_in_a_batch() {
@@ -426,37 +432,120 @@ mod tests {
         .await
         .expect("enrolled key");
 
+        // The stayer leaves too: a second ack, so the batch can be half bad. A
+        // keeper joins first: a memberless class records reviewed_against from a
+        // FINISHED run (db/087), which a scratch database lacks.
+        let keeper = Uuid::new_v4();
+        sqlx::query(
+            "WITH run AS (SELECT ingest_run_id FROM drugref.ingest_run \
+                          WHERE upstream_release = $3), \
+             moiety AS (INSERT INTO drugref.substance_moiety \
+                        (moiety_uuid, display_name, first_seen_ingest) \
+                        SELECT $1, 'Keeper', ingest_run_id FROM run RETURNING moiety_uuid) \
+             INSERT INTO drugref.class_membership \
+             (moiety_uuid, class_uuid, relationship, ingest_run) \
+             SELECT moiety_uuid, $2, 'has_MoA', ingest_run_id FROM moiety, run",
+        )
+        .bind(keeper)
+        .bind(seeded.object_class)
+        .bind(&seeded.release)
+        .execute(&pool)
+        .await
+        .expect("keeper joins");
+        sqlx::query("DELETE FROM drugref.class_membership WHERE moiety_uuid = $1")
+            .bind(seeded.stayer)
+            .execute(&pool)
+            .await
+            .expect("stayer leaves");
+        crate::departures::acknowledge(
+            &pool,
+            &AcknowledgeDepartureRequest {
+                rule_grain: RuleGrain::MoietyRule,
+                ruling_id,
+                moiety_uuid: seeded.stayer,
+                rationale: "Stayer reclassified upstream".into(),
+            },
+            "Ack Signer",
+        )
+        .await
+        .expect("second acknowledgement");
+        let second = unsigned(&pool)
+            .await
+            .expect("unsigned acks")
+            .into_iter()
+            .find(|ack| ack.partner_moiety_name == "Stayer" && ack.reviewed_by == "Ack Signer")
+            .expect("the second ack is unsigned")
+            .ack_id;
+
+        let ids = vec![ack_id, second];
         let query = AckSignatureQuery {
-            ack_ids: vec![ack_id],
+            ack_ids: ids.clone(),
             key_fingerprint: enrolled.key_fingerprint.clone(),
         };
         let prepared = challenges(&pool, &query, reviewer_uuid)
             .await
             .expect("challenges");
-        let challenge = &prepared.challenges[0];
-        let payload = challenge.canonical_payload().expect("payload");
-        let request = |digest: String| SubmitAckSignaturesRequest {
+        let payloads: Vec<Vec<u8>> = prepared
+            .challenges
+            .iter()
+            .map(|c| c.canonical_payload().expect("payload"))
+            .collect();
+        let good = |slot: usize| AckSignature {
+            ack_id: ids[slot],
+            payload_digest: prepared.challenges[slot].payload_digest.clone(),
+            signature_hex: encode_hex(&key.sign(&payloads[slot]).to_bytes()),
+        };
+        let request = |second: AckSignature| SubmitAckSignaturesRequest {
             query: query.clone(),
             signed_at: prepared.signed_at.clone(),
-            signatures: vec![AckSignature {
-                ack_id,
-                payload_digest: digest,
-                signature_hex: encode_hex(&key.sign(&payload).to_bytes()),
-            }],
+            signatures: vec![good(0), second],
         };
-        let stale = submit(&pool, &request("0".repeat(64)), reviewer_uuid)
+        let recorded = || async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM drugref.assertion_signature \
+                 WHERE target_kind = 'graded_pair_departure_ack' AND target_id = ANY($1)",
+            )
+            .bind(&ids)
+            .fetch_one(&pool)
             .await
-            .expect_err("a stale digest is refused");
-        assert_eq!(stale.status(), StatusCode::CONFLICT);
+            .expect("signature count")
+        };
 
-        let done = submit(
+        // One bad slot after a good one records NOTHING: the batch is all or none.
+        let stale = submit(
             &pool,
-            &request(challenge.payload_digest.clone()),
+            &request(AckSignature {
+                payload_digest: "0".repeat(64),
+                ..good(1)
+            }),
             reviewer_uuid,
         )
         .await
-        .expect("signed");
-        assert_eq!(done.recorded, 1);
+        .expect_err("a stale digest is refused");
+        assert_eq!(stale.status(), StatusCode::CONFLICT);
+        assert_eq!(recorded().await, 0);
+        let forged = submit(
+            &pool,
+            &request(AckSignature {
+                signature_hex: encode_hex(&key.sign(&payloads[0]).to_bytes()),
+                ..good(1)
+            }),
+            reviewer_uuid,
+        )
+        .await
+        .expect_err("a signature over other bytes is refused");
+        assert_eq!(forged.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(recorded().await, 0);
+
+        let done = submit(&pool, &request(good(1)), reviewer_uuid)
+            .await
+            .expect("signed");
+        assert_eq!(done.recorded, 2);
+        let again = submit(&pool, &request(good(1)), reviewer_uuid)
+            .await
+            .expect_err("a retried batch is refused");
+        assert_eq!(again.status(), StatusCode::CONFLICT);
+        assert_eq!(recorded().await, 2);
         let status: String = sqlx::query_scalar(
             "SELECT signature_status FROM drugref.departure_ack_signature WHERE ack_id = $1",
         )
@@ -469,6 +558,6 @@ mod tests {
             .await
             .expect("unsigned acks")
             .iter()
-            .any(|ack| ack.ack_id == ack_id));
+            .any(|ack| ids.contains(&ack.ack_id)));
     }
 }

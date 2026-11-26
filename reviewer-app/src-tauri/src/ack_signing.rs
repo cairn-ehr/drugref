@@ -170,7 +170,12 @@ pub async fn complete_ack_signatures(
         signed_at,
     };
     let result = send_json(&accounts, Method::POST, SUBMIT_PATH, Some(&input), true).await?;
-    signing.clear_pending()?;
+    // Best-effort, and only the ack batch (an open ruling preview stays): the batch
+    // IS recorded, so a poisoned store must not report it as failed. A poisoned
+    // store already refuses every later confirmation above.
+    if let Ok(mut pending) = signing.pending_acks.lock() {
+        *pending = None;
+    }
     Ok(result)
 }
 

@@ -92,15 +92,17 @@ def test_an_unsigned_ack_is_named_with_the_command_that_signs_it(
     assert cli_departures.handle_audit_departures(conn, None) == 0
     out = capsys.readouterr().out
     assert "acknowledgements: 1 (unsigned 1)" in out
-    assert f"not signed by a trusted key: ack {_ack_id(conn)}" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out
     assert "drugref sign --target-kind graded_pair_departure_ack" in out
 
 
-def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
+def _sign_the_ack(conn, ingest_run_id, n):
+    """Acknowledge a departure and sign its ack with a fresh registered key.
+    Returns the key's fingerprint."""
     import datetime as dt
 
     from drugref import keys, signatures, signing
-    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, 7)
+    ruling, x, *_ = _a_rule_x_left(conn, ingest_run_id, n)
     graded_pairs.acknowledge(conn, "class", ruling, x, **_WHY)
     kp = signing.generate_keypair()
     fp = signing.fingerprint(kp.public_key)
@@ -113,8 +115,27 @@ def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
                       target_id=_ack_id(conn), payload_context=context,
                       payload=payload, key_fingerprint=fp,
                       signature=signing.sign(kp.private_key, payload), signed_at=at)
+    return fp
+
+
+def test_a_signed_ack_needs_no_signing(conn, ingest_run_id, capsys):
+    _sign_the_ack(conn, ingest_run_id, 7)
 
     cli_departures.handle_audit_departures(conn, None)
     out = capsys.readouterr().out
     assert "acknowledgements: 1 (signed 1)" in out
     assert "not signed" not in out
+
+
+def test_an_ack_signed_only_by_a_compromised_key_needs_signing(conn, ingest_run_id,
+                                                                capsys):
+    """"Needs a signature" is anything but `signed`, not just `unsigned`: a
+    compromised key's signature must not count as trusted."""
+    from drugref import keys
+    fp = _sign_the_ack(conn, ingest_run_id, 8)
+    keys.revoke(conn, key_fingerprint=fp, status="compromised", revoked_by="op")
+
+    cli_departures.handle_audit_departures(conn, None)
+    out = capsys.readouterr().out
+    assert "(signed_by_revoked_key 1)" in out
+    assert f"not signed by a registry-trusted key: ack {_ack_id(conn)}" in out
