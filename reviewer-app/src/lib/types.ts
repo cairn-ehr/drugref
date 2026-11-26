@@ -382,3 +382,68 @@ export interface ReviewQueuePage {
   /** Stable review targets on the requested page. */
   items: ReviewQueueItem[];
 }
+
+/** Grain of a ruling, in the ledger's own spelling (#283). */
+export type RuleGrain = "moiety_rule" | "class_rule";
+
+/** One drug that left a departed ruling, and how many pairs acknowledging it closes. */
+export interface DepartureLeaver {
+  /** The drug that left. */
+  moietyUuid: string;
+  /** The drug's display name. */
+  displayName: string;
+  /** Departed pairs of this ruling that name the drug on either side. */
+  closes: number;
+}
+
+/** One live ruling whose reviewed grade no longer reaches pairs it once graded. */
+export interface GradedPairDeparture {
+  /** Grain of the ruling. */
+  ruleGrain: RuleGrain;
+  /** The ruling's live version id. */
+  rulingId: number;
+  /** Subject moiety (moiety grain) or subject class (class grain). */
+  subjectKey: string;
+  /** Display name of the subject moiety or class. */
+  subjectName: string;
+  /** The class the ruling is against. */
+  objectClassUuid: string;
+  /** Name of that class. */
+  objectClassName: string;
+  /** Contraindication axis of the ruling. */
+  relationship: string;
+  /** The live version's severity. */
+  severity: Severity;
+  /** Who reviewed the live version. */
+  reviewedBy: string;
+  /** What the live version was reviewed against. */
+  reviewedAgainst: string;
+  /** True when an open episode was reconstructed by db/083's migration. */
+  backfilled: boolean;
+  /** RFC 3339 time the earliest open episode was first seen. */
+  firstSeenAt: string;
+  /** Number of departed (subject, partner) pairs. */
+  pairCount: number;
+  /** The drugs that left, each with what acknowledging it closes. */
+  leavers: DepartureLeaver[];
+}
+
+/** Request to acknowledge one drug's departure from one ruling. */
+export interface AcknowledgeDepartureRequest {
+  /** Grain of the ruling. */
+  ruleGrain: RuleGrain;
+  /** Any version's id of the ruling. */
+  rulingId: number;
+  /** The drug whose departed pairs are acknowledged. */
+  moietyUuid: string;
+  /** Why the departure is correct. */
+  rationale: string;
+}
+
+/** What one acknowledgement closed. */
+export interface DepartureAcknowledgement {
+  /** Distinct (subject, partner) pairs closed. */
+  closedPairs: number;
+  /** The release the acknowledgement was recorded against (derived by the service). */
+  reviewedAgainst: string;
+}

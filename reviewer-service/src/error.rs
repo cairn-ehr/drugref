@@ -45,6 +45,17 @@ impl AppError {
         Self::new(StatusCode::NOT_FOUND, message)
     }
 
+    /// Construct a temporary-unavailability response with a safe message.
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    }
+
+    /// The HTTP status, for tests that assert which refusal a path returns.
+    #[cfg(test)]
+    pub(crate) fn status(&self) -> StatusCode {
+        self.status
+    }
+
     /// Construct the fixed response used when login rate limits are exhausted.
     pub fn too_many_requests() -> Self {
         Self::new(

@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 mod accounts;
+mod departures;
 mod signing;
 
 use tauri::Manager;
@@ -32,6 +33,8 @@ pub fn run() {
             accounts::create_review_decision,
             accounts::create_review_annotation,
             accounts::create_evidence_reference,
+            departures::load_graded_pair_departures,
+            departures::acknowledge_graded_pair_departure,
             accounts::list_users,
             accounts::create_user,
             accounts::update_user_profile,

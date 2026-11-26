@@ -66,70 +66,14 @@ class Departure:
     pairs: frozenset[tuple[uuid.UUID, uuid.UUID]]
 
 
-# `now` is `curated_ddi_pair` reduced to (ruling key, pair), read ONCE per call
-# (MATERIALIZED) rather than once per open episode. It takes the same subject /
-# partner filters as the outer query, so the one-drug banner reduces only that
-# drug's rows instead of the whole view. `live` is the live version of
-# every ruling key, both grains in `curated_ddi_pair`'s vocabulary, with the
-# `curated_target_unresolved` arm name the orphan check matches on.
-_DEPARTED_SQL = f"""
-WITH now AS MATERIALIZED (
-    SELECT DISTINCT p.rule_grain,
-           CASE p.rule_grain WHEN 'class_rule' THEN p.via_subject_class
-                             ELSE p.subject_moiety END AS subject_key,
-           p.via_class, p.relationship, p.subject_moiety, p.partner_moiety
-    FROM   drugref.curated_ddi_pair p
-    WHERE  (%(subject)s::uuid IS NULL OR p.subject_moiety = %(subject)s)
-    AND    (%(partner)s::uuid IS NULL OR p.partner_moiety = %(partner)s)),
-live AS (
-    SELECT 'moiety_rule' AS rule_grain, 'curated_interaction' AS target_table,
-           curated_interaction_id AS ruling_id, subject_moiety_uuid AS subject_key,
-           object_class_uuid, relationship, applies, severity, reviewed_by,
-           reviewed_against, reviewed_at
-    FROM   drugref.curated_interaction WHERE superseded_by IS NULL
-    UNION ALL
-    SELECT 'class_rule', 'curated_class_interaction',
-           curated_class_interaction_id, subject_class_uuid,
-           object_class_uuid, relationship, applies, severity, reviewed_by,
-           reviewed_against, reviewed_at
-    FROM   drugref.curated_class_interaction WHERE superseded_by IS NULL)
-SELECT l.rule_grain, l.ruling_id, l.subject_key, l.object_class_uuid,
-       l.relationship, l.severity, l.reviewed_by, l.reviewed_against,
-       bool_or(o.captured = 'backfill_db083'), min(o.first_seen_at),
-       array_agg(o.subject_moiety ORDER BY o.observation_id),
-       array_agg(o.partner_moiety ORDER BY o.observation_id)
-FROM   {OBSERVATION_TABLE} o
-JOIN   live l
-       ON  l.rule_grain = o.rule_grain AND l.subject_key = o.subject_key
-       AND l.object_class_uuid = o.object_class_uuid
-       AND l.relationship = o.relationship
-WHERE  (%(subject)s::uuid IS NULL OR o.subject_moiety = %(subject)s)
-AND    (%(partner)s::uuid IS NULL OR o.partner_moiety = %(partner)s)
--- open: no acknowledgement closes this episode
-AND    NOT EXISTS (SELECT 1 FROM {ACK_TABLE} a
-                   WHERE a.observation_id = o.observation_id)
--- departed: the view no longer grades this pair under this key
-AND    NOT EXISTS (SELECT 1 FROM now n
-                   WHERE n.rule_grain = o.rule_grain
-                   AND   n.subject_key = o.subject_key
-                   AND   n.via_class = o.object_class_uuid
-                   AND   n.relationship = o.relationship
-                   AND   n.subject_moiety = o.subject_moiety
-                   AND   n.partner_moiety = o.partner_moiety)
--- withdrawn: an applies = false ruling grades nothing, so nothing fell out of it
-AND    l.applies
--- orphaned: the candidate is gone, which #121's banner already reports
-AND    NOT EXISTS (SELECT 1 FROM drugref.curated_target_unresolved u
-                   WHERE u.target_table = l.target_table
-                   AND   u.object_uuid = l.object_class_uuid
-                   AND   u.relationship = l.relationship
-                   AND   CASE l.target_table WHEN 'curated_interaction'
-                              THEN u.subject_moiety ELSE u.subject_class END
-                         = l.subject_key)
-GROUP  BY l.rule_grain, l.ruling_id, l.subject_key, l.object_class_uuid,
-          l.relationship, l.severity, l.reviewed_by, l.reviewed_against,
-          l.reviewed_at
-ORDER  BY l.reviewed_at DESC, l.rule_grain, l.ruling_id DESC
+# The rule lives in db/087's `drugref.departed_graded_pairs` (one home: the reviewer
+# GUI's Rust service reads it too, #283). This only orders and unpacks it.
+_DEPARTED_SQL = """
+SELECT rule_grain, ruling_id, subject_key, object_class_uuid, relationship, severity,
+       reviewed_by, reviewed_against, backfilled, first_seen_at, subject_moieties,
+       partner_moieties
+FROM   drugref.departed_graded_pairs(%(subject)s::uuid, %(partner)s::uuid)
+ORDER  BY reviewed_at DESC, rule_grain, ruling_id DESC
 """
 
 
@@ -154,7 +98,8 @@ class UnknownRuling(LookupError):
 
 
 class LedgerBusy(RuntimeError):
-    """`acknowledge` waited ACK_LOCK_TIMEOUT for the ledger lock (#289)."""
+    """`acknowledge` waited ACK_LOCK_TIMEOUT (None = db/087's 30 s) for the ledger
+    lock (#289)."""
 
 
 class NothingDeparted(ValueError):
@@ -186,13 +131,15 @@ def _ruling_key(conn: psycopg.Connection, grain: str, ruling_id: int):
 
 def pairs_to_acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                          drug: uuid.UUID) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
-    """The UNFILTERED set `acknowledge` would close: every open, currently-departed
-    pair of the key of `ruling_id` (any version) in which `drug` is the subject or
-    partner moiety. Empty when nothing departed. Raises `UnknownRuling`.
+    """A read-only preview of the UNFILTERED set `acknowledge` would close: every
+    open, currently-departed pair of the key of `ruling_id` (any version) in which
+    `drug` is the subject or partner moiety. Empty when nothing departed. Raises
+    `UnknownRuling`.
 
-    "Currently departed" is exactly what `departed` reports, so this reuses it
-    (once per direction) instead of repeating its SQL. A banner shows only the pairs
-    its question asked about, so this can be larger than what the curator saw.
+    It mirrors db/087's `acknowledge_departure` selection over the same
+    `departed_graded_pairs` read (once per direction, filtered to the key); the
+    acknowledgement itself does not call it. A banner shows only the pairs its
+    question asked about, so this can be larger than what the curator saw.
     """
     rule_grain, key = _ruling_key(conn, grain, ruling_id)
     return frozenset(
@@ -204,7 +151,8 @@ def pairs_to_acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
 
 
 def leavers(conn: psycopg.Connection, d: Departure) -> frozenset[uuid.UUID]:
-    """The drugs that actually LEFT in `d`'s displayed pairs.
+    """The drugs that actually LEFT in `d`'s displayed pairs (db/087's
+    `drugref.departure_leavers`, which the reviewer GUI reads too).
 
     Class grain: a pair's subject left if it is no longer a subject-side member of
     the live ruling in `class_rule_member`; likewise the partner on its side (both
@@ -212,118 +160,60 @@ def leavers(conn: psycopg.Connection, d: Departure) -> frozenset[uuid.UUID]:
     drug, so the partner left. If a pair has no missing side (cause unknown), its
     partner is named, so the result is never empty for a non-empty `d.pairs`.
     """
-    if d.rule_grain == "moiety_rule":
-        return frozenset(p for _, p in d.pairs)
-    now = {"subject": set(), "partner": set()}
-    for side, moiety in conn.execute(
-            "SELECT side, moiety_uuid FROM drugref.class_rule_member "
-            "WHERE curated_class_interaction_id = %s", (d.ruling_id,)):
-        now[side].add(moiety)
-    out: set[uuid.UUID] = set()
-    for s, p in d.pairs:
-        gone = {x for x, side in ((s, "subject"), (p, "partner"))
-                if x not in now[side]}
-        out |= gone or {p}
-    return frozenset(out)
+    subjects, partners = zip(*d.pairs) if d.pairs else ((), ())
+    return frozenset(r[0] for r in conn.execute(
+        "SELECT * FROM drugref.departure_leavers(%s, %s, %s::uuid[], %s::uuid[])",
+        (d.rule_grain, d.ruling_id, list(subjects), list(partners))))
 
 
 # How long the interactive `acknowledge` waits for the ledger lock (db/086) before
-# raising LedgerBusy (#289). An ingest's commit-time refresh holds it ~5 s (#285),
-# so a longer wait means a transaction was left open. Only `acknowledge` is bounded:
-# a bound on the commit-time triggers would fail an hours-long ingest at COMMIT.
-ACK_LOCK_TIMEOUT = "30s"
+# raising LedgerBusy (#289). None = db/087's default, 30 s: an ingest's commit-time
+# refresh holds the lock ~5 s (#285), so a longer wait means a transaction was left
+# open. Only `acknowledge` is bounded: a bound on the commit-time triggers would
+# fail an hours-long ingest at COMMIT. Tests shorten it.
+ACK_LOCK_TIMEOUT: str | None = None
 
-# The advisory-lock key text; must match db/086's `lock_graded_pair_ledger()`
-# (test_graded_pairs_races finds the holder by it, so a mismatch fails there).
-_LEDGER_LOCK_KEY = "drugref.graded_pair_observation"
-
-
-def _ledger_holders(conn: psycopg.Connection) -> str:
-    """Who holds the ledger lock now, e.g. 'backend 123 (ingest, idle in
-    transaction)'. PostgreSQL hides another role's `state` from a caller without
-    pg_read_all_stats; the role name is always visible, so it is shown too."""
-    rows = conn.execute(
-        "SELECT l.pid, a.usename, "
-        "       coalesce(a.state, 'state hidden: needs pg_read_all_stats') "
-        "FROM pg_locks l JOIN pg_stat_activity a USING (pid) "
-        "WHERE l.locktype = 'advisory' AND l.granted "
-        "AND l.database = (SELECT oid FROM pg_database "
-        "                  WHERE datname = current_database()) "
-        # A bigint advisory key shows in pg_locks as two 32-bit halves.
-        "AND ((l.classid::bigint << 32) | l.objid::bigint) "
-        "    = hashtextextended(%s, 0) ORDER BY l.pid",
-        (_LEDGER_LOCK_KEY,)).fetchall()
-    return (", ".join(f"backend {pid} ({user}, {state})" for pid, user, state in rows)
-            or "a transaction that has since ended")
-
-
-def _lock_ledger_bounded(conn: psycopg.Connection) -> None:
-    """Take the ledger lock, waiting at most ACK_LOCK_TIMEOUT; raise LedgerBusy
-    naming the holder. The wait runs in a savepoint, so a timeout leaves the
-    caller's transaction usable; the caller's own lock_timeout is put back."""
-    if conn.autocommit:
-        # There `conn.transaction()` is a BEGIN/COMMIT of its own: the lock would
-        # be released at once and #287's race would reopen without a sound.
-        raise RuntimeError("acknowledge needs a transaction, not autocommit (db/086)")
-    # Also opens the transaction, so `conn.transaction()` below is a SAVEPOINT
-    # (not a BEGIN/COMMIT that would release the lock at once).
-    previous = conn.execute("SELECT current_setting('lock_timeout')").fetchone()[0]
-    try:
-        with conn.transaction():
-            conn.execute("SELECT set_config('lock_timeout', %s, true)",
-                         (ACK_LOCK_TIMEOUT,))
-            conn.execute("SELECT drugref.lock_graded_pair_ledger()")
-    except psycopg.errors.LockNotAvailable:
-        # The savepoint's rollback already restored lock_timeout.
-        raise LedgerBusy(
-            f"the graded-pair ledger lock is held by {_ledger_holders(conn)}; "
-            f"waited {ACK_LOCK_TIMEOUT}, longer than any ingest commit takes, so "
-            "a transaction was probably left open. End it (pg_terminate_backend("
-            "pid) as a last resort) and retry (db/086, #289)") from None
-    conn.execute("SELECT set_config('lock_timeout', %s, true)", (previous,))
+# db/087's SQLSTATEs for `acknowledge_departure`'s refusals.
+_ACK_REFUSALS = {"LG001": UnknownRuling, "LG002": NothingDeparted,
+                 "LG003": LedgerBusy}
 
 
 def acknowledge(conn: psycopg.Connection, grain: str, ruling_id: int,
                 drug: uuid.UUID, *, rationale: str, reviewed_by: str,
                 reviewed_against: str) -> frozenset[tuple[uuid.UUID, uuid.UUID]]:
     """Ack every open, currently-departed episode of the key of `ruling_id` (any
-    version) in which `drug` is the subject or partner moiety; return the pairs
-    (`pairs_to_acknowledge`), closing EVERY open episode of them, duplicates
-    included. Raises `UnknownRuling` / `NothingDeparted` (also when another
-    curator's ack committed first: the lock makes this call wait for it, then see
-    nothing departed), or `LedgerBusy` after ACK_LOCK_TIMEOUT behind another
-    holder, or RuntimeError on an autocommit connection (the lock would not be
-    held); a blank rationale trips the table's CHECK. Does not commit, so the
-    caller holds the ledger lock (db/086) until it commits or rolls back, also
-    after UnknownRuling / NothingDeparted: end the transaction promptly.
+    version) in which `drug` is the subject or partner moiety; return the distinct
+    pairs closed (the set `pairs_to_acknowledge` previews), closing EVERY open
+    episode of them, duplicates included. The rule is db/087's
+    `drugref.acknowledge_departure` (the reviewer GUI calls it too); it takes
+    db/086's ledger lock before reading (#287).
+
+    Raises `UnknownRuling` / `NothingDeparted` (also when another curator's ack
+    committed first: the lock makes this call wait for it, then see nothing
+    departed), or `LedgerBusy` naming the holder after ACK_LOCK_TIMEOUT, or
+    RuntimeError on an autocommit connection; a blank rationale trips the table's
+    CHECK. Does not commit: on success the caller holds the ledger lock until it
+    commits or rolls back, so end the transaction promptly. A refusal rolls back to
+    a savepoint, leaving the caller's transaction usable.
     """
-    # Before reading (#287): an ingest re-grading the pair either committed first,
-    # so the read below sees it graded and leaves its episode open (NothingDeparted
-    # if nothing else departed), or waits for this commit and then opens a new
-    # episode after the ack.
-    _lock_ledger_bounded(conn)
-    rule_grain, key = _ruling_key(conn, grain, ruling_id)
-    pairs = pairs_to_acknowledge(conn, grain, ruling_id, drug)
-    if not pairs:
-        raise NothingDeparted(f"{drug} is in no open departed episode of ruling "
-                              f"{ruling_id}")
-    subjects, partners = zip(*pairs)
-    written = conn.execute(
-        f"""INSERT INTO {ACK_TABLE} (observation_id, rationale, reviewed_by,
-                                     reviewed_against)
-            SELECT o.observation_id, %s, %s, %s FROM {OBSERVATION_TABLE} o
-            WHERE o.rule_grain = %s AND o.subject_key = %s
-            AND   o.object_class_uuid = %s AND o.relationship = %s
-            AND   (o.subject_moiety, o.partner_moiety) IN
-                  (SELECT * FROM unnest(%s::uuid[], %s::uuid[]))
-            AND   NOT EXISTS (SELECT 1 FROM {ACK_TABLE} a
-                              WHERE a.observation_id = o.observation_id)""",
-        (rationale, reviewed_by, reviewed_against, rule_grain, *key,
-         list(subjects), list(partners))).rowcount
-    # Defensive since db/086: a concurrent `acknowledge` waits on the lock and is
-    # caught by `if not pairs` above, so only an ack written WITHOUT the lock (raw
-    # SQL, a future GUI writer, #283) gets here; "acknowledged" would then be false.
-    if not written:
-        raise NothingDeparted(f"{drug}'s departures of ruling {ruling_id} were "
-                              "already acknowledged by another curator")
-    return pairs
+    if conn.autocommit:
+        # "Does not commit" is the contract the CLI relies on: in autocommit the
+        # savepoint below would be a BEGIN/COMMIT of its own.
+        raise RuntimeError("acknowledge needs a transaction, not autocommit (db/086)")
+    # Opens the caller's transaction if none is open, so `conn.transaction()` below
+    # is a SAVEPOINT; on an idle connection it would be a BEGIN/COMMIT, releasing the
+    # lock before the caller commits (#287's race, silently).
+    conn.execute("SELECT 1")
+    try:
+        with conn.transaction():
+            rows = conn.execute(
+                "SELECT * FROM drugref.acknowledge_departure("
+                "%s, %s, %s, %s, %s, %s, %s)",
+                (_KEY_SQL[grain][0], ruling_id, drug, rationale, reviewed_by,
+                 reviewed_against, ACK_LOCK_TIMEOUT)).fetchall()
+    except psycopg.Error as error:
+        refusal = _ACK_REFUSALS.get(error.sqlstate or "")
+        if refusal is None:
+            raise
+        raise refusal(error.diag.message_primary) from error
+    return frozenset((s, p) for s, p, _against in rows)

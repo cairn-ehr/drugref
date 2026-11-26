@@ -6,6 +6,7 @@
   import KeyTrust from "./KeyTrust.svelte";
   import SigningKeys from "./SigningKeys.svelte";
   import PendingSignatures from "./PendingSignatures.svelte";
+  import Departures from "./Departures.svelte";
   import WorkingRecords from "./WorkingRecords.svelte";
   import ClinicalDecision from "./ClinicalDecision.svelte";
   import {
@@ -47,7 +48,7 @@
   type Screen = "checking" | "bootstrap" | "login" | "workspace" | "unavailable";
 
   /** Authenticated workspace sections selectable from the sidebar. */
-  type View = "queue" | "pending" | "users" | "signing" | "trust";
+  type View = "queue" | "pending" | "departures" | "users" | "signing" | "trust";
 
   /** Initial sequence number used to reject stale overlapping queue responses. */
   const INITIAL_QUEUE_REQUEST = 0;
@@ -245,6 +246,11 @@
     activeView = "pending";
   }
 
+  /** Select reviewed grades that stopped reaching drugs they once graded (#283). */
+  function showDepartures(): void {
+    activeView = "departures";
+  }
+
   /** Select the reviewer-account administration view. */
   function showUsers(): void {
     activeView = "users";
@@ -334,6 +340,12 @@
           type="button"
           onclick={showPendingSignatures}
         ><span class="nav-icon" aria-hidden="true">✓</span>Pending signatures</button>
+        <button
+          class="nav-item"
+          class:active={activeView === "departures"}
+          type="button"
+          onclick={showDepartures}
+        ><span class="nav-icon" aria-hidden="true">↯</span>Departed grades</button>
         <p class="nav-label nav-label--spaced">Administration</p>
         {#if currentUser.role === "administrator"}<button class="nav-item" class:active={activeView === "users"} type="button" onclick={showUsers}><span class="nav-icon" aria-hidden="true">♙</span>Reviewers</button><button class="nav-item" class:active={activeView === "trust"} type="button" onclick={showKeyTrust}><span class="nav-icon" aria-hidden="true">◈</span>Key trust</button>{/if}
         <button class="nav-item" class:active={activeView === "signing"} type="button" onclick={showSigningKeys}><span class="nav-icon" aria-hidden="true">◇</span>Signing keys</button>
@@ -342,7 +354,7 @@
     </aside>
 
     <main class="workspace-shell">
-      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "queue" || activeView === "pending" ? "Clinical curation" : "Administration"}</p><h1>{activeView === "users" ? "Reviewer accounts" : activeView === "signing" ? "Signing keys" : activeView === "trust" ? "Key trust" : activeView === "pending" ? "Pending signatures" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
+      <header class="topbar"><div><p class="eyebrow eyebrow--ink">{activeView === "queue" || activeView === "pending" || activeView === "departures" ? "Clinical curation" : "Administration"}</p><h1>{activeView === "users" ? "Reviewer accounts" : activeView === "signing" ? "Signing keys" : activeView === "trust" ? "Key trust" : activeView === "pending" ? "Pending signatures" : activeView === "departures" ? "Departed grades" : "Review queue"}</h1></div><div class="topbar-actions"><span class="preview-pill"><span></span>{accountMode() === "browser-preview" ? "Browser queue preview" : "Live review service"}</span><div class="reviewer-chip"><span class="avatar">{reviewerInitials(currentUser.fullName)}</span><span><strong>{currentUser.fullName}</strong><small>{currentUser.qualifications || currentUser.role}</small></span></div><button class="icon-button" type="button" aria-label="Sign out" onclick={signOut}>↗</button></div></header>
 
       {#if activeView === "users"}
         <UserManagement {currentUser} onCurrentUserUpdated={updateCurrentUser} onCurrentSessionRevoked={clearWorkspaceSession} />
@@ -352,6 +364,8 @@
         <SigningKeys onEnrolled={updateKeyCount} />
       {:else if activeView === "pending"}
         <PendingSignatures />
+      {:else if activeView === "departures"}
+        <Departures />
       {:else}
         <section class="metrics" aria-label="Review queue summary"><article><span class="metric-icon metric-icon--amber" aria-hidden="true">↔</span><div><strong>{workspace.summary.interactionRules}</strong><span>Interaction rules</span></div><small>Awaiting judgement</small></article><article><span class="metric-icon metric-icon--rose" aria-hidden="true">±</span><div><strong>{workspace.summary.conditionContradictions}</strong><span>Condition conflicts</span></div><small>Need clinical context</small></article><article><span class="metric-icon metric-icon--green" aria-hidden="true">✓</span><div><strong>{workspace.summary.reviewedPairs}</strong><span>Curated DDI pairs</span></div><small>Expanded from live rules</small></article></section>
         <section class="review-layout">
