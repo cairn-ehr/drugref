@@ -1521,6 +1521,18 @@ release never carried). #261 and #262 fixed 2026-11-17; #266 (an empty snapshot 
 marks every snapshotted ruling) and #268 (an unreadable archive file read "missing" on Python 3.14) fixed
 2026-11-17. Production must be built from nothing with the archive set.
 
+### Drug effects on laboratory values (#294) 🔬 SOURCE EVALUATED (2026-11-27), NOT DESIGNED
+Requested by ReportTriage (laboratory-report triage in the Cairn family): for a substance or class, which analyte
+moves, in which direction and in which **role** (causes / makes more dangerous / monitoring protocol / **interferes
+with the result**, the fourth added by owner ruling, consumer side ReportTriage#36). **Owner ruling 2026-11-27:**
+record label statements with a strength grade and let the consumer filter; curated salience later. Four steps:
+(1) source evaluation ✅ [record](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md);
+(2) the model, read view and gap view: next; owner ruled 2026-11-27: drugref-owned analytes derived from MeSH (no
+LOINC codes in drugref tables), keyed to the MeSH `condition` registry; (3) first ingest from openFDA labels,
+compared with #294's test set; (4) review and signing through the existing reviewer. Sources: openFDA labels (main,
+all four roles), MED-RT `CI_with`/PE (role-less seed), LiverTox and DILIrank later for liver tests (public domain).
+Blocked: MedDRA, so OnSIDES and SIDER as data. PROJECT-NOTES § "Drug effects on laboratory values".
+
 ### Slice 6 — HTTP public API
 The co-equal-consumer interface (any EHR/pharmacy/app; Cairn on the same footing). Deferred until there is data worth serving;
 co-located Cairn reaches the schema directly meanwhile.

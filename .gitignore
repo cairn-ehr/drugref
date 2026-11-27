@@ -36,3 +36,6 @@ docs-site/site/
 # `.bak` beside an applied migration is one `git add -A` from being committed.
 *.bak
 *.orig
+
+# browser-automation scratch written by agent tooling
+.playwright-mcp/

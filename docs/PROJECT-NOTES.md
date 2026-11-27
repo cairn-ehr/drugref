@@ -7282,6 +7282,41 @@ graded_pair_departure_ack`) or the reviewer GUI (*Departed grades* → *Unsigned
   ack tests fail identically at the base commit (database state, not code). Frontend: `svelte-check` 0 errors,
   production build.
 
+## Drug effects on laboratory values (#294, 2026-11-27) — source evaluation only, no migration, suite 3752 → 3768
+
+Step 1 of 4 (ROADMAP). The record is the
+[source evaluation](superpowers/specs/2026-11-27-drugref-lab-effects-source-evaluation.md); its figures come from
+`tools/lab_effect_survey.py` (grading rule, every effect pattern's true and false positives, and the per-substance
+aggregation over a `tmp_path` zip, all in `tests/test_lab_effect_survey.py`; the tool reads all 14 openFDA
+partitions in ~4 min and needs no database) and from `drugref_allergy` (MED-RT `CI_with`/`induces`/PE).
+**+14 tests, and +2 parametrized gate cases** the new tool file picks up in `tests/test_tools_server_channel.py`
+(logging entry point, no bare psycopg connection): 3752 → 3768.
+
+- **Owner rulings:** (A) record and grade, the consumer filters; curated salience (B) later. A fourth role,
+  *interferes* (false reading, or a reference range that no longer applies): ReportTriage#36.
+- **Labels are the main source**: 66 of 68 test-set checks found (mention level, an upper bound), 63 in a boxed,
+  warnings or precautions section. Misses: aspirin (OTC, no single-substance Rx label); trimethoprim's INR
+  warning is on the co-trimoxazole combination label, and combination labels are skipped. **The grade cuts each
+  effect's list to a quarter to a half, but does not make it salient** (245 substances mention low platelets in a
+  boxed warning or warnings section).
+- **The population is the openFDA-keyed subset**: 175,458 of 262,032 records have no `openfda` block and are
+  skipped, 36,375 of them in prescription format; the tool counts each skip reason, and DailyMed resolution is
+  **#301**. Both misses hold against the unkeyed labels (checked by product-name prefix). The PR #300 review
+  found the potassium patterns matching salt names ("losartan potassium") and creatinine matching "creatinine
+  clearance" dosing text; fixed, which moved only the potassium, creatinine and platelet rows of the table.
+- **The interference section is thin and mixed**: 161 substances; of a 41 sample, 20 method interference (2 of
+  them imaging), 10 real reference-range shifts, 5 empty, 6 misfiled by openFDA. Biotin has no Rx label.
+- **MED-RT `CI_with` never states the role** (Hypokalemia lists QT drugs, Hyperkalemia lists causers) and matches
+  11 of 26 test pairs; `induces` none. `Decreased Renal K+ Excretion [PE]` (48 members) is a mechanism seed.
+- **Licences (checked 2026-11-27):** MedDRA BLOCKED (so OnSIDES and SIDER data); LOINC, read in full from the
+  owner-supplied text (record §2.1), may be distributed beside drugref under its own notice but never inside the
+  AGPL tables (no-change, no-derivative, field-of-use), and its Part File carries SNOMED CT; LiverTox and DILIrank
+  public domain; CTCAE uncertain (MedDRA terms). **LiverTox's page refused a second fetch: re-read it by hand.**
+- **Owner rulings 2026-11-27 (record §6):** analytes are drugref's own concepts, derived from MeSH, NOT from LOINC
+  (which keeps LOINC's field-of-use clause out of reach), with no LOINC codes in drugref tables, so the consumer
+  maps; statements key to the MeSH `condition` registry plus a condition → (analyte, direction) map. A later
+  LOINC crosswalk (separately noticed) stays open.
+
 ## The standing open-issue ledger
 
 **Moved here from HANDOVER by the PR #113 review round, and this is now its ONE home.** It lived in HANDOVER
@@ -7504,6 +7539,10 @@ NOT release content (owner). #293 item 3 (service `lib.rs` size) done; filed
 test race) and **[#298](https://github.com/cairn-ehr/drugref/issues/298)** (service `signing.rs` 1224 lines);
 second review **[#299](https://github.com/cairn-ehr/drugref/issues/299)** (the GUI's unsigned lists trust registry
 status, never the mathematics). +15 tests, 3737 → 3752.
+**Lab effects, source evaluation (2026-11-27)** — [#294](https://github.com/cairn-ehr/drugref/issues/294) step 1
+of 4 (§ "Drug effects on laboratory values"); its review filed
+**[#301](https://github.com/cairn-ehr/drugref/issues/301)** (175,458 labels with no `openfda` block are skipped:
+resolve them through DailyMed before quoting the survey's denominators). +16 tests, 3752 → 3768.
 **Filed by the class-profiles round (2026-11-07)** —
 **[#202](https://github.com/cairn-ehr/drugref/issues/202)** a single-class read of `class_property` computes every
 class — **FIXED by `db/065`, CLOSED (PR #211)**, with **#209** (lodged by PR #208's pre-merge review; no SQL view for
@@ -7611,6 +7650,10 @@ owner-role bypass; **13** `TRUNCATE`-ing modules depend on it — re-grep before
 immortality · #33 MeSH CAS keys name specific forms (behind #68) · #5 INN from UNII's `Display Name` ·
 **#7/#29 row-at-a-time ingest** — the two MeSH legs are 75.7% of a 133 s chain.
 
+**Drug effects on laboratory values** — **#294 open** (ReportTriage's request; step 1, the source evaluation, done
+2026-11-27; both model rulings given the same day, § "Drug effects on laboratory values"). Its fourth role's
+consumer side is ReportTriage#36.
+
 ## Verify before the first production load
 
 **Moved here from HANDOVER.md** in the #64 review round, for the same reason as the standing rules above: this list is
@@ -7689,7 +7732,7 @@ uv sync
 # reference; `git commit --no-verify` is the escape for a deliberate close.
 git config core.hooksPath .githooks
 
-# 3752 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
+# 3768 tests (THE ONE HOME FOR THIS NUMBER -- it said 958 while the suite was at 969,
 # then 1260 while it was at 1297, then 1395 while it was at 1409, and then 1451 while it
 # was at 1564: FOUR occurrences, every one because the round that added the tests updated
 # its OWN section and not this line. THE FOURTH RAN FOR FIVE ROUNDS (1465, 1511, 1516,
